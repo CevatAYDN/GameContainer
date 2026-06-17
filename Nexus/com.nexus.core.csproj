@@ -76,6 +76,7 @@
     <Compile Include="Packages\com.nexus.core\Runtime\Core\NexusRuntime.cs" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Packages\com.nexus.core\Runtime\link.xml" />
     <None Include="Packages\com.nexus.core\Runtime\com.nexus.core.asmdef" />
   </ItemGroup>
   <ItemGroup>

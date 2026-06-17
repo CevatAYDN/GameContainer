@@ -54,7 +54,11 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Packages\com.nexus.core\Tests\Runtime\LifecycleTests.cs" />
+    <Compile Include="Packages\com.nexus.core\Tests\Runtime\PerformanceTests.cs" />
+    <Compile Include="Packages\com.nexus.core\Tests\Runtime\CrossContextTests.cs" />
+    <Compile Include="Packages\com.nexus.core\Tests\Runtime\HybridQueueTests.cs" />
     <Compile Include="Packages\com.nexus.core\Tests\Runtime\ViewBindingTests.cs" />
+    <Compile Include="Packages\com.nexus.core\Tests\Runtime\CompositeTriggerTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Packages\com.nexus.core\Tests\Runtime\com.nexus.core.tests.asmdef" />
