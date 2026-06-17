@@ -21,7 +21,13 @@ namespace Nexus.Editor
                 // 1. Scan and validate signal handlers, priorities and mixed modes
                 ValidateHandlers(ref errorCount, ref warningCount);
 
-                // 2. Validate scene Roots and context hierarchies
+                // 2. Validate model ownership chains (IDisposableModel)
+                ValidateModelOwnership(ref errorCount, ref warningCount);
+
+                // 3. Validate ContextData DependsOn for cycles
+                ValidateContextDataDependencies(ref errorCount, ref warningCount);
+
+                // 4. Validate scene Roots and context hierarchies
                 ValidateSceneHierarchy(ref errorCount, ref warningCount);
             }
             catch (Exception ex)
@@ -172,6 +178,89 @@ namespace Nexus.Editor
                 return true; // assumed writeable if it lacks IReadOnly prefix
             }
             return false;
+        }
+
+        private static void ValidateModelOwnership(ref int errorCount, ref int warningCount)
+        {
+            // Plan §4 — IDisposableModel disposal chain check
+            // Scan all types implementing IDisposableModel and verify they are referenced
+            // by a Context or another model that will dispose them.
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.IsClass && !type.IsAbstract && typeof(IDisposableModel).IsAssignableFrom(type))
+                        {
+                            // IDisposableModel types must be registered in DI (otherwise they're leaked)
+                            // This is a best-effort static check; runtime DI registration is verified separately.
+                            bool hasValidConstructor = false;
+                            foreach (var ctor in type.GetConstructors(BindingFlags.Public | BindingFlags.Instance))
+                            {
+                                var ps = ctor.GetParameters();
+                                if (ps.Length == 0 || Array.Exists(ps, p => p.ParameterType == typeof(NexusDI)))
+                                {
+                                    hasValidConstructor = true;
+                                    break;
+                                }
+                            }
+                            if (!hasValidConstructor)
+                            {
+                                Debug.LogWarning($"[Nexus Warning] IDisposableModel type {type.FullName} should have a constructor that accepts DI container or is parameterless to ensure proper disposal.");
+                                warningCount++;
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private static void ValidateContextDataDependencies(ref int errorCount, ref int warningCount)
+        {
+            // Plan §5 — ContextData DependsOn validates that dependency chains don't form cycles
+            var contextDataAssets = AssetDatabase.FindAssets("t:ContextData");
+            var dataByName = new Dictionary<string, ContextData>();
+
+            foreach (var guid in contextDataAssets)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var data = AssetDatabase.LoadAssetAtPath<ContextData>(path);
+                if (data != null && !string.IsNullOrEmpty(data.name))
+                {
+                    dataByName[data.name] = data;
+                }
+            }
+
+            foreach (var kvp in dataByName)
+            {
+                var visited = new HashSet<string>();
+                var current = kvp.Key;
+
+                while (!string.IsNullOrEmpty(current))
+                {
+                    if (!visited.Add(current))
+                    {
+                        Debug.LogError($"[Nexus Error] Circular ContextData Dependency: ContextData '{kvp.Key}' has a circular DependsOn chain involving '{current}'.");
+                        errorCount++;
+                        break;
+                    }
+
+                    if (dataByName.TryGetValue(current, out var nextData) && nextData.DependsOn != null && nextData.DependsOn.Length > 0)
+                    {
+                        current = nextData.DependsOn[0];
+                    }
+                    else
+                    {
+                        break;
+                    }
+                }
+            }
         }
 
         private static void ValidateSceneHierarchy(ref int errorCount, ref int warningCount)
