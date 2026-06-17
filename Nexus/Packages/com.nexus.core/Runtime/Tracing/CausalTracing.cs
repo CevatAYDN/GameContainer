@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Threading;
+using UnityEngine.Profiling;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
@@ -18,6 +20,7 @@ namespace Nexus.Core
         Cancelled
     }
 
+    [Preserve]
     public readonly struct TraceEvent
     {
         public readonly int Id;
@@ -45,10 +48,12 @@ namespace Nexus.Core
         void Write(in TraceEvent traceEvent);
     }
 
+    [Preserve]
     public static class NexusTrace
     {
         private const int MaxEvents = 10000;
         private static readonly TraceEvent[] s_ringBuffer = new TraceEvent[MaxEvents];
+#if NEXUS_DEBUG
         private static int s_globalEventIdCounter = 0;
         private static int s_ringBufferIndex = -1;
 
@@ -56,7 +61,8 @@ namespace Nexus.Core
         private static int s_currentActiveEventId;
         
         [ThreadStatic]
-        private static Stack<int> s_parentIdStack;
+        private static Stack<(int parentId, int bufferIndex)> s_parentStack;
+#endif
 
         private static readonly List<INexusTraceSink> s_sinks = new();
         private static readonly object s_lock = new();
@@ -68,11 +74,13 @@ namespace Nexus.Core
 
         public static void Reset()
         {
-            s_parentIdStack = new Stack<int>();
+            Array.Clear(s_ringBuffer, 0, s_ringBuffer.Length);
+#if NEXUS_DEBUG
+            s_parentStack = new Stack<(int, int)>();
             s_currentActiveEventId = -1;
             s_ringBufferIndex = -1;
-            Array.Clear(s_ringBuffer, 0, s_ringBuffer.Length);
             s_globalEventIdCounter = 0;
+#endif
         }
 
         public static void AddSink(INexusTraceSink sink)
@@ -96,27 +104,26 @@ namespace Nexus.Core
 
         public static int BeginEvent(TraceEventType type, string typeName, ExecutionMode mode = ExecutionMode.Sequential)
         {
-            if (s_parentIdStack == null)
+#if NEXUS_DEBUG
+            if (s_parentStack == null)
             {
-                s_parentIdStack = new Stack<int>();
+                s_parentStack = new Stack<(int, int)>();
                 s_currentActiveEventId = -1;
             }
 
             int parentId = s_currentActiveEventId;
             int eventId = Interlocked.Increment(ref s_globalEventIdCounter);
+            int index = Interlocked.Increment(ref s_ringBufferIndex) % MaxEvents;
+            if (index < 0) index = 0;
 
-            s_parentIdStack.Push(s_currentActiveEventId);
+            s_parentStack.Push((s_currentActiveEventId, index));
             s_currentActiveEventId = eventId;
 
             var timestamp = UnityEngine.Time.realtimeSinceStartupAsDouble;
             var traceEvent = new TraceEvent(eventId, parentId, type, timestamp, typeName, TraceStatus.OK, mode);
 
-            // Save to ring buffer
-            int index = Interlocked.Increment(ref s_ringBufferIndex) % MaxEvents;
-            if (index < 0) index = 0;
             s_ringBuffer[index] = traceEvent;
 
-            // Notify sinks
             lock (s_lock)
             {
                 for (int i = 0; i < s_sinks.Count; i++)
@@ -126,36 +133,38 @@ namespace Nexus.Core
             }
 
             return eventId;
+#else
+            return 0;
+#endif
         }
 
         public static void EndEvent(int eventId, TraceStatus status = TraceStatus.OK)
         {
-            if (s_parentIdStack == null || s_parentIdStack.Count == 0)
+#if NEXUS_DEBUG
+            if (s_parentStack == null || s_parentStack.Count == 0)
             {
                 s_currentActiveEventId = -1;
                 return;
             }
 
-            // Update status in ring buffer for this event
-            int index = s_ringBufferIndex;
-            for (int i = 0; i < MaxEvents; i++)
-            {
-                int idx = (index - i) % MaxEvents;
-                if (idx < 0) idx += MaxEvents;
+            var (parentId, bufferIndex) = s_parentStack.Pop();
 
-                if (s_ringBuffer[idx].Id == eventId)
+            if (bufferIndex >= 0 && bufferIndex < MaxEvents)
+            {
+                var ev = s_ringBuffer[bufferIndex];
+                if (ev.Id == eventId)
                 {
-                    var ev = s_ringBuffer[idx];
-                    s_ringBuffer[idx] = new TraceEvent(ev.Id, ev.ParentId, ev.Type, ev.Timestamp, ev.TypeName, status, ev.Mode);
-                    break;
+                    s_ringBuffer[bufferIndex] = new TraceEvent(ev.Id, ev.ParentId, ev.Type, ev.Timestamp, ev.TypeName, status, ev.Mode);
                 }
             }
 
-            s_currentActiveEventId = s_parentIdStack.Pop();
+            s_currentActiveEventId = parentId;
+#endif
         }
 
         public static TraceEvent[] GetRecentEvents(out int count)
         {
+#if NEXUS_DEBUG
             var events = new List<TraceEvent>();
             int lastIndex = s_ringBufferIndex;
             if (lastIndex == -1)
@@ -176,6 +185,10 @@ namespace Nexus.Core
 
             count = events.Count;
             return events.ToArray();
+#else
+            count = 0;
+            return Array.Empty<TraceEvent>();
+#endif
         }
     }
 }
