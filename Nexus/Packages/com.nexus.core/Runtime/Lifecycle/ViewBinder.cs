@@ -2,15 +2,25 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    [Preserve]
     public abstract class View : MonoBehaviour, IView
     {
         protected IContext Context { get; private set; }
+        private bool _isBound;
+
+        private void Awake()
+        {
+            // Plan §2.3: Awake'te Context/SignalBus erişimi yasaktır.
+            // View henüz kaydedilmemiş ve Mediator bağlanmamıştır.
+        }
 
         protected virtual void OnEnable()
         {
+            if (_isBound) return;
             var root = GetComponentInParent<Root>();
             if (root != null)
             {
@@ -37,6 +47,8 @@ namespace Nexus.Core
 
         public void Bind(IContext context)
         {
+            if (_isBound) return;
+            _isBound = true;
             Context = context;
             OnBind(context);
         }
@@ -44,6 +56,7 @@ namespace Nexus.Core
         public void Unbind()
         {
             OnUnbind();
+            _isBound = false;
             Context = null;
         }
 
@@ -51,6 +64,7 @@ namespace Nexus.Core
         protected virtual void OnUnbind() { }
     }
 
+    [Preserve]
     public class ViewBinder : IDisposable
     {
         private readonly IContext _context;
@@ -68,6 +82,8 @@ namespace Nexus.Core
         {
             if (_activeMediators.ContainsKey(view)) return;
 
+            view.Bind(_context);
+
             var viewType = view.GetType();
             var mediatorAttr = viewType.GetCustomAttribute<MediatorAttribute>();
             if (mediatorAttr == null) return;
@@ -83,6 +99,8 @@ namespace Nexus.Core
 
         public void UnregisterView(IView view)
         {
+            view.Unbind();
+
             if (_activeMediators.Remove(view, out var mediator))
             {
                 mediator.Unbind();
@@ -157,7 +175,10 @@ namespace Nexus.Core
                 {
                     kvp.Value.Unbind();
                 }
-                catch {}
+                catch (Exception ex)
+                {
+                    Debug.LogException(ex);
+                }
             }
             _activeMediators.Clear();
             _mediatorPools.Clear();
