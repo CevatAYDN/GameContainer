@@ -3,9 +3,12 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine.Profiling;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    [Preserve]
     public class CommandHandlerInfo
     {
         public Type CommandType { get; }
@@ -58,6 +61,7 @@ namespace Nexus.Core
         }
     }
 
+    [Preserve]
     public class SignalBus : ISignalBus, IDisposable
     {
         private readonly NexusDI _container;
@@ -76,6 +80,12 @@ namespace Nexus.Core
 
         private int _inFlightAsyncCommands;
         private const int MaxInFlightAsyncCommands = 100;
+
+#if NEXUS_DEBUG
+        private static readonly ProfilerMarker s_DispatchMarker = new ProfilerMarker("Nexus.Signal.Dispatch");
+        private static readonly ProfilerMarker s_CommandMarker = new ProfilerMarker("Nexus.Command.Execute");
+        private static readonly ProfilerMarker s_DrainMarker = new ProfilerMarker("Nexus.Queue.Drain");
+#endif
 
         public SignalBus(NexusDI container, CommandPoolManager poolManager, IContext context)
         {
@@ -119,6 +129,9 @@ namespace Nexus.Core
 
             list.Add(new CommandHandlerInfo(commandType, mode, priority, isAsync));
             
+            // Bind command type in DI so CommandPoolManager can resolve it
+            _container.Bind(commandType, isSingleton: false);
+
             // Sort by priority descending
             if (mode != ExecutionMode.Concurrent)
             {
@@ -223,7 +236,10 @@ namespace Nexus.Core
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
             }
 
+#if NEXUS_DEBUG
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
+            s_DispatchMarker.Begin();
+#endif
             try
             {
                 var type = typeof(T);
@@ -238,7 +254,9 @@ namespace Nexus.Core
                         {
                             if (!interceptor.Intercept(ref boxedSignal))
                             {
+#if NEXUS_DEBUG
                                 NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
+#endif
                                 return;
                             }
                         }
@@ -289,15 +307,22 @@ namespace Nexus.Core
 
                 // Process composite triggers
                 ProcessCompositeTriggers(type);
+#if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.OK);
+#endif
             }
             catch (Exception)
             {
+#if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.Failed);
+#endif
                 throw;
             }
             finally
             {
+#if NEXUS_DEBUG
+                s_DispatchMarker.End();
+#endif
                 s_stackDepth--;
             }
         }
@@ -422,7 +447,10 @@ namespace Nexus.Core
 
             while (shouldRun)
             {
+#if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
+                s_CommandMarker.Begin();
+#endif
                 object command = null;
                 try
                 {
@@ -435,11 +463,15 @@ namespace Nexus.Core
                         ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
                     }
                     shouldRun = false; // completed successfully
+#if NEXUS_DEBUG
                     NexusTrace.EndEvent(traceId, TraceStatus.OK);
+#endif
                 }
                 catch (Exception ex)
                 {
+#if NEXUS_DEBUG
                     NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
                     var action = HandleCommandErrorWithDecision(ex, handler.CommandType, signal, ref retryCount);
                     if (action != RecoveryAction.Retry)
                     {
@@ -448,6 +480,9 @@ namespace Nexus.Core
                 }
                 finally
                 {
+#if NEXUS_DEBUG
+                    s_CommandMarker.End();
+#endif
                     if (command != null)
                     {
                         _poolManager.ReturnCommand(handler.CommandType, command);
@@ -463,7 +498,10 @@ namespace Nexus.Core
 
             while (shouldRun)
             {
+#if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
+                s_CommandMarker.Begin();
+#endif
                 object command = null;
                 bool inFlightIncremented = false;
                 try
@@ -485,11 +523,15 @@ namespace Nexus.Core
                         await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
                     }
                     shouldRun = false; // success
+#if NEXUS_DEBUG
                     NexusTrace.EndEvent(traceId, TraceStatus.OK);
+#endif
                 }
                 catch (Exception ex)
                 {
+#if NEXUS_DEBUG
                     NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
                     var action = await HandleCommandErrorWithDecisionAsync(ex, handler.CommandType, signal, retryCount, ct);
                     if (action == RecoveryAction.Retry)
                     {
@@ -502,6 +544,9 @@ namespace Nexus.Core
                 }
                 finally
                 {
+#if NEXUS_DEBUG
+                    s_CommandMarker.End();
+#endif
                     if (inFlightIncremented)
                     {
                         Interlocked.Decrement(ref _inFlightAsyncCommands);
