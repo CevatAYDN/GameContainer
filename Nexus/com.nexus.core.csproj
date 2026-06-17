@@ -56,6 +56,7 @@
     <Compile Include="Packages\com.nexus.core\Runtime\Lifecycle\ViewBinder.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\ContextBuilder.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Interfaces\Interfaces.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Testing\NexusTestHarness.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Attributes\Attributes.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\CommandPool.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\Root.cs" />
@@ -71,6 +72,7 @@
     <Compile Include="Packages\com.nexus.core\Runtime\Core\VersionedScriptableObject.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\SignalBus.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Queue\HybridQueue.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Testing\NexusTestContext.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\NexusRuntime.cs" />
   </ItemGroup>
   <ItemGroup>
