@@ -13,7 +13,24 @@ namespace Nexus.Editor
         private Label _statusLabel;
         private readonly List<VisualElement> _renderedItems = new();
         private bool _isPaused = false;
-        private double _lastRefreshTime;
+
+        // Time Travel Debugging state (Plan §9.7)
+        private TraceEvent[] _pausedEvents;
+        private int _pausedCount;
+        private string _searchFilter = "";
+        private bool _filterSignal = true;
+        private bool _filterCommand = true;
+        private bool _filterModelChange = true;
+        private bool _filterOk = true;
+        private bool _filterFailed = true;
+        private bool _filterCancelled = true;
+        private VisualElement _detailPanel;
+        private Label _detailContent;
+        private TextField _searchField;
+        private readonly Dictionary<int, List<TraceEvent>> _childrenCache = new();
+
+        // Causal chain detail: selected event and its children
+        private int _selectedEventId = -1;
 
         [MenuItem("Window/Nexus/Inspector")]
         public static void ShowWindow()
@@ -26,7 +43,7 @@ namespace Nexus.Editor
         private void CreateGUI()
         {
             var root = rootVisualElement;
-            root.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.14f)); // dark theme
+            root.style.backgroundColor = new StyleColor(new Color(0.12f, 0.12f, 0.14f));
 
             // 1. Header Toolbar
             var toolbar = new VisualElement();
@@ -60,7 +77,22 @@ namespace Nexus.Editor
             _pauseToggle = new Toggle("Pause") { value = _isPaused };
             _pauseToggle.style.marginLeft = 15;
             _pauseToggle.style.color = Color.white;
-            _pauseToggle.RegisterValueChangedCallback(evt => _isPaused = evt.newValue);
+            _pauseToggle.RegisterValueChangedCallback(evt =>
+            {
+                _isPaused = evt.newValue;
+                if (_isPaused)
+                {
+                    SnapshotPausedEvents();
+                }
+                else
+                {
+                    _pausedEvents = null;
+                    _pausedCount = 0;
+                    _selectedEventId = -1;
+                    _detailPanel.style.display = DisplayStyle.None;
+                }
+                RefreshAll();
+            });
             toolbar.Add(_pauseToggle);
 
             _statusLabel = new Label("Steady State: 0 GC");
@@ -71,7 +103,97 @@ namespace Nexus.Editor
 
             root.Add(toolbar);
 
-            // 2. Scrollable Event Container
+            // 2. Search and Filter Bar (Time Travel)
+            var filterBar = new VisualElement();
+            filterBar.style.flexDirection = FlexDirection.Row;
+            filterBar.style.paddingLeft = 10;
+            filterBar.style.paddingRight = 10;
+            filterBar.style.paddingTop = 6;
+            filterBar.style.paddingBottom = 6;
+            filterBar.style.borderBottomWidth = 1;
+            filterBar.style.borderBottomColor = new StyleColor(new Color(0.2f, 0.2f, 0.22f));
+            filterBar.style.alignItems = Align.Center;
+            filterBar.style.flexWrap = Wrap.Wrap;
+
+            // Search field
+            _searchField = new TextField();
+            _searchField.style.flexGrow = 1;
+            _searchField.style.minWidth = 120;
+            _searchField.style.height = 22;
+            _searchField.style.fontSize = 11;
+            _searchField.RegisterValueChangedCallback(evt =>
+            {
+                _searchFilter = evt.newValue;
+                RefreshAll();
+            });
+            var searchPlaceholder = new Label("Search events...");
+            searchPlaceholder.style.position = Position.Absolute;
+            searchPlaceholder.style.left = 8;
+            searchPlaceholder.style.top = 4;
+            searchPlaceholder.style.fontSize = 11;
+            searchPlaceholder.style.color = new StyleColor(new Color(0.4f, 0.4f, 0.4f));
+            searchPlaceholder.style.unityFontStyleAndWeight = FontStyle.Italic;
+            searchPlaceholder.pickingMode = PickingMode.Ignore;
+            _searchField.Add(searchPlaceholder);
+            _searchField.RegisterCallback<FocusInEvent>(evt => searchPlaceholder.style.display = DisplayStyle.None);
+            _searchField.RegisterCallback<FocusOutEvent>(evt =>
+            {
+                if (string.IsNullOrEmpty(_searchField.value))
+                    searchPlaceholder.style.display = DisplayStyle.Flex;
+            });
+            filterBar.Add(_searchField);
+
+            // Spacing
+            filterBar.Add(new Label("  ") { style = { width = 8 } });
+
+            // Type filter buttons
+            var typeFilterLabel = new Label("Type:") { style = { color = new StyleColor(new Color(0.7f, 0.7f, 0.7f)), fontSize = 10, marginRight = 4 } };
+            filterBar.Add(typeFilterLabel);
+
+            var signalFilterBtn = MakeFilterButton("SIG", () => { _filterSignal = !_filterSignal; RefreshAll(); }, () => _filterSignal);
+            var cmdFilterBtn = MakeFilterButton("CMD", () => { _filterCommand = !_filterCommand; RefreshAll(); }, () => _filterCommand);
+            var modelFilterBtn = MakeFilterButton("MOD", () => { _filterModelChange = !_filterModelChange; RefreshAll(); }, () => _filterModelChange);
+
+            filterBar.Add(signalFilterBtn);
+            filterBar.Add(cmdFilterBtn);
+            filterBar.Add(modelFilterBtn);
+
+            filterBar.Add(new Label("  |  ") { style = { color = new StyleColor(new Color(0.3f, 0.3f, 0.3f)), fontSize = 10 } });
+
+            // Status filter buttons
+            var statusFilterLabel = new Label("Status:") { style = { color = new StyleColor(new Color(0.7f, 0.7f, 0.7f)), fontSize = 10, marginRight = 4 } };
+            filterBar.Add(statusFilterLabel);
+
+            var okFilterBtn = MakeFilterButton("OK", () => { _filterOk = !_filterOk; RefreshAll(); }, () => _filterOk, new Color(0.3f, 0.8f, 0.3f));
+            var failFilterBtn = MakeFilterButton("FAIL", () => { _filterFailed = !_filterFailed; RefreshAll(); }, () => _filterFailed, new Color(1f, 0.3f, 0.3f));
+            var cancelFilterBtn = MakeFilterButton("CANCEL", () => { _filterCancelled = !_filterCancelled; RefreshAll(); }, () => _filterCancelled, new Color(1f, 0.7f, 0.2f));
+
+            filterBar.Add(okFilterBtn);
+            filterBar.Add(failFilterBtn);
+            filterBar.Add(cancelFilterBtn);
+
+            root.Add(filterBar);
+
+            // 3. Detail Panel (initially hidden)
+            _detailPanel = new VisualElement();
+            _detailPanel.style.backgroundColor = new StyleColor(new Color(0.08f, 0.08f, 0.1f));
+            _detailPanel.style.borderBottomWidth = 1;
+            _detailPanel.style.borderBottomColor = new StyleColor(new Color(0.2f, 0.2f, 0.22f));
+            _detailPanel.style.paddingLeft = 12;
+            _detailPanel.style.paddingRight = 12;
+            _detailPanel.style.paddingTop = 8;
+            _detailPanel.style.paddingBottom = 8;
+            _detailPanel.style.display = DisplayStyle.None;
+
+            _detailContent = new Label();
+            _detailContent.style.color = new StyleColor(new Color(0.8f, 0.8f, 0.9f));
+            _detailContent.style.fontSize = 11;
+            _detailContent.style.whiteSpace = WhiteSpace.Normal;
+            _detailPanel.Add(_detailContent);
+
+            root.Add(_detailPanel);
+
+            // 4. Scrollable Event Container
             _scrollView = new ScrollView();
             _scrollView.style.flexGrow = 1;
             _scrollView.style.paddingLeft = 10;
@@ -84,35 +206,220 @@ namespace Nexus.Editor
             root.schedule.Execute(RefreshGUI).Every(100);
         }
 
+        private Button MakeFilterButton(string label, System.Action onClick, System.Func<bool> isActive, Color? activeColor = null)
+        {
+            var activeBg = activeColor ?? new Color(0.3f, 0.5f, 0.7f);
+            Button btn = null;
+            btn = new Button(() =>
+            {
+                onClick();
+                UpdateFilterButtonStyle(btn, isActive(), activeBg);
+            }) { text = label };
+            btn.style.fontSize = 9;
+            btn.style.paddingLeft = 6;
+            btn.style.paddingRight = 6;
+            btn.style.paddingTop = 2;
+            btn.style.paddingBottom = 2;
+            btn.style.marginLeft = 2;
+            btn.style.marginRight = 2;
+            btn.style.borderTopLeftRadius = 3;
+            btn.style.borderTopRightRadius = 3;
+            btn.style.borderBottomLeftRadius = 3;
+            btn.style.borderBottomRightRadius = 3;
+            UpdateFilterButtonStyle(btn, isActive(), activeBg);
+            return btn;
+        }
+
+        private void UpdateFilterButtonStyle(Button btn, bool active, Color activeBg)
+        {
+            if (active)
+            {
+                btn.style.backgroundColor = new StyleColor(activeBg);
+                btn.style.color = Color.white;
+            }
+            else
+            {
+                btn.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.17f));
+                btn.style.color = new StyleColor(new Color(0.4f, 0.4f, 0.4f));
+            }
+        }
+
+        private void SnapshotPausedEvents()
+        {
+            _pausedEvents = NexusTrace.GetRecentEvents(out _pausedCount);
+            BuildChildrenCache(_pausedEvents, _pausedCount);
+        }
+
         private void ClearTraces()
         {
             NexusTrace.Reset();
             _scrollView.Clear();
             _renderedItems.Clear();
+            _pausedEvents = null;
+            _pausedCount = 0;
+            _selectedEventId = -1;
+            _detailPanel.style.display = DisplayStyle.None;
         }
 
         private void RefreshGUI()
         {
-            if (_isPaused || !Application.isPlaying) return;
-
-            var events = NexusTrace.GetRecentEvents(out int count);
-            if (count == 0)
+            if (!Application.isPlaying)
             {
                 if (_scrollView.childCount > 0)
                 {
                     _scrollView.Clear();
                     _renderedItems.Clear();
                 }
+                _statusLabel.text = "Not Playing — Open Inspector in Play Mode";
                 return;
             }
 
-            // Simple diffing to avoid recreating all elements
-            int currentRenderedCount = _renderedItems.Count;
-            if (count < currentRenderedCount)
+            if (_isPaused)
+            {
+                // When paused, we show the snapshot - filters apply
+                // Snapshot is taken once when pause is toggled
+                RenderFilteredEvents(_pausedEvents, _pausedCount);
+                return;
+            }
+
+            // Live mode
+            var events = NexusTrace.GetRecentEvents(out int count);
+            if (count == 0 && _scrollView.childCount > 0)
             {
                 _scrollView.Clear();
                 _renderedItems.Clear();
-                currentRenderedCount = 0;
+            }
+
+            RenderLiveEvents(events, count);
+        }
+
+        private void RefreshAll()
+        {
+            // Force a full re-render from current source
+            _scrollView.Clear();
+            _renderedItems.Clear();
+
+            if (_isPaused && _pausedEvents != null)
+            {
+                RenderFilteredEvents(_pausedEvents, _pausedCount);
+            }
+            else if (!_isPaused)
+            {
+                var events = NexusTrace.GetRecentEvents(out int count);
+                RenderLiveEvents(events, count);
+            }
+        }
+
+        private TraceEvent[] GetFilteredEvents(TraceEvent[] source, int count)
+        {
+            if (count == 0 || source == null)
+                return System.Array.Empty<TraceEvent>();
+
+            // Build filter map for fast lookup
+            bool HasTypeFilter(TraceEventType t)
+            {
+                switch (t)
+                {
+                    case TraceEventType.Signal: return _filterSignal;
+                    case TraceEventType.Command: return _filterCommand;
+                    case TraceEventType.ModelChange: return _filterModelChange;
+                    default: return true;
+                }
+            }
+
+            bool HasStatusFilter(TraceStatus s)
+            {
+                switch (s)
+                {
+                    case TraceStatus.OK: return _filterOk;
+                    case TraceStatus.Failed: return _filterFailed;
+                    case TraceStatus.Cancelled: return _filterCancelled;
+                    default: return true;
+                }
+            }
+
+            bool HasNameFilter(string name)
+            {
+                if (string.IsNullOrEmpty(_searchFilter))
+                    return true;
+                return name.IndexOf(_searchFilter, System.StringComparison.OrdinalIgnoreCase) >= 0;
+            }
+
+            var result = new List<TraceEvent>(count);
+            for (int i = 0; i < count; i++)
+            {
+                var ev = source[i];
+                if (HasTypeFilter(ev.Type) && HasStatusFilter(ev.Status) && HasNameFilter(ev.TypeName))
+                {
+                    result.Add(ev);
+                }
+            }
+
+            return result.ToArray();
+        }
+
+        private void RenderFilteredEvents(TraceEvent[] source, int count)
+        {
+            var filtered = GetFilteredEvents(source, count);
+            int filteredCount = filtered.Length;
+
+            if (filteredCount == 0)
+            {
+                if (_renderedItems.Count > 0)
+                {
+                    _scrollView.Clear();
+                    _renderedItems.Clear();
+                }
+                _statusLabel.text = $"Total: {count} | Filtered: 0 | PAUSED";
+                return;
+            }
+
+            // Diff-based update
+            int renderedCount = _renderedItems.Count;
+            if (filteredCount != renderedCount)
+            {
+                _scrollView.Clear();
+                _renderedItems.Clear();
+                renderedCount = 0;
+            }
+
+            var depths = new Dictionary<int, int>();
+
+            for (int i = 0; i < filteredCount; i++)
+            {
+                var ev = filtered[i];
+                int depth = 0;
+                if (ev.ParentId != -1 && depths.TryGetValue(ev.ParentId, out int parentDepth))
+                {
+                    depth = parentDepth + 1;
+                }
+                depths[ev.Id] = depth;
+
+                if (i >= renderedCount)
+                {
+                    var item = CreateTraceElement(ev, depth);
+                    _scrollView.Add(item);
+                    _renderedItems.Add(item);
+                }
+                else
+                {
+                    UpdateTraceElement(_renderedItems[i], ev, depth);
+                }
+            }
+
+            _statusLabel.text = $"Total: {count} | Filtered: {filteredCount} | PAUSED";
+        }
+
+        private void RenderLiveEvents(TraceEvent[] events, int count)
+        {
+            if (count == 0) return;
+
+            int renderedCount = _renderedItems.Count;
+            if (count < renderedCount)
+            {
+                _scrollView.Clear();
+                _renderedItems.Clear();
+                renderedCount = 0;
             }
 
             var depths = new Dictionary<int, int>();
@@ -127,7 +434,7 @@ namespace Nexus.Editor
                 }
                 depths[ev.Id] = depth;
 
-                if (i >= currentRenderedCount)
+                if (i >= renderedCount)
                 {
                     var item = CreateTraceElement(ev, depth);
                     _scrollView.Add(item);
@@ -142,6 +449,76 @@ namespace Nexus.Editor
             _statusLabel.text = $"Total Traced: {count} | Steady State: 0 GC";
         }
 
+        private void BuildChildrenCache(TraceEvent[] events, int count)
+        {
+            _childrenCache.Clear();
+            for (int i = 0; i < count; i++)
+            {
+                var ev = events[i];
+                if (ev.ParentId != -1)
+                {
+                    if (!_childrenCache.ContainsKey(ev.ParentId))
+                        _childrenCache[ev.ParentId] = new List<TraceEvent>();
+                    _childrenCache[ev.ParentId].Add(ev);
+                }
+            }
+        }
+
+        private void OnTraceEventClicked(TraceEvent ev)
+        {
+            if (!_isPaused) return;
+
+            if (_selectedEventId == ev.Id)
+            {
+                _detailPanel.style.display = DisplayStyle.None;
+                _selectedEventId = -1;
+                return;
+            }
+
+            _selectedEventId = ev.Id;
+            var detail = BuildEventDetail(ev);
+            _detailContent.text = detail;
+            _detailPanel.style.display = DisplayStyle.Flex;
+        }
+
+        private string BuildEventDetail(TraceEvent ev)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"<b>Event #{ev.Id}</b>");
+            sb.AppendLine($"Type: {ev.Type}");
+            sb.AppendLine($"Name: {ev.TypeName}");
+            sb.AppendLine($"Status: {ev.Status}");
+            sb.AppendLine($"Mode: {ev.Mode}");
+            sb.AppendLine($"Time: {ev.Timestamp:F3}s");
+            sb.AppendLine($"Parent ID: {(ev.ParentId == -1 ? "None (root)" : ev.ParentId.ToString())}");
+
+            // Causal chain: parent info
+            if (ev.ParentId != -1 && _pausedEvents != null)
+            {
+                for (int i = 0; i < _pausedCount; i++)
+                {
+                    if (_pausedEvents[i].Id == ev.ParentId)
+                    {
+                        var parent = _pausedEvents[i];
+                        sb.AppendLine($"\n<b>Parent Event:</b> #{parent.Id} [{parent.Type}] {parent.TypeName}");
+                        break;
+                    }
+                }
+            }
+
+            // Causal chain: children count
+            if (_childrenCache.TryGetValue(ev.Id, out var children) && children.Count > 0)
+            {
+                sb.AppendLine($"\n<b>Children ({children.Count}):</b>");
+                foreach (var child in children)
+                {
+                    sb.AppendLine($"  #{child.Id} [{child.Type}] {child.TypeName} — {child.Status}");
+                }
+            }
+
+            return sb.ToString();
+        }
+
         private VisualElement CreateTraceElement(TraceEvent ev, int depth)
         {
             var element = new VisualElement();
@@ -149,13 +526,15 @@ namespace Nexus.Editor
             element.style.alignItems = Align.Center;
             element.style.paddingTop = 4;
             element.style.paddingBottom = 4;
-            element.style.paddingLeft = 6 + (depth * 20); // Indentation depth
+            element.style.paddingLeft = 6 + (depth * 20);
             element.style.marginTop = 2;
             element.style.marginBottom = 2;
             element.style.borderTopLeftRadius = 4;
             element.style.borderTopRightRadius = 4;
             element.style.borderBottomLeftRadius = 4;
             element.style.borderBottomRightRadius = 4;
+            // Make clickable for detail view
+            element.RegisterCallback<MouseDownEvent>(evt => OnTraceEventClicked(ev));
 
             // Status indicator dot
             var statusDot = new VisualElement();
@@ -169,7 +548,7 @@ namespace Nexus.Editor
             statusDot.style.marginRight = 8;
             element.Add(statusDot);
 
-            // Hierarchical branch indicator line
+            // Hierarchical branch indicator
             if (depth > 0)
             {
                 var branchLabel = new Label("└─ ");
@@ -227,7 +606,6 @@ namespace Nexus.Editor
 
         private void ApplyTraceValues(VisualElement element, TraceEvent ev, int depth)
         {
-            // Background & Dot based on status
             var dot = element.Q<VisualElement>("StatusDot");
             Color bgColor;
             Color dotColor;
@@ -248,10 +626,15 @@ namespace Nexus.Editor
                     break;
             }
 
+            // Highlight selected event
+            if (_isPaused && _selectedEventId == ev.Id)
+            {
+                bgColor = new Color(0.2f, 0.3f, 0.5f, 0.6f);
+            }
+
             element.style.backgroundColor = new StyleColor(bgColor);
             if (dot != null) dot.style.backgroundColor = new StyleColor(dotColor);
 
-            // Type Tag
             var typeTag = element.Q<Label>("TypeTag");
             if (typeTag != null)
             {
@@ -273,11 +656,9 @@ namespace Nexus.Editor
                 }
             }
 
-            // Name
             var nameLabel = element.Q<Label>("NameLabel");
             if (nameLabel != null) nameLabel.text = ev.TypeName;
 
-            // Mode / Priority
             var modeLabel = element.Q<Label>("ModeLabel");
             if (modeLabel != null)
             {
@@ -292,7 +673,6 @@ namespace Nexus.Editor
                 }
             }
 
-            // Timestamp
             var timeLabel = element.Q<Label>("TimeLabel");
             if (timeLabel != null) timeLabel.text = $"{ev.Timestamp:F3}s";
         }
