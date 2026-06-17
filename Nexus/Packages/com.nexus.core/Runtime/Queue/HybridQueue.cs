@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
@@ -22,6 +23,7 @@ namespace Nexus.Core
         }
     }
 
+    [Preserve]
     public class HybridQueue
     {
         private readonly SignalBus _signalBus;
@@ -67,14 +69,17 @@ namespace Nexus.Core
 
         private IQueuedSignalDrainer GetOrCreateNextFrameQueue<T>() where T : struct
         {
-            var type = typeof(T);
-            if (!_nextFrameQueues.TryGetValue(type, out var queue))
+            lock (_lock)
             {
-                queue = new TypedQueueContainer<T>();
-                _nextFrameQueues[type] = queue;
-                _activeNextFrameQueues.Add(queue);
+                var type = typeof(T);
+                if (!_nextFrameQueues.TryGetValue(type, out var queue))
+                {
+                    queue = new TypedQueueContainer<T>();
+                    _nextFrameQueues[type] = queue;
+                    _activeNextFrameQueues.Add(queue);
+                }
+                return queue;
             }
-            return queue;
         }
 
         public void DrainThreadSafe()
