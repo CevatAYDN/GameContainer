@@ -60,11 +60,15 @@
     <Compile Include="Packages\com.nexus.core\Runtime\Core\CommandPool.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\Root.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\NexusDI.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Plugins\PluginSystem.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Tracing\CausalTracing.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Lifecycle\Mediator.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Models\ModelData.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\Context.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\ContextData.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Recovery\Recovery.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Core\NexusBootstrapManifest.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Core\VersionedScriptableObject.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\SignalBus.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Queue\HybridQueue.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\NexusRuntime.cs" />

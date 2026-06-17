@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <!-- Generated file, do not modify, your changes will be overwritten (use AssetPostprocessor.OnGeneratedCSProject) -->
   <PropertyGroup>
     <BaseIntermediateOutputPath>Temp\obj\$(MSBuildProjectName)</BaseIntermediateOutputPath>
@@ -53,9 +53,12 @@
     <Analyzer Include="C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\BCLExtensions\TargetingPacks\netstandard2.1\analyzers\dotnet\roslyn4.0\cs\System.Text.Json.SourceGeneration.dll" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Packages\com.nexus.core\Tests\Editor\LiveReloadTests.cs" />
+    <Compile Include="Packages\com.nexus.core\Tests\Editor\DataDrivenTests.cs" />
     <Compile Include="Packages\com.nexus.core\Tests\Editor\SignalBusTests.cs" />
     <Compile Include="Packages\com.nexus.core\Tests\Editor\QueueTests.cs" />
     <Compile Include="Packages\com.nexus.core\Tests\Editor\CommandPoolTests.cs" />
+    <Compile Include="Packages\com.nexus.core\Tests\Editor\PluginSystemTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Packages\com.nexus.core\Tests\Editor\com.nexus.core.editor.tests.asmdef" />

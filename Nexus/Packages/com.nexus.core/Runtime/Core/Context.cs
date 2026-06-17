@@ -11,6 +11,9 @@ namespace Nexus.Core
         private readonly ContextData _contextData;
         private readonly CancellationTokenSource _cts = new();
         private readonly ViewBinder _viewBinder;
+        private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
+        
+        public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> Plugins => _plugins;
         
         public ISignalBus SignalBus { get; }
         public CancellationToken LifetimeToken => _cts.Token;
@@ -144,11 +147,61 @@ namespace Nexus.Core
             _viewBinder.UnregisterView(view);
         }
 
+        public void RegisterPlugin(INexusPlugin plugin)
+        {
+            if (plugin == null) return;
+            foreach (var p in _plugins)
+            {
+                if (p.plugin == plugin) return;
+            }
+
+            var pluginContext = new PluginContext(plugin, this);
+            _plugins.Add((plugin, pluginContext));
+            plugin.OnPluginRegistered(pluginContext);
+        }
+
+        public void RemovePlugin(INexusPlugin plugin)
+        {
+            if (plugin == null) return;
+            int index = -1;
+            for (int i = 0; i < _plugins.Count; i++)
+            {
+                if (_plugins[i].plugin == plugin)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index != -1)
+            {
+                var p = _plugins[index];
+                _plugins.RemoveAt(index);
+                p.context.Clear();
+                p.plugin.OnPluginRemoved();
+            }
+        }
+
         public void Dispose()
         {
             _cts.Cancel();
             
             _viewBinder.Dispose();
+
+            // Clean up plugins in reverse order
+            for (int i = _plugins.Count - 1; i >= 0; i--)
+            {
+                try
+                {
+                    _plugins[i].context.Clear();
+                    _plugins[i].plugin.OnPluginRemoved();
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogException(ex);
+                }
+            }
+            _plugins.Clear();
 
             NexusRuntime.UnregisterContext(this);
             

@@ -51,6 +51,8 @@ namespace Nexus.Core
         void UnregisterView(IView view);
         T Resolve<T>() where T : class;
         IContext Parent { get; }
+        void RegisterPlugin(INexusPlugin plugin);
+        void RemovePlugin(INexusPlugin plugin);
     }
 
     public interface ISignalBus

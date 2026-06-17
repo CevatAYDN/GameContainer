@@ -212,6 +212,11 @@ namespace Nexus.Core
             return targetCtor.Invoke(args);
         }
 
+        public IEnumerable<object> GetActiveSingletons()
+        {
+            return _resolvedSingletons;
+        }
+
         public void Dispose()
         {
             foreach (var instance in _resolvedSingletons)

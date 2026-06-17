@@ -55,6 +55,7 @@
   <ItemGroup>
     <Compile Include="Packages\com.nexus.core\Editor\Wizard\RootWizard.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Validation\BuildValidation.cs" />
+    <Compile Include="Packages\com.nexus.core\Editor\LiveReload\LiveReloadProcessor.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Packages\com.nexus.core\Editor\com.nexus.core.editor.asmdef" />

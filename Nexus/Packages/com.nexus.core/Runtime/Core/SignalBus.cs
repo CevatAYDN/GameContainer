@@ -228,6 +228,24 @@ namespace Nexus.Core
             {
                 var type = typeof(T);
 
+                // Run plugins' SignalInterceptors
+                object boxedSignal = signal;
+                if (_context is Context ctx && ctx.Plugins.Count > 0)
+                {
+                    foreach (var p in ctx.Plugins)
+                    {
+                        foreach (var interceptor in p.context.Interceptors)
+                        {
+                            if (!interceptor.Intercept(ref boxedSignal))
+                            {
+                                NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
+                                return;
+                            }
+                        }
+                    }
+                    signal = (T)boxedSignal;
+                }
+
                 // Handle Cross-Context
                 if (!isCrossContextSource)
                 {
@@ -297,6 +315,24 @@ namespace Nexus.Core
             try
             {
                 var type = typeof(T);
+
+                // Run plugins' SignalInterceptors
+                object boxedSignal = signal;
+                if (_context is Context ctx && ctx.Plugins.Count > 0)
+                {
+                    foreach (var p in ctx.Plugins)
+                    {
+                        foreach (var interceptor in p.context.Interceptors)
+                        {
+                            if (!interceptor.Intercept(ref boxedSignal))
+                            {
+                                NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
+                                return;
+                            }
+                        }
+                    }
+                    signal = (T)boxedSignal;
+                }
 
                 // Handle Cross-Context
                 if (!isCrossContextSource)
@@ -396,7 +432,7 @@ namespace Nexus.Core
 
                     if (command is ICommand syncCmd)
                     {
-                        syncCmd.Execute();
+                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
                     }
                     shouldRun = false; // completed successfully
                     NexusTrace.EndEvent(traceId, TraceStatus.OK);
@@ -446,7 +482,7 @@ namespace Nexus.Core
 
                     if (command is IAsyncCommand asyncCmd)
                     {
-                        await asyncCmd.ExecuteAsync(ct);
+                        await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
                     }
                     shouldRun = false; // success
                     NexusTrace.EndEvent(traceId, TraceStatus.OK);
@@ -737,6 +773,52 @@ namespace Nexus.Core
 
             Fire(failedSignal);
             return RecoveryAction.Skip;
+        }
+
+        private void ExecuteWithDecorators(object command, Action next)
+        {
+            if (_context is Context ctx && ctx.Plugins.Count > 0)
+            {
+                Action current = next;
+                for (int i = ctx.Plugins.Count - 1; i >= 0; i--)
+                {
+                    var decorators = ctx.Plugins[i].context.Decorators;
+                    for (int j = decorators.Count - 1; j >= 0; j--)
+                    {
+                        var d = decorators[j];
+                        var prev = current;
+                        current = () => d.DecorateExecute(command, prev);
+                    }
+                }
+                current();
+            }
+            else
+            {
+                next();
+            }
+        }
+
+        private async ValueTask ExecuteWithDecoratorsAsync(object command, Func<ValueTask> next)
+        {
+            if (_context is Context ctx && ctx.Plugins.Count > 0)
+            {
+                Func<ValueTask> current = next;
+                for (int i = ctx.Plugins.Count - 1; i >= 0; i--)
+                {
+                    var decorators = ctx.Plugins[i].context.Decorators;
+                    for (int j = decorators.Count - 1; j >= 0; j--)
+                    {
+                        var d = decorators[j];
+                        var prev = current;
+                        current = async () => await d.DecorateExecuteAsync(command, prev);
+                    }
+                }
+                await current();
+            }
+            else
+            {
+                await next();
+            }
         }
 
         public void Dispose()

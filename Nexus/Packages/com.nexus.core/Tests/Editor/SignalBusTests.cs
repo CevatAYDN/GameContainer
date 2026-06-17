@@ -28,6 +28,8 @@ namespace Nexus.Editor.Tests
             public void RegisterView(IView view) { }
             public void UnregisterView(IView view) { }
             public T Resolve<T>() where T : class => null;
+            public void RegisterPlugin(INexusPlugin plugin) { }
+            public void RemovePlugin(INexusPlugin plugin) { }
             public void Dispose() { }
         }
 
