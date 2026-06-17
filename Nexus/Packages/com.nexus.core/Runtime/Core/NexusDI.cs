@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    [Preserve]
     public class NexusDI : IDisposable
     {
         private readonly NexusDI _parent;
@@ -135,6 +137,8 @@ namespace Nexus.Core
             {
                 if (field.GetCustomAttribute<InjectAttribute>() != null)
                 {
+                    if (field.FieldType.IsValueType)
+                        continue; // Value types cannot be DI-registered (Bind<T> has where T : class constraint)
                     var resolvedValue = Resolve(field.FieldType);
                     field.SetValue(instance, resolvedValue);
                 }
@@ -146,6 +150,8 @@ namespace Nexus.Core
             {
                 if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite)
                 {
+                    if (prop.PropertyType.IsValueType)
+                        continue; // Value types cannot be DI-registered
                     var resolvedValue = Resolve(prop.PropertyType);
                     prop.SetValue(instance, resolvedValue);
                 }
@@ -161,6 +167,8 @@ namespace Nexus.Core
                     var args = new object[parameters.Length];
                     for (int i = 0; i < parameters.Length; i++)
                     {
+                        if (parameters[i].ParameterType.IsValueType)
+                            continue; // Value types cannot be DI-registered
                         args[i] = Resolve(parameters[i].ParameterType);
                     }
                     method.Invoke(instance, args);
