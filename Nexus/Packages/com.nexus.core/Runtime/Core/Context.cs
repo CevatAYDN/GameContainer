@@ -2,9 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    [Preserve]
     public class Context : IContext
     {
         private readonly Context _parent;
@@ -12,6 +14,7 @@ namespace Nexus.Core
         private readonly CancellationTokenSource _cts = new();
         private readonly ViewBinder _viewBinder;
         private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
+        private bool _disposed;
         
         public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> Plugins => _plugins;
         
@@ -184,8 +187,23 @@ namespace Nexus.Core
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
             _cts.Cancel();
-            
+
+            if (Container.IsRegistered(typeof(IContextLifecycle)))
+            {
+                try
+                {
+                    var lifecycle = Container.Resolve<IContextLifecycle>();
+                    lifecycle.OnDispose();
+                }
+                catch (Exception ex)
+                {
+                    UnityEngine.Debug.LogException(ex);
+                }
+            }
+
             _viewBinder.Dispose();
 
             // Clean up plugins in reverse order
