@@ -1,7 +1,9 @@
 using System;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    [Preserve]
     public class ContextBuilder : IContextBuilder
     {
         private readonly NexusDI _container;

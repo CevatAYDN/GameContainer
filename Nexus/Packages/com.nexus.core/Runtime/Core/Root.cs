@@ -3,10 +3,12 @@ using System.Collections;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
     [DefaultExecutionOrder(-1000)] // Ensure Root starts before other scripts
+    [Preserve]
     public class Root : MonoBehaviour
     {
         [Header("Hierarchy")]

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
@@ -11,6 +12,7 @@ namespace Nexus.Core
         void Unbind();
     }
 
+    [Preserve]
     public abstract class Mediator<TView> : IMediator where TView : class
     {
         protected TView View { get; private set; }

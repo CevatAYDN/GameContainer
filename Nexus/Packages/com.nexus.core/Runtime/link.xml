@@ -1,0 +1,8 @@
+<linker>
+  <!-- 
+    Nexus.Core AOT/IL2CPP Preservation
+    Plan §6.2: Nexus uses reflection-heavy patterns (DI injection, attribute scanning,
+    generic dispatch) which IL2CPP would strip without explicit preservation rules.
+  -->
+  <assembly fullname="com.nexus.core" preserve="all"/>
+</linker>

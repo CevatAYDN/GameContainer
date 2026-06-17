@@ -1,8 +1,10 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    [Preserve]
     public static class NexusRuntime
     {
         public static readonly List<IContext> ActiveContexts = new();

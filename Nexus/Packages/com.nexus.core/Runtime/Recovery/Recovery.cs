@@ -1,4 +1,5 @@
 using System;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
@@ -10,6 +11,7 @@ namespace Nexus.Core
         Fallback
     }
 
+    [Preserve]
     public readonly struct RecoveryDecision
     {
         public readonly RecoveryAction Action;
@@ -36,6 +38,7 @@ namespace Nexus.Core
             => new(RecoveryAction.Fallback, typeof(T), 0);
     }
 
+    [Preserve]
     public readonly struct CommandFailureContext
     {
         public readonly Exception Exception;

@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    [Preserve]
     public class CommandPool
     {
         private readonly Type _commandType;
