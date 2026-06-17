@@ -1,0 +1,23 @@
+# Unity-specific ignores
+/[Nn]exus/[Ll]ibrary/
+/[Nn]exus/[Tt]emp/
+/[Nn]exus/[Oo]bj/
+/[Nn]exus/[Bb]uild/
+/[Nn]exus/[Bb]uilds/
+/[Nn]exus/[Ll]ogs/
+/[Nn]exus/[Uu]serSettings/
+/[Nn]exus/[MemoryCaptures]/
+/[Nn]exus/ProjectSettings/ProjectVersion.txt.mdown
+
+# Visual Studio / Rider ignores
+.vs/
+.idea/
+*.sln.imsp
+*.csproj.user
+*.sln.docstate
+*.slnx.user
+.vscode/
+
+# OS-specific ignores
+.DS_Store
+Thumbs.db

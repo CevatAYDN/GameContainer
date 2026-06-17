@@ -1,0 +1,18 @@
+{
+    "name": "com.nexus.core.editor",
+    "rootNamespace": "Nexus.Editor",
+    "references": [
+        "com.nexus.core"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
