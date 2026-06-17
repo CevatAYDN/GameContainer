@@ -1,14 +1,19 @@
 using UnityEditor;
 using UnityEngine;
 using System;
-using System.Reflection;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Reflection;
 using Nexus.Core;
 
 namespace Nexus.Editor
 {
     public class LiveReloadProcessor : AssetPostprocessor
     {
+        private static readonly ConcurrentDictionary<Type, MemberInfo[]> s_modelDataMembersCache = new();
+        private static readonly ConcurrentDictionary<Type, bool> s_classLiveReloadCache = new();
+        private static readonly ConcurrentDictionary<Type, MethodInfo> s_reloadMethodCache = new();
+
         private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
             if (!Application.isPlaying) return;
@@ -28,7 +33,6 @@ namespace Nexus.Editor
 
         private static void TriggerLiveReload(ModelData modelData)
         {
-            // Create a copy list to avoid modification during iteration
             var contexts = new List<IContext>(NexusRuntime.ActiveContexts);
             foreach (var context in contexts)
             {
@@ -37,6 +41,27 @@ namespace Nexus.Editor
                     ProcessContainer(ctx.Container, modelData);
                 }
             }
+        }
+
+        private static MemberInfo[] GetModelDataMembers(Type type)
+        {
+            return s_modelDataMembersCache.GetOrAdd(type, t =>
+            {
+                var members = new List<MemberInfo>();
+                var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var field in fields)
+                {
+                    if (typeof(ModelData).IsAssignableFrom(field.FieldType))
+                        members.Add(field);
+                }
+                var properties = t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var prop in properties)
+                {
+                    if (typeof(ModelData).IsAssignableFrom(prop.PropertyType))
+                        members.Add(prop);
+                }
+                return members.ToArray();
+            });
         }
 
         private static void ProcessContainer(NexusDI container, ModelData modelData)
@@ -49,52 +74,40 @@ namespace Nexus.Editor
                 if (instance == null) continue;
 
                 var type = instance.GetType();
-                bool hasClassLiveReload = type.GetCustomAttribute<LiveReloadAttribute>() != null;
+                bool hasClassLiveReload = s_classLiveReloadCache.GetOrAdd(type, t => t.GetCustomAttribute<LiveReloadAttribute>() != null);
 
-                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var members = GetModelDataMembers(type);
                 bool needsReload = false;
 
-                foreach (var field in fields)
+                foreach (var member in members)
                 {
-                    if (typeof(ModelData).IsAssignableFrom(field.FieldType))
+                    object rawValue;
+                    if (member is FieldInfo field)
                     {
-                        var value = field.GetValue(instance) as ModelData;
-                        if (value != null && value.name == modelData.name)
-                        {
-                            if (hasClassLiveReload || field.GetCustomAttribute<LiveReloadAttribute>() != null)
-                            {
-                                needsReload = true;
-                            }
-                        }
+                        rawValue = field.GetValue(instance);
                     }
-                }
-
-                var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var prop in properties)
-                {
-                    if (typeof(ModelData).IsAssignableFrom(prop.PropertyType))
+                    else if (member is PropertyInfo prop)
                     {
-                        try
+                        try { rawValue = prop.GetValue(instance); }
+                        catch { continue; }
+                    }
+                    else continue;
+
+                    if (rawValue is ModelData value && value != null && value.name == modelData.name)
+                    {
+                        if (hasClassLiveReload || member.GetCustomAttribute<LiveReloadAttribute>() != null)
                         {
-                            var value = prop.GetValue(instance) as ModelData;
-                            if (value != null && value.name == modelData.name)
-                            {
-                                if (hasClassLiveReload || prop.GetCustomAttribute<LiveReloadAttribute>() != null)
-                                {
-                                    needsReload = true;
-                                }
-                            }
-                        }
-                        catch
-                        {
-                            // Ignore properties that throw on get
+                            needsReload = true;
+                            break;
                         }
                     }
                 }
 
                 if (needsReload)
                 {
-                    var reloadMethod = type.GetMethod("OnLiveReload", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    var reloadMethod = s_reloadMethodCache.GetOrAdd(type, t =>
+                        t.GetMethod("OnLiveReload", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance));
+
                     if (reloadMethod != null)
                     {
                         try

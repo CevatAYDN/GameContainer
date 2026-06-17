@@ -47,27 +47,7 @@ namespace Nexus.Core
                 resettable.Reset();
             }
 
-            var type = command.GetType();
-            
-            // Null out injected fields to prevent memory leaks
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var field in fields)
-            {
-                if (field.GetCustomAttribute<InjectAttribute>() != null && !field.FieldType.IsValueType)
-                {
-                    field.SetValue(command, null);
-                }
-            }
-
-            // Null out injected properties
-            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var prop in properties)
-            {
-                if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite && !prop.PropertyType.IsValueType)
-                {
-                    prop.SetValue(command, null);
-                }
-            }
+            NexusDI.ClearInjectedReferences(command);
         }
 
         public void Clear()

@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Nexus.Core;
+using UnityEngine.Scripting;
 
 namespace Nexus.Editor.Tests
 {
@@ -70,7 +71,9 @@ namespace Nexus.Editor.Tests
 
         public class ReentrantCommand : ICommand
         {
+#pragma warning disable 0649
             [Inject] private ISignalBus _signalBus;
+#pragma warning restore 0649
 
             public void Execute()
             {

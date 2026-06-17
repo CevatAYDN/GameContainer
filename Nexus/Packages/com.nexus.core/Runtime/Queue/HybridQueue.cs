@@ -84,20 +84,29 @@ namespace Nexus.Core
 
         public void DrainThreadSafe()
         {
-            // Drain thread-safe queue (typically called in Update)
-            // Using index-based for loop to avoid any list enumerator allocation
-            for (int i = 0; i < _activeThreadSafeQueues.Count; i++)
+            // Snapshot under lock to avoid concurrent modification from EnqueueThreadSafe
+            List<IQueuedSignalDrainer> snapshot;
+            lock (_lock)
             {
-                _activeThreadSafeQueues[i].Drain(_signalBus);
+                snapshot = new List<IQueuedSignalDrainer>(_activeThreadSafeQueues);
+            }
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                snapshot[i].Drain(_signalBus);
             }
         }
 
         public void DrainNextFrame()
         {
-            // Drain next-frame queue (typically called in LateUpdate)
-            for (int i = 0; i < _activeNextFrameQueues.Count; i++)
+            // Snapshot under lock to avoid concurrent modification from EnqueueNextFrame
+            List<IQueuedSignalDrainer> snapshot;
+            lock (_lock)
             {
-                _activeNextFrameQueues[i].Drain(_signalBus);
+                snapshot = new List<IQueuedSignalDrainer>(_activeNextFrameQueues);
+            }
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                snapshot[i].Drain(_signalBus);
             }
         }
 

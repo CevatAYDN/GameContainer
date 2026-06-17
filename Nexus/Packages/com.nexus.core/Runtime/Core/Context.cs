@@ -26,7 +26,7 @@ namespace Nexus.Core
         public CommandPoolManager PoolManager { get; }
         public HybridQueue HybridQueue { get; }
         public string ScopeTag => _contextData != null ? _contextData.ScopeTag : null;
-        public SignalBus SignalBusInternal => (SignalBus)SignalBus;
+        public SignalBus SignalBusInternal { get; }
 
         public Context(Context parent = null, ContextData contextData = null)
         {
@@ -44,6 +44,7 @@ namespace Nexus.Core
 
             var bus = new SignalBus(Container, PoolManager, this);
             SignalBus = bus;
+            SignalBusInternal = bus;
             Container.BindInstance<ISignalBus>(bus);
             Container.BindInstance(bus);
 

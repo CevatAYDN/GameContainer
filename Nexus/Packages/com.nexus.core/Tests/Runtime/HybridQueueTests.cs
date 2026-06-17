@@ -36,15 +36,11 @@ namespace Nexus.Tests
         public readonly struct OrderedSignalB { }
 
         private int _receivedValue;
-        private int _signalACount;
-        private int _signalBCount;
 
         [SetUp]
         public void Setup()
         {
             _receivedValue = 0;
-            _signalACount = 0;
-            _signalBCount = 0;
 
             _container = new NexusDI();
             _poolManager = new CommandPoolManager(_container);

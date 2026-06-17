@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Threading.Tasks;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
     [Preserve]
-    public class NexusDI : IDisposable
+    public class NexusDI : IDisposable, IAsyncDisposable
     {
         private readonly NexusDI _parent;
         private readonly Dictionary<Type, Binding> _bindings = new();
@@ -214,6 +215,8 @@ namespace Nexus.Core
             var args = new object[parameters.Length];
             for (int i = 0; i < parameters.Length; i++)
             {
+                if (parameters[i].ParameterType.IsValueType)
+                    continue; // Value types cannot be DI-registered
                 args[i] = Resolve(parameters[i].ParameterType);
             }
 
@@ -225,11 +228,55 @@ namespace Nexus.Core
             return _resolvedSingletons;
         }
 
+        /// <summary>
+        /// Nulls out all [Inject]-annotated reference fields and writable properties on the given instance.
+        /// Used by CommandPool and ViewBinder to prepare objects for pooling reuse.
+        /// </summary>
+        public static void ClearInjectedReferences(object instance)
+        {
+            var type = instance.GetType();
+
+            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            foreach (var field in fields)
+            {
+                if (field.GetCustomAttribute<InjectAttribute>() != null && !field.FieldType.IsValueType)
+                {
+                    field.SetValue(instance, null);
+                }
+            }
+
+            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            foreach (var prop in properties)
+            {
+                if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite && !prop.PropertyType.IsValueType)
+                {
+                    prop.SetValue(instance, null);
+                }
+            }
+        }
+
         public void Dispose()
         {
             foreach (var instance in _resolvedSingletons)
             {
                 if (instance is IDisposable disposable)
+                {
+                    disposable.Dispose();
+                }
+            }
+            _resolvedSingletons.Clear();
+            _bindings.Clear();
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            foreach (var instance in _resolvedSingletons)
+            {
+                if (instance is IAsyncDisposable asyncDisposable)
+                {
+                    await asyncDisposable.DisposeAsync();
+                }
+                else if (instance is IDisposable disposable)
                 {
                     disposable.Dispose();
                 }

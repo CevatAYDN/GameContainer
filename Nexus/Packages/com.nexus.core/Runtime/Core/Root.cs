@@ -20,6 +20,17 @@ namespace Nexus.Core
         public Context Context { get; private set; }
         public bool IsInitialized { get; private set; }
 
+        private void OnValidate()
+        {
+#if UNITY_EDITOR
+            if (parentRoot == this)
+            {
+                Debug.LogWarning($"[Nexus] Auto-fixed circular reference on Root '{gameObject.name}': parentRoot was set to itself. Resetting parentRoot to null.");
+                parentRoot = null;
+            }
+#endif
+        }
+
         private void Awake()
         {
             InitializeContext();
@@ -51,13 +62,19 @@ namespace Nexus.Core
 
             try
             {
-                // Wait for parent root to be initialized first
+                // Wait for parent root to be initialized first (with timeout)
                 if (parentRoot != null)
                 {
-                    while (!parentRoot.IsInitialized)
+                    int timeoutFrames = 900; // ~15 seconds at 60fps
+                    while (!parentRoot.IsInitialized && timeoutFrames > 0)
                     {
-                        // Yield to next frame using Awaitable
                         await Awaitable.NextFrameAsync(Context.LifetimeToken);
+                        timeoutFrames--;
+                    }
+
+                    if (!parentRoot.IsInitialized)
+                    {
+                        Debug.LogWarning($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Proceeding independently.");
                     }
                 }
 

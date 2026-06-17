@@ -1,8 +1,10 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine;
 using UnityEngine.Profiling;
 using UnityEngine.Scripting;
 
@@ -80,6 +82,10 @@ namespace Nexus.Core
 
         private int _inFlightAsyncCommands;
         private const int MaxInFlightAsyncCommands = 100;
+
+        private const int DisposeTimeoutMs = 5000;
+
+        private static readonly ConcurrentDictionary<Type, MemberInfo> s_signalFieldCache = new();
 
 #if NEXUS_DEBUG
         private static readonly ProfilerMarker s_DispatchMarker = new ProfilerMarker("Nexus.Signal.Dispatch");
@@ -336,7 +342,9 @@ namespace Nexus.Core
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
             }
 
+#if NEXUS_DEBUG
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
+#endif
             try
             {
                 var type = typeof(T);
@@ -351,7 +359,9 @@ namespace Nexus.Core
                         {
                             if (!interceptor.Intercept(ref boxedSignal))
                             {
+#if NEXUS_DEBUG
                                 NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
+#endif
                                 return;
                             }
                         }
@@ -427,11 +437,15 @@ namespace Nexus.Core
 
                 // Process composite triggers
                 ProcessCompositeTriggers(type);
+#if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.OK);
+#endif
             }
             catch (Exception)
             {
+#if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.Failed);
+#endif
                 throw;
             }
             finally
@@ -562,27 +576,38 @@ namespace Nexus.Core
         private void InjectSignal(object command, object signal)
         {
             if (signal == null) return;
-            var type = command.GetType();
+
+            var commandType = command.GetType();
             var signalType = signal.GetType();
-            
-            // Check if there is a field of this signal type (or field named _signal)
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+            if (s_signalFieldCache.TryGetValue(commandType, out var member))
+            {
+                if (member is FieldInfo f)
+                    f.SetValue(command, signal);
+                else if (member is PropertyInfo p)
+                    p.SetValue(command, signal);
+                return;
+            }
+
+            // Cache miss — reflect once per command type
+            var fields = commandType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             foreach (var field in fields)
             {
                 if (field.FieldType == signalType || (field.Name.Equals("_signal", StringComparison.OrdinalIgnoreCase) && field.FieldType.IsInstanceOfType(signal)))
                 {
                     field.SetValue(command, signal);
+                    s_signalFieldCache[commandType] = field;
                     return;
                 }
             }
 
-            // Check properties
-            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var properties = commandType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             foreach (var prop in properties)
             {
                 if (prop.PropertyType == signalType && prop.CanWrite)
                 {
                     prop.SetValue(command, signal);
+                    s_signalFieldCache[commandType] = prop;
                     return;
                 }
             }
@@ -622,9 +647,11 @@ namespace Nexus.Core
             }
         }
 
-        private void ExecuteCompositeCommand(CompositeTriggerState trigger)
+        private async void ExecuteCompositeCommandAsync(CompositeTriggerState trigger)
         {
+#if NEXUS_DEBUG
             int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
+#endif
             object command = null;
             try
             {
@@ -637,13 +664,68 @@ namespace Nexus.Core
                 }
                 else if (command is IAsyncCommand asyncCmd)
                 {
-                    _ = asyncCmd.ExecuteAsync(_context.LifetimeToken);
+                    var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                    Interlocked.Increment(ref _inFlightAsyncCommands);
+                    try
+                    {
+                        await asyncCmd.ExecuteAsync(ct);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref _inFlightAsyncCommands);
+                    }
                 }
+#if NEXUS_DEBUG
                 NexusTrace.EndEvent(traceId, TraceStatus.OK);
+#endif
             }
             catch (Exception ex)
             {
+#if NEXUS_DEBUG
                 NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
+                int retry = 0;
+                HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retry);
+            }
+            finally
+            {
+                if (command != null)
+                {
+                    _poolManager.ReturnCommand(trigger.CommandType, command);
+                }
+            }
+        }
+
+        private void ExecuteCompositeCommand(CompositeTriggerState trigger)
+        {
+#if NEXUS_DEBUG
+            int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
+#endif
+            object command = null;
+            try
+            {
+                command = _poolManager.GetCommand(trigger.CommandType);
+                _container.Inject(command);
+
+                if (command is ICommand syncCmd)
+                {
+                    syncCmd.Execute();
+                }
+                else if (command is IAsyncCommand asyncCmd)
+                {
+                    // Async composite — dispatch via async void with proper tracking
+                    ExecuteCompositeCommandAsync(trigger);
+                    return; // don't return to pool here; async void will handle it
+                }
+#if NEXUS_DEBUG
+                NexusTrace.EndEvent(traceId, TraceStatus.OK);
+#endif
+            }
+            catch (Exception ex)
+            {
+#if NEXUS_DEBUG
+                NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
                 int retry = 0;
                 HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retry);
             }
@@ -868,7 +950,29 @@ namespace Nexus.Core
 
         public void Dispose()
         {
+            // Dispose all active subscriptions
+            foreach (var kvp in _subscriptions)
+            {
+                foreach (var sub in kvp.Value)
+                {
+                    if (sub is IDisposable disposable)
+                        disposable.Dispose();
+                }
+            }
             _subscriptions.Clear();
+
+            // Wait for in-flight async commands to complete
+            if (_inFlightAsyncCommands > 0)
+            {
+                int waited = 0;
+                const int sleepMs = 50;
+                while (Interlocked.CompareExchange(ref _inFlightAsyncCommands, 0, 0) > 0 && waited < DisposeTimeoutMs)
+                {
+                    Thread.Sleep(sleepMs);
+                    waited += sleepMs;
+                }
+            }
+
             _commandHandlers.Clear();
             _compositeTriggersBySignal.Clear();
             _allCompositeTriggers.Clear();

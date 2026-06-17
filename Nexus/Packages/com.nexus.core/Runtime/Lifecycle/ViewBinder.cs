@@ -14,8 +14,8 @@ namespace Nexus.Core
 
         private void Awake()
         {
-            // Plan §2.3: Awake'te Context/SignalBus erişimi yasaktır.
-            // View henüz kaydedilmemiş ve Mediator bağlanmamıştır.
+            // Plan §2.3: Context/SignalBus access is forbidden in Awake.
+            // View has not been registered yet and Mediator has not been connected.
         }
 
         protected virtual void OnEnable()
@@ -145,26 +145,7 @@ namespace Nexus.Core
 
         private void CleanupMediator(IMediator mediator)
         {
-            var type = mediator.GetType();
-            
-            // Null out injected fields to prevent memory leaks
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var field in fields)
-            {
-                if (field.GetCustomAttribute<InjectAttribute>() != null && !field.FieldType.IsValueType)
-                {
-                    field.SetValue(mediator, null);
-                }
-            }
-
-            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var prop in properties)
-            {
-                if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite && !prop.PropertyType.IsValueType)
-                {
-                    prop.SetValue(mediator, null);
-                }
-            }
+            NexusDI.ClearInjectedReferences(mediator);
         }
 
         public void Dispose()

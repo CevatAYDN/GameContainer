@@ -4,6 +4,7 @@ using Nexus.Core;
 using System;
 using System.Threading.Tasks;
 using System.Threading;
+using UnityEngine.Scripting;
 
 namespace Nexus.Editor.Tests
 {
@@ -18,8 +19,10 @@ namespace Nexus.Editor.Tests
         public static string LastReceivedMessage;
         public static int ExecutionCount;
 
-        // Injected field
+        // Injected field (set via InjectSignal reflection — disable CS0649)
+#pragma warning disable 0649
         private PluginTestSignal _signal;
+#pragma warning restore 0649
 
         public void Execute()
         {

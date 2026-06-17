@@ -7,7 +7,19 @@ namespace Nexus.Core
     [Preserve]
     public static class NexusRuntime
     {
-        public static readonly List<IContext> ActiveContexts = new();
+        private static readonly List<IContext> s_activeContexts = new();
+        private static readonly object s_lock = new();
+
+        public static IReadOnlyList<IContext> ActiveContexts
+        {
+            get
+            {
+                lock (s_lock)
+                {
+                    return s_activeContexts.ToArray();
+                }
+            }
+        }
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void InitializeOnLoad()
@@ -17,32 +29,40 @@ namespace Nexus.Core
 
         public static void Reset()
         {
-            // Clear all active contexts
-            for (int i = ActiveContexts.Count - 1; i >= 0; i--)
+            lock (s_lock)
             {
-                try
+                for (int i = s_activeContexts.Count - 1; i >= 0; i--)
                 {
-                    ActiveContexts[i].Dispose();
+                    try
+                    {
+                        s_activeContexts[i].Dispose();
+                    }
+                    catch (System.Exception ex)
+                    {
+                        Debug.LogException(ex);
+                    }
                 }
-                catch (System.Exception ex)
-                {
-                    Debug.LogException(ex);
-                }
+                s_activeContexts.Clear();
             }
-            ActiveContexts.Clear();
         }
 
         public static void RegisterContext(IContext context)
         {
-            if (!ActiveContexts.Contains(context))
+            lock (s_lock)
             {
-                ActiveContexts.Add(context);
+                if (!s_activeContexts.Contains(context))
+                {
+                    s_activeContexts.Add(context);
+                }
             }
         }
 
         public static void UnregisterContext(IContext context)
         {
-            ActiveContexts.Remove(context);
+            lock (s_lock)
+            {
+                s_activeContexts.Remove(context);
+            }
         }
     }
 }

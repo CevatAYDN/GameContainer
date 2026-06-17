@@ -7,12 +7,12 @@ namespace Nexus.Core
     {
         public override int CurrentVersion => 1;
 
-        [Header("Proje İskeleti")]
+        [Header("Project Scaffold")]
         public string[] DefaultContextNames = new string[] { "Global", "Gameplay", "UI" };
         public bool GenerateSampleSignals = true;
         public bool GenerateSampleCommands = true;
 
-        [Header("Editor Araçları")]
+        [Header("Editor Tools")]
         public bool EnableInspector = true;
 
         protected override void Migrate(int fromVersion)

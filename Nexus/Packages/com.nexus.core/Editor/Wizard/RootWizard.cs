@@ -212,9 +212,13 @@ namespace Nexus.Editor
             AssetDatabase.CreateAsset(contextData, path);
             AssetDatabase.SaveAssets();
 
-            // 3. Assign ContextData using reflection
-            var contextDataField = typeof(Root).GetField("contextData", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            contextDataField?.SetValue(root, contextData);
+            var serializedRoot = new SerializedObject(root);
+            var contextDataProp = serializedRoot.FindProperty("contextData");
+            if (contextDataProp != null)
+            {
+                contextDataProp.objectReferenceValue = contextData;
+                serializedRoot.ApplyModifiedProperties();
+            }
 
             // 4. Register Undo & Focus
             Selection.activeGameObject = go;

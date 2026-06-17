@@ -284,30 +284,37 @@ namespace Nexus.Editor
                 }
 
                 // Check circular hierarchy
-                if (DetectCircularHierarchy(root))
+                if (TryDetectCircularHierarchy(root, out var chain))
                 {
-                    Debug.LogError($"[Nexus Error] Circular Context Violation: Circular context hierarchy detected starting from Root GameObject '{root.gameObject.name}'.");
+                    var chainStr = string.Join(" → ", chain.ConvertAll(r => $"{r.gameObject.name}"));
+                    Debug.LogError($"[Nexus Error] Circular Context Violation: Circular hierarchy detected. Chain: {chainStr}. Fix: Ensure parentRoot references do not form a cycle in the scene.");
                     errorCount++;
                 }
             }
         }
 
-        private static bool DetectCircularHierarchy(Root startRoot)
+        private static bool TryDetectCircularHierarchy(Root startRoot, out List<Root> chain)
         {
-            var visited = new HashSet<Root>();
+            var visited = new List<Root>();
+            var visitedSet = new HashSet<Root>();
             var current = startRoot;
 
             var parentRootField = typeof(Root).GetField("parentRoot", BindingFlags.NonPublic | BindingFlags.Instance);
 
             while (current != null)
             {
-                if (!visited.Add(current))
+                if (!visitedSet.Add(current))
                 {
-                    return true; // circular reference!
+                    // Found cycle - build the full chain from the first occurrence
+                    var cycleStart = visited.IndexOf(current);
+                    chain = visited.GetRange(cycleStart, visited.Count - cycleStart);
+                    return true;
                 }
+                visited.Add(current);
                 current = parentRootField?.GetValue(current) as Root;
             }
 
+            chain = null;
             return false;
         }
     }

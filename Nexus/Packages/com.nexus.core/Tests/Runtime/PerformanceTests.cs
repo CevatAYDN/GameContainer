@@ -39,13 +39,10 @@ namespace Nexus.Tests
             public void Execute() { ExecutionCount++; }
         }
 
-        private int _subValue;
-
         [SetUp]
         public void Setup()
         {
             PerfCommand.ExecutionCount = 0;
-            _subValue = 0;
 
             _container = new NexusDI();
             _poolManager = new CommandPoolManager(_container);

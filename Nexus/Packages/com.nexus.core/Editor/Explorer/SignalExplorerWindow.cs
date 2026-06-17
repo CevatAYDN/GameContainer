@@ -104,7 +104,9 @@ namespace Nexus.Editor
             {
                 // Simple filter to skip heavy system DLLs
                 var assemblyName = assembly.GetName().Name;
-                if (assemblyName.StartsWith("System") || assemblyName.StartsWith("mscorlib") || assemblyName.StartsWith("Mono") || assemblyName.StartsWith("UnityEditor") && !assemblyName.Contains("com.nexus"))
+                if (assemblyName.StartsWith("System") || assemblyName.StartsWith("mscorlib") || assemblyName.StartsWith("Mono") || 
+                    assemblyName.StartsWith("UnityEngine") || 
+                    (assemblyName.StartsWith("UnityEditor") && !assemblyName.Contains("com.nexus")))
                 {
                     continue;
                 }
