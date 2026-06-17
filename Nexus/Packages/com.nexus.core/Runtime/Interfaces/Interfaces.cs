@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
@@ -17,6 +18,24 @@ namespace Nexus.Core
     public interface IResettable
     {
         void Reset();
+    }
+
+    /// <summary>
+    /// Model that can be reset to its initial state (e.g. for pooling or replay).
+    /// Plan §4 — Memory Ownership Model.
+    /// </summary>
+    public interface IResettableModel
+    {
+        void Reset();
+    }
+
+    /// <summary>
+    /// Model with explicit dispose lifecycle. BuildValidation checks that
+    /// all IDisposableModel instances are disposed in the disposal chain.
+    /// Plan §4 — Memory Ownership Model.
+    /// </summary>
+    public interface IDisposableModel : IDisposable
+    {
     }
 
     public interface IContextBuilder
