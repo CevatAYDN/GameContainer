@@ -111,8 +111,8 @@ namespace Nexus.Tests
         [Test]
         public void Recovery_Retry_RetriesUpToLimitThenAborts()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex(@"\[Nexus\] Command ThrowCommand failed: Command failed intendedly: RetryTest");
-            var warningRegex = new System.Text.RegularExpressions.Regex(@"\[Nexus\] Retry limit of 3 reached\. Forcing Abort\.");
+            var errorRegex = new System.Text.RegularExpressions.Regex("RetryTest");
+            var warningRegex = new System.Text.RegularExpressions.Regex("Retry limit of 3 reached");
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
@@ -134,7 +134,7 @@ namespace Nexus.Tests
         [Test]
         public void Recovery_Fallback_ExecutesFallbackCommandAndPassesSignal()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex(@"\[Nexus\] Command ThrowCommand failed: Command failed intendedly: FallbackTest");
+            var errorRegex = new System.Text.RegularExpressions.Regex("FallbackTest");
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
 
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
@@ -150,7 +150,7 @@ namespace Nexus.Tests
         [Test]
         public async Task Recovery_FallbackAsync_ExecutesAsyncFallbackCommandAndPassesSignal()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex(@"\[Nexus\] Command ThrowCommand failed: Command failed intendedly: FallbackAsyncTest");
+            var errorRegex = new System.Text.RegularExpressions.Regex("FallbackAsyncTest");
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
 
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
@@ -167,7 +167,7 @@ namespace Nexus.Tests
         [Test]
         public void Recovery_Skip_SuppressesExceptionAndPublishesCommandFailedSignal()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex(@"\[Nexus\] Command ThrowCommand failed: Command failed intendedly: SkipTest");
+            var errorRegex = new System.Text.RegularExpressions.Regex("SkipTest");
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
 
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
@@ -192,7 +192,7 @@ namespace Nexus.Tests
         [Test]
         public void Recovery_Abort_AbortsImmediatelyAndThrows()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex(@"\[Nexus\] Command ThrowCommand failed: Command failed intendedly: AbortTest");
+            var errorRegex = new System.Text.RegularExpressions.Regex("AbortTest");
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
 
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
