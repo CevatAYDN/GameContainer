@@ -126,6 +126,7 @@ namespace Nexus.Core
                     _compositeTriggersBySignal[sigType] = list;
                 }
                 list.Add(state);
+                list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
             }
             
             _container.Bind(commandType, isSingleton: false);
@@ -333,9 +334,9 @@ namespace Nexus.Core
             {
                 await FireInternalAsync(signal, isCrossContextSource);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                UnityEngine.Debug.LogException(ex);
+                UnityEngine.Debug.LogError($"[Nexus] Async bridge failed for signal '{typeof(T).FullName}': {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -736,6 +737,10 @@ namespace Nexus.Core
                     {
                         await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
                     }
+                    else if (command is ICommand syncCmd)
+                    {
+                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                    }
                     shouldRun = false; // success
 #if NEXUS_DEBUG
                     NexusTrace.EndEvent(traceId, TraceStatus.OK);
@@ -803,6 +808,10 @@ namespace Nexus.Core
                     if (command is IAsyncCommand asyncCmd)
                     {
                         await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                    }
+                    else if (command is ICommand syncCmd)
+                    {
+                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
                     }
                     shouldRun = false; // success
 #if NEXUS_DEBUG

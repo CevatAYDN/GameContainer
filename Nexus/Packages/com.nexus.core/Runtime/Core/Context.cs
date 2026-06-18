@@ -111,80 +111,46 @@ namespace Nexus.Core
         {
             if (string.IsNullOrEmpty(ScopeTag)) return null;
 
-            var assemblies = new List<Assembly>();
             if (_contextData == null || _contextData.AssemblyScopes == null || _contextData.AssemblyScopes.Length == 0)
             {
-                assemblies.Add(Assembly.GetExecutingAssembly());
-            }
-            else
-            {
-                foreach (var scopeName in _contextData.AssemblyScopes)
-                {
-                    try
-                    {
-                        var assembly = Assembly.Load(scopeName);
-                        if (assembly != null) assemblies.Add(assembly);
-                    }
-                    catch { }
-                }
+                return FindLifecycleTypeInAssemblies(GetDefaultScanAssemblies(), ScopeTag);
             }
 
-            string targetName1 = $"{ScopeTag}Lifecycle";
-            string targetName2 = $"{ScopeTag}ContextLifecycle";
+            var assemblies = LoadScopedAssemblies(logWarnings: false);
+            return FindLifecycleTypeInAssemblies(assemblies, ScopeTag);
+        }
+
+        private static Type FindLifecycleTypeInAssemblies(List<Assembly> assemblies, string scopeTag)
+        {
+            string targetName1 = $"{scopeTag}Lifecycle";
+            string targetName2 = $"{scopeTag}ContextLifecycle";
 
             foreach (var assembly in assemblies)
             {
-                try
+                foreach (var type in GetTypesSafely(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (type.IsClass && !type.IsAbstract && typeof(IContextLifecycle).IsAssignableFrom(type))
                     {
-                        if (type.IsClass && !type.IsAbstract && typeof(IContextLifecycle).IsAssignableFrom(type))
+                        if (string.Equals(type.Name, targetName1, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(type.Name, targetName2, StringComparison.OrdinalIgnoreCase))
                         {
-                            if (string.Equals(type.Name, targetName1, StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(type.Name, targetName2, StringComparison.OrdinalIgnoreCase))
-                            {
-                                return type;
-                            }
+                            return type;
                         }
                     }
                 }
-                catch { }
             }
             return null;
         }
 
         private void ScanAssembliesAndRegister(ContextBuilder builder)
         {
-            if (_contextData == null || _contextData.AssemblyScopes == null) return;
-
-            var assemblies = new List<Assembly>();
-            if (_contextData.AssemblyScopes.Length == 0)
-            {
-                // Fallback to active assembly
-                assemblies.Add(Assembly.GetExecutingAssembly());
-            }
-            else
-            {
-                foreach (var scopeName in _contextData.AssemblyScopes)
-                {
-                    try
-                    {
-                        var assembly = Assembly.Load(scopeName);
-                        if (assembly != null)
-                        {
-                            assemblies.Add(assembly);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        UnityEngine.Debug.LogWarning($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
-                    }
-                }
-            }
+            var assemblies = _contextData == null || _contextData.AssemblyScopes == null || _contextData.AssemblyScopes.Length == 0
+                ? GetDefaultScanAssemblies()
+                : LoadScopedAssemblies(logWarnings: true);
 
             foreach (var assembly in assemblies)
             {
-                foreach (var type in assembly.GetTypes())
+                foreach (var type in GetTypesSafely(assembly))
                 {
                     if (type.IsClass && !type.IsAbstract)
                     {
@@ -204,7 +170,6 @@ namespace Nexus.Core
                             }
                         }
 
-
                         // Scan [CompositeSignalHandler]
                         var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
                         if (compositeAttr != null)
@@ -214,6 +179,106 @@ namespace Nexus.Core
                         }
                     }
                 }
+            }
+        }
+
+        private List<Assembly> LoadScopedAssemblies(bool logWarnings)
+        {
+            var assemblies = new List<Assembly>();
+            foreach (var scopeName in _contextData.AssemblyScopes)
+            {
+                try
+                {
+                    var assembly = Assembly.Load(scopeName);
+                    if (assembly != null) assemblies.Add(assembly);
+                }
+                catch (Exception ex)
+                {
+                    if (logWarnings)
+                    {
+                        UnityEngine.Debug.LogWarning($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
+                    }
+                }
+            }
+            return assemblies;
+        }
+
+        private static List<Assembly> GetDefaultScanAssemblies()
+        {
+            // Cache the result since assemblies don't change at runtime (only on domain reload)
+            if (s_defaultScanAssemblies != null)
+                return s_defaultScanAssemblies;
+
+            var result = new List<Assembly>();
+            var nexusAssembly = typeof(Context).Assembly;
+            var nexusAssemblyName = nexusAssembly.GetName().Name;
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.IsDynamic) continue;
+                if (ShouldSkipDefaultScanAssembly(assembly)) continue;
+
+                bool shouldScan = assembly == nexusAssembly || assembly.GetName().Name == "Assembly-CSharp";
+                if (!shouldScan)
+                {
+                    try
+                    {
+                        foreach (var reference in assembly.GetReferencedAssemblies())
+                        {
+                            if (reference.Name == nexusAssemblyName)
+                            {
+                                shouldScan = true;
+                                break;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        UnityEngine.Debug.LogWarning($"[Nexus] Failed to check assembly references for '{assembly.GetName().Name}': {ex.Message}");
+                        shouldScan = false;
+                    }
+                }
+
+                if (shouldScan)
+                {
+                    result.Add(assembly);
+                }
+            }
+
+            if (result.Count == 0)
+            {
+                result.Add(nexusAssembly);
+            }
+
+            s_defaultScanAssemblies = result;
+            return result;
+        }
+
+        private static List<Assembly> s_defaultScanAssemblies;
+
+        private static bool ShouldSkipDefaultScanAssembly(Assembly assembly)
+        {
+            var name = assembly.GetName().Name;
+            if (string.IsNullOrEmpty(name)) return true;
+
+            var lowerName = name.ToLowerInvariant();
+            return lowerName.Contains(".tests") || lowerName.EndsWith(".editor");
+        }
+
+        private static IEnumerable<Type> GetTypesSafely(Assembly assembly)
+        {
+            try
+            {
+                return assembly.GetTypes();
+            }
+            catch (ReflectionTypeLoadException ex)
+            {
+                var types = new List<Type>();
+                foreach (var type in ex.Types)
+                {
+                    if (type != null) types.Add(type);
+                }
+                return types;
             }
         }
 

@@ -8,6 +8,11 @@ using Nexus.Core;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Editor window that scans loaded assemblies for <see cref="SignalHandlerAttribute"/> and
+    /// <see cref="CompositeSignalHandlerAttribute"/> mappings and displays them in a searchable, filterable UI.
+    /// Accessed via Window/Nexus/Signal Explorer.
+    /// </summary>
     public class SignalExplorerWindow : EditorWindow
     {
         private ScrollView _scrollView;
@@ -19,6 +24,7 @@ namespace Nexus.Editor
         private DropdownField _assemblyDropdown;
         private TextField _searchField;
 
+        /// <summary>Opens the Signal Explorer window.</summary>
         [MenuItem("Window/Nexus/Signal Explorer")]
         public static void ShowWindow()
         {
@@ -197,9 +203,9 @@ namespace Nexus.Editor
                         uniqueAssemblies.Add(assemblyName);
                     }
                 }
-                catch
+                catch (ReflectionTypeLoadException)
                 {
-                    // Ignore unloadable assemblies
+                    // Assembly has unloadable types — skip
                 }
             }
 

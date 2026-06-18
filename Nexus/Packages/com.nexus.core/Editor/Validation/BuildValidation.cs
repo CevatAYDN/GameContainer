@@ -98,7 +98,10 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch {}
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Debug.LogWarning($"[Nexus] Handler validation skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
+                }
             }
 
             // Validate rules per signal
@@ -250,7 +253,10 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Debug.LogWarning($"[Nexus] Model ownership scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
+                }
             }
         }
 
@@ -320,18 +326,12 @@ namespace Nexus.Editor
 
             foreach (var root in rootList)
             {
-                // Check Missing SO
-                // We access the contextData field via reflection or simple helper since it's private serialized
-                var contextDataField = typeof(Root).GetField("contextData", BindingFlags.NonPublic | BindingFlags.Instance);
-                var contextData = contextDataField?.GetValue(root) as ContextData;
-
-                if (contextData == null)
+                if (root.ContextData == null)
                 {
                     Debug.LogError($"[Nexus Error] Missing SO Violation: Root GameObject '{root.gameObject.name}' has a null ContextData configuration.");
                     errorCount++;
                 }
 
-                // Check circular hierarchy
                 if (TryDetectCircularHierarchy(root, out var chain))
                 {
                     var chainStr = string.Join(" → ", chain.ConvertAll(r => $"{r.gameObject.name}"));
@@ -347,19 +347,16 @@ namespace Nexus.Editor
             var visitedSet = new HashSet<Root>();
             var current = startRoot;
 
-            var parentRootField = typeof(Root).GetField("parentRoot", BindingFlags.NonPublic | BindingFlags.Instance);
-
             while (current != null)
             {
                 if (!visitedSet.Add(current))
                 {
-                    // Found cycle - build the full chain from the first occurrence
                     var cycleStart = visited.IndexOf(current);
                     chain = visited.GetRange(cycleStart, visited.Count - cycleStart);
                     return true;
                 }
                 visited.Add(current);
-                current = parentRootField?.GetValue(current) as Root;
+                current = current.ParentRoot;
             }
 
             chain = null;
@@ -399,6 +396,10 @@ namespace Nexus.Editor
                             if (field.GetCustomAttribute<InjectAttribute>() != null)
                                 continue;
 
+                            // Skip auto-property backing fields whose property has [Inject]
+                            if (IsAutoPropertyWithInject(field, type))
+                                continue;
+
                             // Skip readonly/const fields (they can't leak)
                             if (field.IsInitOnly || field.IsLiteral)
                                 continue;
@@ -417,8 +418,27 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Debug.LogWarning($"[Nexus] Command state leak scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
+                }
             }
+        }
+
+        /// <summary>
+        /// Returns true if <paramref name="field"/> is a C# auto-property backing field
+        /// (name pattern <code>&lt;PropertyName&gt;k__BackingField</code>) and the declaring
+        /// property has <see cref="InjectAttribute"/>. This prevents false positives when
+        /// <c>[Inject]</c> is placed on an auto-property — the attribute lives on the property,
+        /// not on the compiler-generated backing field.
+        /// </summary>
+        private static bool IsAutoPropertyWithInject(FieldInfo field, Type declaringType)
+        {
+            if (!field.Name.EndsWith("k__BackingField")) return false;
+            if (!field.Name.StartsWith("<")) return false;
+            string propName = field.Name.Substring(1, field.Name.IndexOf('>') - 1);
+            var prop = declaringType.GetProperty(propName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            return prop != null && prop.GetCustomAttribute<InjectAttribute>() != null;
         }
 
         /// <summary>
@@ -461,7 +481,10 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Debug.LogWarning($"[Nexus] Composite trigger scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
+                }
             }
 
             // For each composite trigger, warn if any of its constituent signal types

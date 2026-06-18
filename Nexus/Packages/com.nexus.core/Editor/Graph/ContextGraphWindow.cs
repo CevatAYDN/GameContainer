@@ -6,9 +6,15 @@ using Nexus.Core;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Editor window that visualizes active Nexus contexts and their parent-child hierarchy.
+    /// Displays context relationships, signal buses, and registered command handlers.
+    /// Accessed via Window/Nexus/Context Graph.
+    /// </summary>
     public class ContextGraphWindow : EditorWindow
     {
         private ScrollView _scrollView;
+        private int _lastContextVersion;
 
         [MenuItem("Window/Nexus/Context Graph")]
         public static void ShowWindow()
@@ -71,21 +77,85 @@ namespace Nexus.Editor
 
         private void OnScheduledRefresh()
         {
-            if (Application.isPlaying)
+            if (!Application.isPlaying || _scrollView == null) return;
+
+            var activeContexts = NexusRuntime.ActiveContexts;
+            int versionHash = ComputeContextVersion(activeContexts);
+            if (versionHash != _lastContextVersion)
             {
+                _lastContextVersion = versionHash;
                 RebuildGraph();
+            }
+        }
+
+        private static int ComputeContextVersion(System.Collections.Generic.IReadOnlyList<IContext> contexts)
+        {
+            unchecked
+            {
+                int hash = 17;
+                for (int i = 0; i < contexts.Count; i++)
+                {
+                    if (contexts[i] is Context ctx)
+                    {
+                        hash = hash * 31 + (ctx.ScopeTag?.GetHashCode() ?? 0);
+                        hash = hash * 31 + (ctx.Parent?.GetHashCode() ?? 0);
+                        if (ctx.Container != null)
+                        {
+                            var singletons = ctx.Container.GetActiveSingletons();
+                            int count = 0;
+                            using (var e = singletons.GetEnumerator())
+                            {
+                                while (e.MoveNext()) count++;
+                            }
+                            hash = hash * 31 + count;
+                        }
+                    }
+                }
+                return hash;
             }
         }
 
         private void RebuildGraph()
         {
+            if (_scrollView == null) return;
             _scrollView.Clear();
 
-            var activeContexts = new List<IContext>(NexusRuntime.ActiveContexts);
-            if (activeContexts.Count == 0)
+            var activeContexts = NexusRuntime.ActiveContexts;
+            if (activeContexts == null || activeContexts.Count == 0)
             {
-                var label = new Label("No active Contexts running in Play Mode.") { style = { color = Color.gray, alignSelf = Align.Center, marginTop = 40 } };
-                _scrollView.Add(label);
+                var container = new VisualElement();
+                container.style.paddingLeft = 15;
+                container.style.paddingRight = 15;
+                container.style.paddingTop = 15;
+                container.style.paddingBottom = 15;
+                container.style.marginTop = 10;
+
+                NexusEditorStyles.CreateInfoCard(container, "NEXUS CONTEXT GRAPH \u2014 OFFLINE", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBg,
+                    "No active Nexus Contexts found. Enter <b>Play Mode</b> to visualize context hierarchy, parent-child relationships, and registered DI singletons.\n\n" +
+                    "Each active Context appears as a card showing its <b>ScopeTag</b>, handler count, and resolved singletons. Child contexts are nested inside their parent card.");
+
+                int sceneRootCount = CountSceneRoots();
+                if (sceneRootCount > 0)
+                {
+                    NexusEditorStyles.CreateInfoCard(container, $"SCENE ROOTS DETECTED ({sceneRootCount})", NexusEditorStyles.AccentYellow, NexusEditorStyles.CardBgYellow,
+                        $"Found <b>{sceneRootCount}</b> Root GameObject{(sceneRootCount > 1 ? "s" : "")} in the scene. " +
+                        "These will become active contexts when you enter Play Mode.\n\n" +
+                        "Select a Root in the Hierarchy and use the <b>Nexus Inspector</b> to inspect its signal flow.");
+                }
+                else
+                {
+                    NexusEditorStyles.CreateInfoCard(container, "NO ROOTS IN SCENE", NexusEditorStyles.AccentOrange, NexusEditorStyles.CardBgRed,
+                        "Use <b>Window/Nexus/Root Wizard</b> or <b>GameObject/Nexus/Create Root</b> " +
+                        "to create a Root GameObject. Each Root creates a Context in Play Mode.\n\n" +
+                        "After creating a Root, enter Play Mode and return here to see the context graph.");
+                }
+
+                var actionsCard = NexusEditorStyles.CreateActionGroup(container, "QUICK ACTIONS");
+                NexusEditorStyles.AddActionButton(actionsCard, "Open Root Wizard", () => RootWizard.ShowWindow(), NexusEditorStyles.BtnBlue);
+                NexusEditorStyles.AddActionButton(actionsCard, "Open Nexus Inspector", () => NexusInspectorWindow.ShowWindow(), NexusEditorStyles.BtnPurple);
+                NexusEditorStyles.AddActionButton(actionsCard, "Open Signal Explorer", () => SignalExplorerWindow.ShowWindow(), NexusEditorStyles.BtnTeal);
+
+                _scrollView.Add(container);
                 return;
             }
 
@@ -93,9 +163,9 @@ namespace Nexus.Editor
             var rootContexts = new List<Context>();
             var childMap = new Dictionary<Context, List<Context>>();
 
-            foreach (var context in activeContexts)
+            for (int i = 0; i < activeContexts.Count; i++)
             {
-                if (context is Context ctx)
+                if (activeContexts[i] is Context ctx)
                 {
                     if (ctx.Parent == null)
                     {
@@ -171,11 +241,18 @@ namespace Nexus.Editor
             }
 
             int handlerCount = 0;
-            if (ctx.SignalBusInternal != null && ctx.SignalBusInternal.CommandHandlers != null)
+            if (ctx.SignalBusInternal != null)
             {
-                foreach (var kvp in ctx.SignalBusInternal.CommandHandlers)
+                var handlers = ctx.SignalBusInternal.CommandHandlers;
+                if (handlers != null)
                 {
-                    handlerCount += kvp.Value.Count;
+                    foreach (var kvp in handlers)
+                    {
+                        if (kvp.Value != null)
+                        {
+                            handlerCount += kvp.Value.Count;
+                        }
+                    }
                 }
             }
 
@@ -274,6 +351,12 @@ namespace Nexus.Editor
             }
 
             return card;
+        }
+
+        private static int CountSceneRoots()
+        {
+            var roots = UnityEngine.Object.FindObjectsByType<Root>();
+            return roots?.Length ?? 0;
         }
     }
 }

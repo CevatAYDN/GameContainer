@@ -81,6 +81,17 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        public class ConcurrentSyncCommand : ICommand
+        {
+            public SimpleSignal Signal;
+
+            public void Execute()
+            {
+                ExecutedCount++;
+                LastExecutedValue = Signal.Value;
+            }
+        }
+
         [SetUp]
         public void Setup()
         {
@@ -179,6 +190,18 @@ namespace Nexus.Editor.Tests
             _signalBus.Fire(new SimpleSignal(99));
 
             Assert.AreEqual(99, subValue);
+        }
+
+        [Test]
+        public async Task FireAsync_ConcurrentSyncCommand_ExecutesCommand()
+        {
+            _container.Bind<ConcurrentSyncCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(ConcurrentSyncCommand), ExecutionMode.Concurrent, 0, isAsync: false);
+
+            await _signalBus.FireAsync(new SimpleSignal(77));
+
+            Assert.AreEqual(1, ExecutedCount);
+            Assert.AreEqual(77, LastExecutedValue);
         }
     }
 }

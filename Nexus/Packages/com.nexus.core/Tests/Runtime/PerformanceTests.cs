@@ -13,19 +13,6 @@ namespace Nexus.Tests
         private SignalBus _signalBus;
         private MockContext _context;
 
-        public class MockContext : IContext
-        {
-            public ISignalBus SignalBus => null;
-            public CancellationToken LifetimeToken => CancellationToken.None;
-            public IContext Parent => null;
-            public void RegisterView(IView view) { }
-            public void UnregisterView(IView view) { }
-            public T Resolve<T>() where T : class => null;
-            public void RegisterPlugin(INexusPlugin plugin) { }
-            public void RemovePlugin(INexusPlugin plugin) { }
-            public void Dispose() { }
-        }
-
         public readonly struct PerfSignal
         {
             public readonly int Index;
@@ -115,39 +102,33 @@ namespace Nexus.Tests
         [Test]
         public void SteadyState_HasZeroGCAllocations()
         {
-            long allocatedBytes = 0;
+            // SignalBus uses ThreadStatic for stack depth and is not thread-safe for concurrent access.
+            // All framework dispatch MUST happen on the main thread. We measure allocations on the
+            // calling (main) thread after warm-up to get a clean baseline.
 
-            // Run the GC tracking in a dedicated background thread to isolate it 
-            // from Unity editor loop allocations on the main thread.
-            var thread = new Thread(() =>
+            // 1. Warm up the JIT compiler and pre-warm command pools
+            for (int i = 0; i < 100; i++)
             {
-                // 1. Warm up the JIT compiler and pre-warm command pools
-                for (int i = 0; i < 100; i++)
-                {
-                    _signalBus.Fire(new PerfSignal(i));
-                }
+                _signalBus.Fire(new PerfSignal(i));
+            }
 
-                // 2. Perform a garbage collection to start from a clean slate
-                System.GC.Collect();
-                System.GC.WaitForPendingFinalizers();
-                System.GC.Collect();
+            // 2. Perform a garbage collection to start from a clean slate
+            System.GC.Collect();
+            System.GC.WaitForPendingFinalizers();
+            System.GC.Collect();
 
-                long startAllocations = System.GC.GetAllocatedBytesForCurrentThread();
+            long startAllocations = System.GC.GetAllocatedBytesForCurrentThread();
 
-                // 3. Execute 5000 dispatches in steady-state
-                for (int i = 0; i < 5000; i++)
-                {
-                    _signalBus.Fire(new PerfSignal(i));
-                }
+            // 3. Execute 5000 dispatches in steady-state on the calling thread
+            for (int i = 0; i < 5000; i++)
+            {
+                _signalBus.Fire(new PerfSignal(i));
+            }
 
-                long endAllocations = System.GC.GetAllocatedBytesForCurrentThread();
-                allocatedBytes = endAllocations - startAllocations;
-            });
+            long endAllocations = System.GC.GetAllocatedBytesForCurrentThread();
+            long allocatedBytes = endAllocations - startAllocations;
 
-            thread.Start();
-            thread.Join();
-
-            // In some environments, JIT or runtime threads might allocate a tiny bit of background memory.
+            // In some environments, background threads might allocate a tiny bit of memory.
             // We assert that allocations are extremely minimal (e.g. less than 128 bytes total for 5000 dispatches), 
             // indicating zero allocations in the framework's dispatch path.
             Assert.LessOrEqual(allocatedBytes, 128, $"Steady-state dispatch allocated {allocatedBytes} bytes. Expected near-zero allocations.");

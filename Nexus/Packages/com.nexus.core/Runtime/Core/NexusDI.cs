@@ -159,7 +159,7 @@ namespace Nexus.Core
                 if (field.GetCustomAttribute<InjectAttribute>() != null)
                 {
                     if (field.FieldType.IsValueType)
-                        continue; // Value types cannot be DI-registered (Bind<T> has where T : class constraint)
+                        throw new InvalidOperationException($"Cannot inject value type field {type.FullName}.{field.Name}. Nexus DI only supports reference-type dependencies.");
                     var resolvedValue = Resolve(field.FieldType);
                     field.SetValue(instance, resolvedValue);
                 }
@@ -172,7 +172,7 @@ namespace Nexus.Core
                 if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite)
                 {
                     if (prop.PropertyType.IsValueType)
-                        continue; // Value types cannot be DI-registered
+                        throw new InvalidOperationException($"Cannot inject value type property {type.FullName}.{prop.Name}. Nexus DI only supports reference-type dependencies.");
                     var resolvedValue = Resolve(prop.PropertyType);
                     prop.SetValue(instance, resolvedValue);
                 }
@@ -189,7 +189,7 @@ namespace Nexus.Core
                     for (int i = 0; i < parameters.Length; i++)
                     {
                         if (parameters[i].ParameterType.IsValueType)
-                            continue; // Value types cannot be DI-registered
+                            throw new InvalidOperationException($"Cannot inject value type parameter {type.FullName}.{method.Name}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
                         args[i] = Resolve(parameters[i].ParameterType);
                     }
                     method.Invoke(instance, args);
@@ -236,7 +236,7 @@ namespace Nexus.Core
             for (int i = 0; i < parameters.Length; i++)
             {
                 if (parameters[i].ParameterType.IsValueType)
-                    continue; // Value types cannot be DI-registered
+                    throw new InvalidOperationException($"Cannot inject value type constructor parameter {type.FullName}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
                 args[i] = Resolve(parameters[i].ParameterType);
             }
 

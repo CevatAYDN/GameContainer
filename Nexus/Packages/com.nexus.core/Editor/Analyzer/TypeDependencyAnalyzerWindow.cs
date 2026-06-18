@@ -9,6 +9,10 @@ using Nexus.Core;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Editor window that analyzes type dependencies across assemblies, showing which types depend on which.
+    /// Helps identify coupling issues and circular dependencies. Accessed via Window/Nexus/Type Dependency Analyzer.
+    /// </summary>
     public class TypeDependencyAnalyzerWindow : EditorWindow
     {
         private class AnalysisResult
@@ -126,14 +130,21 @@ namespace Nexus.Editor
                 var assemblies = AppDomain.CurrentDomain.GetAssemblies();
                 foreach (var assembly in assemblies)
                 {
-                    var types = assembly.GetTypes();
-                    foreach (var t in types)
+                    try
                     {
-                        if (t.Name.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase) || t.FullName.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase))
+                        var types = assembly.GetTypes();
+                        foreach (var t in types)
                         {
-                            targetType = t;
-                            break;
+                            if (t.Name.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase) || t.FullName.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                targetType = t;
+                                break;
+                            }
                         }
+                    }
+                    catch (ReflectionTypeLoadException ex)
+                    {
+                        Debug.LogWarning($"[Nexus] Could not load types from assembly '{assembly.GetName().Name}': {ex.Message}");
                     }
                     if (targetType != null) break;
                 }
@@ -231,16 +242,18 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus] Failed to scan assembly '{assembly.GetName().Name}' for dependency analysis: {ex.Message}");
+                }
             }
         }
 
         private static void AddToIndex(Type sourceType, Type targetType, string memberDesc)
         {
             string key = sourceType.FullName ?? sourceType.Name;
-            if (!s_injectTargetIndex.ContainsKey(key))
-                s_injectTargetIndex[key] = new List<InjectEntry>();
-            s_injectTargetIndex[key].Add(new InjectEntry { TargetType = targetType, Member = memberDesc });
+            var list = s_injectTargetIndex.GetOrAdd(key, _ => new List<InjectEntry>());
+            list.Add(new InjectEntry { TargetType = targetType, Member = memberDesc });
         }
 
         private void RenderDependenciesSection(Type type)

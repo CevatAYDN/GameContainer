@@ -6,6 +6,11 @@ using Nexus.Core;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Editor window for live signal tracing and time-travel debugging.
+    /// Displays <see cref="NexusTrace"/> events in real-time with filtering, pause/snapshot, and causal chain inspection.
+    /// Accessed via Window/Nexus/Inspector.
+    /// </summary>
     public class NexusInspectorWindow : EditorWindow
     {
         private ScrollView _scrollView;
@@ -32,12 +37,33 @@ namespace Nexus.Editor
         // Causal chain detail: selected event and its children
         private int _selectedEventId = -1;
 
+        /// <summary>Opens the Nexus Inspector window.</summary>
         [MenuItem("Window/Nexus/Inspector")]
         public static void ShowWindow()
         {
             var window = GetWindow<NexusInspectorWindow>("Nexus Inspector");
             window.minSize = new Vector2(450, 400);
             window.Show();
+        }
+
+        private void OnEnable()
+        {
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        }
+
+        private void OnDisable()
+        {
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+        }
+
+        private static void OnPlayModeStateChanged(PlayModeStateChange change)
+        {
+            if (change == PlayModeStateChange.EnteredPlayMode)
+            {
+                var window = GetWindow<NexusInspectorWindow>("Nexus Inspector");
+                window.minSize = new Vector2(450, 400);
+                window.Show();
+            }
         }
 
         private void CreateGUI()
@@ -323,67 +349,77 @@ namespace Nexus.Editor
         {
             if (_scrollView.childCount > 0) return;
 
-            var helpBox = new VisualElement();
-            helpBox.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.2f));
-            helpBox.style.paddingLeft = 15;
-            helpBox.style.paddingRight = 15;
-            helpBox.style.paddingTop = 15;
-            helpBox.style.paddingBottom = 15;
-            helpBox.style.borderTopLeftRadius = 6;
-            helpBox.style.borderTopRightRadius = 6;
-            helpBox.style.borderBottomLeftRadius = 6;
-            helpBox.style.borderBottomRightRadius = 6;
-            helpBox.style.marginTop = 10;
+            var container = new VisualElement();
+            container.style.paddingLeft = 15;
+            container.style.paddingRight = 15;
+            container.style.paddingTop = 15;
+            container.style.paddingBottom = 15;
+            container.style.marginTop = 10;
 
-            var title = new Label("NEXUS INSPECTOR — OFFLINE");
-            title.style.unityFontStyleAndWeight = FontStyle.Bold;
-            title.style.fontSize = 13;
-            title.style.color = new StyleColor(new Color(0.3f, 0.8f, 1f));
-            title.style.marginBottom = 10;
-            helpBox.Add(title);
+            NexusEditorStyles.CreateInfoCard(container, "NEXUS OBSERVABLE ARCHITECTURE", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBg,
+                "Nexus is an observable MVCS framework. Signals flow through the system and are handled by Commands. " +
+                "Use the windows below to inspect your setup, then enter <b>Play Mode</b> to see live traces.");
 
-            int handlerCount = GetStaticSignalHandlerCount();
-            var desc = new Label($"Nexus framework is currently inactive. Run the scene in Play Mode to trace signals, commands, and model changes in real-time.\n\n" +
-                                 $"<b>Static analysis:</b> Found <b>{handlerCount}</b> classes registered with [SignalHandler] or [CompositeSignalHandler] in loaded assemblies.");
-            desc.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
-            desc.style.fontSize = 11;
-            desc.style.whiteSpace = WhiteSpace.Normal;
-            helpBox.Add(desc);
-
-            var tip = new Label("\nTip: You can use the Signal Explorer window to search/filter registered handlers without entering Play Mode.");
-            tip.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
-            tip.style.fontSize = 10;
-            tip.style.whiteSpace = WhiteSpace.Normal;
-            helpBox.Add(tip);
-
-            _scrollView.Add(helpBox);
-        }
-
-        private int GetStaticSignalHandlerCount()
-        {
-            int count = 0;
-            foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+            var mappings = NexusEditorDataProvider.GetHandlerMappings();
+            if (mappings.Count > 0)
             {
-                string name = assembly.FullName;
-                if (name.StartsWith("System") || name.StartsWith("Microsoft") || name.StartsWith("Unity") || name.StartsWith("mscorlib"))
-                    continue;
-                try
+                var handlerCard = NexusEditorStyles.CreateInfoCard(container,
+                    $"REGISTERED HANDLERS ({mappings.Count})", NexusEditorStyles.AccentGreen, NexusEditorStyles.CardBgGreen, "");
+
+                foreach (var m in mappings)
                 {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (type.IsClass && !type.IsAbstract)
-                        {
-                            if (type.GetCustomAttributes(typeof(SignalHandlerAttribute), true).Length > 0 ||
-                                type.GetCustomAttributes(typeof(CompositeSignalHandlerAttribute), true).Length > 0)
-                            {
-                                count++;
-                            }
-                        }
-                    }
+                    var row = new VisualElement();
+                    row.style.flexDirection = FlexDirection.Row;
+                    row.style.paddingTop = 2;
+                    row.style.paddingBottom = 2;
+                    row.style.paddingLeft = 5;
+                    row.style.borderBottomWidth = 1;
+                    row.style.borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor);
+
+                    var signalLabel = new Label(m.SignalName);
+                    signalLabel.style.width = new Length(40, LengthUnit.Percent);
+                    signalLabel.style.color = new StyleColor(NexusEditorStyles.SignalBlue);
+                    signalLabel.style.fontSize = 11;
+                    signalLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
+                    row.Add(signalLabel);
+
+                    var arrowLabel = new Label(" \u2192 ");
+                    arrowLabel.style.color = Color.gray;
+                    arrowLabel.style.fontSize = 11;
+                    row.Add(arrowLabel);
+
+                    var cmdLabel = new Label(m.CommandName);
+                    cmdLabel.style.color = Color.white;
+                    cmdLabel.style.fontSize = 11;
+                    row.Add(cmdLabel);
+
+                    var modeLabel = new Label($" [{m.Mode}]");
+                    modeLabel.style.color = new StyleColor(NexusEditorStyles.AccentPurple);
+                    modeLabel.style.fontSize = 10;
+                    modeLabel.style.marginLeft = StyleKeyword.Auto;
+                    row.Add(modeLabel);
+
+                    handlerCard.Add(row);
                 }
-                catch { }
+
+                var hint = NexusEditorStyles.CreateHint("These handlers will appear as live trace events when you enter Play Mode.");
+                hint.style.marginTop = 8;
+                handlerCard.Add(hint);
             }
-            return count;
+            else
+            {
+                NexusEditorStyles.CreateInfoCard(container, "NO HANDLERS REGISTERED", NexusEditorStyles.AccentOrange, NexusEditorStyles.CardBgYellow,
+                    "Create a Root using <b>Window/Nexus/Root Wizard</b> or <b>GameObject/Nexus/Create Root</b> " +
+                    "to generate signal handlers and lifecycle scripts.\n\n" +
+                    "Once created, enter Play Mode and return here to see live traces.");
+            }
+
+            var actionsCard = NexusEditorStyles.CreateActionGroup(container, "QUICK ACTIONS");
+            NexusEditorStyles.AddActionButton(actionsCard, "Open Root Wizard", () => RootWizard.ShowWindow(), NexusEditorStyles.BtnBlue);
+            NexusEditorStyles.AddActionButton(actionsCard, "Open Signal Explorer", () => SignalExplorerWindow.ShowWindow(), NexusEditorStyles.BtnPurple);
+            NexusEditorStyles.AddActionButton(actionsCard, "Open Context Graph", () => ContextGraphWindow.ShowWindow(), NexusEditorStyles.BtnTeal);
+
+            _scrollView.Add(container);
         }
 
         private void ExportTraceToConsole()

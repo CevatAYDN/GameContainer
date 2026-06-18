@@ -28,7 +28,8 @@ namespace Nexus.Editor.Tests
         public class TestCommand : ICommand
         {
             [Inject] public TestModel Model;
-            [Inject] public TestSignal Signal;
+            /// <summary>Signal is injected by SignalBus via reflection, not by NexusDI.</summary>
+            public TestSignal Signal;
 
             public void Execute()
             {
@@ -40,7 +41,8 @@ namespace Nexus.Editor.Tests
         public class TestAsyncCommand : IAsyncCommand
         {
             [Inject] public TestModel Model;
-            [Inject] public TestSignal Signal;
+            /// <summary>Signal is injected by SignalBus via reflection, not by NexusDI.</summary>
+            public TestSignal Signal;
 
             public async ValueTask ExecuteAsync(CancellationToken ct)
             {

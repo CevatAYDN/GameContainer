@@ -8,6 +8,11 @@ using Nexus.Core;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Monitors <see cref="ModelData"/> asset imports during Play Mode and triggers
+    /// <c>OnLiveReload()</c> on singleton instances that reference the modified model data.
+    /// Uses <see cref="LiveReloadAttribute"/> to control which fields/classes participate.
+    /// </summary>
     public class LiveReloadProcessor : AssetPostprocessor
     {
         private static readonly ConcurrentDictionary<Type, MemberInfo[]> s_modelDataMembersCache = new();

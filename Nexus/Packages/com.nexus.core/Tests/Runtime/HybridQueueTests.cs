@@ -13,19 +13,6 @@ namespace Nexus.Tests
         private HybridQueue _queue;
         private MockContext _context;
 
-        public class MockContext : IContext
-        {
-            public ISignalBus SignalBus => null;
-            public CancellationToken LifetimeToken => CancellationToken.None;
-            public IContext Parent => null;
-            public void RegisterView(IView view) { }
-            public void UnregisterView(IView view) { }
-            public T Resolve<T>() where T : class => null;
-            public void RegisterPlugin(INexusPlugin plugin) { }
-            public void RemovePlugin(INexusPlugin plugin) { }
-            public void Dispose() { }
-        }
-
         public readonly struct QueueTestSignal
         {
             public readonly int Id;

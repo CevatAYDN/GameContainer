@@ -6,31 +6,66 @@ using Nexus.Core;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Editor wizard for creating Nexus Root GameObjects, ContextData assets, lifecycle scripts,
+    /// View/Mediator pairs, and clean deletion of root contexts.
+    /// Accessed via GameObject/Nexus/Create Root or Window/Nexus/Root Wizard.
+    /// </summary>
     public class RootWizard : EditorWindow
     {
         private string _contextName = "Gameplay";
         private string _scopeTag = "Gameplay";
         private Vector2 _scrollPosition;
-        private Root _parentRoot = null;
+        private Root _parentRoot;
         private List<string> _availableAssemblies = new();
         private HashSet<string> _selectedAssemblies = new();
-        private bool _assembliesFoldout = false;
+        private bool _assembliesFoldout;
         private Vector2 _assembliesScroll;
-        private bool _generateLifecycleScript = false;
-        private bool _generateSampleArchitecture = false;
+        private bool _generateLifecycleScript;
+        private bool _generateSampleArchitecture;
 
         // Tab Fields
-        private string[] _tabNames = { "Create Root", "View/Mediator Gen", "Clean Deletion" };
-        private int _selectedTab = 0;
+        private readonly string[] _tabNames = { "Create Root", "View/Mediator Gen", "Clean Deletion" };
+        private int _selectedTab;
 
         // View/Mediator Gen Fields
         private string _viewName = "GameplayHUD";
-        private Root _viewTargetRoot = null;
+        private Root _viewTargetRoot;
         private bool _createViewGo = true;
 
         // Clean Deletion Fields
-        private Root _rootToDelete = null;
+        private Root _rootToDelete;
 
+        // Cached state to avoid per-frame allocations
+        private Root[] _cachedSceneRoots;
+        private double _lastRootCacheTime;
+        private const double RootCacheDuration = 1.0;
+        private NexusBootstrapManifest _cachedManifest;
+        private bool _manifestCacheValid;
+
+        private static readonly Color TitleTextColor = new Color(0.3f, 0.8f, 1f);
+        private static readonly Color ButtonGreenColor = new Color(0.4f, 1f, 0.4f);
+        private static readonly Color ButtonRedColor = new Color(1f, 0.3f, 0.3f);
+
+        private GUIStyle _titleStyle;
+        private GUIStyle _headerStyle;
+        private GUIStyle _actionButtonStyle;
+        private GUIStyle _deleteButtonStyle;
+
+        private void EnsureStyles()
+        {
+            if (_titleStyle != null) return;
+            _titleStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 16, margin = new RectOffset(10, 10, 10, 10) };
+            _titleStyle.normal.textColor = TitleTextColor;
+            _headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 };
+            _headerStyle.normal.textColor = Color.white;
+            _actionButtonStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, fixedHeight = 30 };
+            _actionButtonStyle.normal.textColor = ButtonGreenColor;
+            _deleteButtonStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, fixedHeight = 30 };
+            _deleteButtonStyle.normal.textColor = ButtonRedColor;
+        }
+
+        /// <summary>Opens the Root Wizard window.</summary>
         [MenuItem("GameObject/Nexus/Create Root", false, 10)]
         [MenuItem("Window/Nexus/Root Wizard")]
         public static void ShowWindow()
@@ -43,6 +78,35 @@ namespace Nexus.Editor
         private void OnEnable()
         {
             PopulateAssemblies();
+            _manifestCacheValid = false;
+        }
+
+        // Cache helpers to avoid per-frame allocations
+        private Root[] GetCachedSceneRoots()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            if (_cachedSceneRoots == null || now - _lastRootCacheTime > RootCacheDuration)
+            {
+                _cachedSceneRoots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+                _lastRootCacheTime = now;
+            }
+            return _cachedSceneRoots;
+        }
+
+        private NexusBootstrapManifest GetCachedManifest()
+        {
+            if (!_manifestCacheValid)
+            {
+                _cachedManifest = FindBootstrapManifest();
+                _manifestCacheValid = true;
+            }
+            return _cachedManifest;
+        }
+
+        private void InvalidateCaches()
+        {
+            _cachedSceneRoots = null;
+            _manifestCacheValid = false;
         }
 
         private void PopulateAssemblies()
@@ -73,15 +137,8 @@ namespace Nexus.Editor
 
         private void OnGUI()
         {
-            // Dark elegant title
-            var titleStyle = new GUIStyle(EditorStyles.boldLabel)
-            {
-                fontSize = 16,
-                margin = new RectOffset(10, 10, 10, 10)
-            };
-            titleStyle.normal.textColor = new Color(0.3f, 0.8f, 1f);
-
-            GUILayout.Label("Nexus: Observable Architecture Setup", titleStyle);
+            EnsureStyles();
+            GUILayout.Label("Nexus: Observable Architecture Setup", _titleStyle);
             
             _selectedTab = GUILayout.Toolbar(_selectedTab, _tabNames);
             EditorGUILayout.Space(10);
@@ -106,8 +163,7 @@ namespace Nexus.Editor
 
         private void DrawCreateRootTab()
         {
-            // Find manifest
-            var manifest = FindBootstrapManifest();
+            var manifest = GetCachedManifest();
 
             DrawManifestSection(manifest);
 
@@ -137,10 +193,7 @@ namespace Nexus.Editor
 
         private void DrawManifestSection(NexusBootstrapManifest manifest)
         {
-            var headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 };
-            headerStyle.normal.textColor = Color.white;
-
-            GUILayout.Label("Bootstrap Manifest Generation", headerStyle);
+            GUILayout.Label("Bootstrap Manifest Generation", _headerStyle);
             EditorGUILayout.Space(5);
 
             if (manifest == null)
@@ -164,14 +217,7 @@ namespace Nexus.Editor
 
                 EditorGUILayout.Space(10);
 
-                var buttonStyle = new GUIStyle(GUI.skin.button)
-                {
-                    fontStyle = FontStyle.Bold,
-                    fixedHeight = 30
-                };
-                buttonStyle.normal.textColor = new Color(0.4f, 1f, 0.4f);
-
-                if (GUILayout.Button("Generate Skeleton from Manifest", buttonStyle))
+                if (GUILayout.Button("Generate Skeleton from Manifest", _actionButtonStyle))
                 {
                     GenerateSkeleton(manifest);
                 }
@@ -180,10 +226,7 @@ namespace Nexus.Editor
 
         private void DrawCustomRootSection()
         {
-            var headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 };
-            headerStyle.normal.textColor = Color.white;
-
-            GUILayout.Label("Custom Root Context Creation", headerStyle);
+            GUILayout.Label("Custom Root Context Creation", _headerStyle);
             EditorGUILayout.Space(5);
 
             EditorGUI.indentLevel = 1;
@@ -191,7 +234,7 @@ namespace Nexus.Editor
             _scopeTag = EditorGUILayout.TextField("Scope Tag", _scopeTag);
 
             // Parent Root Dropdown selection
-            var sceneRoots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+            var sceneRoots = GetCachedSceneRoots();
             var rootNames = GetSceneRootNames(sceneRoots);
             int selectedIndex = 0;
             if (_parentRoot != null)
@@ -261,6 +304,11 @@ namespace Nexus.Editor
                 isValid = false;
                 validationError = "Context Name cannot be empty.";
             }
+            else if (_contextName.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0)
+            {
+                isValid = false;
+                validationError = "Context Name contains invalid path characters.";
+            }
             else if (string.IsNullOrWhiteSpace(_scopeTag))
             {
                 isValid = false;
@@ -268,7 +316,6 @@ namespace Nexus.Editor
             }
             else
             {
-                // Validate if Asset already exists
                 string path = $"Assets/Settings/{_contextName}ContextData.asset";
                 if (File.Exists(path))
                 {
@@ -282,14 +329,8 @@ namespace Nexus.Editor
                 EditorGUILayout.HelpBox(validationError, MessageType.Warning);
             }
 
-            var buttonStyle = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = FontStyle.Bold,
-                fixedHeight = 30
-            };
-
             EditorGUI.BeginDisabledGroup(!isValid);
-            if (GUILayout.Button("Create Root & ContextData", buttonStyle))
+            if (GUILayout.Button("Create Root & ContextData", _actionButtonStyle))
             {
                 CreateRoot(_contextName, _scopeTag);
             }
@@ -324,6 +365,7 @@ namespace Nexus.Editor
             AssetDatabase.CreateAsset(manifest, path);
             AssetDatabase.SaveAssets();
 
+            _manifestCacheValid = false;
             Debug.Log($"[Nexus] Created default Bootstrap Manifest at {path}");
             AssetDatabase.Refresh();
         }
@@ -355,6 +397,7 @@ namespace Nexus.Editor
                     File.WriteAllText(commandPath, GetSampleCommandCode());
                 }
 
+                InvalidateCaches();
                 AssetDatabase.Refresh();
             }
 
@@ -448,17 +491,40 @@ namespace Nexus.Editor
             Selection.activeGameObject = go;
             Undo.RegisterCreatedObjectUndo(go, "Create Nexus Root");
 
+            InvalidateCaches();
             AssetDatabase.Refresh();
 
             string parentInfo = _parentRoot != null ? $" with Parent '{_parentRoot.gameObject.name}'" : "";
             string lifecycleInfo = _generateLifecycleScript ? 
                 (_generateSampleArchitecture ? $"\n\nGenerated full architecture folders and templates under Assets/Scripts/Nexus/{contextName}/" : $"\n\nGenerated lifecycle class template at Assets/Scripts/Nexus/{contextName}Lifecycle.cs.") : "";
             
-            EditorUtility.DisplayDialog("Root Created", 
-                $"Successfully created {go.name}{parentInfo} and registered ContextData asset at {path}.{lifecycleInfo}", 
-                "OK");
+            ShowPostCreationGuide(go.name, contextName, scopeTag);
 
             Debug.Log($"[Nexus] Successfully created {go.name} and registered context data at {path}.");
+        }
+
+        private static void ShowPostCreationGuide(string goName, string contextName, string scopeTag)
+        {
+            int choice = EditorUtility.DisplayDialogComplex(
+                $"Root Created: {goName}",
+                $"Successfully created {goName} (ScopeTag: {scopeTag}).\n\n" +
+                "--- NEXT STEPS ---\n\n" +
+                "1. Open Nexus Inspector    → Window/Nexus/Inspector\n" +
+                "   (auto-opens when you enter Play Mode)\n\n" +
+                "2. Define models & commands → Add [Inject] fields in lifecycle\n" +
+                "   and create ICommand classes with [SignalHandler]\n\n" +
+                "3. Enter Play Mode          → Watch signals flow live\n\n" +
+                "Tip: Use the Signal Explorer (Window/Nexus/Signal Explorer)\n" +
+                "to see all registered signal handlers without entering Play Mode.",
+                "Open Nexus Inspector",
+                "Open Signal Explorer",
+                "OK - Got it"
+            );
+
+            if (choice == 0)
+                NexusInspectorWindow.ShowWindow();
+            else if (choice == 1)
+                SignalExplorerWindow.ShowWindow();
         }
 
         private string GetLifecycleTemplateCode(string contextName)
@@ -769,15 +835,12 @@ namespace Nexus
         // --- View & Mediator Generator Tab ---
         private void DrawViewMediatorGenTab()
         {
-            var headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 };
-            headerStyle.normal.textColor = Color.white;
-
-            GUILayout.Label("Generate View & Mediator", headerStyle);
+            GUILayout.Label("Generate View & Mediator", _headerStyle);
             EditorGUILayout.Space(5);
 
             _viewName = EditorGUILayout.TextField("View Name", _viewName);
 
-            var sceneRoots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+            var sceneRoots = GetCachedSceneRoots();
             var rootNames = new string[sceneRoots.Length];
             int selectedIndex = 0;
             for (int i = 0; i < sceneRoots.Length; i++)
@@ -844,8 +907,8 @@ namespace Nexus
 
                 if (createGo)
                 {
-                    EditorPrefs.SetString("Nexus_PendingViewName", viewName);
-                    EditorPrefs.SetString("Nexus_PendingViewRootName", targetRoot.gameObject.name);
+                    EditorPrefs.SetString("com.nexus.core.PendingViewName", viewName);
+                    EditorPrefs.SetString("com.nexus.core.PendingViewRootName", targetRoot.gameObject.name);
                 }
 
                 AssetDatabase.Refresh();
@@ -912,13 +975,10 @@ namespace Nexus
         // --- Clean Deletion Tab ---
         private void DrawCleanDeletionTab()
         {
-            var headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 };
-            headerStyle.normal.textColor = Color.white;
-
-            GUILayout.Label("Clean Deletion Tool", headerStyle);
+            GUILayout.Label("Clean Deletion Tool", _headerStyle);
             EditorGUILayout.Space(5);
 
-            var sceneRoots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+            var sceneRoots = GetCachedSceneRoots();
             if (sceneRoots.Length == 0)
             {
                 EditorGUILayout.HelpBox("No active Roots found in scene.", MessageType.Info);
@@ -944,16 +1004,9 @@ namespace Nexus
                                     "- The Root GameObject from the active scene.\n" +
                                     "- The associated ContextData ScriptableObject.\n" +
                                     "- The generated script directory Assets/Scripts/Nexus/<ContextName>/\n\n" +
-                                    "Make sure you have backed up your custom script changes before proceeding!", MessageType.Warning);
+                                    "Make sure you have backed up your custom script changes before committing!", MessageType.Warning);
 
-            var buttonStyle = new GUIStyle(GUI.skin.button)
-            {
-                fontStyle = FontStyle.Bold,
-                fixedHeight = 30
-            };
-            buttonStyle.normal.textColor = new Color(1f, 0.3f, 0.3f);
-
-            if (GUILayout.Button("DELETE ROOT & ALL RELATED ASSETS", buttonStyle))
+            if (GUILayout.Button("DELETE ROOT & ALL RELATED ASSETS", _deleteButtonStyle))
             {
                 string contextName = _rootToDelete.ContextData != null ? _rootToDelete.ContextData.name.Replace("ContextData", "") : _rootToDelete.gameObject.name.Replace("Root", "");
                 if (EditorUtility.DisplayDialog("Confirm Clean Deletion", 
@@ -1005,6 +1058,7 @@ namespace Nexus
                 Undo.DestroyObjectImmediate(go);
                 Debug.Log($"[Nexus] Destroyed Root GameObject '{go.name}'");
 
+                InvalidateCaches();
                 AssetDatabase.Refresh();
                 EditorUtility.DisplayDialog("Root Deleted", $"Successfully deleted context '{contextName}' and its related assets.", "OK");
             }
@@ -1016,6 +1070,10 @@ namespace Nexus
         }
     }
 
+    /// <summary>
+    /// Post-compile handler that creates pending view GameObjects after assembly reload.
+    /// Triggered by <see cref="RootWizard"/> when a new View/Mediator pair is generated with GameObject creation enabled.
+    /// </summary>
     [InitializeOnLoad]
     public static class NexusPostCompileViewCreator
     {
@@ -1026,12 +1084,12 @@ namespace Nexus
 
         private static void CheckAndCreatePendingViewObject()
         {
-            if (!EditorPrefs.HasKey("Nexus_PendingViewName")) return;
+            if (!EditorPrefs.HasKey("com.nexus.core.PendingViewName")) return;
 
-            string viewName = EditorPrefs.GetString("Nexus_PendingViewName");
-            string rootName = EditorPrefs.GetString("Nexus_PendingViewRootName");
-            EditorPrefs.DeleteKey("Nexus_PendingViewName");
-            EditorPrefs.DeleteKey("Nexus_PendingViewRootName");
+            string viewName = EditorPrefs.GetString("com.nexus.core.PendingViewName");
+            string rootName = EditorPrefs.GetString("com.nexus.core.PendingViewRootName");
+            EditorPrefs.DeleteKey("com.nexus.core.PendingViewName");
+            EditorPrefs.DeleteKey("com.nexus.core.PendingViewRootName");
 
             System.Type viewType = null;
             foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())

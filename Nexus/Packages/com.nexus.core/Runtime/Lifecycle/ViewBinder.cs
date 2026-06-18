@@ -6,9 +6,14 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    /// <summary>
+    /// Abstract base class for Nexus views. Views are MonoBehaviour components that
+    /// automatically register with the nearest <see cref="Root"/> context and bind their mediator.
+    /// </summary>
     [Preserve]
     public abstract class View : MonoBehaviour, IView
     {
+        /// <summary>The context this view is bound to. Set after <see cref="Bind"/> is called.</summary>
         protected IContext Context { get; private set; }
         private bool _isBound;
 
@@ -18,6 +23,10 @@ namespace Nexus.Core
             // View has not been registered yet and Mediator has not been connected.
         }
 
+        /// <summary>
+        /// Automatically registers this view with the nearest parent Root's context.
+        /// Falls back to FindObjectsByType if no parent Root is found (single-root scenes).
+        /// </summary>
         protected virtual void OnEnable()
         {
             if (_isBound) return;
@@ -28,23 +37,36 @@ namespace Nexus.Core
             }
             else
             {
-                // Fallback: find nearest active root
-                var fallbackRoot = FindAnyObjectByType<Root>();
-                if (fallbackRoot != null && fallbackRoot.Context != null)
+                // Fallback only when the scene has a single unambiguous active root.
+                var roots = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+                if (roots.Length == 1 && roots[0].Context != null)
                 {
-                    fallbackRoot.Context.RegisterView(this);
+                    roots[0].Context.RegisterView(this);
                 }
             }
         }
 
+        /// <summary>
+        /// Unregisters this view from its context when disabled.
+        /// Errors during unbinding are caught and logged to avoid breaking scene teardown.
+        /// </summary>
         protected virtual void OnDisable()
         {
-            if (Context != null)
+            try
             {
-                Context.UnregisterView(this);
+                if (Context != null)
+                {
+                    Context.UnregisterView(this);
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus] View '{gameObject.name}' failed to unbind on disable: {ex.Message}");
             }
         }
 
+        /// <summary>Binds the view to a context. Calls <see cref="OnBind"/> for derived setup.</summary>
+        /// <param name="context">The context to bind to.</param>
         public void Bind(IContext context)
         {
             if (_isBound) return;
@@ -53,6 +75,7 @@ namespace Nexus.Core
             OnBind(context);
         }
 
+        /// <summary>Unbinds the view from its context. Calls <see cref="OnUnbind"/> for derived cleanup.</summary>
         public void Unbind()
         {
             OnUnbind();
@@ -60,10 +83,17 @@ namespace Nexus.Core
             Context = null;
         }
 
+        /// <summary>Override to perform custom setup when the view is bound to a context.</summary>
+        /// <param name="context">The context this view is now bound to.</param>
         protected virtual void OnBind(IContext context) { }
+        /// <summary>Override to perform custom cleanup when the view is unbound.</summary>
         protected virtual void OnUnbind() { }
     }
 
+    /// <summary>
+    /// Manages view registration, mediator instantiation/pooling, and cleanup.
+    /// Connects views to their associated <see cref="Mediator{TView}"/> via <see cref="MediatorAttribute"/>.
+    /// </summary>
     [Preserve]
     public class ViewBinder : IDisposable
     {
@@ -72,12 +102,20 @@ namespace Nexus.Core
         private readonly Dictionary<IView, IMediator> _activeMediators = new();
         private readonly Dictionary<Type, Stack<IMediator>> _mediatorPools = new();
 
+        /// <summary>Creates a new <see cref="ViewBinder"/> for the given context.</summary>
+        /// <param name="context">The context that owns this binder.</param>
+        /// <param name="container">The DI container for resolving mediators.</param>
         public ViewBinder(IContext context, NexusDI container)
         {
             _context = context;
             _container = container;
         }
 
+        /// <summary>
+        /// Registers a view, binds it to the context, and creates/assigns its mediator.
+        /// If the view has a <see cref="MediatorAttribute"/>, the corresponding mediator is resolved from the pool or created.
+        /// </summary>
+        /// <param name="view">The view to register.</param>
         public void RegisterView(IView view)
         {
             if (_activeMediators.ContainsKey(view)) return;
@@ -97,6 +135,8 @@ namespace Nexus.Core
             mediator.Bind(view, _context.SignalBus);
         }
 
+        /// <summary>Unregisters a view, unbinds its mediator, and returns the mediator to the pool.</summary>
+        /// <param name="view">The view to unregister.</param>
         public void UnregisterView(IView view)
         {
             view.Unbind();
@@ -148,6 +188,7 @@ namespace Nexus.Core
             NexusDI.ClearInjectedReferences(mediator);
         }
 
+        /// <summary>Disposes all active mediators and clears all pools.</summary>
         public void Dispose()
         {
             foreach (var kvp in _activeMediators)

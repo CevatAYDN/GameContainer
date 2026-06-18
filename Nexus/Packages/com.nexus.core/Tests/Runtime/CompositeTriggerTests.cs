@@ -17,28 +17,31 @@ namespace Nexus.Tests
             public void Execute() { ExecutionCount++; }
         }
 
+        public class HighPriorityCompositeCommand : ICommand
+        {
+            public static int RunOrder;
+            public static int ObservedOrder;
+            public void Execute() { ObservedOrder = ++RunOrder; }
+        }
+
+        public class LowPriorityCompositeCommand : ICommand
+        {
+            public static int ObservedOrder;
+            public void Execute() { ObservedOrder = ++HighPriorityCompositeCommand.RunOrder; }
+        }
+
         private NexusDI _container;
         private CommandPoolManager _poolManager;
         private SignalBus _signalBus;
         private MockContext _context;
 
-        public class MockContext : IContext
-        {
-            public ISignalBus SignalBus => null;
-            public CancellationToken LifetimeToken => CancellationToken.None;
-            public IContext Parent => null;
-            public void RegisterView(IView view) { }
-            public void UnregisterView(IView view) { }
-            public T Resolve<T>() where T : class => null;
-            public void RegisterPlugin(INexusPlugin plugin) { }
-            public void RemovePlugin(INexusPlugin plugin) { }
-            public void Dispose() { }
-        }
-
         [SetUp]
         public void Setup()
         {
             TestCompositeCommand.ExecutionCount = 0;
+            HighPriorityCompositeCommand.RunOrder = 0;
+            HighPriorityCompositeCommand.ObservedOrder = 0;
+            LowPriorityCompositeCommand.ObservedOrder = 0;
             _container = new NexusDI();
             _poolManager = new CommandPoolManager(_container);
             _context = new MockContext();
@@ -118,6 +121,31 @@ namespace Nexus.Tests
 
             // Should trigger only once
             Assert.AreEqual(1, TestCompositeCommand.ExecutionCount);
+        }
+
+        [Test]
+        public void CompositeTriggers_ExecuteInPriorityOrder()
+        {
+            _signalBus.RegisterCompositeCommand(
+                new[] { typeof(SignalA), typeof(SignalB) },
+                typeof(LowPriorityCompositeCommand),
+                oneShot: false,
+                priority: 0,
+                isAsync: false
+            );
+            _signalBus.RegisterCompositeCommand(
+                new[] { typeof(SignalA), typeof(SignalB) },
+                typeof(HighPriorityCompositeCommand),
+                oneShot: false,
+                priority: 100,
+                isAsync: false
+            );
+
+            _signalBus.Fire(new SignalA());
+            _signalBus.Fire(new SignalB());
+
+            Assert.AreEqual(1, HighPriorityCompositeCommand.ObservedOrder);
+            Assert.AreEqual(2, LowPriorityCompositeCommand.ObservedOrder);
         }
     }
 }

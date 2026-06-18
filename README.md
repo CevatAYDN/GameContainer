@@ -4,17 +4,14 @@ Nexus, Unity için tasarlanmış, **0 GC allocation (steady-state)** hedefleriyl
 
 ## 📋 Sistem Gereksinimleri ve Uyumluluk
 
-Nexus, modern C# ve Unity editör yeteneklerini kullanır. Aşağıdaki Unity sürümleriyle tam uyumlu olarak çalışmaktadır:
+Nexus, modern C# ve Unity editör/runtime yeteneklerini kullanır. Bu proje şu anda Unity 6 üzerinde hedeflenir ve doğrulanır:
 
-* **Unity 6 (ve tüm 6000.x sürümleri)**
-* **Unity 2023.x**
-* **Unity 2022.3 LTS**
-* **Unity 2021.3 LTS**
+* **Unity 6 (6000.x sürümleri)**
 
 ### Gereksinimler:
-* **C# 9.0+ ve .NET Standard 2.1** desteği (Unity 2021.3 LTS ve sonrasında varsayılan olarak desteklenmektedir).
+* **C# 9.0+ ve .NET Standard 2.1** desteği.
 * **UI Toolkit (UIElements)** (Editör araçlarının çalışabilmesi için gereklidir).
-* **Unity 5 ve daha eski (Legacy) sürümler desteklenmemektedir** (eski .NET sürüm kısıtlamaları ve UI Toolkit eksikliği nedeniyle).
+* **Unity 2023.x ve daha eski sürümler desteklenmiş hedef olarak ilan edilmemektedir**. Paket metadata'sı `unity: 6000.0` değerini kullanır.
 
 ## 🚀 Ana Vaat
 > **"Unity'de sisteminizin neden çalışmadığını 10 saniyede görün."**

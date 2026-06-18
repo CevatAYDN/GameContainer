@@ -23,6 +23,22 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        public class ConstructorInjectedClass
+        {
+            public IDependency Dependency { get; }
+
+            [Inject]
+            public ConstructorInjectedClass(IDependency dependency)
+            {
+                Dependency = dependency;
+            }
+        }
+
+        public class ValueTypeInjectedClass
+        {
+            [Inject] public int InvalidValue;
+        }
+
         [Test]
         public void BindAndResolve_ReturnsCorrectInstances()
         {
@@ -63,6 +79,28 @@ namespace Nexus.Editor.Tests
 
             Assert.IsNotNull(resolved);
             Assert.IsInstanceOf<ConcreteDependency>(resolved);
+        }
+
+        [Test]
+        public void InjectConstructorAttribute_ResolvesConstructorDependencies()
+        {
+            using var di = new NexusDI();
+            di.Bind<IDependency, ConcreteDependency>();
+            di.Bind<ConstructorInjectedClass>(isSingleton: false);
+
+            var resolved = di.Resolve<ConstructorInjectedClass>();
+
+            Assert.IsNotNull(resolved.Dependency);
+            Assert.IsInstanceOf<ConcreteDependency>(resolved.Dependency);
+        }
+
+        [Test]
+        public void InjectValueTypeField_ThrowsExplicitError()
+        {
+            using var di = new NexusDI();
+            di.Bind<ValueTypeInjectedClass>(isSingleton: false);
+
+            Assert.Throws<System.InvalidOperationException>(() => di.Resolve<ValueTypeInjectedClass>());
         }
     }
 }

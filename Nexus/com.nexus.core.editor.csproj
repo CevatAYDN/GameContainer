@@ -1,4 +1,4 @@
-<Project>
+﻿<Project>
   <!-- Generated file, do not modify, your changes will be overwritten (use AssetPostprocessor.OnGeneratedCSProject) -->
   <PropertyGroup>
     <BaseIntermediateOutputPath>Temp\obj\$(MSBuildProjectName)</BaseIntermediateOutputPath>
@@ -55,12 +55,15 @@
   <ItemGroup>
     <Compile Include="Packages\com.nexus.core\Editor\Graph\ContextGraphWindow.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Inspector\NexusDataInspectorWindow.cs" />
+    <Compile Include="Packages\com.nexus.core\Editor\Core\NexusEditorStyles.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Wizard\RootWizard.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Inspector\NexusInspectorWindow.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Explorer\SignalExplorerWindow.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Validation\BuildValidation.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Analyzer\TypeDependencyAnalyzerWindow.cs" />
+    <Compile Include="Packages\com.nexus.core\Editor\Core\NexusEditorDataProvider.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\LiveReload\LiveReloadProcessor.cs" />
+    <Compile Include="Packages\com.nexus.core\Editor\Core\NexusHubWindow.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Packages\com.nexus.core\Editor\com.nexus.core.editor.asmdef" />

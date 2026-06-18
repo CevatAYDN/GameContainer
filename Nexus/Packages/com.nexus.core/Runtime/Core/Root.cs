@@ -8,6 +8,10 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    /// <summary>
+    /// MonoBehaviour root for a Nexus context. Each Root creates and manages a <see cref="Context"/>.
+    /// Supports hierarchical parent-child relationships and priority-based sibling initialization ordering.
+    /// </summary>
     [DefaultExecutionOrder(-1000)] // Ensure Root starts before other scripts
     [Preserve]
     public class Root : MonoBehaviour
@@ -19,10 +23,38 @@ namespace Nexus.Core
         [SerializeField] private ContextData contextData;
         [SerializeField] private int initializationPriority = 0;
 
+        /// <summary>The Nexus context owned by this root.</summary>
         public Context Context { get; private set; }
+        /// <summary>True after async initialization (OnInitializeAsync + OnStartAsync) completes.</summary>
         public bool IsInitialized { get; private set; }
+        /// <summary>Priority for sibling sorting; higher values initialize earlier.</summary>
         public int InitializationPriority => initializationPriority;
+        /// <summary>Configuration data for this context.</summary>
         public ContextData ContextData => contextData;
+        /// <summary>Parent root in the context hierarchy (null for root contexts).</summary>
+        public Root ParentRoot => parentRoot;
+
+        // Registry to avoid FindObjectsByType in every Start()
+        private static readonly List<Root> s_allRoots = new();
+        private static bool s_registryDirty = true;
+
+        private void OnEnable()
+        {
+            s_registryDirty = true;
+        }
+
+        private void OnDisable()
+        {
+            s_registryDirty = true;
+        }
+
+        private static void EnsureRegistry()
+        {
+            if (!s_registryDirty) return;
+            s_allRoots.Clear();
+            s_allRoots.AddRange(FindObjectsByType<Root>(FindObjectsInactive.Exclude));
+            s_registryDirty = false;
+        }
 
         private void OnValidate()
         {
@@ -43,6 +75,11 @@ namespace Nexus.Core
         private void InitializeContext()
         {
             if (Context != null) return;
+
+            if (parentRoot != null && parentRoot != this)
+            {
+                parentRoot.InitializeContext();
+            }
 
             Context parentContext = parentRoot != null ? parentRoot.Context : null;
             Context = new Context(parentContext, contextData);
@@ -83,9 +120,9 @@ namespace Nexus.Core
                 }
 
                 // Wait for sibling roots with higher priority to initialize (with timeout)
-                var allRoots = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+                EnsureRegistry();
                 var siblingsToWait = new List<Root>();
-                foreach (var r in allRoots)
+                foreach (var r in s_allRoots)
                 {
                     if (r == this) continue;
                     if (r.parentRoot != this.parentRoot) continue;

@@ -52,6 +52,8 @@ namespace Nexus.Core
             where TCommand : class, ICommand;
         void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class, IAsyncCommand;
+
+        void Fire<T>(T signal) where T : struct;
     }
 
     public interface IContextLifecycle
