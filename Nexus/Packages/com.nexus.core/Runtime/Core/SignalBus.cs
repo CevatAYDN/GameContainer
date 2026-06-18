@@ -1000,10 +1000,11 @@ namespace Nexus.Core
 
         public void Dispose()
         {
-            // Dispose all active subscriptions
+            // Dispose all active subscriptions using a copy to avoid modification exceptions
             foreach (var kvp in _subscriptions)
             {
-                foreach (var sub in kvp.Value)
+                var subsCopy = new List<object>(kvp.Value);
+                foreach (var sub in subsCopy)
                 {
                     if (sub is IDisposable disposable)
                         disposable.Dispose();

@@ -36,6 +36,9 @@ namespace Nexus.Core
             
         public static RecoveryDecision Fallback<T>() where T : ICommand 
             => new(RecoveryAction.Fallback, typeof(T), 0);
+
+        public static RecoveryDecision FallbackAsync<T>() where T : IAsyncCommand 
+            => new(RecoveryAction.Fallback, typeof(T), 0);
     }
 
     [Preserve]

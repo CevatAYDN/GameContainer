@@ -111,5 +111,62 @@ namespace Nexus.Tests
 
             Assert.AreEqual(102, PerfCommand.ExecutionCount);
         }
+
+        [Test]
+        public void SteadyState_HasZeroGCAllocations()
+        {
+            // 1. Warm up the JIT compiler and pre-warm command pools
+            for (int i = 0; i < 100; i++)
+            {
+                _signalBus.Fire(new PerfSignal(i));
+            }
+
+            // 2. Perform a garbage collection to start from a clean slate
+            System.GC.Collect();
+            System.GC.WaitForPendingFinalizers();
+            System.GC.Collect();
+
+            long startAllocations = System.GC.GetTotalMemory(false);
+
+            // 3. Execute 5000 dispatches in steady-state
+            for (int i = 0; i < 5000; i++)
+            {
+                _signalBus.Fire(new PerfSignal(i));
+            }
+
+            long endAllocations = System.GC.GetTotalMemory(false);
+            long allocatedBytes = endAllocations - startAllocations;
+
+            // In some environments, JIT or runtime threads might allocate a tiny bit of background memory.
+            // We assert that allocations are extremely minimal (e.g. less than 128 bytes total for 5000 dispatches), 
+            // indicating zero allocations in the framework's dispatch path.
+            Assert.LessOrEqual(allocatedBytes, 128, $"Steady-state dispatch allocated {allocatedBytes} bytes. Expected near-zero allocations.");
+        }
+
+        [Test]
+        public void HighFrequency_Performance_StressTest()
+        {
+            const int count = 50000;
+            
+            // Warm up
+            for (int i = 0; i < 100; i++)
+            {
+                _signalBus.Fire(new PerfSignal(i));
+            }
+
+            var sw = Stopwatch.StartNew();
+
+            for (int i = 0; i < count; i++)
+            {
+                _signalBus.Fire(new PerfSignal(i));
+            }
+
+            sw.Stop();
+            
+            UnityEngine.Debug.Log($"[Nexus Benchmark] 50,000 dispatches completed in {sw.ElapsedMilliseconds} ms.");
+            
+            // Assert that 50k dispatches complete in less than 2 seconds (usually takes < 100ms)
+            Assert.Less(sw.ElapsedMilliseconds, 2000, "50,000 dispatches took too long.");
+        }
     }
 }

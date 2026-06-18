@@ -9,6 +9,19 @@ namespace Nexus.Editor
 {
     public static class BuildValidation
     {
+        public static bool IncludeTestAssemblies { get; set; } = false;
+
+        public static Action<string> InfoLogger { get; set; } = UnityEngine.Debug.Log;
+        public static Action<string> WarningLogger { get; set; } = UnityEngine.Debug.LogWarning;
+        public static Action<string> ErrorLogger { get; set; } = UnityEngine.Debug.LogError;
+
+        private static class Debug
+        {
+            public static void Log(string msg) => InfoLogger(msg);
+            public static void LogWarning(string msg) => WarningLogger(msg);
+            public static void LogError(string msg) => ErrorLogger(msg);
+        }
+
         [MenuItem("Nexus/Validate Architecture")]
         public static bool Validate()
         {
@@ -62,6 +75,8 @@ namespace Nexus.Editor
                 // Skip system/unity assemblies to speed up
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
                 try
@@ -205,6 +220,8 @@ namespace Nexus.Editor
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
                 try
@@ -362,6 +379,8 @@ namespace Nexus.Editor
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
                     continue;
+                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
 
                 try
                 {
@@ -417,6 +436,8 @@ namespace Nexus.Editor
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
                 try

@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <!-- Generated file, do not modify, your changes will be overwritten (use AssetPostprocessor.OnGeneratedCSProject) -->
   <PropertyGroup>
     <BaseIntermediateOutputPath>Temp\obj\$(MSBuildProjectName)</BaseIntermediateOutputPath>
@@ -59,6 +59,8 @@
     <Compile Include="Packages\com.nexus.core\Tests\Runtime\HybridQueueTests.cs" />
     <Compile Include="Packages\com.nexus.core\Tests\Runtime\ViewBindingTests.cs" />
     <Compile Include="Packages\com.nexus.core\Tests\Runtime\CompositeTriggerTests.cs" />
+    <Compile Include="Packages\com.nexus.core\Tests\Runtime\RecoveryTests.cs" />
+    <Compile Include="Packages\com.nexus.core\Tests\Runtime\DebugStrippingTests.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Packages\com.nexus.core\Tests\Runtime\com.nexus.core.tests.asmdef" />
