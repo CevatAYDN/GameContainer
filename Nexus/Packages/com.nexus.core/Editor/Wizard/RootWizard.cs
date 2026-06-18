@@ -19,6 +19,18 @@ namespace Nexus.Editor
         private bool _generateLifecycleScript = false;
         private bool _generateSampleArchitecture = false;
 
+        // Tab Fields
+        private string[] _tabNames = { "Create Root", "View/Mediator Gen", "Clean Deletion" };
+        private int _selectedTab = 0;
+
+        // View/Mediator Gen Fields
+        private string _viewName = "GameplayHUD";
+        private Root _viewTargetRoot = null;
+        private bool _createViewGo = true;
+
+        // Clean Deletion Fields
+        private Root _rootToDelete = null;
+
         [MenuItem("GameObject/Nexus/Create Root", false, 10)]
         [MenuItem("Window/Nexus/Root Wizard")]
         public static void ShowWindow()
@@ -61,8 +73,6 @@ namespace Nexus.Editor
 
         private void OnGUI()
         {
-            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
-
             // Dark elegant title
             var titleStyle = new GUIStyle(EditorStyles.boldLabel)
             {
@@ -72,8 +82,30 @@ namespace Nexus.Editor
             titleStyle.normal.textColor = new Color(0.3f, 0.8f, 1f);
 
             GUILayout.Label("Nexus: Observable Architecture Setup", titleStyle);
-            EditorGUILayout.Space();
+            
+            _selectedTab = GUILayout.Toolbar(_selectedTab, _tabNames);
+            EditorGUILayout.Space(10);
 
+            _scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
+
+            switch (_selectedTab)
+            {
+                case 0:
+                    DrawCreateRootTab();
+                    break;
+                case 1:
+                    DrawViewMediatorGenTab();
+                    break;
+                case 2:
+                    DrawCleanDeletionTab();
+                    break;
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void DrawCreateRootTab()
+        {
             // Find manifest
             var manifest = FindBootstrapManifest();
 
@@ -84,8 +116,6 @@ namespace Nexus.Editor
             EditorGUILayout.Space(15);
 
             DrawCustomRootSection();
-
-            EditorGUILayout.EndScrollView();
         }
 
         private void DrawSeparator()
@@ -336,6 +366,10 @@ namespace Nexus.Editor
             // 1. Create GameObject
             var go = new GameObject($"{contextName}Root");
             var root = go.AddComponent<Root>();
+            if (_parentRoot != null)
+            {
+                go.transform.SetParent(_parentRoot.transform);
+            }
 
             // 2. Create ContextData asset
             var contextData = ScriptableObject.CreateInstance<ContextData>();
@@ -730,6 +764,319 @@ namespace Nexus
     }}
 }}
 ";
+        }
+
+        // --- View & Mediator Generator Tab ---
+        private void DrawViewMediatorGenTab()
+        {
+            var headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 };
+            headerStyle.normal.textColor = Color.white;
+
+            GUILayout.Label("Generate View & Mediator", headerStyle);
+            EditorGUILayout.Space(5);
+
+            _viewName = EditorGUILayout.TextField("View Name", _viewName);
+
+            var sceneRoots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+            var rootNames = new string[sceneRoots.Length];
+            int selectedIndex = 0;
+            for (int i = 0; i < sceneRoots.Length; i++)
+            {
+                rootNames[i] = sceneRoots[i].gameObject.name;
+                if (sceneRoots[i] == _viewTargetRoot)
+                {
+                    selectedIndex = i;
+                }
+            }
+
+            if (sceneRoots.Length == 0)
+            {
+                EditorGUILayout.HelpBox("No active Roots found in scene. Create a Root first.", MessageType.Warning);
+                return;
+            }
+
+            int newIndex = EditorGUILayout.Popup("Target Root Context", selectedIndex, rootNames);
+            _viewTargetRoot = sceneRoots[newIndex];
+
+            _createViewGo = EditorGUILayout.Toggle("Sahnede GameObject Oluştur", _createViewGo);
+
+            EditorGUILayout.Space(10);
+
+            bool isValid = !string.IsNullOrWhiteSpace(_viewName);
+            if (!isValid)
+            {
+                EditorGUILayout.HelpBox("View Name cannot be empty.", MessageType.Warning);
+            }
+
+            EditorGUI.BeginDisabledGroup(!isValid);
+            if (GUILayout.Button("Generate View & Mediator", GUILayout.Height(30)))
+            {
+                GenerateViewAndMediator(_viewName, _viewTargetRoot, _createViewGo);
+            }
+            EditorGUI.EndDisabledGroup();
+        }
+
+        private void GenerateViewAndMediator(string viewName, Root targetRoot, bool createGo)
+        {
+            string contextName = targetRoot.ContextData != null ? targetRoot.ContextData.name.Replace("ContextData", "") : targetRoot.gameObject.name.Replace("Root", "");
+            string viewsDir = $"Assets/Scripts/Nexus/{contextName}/Views";
+
+            try
+            {
+                if (!Directory.Exists(viewsDir))
+                {
+                    Directory.CreateDirectory(viewsDir);
+                }
+
+                string viewPath = Path.Combine(viewsDir, $"{viewName}View.cs");
+                string mediatorPath = Path.Combine(viewsDir, $"{viewName}Mediator.cs");
+
+                if (File.Exists(viewPath) || File.Exists(mediatorPath))
+                {
+                    if (!EditorUtility.DisplayDialog("Overwrite Files?", $"Files for {viewName}View already exist. Do you want to overwrite them?", "Yes", "No"))
+                    {
+                        return;
+                    }
+                }
+
+                File.WriteAllText(viewPath, GetGenericViewBoilerplate(viewName, contextName));
+                File.WriteAllText(mediatorPath, GetGenericMediatorBoilerplate(viewName, contextName));
+
+                if (createGo)
+                {
+                    EditorPrefs.SetString("Nexus_PendingViewName", viewName);
+                    EditorPrefs.SetString("Nexus_PendingViewRootName", targetRoot.gameObject.name);
+                }
+
+                AssetDatabase.Refresh();
+
+                string goMsg = createGo ? " and queued GameObject creation post-compile" : "";
+                EditorUtility.DisplayDialog("Generated successfully", $"Successfully generated {viewName}View and {viewName}Mediator under {viewsDir}{goMsg}.", "OK");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Nexus] View/Mediator generation failed: {ex.Message}");
+                EditorUtility.DisplayDialog("Generation Error", $"Failed to generate View/Mediator: {ex.Message}", "OK");
+            }
+        }
+
+        private string GetGenericViewBoilerplate(string viewName, string contextName)
+        {
+            return $@"using Nexus.Core;
+using UnityEngine;
+
+namespace Nexus
+{{
+    [Mediator(typeof({viewName}Mediator))]
+    public class {viewName}View : View
+    {{
+        // Define your view events, fields and UI elements here
+
+        protected override void OnBind(IContext context)
+        {{
+            Debug.Log($""[{{nameof({viewName}View)}}] Bound to context {contextName}"");
+        }}
+
+        protected override void OnUnbind()
+        {{
+            Debug.Log($""[{{nameof({viewName}View)}}] Unbound"");
+        }}
+    }}
+}}
+";
+        }
+
+        private string GetGenericMediatorBoilerplate(string viewName, string contextName)
+        {
+            return $@"using Nexus.Core;
+using UnityEngine;
+
+namespace Nexus
+{{
+    public class {viewName}Mediator : Mediator<{viewName}View>
+    {{
+        protected override void OnBind()
+        {{
+            Debug.Log($""[{{nameof({viewName}Mediator)}}] Binding View to Model..."");
+        }}
+
+        protected override void OnUnbind()
+        {{
+            Debug.Log($""[{{nameof({viewName}Mediator)}}] Unbinding..."");
+        }}
+    }}
+}}
+";
+        }
+
+        // --- Clean Deletion Tab ---
+        private void DrawCleanDeletionTab()
+        {
+            var headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 };
+            headerStyle.normal.textColor = Color.white;
+
+            GUILayout.Label("Clean Deletion Tool", headerStyle);
+            EditorGUILayout.Space(5);
+
+            var sceneRoots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+            if (sceneRoots.Length == 0)
+            {
+                EditorGUILayout.HelpBox("No active Roots found in scene.", MessageType.Info);
+                return;
+            }
+
+            var rootNames = new string[sceneRoots.Length];
+            int selectedIndex = 0;
+            for (int i = 0; i < sceneRoots.Length; i++)
+            {
+                rootNames[i] = sceneRoots[i].gameObject.name;
+                if (sceneRoots[i] == _rootToDelete)
+                {
+                    selectedIndex = i;
+                }
+            }
+
+            int newIndex = EditorGUILayout.Popup("Root Context to Delete", selectedIndex, rootNames);
+            _rootToDelete = sceneRoots[newIndex];
+
+            EditorGUILayout.Space(10);
+            EditorGUILayout.HelpBox("WARNING: This will permanently delete:\n" +
+                                    "- The Root GameObject from the active scene.\n" +
+                                    "- The associated ContextData ScriptableObject.\n" +
+                                    "- The generated script directory Assets/Scripts/Nexus/<ContextName>/\n\n" +
+                                    "Make sure you have backed up your custom script changes before proceeding!", MessageType.Warning);
+
+            var buttonStyle = new GUIStyle(GUI.skin.button)
+            {
+                fontStyle = FontStyle.Bold,
+                fixedHeight = 30
+            };
+            buttonStyle.normal.textColor = new Color(1f, 0.3f, 0.3f);
+
+            if (GUILayout.Button("DELETE ROOT & ALL RELATED ASSETS", buttonStyle))
+            {
+                string contextName = _rootToDelete.ContextData != null ? _rootToDelete.ContextData.name.Replace("ContextData", "") : _rootToDelete.gameObject.name.Replace("Root", "");
+                if (EditorUtility.DisplayDialog("Confirm Clean Deletion", 
+                    $"Are you absolutely sure you want to delete context '{contextName}' and all its assets/GameObjects? This action cannot be fully undone.", 
+                    "Yes, Delete", "Cancel"))
+                  {
+                      DeleteRootContext(_rootToDelete);
+                  }
+            }
+        }
+
+        private void DeleteRootContext(Root root)
+        {
+            if (root == null) return;
+            try
+            {
+                var go = root.gameObject;
+                string contextName = root.ContextData != null ? root.ContextData.name.Replace("ContextData", "") : go.name.Replace("Root", "");
+
+                // 1. Delete ContextData Asset
+                if (root.ContextData != null)
+                {
+                    string assetPath = AssetDatabase.GetAssetPath(root.ContextData);
+                    if (!string.IsNullOrEmpty(assetPath))
+                    {
+                        AssetDatabase.DeleteAsset(assetPath);
+                        Debug.Log($"[Nexus] Deleted ContextData asset at: {assetPath}");
+                    }
+                }
+
+                // 2. Delete generated scripts directory or lifecycle script
+                string scriptsDir = $"Assets/Scripts/Nexus/{contextName}";
+                if (AssetDatabase.IsValidFolder(scriptsDir))
+                {
+                    AssetDatabase.DeleteAsset(scriptsDir);
+                    Debug.Log($"[Nexus] Deleted script directory: {scriptsDir}");
+                }
+                else
+                {
+                    string flatScriptPath = $"Assets/Scripts/Nexus/{contextName}Lifecycle.cs";
+                    if (File.Exists(flatScriptPath))
+                    {
+                        AssetDatabase.DeleteAsset(flatScriptPath);
+                        Debug.Log($"[Nexus] Deleted flat lifecycle script: {flatScriptPath}");
+                    }
+                }
+
+                // 3. Destroy GameObject in scene
+                Undo.DestroyObjectImmediate(go);
+                Debug.Log($"[Nexus] Destroyed Root GameObject '{go.name}'");
+
+                AssetDatabase.Refresh();
+                EditorUtility.DisplayDialog("Root Deleted", $"Successfully deleted context '{contextName}' and its related assets.", "OK");
+            }
+            catch (System.Exception ex)
+            {
+                Debug.LogError($"[Nexus] Failed to cleanly delete root: {ex.Message}");
+                EditorUtility.DisplayDialog("Deletion Error", $"Failed to delete root: {ex.Message}", "OK");
+            }
+        }
+    }
+
+    [InitializeOnLoad]
+    public static class NexusPostCompileViewCreator
+    {
+        static NexusPostCompileViewCreator()
+        {
+            EditorApplication.delayCall += CheckAndCreatePendingViewObject;
+        }
+
+        private static void CheckAndCreatePendingViewObject()
+        {
+            if (!EditorPrefs.HasKey("Nexus_PendingViewName")) return;
+
+            string viewName = EditorPrefs.GetString("Nexus_PendingViewName");
+            string rootName = EditorPrefs.GetString("Nexus_PendingViewRootName");
+            EditorPrefs.DeleteKey("Nexus_PendingViewName");
+            EditorPrefs.DeleteKey("Nexus_PendingViewRootName");
+
+            System.Type viewType = null;
+            foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.GetName().Name == "Assembly-CSharp" || assembly.GetName().Name == "com.nexus.core")
+                {
+                    viewType = assembly.GetType($"Nexus.{viewName}View");
+                    if (viewType != null) break;
+                }
+            }
+
+            if (viewType == null)
+            {
+                foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+                {
+                    viewType = assembly.GetType($"Nexus.{viewName}View");
+                    if (viewType != null) break;
+                }
+            }
+
+            if (viewType == null)
+            {
+                Debug.LogError($"[Nexus] Could not find compiled type 'Nexus.{viewName}View' after assembly reload.");
+                return;
+            }
+
+            GameObject parentGo = GameObject.Find(rootName);
+            if (parentGo == null)
+            {
+                var rootComp = GameObject.FindAnyObjectByType<Root>();
+                if (rootComp != null) parentGo = rootComp.gameObject;
+            }
+
+            var viewGo = new GameObject(viewName);
+            if (parentGo != null)
+            {
+                viewGo.transform.SetParent(parentGo.transform);
+            }
+            
+            var viewComponent = viewGo.AddComponent(viewType);
+            
+            Undo.RegisterCreatedObjectUndo(viewGo, $"Create {viewName} GameObject");
+            Selection.activeGameObject = viewGo;
+
+            Debug.Log($"[Nexus] Successfully created GameObject '{viewName}' with component '{viewType.Name}' attached under root '{parentGo?.name}'.");
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -16,9 +17,12 @@ namespace Nexus.Core
 
         [Header("Configuration")]
         [SerializeField] private ContextData contextData;
+        [SerializeField] private int initializationPriority = 0;
 
         public Context Context { get; private set; }
         public bool IsInitialized { get; private set; }
+        public int InitializationPriority => initializationPriority;
+        public ContextData ContextData => contextData;
 
         private void OnValidate()
         {
@@ -75,6 +79,45 @@ namespace Nexus.Core
                     if (!parentRoot.IsInitialized)
                     {
                         Debug.LogWarning($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Proceeding independently.");
+                    }
+                }
+
+                // Wait for sibling roots with higher priority to initialize (with timeout)
+                var allRoots = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+                var siblingsToWait = new List<Root>();
+                foreach (var r in allRoots)
+                {
+                    if (r == this) continue;
+                    if (r.parentRoot != this.parentRoot) continue;
+                    if (!r.gameObject.activeInHierarchy || !r.enabled) continue;
+
+                    bool runsBeforeUs = r.InitializationPriority > this.InitializationPriority;
+                    if (r.InitializationPriority == this.InitializationPriority)
+                    {
+                        if (string.Compare(r.gameObject.name, this.gameObject.name, StringComparison.Ordinal) < 0)
+                        {
+                            runsBeforeUs = true;
+                        }
+                    }
+
+                    if (runsBeforeUs)
+                    {
+                        siblingsToWait.Add(r);
+                    }
+                }
+
+                foreach (var sibling in siblingsToWait)
+                {
+                    int timeoutFrames = 900;
+                    while (sibling != null && !sibling.IsInitialized && timeoutFrames > 0)
+                    {
+                        await Awaitable.NextFrameAsync(Context.LifetimeToken);
+                        timeoutFrames--;
+                    }
+
+                    if (sibling != null && !sibling.IsInitialized)
+                    {
+                        Debug.LogWarning($"[Nexus] Root '{gameObject.name}' timed out waiting for sibling root '{sibling.gameObject.name}' to initialize. Proceeding independently.");
                     }
                 }
 

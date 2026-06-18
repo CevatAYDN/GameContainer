@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <!-- Generated file, do not modify, your changes will be overwritten (use AssetPostprocessor.OnGeneratedCSProject) -->
   <PropertyGroup>
     <BaseIntermediateOutputPath>Temp\obj\$(MSBuildProjectName)</BaseIntermediateOutputPath>
@@ -54,6 +54,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Packages\com.nexus.core\Editor\Graph\ContextGraphWindow.cs" />
+    <Compile Include="Packages\com.nexus.core\Editor\Inspector\NexusDataInspectorWindow.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Wizard\RootWizard.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Inspector\NexusInspectorWindow.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Explorer\SignalExplorerWindow.cs" />

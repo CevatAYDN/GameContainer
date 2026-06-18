@@ -248,6 +248,30 @@ namespace Nexus.Core
             return _resolvedSingletons;
         }
 
+        public Dictionary<Type, object> GetRegisteredSingletons()
+        {
+            var result = new Dictionary<Type, object>();
+            foreach (var kvp in _bindings)
+            {
+                if (kvp.Value.IsSingleton && kvp.Value.Instance != null)
+                {
+                    result[kvp.Key] = kvp.Value.Instance;
+                }
+            }
+            if (_parent != null)
+            {
+                var parentSingletons = _parent.GetRegisteredSingletons();
+                foreach (var kvp in parentSingletons)
+                {
+                    if (!result.ContainsKey(kvp.Key))
+                    {
+                        result[kvp.Key] = kvp.Value;
+                    }
+                }
+            }
+            return result;
+        }
+
         /// <summary>
         /// Nulls out all [Inject]-annotated reference fields and writable properties on the given instance.
         /// Used by CommandPool and ViewBinder to prepare objects for pooling reuse.
