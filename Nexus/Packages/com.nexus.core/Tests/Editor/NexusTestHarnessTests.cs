@@ -36,7 +36,7 @@ namespace Nexus.Editor.Tests
             }
         }
 
-        [SignalHandler(typeof(TestSignal))]
+        [SignalHandler(typeof(TestSignal), Priority = 1)]
         public class TestAsyncCommand : IAsyncCommand
         {
             [Inject] public TestModel Model;
