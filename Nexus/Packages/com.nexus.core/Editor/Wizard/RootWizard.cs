@@ -17,6 +17,7 @@ namespace Nexus.Editor
         private bool _assembliesFoldout = false;
         private Vector2 _assembliesScroll;
         private bool _generateLifecycleScript = false;
+        private bool _generateSampleArchitecture = false;
 
         [MenuItem("GameObject/Nexus/Create Root", false, 10)]
         [MenuItem("Window/Nexus/Root Wizard")]
@@ -50,6 +51,12 @@ namespace Nexus.Editor
                 }
             }
             _availableAssemblies.Sort();
+
+            // Pre-select Assembly-CSharp by default since most game project code lives there
+            if (_availableAssemblies.Contains("Assembly-CSharp"))
+            {
+                _selectedAssemblies.Add("Assembly-CSharp");
+            }
         }
 
         private void OnGUI()
@@ -206,6 +213,10 @@ namespace Nexus.Editor
             // Lifecycle template toggle
             EditorGUILayout.Space(5);
             _generateLifecycleScript = EditorGUILayout.Toggle("Create Lifecycle Template", _generateLifecycleScript);
+
+            EditorGUI.BeginDisabledGroup(!_generateLifecycleScript);
+            _generateSampleArchitecture = EditorGUILayout.Toggle("Create Architecture Boilerplate", _generateSampleArchitecture && _generateLifecycleScript);
+            EditorGUI.EndDisabledGroup();
 
             EditorGUI.indentLevel = 0;
 
@@ -365,8 +376,37 @@ namespace Nexus.Editor
                 {
                     Directory.CreateDirectory(scriptsDir);
                 }
-                string scriptPath = Path.Combine(scriptsDir, $"{contextName}Lifecycle.cs");
-                File.WriteAllText(scriptPath, GetLifecycleTemplateCode(contextName));
+                
+                string scriptPath;
+                if (_generateSampleArchitecture)
+                {
+                    string contextDir = Path.Combine(scriptsDir, contextName);
+                    string signalsDir = Path.Combine(contextDir, "Signals");
+                    string modelsDir = Path.Combine(contextDir, "Models");
+                    string commandsDir = Path.Combine(contextDir, "Commands");
+                    string viewsDir = Path.Combine(contextDir, "Views");
+
+                    Directory.CreateDirectory(contextDir);
+                    Directory.CreateDirectory(signalsDir);
+                    Directory.CreateDirectory(modelsDir);
+                    Directory.CreateDirectory(commandsDir);
+                    Directory.CreateDirectory(viewsDir);
+
+                    File.WriteAllText(Path.Combine(signalsDir, $"{contextName}Signals.cs"), GetSignalsBoilerplate(contextName));
+                    File.WriteAllText(Path.Combine(modelsDir, $"I{contextName}Model.cs"), GetModelInterfaceBoilerplate(contextName));
+                    File.WriteAllText(Path.Combine(modelsDir, $"{contextName}Model.cs"), GetModelImplementationBoilerplate(contextName));
+                    File.WriteAllText(Path.Combine(commandsDir, $"{contextName}Command.cs"), GetCommandBoilerplate(contextName));
+                    File.WriteAllText(Path.Combine(viewsDir, $"{contextName}View.cs"), GetViewBoilerplate(contextName));
+                    File.WriteAllText(Path.Combine(viewsDir, $"{contextName}Mediator.cs"), GetMediatorBoilerplate(contextName));
+
+                    scriptPath = Path.Combine(contextDir, $"{contextName}Lifecycle.cs");
+                    File.WriteAllText(scriptPath, GetLifecycleBoilerplateWithBindings(contextName));
+                }
+                else
+                {
+                    scriptPath = Path.Combine(scriptsDir, $"{contextName}Lifecycle.cs");
+                    File.WriteAllText(scriptPath, GetLifecycleTemplateCode(contextName));
+                }
                 Debug.Log($"[Nexus] Generated lifecycle template at {scriptPath}");
             }
 
@@ -377,7 +417,9 @@ namespace Nexus.Editor
             AssetDatabase.Refresh();
 
             string parentInfo = _parentRoot != null ? $" with Parent '{_parentRoot.gameObject.name}'" : "";
-            string lifecycleInfo = _generateLifecycleScript ? $"\n\nGenerated lifecycle class template at Assets/Scripts/Nexus/{contextName}Lifecycle.cs. It will be automatically discovered and bound by naming convention." : "";
+            string lifecycleInfo = _generateLifecycleScript ? 
+                (_generateSampleArchitecture ? $"\n\nGenerated full architecture folders and templates under Assets/Scripts/Nexus/{contextName}/" : $"\n\nGenerated lifecycle class template at Assets/Scripts/Nexus/{contextName}Lifecycle.cs.") : "";
+            
             EditorUtility.DisplayDialog("Root Created", 
                 $"Successfully created {go.name}{parentInfo} and registered ContextData asset at {path}.{lifecycleInfo}", 
                 "OK");
@@ -455,6 +497,238 @@ namespace Nexus.Samples
         }
     }
 }
+";
+        }
+
+        private string GetSignalsBoilerplate(string contextName)
+        {
+            return $@"namespace Nexus
+{{
+    // Simple struct signal with counter payload
+    public readonly struct {contextName}CounterSignal
+    {{
+        public readonly int Value;
+        public {contextName}CounterSignal(int value) => Value = value;
+    }}
+}}
+";
+        }
+
+        private string GetModelInterfaceBoilerplate(string contextName)
+        {
+            return $@"using System;
+
+namespace Nexus
+{{
+    public interface I{contextName}Model
+    {{
+        int Counter {{ get; }}
+        event Action<int> OnCounterChanged;
+        void Increment(int amount);
+    }}
+}}
+";
+        }
+
+        private string GetModelImplementationBoilerplate(string contextName)
+        {
+            return $@"using System;
+using UnityEngine;
+
+namespace Nexus
+{{
+    public class {contextName}Model : I{contextName}Model
+    {{
+        public int Counter {{ get; private set; }}
+        public event Action<int> OnCounterChanged;
+
+        public void Increment(int amount)
+        {{
+            Counter += amount;
+            Debug.Log($""[{{nameof({contextName}Model)}}] Counter changed to: {{Counter}}"");
+            OnCounterChanged?.Invoke(Counter);
+        }}
+    }}
+}}
+";
+        }
+
+        private string GetCommandBoilerplate(string contextName)
+        {
+            return $@"using Nexus.Core;
+using UnityEngine;
+
+namespace Nexus
+{{
+    // Command that handles the struct signal and updates the injected model
+    public class {contextName}IncrementCommand : ICommand
+    {{
+        [Inject] public I{contextName}Model Model {{ get; set; }}
+        [Inject] public {contextName}CounterSignal Signal {{ get; set; }}
+
+        public void Execute()
+        {{
+            Debug.Log($""[{{nameof({contextName}IncrementCommand)}}] Executing command with signal payload: {{Signal.Value}}"");
+            Model.Increment(Signal.Value);
+        }}
+    }}
+}}
+";
+        }
+
+        private string GetViewBoilerplate(string contextName)
+        {
+            return $@"using Nexus.Core;
+using UnityEngine;
+using UnityEngine.UI;
+
+namespace Nexus
+{{
+    // Automatically binds the view instance to its custom Mediator on context registration
+    [Mediator(typeof({contextName}Mediator))]
+    public class {contextName}View : View
+    {{
+        public event System.Action OnButtonClicked;
+
+        [Header(""UI References (Assign in Inspector)"")]
+        [SerializeField] private Button incrementButton;
+        [SerializeField] private Text counterText;
+
+        protected override void OnBind(IContext context)
+        {{
+            if (incrementButton != null)
+            {{
+                incrementButton.onClick.AddListener(() => OnButtonClicked?.Invoke());
+            }}
+        }}
+
+        protected override void OnUnbind()
+        {{
+            if (incrementButton != null)
+            {{
+                incrementButton.onClick.RemoveAllListeners();
+            }}
+        }}
+
+        [ContextMenu(""Simulate Button Click"")]
+        public void SimulateClick()
+        {{
+            OnButtonClicked?.Invoke();
+        }}
+
+        public void UpdateCounterText(int value)
+        {{
+            if (counterText != null)
+            {{
+                counterText.text = $""Counter: {{value}}"";
+            }}
+            else
+            {{
+                Debug.Log($""[{{nameof({contextName}View)}}] UI Counter updated to: {{value}}"");
+            }}
+        }}
+    }}
+}}
+";
+        }
+
+        private string GetMediatorBoilerplate(string contextName)
+        {
+            return $@"using Nexus.Core;
+using UnityEngine;
+
+namespace Nexus
+{{
+    public class {contextName}Mediator : Mediator<{contextName}View>
+    {{
+        [Inject] public I{contextName}Model Model {{ get; set; }}
+
+        protected override void OnBind()
+        {{
+            Debug.Log($""[{{nameof({contextName}Mediator)}}] Binding View to Model..."");
+
+            // Listen to model changes
+            Model.OnCounterChanged += OnModelCounterChanged;
+
+            // Initialize view state
+            View.UpdateCounterText(Model.Counter);
+
+            // Respond to user interaction
+            View.OnButtonClicked += OnViewButtonClicked;
+        }}
+
+        protected override void OnUnbind()
+        {{
+            Debug.Log($""[{{nameof({contextName}Mediator)}}] Unbinding..."");
+
+            if (Model != null)
+            {{
+                Model.OnCounterChanged -= OnModelCounterChanged;
+            }}
+
+            if (View != null)
+            {{
+                View.OnButtonClicked -= OnViewButtonClicked;
+            }}
+        }}
+
+        private void OnViewButtonClicked()
+        {{
+            Debug.Log($""[{{nameof({contextName}Mediator)}}] Button clicked on view! Dispatching counter signal..."");
+            SignalBus.Fire(new {contextName}CounterSignal(1));
+        }}
+
+        private void OnModelCounterChanged(int newValue)
+        {{
+            View.UpdateCounterText(newValue);
+        }}
+    }}
+}}
+";
+        }
+
+        private string GetLifecycleBoilerplateWithBindings(string contextName)
+        {
+            return $@"using System.Threading;
+using System.Threading.Tasks;
+using Nexus.Core;
+using UnityEngine;
+
+namespace Nexus
+{{
+    // Automatically discovered and bound by Nexus based on naming convention ({contextName}Lifecycle).
+    // No need to attach this to any GameObject!
+    public class {contextName}Lifecycle : IContextLifecycle
+    {{
+        public void OnConfigure(IContextBuilder builder)
+        {{
+            Debug.Log($""[{{nameof({contextName}Lifecycle)}}] Configuring architecture layers..."");
+
+            // 1. Bind Observable/Reactive Model
+            builder.BindModel<I{contextName}Model, {contextName}Model>();
+
+            // 2. Bind Command that reacts to the struct signal
+            builder.BindCommand<{contextName}CounterSignal, {contextName}IncrementCommand>();
+        }}
+
+        public ValueTask OnInitializeAsync(CancellationToken ct)
+        {{
+            // Async initialization logic
+            return default;
+        }}
+
+        public ValueTask OnStartAsync(CancellationToken ct)
+        {{
+            // Start logic (executed after initialization)
+            return default;
+        }}
+
+        public void OnDispose()
+        {{
+            Debug.Log($""[{{nameof({contextName}Lifecycle)}}] Context disposed."");
+        }}
+    }}
+}}
 ";
         }
     }
