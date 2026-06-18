@@ -404,16 +404,16 @@ namespace Nexus
             Debug.Log(""[{contextName}Lifecycle] Configuring context..."");
         }}
 
-        public async ValueTask OnInitializeAsync(CancellationToken ct)
+        public ValueTask OnInitializeAsync(CancellationToken ct)
         {{
             // Async initialization logic
-            await ValueTask.CompletedTask;
+            return default;
         }}
 
-        public async ValueTask OnStartAsync(CancellationToken ct)
+        public ValueTask OnStartAsync(CancellationToken ct)
         {{
             // Start logic (executed after initialization)
-            await ValueTask.CompletedTask;
+            return default;
         }}
 
         public void OnDispose()

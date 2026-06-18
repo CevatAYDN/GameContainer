@@ -112,8 +112,8 @@ namespace Nexus
             builder.BindModel<IPlayerModel, PlayerModel>();
         }
 
-        public ValueTask OnInitializeAsync(CancellationToken ct) => ValueTask.CompletedTask;
-        public ValueTask OnStartAsync(CancellationToken ct) => ValueTask.CompletedTask;
+        public ValueTask OnInitializeAsync(CancellationToken ct) => default;
+        public ValueTask OnStartAsync(CancellationToken ct) => default;
         public void OnDispose() { }
     }
 }
