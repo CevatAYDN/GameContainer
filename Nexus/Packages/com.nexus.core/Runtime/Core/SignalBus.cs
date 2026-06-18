@@ -238,10 +238,10 @@ namespace Nexus.Core
             try
             {
                 // Run plugins' SignalInterceptors (snapshot to avoid modification during iteration)
-                object boxedSignal = signal;
                 bool interceptorCancelled = false;
                 if (_context is Context ctx && ctx.Plugins.Count > 0)
                 {
+                    object boxedSignal = signal;
                     var pluginSnapshot = ctx.GetPluginsSnapshot();
                     foreach (var p in pluginSnapshot)
                     {
@@ -377,10 +377,10 @@ namespace Nexus.Core
                 var type = typeof(T);
 
                 // Run plugins' SignalInterceptors (snapshot to avoid modification during iteration)
-                object boxedSignal = signal;
                 bool interceptorCancelled = false;
                 if (_context is Context ctx && ctx.Plugins.Count > 0)
                 {
+                    object boxedSignal = signal;
                     var pluginSnapshot = ctx.GetPluginsSnapshot();
                     foreach (var p in pluginSnapshot)
                     {
@@ -490,7 +490,102 @@ namespace Nexus.Core
             }
         }
 
-        private void ExecuteCommand(CommandHandlerInfo handler, object signal)
+        private static class SignalInjector<TSignal> where TSignal : struct
+        {
+            private static readonly Dictionary<Type, Action<object, TSignal>> s_setters = new();
+            private static readonly Dictionary<Type, MemberInfo> s_memberCache = new();
+            private static readonly Dictionary<Type, bool> s_hasMember = new();
+
+            public static void Inject(object command, TSignal signal)
+            {
+                var commandType = command.GetType();
+                
+                if (!s_hasMember.TryGetValue(commandType, out var hasMember))
+                {
+                    MemberInfo foundMember = null;
+                    var fields = commandType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    foreach (var field in fields)
+                    {
+                        if (field.FieldType == typeof(TSignal) || (field.Name.Equals("_signal", StringComparison.OrdinalIgnoreCase) && field.FieldType.IsAssignableFrom(typeof(TSignal))))
+                        {
+                            foundMember = field;
+                            break;
+                        }
+                    }
+
+                    if (foundMember == null)
+                    {
+                        var properties = commandType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        foreach (var prop in properties)
+                        {
+                            if (prop.PropertyType == typeof(TSignal) && prop.CanWrite)
+                            {
+                                foundMember = prop;
+                                break;
+                            }
+                        }
+                    }
+
+                    hasMember = foundMember != null;
+                    s_hasMember[commandType] = hasMember;
+                    if (hasMember)
+                    {
+                        s_memberCache[commandType] = foundMember;
+                        var setter = CreateSetter(commandType, foundMember);
+                        if (setter != null)
+                        {
+                            s_setters[commandType] = setter;
+                        }
+                    }
+                }
+
+                if (hasMember)
+                {
+                    if (s_setters.TryGetValue(commandType, out var compiledSetter))
+                    {
+                        compiledSetter(command, signal);
+                    }
+                    else
+                    {
+                        var member = s_memberCache[commandType];
+                        if (member is FieldInfo f)
+                            f.SetValue(command, signal);
+                        else if (member is PropertyInfo p)
+                            p.SetValue(command, signal);
+                    }
+                }
+            }
+
+            private static Action<object, TSignal> CreateSetter(Type commandType, MemberInfo member)
+            {
+                try
+                {
+                    var targetExp = System.Linq.Expressions.Expression.Parameter(typeof(object), "target");
+                    var valueExp = System.Linq.Expressions.Expression.Parameter(typeof(TSignal), "value");
+                    var castTarget = System.Linq.Expressions.Expression.Convert(targetExp, commandType);
+                    
+                    System.Linq.Expressions.Expression memberExp = null;
+                    if (member is FieldInfo f)
+                        memberExp = System.Linq.Expressions.Expression.Field(castTarget, f);
+                    else if (member is PropertyInfo p)
+                        memberExp = System.Linq.Expressions.Expression.Property(castTarget, p);
+
+                    if (memberExp != null)
+                    {
+                        var assignExp = System.Linq.Expressions.Expression.Assign(memberExp, valueExp);
+                        var lambda = System.Linq.Expressions.Expression.Lambda<Action<object, TSignal>>(assignExp, targetExp, valueExp);
+                        return lambda.Compile();
+                    }
+                }
+                catch
+                {
+                    // Fallback to reflection
+                }
+                return null;
+            }
+        }
+
+        private void ExecuteCommand<TSignal>(CommandHandlerInfo handler, TSignal signal) where TSignal : struct
         {
             int retryCount = 0;
             bool shouldRun = true;
@@ -506,11 +601,16 @@ namespace Nexus.Core
                 {
                     command = _poolManager.GetCommand(handler.CommandType);
                     _container.Inject(command);
-                    InjectSignal(command, signal);
+                    SignalInjector<TSignal>.Inject(command, signal);
 
                     if (command is ICommand syncCmd)
                     {
                         ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                    }
+                    else if (command is IAsyncCommand asyncCmd)
+                    {
+                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                        ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct)).AsTask().GetAwaiter().GetResult();
                     }
                     shouldRun = false; // completed successfully
 #if NEXUS_DEBUG
@@ -537,6 +637,134 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
                     s_CommandMarker.End();
 #endif
+                    if (command != null)
+                    {
+                        _poolManager.ReturnCommand(handler.CommandType, command);
+                    }
+                }
+            }
+        }
+
+        private void ExecuteCommand(CommandHandlerInfo handler, object signal)
+        {
+            int retryCount = 0;
+            bool shouldRun = true;
+
+            while (shouldRun)
+            {
+#if NEXUS_DEBUG
+                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
+                s_CommandMarker.Begin();
+#endif
+                object command = null;
+                try
+                {
+                    command = _poolManager.GetCommand(handler.CommandType);
+                    _container.Inject(command);
+                    InjectSignal(command, signal);
+
+                    if (command is ICommand syncCmd)
+                    {
+                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                    }
+                    else if (command is IAsyncCommand asyncCmd)
+                    {
+                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                        ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct)).AsTask().GetAwaiter().GetResult();
+                    }
+                    shouldRun = false; // completed successfully
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
+#endif
+                }
+                catch (Exception ex)
+                {
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
+                    var action = HandleCommandErrorWithDecision(ex, handler.CommandType, signal, ref retryCount);
+                    if (action == RecoveryAction.Retry)
+                    {
+                        retryCount++;
+                    }
+                    else
+                    {
+                        shouldRun = false;
+                    }
+                }
+                finally
+                {
+#if NEXUS_DEBUG
+                    s_CommandMarker.End();
+#endif
+                    if (command != null)
+                    {
+                        _poolManager.ReturnCommand(handler.CommandType, command);
+                    }
+                }
+            }
+        }
+
+        private async ValueTask ExecuteCommandAsync<TSignal>(CommandHandlerInfo handler, TSignal signal, CancellationToken ct) where TSignal : struct
+        {
+            int retryCount = 0;
+            bool shouldRun = true;
+
+            while (shouldRun)
+            {
+#if NEXUS_DEBUG
+                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
+                s_CommandMarker.Begin();
+#endif
+                object command = null;
+                bool inFlightIncremented = false;
+                try
+                {
+                    var count = Interlocked.Increment(ref _inFlightAsyncCommands);
+                    if (count > MaxInFlightAsyncCommands)
+                    {
+                        Interlocked.Decrement(ref _inFlightAsyncCommands);
+                        throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
+                    }
+                    inFlightIncremented = true;
+
+                    command = _poolManager.GetCommand(handler.CommandType);
+                    _container.Inject(command);
+                    SignalInjector<TSignal>.Inject(command, signal);
+
+                    if (command is IAsyncCommand asyncCmd)
+                    {
+                        await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                    }
+                    shouldRun = false; // success
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
+#endif
+                }
+                catch (Exception ex)
+                {
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
+                    var action = await HandleCommandErrorWithDecisionAsync(ex, handler.CommandType, signal, retryCount, ct);
+                    if (action == RecoveryAction.Retry)
+                    {
+                        retryCount++;
+                    }
+                    else
+                    {
+                        shouldRun = false;
+                    }
+                }
+                finally
+                {
+#if NEXUS_DEBUG
+                    s_CommandMarker.End();
+#endif
+                    if (inFlightIncremented)
+                    {
+                        Interlocked.Decrement(ref _inFlightAsyncCommands);
+                    }
                     if (command != null)
                     {
                         _poolManager.ReturnCommand(handler.CommandType, command);
@@ -630,7 +858,6 @@ namespace Nexus.Core
                 return;
             }
 
-            // Cache miss — reflect once per (command type, signal type) pair
             var fields = commandType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             foreach (var field in fields)
             {
@@ -848,6 +1075,7 @@ namespace Nexus.Core
                     
                     if (decision.Action == RecoveryAction.Skip)
                     {
+                        Fire(failedSignal);
                         return RecoveryAction.Skip;
                     }
                     if (decision.Action == RecoveryAction.Abort)
@@ -910,6 +1138,7 @@ namespace Nexus.Core
                     
                     if (decision.Action == RecoveryAction.Skip)
                     {
+                        Fire(failedSignal);
                         return RecoveryAction.Skip;
                     }
                     if (decision.Action == RecoveryAction.Abort)

@@ -115,27 +115,37 @@ namespace Nexus.Tests
         [Test]
         public void SteadyState_HasZeroGCAllocations()
         {
-            // 1. Warm up the JIT compiler and pre-warm command pools
-            for (int i = 0; i < 100; i++)
+            long allocatedBytes = 0;
+
+            // Run the GC tracking in a dedicated background thread to isolate it 
+            // from Unity editor loop allocations on the main thread.
+            var thread = new Thread(() =>
             {
-                _signalBus.Fire(new PerfSignal(i));
-            }
+                // 1. Warm up the JIT compiler and pre-warm command pools
+                for (int i = 0; i < 100; i++)
+                {
+                    _signalBus.Fire(new PerfSignal(i));
+                }
 
-            // 2. Perform a garbage collection to start from a clean slate
-            System.GC.Collect();
-            System.GC.WaitForPendingFinalizers();
-            System.GC.Collect();
+                // 2. Perform a garbage collection to start from a clean slate
+                System.GC.Collect();
+                System.GC.WaitForPendingFinalizers();
+                System.GC.Collect();
 
-            long startAllocations = System.GC.GetTotalMemory(false);
+                long startAllocations = System.GC.GetAllocatedBytesForCurrentThread();
 
-            // 3. Execute 5000 dispatches in steady-state
-            for (int i = 0; i < 5000; i++)
-            {
-                _signalBus.Fire(new PerfSignal(i));
-            }
+                // 3. Execute 5000 dispatches in steady-state
+                for (int i = 0; i < 5000; i++)
+                {
+                    _signalBus.Fire(new PerfSignal(i));
+                }
 
-            long endAllocations = System.GC.GetTotalMemory(false);
-            long allocatedBytes = endAllocations - startAllocations;
+                long endAllocations = System.GC.GetAllocatedBytesForCurrentThread();
+                allocatedBytes = endAllocations - startAllocations;
+            });
+
+            thread.Start();
+            thread.Join();
 
             // In some environments, JIT or runtime threads might allocate a tiny bit of background memory.
             // We assert that allocations are extremely minimal (e.g. less than 128 bytes total for 5000 dispatches), 
