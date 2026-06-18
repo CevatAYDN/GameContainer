@@ -10,58 +10,7 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
-    [Preserve]
-    public class CommandHandlerInfo
-    {
-        public Type CommandType { get; }
-        public ExecutionMode Mode { get; }
-        public int Priority { get; }
-        public bool IsAsync { get; }
 
-        public CommandHandlerInfo(Type commandType, ExecutionMode mode, int priority, bool isAsync)
-        {
-            CommandType = commandType;
-            Mode = mode;
-            Priority = priority;
-            IsAsync = isAsync;
-        }
-    }
-
-    public class CompositeTriggerState
-    {
-        public Type CommandType { get; }
-        public Type[] RequiredSignals { get; }
-        public bool OneShot { get; }
-        public int Priority { get; }
-        public ulong CurrentMask { get; set; }
-        public ulong TargetMask { get; }
-        public bool IsCompleted { get; set; }
-
-        public CompositeTriggerState(Type commandType, Type[] requiredSignals, bool oneShot, int priority)
-        {
-            CommandType = commandType;
-            RequiredSignals = requiredSignals;
-            OneShot = oneShot;
-            Priority = priority;
-            TargetMask = (1UL << requiredSignals.Length) - 1;
-            CurrentMask = 0;
-            IsCompleted = false;
-        }
-    }
-
-    public readonly struct CommandFailedSignal
-    {
-        public readonly Exception Exception;
-        public readonly Type SourceCommand;
-        public readonly object SourceSignal;
-
-        public CommandFailedSignal(Exception exception, Type sourceCommand, object sourceSignal)
-        {
-            Exception = exception;
-            SourceCommand = sourceCommand;
-            SourceSignal = sourceSignal;
-        }
-    }
 
     [Preserve]
     public class SignalBus : ISignalBus, IDisposable
@@ -1074,70 +1023,4 @@ namespace Nexus.Core
         }
     }
 
-    // Concrete signal subscription implementations
-    public class SignalSubscription<T> : ISignalSubscription where T : struct
-    {
-        private readonly Action<T> _handler;
-        private readonly Action _onDispose;
-        public bool IsActive { get; private set; } = true;
-        public CancellationToken Lifetime { get; }
-        private CancellationTokenRegistration _registration;
-
-        public SignalSubscription(Action<T> handler, CancellationToken ct, Action onDispose)
-        {
-            _handler = handler;
-            Lifetime = ct;
-            _onDispose = onDispose;
-            _registration = ct.Register(Dispose);
-        }
-
-        public void Invoke(T signal)
-        {
-            if (IsActive && !Lifetime.IsCancellationRequested)
-            {
-                _handler(signal);
-            }
-        }
-
-        public void Dispose()
-        {
-            if (!IsActive) return;
-            IsActive = false;
-            _registration.Dispose();
-            _onDispose?.Invoke();
-        }
-    }
-
-    public class AsyncSignalSubscription<T> : ISignalSubscription where T : struct
-    {
-        private readonly Func<T, CancellationToken, ValueTask> _handler;
-        private readonly Action _onDispose;
-        public bool IsActive { get; private set; } = true;
-        public CancellationToken Lifetime { get; }
-        private CancellationTokenRegistration _registration;
-
-        public AsyncSignalSubscription(Func<T, CancellationToken, ValueTask> handler, CancellationToken ct, Action onDispose)
-        {
-            _handler = handler;
-            Lifetime = ct;
-            _onDispose = onDispose;
-            _registration = ct.Register(Dispose);
-        }
-
-        public async ValueTask InvokeAsync(T signal, CancellationToken ct)
-        {
-            if (IsActive && !Lifetime.IsCancellationRequested && !ct.IsCancellationRequested)
-            {
-                await _handler(signal, ct);
-            }
-        }
-
-        public void Dispose()
-        {
-            if (!IsActive) return;
-            IsActive = false;
-            _registration.Dispose();
-            _onDispose?.Invoke();
-        }
-    }
 }

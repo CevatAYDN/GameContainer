@@ -154,7 +154,7 @@ namespace Nexus.Editor
             _scopeTag = EditorGUILayout.TextField("Scope Tag", _scopeTag);
 
             // Parent Root Dropdown selection
-            var sceneRoots = GameObject.FindObjectsOfType<Root>();
+            var sceneRoots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
             var rootNames = GetSceneRootNames(sceneRoots);
             int selectedIndex = 0;
             if (_parentRoot != null)
@@ -377,7 +377,7 @@ namespace Nexus.Editor
             AssetDatabase.Refresh();
 
             string parentInfo = _parentRoot != null ? $" with Parent '{_parentRoot.gameObject.name}'" : "";
-            string lifecycleInfo = _generateLifecycleScript ? "\nGenerated boilerplate for IContextLifecycle. Attach it to this Root once compilation finishes." : "";
+            string lifecycleInfo = _generateLifecycleScript ? $"\n\nGenerated lifecycle class template at Assets/Scripts/Nexus/{contextName}Lifecycle.cs. It will be automatically discovered and bound by naming convention." : "";
             EditorUtility.DisplayDialog("Root Created", 
                 $"Successfully created {go.name}{parentInfo} and registered ContextData asset at {path}.{lifecycleInfo}", 
                 "OK");
@@ -394,8 +394,9 @@ using UnityEngine;
 
 namespace Nexus
 {{
-    // Attach this component to the {contextName}Root GameObject to participate in the Context lifecycle.
-    public class {contextName}Lifecycle : MonoBehaviour, IContextLifecycle
+    // Automatically discovered and bound by Nexus based on naming convention ({contextName}Lifecycle).
+    // No need to attach this to any GameObject!
+    public class {contextName}Lifecycle : IContextLifecycle
     {{
         public void OnConfigure(IContextBuilder builder)
         {{

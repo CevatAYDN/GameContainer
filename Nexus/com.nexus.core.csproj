@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <!-- Generated file, do not modify, your changes will be overwritten (use AssetPostprocessor.OnGeneratedCSProject) -->
   <PropertyGroup>
     <BaseIntermediateOutputPath>Temp\obj\$(MSBuildProjectName)</BaseIntermediateOutputPath>
@@ -74,6 +74,10 @@
     <Compile Include="Packages\com.nexus.core\Runtime\Queue\HybridQueue.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Testing\NexusTestContext.cs" />
     <Compile Include="Packages\com.nexus.core\Runtime\Core\NexusRuntime.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Core\CommandHandlerInfo.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Core\CompositeTriggerState.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Core\CommandFailedSignal.cs" />
+    <Compile Include="Packages\com.nexus.core\Runtime\Core\SignalSubscriptions.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Packages\com.nexus.core\Runtime\link.xml" />

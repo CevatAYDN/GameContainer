@@ -75,6 +75,27 @@ namespace Nexus.Core
         {
             var builder = new ContextBuilder(Container, SignalBusInternal);
             
+            // Auto-discover lifecycle class if not explicitly registered as a component
+            if (!Container.IsRegistered(typeof(IContextLifecycle)))
+            {
+                var lifecycleType = FindLifecycleTypeByConvention();
+                if (lifecycleType != null)
+                {
+                    try
+                    {
+                        var instance = Activator.CreateInstance(lifecycleType) as IContextLifecycle;
+                        if (instance != null)
+                        {
+                            Container.BindInstance<IContextLifecycle>(instance);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        UnityEngine.Debug.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
+                    }
+                }
+            }
+
             // Call user lifecycle OnConfigure if registered
             if (Container.IsRegistered(typeof(IContextLifecycle)))
             {
@@ -84,6 +105,52 @@ namespace Nexus.Core
 
             // Scan and register attributes
             ScanAssembliesAndRegister(builder);
+        }
+
+        private Type FindLifecycleTypeByConvention()
+        {
+            if (string.IsNullOrEmpty(ScopeTag)) return null;
+
+            var assemblies = new List<Assembly>();
+            if (_contextData == null || _contextData.AssemblyScopes == null || _contextData.AssemblyScopes.Length == 0)
+            {
+                assemblies.Add(Assembly.GetExecutingAssembly());
+            }
+            else
+            {
+                foreach (var scopeName in _contextData.AssemblyScopes)
+                {
+                    try
+                    {
+                        var assembly = Assembly.Load(scopeName);
+                        if (assembly != null) assemblies.Add(assembly);
+                    }
+                    catch { }
+                }
+            }
+
+            string targetName1 = $"{ScopeTag}Lifecycle";
+            string targetName2 = $"{ScopeTag}ContextLifecycle";
+
+            foreach (var assembly in assemblies)
+            {
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.IsClass && !type.IsAbstract && typeof(IContextLifecycle).IsAssignableFrom(type))
+                        {
+                            if (string.Equals(type.Name, targetName1, StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(type.Name, targetName2, StringComparison.OrdinalIgnoreCase))
+                            {
+                                return type;
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+            return null;
         }
 
         private void ScanAssembliesAndRegister(ContextBuilder builder)
