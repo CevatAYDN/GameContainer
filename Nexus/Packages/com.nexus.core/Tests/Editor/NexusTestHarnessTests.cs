@@ -36,6 +36,19 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        [SignalHandler(typeof(TestSignal))]
+        public class TestAsyncCommand : IAsyncCommand
+        {
+            [Inject] public TestModel Model;
+            [Inject] public TestSignal Signal;
+
+            public async ValueTask ExecuteAsync(CancellationToken ct)
+            {
+                await Task.Yield();
+                Model.Value += Signal.Value * 2;
+            }
+        }
+
         [Test]
         public void CreateContext_CreatesValidContext()
         {
@@ -106,6 +119,124 @@ namespace Nexus.Editor.Tests
             {
                 testContext.Dispatch(new UnregisteredSignal());
                 Assert.IsFalse(testContext.SignalWasDispatched<UnregisteredSignal>());
+            }
+        }
+
+        [Test]
+        public void CreateContext_WithScopeTag_CreatesScopeTag()
+        {
+            using (var testContext = NexusTestHarness.CreateContext("CustomScope"))
+            {
+                Assert.AreEqual("CustomScope", testContext.Context.ScopeTag);
+            }
+        }
+
+        [Test]
+        public void CreateChildContext_CreatesValidChildContext()
+        {
+            using (var parent = NexusTestHarness.CreateContext("ParentScope"))
+            {
+                using (var child = NexusTestHarness.CreateChildContext(parent, "ChildScope"))
+                {
+                    Assert.AreEqual("ChildScope", child.Context.ScopeTag);
+                    Assert.AreSame(parent.Context, child.Context.Parent);
+                }
+            }
+        }
+
+        [Test]
+        public void CreateContext_WithBuilderAction_BindsProperly()
+        {
+            using (var testContext = NexusTestHarness.CreateContext(builder =>
+            {
+                builder.BindModel<TestModel>();
+            }))
+            {
+                var model = testContext.GetModel<TestModel>();
+                Assert.IsNotNull(model);
+            }
+        }
+
+        [Test]
+        public void RegisterCommand_CustomHelper_Works()
+        {
+            using (var testContext = NexusTestHarness.CreateContext())
+            {
+                testContext.Register<TestModel>();
+                testContext.RegisterCommand<TestCommand>();
+
+                var model = testContext.GetModel<TestModel>();
+                testContext.Dispatch(new TestSignal(10));
+                Assert.AreEqual(10, model.Value);
+            }
+        }
+
+        [Test]
+        public async Task RegisterAsyncCommand_CustomHelper_Works()
+        {
+            using (var testContext = NexusTestHarness.CreateContext())
+            {
+                testContext.Register<TestModel>();
+                testContext.RegisterAsyncCommand<TestAsyncCommand>();
+
+                var model = testContext.GetModel<TestModel>();
+                await testContext.DispatchAsync(new TestSignal(5));
+                Assert.AreEqual(10, model.Value);
+            }
+        }
+
+        [Test]
+        public void GetDispatchedSignalCount_TracksCount()
+        {
+            using (var testContext = NexusTestHarness.CreateContext())
+            {
+                testContext.Register<TestSignal>();
+                Assert.AreEqual(0, testContext.GetDispatchedSignalCount<TestSignal>());
+
+                testContext.Dispatch(new TestSignal(1));
+                testContext.Dispatch(new TestSignal(2));
+
+                Assert.AreEqual(2, testContext.GetDispatchedSignalCount<TestSignal>());
+            }
+        }
+
+        [Test]
+        public void ClearDispatchedSignals_ClearsSignals()
+        {
+            using (var testContext = NexusTestHarness.CreateContext())
+            {
+                testContext.Register<TestSignal>();
+                testContext.Dispatch(new TestSignal(1));
+                Assert.AreEqual(1, testContext.GetDispatchedSignalCount<TestSignal>());
+
+                testContext.ClearDispatchedSignals();
+                Assert.AreEqual(0, testContext.GetDispatchedSignalCount<TestSignal>());
+            }
+        }
+
+        [Test]
+        public void AssertSignalDispatched_ThrowsIfNotDispatched()
+        {
+            using (var testContext = NexusTestHarness.CreateContext())
+            {
+                testContext.Register<TestSignal>();
+                Assert.Throws<UnityEngine.Assertions.AssertionException>(() => testContext.AssertSignalDispatched<TestSignal>());
+
+                testContext.Dispatch(new TestSignal(1));
+                Assert.DoesNotThrow(() => testContext.AssertSignalDispatched<TestSignal>());
+            }
+        }
+
+        [Test]
+        public void AssertSignalNotDispatched_ThrowsIfDispatched()
+        {
+            using (var testContext = NexusTestHarness.CreateContext())
+            {
+                testContext.Register<TestSignal>();
+                Assert.DoesNotThrow(() => testContext.AssertSignalNotDispatched<TestSignal>());
+
+                testContext.Dispatch(new TestSignal(1));
+                Assert.Throws<UnityEngine.Assertions.AssertionException>(() => testContext.AssertSignalNotDispatched<TestSignal>());
             }
         }
     }

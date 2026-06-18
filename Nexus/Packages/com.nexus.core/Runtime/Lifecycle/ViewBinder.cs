@@ -22,7 +22,7 @@ namespace Nexus.Core
         {
             if (_isBound) return;
             var root = GetComponentInParent<Root>();
-            if (root != null)
+            if (root != null && root.Context != null)
             {
                 root.Context.RegisterView(this);
             }
@@ -30,7 +30,7 @@ namespace Nexus.Core
             {
                 // Fallback: find nearest active root
                 var fallbackRoot = FindAnyObjectByType<Root>();
-                if (fallbackRoot != null)
+                if (fallbackRoot != null && fallbackRoot.Context != null)
                 {
                     fallbackRoot.Context.RegisterView(this);
                 }

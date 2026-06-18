@@ -56,6 +56,7 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
         private static int s_globalEventIdCounter = 0;
         private static int s_ringBufferIndex = -1;
+        private static int s_totalEventsWritten = 0;
 
         [ThreadStatic]
         private static int s_currentActiveEventId;
@@ -80,6 +81,7 @@ namespace Nexus.Core
             s_currentActiveEventId = -1;
             s_ringBufferIndex = -1;
             s_globalEventIdCounter = 0;
+            s_totalEventsWritten = 0;
 #endif
         }
 
@@ -113,8 +115,12 @@ namespace Nexus.Core
 
             int parentId = s_currentActiveEventId;
             int eventId = Interlocked.Increment(ref s_globalEventIdCounter);
-            int index = Interlocked.Increment(ref s_ringBufferIndex) % MaxEvents;
-            if (index < 0) index = 0;
+            
+            // Advance ring buffer index with proper wrapping to prevent int overflow
+            s_ringBufferIndex = (s_ringBufferIndex + 1) % MaxEvents;
+            if (s_ringBufferIndex < 0) s_ringBufferIndex = 0;
+            s_totalEventsWritten++;
+            int index = s_ringBufferIndex;
 
             s_parentStack.Push((s_currentActiveEventId, index));
             s_currentActiveEventId = eventId;
@@ -166,17 +172,19 @@ namespace Nexus.Core
         {
 #if NEXUS_DEBUG
             var events = new List<TraceEvent>();
-            int lastIndex = s_ringBufferIndex;
-            if (lastIndex == -1)
+            if (s_totalEventsWritten == 0)
             {
                 count = 0;
                 return Array.Empty<TraceEvent>();
             }
 
-            int start = Math.Max(0, lastIndex - MaxEvents + 1);
-            for (int i = start; i <= lastIndex; i++)
+            int available = Math.Min(s_totalEventsWritten, MaxEvents);
+            int start = s_ringBufferIndex - available + 1;
+            if (start < 0) start += MaxEvents;
+
+            for (int i = 0; i < available; i++)
             {
-                var idx = i % MaxEvents;
+                int idx = (start + i) % MaxEvents;
                 if (s_ringBuffer[idx].Id > 0)
                 {
                     events.Add(s_ringBuffer[idx]);

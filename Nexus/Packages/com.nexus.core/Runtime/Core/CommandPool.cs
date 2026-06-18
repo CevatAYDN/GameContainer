@@ -11,11 +11,13 @@ namespace Nexus.Core
         private readonly Type _commandType;
         private readonly Func<object> _factory;
         private readonly Stack<object> _pool = new();
+        private readonly int _maxSize;
 
-        public CommandPool(Type commandType, Func<object> factory, int initialSize = 0)
+        public CommandPool(Type commandType, Func<object> factory, int initialSize = 0, int maxSize = 64)
         {
             _commandType = commandType;
             _factory = factory;
+            _maxSize = maxSize;
 
             for (int i = 0; i < initialSize; i++)
             {
@@ -37,7 +39,12 @@ namespace Nexus.Core
             if (command == null) return;
             
             Cleanup(command);
-            _pool.Push(command);
+            
+            // Guard: don't grow pool beyond max size
+            if (_pool.Count < _maxSize)
+            {
+                _pool.Push(command);
+            }
         }
 
         private void Cleanup(object command)

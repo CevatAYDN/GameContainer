@@ -95,11 +95,15 @@ namespace Nexus.Core
             {
                 // Cancelled, dispose context safely
                 Context.Dispose();
+                Context = null;
+                IsInitialized = false;
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[Nexus] Root initialization failed: {ex.Message}\n{ex.StackTrace}");
                 Context.Dispose();
+                Context = null;
+                IsInitialized = false;
             }
         }
 

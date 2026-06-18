@@ -63,7 +63,18 @@ namespace Nexus.Editor
             _scrollView.style.paddingBottom = 15;
             root.Add(_scrollView);
 
+            // Schedule auto-refresh every 1.0s in Play Mode
+            root.schedule.Execute(OnScheduledRefresh).Every(1000);
+
             RebuildGraph();
+        }
+
+        private void OnScheduledRefresh()
+        {
+            if (Application.isPlaying)
+            {
+                RebuildGraph();
+            }
         }
 
         private void RebuildGraph()
@@ -140,11 +151,15 @@ namespace Nexus.Editor
             header.style.borderBottomColor = new StyleColor(new Color(0.22f, 0.22f, 0.25f));
             header.style.paddingBottom = 6;
 
+            var titleContainer = new VisualElement();
+            titleContainer.style.flexDirection = FlexDirection.Row;
+            titleContainer.style.alignItems = Align.Center;
+
             var title = new Label(ctx.ScopeTag ?? "Context");
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.fontSize = 13;
             title.style.color = new StyleColor(new Color(0.3f, 0.8f, 1f));
-            header.Add(title);
+            titleContainer.Add(title);
 
             if (ctx.Parent != null)
             {
@@ -152,7 +167,57 @@ namespace Nexus.Editor
                 var parentTag = new Label($" (Parent: {parentTagText})");
                 parentTag.style.fontSize = 10;
                 parentTag.style.color = Color.gray;
-                header.Add(parentTag);
+                titleContainer.Add(parentTag);
+            }
+
+            int handlerCount = 0;
+            if (ctx.SignalBusInternal != null && ctx.SignalBusInternal.CommandHandlers != null)
+            {
+                foreach (var kvp in ctx.SignalBusInternal.CommandHandlers)
+                {
+                    handlerCount += kvp.Value.Count;
+                }
+            }
+
+            var handlerPill = new Label($"{handlerCount} Handlers") {
+                style = {
+                    fontSize = 9,
+                    backgroundColor = new StyleColor(new Color(0.2f, 0.35f, 0.2f)),
+                    color = new StyleColor(new Color(0.6f, 1f, 0.6f)),
+                    paddingLeft = 4,
+                    paddingRight = 4,
+                    paddingTop = 1,
+                    paddingBottom = 1,
+                    marginLeft = 8,
+                    borderTopLeftRadius = 3,
+                    borderTopRightRadius = 3,
+                    borderBottomLeftRadius = 3,
+                    borderBottomRightRadius = 3,
+                    unityFontStyleAndWeight = FontStyle.Bold
+                }
+            };
+            titleContainer.Add(handlerPill);
+            header.Add(titleContainer);
+
+            if (ctx.ContextData != null)
+            {
+                var soLink = new Button(() => {
+                    Selection.activeObject = ctx.ContextData;
+                    EditorGUIUtility.PingObject(ctx.ContextData);
+                }) { text = "Config SO ↗" };
+                soLink.style.backgroundColor = new StyleColor(new Color(0.2f, 0.22f, 0.25f));
+                soLink.style.color = new StyleColor(new Color(0.3f, 0.8f, 1f));
+                soLink.style.fontSize = 9;
+                soLink.style.borderTopLeftRadius = 3;
+                soLink.style.borderTopRightRadius = 3;
+                soLink.style.borderBottomLeftRadius = 3;
+                soLink.style.borderBottomRightRadius = 3;
+                soLink.style.paddingLeft = 5;
+                soLink.style.paddingRight = 5;
+                soLink.style.paddingTop = 1;
+                soLink.style.paddingBottom = 1;
+                soLink.style.marginLeft = StyleKeyword.Auto;
+                header.Add(soLink);
             }
 
             card.Add(header);

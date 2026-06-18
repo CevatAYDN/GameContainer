@@ -74,6 +74,18 @@ namespace Nexus.Editor
             clearButton.style.paddingRight = 10;
             toolbar.Add(clearButton);
 
+            var exportButton = new Button(ExportTraceToConsole) { text = "Export Trace" };
+            exportButton.style.backgroundColor = new StyleColor(new Color(0.25f, 0.25f, 0.28f));
+            exportButton.style.borderTopLeftRadius = 4;
+            exportButton.style.borderTopRightRadius = 4;
+            exportButton.style.borderBottomLeftRadius = 4;
+            exportButton.style.borderBottomRightRadius = 4;
+            exportButton.style.color = Color.white;
+            exportButton.style.paddingLeft = 10;
+            exportButton.style.paddingRight = 10;
+            exportButton.style.marginLeft = 5;
+            toolbar.Add(exportButton);
+
             _pauseToggle = new Toggle("Pause") { value = _isPaused };
             _pauseToggle.style.marginLeft = 15;
             _pauseToggle.style.color = Color.white;
@@ -265,20 +277,33 @@ namespace Nexus.Editor
         {
             if (!Application.isPlaying)
             {
-                if (_scrollView.childCount > 0)
+                if (_scrollView.childCount > 0 && _renderedItems.Count > 0)
                 {
                     _scrollView.Clear();
                     _renderedItems.Clear();
                 }
-                _statusLabel.text = "Not Playing — Open Inspector in Play Mode";
+                _statusLabel.text = "Not Playing";
+                RenderNotPlayingInfo();
                 return;
+            }
+
+            int activeContexts = NexusRuntime.ActiveContexts.Count;
+            int totalHandlers = 0;
+            foreach (var ctx in NexusRuntime.ActiveContexts)
+            {
+                if (ctx is Context concreteCtx && concreteCtx.SignalBusInternal != null)
+                {
+                    foreach (var kvp in concreteCtx.SignalBusInternal.CommandHandlers)
+                    {
+                        totalHandlers += kvp.Value.Count;
+                    }
+                }
             }
 
             if (_isPaused)
             {
-                // When paused, we show the snapshot - filters apply
-                // Snapshot is taken once when pause is toggled
                 RenderFilteredEvents(_pausedEvents, _pausedCount);
+                _statusLabel.text = $"Contexts: {activeContexts} | Total Handlers: {totalHandlers} | Events: {_pausedCount} (PAUSED)";
                 return;
             }
 
@@ -291,11 +316,130 @@ namespace Nexus.Editor
             }
 
             RenderLiveEvents(events, count);
+            _statusLabel.text = $"Contexts: {activeContexts} | Total Handlers: {totalHandlers} | Events: {count}";
+        }
+
+        private void RenderNotPlayingInfo()
+        {
+            if (_scrollView.childCount > 0) return;
+
+            var helpBox = new VisualElement();
+            helpBox.style.backgroundColor = new StyleColor(new Color(0.18f, 0.18f, 0.2f));
+            helpBox.style.paddingLeft = 15;
+            helpBox.style.paddingRight = 15;
+            helpBox.style.paddingTop = 15;
+            helpBox.style.paddingBottom = 15;
+            helpBox.style.borderTopLeftRadius = 6;
+            helpBox.style.borderTopRightRadius = 6;
+            helpBox.style.borderBottomLeftRadius = 6;
+            helpBox.style.borderBottomRightRadius = 6;
+            helpBox.style.marginTop = 10;
+
+            var title = new Label("NEXUS INSPECTOR — OFFLINE");
+            title.style.unityFontStyleAndWeight = FontStyle.Bold;
+            title.style.fontSize = 13;
+            title.style.color = new StyleColor(new Color(0.3f, 0.8f, 1f));
+            title.style.marginBottom = 10;
+            helpBox.Add(title);
+
+            int handlerCount = GetStaticSignalHandlerCount();
+            var desc = new Label($"Nexus framework is currently inactive. Run the scene in Play Mode to trace signals, commands, and model changes in real-time.\n\n" +
+                                 $"<b>Static analysis:</b> Found <b>{handlerCount}</b> classes registered with [SignalHandler] or [CompositeSignalHandler] in loaded assemblies.");
+            desc.style.color = new StyleColor(new Color(0.85f, 0.85f, 0.85f));
+            desc.style.fontSize = 11;
+            desc.style.whiteSpace = WhiteSpace.Normal;
+            helpBox.Add(desc);
+
+            var tip = new Label("\nTip: You can use the Signal Explorer window to search/filter registered handlers without entering Play Mode.");
+            tip.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            tip.style.fontSize = 10;
+            tip.style.whiteSpace = WhiteSpace.Normal;
+            helpBox.Add(tip);
+
+            _scrollView.Add(helpBox);
+        }
+
+        private int GetStaticSignalHandlerCount()
+        {
+            int count = 0;
+            foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                string name = assembly.FullName;
+                if (name.StartsWith("System") || name.StartsWith("Microsoft") || name.StartsWith("Unity") || name.StartsWith("mscorlib"))
+                    continue;
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.IsClass && !type.IsAbstract)
+                        {
+                            if (type.GetCustomAttributes(typeof(SignalHandlerAttribute), true).Length > 0 ||
+                                type.GetCustomAttributes(typeof(CompositeSignalHandlerAttribute), true).Length > 0)
+                            {
+                                count++;
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+            return count;
+        }
+
+        private void ExportTraceToConsole()
+        {
+            var events = _isPaused && _pausedEvents != null ? _pausedEvents : NexusTrace.GetRecentEvents(out _);
+            int count = _isPaused && _pausedEvents != null ? _pausedCount : events.Length;
+            if (count == 0)
+            {
+                UnityEngine.Debug.Log("[Nexus] No traces available to export.");
+                return;
+            }
+            var json = ExportTraceEventsToJson(events, count);
+            UnityEngine.Debug.Log($"[Nexus Trace Export]:\n{json}");
+        }
+
+        private string TraceEventToJson(TraceEvent ev)
+        {
+            return $"{{\n" +
+                   $"  \"id\": {ev.Id},\n" +
+                   $"  \"parentId\": {ev.ParentId},\n" +
+                   $"  \"type\": \"{ev.Type}\",\n" +
+                   $"  \"timestamp\": {ev.Timestamp:F6},\n" +
+                   $"  \"typeName\": \"{ev.TypeName}\",\n" +
+                   $"  \"status\": \"{ev.Status}\",\n" +
+                   $"  \"mode\": \"{ev.Mode}\"\n" +
+                   $"}}";
+        }
+
+        private string ExportTraceEventsToJson(TraceEvent[] events, int count)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("[");
+            for (int i = 0; i < count; i++)
+            {
+                var json = TraceEventToJson(events[i]);
+                var lines = json.Split('\n');
+                for (int j = 0; j < lines.Length; j++)
+                {
+                    sb.Append("  ").Append(lines[j]);
+                    if (j < lines.Length - 1) sb.AppendLine();
+                }
+                if (i < count - 1)
+                {
+                    sb.AppendLine(",");
+                }
+                else
+                {
+                    sb.AppendLine();
+                }
+            }
+            sb.Append("]");
+            return sb.ToString();
         }
 
         private void RefreshAll()
         {
-            // Force a full re-render from current source
             _scrollView.Clear();
             _renderedItems.Clear();
 

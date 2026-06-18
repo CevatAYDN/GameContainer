@@ -32,6 +32,10 @@ namespace Nexus.Core
         private readonly List<IQueuedSignalDrainer> _activeThreadSafeQueues = new();
         private readonly object _lock = new();
 
+        // Reusable scratch lists to avoid GC allocation every frame (Plan §6.1 zero-alloc steady-state)
+        private readonly List<IQueuedSignalDrainer> _drainThreadSafeScratch = new();
+        private readonly List<IQueuedSignalDrainer> _drainNextFrameScratch = new();
+
         private readonly Dictionary<Type, IQueuedSignalDrainer> _nextFrameQueues = new();
         private readonly List<IQueuedSignalDrainer> _activeNextFrameQueues = new();
 
@@ -85,28 +89,30 @@ namespace Nexus.Core
         public void DrainThreadSafe()
         {
             // Snapshot under lock to avoid concurrent modification from EnqueueThreadSafe
-            List<IQueuedSignalDrainer> snapshot;
+            // Uses reusable scratch list to avoid GC allocation (Plan §6.1)
+            _drainThreadSafeScratch.Clear();
             lock (_lock)
             {
-                snapshot = new List<IQueuedSignalDrainer>(_activeThreadSafeQueues);
+                _drainThreadSafeScratch.AddRange(_activeThreadSafeQueues);
             }
-            for (int i = 0; i < snapshot.Count; i++)
+            for (int i = 0; i < _drainThreadSafeScratch.Count; i++)
             {
-                snapshot[i].Drain(_signalBus);
+                _drainThreadSafeScratch[i].Drain(_signalBus);
             }
         }
 
         public void DrainNextFrame()
         {
             // Snapshot under lock to avoid concurrent modification from EnqueueNextFrame
-            List<IQueuedSignalDrainer> snapshot;
+            // Uses reusable scratch list to avoid GC allocation (Plan §6.1)
+            _drainNextFrameScratch.Clear();
             lock (_lock)
             {
-                snapshot = new List<IQueuedSignalDrainer>(_activeNextFrameQueues);
+                _drainNextFrameScratch.AddRange(_activeNextFrameQueues);
             }
-            for (int i = 0; i < snapshot.Count; i++)
+            for (int i = 0; i < _drainNextFrameScratch.Count; i++)
             {
-                snapshot[i].Drain(_signalBus);
+                _drainNextFrameScratch[i].Drain(_signalBus);
             }
         }
 

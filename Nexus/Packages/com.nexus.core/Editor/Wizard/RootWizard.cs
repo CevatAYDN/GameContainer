@@ -1,6 +1,7 @@
 using UnityEditor;
 using UnityEngine;
 using System.IO;
+using System.Collections.Generic;
 using Nexus.Core;
 
 namespace Nexus.Editor
@@ -10,14 +11,45 @@ namespace Nexus.Editor
         private string _contextName = "Gameplay";
         private string _scopeTag = "Gameplay";
         private Vector2 _scrollPosition;
+        private Root _parentRoot = null;
+        private List<string> _availableAssemblies = new();
+        private HashSet<string> _selectedAssemblies = new();
+        private bool _assembliesFoldout = false;
+        private Vector2 _assembliesScroll;
+        private bool _generateLifecycleScript = false;
 
         [MenuItem("GameObject/Nexus/Create Root", false, 10)]
         [MenuItem("Window/Nexus/Root Wizard")]
         public static void ShowWindow()
         {
             var window = GetWindow<RootWizard>("Nexus Root Wizard");
-            window.minSize = new Vector2(400, 350);
+            window.minSize = new Vector2(400, 450);
             window.Show();
+        }
+
+        private void OnEnable()
+        {
+            PopulateAssemblies();
+        }
+
+        private void PopulateAssemblies()
+        {
+            _availableAssemblies.Clear();
+            foreach (var assembly in System.AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || 
+                    name.StartsWith("UnityEngine") || name.StartsWith("UnityEditor") || name.StartsWith("nunit") || 
+                    name.Contains("PlayerLoop") || name.Contains("JetBrains"))
+                {
+                    continue;
+                }
+                if (!_availableAssemblies.Contains(name))
+                {
+                    _availableAssemblies.Add(name);
+                }
+            }
+            _availableAssemblies.Sort();
         }
 
         private void OnGUI()
@@ -120,9 +152,94 @@ namespace Nexus.Editor
             EditorGUI.indentLevel = 1;
             _contextName = EditorGUILayout.TextField("Context Name", _contextName);
             _scopeTag = EditorGUILayout.TextField("Scope Tag", _scopeTag);
+
+            // Parent Root Dropdown selection
+            var sceneRoots = GameObject.FindObjectsOfType<Root>();
+            var rootNames = GetSceneRootNames(sceneRoots);
+            int selectedIndex = 0;
+            if (_parentRoot != null)
+            {
+                for (int i = 0; i < sceneRoots.Length; i++)
+                {
+                    if (sceneRoots[i] == _parentRoot)
+                    {
+                        selectedIndex = i + 1;
+                        break;
+                    }
+                }
+            }
+            int newIndex = EditorGUILayout.Popup("Parent Root", selectedIndex, rootNames);
+            if (newIndex == 0)
+            {
+                _parentRoot = null;
+            }
+            else
+            {
+                _parentRoot = sceneRoots[newIndex - 1];
+            }
+
+            // Assembly Scope Multi-select foldout
+            EditorGUILayout.Space(5);
+            _assembliesFoldout = EditorGUILayout.Foldout(_assembliesFoldout, $"Assembly Scopes ({_selectedAssemblies.Count} selected)");
+            if (_assembliesFoldout)
+            {
+                EditorGUI.indentLevel++;
+                var scrollHeight = Mathf.Min(_availableAssemblies.Count * 20 + 5, 120);
+                _assembliesScroll = EditorGUILayout.BeginScrollView(_assembliesScroll, GUILayout.Height(scrollHeight));
+                foreach (var assemblyName in _availableAssemblies)
+                {
+                    bool isSelected = _selectedAssemblies.Contains(assemblyName);
+                    bool newSelected = EditorGUILayout.ToggleLeft(assemblyName, isSelected);
+                    if (newSelected && !isSelected)
+                    {
+                        _selectedAssemblies.Add(assemblyName);
+                    }
+                    else if (!newSelected && isSelected)
+                    {
+                        _selectedAssemblies.Remove(assemblyName);
+                    }
+                }
+                EditorGUILayout.EndScrollView();
+                EditorGUI.indentLevel--;
+            }
+
+            // Lifecycle template toggle
+            EditorGUILayout.Space(5);
+            _generateLifecycleScript = EditorGUILayout.Toggle("Create Lifecycle Template", _generateLifecycleScript);
+
             EditorGUI.indentLevel = 0;
 
             EditorGUILayout.Space(10);
+
+            // Validation logic
+            bool isValid = true;
+            string validationError = "";
+
+            if (string.IsNullOrWhiteSpace(_contextName))
+            {
+                isValid = false;
+                validationError = "Context Name cannot be empty.";
+            }
+            else if (string.IsNullOrWhiteSpace(_scopeTag))
+            {
+                isValid = false;
+                validationError = "Scope Tag cannot be empty.";
+            }
+            else
+            {
+                // Validate if Asset already exists
+                string path = $"Assets/Settings/{_contextName}ContextData.asset";
+                if (File.Exists(path))
+                {
+                    isValid = false;
+                    validationError = $"A ContextData asset already exists at {path}. Use a different Context Name.";
+                }
+            }
+
+            if (!isValid)
+            {
+                EditorGUILayout.HelpBox(validationError, MessageType.Warning);
+            }
 
             var buttonStyle = new GUIStyle(GUI.skin.button)
             {
@@ -130,10 +247,23 @@ namespace Nexus.Editor
                 fixedHeight = 30
             };
 
+            EditorGUI.BeginDisabledGroup(!isValid);
             if (GUILayout.Button("Create Root & ContextData", buttonStyle))
             {
                 CreateRoot(_contextName, _scopeTag);
             }
+            EditorGUI.EndDisabledGroup();
+        }
+
+        private string[] GetSceneRootNames(Root[] roots)
+        {
+            var names = new string[roots.Length + 1];
+            names[0] = "None (Root Context)";
+            for (int i = 0; i < roots.Length; i++)
+            {
+                names[i + 1] = roots[i].gameObject.name;
+            }
+            return names;
         }
 
         private void CreateDefaultManifest()
@@ -159,13 +289,11 @@ namespace Nexus.Editor
 
         private void GenerateSkeleton(NexusBootstrapManifest manifest)
         {
-            // 1. Create Context GameObjects & Assets
             foreach (var name in manifest.DefaultContextNames)
             {
                 CreateRoot(name, name);
             }
 
-            // 2. Generate samples if checked
             if (manifest.GenerateSampleSignals || manifest.GenerateSampleCommands)
             {
                 string samplesDir = "Assets/Samples/Nexus";
@@ -201,7 +329,7 @@ namespace Nexus.Editor
             // 2. Create ContextData asset
             var contextData = ScriptableObject.CreateInstance<ContextData>();
             contextData.ScopeTag = scopeTag;
-            contextData.AssemblyScopes = new string[0]; // Empty scans executing assembly
+            contextData.AssemblyScopes = new List<string>(_selectedAssemblies).ToArray();
 
             if (!AssetDatabase.IsValidFolder("Assets/Settings"))
             {
@@ -217,14 +345,84 @@ namespace Nexus.Editor
             if (contextDataProp != null)
             {
                 contextDataProp.objectReferenceValue = contextData;
-                serializedRoot.ApplyModifiedProperties();
+            }
+
+            if (_parentRoot != null)
+            {
+                var parentProp = serializedRoot.FindProperty("parentRoot");
+                if (parentProp != null)
+                {
+                    parentProp.objectReferenceValue = _parentRoot;
+                }
+            }
+            serializedRoot.ApplyModifiedProperties();
+
+            // 3. Create Lifecycle script template if checked
+            if (_generateLifecycleScript)
+            {
+                string scriptsDir = "Assets/Scripts/Nexus";
+                if (!Directory.Exists(scriptsDir))
+                {
+                    Directory.CreateDirectory(scriptsDir);
+                }
+                string scriptPath = Path.Combine(scriptsDir, $"{contextName}Lifecycle.cs");
+                File.WriteAllText(scriptPath, GetLifecycleTemplateCode(contextName));
+                Debug.Log($"[Nexus] Generated lifecycle template at {scriptPath}");
             }
 
             // 4. Register Undo & Focus
             Selection.activeGameObject = go;
             Undo.RegisterCreatedObjectUndo(go, "Create Nexus Root");
 
+            AssetDatabase.Refresh();
+
+            string parentInfo = _parentRoot != null ? $" with Parent '{_parentRoot.gameObject.name}'" : "";
+            string lifecycleInfo = _generateLifecycleScript ? "\nGenerated boilerplate for IContextLifecycle. Attach it to this Root once compilation finishes." : "";
+            EditorUtility.DisplayDialog("Root Created", 
+                $"Successfully created {go.name}{parentInfo} and registered ContextData asset at {path}.{lifecycleInfo}", 
+                "OK");
+
             Debug.Log($"[Nexus] Successfully created {go.name} and registered context data at {path}.");
+        }
+
+        private string GetLifecycleTemplateCode(string contextName)
+        {
+            return $@"using System.Threading;
+using System.Threading.Tasks;
+using Nexus.Core;
+using UnityEngine;
+
+namespace Nexus
+{{
+    // Attach this component to the {contextName}Root GameObject to participate in the Context lifecycle.
+    public class {contextName}Lifecycle : MonoBehaviour, IContextLifecycle
+    {{
+        public void OnConfigure(IContextBuilder builder)
+        {{
+            // Bind models, commands, and dependencies here
+            Debug.Log(""[{contextName}Lifecycle] Configuring context..."");
+        }}
+
+        public async ValueTask OnInitializeAsync(CancellationToken ct)
+        {{
+            // Async initialization logic
+            await ValueTask.CompletedTask;
+        }}
+
+        public async ValueTask OnStartAsync(CancellationToken ct)
+        {{
+            // Start logic (executed after initialization)
+            await ValueTask.CompletedTask;
+        }}
+
+        public void OnDispose()
+        {{
+            // Cleanup logic
+            Debug.Log(""[{contextName}Lifecycle] Context disposed."");
+        }}
+    }}
+}}
+";
         }
 
         private string GetSampleSignalCode()

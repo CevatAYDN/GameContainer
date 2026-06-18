@@ -3,8 +3,10 @@ using UnityEngine;
 namespace Nexus.Core
 {
     [CreateAssetMenu(fileName = "ContextData", menuName = "Nexus/Context Data")]
-    public class ContextData : ScriptableObject
+    public class ContextData : VersionedScriptableObject
     {
+        public override int CurrentVersion => 1;
+
         [Header("Orchestration")]
         [Tooltip("Assemblies to scan for SignalHandlers. If empty, uses the calling assembly.")]
         public string[] AssemblyScopes;
@@ -21,5 +23,10 @@ namespace Nexus.Core
 
         [Header("Metadata")]
         public string ScopeTag;
+
+        protected override void Migrate(int fromVersion)
+        {
+            // v1 is the initial version, no migration needed yet.
+        }
     }
 }

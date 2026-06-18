@@ -14,9 +14,22 @@ namespace Nexus.Core
         private readonly CancellationTokenSource _cts = new();
         private readonly ViewBinder _viewBinder;
         private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
+        private readonly object _pluginsLock = new();
         private bool _disposed;
         
         public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> Plugins => _plugins;
+        
+        /// <summary>
+        /// Returns a snapshot of the plugins list to allow safe iteration during dispatch
+        /// when plugins may register/unregister other plugins via interceptors.
+        /// </summary>
+        public List<(INexusPlugin plugin, PluginContext context)> GetPluginsSnapshot()
+        {
+            lock (_pluginsLock)
+            {
+                return new List<(INexusPlugin plugin, PluginContext context)>(_plugins);
+            }
+        }
         
         public ISignalBus SignalBus { get; }
         public CancellationToken LifetimeToken => _cts.Token;
@@ -26,6 +39,7 @@ namespace Nexus.Core
         public CommandPoolManager PoolManager { get; }
         public HybridQueue HybridQueue { get; }
         public string ScopeTag => _contextData != null ? _contextData.ScopeTag : null;
+        public ContextData ContextData => _contextData;
         public SignalBus SignalBusInternal { get; }
 
         public Context(Context parent = null, ContextData contextData = null)
@@ -154,35 +168,41 @@ namespace Nexus.Core
         public void RegisterPlugin(INexusPlugin plugin)
         {
             if (plugin == null) return;
-            foreach (var p in _plugins)
+            lock (_pluginsLock)
             {
-                if (p.plugin == plugin) return;
-            }
+                foreach (var p in _plugins)
+                {
+                    if (p.plugin == plugin) return;
+                }
 
-            var pluginContext = new PluginContext(plugin, this);
-            _plugins.Add((plugin, pluginContext));
-            plugin.OnPluginRegistered(pluginContext);
+                var pluginContext = new PluginContext(plugin, this);
+                _plugins.Add((plugin, pluginContext));
+                plugin.OnPluginRegistered(pluginContext);
+            }
         }
 
         public void RemovePlugin(INexusPlugin plugin)
         {
             if (plugin == null) return;
-            int index = -1;
-            for (int i = 0; i < _plugins.Count; i++)
+            lock (_pluginsLock)
             {
-                if (_plugins[i].plugin == plugin)
+                int index = -1;
+                for (int i = 0; i < _plugins.Count; i++)
                 {
-                    index = i;
-                    break;
+                    if (_plugins[i].plugin == plugin)
+                    {
+                        index = i;
+                        break;
+                    }
                 }
-            }
 
-            if (index != -1)
-            {
-                var p = _plugins[index];
-                _plugins.RemoveAt(index);
-                p.context.Clear();
-                p.plugin.OnPluginRemoved();
+                if (index != -1)
+                {
+                    var p = _plugins[index];
+                    _plugins.RemoveAt(index);
+                    p.context.Clear();
+                    p.plugin.OnPluginRemoved();
+                }
             }
         }
 

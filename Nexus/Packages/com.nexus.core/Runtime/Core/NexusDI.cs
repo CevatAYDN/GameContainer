@@ -13,6 +13,9 @@ namespace Nexus.Core
         private readonly Dictionary<Type, Binding> _bindings = new();
         private readonly HashSet<object> _resolvedSingletons = new();
 
+        [ThreadStatic]
+        private static HashSet<Type> s_resolutionStack;
+
         private class Binding
         {
             public Type ConcreteType { get; set; }
@@ -97,18 +100,35 @@ namespace Nexus.Core
                     return binding.Factory();
                 }
 
-                if (binding.IsSingleton)
+                // Circular dependency detection
+                if (s_resolutionStack == null)
+                    s_resolutionStack = new HashSet<Type>();
+
+                if (!s_resolutionStack.Add(type))
                 {
-                    var instance = CreateInstance(binding.ConcreteType);
-                    binding.Instance = instance;
-                    _resolvedSingletons.Add(instance);
-                    Inject(instance);
-                    return instance;
+                    s_resolutionStack.Clear();
+                    throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}. Resolution chain forms a cycle.");
                 }
 
-                var transientInstance = CreateInstance(binding.ConcreteType);
-                Inject(transientInstance);
-                return transientInstance;
+                try
+                {
+                    if (binding.IsSingleton)
+                    {
+                        var instance = CreateInstance(binding.ConcreteType);
+                        binding.Instance = instance;
+                        _resolvedSingletons.Add(instance);
+                        Inject(instance);
+                        return instance;
+                    }
+
+                    var transientInstance = CreateInstance(binding.ConcreteType);
+                    Inject(transientInstance);
+                    return transientInstance;
+                }
+                finally
+                {
+                    s_resolutionStack.Remove(type);
+                }
             }
 
             if (_parent != null)

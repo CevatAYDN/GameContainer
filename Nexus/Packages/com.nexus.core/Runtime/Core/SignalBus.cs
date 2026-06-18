@@ -74,7 +74,13 @@ namespace Nexus.Core
         private readonly Dictionary<Type, List<CompositeTriggerState>> _compositeTriggersBySignal = new();
         private readonly List<CompositeTriggerState> _allCompositeTriggers = new();
 
+        public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers => _commandHandlers;
+
         private readonly Dictionary<Type, List<object>> _subscriptions = new();
+
+        // Precomputed cache: does this signal type have at least one async handler?
+        // Used by FireInternal to decide whether to delegate to the async path.
+        private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
         
         [ThreadStatic]
         private static int s_stackDepth;
@@ -83,9 +89,7 @@ namespace Nexus.Core
         private int _inFlightAsyncCommands;
         private const int MaxInFlightAsyncCommands = 100;
 
-        private const int DisposeTimeoutMs = 5000;
-
-        private static readonly ConcurrentDictionary<Type, MemberInfo> s_signalFieldCache = new();
+        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), MemberInfo> s_signalFieldCache = new();
 
 #if NEXUS_DEBUG
         private static readonly ProfilerMarker s_DispatchMarker = new ProfilerMarker("Nexus.Signal.Dispatch");
@@ -138,6 +142,16 @@ namespace Nexus.Core
             // Bind command type in DI so CommandPoolManager can resolve it
             _container.Bind(commandType, isSingleton: false);
 
+            // Update async handler cache — if any handler is async, mark the signal type
+            if (isAsync)
+            {
+                _hasAsyncHandler[signalType] = true;
+            }
+            else if (!_hasAsyncHandler.ContainsKey(signalType))
+            {
+                _hasAsyncHandler[signalType] = false;
+            }
+
             // Sort by priority descending
             if (mode != ExecutionMode.Concurrent)
             {
@@ -147,6 +161,11 @@ namespace Nexus.Core
 
         public void RegisterCompositeCommand(Type[] signalTypes, Type commandType, bool oneShot, int priority, bool isAsync)
         {
+            if (signalTypes == null || signalTypes.Length == 0)
+                throw new ArgumentException("Composite command requires at least one signal type.", nameof(signalTypes));
+            if (signalTypes.Length > 64)
+                throw new ArgumentException($"Composite command supports a maximum of 64 signal types. Received {signalTypes.Length}.", nameof(signalTypes));
+
             var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority);
             _allCompositeTriggers.Add(state);
 
@@ -194,11 +213,12 @@ namespace Nexus.Core
                 _subscriptions[type] = list;
             }
 
-            var sub = new SignalSubscription<T>(handler, _context.LifetimeToken, () =>
+            SignalSubscription<T> sub = null;
+            sub = new SignalSubscription<T>(handler, _context.LifetimeToken, () =>
             {
                 lock (list)
                 {
-                    list.Remove(handler);
+                    list.Remove(sub);
                 }
             });
 
@@ -218,11 +238,12 @@ namespace Nexus.Core
                 _subscriptions[type] = list;
             }
 
-            var sub = new AsyncSignalSubscription<T>(handler, _context.LifetimeToken, () =>
+            AsyncSignalSubscription<T> sub = null;
+            sub = new AsyncSignalSubscription<T>(handler, _context.LifetimeToken, () =>
             {
                 lock (list)
                 {
-                    list.Remove(handler);
+                    list.Remove(sub);
                 }
             });
 
@@ -235,6 +256,25 @@ namespace Nexus.Core
 
         private void FireInternal<T>(T signal, bool isCrossContextSource) where T : struct
         {
+            var type = typeof(T);
+
+            // Plan §1.4.1 — If this signal has ANY async handlers registered,
+            // delegate to the async path to preserve Sequential ordering guarantees.
+            // The async path properly awaits each handler in priority order.
+            // Sync-only signals take the fast path below with zero async overhead.
+            bool hasAsync = _hasAsyncHandler.TryGetValue(type, out var asyncFlag) && asyncFlag;
+            bool hasAsyncSubscriptions = HasAsyncSubscriptions(type);
+
+            if (hasAsync || hasAsyncSubscriptions)
+            {
+                // Delegate to async path — this is the ONLY correct way to handle
+                // async handlers from a sync call site. We use async void pattern
+                // (Unity-compatible) to bridge the sync→async boundary.
+                FireInternalAsyncFromSync(signal, isCrossContextSource);
+                return;
+            }
+
+            // === FAST PATH: All handlers are synchronous ===
             s_stackDepth++;
             if (s_stackDepth > MaxStackDepth)
             {
@@ -248,26 +288,33 @@ namespace Nexus.Core
 #endif
             try
             {
-                var type = typeof(T);
-
-                // Run plugins' SignalInterceptors
+                // Run plugins' SignalInterceptors (snapshot to avoid modification during iteration)
                 object boxedSignal = signal;
+                bool interceptorCancelled = false;
                 if (_context is Context ctx && ctx.Plugins.Count > 0)
                 {
-                    foreach (var p in ctx.Plugins)
+                    var pluginSnapshot = ctx.GetPluginsSnapshot();
+                    foreach (var p in pluginSnapshot)
                     {
                         foreach (var interceptor in p.context.Interceptors)
                         {
                             if (!interceptor.Intercept(ref boxedSignal))
                             {
-#if NEXUS_DEBUG
-                                NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
-#endif
-                                return;
+                                interceptorCancelled = true;
+                                break;
                             }
                         }
+                        if (interceptorCancelled) break;
                     }
                     signal = (T)boxedSignal;
+                }
+
+                if (interceptorCancelled)
+                {
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
+#endif
+                    return;
                 }
 
                 // Handle Cross-Context
@@ -280,7 +327,7 @@ namespace Nexus.Core
                     }
                 }
 
-                // Process subscriptions
+                // Process subscriptions (sync-only path — no async subs here)
                 if (_subscriptions.TryGetValue(type, out var subs))
                 {
                     lock (subs)
@@ -295,19 +342,12 @@ namespace Nexus.Core
                     }
                 }
 
-                // Process commands
+                // Process commands (all sync in this path)
                 if (_commandHandlers.TryGetValue(type, out var handlers))
                 {
                     foreach (var handler in handlers)
                     {
-                        if (handler.IsAsync)
-                        {
-                            _ = ExecuteCommandAsync(handler, signal, _context.LifetimeToken);
-                        }
-                        else
-                        {
-                            ExecuteCommand(handler, signal);
-                        }
+                        ExecuteCommand(handler, signal);
                     }
                 }
 
@@ -333,6 +373,44 @@ namespace Nexus.Core
             }
         }
 
+        /// <summary>
+        /// Bridge method: sync Fire() with async handlers. Uses async void (Unity-compatible)
+        /// to properly await all handlers in order. Exceptions are caught and logged
+        /// via the standard recovery pipeline.
+        /// </summary>
+        private async void FireInternalAsyncFromSync<T>(T signal, bool isCrossContextSource) where T : struct
+        {
+            try
+            {
+                await FireInternalAsync(signal, isCrossContextSource);
+            }
+            catch (Exception ex)
+            {
+                UnityEngine.Debug.LogException(ex);
+            }
+        }
+
+        /// <summary>
+        /// Checks if a signal type has any async subscriptions (SubscribeAsync).
+        /// </summary>
+        private bool HasAsyncSubscriptions(Type signalType)
+        {
+            if (!_subscriptions.TryGetValue(signalType, out var subs))
+                return false;
+
+            lock (subs)
+            {
+                for (int i = 0; i < subs.Count; i++)
+                {
+                    // AsyncSignalSubscription<T> type name starts with "AsyncSignal"
+                    var subType = subs[i].GetType();
+                    if (subType.Name.StartsWith("AsyncSignalSubscription"))
+                        return true;
+                }
+            }
+            return false;
+        }
+
         private async ValueTask FireInternalAsync<T>(T signal, bool isCrossContextSource) where T : struct
         {
             s_stackDepth++;
@@ -349,24 +427,33 @@ namespace Nexus.Core
             {
                 var type = typeof(T);
 
-                // Run plugins' SignalInterceptors
+                // Run plugins' SignalInterceptors (snapshot to avoid modification during iteration)
                 object boxedSignal = signal;
+                bool interceptorCancelled = false;
                 if (_context is Context ctx && ctx.Plugins.Count > 0)
                 {
-                    foreach (var p in ctx.Plugins)
+                    var pluginSnapshot = ctx.GetPluginsSnapshot();
+                    foreach (var p in pluginSnapshot)
                     {
                         foreach (var interceptor in p.context.Interceptors)
                         {
                             if (!interceptor.Intercept(ref boxedSignal))
                             {
-#if NEXUS_DEBUG
-                                NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
-#endif
-                                return;
+                                interceptorCancelled = true;
+                                break;
                             }
                         }
+                        if (interceptorCancelled) break;
                     }
                     signal = (T)boxedSignal;
+                }
+
+                if (interceptorCancelled)
+                {
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
+#endif
+                    return;
                 }
 
                 // Handle Cross-Context
@@ -487,7 +574,11 @@ namespace Nexus.Core
                     NexusTrace.EndEvent(traceId, TraceStatus.Failed);
 #endif
                     var action = HandleCommandErrorWithDecision(ex, handler.CommandType, signal, ref retryCount);
-                    if (action != RecoveryAction.Retry)
+                    if (action == RecoveryAction.Retry)
+                    {
+                        retryCount++;
+                    }
+                    else
                     {
                         shouldRun = false;
                     }
@@ -579,8 +670,9 @@ namespace Nexus.Core
 
             var commandType = command.GetType();
             var signalType = signal.GetType();
+            var cacheKey = (commandType, signalType);
 
-            if (s_signalFieldCache.TryGetValue(commandType, out var member))
+            if (s_signalFieldCache.TryGetValue(cacheKey, out var member))
             {
                 if (member is FieldInfo f)
                     f.SetValue(command, signal);
@@ -589,14 +681,14 @@ namespace Nexus.Core
                 return;
             }
 
-            // Cache miss — reflect once per command type
+            // Cache miss — reflect once per (command type, signal type) pair
             var fields = commandType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             foreach (var field in fields)
             {
                 if (field.FieldType == signalType || (field.Name.Equals("_signal", StringComparison.OrdinalIgnoreCase) && field.FieldType.IsInstanceOfType(signal)))
                 {
                     field.SetValue(command, signal);
-                    s_signalFieldCache[commandType] = field;
+                    s_signalFieldCache[cacheKey] = field;
                     return;
                 }
             }
@@ -607,7 +699,7 @@ namespace Nexus.Core
                 if (prop.PropertyType == signalType && prop.CanWrite)
                 {
                     prop.SetValue(command, signal);
-                    s_signalFieldCache[commandType] = prop;
+                    s_signalFieldCache[cacheKey] = prop;
                     return;
                 }
             }
@@ -647,17 +739,14 @@ namespace Nexus.Core
             }
         }
 
-        private async void ExecuteCompositeCommandAsync(CompositeTriggerState trigger)
+        private async void ExecuteCompositeCommandAsync(CompositeTriggerState trigger, object command)
         {
 #if NEXUS_DEBUG
             int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
 #endif
-            object command = null;
+            bool inFlightIncremented = false;
             try
             {
-                command = _poolManager.GetCommand(trigger.CommandType);
-                _container.Inject(command);
-
                 if (command is ICommand syncCmd)
                 {
                     syncCmd.Execute();
@@ -666,13 +755,18 @@ namespace Nexus.Core
                 {
                     var ct = _context?.LifetimeToken ?? CancellationToken.None;
                     Interlocked.Increment(ref _inFlightAsyncCommands);
+                    inFlightIncremented = true;
                     try
                     {
                         await asyncCmd.ExecuteAsync(ct);
                     }
                     finally
                     {
-                        Interlocked.Decrement(ref _inFlightAsyncCommands);
+                        if (inFlightIncremented)
+                        {
+                            Interlocked.Decrement(ref _inFlightAsyncCommands);
+                            inFlightIncremented = false;
+                        }
                     }
                 }
 #if NEXUS_DEBUG
@@ -689,6 +783,10 @@ namespace Nexus.Core
             }
             finally
             {
+                if (inFlightIncremented)
+                {
+                    Interlocked.Decrement(ref _inFlightAsyncCommands);
+                }
                 if (command != null)
                 {
                     _poolManager.ReturnCommand(trigger.CommandType, command);
@@ -714,8 +812,11 @@ namespace Nexus.Core
                 else if (command is IAsyncCommand asyncCmd)
                 {
                     // Async composite — dispatch via async void with proper tracking
-                    ExecuteCompositeCommandAsync(trigger);
-                    return; // don't return to pool here; async void will handle it
+                    // Pass the command to the async method; it will handle pool return
+                    var cmdForAsync = command;
+                    command = null; // Prevent finally from returning it; async method owns it now
+                    ExecuteCompositeCommandAsync(trigger, cmdForAsync);
+                    return;
                 }
 #if NEXUS_DEBUG
                 NexusTrace.EndEvent(traceId, TraceStatus.OK);
@@ -961,16 +1062,10 @@ namespace Nexus.Core
             }
             _subscriptions.Clear();
 
-            // Wait for in-flight async commands to complete
+            // Warn if there are in-flight async commands that haven't completed
             if (_inFlightAsyncCommands > 0)
             {
-                int waited = 0;
-                const int sleepMs = 50;
-                while (Interlocked.CompareExchange(ref _inFlightAsyncCommands, 0, 0) > 0 && waited < DisposeTimeoutMs)
-                {
-                    Thread.Sleep(sleepMs);
-                    waited += sleepMs;
-                }
+                UnityEngine.Debug.LogWarning($"[Nexus] SignalBus disposed while {_inFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
             }
 
             _commandHandlers.Clear();

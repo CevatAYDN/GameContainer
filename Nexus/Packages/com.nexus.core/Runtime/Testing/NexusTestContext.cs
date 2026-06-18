@@ -79,6 +79,82 @@ namespace Nexus.Core
             }
         }
 
+        public void RegisterCommand<TCommand>() where TCommand : class, ICommand
+        {
+            var type = typeof(TCommand);
+            Context.Container.Bind(type, isSingleton: false);
+
+            var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+            bool hasAttr = false;
+            foreach (var attr in handlerAttrs)
+            {
+                hasAttr = true;
+                Context.SignalBusInternal.RegisterCommand(
+                    attr.SignalType, 
+                    type, 
+                    attr.Mode, 
+                    attr.Priority, 
+                    isAsync: false
+                );
+            }
+
+            var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+            if (compositeAttr != null)
+            {
+                hasAttr = true;
+                Context.SignalBusInternal.RegisterCompositeCommand(
+                    compositeAttr.SignalTypes, 
+                    type, 
+                    compositeAttr.OneShot, 
+                    compositeAttr.Priority, 
+                    isAsync: false
+                );
+            }
+
+            if (!hasAttr)
+            {
+                throw new InvalidOperationException($"Command type {type.Name} does not have any [SignalHandler] or [CompositeSignalHandler] attributes.");
+            }
+        }
+
+        public void RegisterAsyncCommand<TCommand>() where TCommand : class, IAsyncCommand
+        {
+            var type = typeof(TCommand);
+            Context.Container.Bind(type, isSingleton: false);
+
+            var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+            bool hasAttr = false;
+            foreach (var attr in handlerAttrs)
+            {
+                hasAttr = true;
+                Context.SignalBusInternal.RegisterCommand(
+                    attr.SignalType, 
+                    type, 
+                    attr.Mode, 
+                    attr.Priority, 
+                    isAsync: true
+                );
+            }
+
+            var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+            if (compositeAttr != null)
+            {
+                hasAttr = true;
+                Context.SignalBusInternal.RegisterCompositeCommand(
+                    compositeAttr.SignalTypes, 
+                    type, 
+                    compositeAttr.OneShot, 
+                    compositeAttr.Priority, 
+                    isAsync: true
+                );
+            }
+
+            if (!hasAttr)
+            {
+                throw new InvalidOperationException($"Command type {type.Name} does not have any [SignalHandler] or [CompositeSignalHandler] attributes.");
+            }
+        }
+
         private void RegisterSignalInternal<TSignal>() where TSignal : struct
         {
             if (!_dispatchedSignals.ContainsKey(typeof(TSignal)))
@@ -104,6 +180,15 @@ namespace Nexus.Core
             return _dispatchedSignals.TryGetValue(typeof(TSignal), out var list) && ((List<TSignal>)list).Count > 0;
         }
 
+        public int GetDispatchedSignalCount<TSignal>() where TSignal : struct
+        {
+            if (_dispatchedSignals.TryGetValue(typeof(TSignal), out var list))
+            {
+                return ((List<TSignal>)list).Count;
+            }
+            return 0;
+        }
+
         public IReadOnlyList<TSignal> GetDispatchedSignals<TSignal>() where TSignal : struct
         {
             if (_dispatchedSignals.TryGetValue(typeof(TSignal), out var list))
@@ -121,6 +206,39 @@ namespace Nexus.Core
                 throw new InvalidOperationException($"No signals of type {typeof(TSignal).Name} were dispatched.");
             }
             return list[list.Count - 1];
+        }
+
+        public void ClearDispatchedSignals()
+        {
+            foreach (var list in _dispatchedSignals.Values)
+            {
+                if (list is System.Collections.IList listInstance)
+                {
+                    listInstance.Clear();
+                }
+            }
+        }
+
+        public void AssertSignalDispatched<TSignal>() where TSignal : struct
+        {
+            if (!SignalWasDispatched<TSignal>())
+            {
+                throw new UnityEngine.Assertions.AssertionException(
+                    $"Assertion failed: Expected signal of type '{typeof(TSignal).Name}' to be dispatched, but it was not.",
+                    ""
+                );
+            }
+        }
+
+        public void AssertSignalNotDispatched<TSignal>() where TSignal : struct
+        {
+            if (SignalWasDispatched<TSignal>())
+            {
+                throw new UnityEngine.Assertions.AssertionException(
+                    $"Assertion failed: Expected signal of type '{typeof(TSignal).Name}' NOT to be dispatched, but it was.",
+                    ""
+                );
+            }
         }
 
         public T GetModel<T>() where T : class

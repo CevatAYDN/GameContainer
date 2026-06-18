@@ -29,6 +29,12 @@ namespace Nexus.Editor
 
                 // 4. Validate scene Roots and context hierarchies
                 ValidateSceneHierarchy(ref errorCount, ref warningCount);
+
+                // 5. Validate Command state leak (Plan §6.1.1)
+                ValidateCommandStateLeak(ref errorCount, ref warningCount);
+
+                // 6. Validate Composite Trigger reachability (Plan §9.6)
+                ValidateCompositeTriggerReachability(ref errorCount, ref warningCount);
             }
             catch (Exception ex)
             {
@@ -165,18 +171,28 @@ namespace Nexus.Editor
 
         private static bool IsWriteableModelType(Type type)
         {
-            // If it's an interface ending with Model and does not start with IReadOnly, it's a model.
-            // If it has setters, it is writeable.
-            if (type.IsInterface && type.Name.EndsWith("Model") && !type.Name.StartsWith("IReadOnly"))
+            // Heuristic: A "model" type is an interface whose name ends with "Model".
+            // IReadOnly-prefixed interfaces are considered read-only by convention.
+            // For concrete model interfaces, check if they actually expose writeable members.
+            if (!type.IsInterface) return false;
+            if (!type.Name.EndsWith("Model")) return false;
+            if (type.Name.StartsWith("IReadOnly")) return false;
+
+            // Check if the interface has any settable properties (writeable indicators)
+            var props = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+            foreach (var prop in props)
             {
-                // Check if it has any setter properties or methods modifying state
-                var props = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-                foreach (var prop in props)
-                {
-                    if (prop.CanWrite) return true;
-                }
-                return true; // assumed writeable if it lacks IReadOnly prefix
+                if (prop.CanWrite) return true;
             }
+
+            // Check if the interface has methods that imply mutation (Set*, Update*, Modify*)
+            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance);
+            foreach (var m in methods)
+            {
+                if (m.Name.StartsWith("Set") || m.Name.StartsWith("Update") || m.Name.StartsWith("Modify"))
+                    return true;
+            }
+
             return false;
         }
 
@@ -237,30 +253,45 @@ namespace Nexus.Editor
                 }
             }
 
+            // DFS-based cycle detection across all dependencies
             foreach (var kvp in dataByName)
             {
+                var visiting = new HashSet<string>();
                 var visited = new HashSet<string>();
-                var current = kvp.Key;
-
-                while (!string.IsNullOrEmpty(current))
+                if (HasDependencyCycle(kvp.Key, dataByName, visiting, visited, new List<string>()))
                 {
-                    if (!visited.Add(current))
-                    {
-                        Debug.LogError($"[Nexus Error] Circular ContextData Dependency: ContextData '{kvp.Key}' has a circular DependsOn chain involving '{current}'.");
-                        errorCount++;
-                        break;
-                    }
+                    errorCount++;
+                }
+            }
+        }
 
-                    if (dataByName.TryGetValue(current, out var nextData) && nextData.DependsOn != null && nextData.DependsOn.Length > 0)
+        private static bool HasDependencyCycle(string current, Dictionary<string, ContextData> dataByName, HashSet<string> visiting, HashSet<string> visited, List<string> path)
+        {
+            if (visited.Contains(current)) return false;
+            if (!visiting.Add(current))
+            {
+                path.Add(current);
+                Debug.LogError($"[Nexus Error] Circular ContextData Dependency: Circular DependsOn chain detected involving '{current}'. Chain: {string.Join(" → ", path)}");
+                return true;
+            }
+
+            path.Add(current);
+
+            if (dataByName.TryGetValue(current, out var data) && data.DependsOn != null)
+            {
+                foreach (var dep in data.DependsOn)
+                {
+                    if (!string.IsNullOrEmpty(dep) && HasDependencyCycle(dep, dataByName, visiting, visited, path))
                     {
-                        current = nextData.DependsOn[0];
-                    }
-                    else
-                    {
-                        break;
+                        return true;
                     }
                 }
             }
+
+            path.RemoveAt(path.Count - 1);
+            visiting.Remove(current);
+            visited.Add(current);
+            return false;
         }
 
         private static void ValidateSceneHierarchy(ref int errorCount, ref int warningCount)
@@ -316,6 +347,121 @@ namespace Nexus.Editor
 
             chain = null;
             return false;
+        }
+
+        /// <summary>
+        /// Plan §6.1.1 — Command State Leak Validation:
+        /// Warns about commands with mutable, non-injected, non-IResettable state fields.
+        /// If a command has such fields and does not implement IResettable, it may leak state
+        /// across pooled reuses.
+        /// </summary>
+        private static void ValidateCommandStateLeak(ref int errorCount, ref int warningCount)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (!type.IsClass || type.IsAbstract) continue;
+                        bool isCommand = typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type);
+                        if (!isCommand) continue;
+
+                        bool implementsResettable = typeof(IResettable).IsAssignableFrom(type);
+
+                        var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        foreach (var field in fields)
+                        {
+                            // Skip [Inject]-annotated fields (auto-cleared by CommandPool)
+                            if (field.GetCustomAttribute<InjectAttribute>() != null)
+                                continue;
+
+                            // Skip readonly/const fields (they can't leak)
+                            if (field.IsInitOnly || field.IsLiteral)
+                                continue;
+
+                            // Skip value types that are primitives (int, bool, etc. — trivially reset)
+                            if (field.FieldType.IsPrimitive)
+                                continue;
+
+                            // A non-injected, non-readonly, non-primitive mutable field in a command
+                            // that does not implement IResettable is a potential state leak
+                            if (!implementsResettable)
+                            {
+                                Debug.LogWarning($"[Nexus Warning] Command State Leak Risk: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable. This field may retain state across pooled reuses. Fix: Implement IResettable and clear state in Reset(), or mark the field as readonly.");
+                                warningCount++;
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        /// <summary>
+        /// Plan §9.6 — Composite Trigger unreachable signal:
+        /// Warns when a composite trigger references a signal type that is never dispatched
+        /// by any registered command (no [SignalHandler] outputs it) making the composite
+        /// potentially impossible to complete.
+        /// </summary>
+        private static void ValidateCompositeTriggerReachability(ref int errorCount, ref int warningCount)
+        {
+            var compositeSignalSets = new List<(Type CommandType, Type[] SignalTypes)>();
+            var allHandledSignalTypes = new HashSet<Type>();
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (!type.IsClass || type.IsAbstract) continue;
+
+                        // Collect [SignalHandler] signal types
+                        var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                        foreach (var attr in handlerAttrs)
+                        {
+                            allHandledSignalTypes.Add(attr.SignalType);
+                        }
+
+                        // Collect [CompositeSignalHandler] entries
+                        var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                        if (compositeAttr != null)
+                        {
+                            compositeSignalSets.Add((type, compositeAttr.SignalTypes));
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // For each composite trigger, warn if any of its constituent signal types
+            // are never referenced as a handled signal type (meaning nothing responds to it,
+            // indicating it may only come from user code — which is fine, so this is just a warning)
+            foreach (var (cmdType, signalTypes) in compositeSignalSets)
+            {
+                foreach (var sigType in signalTypes)
+                {
+                    if (!allHandledSignalTypes.Contains(sigType))
+                    {
+                        // Check if the signal has [CrossContext] — these are typically dispatched externally
+                        var crossAttr = sigType.GetCustomAttribute<CrossContextAttribute>();
+                        if (crossAttr == null)
+                        {
+                            Debug.LogWarning($"[Nexus Warning] Composite Trigger Unreachable Signal: Composite command {cmdType.Name} references signal {sigType.Name} which has no [SignalHandler] binding. Ensure this signal is dispatched from user code or other systems.");
+                            warningCount++;
+                        }
+                    }
+                }
+            }
         }
     }
 
