@@ -153,6 +153,7 @@ namespace Nexus.Editor
                 var actionsCard = NexusEditorStyles.CreateActionGroup(container, "QUICK ACTIONS");
                 NexusEditorStyles.AddActionButton(actionsCard, "Open Root Wizard", () => RootWizard.ShowWindow(), NexusEditorStyles.BtnBlue);
                 NexusEditorStyles.AddActionButton(actionsCard, "Open Nexus Inspector", () => NexusInspectorWindow.ShowWindow(), NexusEditorStyles.BtnPurple);
+                NexusEditorStyles.AddActionButton(actionsCard, "Open Signal Tester", () => NexusSignalTesterWindow.ShowWindow(), NexusEditorStyles.BtnPurple);
                 NexusEditorStyles.AddActionButton(actionsCard, "Open Signal Explorer", () => SignalExplorerWindow.ShowWindow(), NexusEditorStyles.BtnTeal);
 
                 _scrollView.Add(container);

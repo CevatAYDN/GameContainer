@@ -155,6 +155,8 @@ namespace Nexus.Editor
                 NexusEditorStyles.BtnTeal, SignalExplorerWindow.ShowWindow);
             AddToolEntry(toolsCard, "Root Wizard", "Create Root GameObjects & View/Mediator pairs",
                 NexusEditorStyles.BtnBlue, RootWizard.ShowWindow);
+            AddToolEntry(toolsCard, "Signal Tester", "Fire test signals & inspect command chains",
+                NexusEditorStyles.BtnPurple, NexusSignalTesterWindow.ShowWindow);
 
             _toolsContainer.Add(toolsCard);
         }

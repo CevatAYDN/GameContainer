@@ -55,6 +55,7 @@
   <ItemGroup>
     <Compile Include="Packages\com.nexus.core\Editor\Graph\ContextGraphWindow.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Inspector\NexusDataInspectorWindow.cs" />
+    <Compile Include="Packages\com.nexus.core\Editor\Core\NexusSignalTesterWindow.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Core\NexusEditorStyles.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Wizard\RootWizard.cs" />
     <Compile Include="Packages\com.nexus.core\Editor\Inspector\NexusInspectorWindow.cs" />
