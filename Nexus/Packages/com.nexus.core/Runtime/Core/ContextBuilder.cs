@@ -77,8 +77,16 @@ namespace Nexus.Core
         /// <param name="mode">Execution mode (Sequential, Concurrent, Exclusive, CompositeTrigger).</param>
         /// <param name="priority">Execution priority; lower values run first.</param>
         public void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
-            where TCommand : class, ICommand
+            where TCommand : class where TSignal : struct
         {
+            // Validate that the command implements either ICommand or ICommand<TSignal>
+            bool isGeneric = typeof(ICommand<TSignal>).IsAssignableFrom(typeof(TCommand));
+            bool isNormal = typeof(ICommand).IsAssignableFrom(typeof(TCommand));
+            if (!isGeneric && !isNormal)
+            {
+                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement either ICommand or ICommand<{typeof(TSignal).Name}>");
+            }
+
             _container.Bind<TCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TSignal), typeof(TCommand), mode, priority, isAsync: false);
         }
@@ -88,14 +96,27 @@ namespace Nexus.Core
         /// The command is bound as non-singleton (one instance per execution).
         /// </summary>
         /// <typeparam name="TSignal">The signal struct type that triggers the command.</typeparam>
-        /// <typeparam name="TCommand">The command class (must implement <see cref="IAsyncCommand"/>).</typeparam>
+        /// <typeparam name="TCommand">The command class.</typeparam>
         /// <param name="mode">Execution mode (Sequential, Concurrent, Exclusive, CompositeTrigger).</param>
         /// <param name="priority">Execution priority; lower values run first.</param>
         public void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
-            where TCommand : class, IAsyncCommand
+            where TCommand : class where TSignal : struct
         {
+            // Validate that the command implements either IAsyncCommand or IAsyncCommand<TSignal>
+            bool isGeneric = typeof(IAsyncCommand<TSignal>).IsAssignableFrom(typeof(TCommand));
+            bool isNormal = typeof(IAsyncCommand).IsAssignableFrom(typeof(TCommand));
+            if (!isGeneric && !isNormal)
+            {
+                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement either IAsyncCommand or IAsyncCommand<{typeof(TSignal).Name}>");
+            }
+
             _container.Bind<TCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TSignal), typeof(TCommand), mode, priority, isAsync: true);
+        }
+
+        public ICommandBindingBuilder<TSignal> BindSignal<TSignal>() where TSignal : struct
+        {
+            return new CommandBindingBuilder<TSignal>(this);
         }
 
         /// <summary>
@@ -107,6 +128,29 @@ namespace Nexus.Core
         public void Fire<T>(T signal) where T : struct
         {
             _signalBus.Fire(signal);
+        }
+    }
+
+    [Preserve]
+    internal class CommandBindingBuilder<TSignal> : ICommandBindingBuilder<TSignal> where TSignal : struct
+    {
+        private readonly ContextBuilder _builder;
+
+        public CommandBindingBuilder(ContextBuilder builder)
+        {
+            _builder = builder;
+        }
+
+        public ICommandBindingBuilder<TSignal> To<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class
+        {
+            _builder.BindCommand<TSignal, TCommand>(mode, priority);
+            return this;
+        }
+
+        public ICommandBindingBuilder<TSignal> ToAsync<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class
+        {
+            _builder.BindAsyncCommand<TSignal, TCommand>(mode, priority);
+            return this;
         }
     }
 }

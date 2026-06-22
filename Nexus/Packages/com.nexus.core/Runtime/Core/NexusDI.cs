@@ -7,8 +7,18 @@ using UnityEngine.Scripting;
 namespace Nexus.Core
 {
     [Preserve]
+    public interface IDependencyAdapter
+    {
+        object Resolve(Type type);
+        void Inject(object instance);
+        bool IsRegistered(Type type);
+    }
+
+    [Preserve]
     public class NexusDI : IDisposable, IAsyncDisposable
     {
+        public IDependencyAdapter ExternalAdapter { get; set; }
+        public int ActiveSingletonsCount => _resolvedSingletons.Count;
         private readonly NexusDI _parent;
         private readonly Dictionary<Type, Binding> _bindings = new();
         private readonly HashSet<object> _resolvedSingletons = new();
@@ -88,6 +98,11 @@ namespace Nexus.Core
                 return this;
             }
 
+            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type))
+            {
+                return ExternalAdapter.Resolve(type);
+            }
+
             if (_bindings.TryGetValue(type, out var binding))
             {
                 if (binding.Instance != null)
@@ -141,6 +156,8 @@ namespace Nexus.Core
 
         public bool IsRegistered(Type type)
         {
+            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type))
+                return true;
             if (_bindings.ContainsKey(type))
                 return true;
             return _parent != null && _parent.IsRegistered(type);
@@ -149,6 +166,11 @@ namespace Nexus.Core
         public void Inject(object instance)
         {
             if (instance == null) return;
+
+            if (ExternalAdapter != null)
+            {
+                ExternalAdapter.Inject(instance);
+            }
 
             var type = instance.GetType();
             

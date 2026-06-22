@@ -10,13 +10,13 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 567af3019c2502e4186aa9c0413c79f6, type: 3}
-  m_Name: Test1ContextData
+  m_Name: TEST1ContextData
   m_EditorClassIdentifier: com.nexus.core::Nexus.Core.ContextData
-  _version: 0
+  _version: 1
   AssemblyScopes:
   - Assembly-CSharp
   DependsOn: []
   EnableAnalytics: 0
   EnableDebugSignals: 0
   CommandPoolInitialSize: 4
-  ScopeTag: Test1
+  ScopeTag: TEST1

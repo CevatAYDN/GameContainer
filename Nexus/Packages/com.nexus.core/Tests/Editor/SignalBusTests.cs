@@ -203,5 +203,90 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(1, ExecutedCount);
             Assert.AreEqual(77, LastExecutedValue);
         }
+
+        public static int GenericExecutedCount = 0;
+        public static int GenericLastExecutedValue = 0;
+
+        public class GenericTestCommand : ICommand<SimpleSignal>
+        {
+            public void Execute(SimpleSignal signal)
+            {
+                GenericExecutedCount++;
+                GenericLastExecutedValue = signal.Value;
+            }
+        }
+
+        public class MockDependencyAdapter : IDependencyAdapter
+        {
+            public bool IsRegisteredCalled = false;
+            public bool ResolveCalled = false;
+            public bool InjectCalled = false;
+
+            public bool IsRegistered(Type type)
+            {
+                IsRegisteredCalled = true;
+                return type == typeof(string);
+            }
+
+            public object Resolve(Type type)
+            {
+                ResolveCalled = true;
+                if (type == typeof(string))
+                    return "InjectedExternalString";
+                return null;
+            }
+
+            public void Inject(object instance)
+            {
+                InjectCalled = true;
+            }
+        }
+
+        [Test]
+        public void GenericCommand_ExecutesAndInjectsSignalWithoutReflection()
+        {
+            GenericExecutedCount = 0;
+            GenericLastExecutedValue = 0;
+
+            _container.Bind<GenericTestCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(GenericTestCommand), ExecutionMode.Sequential, 0, isAsync: false);
+
+            _signalBus.Fire(new SimpleSignal(88));
+
+            Assert.AreEqual(1, GenericExecutedCount);
+            Assert.AreEqual(88, GenericLastExecutedValue);
+        }
+
+        [Test]
+        public void FluentBindingAPI_RegistersCommandCorrectly()
+        {
+            GenericExecutedCount = 0;
+            GenericLastExecutedValue = 0;
+
+            var builder = new ContextBuilder(_container, _signalBus);
+            builder.BindSignal<SimpleSignal>().To<GenericTestCommand>();
+
+            _signalBus.Fire(new SimpleSignal(12));
+
+            Assert.AreEqual(1, GenericExecutedCount);
+            Assert.AreEqual(12, GenericLastExecutedValue);
+        }
+
+        [Test]
+        public void IDependencyAdapter_DelegatesResolvesAndInjections()
+        {
+            var adapter = new MockDependencyAdapter();
+            _container.ExternalAdapter = adapter;
+
+            var resolvedString = _container.Resolve<string>();
+
+            Assert.IsTrue(adapter.IsRegisteredCalled);
+            Assert.IsTrue(adapter.ResolveCalled);
+            Assert.AreEqual("InjectedExternalString", resolvedString);
+
+            var cmd = new GenericTestCommand();
+            _container.Inject(cmd);
+            Assert.IsTrue(adapter.InjectCalled);
+        }
     }
 }

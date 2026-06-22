@@ -1,16 +1,17 @@
 [Licensing::Module] Trying to connect to existing licensing client channel...
 Built from '6000.5/staging' branch; Version is '6000.5.0f1 (88b47c5e7076) revision 8959100'; Using compiler version '194234433'; Build Type 'Release'
 OS: 'Windows 11  (10.0.26200) Professional' Language: 'tr' Physical Memory: 65446 MB
-[Licensing::IpcConnector] Successfully connected to: "LicenseClient-wwwla" at "2026-06-18T22:24:24.7768042Z"
+[Licensing::IpcConnector] Channel LicenseClient-wwwla doesn't exist
 BatchMode: 1, IsHumanControllingUs: 0, StartBugReporterOnCrash: 0, Is64bit: 1
 System  architecture: x64
 Process architecture: x64
-Date: 2026-06-18T22:24:24Z
+Date: 2026-06-22T21:18:27Z
+[Licensing::Module] Successfully launched the LicensingClient (PId: 24660)
 
 COMMAND LINE ARGUMENTS:
 C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Unity.exe
 -projectPath
-C:\Users\wwwla\Documents\Github\GameContainer\Nexus
+c:\Users\wwwla\Documents\Github\GameContainer\Nexus
 -automated
 -runTests
 -testPlatform
@@ -18,11 +19,11 @@ editmode
 -testResults
 editmode-results.xml
 -logFile
-C:\Users\wwwla\Documents\Github\GameContainer\Nexus\editmode-run.log
+c:\Users\wwwla\Documents\Github\GameContainer\Nexus\editmode-run.log
 -batchmode
 -nographics
 -quit
-Successfully changed project path to: C:\Users\wwwla\Documents\Github\GameContainer\Nexus
+Successfully changed project path to: c:\Users\wwwla\Documents\Github\GameContainer\Nexus
 C:/Users/wwwla/Documents/Github/GameContainer/Nexus
 [UnityMemory] Configuration Parameters - Can be set up in boot.config
     "memorysetup-temp-allocator-size-gi-baking-worker=262144"
@@ -60,36 +61,31 @@ C:/Users/wwwla/Documents/Github/GameContainer/Nexus
     "memorysetup-job-temp-allocator-block-size=2097152"
     "memorysetup-job-temp-allocator-block-size-background=1048576"
     "memorysetup-job-temp-allocator-reduction-small-platforms=262144"
-Logging is directed to a specific file, skipping project log.Player connection [22396]  Target information:
+Logging is directed to a specific file, skipping project log.Player connection [25000]  Target information:
 
-Player connection [22396]  * "[IP] 192.168.1.102 [Port] 55504 [Flags] 2 [Guid] 2556655188 [EditorId] 2556655188 [Version] 1048832 [Id] WindowsEditor(7,Cevat) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
+Player connection [25000]  * "[IP] 192.168.1.102 [Port] 55504 [Flags] 2 [Guid] 1891120090 [EditorId] 1891120090 [Version] 1048832 [Id] WindowsEditor(7,Cevat) [Debug] 1 [PackageName] WindowsEditor [ProjectName] Editor" 
 
-Player connection [22396] Host joined multi-casting on [225.0.0.222:54997]...
-Player connection [22396] Host joined alternative multi-casting on [225.0.0.222:34997]...
+Player connection [25000] Host joined multi-casting on [225.0.0.222:54997]...
+Player connection [25000] Host joined alternative multi-casting on [225.0.0.222:34997]...
 Input System module state changed to: Initialized.
 [Physics::Module] Initialized fallback backend.
 [Physics::Module] Id: 0xdecafbad
-[Package Manager] Connected to IPC stream "Upm-29364" after 0.2 seconds.
-[Licensing::Module] Licensing is not yet initialized.
-[Licensing::Client] Error: HandshakeResponse reported an error:
-	ResponseCode: 505
-	ResponseStatus: Unsupported protocol version '1.18.1'.
-[Licensing::Module] Error: Failed to handshake to channel: "LicenseClient-wwwla"
-[Licensing::IpcConnector] LicenseClient-wwwla channel disconnected successfully.
-[Licensing::IpcConnector] Channel LicenseClient-wwwla-6000.5.0 doesn't exist
-[Licensing::Module] Successfully launched the LicensingClient (PId: 25584)
-[Licensing::IpcConnector] Successfully connected to: "LicenseClient-wwwla-6000.5.0" at "2026-06-18T22:24:26.6801482Z"
-[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 25584, path: "C:/Program Files/Unity/Hub/Editor/6000.5.0f1/Editor/Data/Resources/Licensing/Client/Unity.Licensing.Client.exe")
+Starting IPC server.
+Waiting for clients to connect on \\.\pipe\Unity-LicenseClient-wwwla, press Ctrl-C to exit.
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-wwwla" at "2026-06-22T21:18:27.7271334Z"
+[Licensing::Client] Code 10 while verifying Licensing Client signature (process Id: 24660, path: "C:/Program Files/Unity/Hub/Editor/6000.5.0f1/Editor/Data/Resources/Licensing/Client/Unity.Licensing.Client.exe")
 [Licensing::Module] LicensingClient has failed validation; ignoring
+[Package Manager] Connected to IPC stream "Upm-25496" after 0.2 seconds.
+[Licensing::Module] Licensing is not yet initialized.
 [Licensing::Client] Handshaking with LicensingClient:
   Version:                 1.18.1+9fbee8e
-  Session Id:              a94aa1651af5466aa43c4bd027f70971
-  Correlation Id:          9d97c40ee58b07e66e1b47c91dd91620
-  External correlation Id: 3382708178396224795
+  Session Id:              f180d5f2986d425eacbf35f668427006
+  Correlation Id:          dd37efb04b58ba74e3c0ff8d0a6107bf
+  External correlation Id: 6882702240874487056
   Machine Id:              2ZFNcCL9T/0lfDBMYsRpY9qCsFg=
-[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-wwwla-6000.5.0" (connect: 0.24s, validation: 0.09s, handshake: 0.01s)
-[Licensing::IpcConnector] Successfully connected to: "LicenseClient-wwwla-6000.5.0-notifications" at "2026-06-18T22:24:26.777791Z"
-[Licensing::Module] Connected to LicensingClient (PId: 25584, launch time: 0.00, total connection time: 0.34s)
+[Licensing::Module] Successfully connected to LicensingClient on channel: "LicenseClient-wwwla" (connect: 0.24s, validation: 0.14s, handshake: 0.04s)
+[Licensing::IpcConnector] Successfully connected to: "LicenseClient-wwwla-notifications" at "2026-06-22T21:18:27.9135666Z"
+[Licensing::Module] Connected to LicensingClient (PId: 24660, launch time: 0.00, total connection time: 0.43s)
 [Licensing::Module] Error: Access token is unavailable; failed to update
 [Licensing::Client] Successfully resolved entitlement details
 [Licensing::Module] License group:
@@ -97,9 +93,9 @@ Input System module state changed to: Initialized.
   Product: Unity Personal
   Type: Assigned
   Expiration: Unlimited
-[Licensing::Client] Successfully updated license, isAsync: True, time: 0.02
-[Licensing::Module] Licensing Background thread has ended after 2.04s
-[Licensing::Module] Licensing is initialized (took 1.70s).
+[Licensing::Client] Successfully updated license, isAsync: True, time: 0.01
+[Licensing::Module] Licensing Background thread has ended after 0.47s
+[Licensing::Module] Licensing is initialized (took 0.10s).
 [Licensing::Client] Successfully resolved entitlement details
 Library Redirect Path: Library/
 [Physics::Module] Selected backend.
@@ -123,7 +119,7 @@ Mono path[0] = 'C:/Program Files/Unity/Hub/Editor/6000.5.0f1/Editor/Data/Managed
 Mono path[1] = 'C:/Program Files/Unity/Hub/Editor/6000.5.0f1/Editor/Data/BCLExtensions/runtime/netstandard2.1'
 Mono path[2] = 'C:/Program Files/Unity/Hub/Editor/6000.5.0f1/Editor/Data/MonoBleedingEdge/lib/mono/unityjit-win32'
 Mono config path = 'C:/Program Files/Unity/Hub/Editor/6000.5.0f1/Editor/Data/MonoBleedingEdge/etc'
-Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56364
+Using monoOptions --debugger-agent=transport=dt_socket,embedding=1,server=y,suspend=n,address=127.0.0.1:56496
 CodeReloadManager initialized
 ImportWorker Server TCP listen port: 0
 AcceleratorClientConnectionCallback - disconnected - :0
@@ -133,31 +129,31 @@ Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.5.0f1/E
 Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.5.0f1/Editor/Data/PlaybackEngines/WindowsStandaloneSupport/UnityEditor.WindowsStandalone.Extensions.dll
 [Licensing::Client] Successfully resolved entitlement details
 Register platform support module: C:/Program Files/Unity/Hub/Editor/6000.5.0f1/Editor/Data/PlaybackEngines/AndroidPlayer/UnityEditor.Android.Extensions.dll
-Registered in 0.003917 seconds.
+Registered in 0.004419 seconds.
 Native extension for Android target not found
 Native extension for WindowsStandalone target not found
 Native extension for WebGL target not found
 Package Manager log level set to [2]
 ScheduleIndexationOnStartup MainProcess:False IndexOnStartup:True
 Mono: successfully reloaded assembly
-- Finished resetting the current domain, in  0.340 seconds
-Domain Reload Profiling: 787ms
-	BeginReloadAssembly (112ms)
-		CreateAndSetChildDomain (4ms)
-	RebuildCommonClasses (4ms)
-	RebuildNativeTypeToScriptingClass (14ms)
-	initialDomainReloadingComplete (58ms)
-	LoadAllAssembliesAndSetupDomain (256ms)
-		LoadAssemblies (106ms)
-		AnalyzeDomain (183ms)
-			TypeCache.Refresh (182ms)
-				TypeCache.ScanAssembly (170ms)
-	FinalizeReload (342ms)
+- Finished resetting the current domain, in  0.352 seconds
+Domain Reload Profiling: 824ms
+	BeginReloadAssembly (122ms)
+		CreateAndSetChildDomain (15ms)
+	RebuildCommonClasses (6ms)
+	RebuildNativeTypeToScriptingClass (16ms)
+	initialDomainReloadingComplete (61ms)
+	LoadAllAssembliesAndSetupDomain (265ms)
+		LoadAssemblies (104ms)
+		AnalyzeDomain (188ms)
+			TypeCache.Refresh (186ms)
+				TypeCache.ScanAssembly (174ms)
+	FinalizeReload (355ms)
 		SetupLoadedEditorAssemblies (0ms)
 			InitializePlatformSupportModulesInManaged (8ms)
-			BeforeProcessingInitializeOnLoad (79ms)
+			BeforeProcessingInitializeOnLoad (83ms)
 			ProcessInitializeOnLoadAttributes (90ms)
-			ProcessInitializeOnLoadMethodAttributes (98ms)
+			ProcessInitializeOnLoadMethodAttributes (103ms)
 [Licensing::Client] Successfully resolved entitlement details
 Application.AssetDatabase Initial Refresh Start
 [Package Manager] Restoring resolved packages state from cache
@@ -226,109 +222,476 @@ Application.AssetDatabase Initial Refresh Start
     com.nexus.core@file:C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core (location: C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core)
 [Subsystems] No new subsystems found in resolved package list.
 [Package Manager] Done registering packages in 0.02 seconds
+[ScriptCompilation] Requested script compilation because: AssetDatabase observed changes in script compilation related files
+info: Microsoft.Hosting.Lifetime[14]
+      Now listening on: http://localhost:80
+info: Microsoft.Hosting.Lifetime[0]
+      Application started. Press Ctrl+C to shut down.
+info: Microsoft.Hosting.Lifetime[0]
+      Hosting environment: Production
+info: Microsoft.Hosting.Lifetime[0]
+      Content root path: C:\Users\wwwla\Documents\Github\GameContainer\Nexus
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping - application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/Ping'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/Ping - 200 - application/grpc 26.1797ms
 Starting: C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\Tools\BuildPipeline\bee_backend.exe --ipc --defer-dag-verification --dagfile="Library/Bee/1900b0aE.dag" --continue-on-failure --profile="Library/Bee/backend1.traceevents" ScriptAssemblies
 WorkingDir: C:/Users/wwwla/Documents/Github/GameContainer/Nexus
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/ConfigurePostProcessors - application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/ConfigurePostProcessors'
+warn: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Assembly system.runtime.interopservices.windowsruntime has duplicate hint path. Ignoring "C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\UnityReferenceAssemblies\unity-4.8-api\Facades\System.Runtime.InteropServices.WindowsRuntime.dll" in favor of "C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\NetStandard\Extensions\2.0.0\System.Runtime.InteropServices.WindowsRuntime.dll"
+warn: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Assembly system.componentmodel.composition has duplicate hint path. Ignoring "C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\UnityReferenceAssemblies\unity-4.8-api\System.ComponentModel.Composition.dll" in favor of "C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\NetStandard\compat\2.1.0\shims\netfx\System.ComponentModel.Composition.dll"
 DisplayProgressbar: Compiling Scripts
-ExitCode: 0 Duration: 0s227ms
-[753/958    0s] ILPP-Configuration Library/ilpp-configuration.nevergeneratedoutput
-*** Tundra build success (0.20 seconds), 1 items updated, 958 evaluated
-AssetDatabase: script compilation time: 0.591392s
+info: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Resolved Unity.Burst.Cecil, Version=0.11.6.0, Culture=neutral, PublicKeyToken=50cebf1cceb9d05e with Library\PackageCache\com.unity.burst@6bb9aca3ef38\Unity.Burst.CodeGen\Unity.Burst.Cecil.dll
+info: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Resolved Mono.Cecil, Version=0.11.5.0, Culture=neutral, PublicKeyToken=50cebf1cceb9d05e with Library\PackageCache\com.unity.nuget.mono-cecil@ecb9724e46ff\Mono.Cecil.dll
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/ConfigurePostProcessors'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/ConfigurePostProcessors - 200 - application/grpc 49.7634ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      Processing assembly Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.dll, with 141 defines and 299 references
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running Unity.Jobs.CodeGen.JobsILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - 200 - application/grpc 13.6197ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      Processing assembly Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.tests.dll, with 141 defines and 285 references
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running Unity.Jobs.CodeGen.JobsILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - 200 - application/grpc 2.7257ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - application/grpc -
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      Processing assembly Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.tests.dll, with 139 defines and 296 references
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      Processing assembly Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.dll, with 139 defines and 309 references
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running Unity.Jobs.CodeGen.JobsILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running Unity.Jobs.CodeGen.JobsILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - 200 - application/grpc 2.0141ms
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - 200 - application/grpc 2.4216ms
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      Processing assembly Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp.dll, with 141 defines and 341 references
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running Unity.Jobs.CodeGen.JobsILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Resolved Unity.Collections, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null with Library\Bee\artifacts\1900b0aE.dag\Unity.Collections.dll
+info: Microsoft.AspNetCore.Hosting.Diagnostics[1]
+      Request starting HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - application/grpc -
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[0]
+      Executing endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      Processing assembly Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp-Editor.dll, with 139 defines and 365 references
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running Unity.Jobs.CodeGen.JobsILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Resolved UnityEditor.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null with C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\Managed\UnityEngine\UnityEditor.CoreModule.dll
+info: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Resolved UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null with C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\Managed\UnityEngine\UnityEngine.CoreModule.dll
+info: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Resolved Unity.Scripting, Version=0.0.0.0, Culture=neutral, PublicKeyToken=null with C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Data\Managed\UnityEngine\Unity.Scripting.dll
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingPipeline[0]
+      running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+info: Unity.ILPP.Runner.PostProcessingAssemblyLoadContext[0]
+      Resolved Unity.Burst.Cecil.Rocks, Version=0.11.6.0, Culture=neutral, PublicKeyToken=50cebf1cceb9d05e with Library\PackageCache\com.unity.burst@6bb9aca3ef38\Unity.Burst.CodeGen\Unity.Burst.Cecil.Rocks.dll
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - 200 - application/grpc 1379.8310ms
+info: Microsoft.AspNetCore.Routing.EndpointMiddleware[1]
+      Executed endpoint 'gRPC - /UnityILPP.PostProcessing/PostProcessAssembly'
+info: Microsoft.AspNetCore.Hosting.Diagnostics[2]
+      Request finished HTTP/2 POST http://ilpp/UnityILPP.PostProcessing/PostProcessAssembly - 200 - application/grpc 1562.9566ms
+ExitCode: 0 Duration: 5s633ms
+[           0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.dll (+2 others) [CacheMiss dd9bd5073acc0997a39da56dcdc5e18100000000000000000000000000000006]
+[747/958    0s] ILPP-Configuration Library/ilpp-configuration.nevergeneratedoutput
+[934/958    0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.dll (+2 others)
+[           0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.dll (+2 others) [CacheWrite dd9bd5073acc0997a39da56dcdc5e18100000000000000000000000000000006]
+[           0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.dll (+2 others) [CacheMiss fd39e48bb66470dd2edd8d9e504c4b5600000000000000000000000000000006]
+[           0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.tests.dll (+2 others) [CacheMiss cc5aaaf6fe8f227cb2c3ccc7f616d1ea00000000000000000000000000000006]
+[935/958    0s] ILPostProcess Library/Bee/artifacts/1900b0aE.dag/post-processed/com.nexus.core.dll (+pdb)
+Processing assembly Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.dll, with 141 defines and 299 references
+
+processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+
+running Unity.Jobs.CodeGen.JobsILPostProcessor
+
+running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+[936/958    0s] CopyFiles Library/ScriptAssemblies/com.nexus.core.pdb
+[937/958    0s] CopyFiles Library/ScriptAssemblies/com.nexus.core.dll
+[938/958    0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.tests.dll (+2 others)
+[           0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.tests.dll (+2 others) [CacheWrite cc5aaaf6fe8f227cb2c3ccc7f616d1ea00000000000000000000000000000006]
+[939/958    0s] ILPostProcess Library/Bee/artifacts/1900b0aE.dag/post-processed/com.nexus.core.tests.dll (+pdb)
+Processing assembly Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.tests.dll, with 141 defines and 285 references
+
+processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+
+running Unity.Jobs.CodeGen.JobsILPostProcessor
+
+running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+[940/958    0s] CopyFiles Library/ScriptAssemblies/com.nexus.core.tests.pdb
+[941/958    0s] CopyFiles Library/ScriptAssemblies/com.nexus.core.tests.dll
+[942/958    2s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.dll (+2 others)
+[           0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.dll (+2 others) [CacheWrite fd39e48bb66470dd2edd8d9e504c4b5600000000000000000000000000000006]
+[           0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.tests.dll (+2 others) [CacheMiss aa2b4534eded33fae54863eb04d275a600000000000000000000000000000006]
+[943/958    0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.tests.dll (+2 others)
+[           0s] Csc Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.tests.dll (+2 others) [CacheWrite aa2b4534eded33fae54863eb04d275a600000000000000000000000000000006]
+[944/958    0s] ILPostProcess Library/Bee/artifacts/1900b0aE.dag/post-processed/com.nexus.core.editor.tests.dll (+pdb)
+Processing assembly Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.tests.dll, with 139 defines and 296 references
+
+processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+
+running Unity.Jobs.CodeGen.JobsILPostProcessor
+
+running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+[945/958    0s] ILPostProcess Library/Bee/artifacts/1900b0aE.dag/post-processed/com.nexus.core.editor.dll (+pdb)
+Processing assembly Library/Bee/artifacts/1900b0aE.dag/com.nexus.core.editor.dll, with 139 defines and 309 references
+
+processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+
+running Unity.Jobs.CodeGen.JobsILPostProcessor
+
+running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+[946/958    0s] CopyFiles Library/ScriptAssemblies/com.nexus.core.editor.pdb
+[947/958    0s] CopyFiles Library/ScriptAssemblies/com.nexus.core.editor.tests.pdb
+[948/958    0s] CopyFiles Library/ScriptAssemblies/com.nexus.core.editor.tests.dll
+[949/958    0s] CopyFiles Library/ScriptAssemblies/com.nexus.core.editor.dll
+[950/958    1s] Csc Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp.dll (+2 others)
+[951/958    0s] Csc Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp-Editor.dll (+2 others)
+[952/958    1s] ILPostProcess Library/Bee/artifacts/1900b0aE.dag/post-processed/Assembly-CSharp.dll (+pdb)
+Processing assembly Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp.dll, with 141 defines and 341 references
+
+processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+
+running Unity.Jobs.CodeGen.JobsILPostProcessor
+
+running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+[953/958    1s] ILPostProcess Library/Bee/artifacts/1900b0aE.dag/post-processed/Assembly-CSharp-Editor.dll (+pdb)
+Processing assembly Library/Bee/artifacts/1900b0aE.dag/Assembly-CSharp-Editor.dll, with 139 defines and 365 references
+
+processors: Unity.Jobs.CodeGen.JobsILPostProcessor, zzzUnity.Burst.CodeGen.BurstILPostProcessor
+
+running Unity.Jobs.CodeGen.JobsILPostProcessor
+
+running zzzUnity.Burst.CodeGen.BurstILPostProcessor
+[954/958    0s] CopyFiles Library/ScriptAssemblies/Assembly-CSharp.dll
+[955/958    0s] CopyFiles Library/ScriptAssemblies/Assembly-CSharp.pdb
+[956/958    0s] CopyFiles Library/ScriptAssemblies/Assembly-CSharp-Editor.dll
+[957/958    0s] CopyFiles Library/ScriptAssemblies/Assembly-CSharp-Editor.pdb
+*** Tundra build success (5.61 seconds), 25 items updated, 958 evaluated
+Total cache size 192425881
+Total cache size after purge 192425881, took 00:00:00.3523060
+AssetDatabase: script compilation time: 6.676160s
 Begin MonoManager ReloadAssembly
+Refreshing native plugins compatible for Editor in 60.71 ms, found 4 plugins.
 Native extension for Android target not found
 Native extension for WindowsStandalone target not found
 Native extension for WebGL target not found
 ScheduleIndexationOnStartup MainProcess:True IndexOnStartup:True
 Mono: successfully reloaded assembly
-- Finished resetting the current domain, in  2.653 seconds
-Domain Reload Profiling: 3535ms
-	BeginReloadAssembly (298ms)
-		DisableScriptedObjects (23ms)
-		CreateAndSetChildDomain (140ms)
-	RebuildCommonClasses (7ms)
-	RebuildNativeTypeToScriptingClass (14ms)
-	initialDomainReloadingComplete (48ms)
-	LoadAllAssembliesAndSetupDomain (513ms)
-		LoadAssemblies (277ms)
-		AnalyzeDomain (219ms)
-			TypeCache.Refresh (149ms)
-				TypeCache.ScanAssembly (139ms)
-			BuildScriptInfoCaches (60ms)
+- Finished resetting the current domain, in  3.833 seconds
+Domain Reload Profiling: 6434ms
+	BeginReloadAssembly (210ms)
+		DisableScriptedObjects (30ms)
+		CreateAndSetChildDomain (46ms)
+	RebuildCommonClasses (8ms)
+	RebuildNativeTypeToScriptingClass (15ms)
+	initialDomainReloadingComplete (50ms)
+	LoadAllAssembliesAndSetupDomain (2318ms)
+		LoadAssemblies (1953ms)
+		AnalyzeDomain (345ms)
+			TypeCache.Refresh (270ms)
+				TypeCache.ScanAssembly (259ms)
+			BuildScriptInfoCaches (65ms)
 			ResolveRequiredComponents (7ms)
-	FinalizeReload (2654ms)
+	FinalizeReload (3834ms)
 		SetupLoadedEditorAssemblies (0ms)
 			InitializePlatformSupportModulesInManaged (7ms)
-			BeforeProcessingInitializeOnLoad (77ms)
-			ProcessInitializeOnLoadAttributes (2032ms)
-			ProcessInitializeOnLoadMethodAttributes (241ms)
-			AfterProcessingInitializeOnLoad (4ms)
-		AwakeInstancesAfterBackupRestoration (17ms)
-Starting new worker id: 0 with log in C:/Users/wwwla/Documents/Github/GameContainer/Nexus/Logs/AssetImportWorkerHW0.log
+			BeforeProcessingInitializeOnLoad (81ms)
+			ProcessInitializeOnLoadAttributes (2636ms)
+			ProcessInitializeOnLoadMethodAttributes (181ms)
+			AfterProcessingInitializeOnLoad (5ms)
+		AwakeInstancesAfterBackupRestoration (20ms)
+Importing 'GUID: 1142bbad8b9e8c44c83a9775ff120d37 - Path: Packages/com.unity.render-pipelines.core/Tests/Editor/UnifiedRayTracing/TraceRays.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+Launched and connected shader compiler UnityShaderCompiler.exe after 0.04 seconds
 
-Asset Pipeline Refresh (id=41ef01cb3333dcc47845e76b8d70a3d4): Total: 4.698 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
+Compiling Ray Tracing Shader "TraceRays.urtshader", keywords = <no keywords>
+    finished in 0.37 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 1142bbad8b9e8c44c83a9775ff120d37' -> (Import Result ID: '2f80b42cb77a5ba8408fb1fbf9105067') in 0.593 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=dd8ac7dc757973ce66df0f8192beeedc DependenciesID=923d55a04994898b005482160e081841 StaticDependenciesID=83382896bf2194e2afb7a814a9f914cd 
+Importing 'GUID: d19f4f8a13b6edb48b986a47ec96402e - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/LightmapShadowMaskIntegration.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "LightmapShadowMaskIntegration.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: d19f4f8a13b6edb48b986a47ec96402e' -> (Import Result ID: 'c81150214ac3e9f5e228ed0d3729c080') in 0.248 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=f9d6f25beaf5d632388b03cbd647ba2d DependenciesID=d30defaa51229579d6a3e089451a8ff8 StaticDependenciesID=14c19d6e640993fbe77b1f068828bf12 
+Importing 'GUID: 737a1597422c12547a8714d76a9406ec - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/LightmapGBufferDebug.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "LightmapGBufferDebug.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 737a1597422c12547a8714d76a9406ec' -> (Import Result ID: '698ffc378a4d85d97d34daf19b03facb') in 0.028 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=1d2c381688657612bf743dea33e4ae23 DependenciesID=e3493efa11b41a5fce221d01dc1593a4 StaticDependenciesID=8d11f009385b3a4cea3b53c3339efefb 
+Importing 'GUID: f32463968f29423cad25aee15a14b9f1 - Path: Packages/com.unity.render-pipelines.core/Runtime/Lighting/SurfaceCache/PunctualLightSampling.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "PunctualLightSampling.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: f32463968f29423cad25aee15a14b9f1' -> (Import Result ID: 'ea753f701bc603d4f37080ad7e7d81d3') in 0.078 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=c345b5a4fe54a56e0d3503075d4bb008 DependenciesID=6ae75420b80efbc8cd7671e1a3f71446 StaticDependenciesID=fae2d39a41418b21bab2b70cd0d272f0 
+Importing 'GUID: 1451d029813b192429211be28181beab - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/LightmapNormalIntegration.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "LightmapNormalIntegration.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 1451d029813b192429211be28181beab' -> (Import Result ID: '520a9bbc03fb0ce2fb572ccbfaf42110') in 0.026 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=45d5bed88c08e0ae24f0e31fdf9fdc71 DependenciesID=74f2ac14e5fa0052311ef1ac8f1fa5d1 StaticDependenciesID=6695b2a8ac591a9580bdd3907887ec37 
+Importing 'GUID: 94a070d33e408384bafc1dea4a565df9 - Path: Packages/com.unity.render-pipelines.core/Editor/Lighting/ProbeVolume/RenderingLayerMask/TraceRenderingLayerMask.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "TraceRenderingLayerMask.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 94a070d33e408384bafc1dea4a565df9' -> (Import Result ID: '6b57880dcf6cee457d172c8795f31ce2') in 0.031 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=0c75c5da200e55f509589784931565ac DependenciesID=b1e57c2e101e38532081fd4f7b47bb66 StaticDependenciesID=76c56abbfe1dea1698b482e1c311a1b3 
+Importing 'GUID: 94a39d12848d8d64ca962a72b74e7c50 - Path: Packages/com.unity.render-pipelines.core/Runtime/Lighting/SurfaceCache/Estimation.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "Estimation.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 94a39d12848d8d64ca962a72b74e7c50' -> (Import Result ID: '96f27f815e773686e99a8ad8b6da041f') in 0.036 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=1b0eb138d1e1b0e28d1dc38e6c2ee3c2 DependenciesID=d2722f9f0ca270c105f0bd733c94345d StaticDependenciesID=3d83c90598d39b20511fc2d468edef81 
+Importing 'GUID: 6513c3b892e933c4f8d00c19d5c47532 - Path: Packages/com.unity.render-pipelines.core/Tests/Editor/UnifiedRayTracing/TraceTransparentRays.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "TraceTransparentRays.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 6513c3b892e933c4f8d00c19d5c47532' -> (Import Result ID: 'e92e1eaa55ec81e9f67112a377208e03') in 0.021 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=059128fa4c67d89d87bfe4d554ad391b DependenciesID=aa28f2783794e06c99213afe659c244e StaticDependenciesID=8372fb0bb36e1468fa9601c49a86d0e6 
+Importing 'GUID: 7624adbeb148b5c48ab5ab660cc2602a - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/LightmapIndirectIntegration.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "LightmapIndirectIntegration.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 7624adbeb148b5c48ab5ab660cc2602a' -> (Import Result ID: '80250c0b0a9d30af0155daad69be964e') in 0.029 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=2cd6cb9b0035d2315974d321ecfa36f5 DependenciesID=23c634e5f6c07c120f6280f7e50a8253 StaticDependenciesID=67a45332e0f51102f9bb9c93a750d036 
+Importing 'GUID: e9f4de6d1e07fb94f9a60d35b618f724 - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/LightmapGBufferIntegration.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "LightmapGBufferIntegration.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: e9f4de6d1e07fb94f9a60d35b618f724' -> (Import Result ID: '25795c3be563296f568e3faa4a6efb14') in 0.033 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=a7f5bdb587796a71d8ca128a644b358f DependenciesID=5373e5004429887b0f43544db0930b3b StaticDependenciesID=8b26c93a6e3373b36ba430a420b17d9a 
+Importing 'GUID: 5a2a534753fbdb44e96c3c78b5a6999d - Path: Packages/com.unity.render-pipelines.core/Editor/Lighting/ProbeVolume/DynamicGI/DynamicGISkyOcclusion.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "DynamicGISkyOcclusion.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 5a2a534753fbdb44e96c3c78b5a6999d' -> (Import Result ID: '3cff4f520314642302fee8b4b3bc3054') in 0.026 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=1cf97bfff22f517865c2e82dc6d8c4c7 DependenciesID=21f2ee2bde8ca4c442ed0ab5071135a4 StaticDependenciesID=41b936436a30154af8a3b61f441fd564 
+Importing 'GUID: 5bbebdef5916845478fcef13fa10d89f - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/LightmapDirectIntegration.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "LightmapDirectIntegration.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 5bbebdef5916845478fcef13fa10d89f' -> (Import Result ID: '93e181801a4b5541a71a4b5c72d3a09b') in 0.032 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=9652420a6e2647f96f59102062aeed95 DependenciesID=f730659c965eb66074f896124e8f425f StaticDependenciesID=49e7ce722dcdec23942b360d8297bad5 
+Importing 'GUID: fbc59f55df2416344b008dc23753cae2 - Path: Packages/com.unity.render-pipelines.core/Tests/Editor/UnifiedRayTracing/TraceRaysAndFetchAttributes.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "TraceRaysAndFetchAttributes.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: fbc59f55df2416344b008dc23753cae2' -> (Import Result ID: 'be99e65f4c0b51cdac64c4dc7fb52201') in 0.024 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=22c22f4b614e9358e9dd846829db8146 DependenciesID=753a3d7bdf01223bb09c53df7333001f StaticDependenciesID=8530ce6573ae9a6cd0b7e3b83f0a29ad 
+Importing 'GUID: 1c410815c01ce1d4d82c645c0cd45747 - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/LightmapAOIntegration.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "LightmapAOIntegration.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 1c410815c01ce1d4d82c645c0cd45747' -> (Import Result ID: '05a6b7cc56ca73c351347ca1d1d6808c') in 0.030 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=629e7047fbba502c5cf40e8eae2d08f7 DependenciesID=a3d95a3fe5fa3e6f79da65b204422992 StaticDependenciesID=750dfd3ce8976c275bbe79cdc0d3127f 
+Importing 'GUID: 2c32233d92a2d0745930664c087c5c9a - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/ProbeIntegrationValidity.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "ProbeIntegrationValidity.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 2c32233d92a2d0745930664c087c5c9a' -> (Import Result ID: '45a0fe9a842b9971874db182f7e63d5d') in 0.026 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=50448cca7f57ca37bc4d9339b13854dd DependenciesID=ec8940c108bc63922c293f668a0937a4 StaticDependenciesID=29b4a31e24ae88c796e0b3135dc8eb9b 
+Importing 'GUID: ace95ac84e213794891b4bd7c9b3c158 - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/LightmapValidityIntegration.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "LightmapValidityIntegration.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: ace95ac84e213794891b4bd7c9b3c158' -> (Import Result ID: '46fd458c839fe45dc61764c5d1350da7') in 0.031 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=47e60a7a62a731fc98fd30d4f1b0213b DependenciesID=594202c4c3e6d88d49db3aa277ba2689 StaticDependenciesID=ba52e4c5fecd98843b40eedfc4866f08 
+Importing 'GUID: 5ecdabd800f05984696f22ba95284516 - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/ProbeIntegrationIndirect.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "ProbeIntegrationIndirect.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 5ecdabd800f05984696f22ba95284516' -> (Import Result ID: '622e287ccf756efede27d7e6c19f265c') in 0.040 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=2d2484001f742a5a9c0a3345963f5f9b DependenciesID=b41edbac16c053a304fcb9b9aa2fcc96 StaticDependenciesID=e2c127f94ccdcb83ca23463fb1f2a2e5 
+Importing 'GUID: 6e0b547bab30a804c8123974120d583f - Path: Packages/com.unity.render-pipelines.core/Tests/Runtime/PathTracing/PathIteratorTest.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "PathIteratorTest.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 6e0b547bab30a804c8123974120d583f' -> (Import Result ID: '2b59b5f95abb2c9243d641a1bf179af0') in 0.036 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=67ad072e70c3925bdb321165fa9bf554 DependenciesID=69d721e44ca663306e2ac8bce2ed4663 StaticDependenciesID=109768bf87f2aa9106ce5a61082f1a11 
+Importing 'GUID: de3013e16d99f2746ab1735ec06a660b - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/ProbeIntegrationOcclusion.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "ProbeIntegrationOcclusion.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: de3013e16d99f2746ab1735ec06a660b' -> (Import Result ID: 'a78c01ab46373911f5e2ef366b3b9e9a') in 0.034 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=390f2c8e40990339148dcbd795865f54 DependenciesID=2f10ea92923129ac0d9941f98b459a39 StaticDependenciesID=b27c26bc9001d433eb4742192dec8cdb 
+Importing 'GUID: 1f9bfe60b4ad75943a5281839c1a4e5c - Path: Packages/com.unity.render-pipelines.core/Runtime/PathTracing/Shaders/ProbeIntegrationDirect.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "ProbeIntegrationDirect.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: 1f9bfe60b4ad75943a5281839c1a4e5c' -> (Import Result ID: '712fae4827e2a01e4ec7773293d9fea1') in 0.032 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=1be9207c1326c9dca6b7a827acd454b0 DependenciesID=10d406fd958da1cd4dcaaccfdc90328f StaticDependenciesID=9976b23c91526db98b62402ee2637b09 
+Importing 'GUID: ff2cbab5da58bf04d82c5f34037ed123 - Path: Packages/com.unity.render-pipelines.core/Editor/Lighting/ProbeVolume/VirtualOffset/TraceVirtualOffset.urtshader' with importer (ScriptedImporter : Unity.Rendering.LightTransport.Editor:UnityEditor.Rendering.UnifiedRayTracing:UnifiedRTShaderImporter)
+
+Compiling Ray Tracing Shader "TraceVirtualOffset.urtshader", keywords = <no keywords>
+    finished in 0.01 seconds. Local cache hits 1, remote cache hits 0, compiled 0 platform variants
+Imported 'GUID: ff2cbab5da58bf04d82c5f34037ed123' -> (Import Result ID: '763f90d92a95218ff322e264c3480acd') in 0.028 seconds [static and dynamic dependencies]. Details - ImportResultOutputID=3b279ee2b602350b8a13acac76e11c01 DependenciesID=e5a663906791adc6d988111777f219b1 StaticDependenciesID=bb01cef5f5bbfce7bb5614b4f3a2af7b 
+Starting new worker id: 0 with log in C:/Users/wwwla/Documents/Github/GameContainer/Nexus/Logs/AssetImportWorkerHW0.log
+Refreshing native plugins compatible for Editor in 2.67 ms, found 4 plugins.
+
+Asset Pipeline Refresh (id=1defb49c162725f4cb6e571a6b63c2ef): Total: 15.736 seconds - Initiated by InitialRefreshV2(ForceSynchronousImport)
 	(Values over 0.05ms)
 	Summary:
-		Imports: total=0 (actual=0, local cache=0, cache server=0)
-		Asset DB Process Time: managed=0 ms, native=3049 ms
-		Asset DB Callback time: managed=55 ms, native=18 ms
-		Scripting: domain reloads=1, domain reload time=929 ms, compile time=593 ms, other=53 ms
-		Project Asset Count: scripts=1335, non-scripts=2260
-		Asset File Changes: new=0, changed=0, moved=0, deleted=0
+		Imports: total=21 (actual=21, local cache=0, cache server=0)
+		Asset DB Process Time: managed=3 ms, native=5774 ms
+		Asset DB Callback time: managed=248 ms, native=325 ms
+		Scripting: domain reloads=1, domain reload time=2650 ms, compile time=6677 ms, other=56 ms
+		Project Asset Count: scripts=1343, non-scripts=2261
+		Asset File Changes: new=0, changed=2, moved=0, deleted=0
 		Scan Filter Count: 0
-	InvokePackagesCallback: 20.602ms
-	ApplyChangesToAssetFolders: 0.527ms
-	Scan: 73.849ms
-	Collect global state as custom dependencies: 2.529ms
-	CategorizeScriptCompilationAssets: 40.656ms
-	ProcessAssetsWithTransientArtifactChanges: 68.803ms
-	CategorizeAssets: 39.126ms
-	CompileScripts: 592.513ms
-	ImportOutOfDateAssets: 2714.309ms (2669.012ms without children)
-		UnloadImportedAssets: 0.669ms
-		EnsureUptoDateAssetsAreRegisteredWithGuidPM: 0.592ms
-		ImportSchedulerStart: 44.005ms
-	PostProcessAllAssets: 55.545ms
-		MonoPostProcessAllAssets: 55.478ms
-			UniversalRenderPipelineGlobalSettingsPostprocessor.OnPostprocessAllAssets 17.516ms
-			SyncVS.PostprocessSyncProject 10.502ms
-			SpeedTree9Postprocessor.OnPostprocessAllAssets 7.911ms
-			WindowAssetPostprocessingWatcher.OnPostprocessAllAssets 3.118ms
-			RenderPipelineGlobalSettingsPostprocessor.OnPostprocessAllAssets 0.676ms
-			ShaderReflectionAssetPostProcessor.OnPostprocessAllAssets 0.374ms
-			ReferencedClipsPostProcessor.OnPostprocessAllAssets 0.324ms
-			InputActionAssetPostprocessor.OnPostprocessAllAssets 0.268ms
-			AssetDatabaseCallbacks.OnPostprocessAllAssets 0.230ms
-			TerrainToolbarOverlayPostProcessor.OnPostprocessAllAssets 0.193ms
-			ProjectSettingsPostprocessor.OnPostprocessAllAssets 0.136ms
-	UnloadStreamsBegin: 2.256ms
-	PersistCurrentRevisions: 0.088ms
-	GenerateScriptTypeHashes: 1.154ms
-	GenerateScriptTypeSerializationHashes: 2.058ms
-	Untracked: 1082.792ms
+	InvokePackagesCallback: 22.660ms
+	ApplyChangesToAssetFolders: 0.597ms
+	Scan: 75.572ms
+	Collect global state as custom dependencies: 2.623ms
+	OnSourceAssetsModified: 0.691ms
+	CategorizeScriptCompilationAssets: 41.028ms
+	ProcessAssetsWithTransientArtifactChanges: 67.489ms
+	CategorizeAssets: 41.591ms
+	CompileScripts: 6677.428ms
+	ImportOutOfDateAssets: 5435.485ms (3909.079ms without children)
+		ImportManagerImport: 1487.754ms (1.491ms without children)
+			UpdateCategorizedAssets: 1.126ms
+		UnloadImportedAssets: 0.958ms
+		ReloadImportedAssets: 17.381ms
+		EnsureUptoDateAssetsAreRegisteredWithGuidPM: 0.548ms
+		ImportSchedulerStart: 37.099ms
+	PostProcessAllAssets: 548.206ms
+		ComputeShaderImportPostprocess 189.530ms
+		RaytracingShaderImportPostprocess 106.667ms
+		VCAutoAddAssetPostprocess 2.182ms
+		XRBuildSystem.XRAssetImported 0.403ms
+		Canvas.OnAllAssetImport 0.228ms
+		PostProcessCallbackCreateDeferredMaterials 0.076ms
+		ShaderAssetModifiedCallback 0.054ms
+		MonoPostProcessAllAssets: 247.591ms
+			AssetPostprocessor.OnPostprocessAllAssets 117.705ms
+			SyncVS.PostprocessSyncProject 34.835ms
+			StyleCatalogPostProcessor.OnPostprocessAllAssets 28.238ms
+			UniversalRenderPipelineGlobalSettingsPostprocessor.OnPostprocessAllAssets 19.512ms
+			BuilderAssetPostprocessor.OnPostprocessAllAssets 6.711ms
+			ShaderGraphAssetPostProcessor.OnPostprocessAllAssets 2.978ms
+			SpeedTree9Postprocessor.OnPostprocessAllAssets 2.703ms
+			WindowAssetPostprocessingWatcher.OnPostprocessAllAssets 2.563ms
+			AssetChangedListener.OnPostprocessAllAssets 2.150ms
+			RetainedModeAssetPostprocessor.OnPostprocessAllAssets 1.766ms
+			LiveReloadProcessor.OnPostprocessAllAssets 1.562ms
+			RenderPipelineGlobalSettingsPostprocessor.OnPostprocessAllAssets 1.112ms
+			ArtifactBrowserPostProcessor.OnPostprocessAllAssets 0.886ms
+			MaterialPostprocessor.OnPostprocessAllAssets 0.868ms
+			InputActionAssetPostprocessor.OnPostprocessAllAssets 0.727ms
+			TMPro_TexturePostProcessor.OnPostprocessAllAssets 0.660ms
+			TextAssetPostProcessor.OnPostprocessAllAssets 0.580ms
+			SampleDependencyImporterPostProcessor.OnPostprocessAllAssets 0.555ms
+			AudioMixerPostprocessor.OnPostprocessAllAssets 0.528ms
+			ReferencedClipsPostProcessor.OnPostprocessAllAssets 0.523ms
+			PostProcessor.OnPostprocessAllAssets 0.477ms
+			UVCSAssetPostprocessor.OnPostprocessAllAssets 0.473ms
+			ShaderReflectionAssetPostProcessor.OnPostprocessAllAssets 0.470ms
+			InputActionJsonNameModifierAssetProcessor.OnPostprocessAllAssets 0.450ms
+			AssetEvents.OnPostprocessAllAssets 0.389ms
+			TerrainToolbarOverlayPostProcessor.OnPostprocessAllAssets 0.284ms
+			SpeedTreePostProcessor.OnPostprocessAllAssets 0.240ms
+			ConfigAssetsTracker.OnPostprocessAllAssets 0.225ms
+			SamplePostprocessor.OnPostprocessAllAssets 0.205ms
+			AssetDatabaseCallbacks.OnPostprocessAllAssets 0.183ms
+			ProjectSettingsPostprocessor.OnPostprocessAllAssets 0.181ms
+			AudioContainerPostProcessor.OnPostprocessAllAssets 0.174ms
+			ScenarioDriftAssetsTracker.OnPostprocessAllAssets 0.131ms
+	PostAssetChangesProfiler: 4.856ms
+	UnloadStreamsBegin: 2.300ms
+	PersistCurrentRevisions: 0.240ms
+	GenerateScriptTypeHashes: 1.209ms
+	GenerateScriptTypeSerializationHashes: 2.113ms
+	Untracked: 2810.478ms
 
 Application.AssetDatabase Initial Refresh End
 Shader Hidden/ChartRasterizerHardware is not supported: GPU does not support conservative rasterization
-Scanning for USB devices : 15.395ms
+Scanning for USB devices : 15.979ms
 Initializing Unity extensions:
+Worker ready: AssetImportWorkerHW0 0
 [MODES] ModeService[none].Initialize
 [MODES] ModeService[none].LoadModes
 [MODES] Loading mode Default (0) for mode-current-id-Nexus
-Unloading 25 Unused Serialized files (Serialized files now loaded: 0)
-Unloading 6487 unused Assets / (3.9 MB). Loaded Objects now: 7391.
-Memory consumption went from 398.2 MB to 394.3 MB.
-Total: 10.581500 ms (FindLiveObjects: 0.609400 ms CreateObjectMapping: 2.139700 ms MarkObjects: 5.980500 ms  DeleteObjects: 1.847300 ms)
+Unloading 43 Unused Serialized files (Serialized files now loaded: 0)
+Unloading 6537 unused Assets / (3.6 MB). Loaded Objects now: 7407.
+Memory consumption went from 414.0 MB to 410.5 MB.
+Total: 11.519100 ms (FindLiveObjects: 0.584000 ms CreateObjectMapping: 2.066800 ms MarkObjects: 6.764500 ms  DeleteObjects: 2.100100 ms)
 
 Batchmode quit successfully invoked - shutting down!
-Worker ready: AssetImportWorkerHW0 0
-Killing ADB server in 2,0783429 seconds.
+Killing ADB server in 2,0847896 seconds.
 [Physics::Module] Cleanup current backend.
 [Physics::Module] Id: 0xf2b8ea05
 Input System module state changed to: ShutdownInProgress.
 Input Polling Thread exited.
 Input System module state changed to: Shutdown.
-[Licensing::IpcConnector] LicenseClient-wwwla-6000.5.0-notifications channel disconnected successfully.
-[Licensing::IpcConnector] LicenseClient-wwwla-6000.5.0 channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-wwwla-notifications channel disconnected successfully.
+[Licensing::IpcConnector] LicenseClient-wwwla channel disconnected successfully.
+Shut down.
 AcceleratorClientConnectionCallback - disconnected - :0
 Cleanup mono
 CodeReloadManager destroyed
+abort_threads: Failed aborting id: 00000000000058B8, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 0000000000002930, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 00000000000058B8, mono_thread_manage will ignore it
+
+abort_threads: Failed aborting id: 0000000000002930, mono_thread_manage will ignore it
+
+debugger-agent: Unable to listen on 3556
 Exiting batchmode successfully now!
 Exiting without the bug reporter. Application will terminate with return code 0

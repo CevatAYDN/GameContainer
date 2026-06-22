@@ -5,8 +5,8 @@ using UnityEngine.UI;
 namespace Nexus
 {
     // Automatically binds the view instance to its custom Mediator on context registration
-    [Mediator(typeof(Test1Mediator))]
-    public class Test1View : View
+    [Mediator(typeof(TEST1Mediator))]
+    public class TEST1View : View
     {
         public event System.Action OnButtonClicked;
 
@@ -44,7 +44,7 @@ namespace Nexus
             }
             else
             {
-                Debug.Log($"[{nameof(Test1View)}] UI Counter updated to: {value}");
+                Debug.Log($"[{nameof(TEST1View)}] UI Counter updated to: {value}");
             }
         }
     }

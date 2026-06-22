@@ -14,5 +14,12 @@
   "author": {
     "name": "Nexus",
     "url": "https://github.com/GameContainer/Nexus"
-  }
+  },
+  "samples": [
+    {
+      "displayName": "Counter Example",
+      "description": "A simple counter application demonstrating generic 0-GC commands, reactive model, and mediator bindings in Nexus.",
+      "path": "Samples~/Counter"
+    }
+  ]
 }

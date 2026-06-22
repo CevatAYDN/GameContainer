@@ -27,10 +27,14 @@ namespace Nexus.Editor
             {
                 if (assetPath.EndsWith(".asset"))
                 {
-                    var asset = AssetDatabase.LoadAssetAtPath<ScriptableObject>(assetPath);
-                    if (asset is ModelData modelData)
+                    var assetType = AssetDatabase.GetMainAssetTypeAtPath(assetPath);
+                    if (assetType != null && typeof(ModelData).IsAssignableFrom(assetType))
                     {
-                        TriggerLiveReload(modelData);
+                        var asset = AssetDatabase.LoadAssetAtPath<ModelData>(assetPath);
+                        if (asset != null)
+                        {
+                            TriggerLiveReload(asset);
+                        }
                     }
                 }
             }

@@ -10,9 +10,19 @@ namespace Nexus.Core
         void Execute();
     }
 
+    public interface ICommand<in TSignal> where TSignal : struct
+    {
+        void Execute(TSignal signal);
+    }
+
     public interface IAsyncCommand
     {
         ValueTask ExecuteAsync(CancellationToken ct);
+    }
+
+    public interface IAsyncCommand<in TSignal> where TSignal : struct
+    {
+        ValueTask ExecuteAsync(TSignal signal, CancellationToken ct);
     }
 
     public interface IResettable
@@ -38,6 +48,12 @@ namespace Nexus.Core
     {
     }
 
+    public interface ICommandBindingBuilder<TSignal> where TSignal : struct
+    {
+        ICommandBindingBuilder<TSignal> To<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class;
+        ICommandBindingBuilder<TSignal> ToAsync<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class;
+    }
+
     public interface IContextBuilder
     {
         void BindModel<TInterface, TImplementation>() where TImplementation : class, TInterface;
@@ -49,9 +65,11 @@ namespace Nexus.Core
         void BindInstance<T>(T instance) where T : class;
         
         void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
-            where TCommand : class, ICommand;
+            where TCommand : class where TSignal : struct;
         void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
-            where TCommand : class, IAsyncCommand;
+            where TCommand : class where TSignal : struct;
+
+        ICommandBindingBuilder<TSignal> BindSignal<TSignal>() where TSignal : struct;
 
         void Fire<T>(T signal) where T : struct;
     }

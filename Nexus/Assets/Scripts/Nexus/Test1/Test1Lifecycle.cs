@@ -5,19 +5,19 @@ using UnityEngine;
 
 namespace Nexus
 {
-    // Automatically discovered and bound by Nexus based on naming convention (Test1Lifecycle).
+    // Automatically discovered and bound by Nexus based on naming convention (TEST1Lifecycle).
     // No need to attach this to any GameObject!
-    public class Test1Lifecycle : IContextLifecycle
+    public class TEST1Lifecycle : IContextLifecycle
     {
         public void OnConfigure(IContextBuilder builder)
         {
-            Debug.Log($"[{nameof(Test1Lifecycle)}] Configuring architecture layers...");
+            Debug.Log($"[{nameof(TEST1Lifecycle)}] Configuring architecture layers...");
 
             // 1. Bind Observable/Reactive Model
-            builder.BindModel<ITest1Model, Test1Model>();
+            builder.BindModel<ITEST1Model, TEST1Model>();
 
             // 2. Bind Command that reacts to the struct signal
-            builder.BindCommand<Test1CounterSignal, Test1IncrementCommand>();
+            builder.BindCommand<TEST1CounterSignal, TEST1IncrementCommand>();
         }
 
         public ValueTask OnInitializeAsync(CancellationToken ct)
@@ -34,7 +34,7 @@ namespace Nexus
 
         public void OnDispose()
         {
-            Debug.Log($"[{nameof(Test1Lifecycle)}] Context disposed.");
+            Debug.Log($"[{nameof(TEST1Lifecycle)}] Context disposed.");
         }
     }
 }

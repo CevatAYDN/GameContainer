@@ -2,7 +2,7 @@ using System;
 
 namespace Nexus
 {
-    public interface ITest1Model
+    public interface ITEST1Model
     {
         int Counter { get; }
         event Action<int> OnCounterChanged;

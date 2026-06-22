@@ -12,21 +12,23 @@ namespace Nexus.Editor
     {
         // ── Cached handler mappings ─────────────────────────────
         private static List<HandlerMapping> s_cachedMappings;
-        private static bool s_mappingsValid;
+        private static int s_cachedHandlerCount;
+        private static bool s_cacheValid;
 
         [DidReloadScripts]
         private static void OnScriptsReloaded()
         {
-            s_mappingsValid = false;
-            s_handlerCountValid = false;
+            s_cacheValid = false;
         }
 
-        internal static List<HandlerMapping> GetHandlerMappings()
+        private static void EnsureCached()
         {
-            if (s_mappingsValid && s_cachedMappings != null)
-                return s_cachedMappings;
+            if (s_cacheValid && s_cachedMappings != null)
+                return;
 
             s_cachedMappings = new List<HandlerMapping>();
+            s_cachedHandlerCount = 0;
+
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 string name = assembly.FullName;
@@ -38,8 +40,11 @@ namespace Nexus.Editor
                     {
                         if (!type.IsClass || type.IsAbstract) continue;
 
+                        bool hasHandlers = false;
+
                         foreach (var attr in type.GetCustomAttributes<SignalHandlerAttribute>())
                         {
+                            hasHandlers = true;
                             s_cachedMappings.Add(new HandlerMapping
                             {
                                 SignalName = attr.SignalType.Name,
@@ -51,6 +56,7 @@ namespace Nexus.Editor
                         var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
                         if (compositeAttr != null)
                         {
+                            hasHandlers = true;
                             var sigs = new System.Text.StringBuilder();
                             foreach (var s in compositeAttr.SignalTypes)
                             {
@@ -64,49 +70,31 @@ namespace Nexus.Editor
                                 Mode = compositeAttr.OneShot ? "OneShot" : "Re-trigger"
                             });
                         }
-                    }
-                }
-                catch (ReflectionTypeLoadException) { }
-            }
 
-            s_cachedMappings.Sort((a, b) => string.Compare(a.SignalName, b.SignalName, StringComparison.Ordinal));
-            s_mappingsValid = true;
-            return s_cachedMappings;
-        }
-
-        internal static int GetHandlerCount()
-        {
-            if (s_handlerCountValid)
-                return s_cachedHandlerCount;
-
-            int count = 0;
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                string name = assembly.FullName;
-                if (name.StartsWith("System") || name.StartsWith("Microsoft") || name.StartsWith("Unity") || name.StartsWith("mscorlib"))
-                    continue;
-                try
-                {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (type.IsClass && !type.IsAbstract)
+                        if (hasHandlers)
                         {
-                            if (type.GetCustomAttributes(typeof(SignalHandlerAttribute), true).Length > 0 ||
-                                type.GetCustomAttributes(typeof(CompositeSignalHandlerAttribute), true).Length > 0)
-                                count++;
+                            s_cachedHandlerCount++;
                         }
                     }
                 }
                 catch (ReflectionTypeLoadException) { }
             }
 
-            s_cachedHandlerCount = count;
-            s_handlerCountValid = true;
-            return count;
+            s_cachedMappings.Sort((a, b) => string.Compare(a.SignalName, b.SignalName, StringComparison.Ordinal));
+            s_cacheValid = true;
         }
 
-        private static int s_cachedHandlerCount;
-        private static bool s_handlerCountValid;
+        internal static List<HandlerMapping> GetHandlerMappings()
+        {
+            EnsureCached();
+            return s_cachedMappings;
+        }
+
+        internal static int GetHandlerCount()
+        {
+            EnsureCached();
+            return s_cachedHandlerCount;
+        }
 
         // ── Scene roots ─────────────────────────────────────────
         private static Root[] s_cachedSceneRoots;

@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace Nexus
 {
-    public class Test1Model : ITest1Model
+    public class TEST1Model : ITEST1Model
     {
         public int Counter { get; private set; }
         public event Action<int> OnCounterChanged;
@@ -11,7 +11,7 @@ namespace Nexus
         public void Increment(int amount)
         {
             Counter += amount;
-            Debug.Log($"[{nameof(Test1Model)}] Counter changed to: {Counter}");
+            Debug.Log($"[{nameof(TEST1Model)}] Counter changed to: {Counter}");
             OnCounterChanged?.Invoke(Counter);
         }
     }

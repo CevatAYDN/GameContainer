@@ -3,13 +3,13 @@ using UnityEngine;
 
 namespace Nexus
 {
-    public class Test1Mediator : Mediator<Test1View>
+    public class TEST1Mediator : Mediator<TEST1View>
     {
-        [Inject] public ITest1Model Model { get; set; }
+        [Inject] public ITEST1Model Model { get; set; }
 
         protected override void OnBind()
         {
-            Debug.Log($"[{nameof(Test1Mediator)}] Binding View to Model...");
+            Debug.Log($"[{nameof(TEST1Mediator)}] Binding View to Model...");
 
             // Listen to model changes
             Model.OnCounterChanged += OnModelCounterChanged;
@@ -23,7 +23,7 @@ namespace Nexus
 
         protected override void OnUnbind()
         {
-            Debug.Log($"[{nameof(Test1Mediator)}] Unbinding...");
+            Debug.Log($"[{nameof(TEST1Mediator)}] Unbinding...");
 
             if (Model != null)
             {
@@ -38,8 +38,8 @@ namespace Nexus
 
         private void OnViewButtonClicked()
         {
-            Debug.Log($"[{nameof(Test1Mediator)}] Button clicked on view! Dispatching counter signal...");
-            SignalBus.Fire(new Test1CounterSignal(1));
+            Debug.Log($"[{nameof(TEST1Mediator)}] Button clicked on view! Dispatching counter signal...");
+            SignalBus.Fire(new TEST1CounterSignal(1));
         }
 
         private void OnModelCounterChanged(int newValue)

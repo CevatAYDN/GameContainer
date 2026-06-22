@@ -152,6 +152,29 @@ namespace Nexus.Editor
                         ValidateConcurrentCommandInjection(handler.CommandType, ref errorCount);
                     }
                 }
+
+                // Generic command interface check (for performance and AOT compatibility)
+                foreach (var handler in handlers)
+                {
+                    bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(handler.CommandType);
+                    bool implementsGeneric = false;
+                    if (isAsync)
+                    {
+                        var genericAsyncType = typeof(IAsyncCommand<>).MakeGenericType(signalType);
+                        implementsGeneric = genericAsyncType.IsAssignableFrom(handler.CommandType);
+                    }
+                    else
+                    {
+                        var genericType = typeof(ICommand<>).MakeGenericType(signalType);
+                        implementsGeneric = genericType.IsAssignableFrom(handler.CommandType);
+                    }
+
+                    if (!implementsGeneric)
+                    {
+                        Debug.LogWarning($"[Nexus Warning] Non-Generic Command Performance Risk: Command {handler.CommandType.FullName} handles signal {signalType.Name} but does not implement ICommand<{signalType.Name}> or IAsyncCommand<{signalType.Name}>. For AOT/IL2CPP compatibility and zero GC allocation on all platforms, implementing generic interfaces is highly recommended.");
+                        warningCount++;
+                    }
+                }
             }
         }
 

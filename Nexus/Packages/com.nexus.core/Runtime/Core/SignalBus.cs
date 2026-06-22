@@ -229,7 +229,12 @@ namespace Nexus.Core
             if (s_stackDepth > MaxStackDepth)
             {
                 s_stackDepth = 0;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
+#else
+                UnityEngine.Debug.LogError($"[Nexus] Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
+                return;
+#endif
             }
 
 #if NEXUS_DEBUG
@@ -367,7 +372,12 @@ namespace Nexus.Core
             if (s_stackDepth > MaxStackDepth)
             {
                 s_stackDepth = 0;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
+#else
+                UnityEngine.Debug.LogError($"[Nexus] Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
+                return;
+#endif
             }
 
 #if NEXUS_DEBUG
@@ -602,16 +612,32 @@ namespace Nexus.Core
                 {
                     command = _poolManager.GetCommand(handler.CommandType);
                     _container.Inject(command);
-                    SignalInjector<TSignal>.Inject(command, signal);
-
-                    if (command is ICommand syncCmd)
+                    
+                    if (command is ICommand<TSignal> genericSyncCmd)
                     {
-                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        ExecuteWithDecorators(genericSyncCmd, () => genericSyncCmd.Execute(signal));
                     }
-                    else if (command is IAsyncCommand asyncCmd)
+                    else if (command is IAsyncCommand<TSignal> genericAsyncCmd)
                     {
                         var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct)).AsTask().GetAwaiter().GetResult();
+                        ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, ct)).AsTask().GetAwaiter().GetResult();
+                    }
+                    else
+                    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                        UnityEngine.Debug.LogWarning($"[Nexus Performance Warning] Command '{handler.CommandType.Name}' handles signal '{typeof(TSignal).Name}' but does not implement ICommand<{typeof(TSignal).Name}> or IAsyncCommand<{typeof(TSignal).Name}>. Fallback to reflection injection is used, causing performance overhead/boxing on AOT.");
+#endif
+                        SignalInjector<TSignal>.Inject(command, signal);
+ 
+                        if (command is ICommand syncCmd)
+                        {
+                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        }
+                        else if (command is IAsyncCommand asyncCmd)
+                        {
+                            var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                            ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct)).AsTask().GetAwaiter().GetResult();
+                        }
                     }
                     shouldRun = false; // completed successfully
 #if NEXUS_DEBUG
@@ -725,21 +751,42 @@ namespace Nexus.Core
                     if (count > MaxInFlightAsyncCommands)
                     {
                         Interlocked.Decrement(ref _inFlightAsyncCommands);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                         throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
+#else
+                        UnityEngine.Debug.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
+                        shouldRun = false;
+                        break;
+#endif
                     }
                     inFlightIncremented = true;
 
                     command = _poolManager.GetCommand(handler.CommandType);
                     _container.Inject(command);
-                    SignalInjector<TSignal>.Inject(command, signal);
-
-                    if (command is IAsyncCommand asyncCmd)
+ 
+                    if (command is IAsyncCommand<TSignal> genericAsyncCmd)
                     {
-                        await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                        await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, ct));
                     }
-                    else if (command is ICommand syncCmd)
+                    else if (command is ICommand<TSignal> genericSyncCmd)
                     {
-                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        ExecuteWithDecorators(genericSyncCmd, () => genericSyncCmd.Execute(signal));
+                    }
+                    else
+                    {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                        UnityEngine.Debug.LogWarning($"[Nexus Performance Warning] Command '{handler.CommandType.Name}' handles signal '{typeof(TSignal).Name}' but does not implement ICommand<{typeof(TSignal).Name}> or IAsyncCommand<{typeof(TSignal).Name}>. Fallback to reflection injection is used, causing performance overhead/boxing on AOT.");
+#endif
+                        SignalInjector<TSignal>.Inject(command, signal);
+ 
+                        if (command is IAsyncCommand asyncCmd)
+                        {
+                            await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                        }
+                        else if (command is ICommand syncCmd)
+                        {
+                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        }
                     }
                     shouldRun = false; // success
 #if NEXUS_DEBUG
@@ -797,7 +844,13 @@ namespace Nexus.Core
                     if (count > MaxInFlightAsyncCommands)
                     {
                         Interlocked.Decrement(ref _inFlightAsyncCommands);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                         throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
+#else
+                        UnityEngine.Debug.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
+                        shouldRun = false;
+                        break;
+#endif
                     }
                     inFlightIncremented = true;
 
