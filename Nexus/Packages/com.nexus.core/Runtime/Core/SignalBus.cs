@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Profiling;
 using UnityEngine.Scripting;
+using Unity.Profiling;
 
 namespace Nexus.Core
 {
