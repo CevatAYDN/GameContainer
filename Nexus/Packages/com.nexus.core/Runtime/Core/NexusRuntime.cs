@@ -8,9 +8,11 @@ namespace Nexus.Core
     /// Central registry for all active Nexus contexts.
     /// Provides thread-safe registration, unregistration, enumeration, and domain-reload-safe reset.
     /// </summary>
-    [Preserve]
     public static class NexusRuntime
     {
+        public static event System.Action<IContext> OnContextRegistered;
+        public static event System.Action<IContext> OnContextUnregistered;
+
         private static readonly List<IContext> s_activeContexts = new();
         private static readonly HashSet<IContext> s_contextSet = new();
         private static readonly object s_lock = new();
@@ -59,11 +61,24 @@ namespace Nexus.Core
         /// <param name="context">The context to register.</param>
         public static void RegisterContext(IContext context)
         {
+            bool added = false;
             lock (s_lock)
             {
                 if (s_contextSet.Add(context))
                 {
                     s_activeContexts.Add(context);
+                    added = true;
+                }
+            }
+            if (added)
+            {
+                try
+                {
+                    OnContextRegistered?.Invoke(context);
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogException(ex);
                 }
             }
         }
@@ -72,11 +87,24 @@ namespace Nexus.Core
         /// <param name="context">The context to unregister.</param>
         public static void UnregisterContext(IContext context)
         {
+            bool removed = false;
             lock (s_lock)
             {
                 if (s_contextSet.Remove(context))
                 {
                     s_activeContexts.Remove(context);
+                    removed = true;
+                }
+            }
+            if (removed)
+            {
+                try
+                {
+                    OnContextUnregistered?.Invoke(context);
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogException(ex);
                 }
             }
         }

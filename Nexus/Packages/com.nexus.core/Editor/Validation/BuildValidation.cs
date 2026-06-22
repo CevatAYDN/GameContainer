@@ -212,26 +212,37 @@ namespace Nexus.Editor
 
         private static bool IsWriteableModelType(Type type)
         {
-            // Heuristic: A "model" type is an interface whose name ends with "Model".
-            // IReadOnly-prefixed interfaces are considered read-only by convention.
-            // For concrete model interfaces, check if they actually expose writeable members.
             if (!type.IsInterface) return false;
-            if (!type.Name.EndsWith("Model")) return false;
-            if (type.Name.StartsWith("IReadOnly")) return false;
+            if (!type.Name.EndsWith("Model", StringComparison.OrdinalIgnoreCase)) return false;
+            if (type.Name.StartsWith("IReadOnly", StringComparison.OrdinalIgnoreCase)) return false;
 
-            // Check if the interface has any settable properties (writeable indicators)
-            var props = type.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-            foreach (var prop in props)
-            {
-                if (prop.CanWrite) return true;
-            }
+            // Interface inheritance reflection fix: recursively scan all parent interfaces
+            var allTypes = new List<Type> { type };
+            allTypes.AddRange(type.GetInterfaces());
 
-            // Check if the interface has methods that imply mutation (Set*, Update*, Modify*)
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.Instance);
-            foreach (var m in methods)
+            foreach (var t in allTypes)
             {
-                if (m.Name.StartsWith("Set") || m.Name.StartsWith("Update") || m.Name.StartsWith("Modify"))
-                    return true;
+                // Check if the interface has any settable properties (writeable indicators)
+                var props = t.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+                foreach (var prop in props)
+                {
+                    if (prop.CanWrite) return true;
+                }
+
+                // Check if the interface has methods that imply mutation (Set*, Update*, Modify*, Reset*, Clear*)
+                var methods = t.GetMethods(BindingFlags.Public | BindingFlags.Instance);
+                foreach (var m in methods)
+                {
+                    string name = m.Name;
+                    if (name.StartsWith("Set", StringComparison.OrdinalIgnoreCase) || 
+                        name.StartsWith("Update", StringComparison.OrdinalIgnoreCase) || 
+                        name.StartsWith("Modify", StringComparison.OrdinalIgnoreCase) ||
+                        name.StartsWith("Reset", StringComparison.OrdinalIgnoreCase) ||
+                        name.StartsWith("Clear", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return true;
+                    }
+                }
             }
 
             return false;

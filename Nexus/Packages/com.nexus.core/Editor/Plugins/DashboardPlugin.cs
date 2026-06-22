@@ -1,21 +1,26 @@
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
+using Nexus.Core;
 
 namespace Nexus.Editor
 {
-    public partial class NexusWindow
+    public class DashboardPlugin : NexusEditorPlugin
     {
-        // ==========================================
-        // ── TAB 1: DASHBOARD
-        // ==========================================
-        private void BuildDashboardTab()
-        {
-            var toolbar = NexusEditorStyles.CreateToolbar("NEXUS SYSTEM OVERVIEW");
-            _contentArea.Add(toolbar);
+        public override string Id => "Dashboard";
+        public override string DisplayName => "Dashboard";
+        public override int Order => 0;
 
-            var scroll = new ScrollView();
-            scroll.style.flexGrow = 1;
+        private VisualElement _view;
+
+        public override VisualElement CreateView()
+        {
+            _view = new VisualElement { style = { flexGrow = 1 } };
+
+            var toolbar = NexusEditorStyles.CreateToolbar("NEXUS SYSTEM OVERVIEW");
+            _view.Add(toolbar);
+
+            var scroll = new ScrollView { style = { flexGrow = 1 } };
             scroll.style.paddingLeft = 15;
             scroll.style.paddingRight = 15;
             scroll.style.paddingTop = 15;
@@ -24,7 +29,7 @@ namespace Nexus.Editor
             bool playing = Application.isPlaying;
             int contextCount = NexusEditorDataProvider.GetActiveContextCount();
             int handlerCount = NexusEditorDataProvider.GetHandlerCount();
-            var roots = GetCachedSceneRoots();
+            var roots = NexusEditorDataProvider.GetSceneRoots();
             int rootCount = roots?.Length ?? 0;
 
             var cardBg = playing ? NexusEditorStyles.CardBgGreen : NexusEditorStyles.CardBg;
@@ -61,20 +66,21 @@ namespace Nexus.Editor
 
             // Quick Actions Panel
             var actionsCard = NexusEditorStyles.CreateActionGroup(scroll, "QUICK ACTIONS");
-            NexusEditorStyles.AddActionButton(actionsCard, "Context Setup Wizard", () => SwitchTab(TabType.Wizard), NexusEditorStyles.BtnBlue);
-            NexusEditorStyles.AddActionButton(actionsCard, "Open Hierarchy & Data", () => SwitchTab(TabType.Hierarchy), NexusEditorStyles.BtnTeal);
-            NexusEditorStyles.AddActionButton(actionsCard, "View Signal Explorer", () => SwitchTab(TabType.Explorer), NexusEditorStyles.BtnTeal);
-            NexusEditorStyles.AddActionButton(actionsCard, "Open Live Tracer", () => SwitchTab(TabType.Tracer), NexusEditorStyles.BtnPurple);
+            NexusEditorStyles.AddActionButton(actionsCard, "Context Setup Wizard", () => Window.SwitchToPlugin("Wizard"), NexusEditorStyles.BtnBlue);
+            NexusEditorStyles.AddActionButton(actionsCard, "Open Hierarchy & Data", () => Window.SwitchToPlugin("Hierarchy"), NexusEditorStyles.BtnTeal);
+            NexusEditorStyles.AddActionButton(actionsCard, "View Signal Explorer", () => Window.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnTeal);
+            NexusEditorStyles.AddActionButton(actionsCard, "Open Live Tracer", () => Window.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnPurple);
 
             // Framework Details
-            var docCard = NexusEditorStyles.CreateInfoCard(scroll, "NEXUS OBSERVABLE SUITE", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
+            NexusEditorStyles.CreateInfoCard(scroll, "NEXUS OBSERVABLE SUITE", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
                 "Nexus is built on a 0-GC, JIT-free generic observable framework designed for production gaming.\n\n" +
                 "• <b>Context Wizard</b>: Handles scaffolding lifecycle components.\n" +
                 "• <b>Hierarchy & Data</b>: Live view of DI injection layers and values.\n" +
                 "• <b>Signal Explorer</b>: Inspects static signal routes and allows play-mode test firing.\n" +
                 "• <b>Live Tracer</b>: Displays time-travel profiling logs for tracing bugs.");
 
-            _contentArea.Add(scroll);
+            _view.Add(scroll);
+            return _view;
         }
     }
 }

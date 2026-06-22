@@ -1,15 +1,8 @@
-using System.IO;
-using UnityEditor;
-using UnityEngine;
-
 namespace Nexus.Editor
 {
-    public partial class NexusWindow
+    public static class NexusTemplateProvider
     {
-        // ==========================================
-        // ── BOILERPLATE CODE GENERATOR STRINGS
-        // ==========================================
-        private string GetLifecycleTemplateCode(string contextName)
+        public static string GetLifecycleTemplateCode(string contextName)
         {
             return $@"using System.Threading;
 using System.Threading.Tasks;
@@ -33,7 +26,7 @@ namespace Nexus
 ";
         }
 
-        private string GetSampleSignalCode()
+        public static string GetSampleSignalCode()
         {
             return @"namespace Nexus.Samples
 {
@@ -46,7 +39,7 @@ namespace Nexus
 ";
         }
 
-        private string GetSampleCommandCode()
+        public static string GetSampleCommandCode()
         {
             return @"using Nexus.Core;
 using UnityEngine;
@@ -65,7 +58,7 @@ namespace Nexus.Samples
 ";
         }
 
-        private string GetSignalsBoilerplate(string contextName)
+        public static string GetSignalsBoilerplate(string contextName)
         {
             return $@"namespace Nexus
 {{
@@ -78,7 +71,7 @@ namespace Nexus.Samples
 ";
         }
 
-        private string GetModelInterfaceBoilerplate(string contextName)
+        public static string GetModelInterfaceBoilerplate(string contextName)
         {
             return $@"using System;
 
@@ -94,7 +87,7 @@ namespace Nexus
 ";
         }
 
-        private string GetModelImplementationBoilerplate(string contextName)
+        public static string GetModelImplementationBoilerplate(string contextName)
         {
             return $@"using System;
 using UnityEngine;
@@ -117,7 +110,7 @@ namespace Nexus
 ";
         }
 
-        private string GetCommandBoilerplate(string contextName)
+        public static string GetCommandBoilerplate(string contextName)
         {
             return $@"using Nexus.Core;
 using UnityEngine;
@@ -138,7 +131,7 @@ namespace Nexus
 ";
         }
 
-        private string GetViewBoilerplate(string contextName)
+        public static string GetViewBoilerplate(string contextName)
         {
             return $@"using Nexus.Core;
 using UnityEngine;
@@ -177,7 +170,7 @@ namespace Nexus
 ";
         }
 
-        private string GetMediatorBoilerplate(string contextName)
+        public static string GetMediatorBoilerplate(string contextName)
         {
             return $@"using Nexus.Core;
 using UnityEngine;
@@ -215,7 +208,7 @@ namespace Nexus
 ";
         }
 
-        private string GetLifecycleBoilerplateWithBindings(string contextName)
+        public static string GetLifecycleBoilerplateWithBindings(string contextName)
         {
             return $@"using System.Threading;
 using System.Threading.Tasks;
@@ -240,7 +233,7 @@ namespace Nexus
 ";
         }
 
-        private string GetGenericViewBoilerplate(string viewName, string contextName)
+        public static string GetGenericViewBoilerplate(string viewName, string contextName)
         {
             return $@"using Nexus.Core;
 using UnityEngine;
@@ -264,7 +257,7 @@ namespace Nexus
 ";
         }
 
-        private string GetGenericMediatorBoilerplate(string viewName, string contextName)
+        public static string GetGenericMediatorBoilerplate(string viewName, string contextName)
         {
             return $@"using Nexus.Core;
 using UnityEngine;

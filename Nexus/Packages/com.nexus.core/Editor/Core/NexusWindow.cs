@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Reflection;
 using UnityEditor;
@@ -10,116 +9,22 @@ using Nexus.Core;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Host shell for the Nexus Architecture Suite.
+    /// Dynamically loads all implementations of <see cref="INexusEditorPlugin"/> and manages tab switching,
+    /// branding sidebar, and event-driven status updates.
+    /// </summary>
     public partial class NexusWindow : EditorWindow
     {
-        private enum TabType
-        {
-            Dashboard,
-            Wizard,
-            Hierarchy,
-            Explorer,
-            Tracer
-        }
+        private List<INexusEditorPlugin> _plugins = new();
+        private INexusEditorPlugin _activePlugin;
 
-        private TabType _activeTab = TabType.Dashboard;
         private VisualElement _sidebar;
         private VisualElement _contentArea;
         private Label _statusBar;
 
-        // --- Common Editor Styles ---
-        private GUIStyle _headerStyle;
-        private GUIStyle _actionButtonStyle;
-        private GUIStyle _deleteButtonStyle;
-        private GUIStyle _miniBoldLabelStyle;
-        private static readonly Color HeaderColor = new(0.3f, 0.8f, 1f);
-        private static readonly Color ButtonGreenColor = new(0.4f, 1f, 0.4f);
-        private static readonly Color ButtonRedColor = new(1f, 0.3f, 0.3f);
+        private HierarchyPlugin _hierarchyPlugin; // Keep reference to update trackers in Play Mode
 
-        // --- Wizard Tab Fields ---
-        private string _wizardContextName = "Gameplay";
-        private string _wizardScopeTag = "Gameplay";
-        private Root _wizardParentRoot;
-        private List<string> _wizardAvailableAssemblies = new();
-        private HashSet<string> _wizardSelectedAssemblies = new();
-        private bool _wizardAssembliesFoldout;
-        private Vector2 _wizardAssembliesScroll;
-        private bool _wizardGenerateLifecycleScript = true;
-        private bool _wizardGenerateSampleArchitecture = true;
-        private int _wizardSelectedSubTab; // 0 = Create Root, 1 = View/Mediator Gen, 2 = Clean Deletion
-        private readonly string[] _wizardSubTabNames = { "Create Root", "View/Mediator Gen", "Clean Deletion" };
-        private Vector2 _wizardScroll;
-        private string _wizardViewName = "GameplayHUD";
-        private Root _wizardViewTargetRoot;
-        private bool _wizardCreateViewGo = true;
-        private Root _wizardRootToDelete;
-
-        // Wizard caching fields
-        private Root[] _cachedSceneRoots;
-        private double _lastRootCacheTime;
-        private const double RootCacheDuration = 1.0;
-        private NexusBootstrapManifest _cachedManifest;
-        private bool _manifestCacheValid;
-
-        // --- Hierarchy & Data Tab Fields ---
-        private int _lastContextVersion;
-        private Context _selectedContextForInspector;
-        private Vector2 _inspectorScrollPosition;
-        private readonly Dictionary<string, bool> _inspectorFoldoutStates = new();
-        private string _inspectorSearchFilter = "";
-        private double _lastInspectorCleanupTime;
-
-        // --- Signal Explorer & Tester Tab Fields ---
-        private string _explorerSearchQuery = "";
-        private string _explorerSelectedAssembly = "All Assemblies";
-        private List<MappingInfo> _explorerAllMappings = new();
-        private List<VisualElement> _explorerRenderedRows = new();
-        private DropdownField _explorerAssemblyDropdown;
-        private TextField _explorerSearchField;
-        private ScrollView _explorerScrollView;
-
-        // Signal Tester details nested in Explorer
-        private Type _testerSelectedSignalType;
-        private object _testerSignalInstance;
-        private FieldInfo[] _testerSignalFields;
-        private Vector2 _testerScrollPos;
-        private string _testerResultLog;
-        private Color _testerResultColor = Color.white;
-
-        // Static assembly reflection caches
-        private static List<MappingInfo> s_cachedMappings;
-        private static List<string> s_cachedAssemblies;
-        private static List<Type> s_cachedSignalTypes;
-
-        [UnityEditor.Callbacks.DidReloadScripts]
-        private static void OnScriptsReloaded()
-        {
-            s_cachedMappings = null;
-            s_cachedAssemblies = null;
-            s_cachedSignalTypes = null;
-        }
-
-        // --- Tracer Tab Fields ---
-        private ScrollView _tracerScrollView;
-        private Toggle _tracerPauseToggle;
-        private bool _tracerIsPaused = false;
-        private TraceEvent[] _tracerPausedEvents;
-        private int _tracerPausedCount;
-        private string _tracerSearchFilter = "";
-        private bool _tracerFilterSignal = true;
-        private bool _tracerFilterCommand = true;
-        private bool _tracerFilterModelChange = true;
-        private bool _tracerFilterOk = true;
-        private bool _tracerFilterFailed = true;
-        private bool _tracerFilterCancelled = true;
-        private VisualElement _tracerDetailPanel;
-        private Label _tracerDetailContent;
-        private TextField _tracerSearchField;
-        private readonly List<VisualElement> _tracerRenderedItems = new();
-        private readonly Dictionary<int, List<TraceEvent>> _tracerChildrenCache = new();
-        private readonly Dictionary<int, int> _tracerDepthsCache = new();
-        private int _tracerSelectedEventId = -1;
-
-        // --- Window Entry Point ---
         [MenuItem("Window/Nexus/Dashboard %#n")]
         public static void ShowWindow()
         {
@@ -130,19 +35,47 @@ namespace Nexus.Editor
 
         private void OnEnable()
         {
+            DiscoverPlugins();
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-            PopulateAssemblies();
-            _manifestCacheValid = false;
+            EditorApplication.hierarchyChanged += OnHierarchyChanged;
+            
+            NexusRuntime.OnContextRegistered += OnContextEvent;
+            NexusRuntime.OnContextUnregistered += OnContextEvent;
+
+            foreach (var plugin in _plugins)
+            {
+                try { plugin.OnEnable(); } catch (Exception ex) { Debug.LogException(ex); }
+            }
         }
 
         private void OnDisable()
         {
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+            
+            NexusRuntime.OnContextRegistered -= OnContextEvent;
+            NexusRuntime.OnContextUnregistered -= OnContextEvent;
+
+            foreach (var plugin in _plugins)
+            {
+                try { plugin.OnDisable(); } catch (Exception ex) { Debug.LogException(ex); }
+            }
         }
 
         private void OnPlayModeStateChanged(PlayModeStateChange change)
         {
-            RefreshActiveTabContent();
+            UpdateStatusBarText();
+            RefreshActivePlugin();
+        }
+
+        private void OnHierarchyChanged()
+        {
+            UpdateStatusBarText();
+        }
+
+        private void OnContextEvent(IContext context)
+        {
+            UpdateStatusBarText();
         }
 
         private void CreateGUI()
@@ -177,12 +110,11 @@ namespace Nexus.Editor
             subtitleLabel.style.alignSelf = Align.Center;
             _sidebar.Add(subtitleLabel);
 
-            // Tab Buttons
-            AddTabButton("Dashboard", TabType.Dashboard);
-            AddTabButton("Context Wizard", TabType.Wizard);
-            AddTabButton("Hierarchy & Data", TabType.Hierarchy);
-            AddTabButton("Signal Explorer", TabType.Explorer);
-            AddTabButton("Live Tracer", TabType.Tracer);
+            // Build dynamic Tab Buttons based on plugins
+            foreach (var plugin in _plugins)
+            {
+                AddTabButton(plugin.DisplayName, plugin.Id);
+            }
 
             root.Add(_sidebar);
 
@@ -201,17 +133,60 @@ namespace Nexus.Editor
 
             root.Add(rightPanel);
 
-            // Set default view
-            SwitchTab(TabType.Dashboard);
+            // Select default tab
+            if (_plugins.Count > 0)
+            {
+                SwitchToPlugin(_plugins[0].Id);
+            }
 
-            // Global updater loop
-            root.schedule.Execute(OnScheduledRefresh).Every(100);
+            UpdateStatusBarText();
+
+            // Scheduler to update Hierarchy trackers when in Play Mode and Hierarchy tab is active
+            root.schedule.Execute(OnScheduledUpdate).Every(200);
         }
 
-        private void AddTabButton(string label, TabType tab)
+        private void DiscoverPlugins()
         {
-            var btn = new Button(() => SwitchTab(tab)) { text = label };
-            btn.name = $"Tab_{tab}";
+            _plugins.Clear();
+            _hierarchyPlugin = null;
+
+            var pluginType = typeof(INexusEditorPlugin);
+            var foundPlugins = new List<INexusEditorPlugin>();
+
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("UnityEngine"))
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
+                        {
+                            var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
+                            plugin.Initialize(this);
+                            foundPlugins.Add(plugin);
+
+                            if (plugin is HierarchyPlugin hp)
+                            {
+                                _hierarchyPlugin = hp;
+                            }
+                        }
+                    }
+                }
+                catch (ReflectionTypeLoadException) { }
+            }
+
+            // Sort plugins by their predefined order
+            _plugins = foundPlugins.OrderBy(p => p.Order).ToList();
+        }
+
+        private void AddTabButton(string label, string pluginId)
+        {
+            var btn = new Button(() => SwitchToPlugin(pluginId)) { text = label };
+            btn.name = $"Tab_{pluginId}";
             btn.style.backgroundColor = new StyleColor(Color.clear);
             btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
             btn.style.fontSize = 11;
@@ -235,17 +210,20 @@ namespace Nexus.Editor
             _sidebar.Add(btn);
         }
 
-        private void SwitchTab(TabType tab)
+        public void SwitchToPlugin(string pluginId)
         {
-            _activeTab = tab;
+            var targetPlugin = _plugins.FirstOrDefault(p => p.Id == pluginId);
+            if (targetPlugin == null) return;
 
-            // Highlight active button
-            foreach (TabType t in Enum.GetValues(typeof(TabType)))
+            _activePlugin = targetPlugin;
+
+            // Highlight active sidebar button
+            foreach (var plugin in _plugins)
             {
-                var btn = _sidebar.Q<Button>($"Tab_{t}");
+                var btn = _sidebar.Q<Button>($"Tab_{plugin.Id}");
                 if (btn != null)
                 {
-                    if (t == _activeTab)
+                    if (plugin.Id == pluginId)
                     {
                         btn.style.backgroundColor = new StyleColor(new Color(0.18f, 0.22f, 0.28f));
                         btn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
@@ -260,65 +238,30 @@ namespace Nexus.Editor
                 }
             }
 
-            RefreshActiveTabContent();
+            RefreshActivePlugin();
         }
 
-        private void RefreshActiveTabContent()
+        private void RefreshActivePlugin()
         {
-            if (_contentArea == null) return;
+            if (_contentArea == null || _activePlugin == null) return;
             _contentArea.Clear();
-
-            switch (_activeTab)
+            
+            try
             {
-                case TabType.Dashboard:
-                    BuildDashboardTab();
-                    break;
-                case TabType.Wizard:
-                    BuildWizardTab();
-                    break;
-                case TabType.Hierarchy:
-                    BuildHierarchyTab();
-                    break;
-                case TabType.Explorer:
-                    BuildExplorerTab();
-                    break;
-                case TabType.Tracer:
-                    BuildTracerTab();
-                    break;
+                _contentArea.Add(_activePlugin.CreateView());
             }
-
-            UpdateStatusBarText();
+            catch (Exception ex)
+            {
+                Debug.LogException(ex);
+                _contentArea.Add(new Label($"Error loading eklenti view: {ex.Message}") { style = { color = Color.red } });
+            }
         }
 
-        private void OnScheduledRefresh()
+        private void OnScheduledUpdate()
         {
-            UpdateStatusBarText();
-
-            // Perform context changes checking for Graph tab
-            if (_activeTab == TabType.Hierarchy && Application.isPlaying)
+            if (_activePlugin != null && _activePlugin.Id == "Hierarchy" && Application.isPlaying)
             {
-                var activeContexts = NexusRuntime.ActiveContexts;
-                int versionHash = ComputeContextVersion(activeContexts);
-                if (versionHash != _lastContextVersion)
-                {
-                    _lastContextVersion = versionHash;
-                    RefreshActiveTabContent();
-                }
-            }
-
-            // Perform live tracing updating for Tracer tab
-            if (_activeTab == TabType.Tracer && Application.isPlaying && !_tracerIsPaused)
-            {
-                var events = NexusTrace.GetRecentEvents(out int count);
-                if (count == 0 && _tracerScrollView != null && _tracerScrollView.childCount > 0)
-                {
-                    _tracerScrollView.Clear();
-                    _tracerRenderedItems.Clear();
-                }
-                if (count > 0)
-                {
-                    RenderLiveEvents(events, count);
-                }
+                _hierarchyPlugin?.UpdateVisibleTrackers();
             }
         }
 
@@ -329,46 +272,12 @@ namespace Nexus.Editor
             bool playing = Application.isPlaying;
             int contextCount = NexusEditorDataProvider.GetActiveContextCount();
             int handlerCount = NexusEditorDataProvider.GetHandlerCount();
-            var roots = GetCachedSceneRoots();
+            var roots = NexusEditorDataProvider.GetSceneRoots();
             int rootCount = roots?.Length ?? 0;
 
             _statusBar.text = playing
                 ? $"Nexus ● ACTIVE  |  {contextCount} context(s) active  |  {handlerCount} static handler(s) registered"
                 : $"Nexus ○ STANDBY  |  {rootCount} Root(s) in scene  |  Enter Play Mode to activate";
-        }
-
-        private void EnsureStyles()
-        {
-            if (_headerStyle != null) return;
-            _headerStyle = new GUIStyle(EditorStyles.boldLabel) { fontSize = 12 };
-            _headerStyle.normal.textColor = Color.white;
-            _actionButtonStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, fixedHeight = 25 };
-            _actionButtonStyle.normal.textColor = ButtonGreenColor;
-            _deleteButtonStyle = new GUIStyle(GUI.skin.button) { fontStyle = FontStyle.Bold, fixedHeight = 25 };
-            _deleteButtonStyle.normal.textColor = ButtonRedColor;
-            _miniBoldLabelStyle = new GUIStyle(EditorStyles.miniBoldLabel);
-        }
-
-        private struct MappingInfo
-        {
-            public string SignalName;
-            public string CommandName;
-            public string Mode;
-            public string Priority;
-            public bool IsAsync;
-            public string AssemblyName;
-            public Type SignalType;
-
-            public MappingInfo(string signalName, string commandName, string mode, string priority, bool isAsync, string assemblyName, Type signalType)
-            {
-                SignalName = signalName;
-                CommandName = commandName;
-                Mode = mode;
-                Priority = priority;
-                IsAsync = isAsync;
-                AssemblyName = assemblyName;
-                SignalType = signalType;
-            }
         }
     }
 }
