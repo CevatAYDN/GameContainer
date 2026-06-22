@@ -92,15 +92,25 @@ namespace Nexus.Core
         private const int MaxEvents = 10000;
         private static readonly TraceEvent[] s_ringBuffer = new TraceEvent[MaxEvents];
 #if NEXUS_DEBUG
+        private class TraceFrame
+        {
+            public readonly int ParentId;
+            public readonly int BufferIndex;
+            public readonly TraceFrame Previous;
+            public TraceFrame(int parentId, int bufferIndex, TraceFrame previous)
+            {
+                ParentId = parentId;
+                BufferIndex = bufferIndex;
+                Previous = previous;
+            }
+        }
+
         private static int s_globalEventIdCounter = 0;
         private static int s_ringBufferIndex = -1;
         private static int s_totalEventsWritten = 0;
 
-        [ThreadStatic]
-        private static int s_currentActiveEventId;
-        
-        [ThreadStatic]
-        private static Stack<(int parentId, int bufferIndex)> s_parentStack;
+        private static readonly AsyncLocal<int> s_currentActiveEventId = new();
+        private static readonly AsyncLocal<TraceFrame> s_currentFrame = new();
 #endif
 
         private static readonly List<INexusTraceSink> s_sinks = new();
@@ -116,8 +126,8 @@ namespace Nexus.Core
         {
             Array.Clear(s_ringBuffer, 0, s_ringBuffer.Length);
 #if NEXUS_DEBUG
-            s_parentStack = new Stack<(int, int)>();
-            s_currentActiveEventId = -1;
+            s_currentFrame.Value = null;
+            s_currentActiveEventId.Value = -1;
             s_ringBufferIndex = -1;
             s_globalEventIdCounter = 0;
             s_totalEventsWritten = 0;
@@ -159,13 +169,12 @@ namespace Nexus.Core
         public static int BeginEvent(TraceEventType type, string typeName, ExecutionMode mode = ExecutionMode.Sequential)
         {
 #if NEXUS_DEBUG
-            if (s_parentStack == null)
+            int parentId = s_currentActiveEventId.Value;
+            if (parentId == 0 && s_currentFrame.Value == null)
             {
-                s_parentStack = new Stack<(int, int)>();
-                s_currentActiveEventId = -1;
+                parentId = -1;
             }
 
-            int parentId = s_currentActiveEventId;
             int eventId = Interlocked.Increment(ref s_globalEventIdCounter);
             
             // Advance ring buffer index with Interlocked for thread safety
@@ -175,8 +184,8 @@ namespace Nexus.Core
             Interlocked.Increment(ref s_totalEventsWritten);
             int index = s_ringBufferIndex;
 
-            s_parentStack.Push((s_currentActiveEventId, index));
-            s_currentActiveEventId = eventId;
+            s_currentFrame.Value = new TraceFrame(parentId, index, s_currentFrame.Value);
+            s_currentActiveEventId.Value = eventId;
 
             var timestamp = UnityEngine.Time.realtimeSinceStartupAsDouble;
             var traceEvent = new TraceEvent(eventId, parentId, type, timestamp, typeName, TraceStatus.OK, mode);
@@ -206,14 +215,17 @@ namespace Nexus.Core
         public static void EndEvent(int eventId, TraceStatus status = TraceStatus.OK)
         {
 #if NEXUS_DEBUG
-            if (s_parentStack == null || s_parentStack.Count == 0)
+            var frame = s_currentFrame.Value;
+            if (frame == null)
             {
-                s_currentActiveEventId = -1;
+                s_currentActiveEventId.Value = -1;
                 return;
             }
 
-            var (parentId, bufferIndex) = s_parentStack.Pop();
+            s_currentFrame.Value = frame.Previous;
+            s_currentActiveEventId.Value = frame.ParentId;
 
+            int bufferIndex = frame.BufferIndex;
             if (bufferIndex >= 0 && bufferIndex < MaxEvents)
             {
                 var ev = s_ringBuffer[bufferIndex];
@@ -222,8 +234,6 @@ namespace Nexus.Core
                     s_ringBuffer[bufferIndex] = new TraceEvent(ev.Id, ev.ParentId, ev.Type, ev.Timestamp, ev.TypeName, status, ev.Mode);
                 }
             }
-
-            s_currentActiveEventId = parentId;
 #endif
         }
 

@@ -286,14 +286,16 @@ namespace Nexus.Core
                 // Process subscriptions (sync-only path — no async subs here)
                 if (_subscriptions.TryGetValue(type, out var subs))
                 {
+                    List<object> subsCopy;
                     lock (subs)
                     {
-                        for (int i = 0; i < subs.Count; i++)
+                        subsCopy = new List<object>(subs);
+                    }
+                    for (int i = 0; i < subsCopy.Count; i++)
+                    {
+                        if (subsCopy[i] is SignalSubscription<T> syncSub)
                         {
-                            if (subs[i] is SignalSubscription<T> syncSub)
-                            {
-                                syncSub.Invoke(signal);
-                            }
+                            syncSub.Invoke(signal);
                         }
                     }
                 }
@@ -592,6 +594,15 @@ namespace Nexus.Core
                 catch
                 {
                     // Fallback to reflection
+                }
+
+                if (member is FieldInfo fieldInfo)
+                {
+                    return (target, val) => fieldInfo.SetValue(target, val);
+                }
+                else if (member is PropertyInfo propInfo)
+                {
+                    return (target, val) => propInfo.SetValue(target, val);
                 }
                 return null;
             }

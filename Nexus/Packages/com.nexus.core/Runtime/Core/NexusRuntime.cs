@@ -18,14 +18,14 @@ namespace Nexus.Core
         private static readonly object s_lock = new();
 
         /// <summary>Returns a thread-safe snapshot of all active contexts.</summary>
-        /// <remarks>Locked access via <c>s_lock</c>. No allocation on each access (returns the live list).</remarks>
+        /// <remarks>Locked access via <c>s_lock</c>. Returns a snapshot to prevent race conditions during iteration.</remarks>
         public static IReadOnlyList<IContext> ActiveContexts
         {
             get
             {
                 lock (s_lock)
                 {
-                    return s_activeContexts;
+                    return new List<IContext>(s_activeContexts);
                 }
             }
         }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading.Tasks;
@@ -22,6 +23,138 @@ namespace Nexus.Core
         private readonly NexusDI _parent;
         private readonly Dictionary<Type, Binding> _bindings = new();
         private readonly HashSet<object> _resolvedSingletons = new();
+
+        private class InjectableField
+        {
+            public FieldInfo Field { get; set; }
+            public Type Type { get; set; }
+        }
+        private class InjectableProperty
+        {
+            public PropertyInfo Property { get; set; }
+            public Type Type { get; set; }
+        }
+        private class InjectableMethod
+        {
+            public MethodInfo Method { get; set; }
+            public Type[] ParameterTypes { get; set; }
+        }
+        private class InjectableMetadata
+        {
+            public InjectableField[] Fields { get; set; }
+            public InjectableProperty[] Properties { get; set; }
+            public InjectableMethod[] Methods { get; set; }
+            public ConstructorInfo Constructor { get; set; }
+            public Type[] ConstructorParameterTypes { get; set; }
+        }
+        private class ClearableMetadata
+        {
+            public FieldInfo[] Fields { get; set; }
+            public PropertyInfo[] Properties { get; set; }
+        }
+
+        private static readonly ConcurrentDictionary<Type, InjectableMetadata> s_injectMetadataCache = new();
+        private static readonly ConcurrentDictionary<Type, ClearableMetadata> s_clearMetadataCache = new();
+
+        private static InjectableMetadata GetOrCreateInjectMetadata(Type type)
+        {
+            return s_injectMetadataCache.GetOrAdd(type, t =>
+            {
+                // Fields
+                var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var fieldList = new List<InjectableField>();
+                foreach (var field in fields)
+                {
+                    if (field.GetCustomAttribute<InjectAttribute>() != null)
+                    {
+                        if (field.FieldType.IsValueType)
+                            throw new InvalidOperationException($"Cannot inject value type field {t.FullName}.{field.Name}. Nexus DI only supports reference-type dependencies.");
+                        fieldList.Add(new InjectableField { Field = field, Type = field.FieldType });
+                    }
+                }
+
+                // Properties
+                var properties = t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var propList = new List<InjectableProperty>();
+                foreach (var prop in properties)
+                {
+                    if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite)
+                    {
+                        if (prop.PropertyType.IsValueType)
+                            throw new InvalidOperationException($"Cannot inject value type property {t.FullName}.{prop.Name}. Nexus DI only supports reference-type dependencies.");
+                        propList.Add(new InjectableProperty { Property = prop, Type = prop.PropertyType });
+                    }
+                }
+
+                // Methods
+                var methods = t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var methodList = new List<InjectableMethod>();
+                foreach (var method in methods)
+                {
+                    if (method.GetCustomAttribute<InjectAttribute>() != null)
+                    {
+                        var parameters = method.GetParameters();
+                        var paramTypes = new Type[parameters.Length];
+                        for (int i = 0; i < parameters.Length; i++)
+                        {
+                            if (parameters[i].ParameterType.IsValueType)
+                                throw new InvalidOperationException($"Cannot inject value type parameter {t.FullName}.{method.Name}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
+                            paramTypes[i] = parameters[i].ParameterType;
+                        }
+                        methodList.Add(new InjectableMethod { Method = method, ParameterTypes = paramTypes });
+                    }
+                }
+
+                // Constructor
+                ConstructorInfo targetCtor = null;
+                var constructors = t.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+                if (constructors.Length > 0)
+                {
+                    foreach (var ctor in constructors)
+                    {
+                        if (ctor.GetCustomAttribute<InjectAttribute>() != null)
+                        {
+                            targetCtor = ctor;
+                            break;
+                        }
+                    }
+
+                    if (targetCtor == null)
+                    {
+                        targetCtor = constructors[0];
+                        for (int i = 1; i < constructors.Length; i++)
+                        {
+                            if (constructors[i].GetParameters().Length > targetCtor.GetParameters().Length)
+                            {
+                                targetCtor = constructors[i];
+                            }
+                        }
+                    }
+                }
+
+                Type[] ctorParamTypes = null;
+                if (targetCtor != null)
+                {
+                    var parameters = targetCtor.GetParameters();
+                    ctorParamTypes = new Type[parameters.Length];
+                    for (int i = 0; i < parameters.Length; i++)
+                    {
+                        if (parameters[i].ParameterType.IsValueType)
+                            throw new InvalidOperationException($"Cannot inject value type constructor parameter {t.FullName}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
+                        ctorParamTypes[i] = parameters[i].ParameterType;
+                    }
+                }
+
+                return new InjectableMetadata
+                {
+                    Fields = fieldList.ToArray(),
+                    Properties = propList.ToArray(),
+                    Methods = methodList.ToArray(),
+                    Constructor = targetCtor,
+                    ConstructorParameterTypes = ctorParamTypes
+                };
+            });
+        }
 
         [ThreadStatic]
         private static HashSet<Type> s_resolutionStack;
@@ -173,96 +306,54 @@ namespace Nexus.Core
             }
 
             var type = instance.GetType();
+            var meta = GetOrCreateInjectMetadata(type);
             
             // Inject fields
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var field in fields)
+            for (int i = 0; i < meta.Fields.Length; i++)
             {
-                if (field.GetCustomAttribute<InjectAttribute>() != null)
-                {
-                    if (field.FieldType.IsValueType)
-                        throw new InvalidOperationException($"Cannot inject value type field {type.FullName}.{field.Name}. Nexus DI only supports reference-type dependencies.");
-                    var resolvedValue = Resolve(field.FieldType);
-                    field.SetValue(instance, resolvedValue);
-                }
+                var f = meta.Fields[i];
+                var resolvedValue = Resolve(f.Type);
+                f.Field.SetValue(instance, resolvedValue);
             }
 
             // Inject properties
-            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var prop in properties)
+            for (int i = 0; i < meta.Properties.Length; i++)
             {
-                if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite)
-                {
-                    if (prop.PropertyType.IsValueType)
-                        throw new InvalidOperationException($"Cannot inject value type property {type.FullName}.{prop.Name}. Nexus DI only supports reference-type dependencies.");
-                    var resolvedValue = Resolve(prop.PropertyType);
-                    prop.SetValue(instance, resolvedValue);
-                }
+                var p = meta.Properties[i];
+                var resolvedValue = Resolve(p.Type);
+                p.Property.SetValue(instance, resolvedValue);
             }
 
             // Inject methods (e.g. Construct)
-            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var method in methods)
+            for (int i = 0; i < meta.Methods.Length; i++)
             {
-                if (method.GetCustomAttribute<InjectAttribute>() != null)
+                var m = meta.Methods[i];
+                var args = new object[m.ParameterTypes.Length];
+                for (int j = 0; j < m.ParameterTypes.Length; j++)
                 {
-                    var parameters = method.GetParameters();
-                    var args = new object[parameters.Length];
-                    for (int i = 0; i < parameters.Length; i++)
-                    {
-                        if (parameters[i].ParameterType.IsValueType)
-                            throw new InvalidOperationException($"Cannot inject value type parameter {type.FullName}.{method.Name}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
-                        args[i] = Resolve(parameters[i].ParameterType);
-                    }
-                    method.Invoke(instance, args);
+                    args[j] = Resolve(m.ParameterTypes[j]);
                 }
+                m.Method.Invoke(instance, args);
             }
         }
 
         private object CreateInstance(Type type)
         {
-            // Find constructor
-            var constructors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
-            if (constructors.Length == 0)
+            var meta = GetOrCreateInjectMetadata(type);
+            if (meta.Constructor == null)
             {
                 // Fallback to parameterless constructor (even private ones)
                 return Activator.CreateInstance(type, true);
             }
 
-            // Find constructor with [Inject]
-            ConstructorInfo targetCtor = null;
-            foreach (var ctor in constructors)
+            var paramTypes = meta.ConstructorParameterTypes;
+            var args = new object[paramTypes.Length];
+            for (int i = 0; i < paramTypes.Length; i++)
             {
-                if (ctor.GetCustomAttribute<InjectAttribute>() != null)
-                {
-                    targetCtor = ctor;
-                    break;
-                }
+                args[i] = Resolve(paramTypes[i]);
             }
 
-            // Fallback to the one with the most parameters, or default
-            if (targetCtor == null)
-            {
-                targetCtor = constructors[0];
-                for (int i = 1; i < constructors.Length; i++)
-                {
-                    if (constructors[i].GetParameters().Length > targetCtor.GetParameters().Length)
-                    {
-                        targetCtor = constructors[i];
-                    }
-                }
-            }
-
-            var parameters = targetCtor.GetParameters();
-            var args = new object[parameters.Length];
-            for (int i = 0; i < parameters.Length; i++)
-            {
-                if (parameters[i].ParameterType.IsValueType)
-                    throw new InvalidOperationException($"Cannot inject value type constructor parameter {type.FullName}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
-                args[i] = Resolve(parameters[i].ParameterType);
-            }
-
-            return targetCtor.Invoke(args);
+            return meta.Constructor.Invoke(args);
         }
 
         public IEnumerable<object> GetActiveSingletons()
@@ -300,24 +391,46 @@ namespace Nexus.Core
         /// </summary>
         public static void ClearInjectedReferences(object instance)
         {
+            if (instance == null) return;
             var type = instance.GetType();
 
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var field in fields)
+            var meta = s_clearMetadataCache.GetOrAdd(type, t =>
             {
-                if (field.GetCustomAttribute<InjectAttribute>() != null && !field.FieldType.IsValueType)
+                var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var fieldList = new List<FieldInfo>();
+                foreach (var field in fields)
                 {
-                    field.SetValue(instance, null);
+                    if (field.GetCustomAttribute<InjectAttribute>() != null && !field.FieldType.IsValueType)
+                    {
+                        fieldList.Add(field);
+                    }
                 }
+
+                var properties = t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var propList = new List<PropertyInfo>();
+                foreach (var prop in properties)
+                {
+                    if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite && !prop.PropertyType.IsValueType)
+                    {
+                        propList.Add(prop);
+                    }
+                }
+
+                return new ClearableMetadata
+                {
+                    Fields = fieldList.ToArray(),
+                    Properties = propList.ToArray()
+                };
+            });
+
+            for (int i = 0; i < meta.Fields.Length; i++)
+            {
+                meta.Fields[i].SetValue(instance, null);
             }
 
-            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var prop in properties)
+            for (int i = 0; i < meta.Properties.Length; i++)
             {
-                if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite && !prop.PropertyType.IsValueType)
-                {
-                    prop.SetValue(instance, null);
-                }
+                meta.Properties[i].SetValue(instance, null);
             }
         }
 

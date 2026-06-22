@@ -170,6 +170,8 @@ namespace Nexus.Core
             return (IMediator)_container.Resolve(mediatorType);
         }
 
+        private const int MaxMediatorPoolSize = 64;
+
         private void ReturnMediator(IMediator mediator)
         {
             var type = mediator.GetType();
@@ -180,7 +182,10 @@ namespace Nexus.Core
             }
             
             CleanupMediator(mediator);
-            pool.Push(mediator);
+            if (pool.Count < MaxMediatorPoolSize)
+            {
+                pool.Push(mediator);
+            }
         }
 
         private void CleanupMediator(IMediator mediator)

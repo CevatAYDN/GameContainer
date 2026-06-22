@@ -46,6 +46,7 @@ namespace Nexus.Core
         private void OnDisable()
         {
             s_registryDirty = true;
+            s_allRoots.Clear();
         }
 
         private static void EnsureRegistry()
@@ -174,15 +175,21 @@ namespace Nexus.Core
             catch (OperationCanceledException)
             {
                 // Cancelled, dispose context safely
-                Context.Dispose();
-                Context = null;
+                if (Context != null)
+                {
+                    Context.Dispose();
+                    Context = null;
+                }
                 IsInitialized = false;
             }
             catch (Exception ex)
             {
                 Debug.LogError($"[Nexus] Root initialization failed: {ex.Message}\n{ex.StackTrace}");
-                Context.Dispose();
-                Context = null;
+                if (Context != null)
+                {
+                    Context.Dispose();
+                    Context = null;
+                }
                 IsInitialized = false;
             }
         }
