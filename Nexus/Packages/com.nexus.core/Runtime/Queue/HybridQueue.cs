@@ -41,7 +41,7 @@ namespace Nexus.Core
     {
         private readonly SignalBus _signalBus;
         
-        private readonly Dictionary<Type, IQueuedSignalDrainer> _threadSafeQueues = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, IQueuedSignalDrainer> _threadSafeQueues = new();
         private readonly List<IQueuedSignalDrainer> _activeThreadSafeQueues = new();
         private readonly object _lock = new();
 
@@ -49,7 +49,7 @@ namespace Nexus.Core
         private readonly List<IQueuedSignalDrainer> _drainThreadSafeScratch = new();
         private readonly List<IQueuedSignalDrainer> _drainNextFrameScratch = new();
 
-        private readonly Dictionary<Type, IQueuedSignalDrainer> _nextFrameQueues = new();
+        private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, IQueuedSignalDrainer> _nextFrameQueues = new();
         private readonly List<IQueuedSignalDrainer> _activeNextFrameQueues = new();
 
         /// <summary>Creates a new <see cref="HybridQueue"/> backed by the given signal bus.</summary>
@@ -64,8 +64,12 @@ namespace Nexus.Core
         /// <param name="signal">The signal data.</param>
         public void EnqueueThreadSafe<T>(T signal) where T : struct
         {
-            var drainer = GetOrCreateThreadSafeQueue<T>();
-            ((TypedQueueContainer<T>)drainer).Queue.Enqueue(signal);
+            var type = typeof(T);
+            if (!_threadSafeQueues.TryGetValue(type, out var queue))
+            {
+                queue = GetOrCreateThreadSafeQueue<T>();
+            }
+            ((TypedQueueContainer<T>)queue).Queue.Enqueue(signal);
         }
 
         /// <summary>Enqueues a signal to be fired at the start of the next frame (LateUpdate drain).</summary>
@@ -73,8 +77,12 @@ namespace Nexus.Core
         /// <param name="signal">The signal data.</param>
         public void EnqueueNextFrame<T>(T signal) where T : struct
         {
-            var drainer = GetOrCreateNextFrameQueue<T>();
-            ((TypedQueueContainer<T>)drainer).Queue.Enqueue(signal);
+            var type = typeof(T);
+            if (!_nextFrameQueues.TryGetValue(type, out var queue))
+            {
+                queue = GetOrCreateNextFrameQueue<T>();
+            }
+            ((TypedQueueContainer<T>)queue).Queue.Enqueue(signal);
         }
 
         private IQueuedSignalDrainer GetOrCreateThreadSafeQueue<T>() where T : struct

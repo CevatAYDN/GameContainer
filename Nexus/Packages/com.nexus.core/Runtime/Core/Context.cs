@@ -16,6 +16,21 @@ namespace Nexus.Core
         private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
         private readonly object _pluginsLock = new();
         private bool _disposed;
+
+        private class ScannedHandlerData
+        {
+            public Type Type { get; }
+            public List<SignalHandlerAttribute> Handlers { get; } = new();
+            public CompositeSignalHandlerAttribute CompositeHandler { get; set; }
+
+            public ScannedHandlerData(Type type)
+            {
+                Type = type;
+            }
+        }
+
+        private static readonly Dictionary<Assembly, List<ScannedHandlerData>> s_assemblyScanCache = new();
+        private static readonly object s_scanLock = new();
         
         public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> Plugins => _plugins;
         
@@ -150,33 +165,66 @@ namespace Nexus.Core
 
             foreach (var assembly in assemblies)
             {
-                foreach (var type in GetTypesSafely(assembly))
+                List<ScannedHandlerData> cachedData;
+                lock (s_scanLock)
                 {
-                    if (type.IsClass && !type.IsAbstract)
+                    if (!s_assemblyScanCache.TryGetValue(assembly, out cachedData))
                     {
-                        // Scan [SignalHandler]
-                        var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                        foreach (var attr in handlerAttrs)
+                        cachedData = new List<ScannedHandlerData>();
+                        foreach (var type in GetTypesSafely(assembly))
                         {
-                            if (typeof(ICommand).IsAssignableFrom(type))
+                            if (type.IsClass && !type.IsAbstract)
                             {
-                                Container.Bind(type, isSingleton: false);
-                                SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: false);
-                            }
-                            else if (typeof(IAsyncCommand).IsAssignableFrom(type))
-                            {
-                                Container.Bind(type, isSingleton: false);
-                                SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: true);
-                            }
-                        }
+                                ScannedHandlerData data = null;
 
-                        // Scan [CompositeSignalHandler]
-                        var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-                        if (compositeAttr != null)
-                        {
-                            bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(type);
-                            SignalBusInternal.RegisterCompositeCommand(compositeAttr.SignalTypes, type, compositeAttr.OneShot, compositeAttr.Priority, isAsync);
+                                var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                                foreach (var attr in handlerAttrs)
+                                {
+                                    if (data == null) data = new ScannedHandlerData(type);
+                                    data.Handlers.Add(attr);
+                                }
+
+                                var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                                if (compositeAttr != null)
+                                {
+                                    if (data == null) data = new ScannedHandlerData(type);
+                                    data.CompositeHandler = compositeAttr;
+                                }
+
+                                if (data != null)
+                                {
+                                    cachedData.Add(data);
+                                }
+                            }
                         }
+                        s_assemblyScanCache[assembly] = cachedData;
+                    }
+                }
+
+                for (int i = 0; i < cachedData.Count; i++)
+                {
+                    var data = cachedData[i];
+                    var type = data.Type;
+
+                    for (int j = 0; j < data.Handlers.Count; j++)
+                    {
+                        var attr = data.Handlers[j];
+                        if (typeof(ICommand).IsAssignableFrom(type))
+                        {
+                            Container.Bind(type, isSingleton: false);
+                            SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: false);
+                        }
+                        else if (typeof(IAsyncCommand).IsAssignableFrom(type))
+                        {
+                            Container.Bind(type, isSingleton: false);
+                            SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: true);
+                        }
+                    }
+
+                    if (data.CompositeHandler != null)
+                    {
+                        bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(type);
+                        SignalBusInternal.RegisterCompositeCommand(data.CompositeHandler.SignalTypes, type, data.CompositeHandler.OneShot, data.CompositeHandler.Priority, isAsync);
                     }
                 }
             }

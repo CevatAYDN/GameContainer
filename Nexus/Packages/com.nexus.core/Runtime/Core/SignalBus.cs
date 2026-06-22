@@ -39,7 +39,24 @@ namespace Nexus.Core
         private int _inFlightAsyncCommands;
         private const int MaxInFlightAsyncCommands = 100;
 
-        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), MemberInfo> s_signalFieldCache = new();
+        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_signalSetterCache = new();
+
+        private static readonly Stack<List<object>> s_listPool = new();
+        private static List<object> GetPooledList()
+        {
+            lock (s_listPool)
+            {
+                return s_listPool.Count > 0 ? s_listPool.Pop() : new List<object>();
+            }
+        }
+        private static void ReturnPooledList(List<object> list)
+        {
+            list.Clear();
+            lock (s_listPool)
+            {
+                s_listPool.Push(list);
+            }
+        }
 
 #if NEXUS_DEBUG
         private static readonly ProfilerMarker s_DispatchMarker = new ProfilerMarker("Nexus.Signal.Dispatch");
@@ -286,17 +303,24 @@ namespace Nexus.Core
                 // Process subscriptions (sync-only path — no async subs here)
                 if (_subscriptions.TryGetValue(type, out var subs))
                 {
-                    List<object> subsCopy;
+                    var subsCopy = GetPooledList();
                     lock (subs)
                     {
-                        subsCopy = new List<object>(subs);
+                        subsCopy.AddRange(subs);
                     }
-                    for (int i = 0; i < subsCopy.Count; i++)
+                    try
                     {
-                        if (subsCopy[i] is SignalSubscription<T> syncSub)
+                        for (int i = 0; i < subsCopy.Count; i++)
                         {
-                            syncSub.Invoke(signal);
+                            if (subsCopy[i] is SignalSubscription<T> syncSub)
+                            {
+                                syncSub.Invoke(signal);
+                            }
                         }
+                    }
+                    finally
+                    {
+                        ReturnPooledList(subsCopy);
                     }
                 }
 
@@ -432,22 +456,29 @@ namespace Nexus.Core
                 // Subscriptions
                 if (_subscriptions.TryGetValue(type, out var subs))
                 {
-                    List<object> subsCopy;
+                    var subsCopy = GetPooledList();
                     lock (subs)
                     {
-                        subsCopy = new List<object>(subs);
+                        subsCopy.AddRange(subs);
                     }
-                    
-                    foreach (var sub in subsCopy)
+                    try
                     {
-                        if (sub is SignalSubscription<T> syncSub)
+                        for (int i = 0; i < subsCopy.Count; i++)
                         {
-                            syncSub.Invoke(signal);
+                            var sub = subsCopy[i];
+                            if (sub is SignalSubscription<T> syncSub)
+                            {
+                                syncSub.Invoke(signal);
+                            }
+                            else if (sub is AsyncSignalSubscription<T> asyncSub)
+                            {
+                                await asyncSub.InvokeAsync(signal, _context.LifetimeToken);
+                            }
                         }
-                        else if (sub is AsyncSignalSubscription<T> asyncSub)
-                        {
-                            await asyncSub.InvokeAsync(signal, _context.LifetimeToken);
-                        }
+                    }
+                    finally
+                    {
+                        ReturnPooledList(subsCopy);
                     }
                 }
 
@@ -457,15 +488,23 @@ namespace Nexus.Core
                     if (handlers.Count > 0 && handlers[0].Mode == ExecutionMode.Concurrent)
                     {
                         // Run concurrently
-                        var tasks = new ValueTask[handlers.Count];
-                        for (int i = 0; i < handlers.Count; i++)
+                        int taskCount = handlers.Count;
+                        var tasks = System.Buffers.ArrayPool<ValueTask>.Shared.Rent(taskCount);
+                        try
                         {
-                            tasks[i] = ExecuteCommandAsync(handlers[i], signal, _context.LifetimeToken);
+                            for (int i = 0; i < taskCount; i++)
+                            {
+                                tasks[i] = ExecuteCommandAsync(handlers[i], signal, _context.LifetimeToken);
+                            }
+                            
+                            for (int i = 0; i < taskCount; i++)
+                            {
+                                await tasks[i];
+                            }
                         }
-                        
-                        foreach (var task in tasks)
+                        finally
                         {
-                            await task;
+                            System.Buffers.ArrayPool<ValueTask>.Shared.Return(tasks);
                         }
                     }
                     else
@@ -923,36 +962,52 @@ namespace Nexus.Core
             var signalType = signal.GetType();
             var cacheKey = (commandType, signalType);
 
-            if (s_signalFieldCache.TryGetValue(cacheKey, out var member))
+            if (s_signalSetterCache.TryGetValue(cacheKey, out var setter))
             {
-                if (member is FieldInfo f)
-                    f.SetValue(command, signal);
-                else if (member is PropertyInfo p)
-                    p.SetValue(command, signal);
+                setter(command, signal);
                 return;
             }
+
+            Action<object, object> newSetter = null;
+            MemberInfo foundMember = null;
 
             var fields = commandType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             foreach (var field in fields)
             {
                 if (field.FieldType == signalType || (field.Name.Equals("_signal", StringComparison.OrdinalIgnoreCase) && field.FieldType.IsInstanceOfType(signal)))
                 {
-                    field.SetValue(command, signal);
-                    s_signalFieldCache[cacheKey] = field;
-                    return;
+                    foundMember = field;
+                    break;
                 }
             }
 
-            var properties = commandType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var prop in properties)
+            if (foundMember == null)
             {
-                if (prop.PropertyType == signalType && prop.CanWrite)
+                var properties = commandType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var prop in properties)
                 {
-                    prop.SetValue(command, signal);
-                    s_signalFieldCache[cacheKey] = prop;
-                    return;
+                    if (prop.PropertyType == signalType && prop.CanWrite)
+                    {
+                        foundMember = prop;
+                        break;
+                    }
                 }
             }
+
+            if (foundMember != null)
+            {
+                if (foundMember is FieldInfo f)
+                    newSetter = (target, val) => f.SetValue(target, val);
+                else if (foundMember is PropertyInfo p)
+                    newSetter = (target, val) => p.SetValue(target, val);
+            }
+            else
+            {
+                newSetter = (target, val) => { }; // No-op fallback
+            }
+
+            s_signalSetterCache[cacheKey] = newSetter;
+            newSetter(command, signal);
         }
 
         private void ProcessCompositeTriggers(Type signalType)
