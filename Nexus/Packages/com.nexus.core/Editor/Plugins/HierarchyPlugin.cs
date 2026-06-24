@@ -38,6 +38,8 @@ namespace Nexus.Editor
             public MemberInfo Member;
             public BindableElement UIElement;
             public Type MemberType;
+            public object LastValue;
+            public float FlashTimeRemaining;
         }
 
         public override VisualElement CreateView()
@@ -500,7 +502,9 @@ namespace Nexus.Editor
                     Instance = instance,
                     Member = member,
                     UIElement = bindable,
-                    MemberType = type
+                    MemberType = type,
+                    LastValue = initialValue,
+                    FlashTimeRemaining = 0f
                 });
             }
 
@@ -527,6 +531,25 @@ namespace Nexus.Editor
                     object currentVal = null;
                     if (tracker.Member is FieldInfo field) currentVal = field.GetValue(tracker.Instance);
                     else if (tracker.Member is PropertyInfo prop) currentVal = prop.GetValue(tracker.Instance);
+
+                    bool valueChanged = false;
+                    if (tracker.LastValue == null && currentVal != null) valueChanged = true;
+                    else if (tracker.LastValue != null && !tracker.LastValue.Equals(currentVal)) valueChanged = true;
+
+                    if (valueChanged)
+                    {
+                        tracker.LastValue = currentVal;
+                        tracker.FlashTimeRemaining = 0.6f;
+                        tracker.UIElement.style.backgroundColor = new StyleColor(new Color(0.18f, 0.45f, 0.18f, 0.7f));
+                    }
+                    else if (tracker.FlashTimeRemaining > 0f)
+                    {
+                        tracker.FlashTimeRemaining -= 0.2f;
+                        if (tracker.FlashTimeRemaining <= 0f)
+                        {
+                            tracker.UIElement.style.backgroundColor = new StyleColor(StyleKeyword.Null);
+                        }
+                    }
 
                     if (tracker.MemberType == typeof(int) && tracker.UIElement is IntegerField intField)
                     {
