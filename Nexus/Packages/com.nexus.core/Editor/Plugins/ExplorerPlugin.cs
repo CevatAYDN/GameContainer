@@ -273,10 +273,26 @@ namespace Nexus.Editor
 
                 if (!string.IsNullOrEmpty(_searchQuery))
                 {
-                    bool matchSignal = map.SignalName.IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0;
-                    bool matchCommand = map.CommandName.IndexOf(_searchQuery, StringComparison.OrdinalIgnoreCase) >= 0;
-                    if (!matchSignal && !matchCommand)
-                        continue;
+                    string q = _searchQuery.Trim().ToLowerInvariant();
+                    if (q.StartsWith("t:"))
+                    {
+                        if (map.SignalName.IndexOf(q.Substring(2).Trim(), StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    }
+                    else if (q.StartsWith("c:"))
+                    {
+                        if (map.CommandName.IndexOf(q.Substring(2).Trim(), StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    }
+                    else if (q.StartsWith("m:"))
+                    {
+                        if (map.Mode.IndexOf(q.Substring(2).Trim(), StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    }
+                    else
+                    {
+                        bool matchSignal = map.SignalName.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0;
+                        bool matchCommand = map.CommandName.IndexOf(q, StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (!matchSignal && !matchCommand)
+                            continue;
+                    }
                 }
 
                 filtered.Add(map);
@@ -413,6 +429,74 @@ namespace Nexus.Editor
             _fireButton.style.marginTop = 10;
             _fireButton.style.height = 30;
             _testerFormContainer.Add(_fireButton);
+
+            // Presets Section
+            var presetsHeader = new Label("Presets") { style = { marginTop = 15, fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray } };
+            _testerFormContainer.Add(presetsHeader);
+
+            var presetRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
+            var presetNameField = new TextField { style = { flexGrow = 1, marginRight = 5 } };
+            presetNameField.SetValueWithoutNotify("Default");
+            presetRow.Add(presetNameField);
+
+            var savePresetBtn = new Button(() => SavePreset(presetNameField.value)) { text = "Save" };
+            presetRow.Add(savePresetBtn);
+
+            _testerFormContainer.Add(presetRow);
+
+            var loadPresetRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
+            var presetNames = GetSavedPresetNames();
+            if (presetNames.Count == 0) presetNames.Add("No Presets");
+            var loadDropdown = new DropdownField(presetNames, 0) { style = { flexGrow = 1, marginRight = 5 } };
+            loadPresetRow.Add(loadDropdown);
+
+            var loadBtn = new Button(() => LoadPreset(loadDropdown.value)) { text = "Load" };
+            if (presetNames[0] == "No Presets") loadBtn.SetEnabled(false);
+            loadPresetRow.Add(loadBtn);
+
+            _testerFormContainer.Add(loadPresetRow);
+        }
+
+        private void SavePreset(string presetName)
+        {
+            if (string.IsNullOrWhiteSpace(presetName)) return;
+            if (_testerSelectedSignalType == null || _testerSignalInstance == null) return;
+
+            string key = $"NexusPreset_{_testerSelectedSignalType.FullName}_{presetName}";
+            string json = EditorJsonUtility.ToJson(_testerSignalInstance);
+            EditorPrefs.SetString(key, json);
+
+            string listKey = $"NexusPresets_{_testerSelectedSignalType.FullName}";
+            var list = GetSavedPresetNames();
+            if (!list.Contains(presetName))
+            {
+                list.Add(presetName);
+                EditorPrefs.SetString(listKey, string.Join(";", list));
+            }
+            RefreshTesterView();
+        }
+
+        private List<string> GetSavedPresetNames()
+        {
+            if (_testerSelectedSignalType == null) return new List<string>();
+            string listKey = $"NexusPresets_{_testerSelectedSignalType.FullName}";
+            string saved = EditorPrefs.GetString(listKey, "");
+            if (string.IsNullOrEmpty(saved)) return new List<string>();
+            return new List<string>(saved.Split(';', StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        private void LoadPreset(string presetName)
+        {
+            if (string.IsNullOrEmpty(presetName) || presetName == "No Presets") return;
+            if (_testerSelectedSignalType == null || _testerSignalInstance == null) return;
+
+            string key = $"NexusPreset_{_testerSelectedSignalType.FullName}_{presetName}";
+            string json = EditorPrefs.GetString(key, "");
+            if (!string.IsNullOrEmpty(json))
+            {
+                EditorJsonUtility.FromJsonOverwrite(json, _testerSignalInstance);
+                RefreshTesterView();
+            }
         }
 
         private VisualElement CreateSignalFieldUI(FieldInfo field, Type type, Func<object> getter, Action<object> setter)
