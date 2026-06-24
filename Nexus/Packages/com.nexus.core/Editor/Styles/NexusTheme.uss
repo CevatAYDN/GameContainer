@@ -1,0 +1,439 @@
+/* Nexus Theme — USS Base Stylesheet
+   Supports Unity Editor dark theme (primary) and light theme.
+   All colors use USS variables or hardcoded dark-theme values.
+   Plugins apply these via AddToClassList(). */
+
+/* ─── Sidebar ─── */
+.nexus-sidebar {
+    background-color: rgb(25, 25, 30);
+    border-right-color: rgb(51, 51, 56);
+    border-right-width: 1px;
+}
+
+.nexus-sidebar-brand {
+    -unity-font-style: bold;
+    font-size: 20px;
+    color: rgb(77, 204, 255);
+    margin-bottom: 2px;
+    align-self: center;
+}
+
+.nexus-sidebar-subtitle {
+    font-size: 9px;
+    color: rgb(153, 153, 153);
+    margin-bottom: 20px;
+    align-self: center;
+}
+
+.nexus-sidebar-btn {
+    background-color: rgba(0, 0, 0, 0);
+    color: rgb(217, 217, 217);
+    font-size: 11px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    border-top-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    border-right-width: 0;
+    margin-top: 3px;
+    margin-bottom: 3px;
+    -unity-font-style: normal;
+    align-items: flex-start;
+    flex-direction: row;
+}
+
+.nexus-sidebar-btn:hover {
+    background-color: rgb(40, 40, 45);
+}
+
+.nexus-sidebar-btn.active {
+    background-color: rgb(46, 56, 71);
+    color: rgb(77, 204, 255);
+    -unity-font-style: bold;
+}
+
+.nexus-sidebar-icon {
+    width: 16px;
+    height: 16px;
+    margin-right: 8px;
+    margin-top: 1px;
+}
+
+/* ─── Toolbar ─── */
+.nexus-toolbar {
+    flex-direction: row;
+    background-color: rgb(25, 25, 30);
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    border-bottom-color: rgb(51, 51, 56);
+    border-bottom-width: 1px;
+    align-items: center;
+}
+
+.nexus-toolbar-title {
+    -unity-font-style: bold;
+    font-size: 12px;
+    color: rgb(77, 204, 255);
+    margin-right: 20px;
+}
+
+/* ─── Cards ─── */
+.nexus-card {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.nexus-card-default {
+    background-color: rgb(46, 46, 51);
+}
+
+.nexus-card-green {
+    background-color: rgb(36, 46, 36);
+}
+
+.nexus-card-yellow {
+    background-color: rgb(51, 46, 36);
+}
+
+.nexus-card-red {
+    background-color: rgb(51, 36, 36);
+}
+
+.nexus-card-blue {
+    background-color: rgb(36, 41, 51);
+}
+
+/* ─── Action Buttons ─── */
+.nexus-action-btn {
+    background-color: rgb(64, 64, 71);
+    color: white;
+    font-size: 11px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+    margin-top: 4px;
+    margin-bottom: 4px;
+    -unity-font-style: bold;
+    border-top-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    border-right-width: 0;
+    align-items: center;
+    flex-direction: row;
+}
+
+.nexus-action-btn:hover {
+    background-color: rgb(76, 76, 84);
+}
+
+/* ─── Badges / Pills ─── */
+.nexus-pill {
+    font-size: 8px;
+    padding-left: 4px;
+    padding-right: 4px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    border-top-left-radius: 2px;
+    border-top-right-radius: 2px;
+    border-bottom-left-radius: 2px;
+    border-bottom-right-radius: 2px;
+    -unity-font-style: bold;
+    margin-left: 6px;
+}
+
+.nexus-pill-green {
+    background-color: rgb(51, 89, 51);
+    color: rgb(153, 255, 153);
+}
+
+.nexus-pill-blue {
+    background-color: rgb(51, 89, 128);
+    color: rgb(153, 204, 255);
+}
+
+.nexus-pill-purple {
+    background-color: rgb(77, 51, 102);
+    color: rgb(204, 153, 255);
+}
+
+.nexus-pill-yellow {
+    background-color: rgb(115, 89, 38);
+    color: rgb(255, 204, 51);
+}
+
+/* ─── Filter Buttons ─── */
+.nexus-filterbar {
+    flex-direction: row;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    border-bottom-color: rgb(51, 51, 56);
+    border-bottom-width: 1px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.nexus-filter-label {
+    font-size: 10px;
+    color: rgb(128, 128, 128);
+    margin-left: 10px;
+}
+
+.nexus-filter-btn {
+    font-size: 8px;
+    padding-left: 4px;
+    padding-right: 4px;
+    padding-top: 1px;
+    padding-bottom: 1px;
+    margin-left: 2px;
+    margin-right: 2px;
+    border-top-left-radius: 2px;
+    border-top-right-radius: 2px;
+    border-bottom-left-radius: 2px;
+    border-bottom-right-radius: 2px;
+    border-top-width: 0;
+    border-bottom-width: 0;
+    border-left-width: 0;
+    border-right-width: 0;
+}
+
+.nexus-filter-btn.active {
+    background-color: rgb(51, 89, 128);
+    color: white;
+}
+
+.nexus-filter-btn.inactive {
+    background-color: rgb(38, 38, 43);
+    color: rgb(102, 102, 102);
+}
+
+/* ─── Status Dot ─── */
+.nexus-status-dot {
+    width: 6px;
+    height: 6px;
+    border-top-left-radius: 3px;
+    border-top-right-radius: 3px;
+    border-bottom-left-radius: 3px;
+    border-bottom-right-radius: 3px;
+    margin-right: 6px;
+}
+
+/* ─── Empty State ─── */
+.nexus-empty-state {
+    color: rgb(128, 128, 128);
+    font-size: 11px;
+    align-self: center;
+    margin-top: 20px;
+}
+
+.nexus-empty-state-title {
+    color: rgb(128, 128, 128);
+    -unity-font-style: bold;
+    font-size: 14px;
+    align-self: center;
+    margin-top: 30px;
+    margin-bottom: 8px;
+}
+
+/* ─── Section Titles ─── */
+.nexus-section-title {
+    font-size: 10px;
+    -unity-font-style: bold;
+    color: rgb(153, 153, 153);
+    margin-bottom: 4px;
+}
+
+/* ─── Status Bar ─── */
+.nexus-statusbar {
+    background-color: rgb(25, 25, 30);
+    color: rgb(153, 153, 153);
+    font-size: 10px;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 4px;
+    padding-bottom: 4px;
+    border-top-color: rgb(51, 51, 56);
+    border-top-width: 1px;
+    -unity-font-style: bold;
+}
+
+/* ─── Split Panes ─── */
+.nexus-split-left {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    border-right-color: rgb(51, 51, 56);
+    border-right-width: 1px;
+}
+
+.nexus-split-right {
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+}
+
+/* ─── Trace Tree ─── */
+.nexus-trace-row {
+    padding-top: 4px;
+    padding-bottom: 4px;
+    margin-top: 2px;
+    margin-bottom: 2px;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+
+.nexus-trace-row:hover {
+    background-color: rgba(255, 255, 255, 0.03);
+}
+
+.nexus-trace-row.selected {
+    background-color: rgba(51, 77, 128, 0.6);
+}
+
+/* ─── Context Card ─── */
+.nexus-context-card {
+    border-width: 1px;
+    border-color: rgb(64, 64, 71);
+    border-top-left-radius: 5px;
+    border-top-right-radius: 5px;
+    border-bottom-left-radius: 5px;
+    border-bottom-right-radius: 5px;
+    padding-left: 10px;
+    padding-right: 10px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    margin-top: 6px;
+    margin-bottom: 6px;
+}
+
+.nexus-context-card.default {
+    background-color: rgb(38, 38, 43);
+}
+
+.nexus-context-card.selected {
+    background-color: rgb(46, 56, 66);
+}
+
+.nexus-context-card:hover {
+    background-color: rgb(51, 51, 56);
+}
+
+/* ─── Dashboard specifics ─── */
+.nexus-dashboard-action-card {
+    flex-direction: column;
+    background-color: rgb(41, 41, 46);
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+    margin-right: 8px;
+    margin-bottom: 8px;
+    width: 48%;
+    cursor: link;
+    border-width: 1px;
+    border-color: transparent;
+}
+
+.nexus-dashboard-action-card:hover {
+    background-color: rgb(51, 51, 56);
+    border-color: rgb(77, 204, 255);
+}
+
+.nexus-dashboard-action-card:active {
+    background-color: rgb(60, 60, 66);
+}
+
+.nexus-dashboard-stat {
+    font-size: 24px;
+    -unity-font-style: bold;
+    color: white;
+}
+
+.nexus-dashboard-stat-label {
+    font-size: 9px;
+    color: rgb(153, 153, 153);
+    margin-bottom: 8px;
+}
+
+.nexus-dashboard-quickicon {
+    width: 20px;
+    height: 20px;
+    margin-right: 8px;
+}
+
+/* ─── Warning Box ─── */
+.nexus-warning-box {
+    color: rgb(255, 179, 51);
+    background-color: rgb(51, 38, 25);
+    padding-left: 8px;
+    padding-right: 8px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+    margin-top: 8px;
+    font-size: 10px;
+    white-space: normal;
+    border-top-left-radius: 4px;
+    border-top-right-radius: 4px;
+    border-bottom-left-radius: 4px;
+    border-bottom-right-radius: 4px;
+}
+
+/* ─── Table Header ─── */
+.nexus-table-header {
+    flex-direction: row;
+    padding-left: 12px;
+    padding-right: 12px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    background-color: rgb(41, 41, 46);
+    border-bottom-color: rgb(64, 64, 69);
+    border-bottom-width: 1px;
+}
+
+.nexus-table-header-label {
+    -unity-font-style: bold;
+    color: rgb(128, 128, 128);
+    font-size: 9px;
+}
+
+/* ─── Search Field ─── */
+.nexus-search-field {
+    width: 140px;
+    height: 20px;
+    margin-right: 10px;
+}
+
+/* ─── Assembly Dropdown ─── */
+.nexus-dropdown {
+    width: 160px;
+    margin-right: 10px;
+}

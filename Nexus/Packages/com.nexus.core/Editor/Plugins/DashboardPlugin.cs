@@ -12,19 +12,173 @@ namespace Nexus.Editor
         public override int Order => 0;
 
         private VisualElement _view;
+        private Label _contextStat;
+        private Label _handlerStat;
+        private Label _rootStat;
 
         public override VisualElement CreateView()
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("NEXUS SYSTEM OVERVIEW");
+            var toolbar = NexusEditorStyles.CreateToolbar("NEXUS DASHBOARD");
             _view.Add(toolbar);
 
             var scroll = new ScrollView { style = { flexGrow = 1 } };
-            scroll.style.paddingLeft = 15;
-            scroll.style.paddingRight = 15;
-            scroll.style.paddingTop = 15;
-            scroll.style.paddingBottom = 15;
+            scroll.style.paddingLeft = 20;
+            scroll.style.paddingRight = 20;
+            scroll.style.paddingTop = 20;
+            scroll.style.paddingBottom = 20;
+
+            BuildStatusSection(scroll);
+            BuildQuickActions(scroll);
+            BuildFrameworkInfo(scroll);
+
+            _view.Add(scroll);
+
+            // Periodic refresh
+            _view.schedule.Execute(RefreshStats).Every(2000);
+
+            return _view;
+        }
+
+        private void BuildStatusSection(VisualElement parent)
+        {
+            bool playing = Application.isPlaying;
+            int contextCount = NexusEditorDataProvider.GetActiveContextCount();
+            int handlerCount = NexusEditorDataProvider.GetHandlerCount();
+            var roots = NexusEditorDataProvider.GetSceneRoots();
+            int rootCount = roots?.Length ?? 0;
+
+            var cardBg = playing ? NexusEditorStyles.CardBgGreen : NexusEditorStyles.CardBgBlue;
+            var titleColor = playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.AccentBlue;
+            var statusSymbol = playing ? "●" : "○";
+            var statusText = playing ? "ACTIVE" : "STANDBY";
+
+            // Status header
+            var statusCard = NexusEditorStyles.CreateCard(cardBg);
+            var statusRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 12 } };
+
+            var statusDot = NexusEditorStyles.CreateStatusDot(titleColor, 12);
+            statusRow.Add(statusDot);
+
+            var statusLabel = new Label($"  SYSTEM {statusSymbol} {statusText}")
+            {
+                style = { fontSize = 18, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(titleColor) }
+            };
+            statusRow.Add(statusLabel);
+            statusCard.Add(statusRow);
+
+            // Stat counters
+            var statRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 8 } };
+
+            _contextStat = CreateStatBox(statRow, contextCount.ToString(), "Active Contexts", NexusEditorStyles.AccentBlue);
+            _handlerStat = CreateStatBox(statRow, handlerCount.ToString(), "Handlers", NexusEditorStyles.AccentPurple);
+            _rootStat = CreateStatBox(statRow, rootCount.ToString(), "Scene Roots", NexusEditorStyles.AccentYellow);
+
+            statusCard.Add(statRow);
+
+            // Hint text based on state
+            if (!playing && rootCount == 0 && handlerCount == 0)
+            {
+                var hint = NexusEditorStyles.CreateHint("No Roots or Signal Handlers found. Start by creating a Root context via the Context Wizard.");
+                hint.style.marginTop = 12;
+                statusCard.Add(hint);
+            }
+            else if (!playing && rootCount > 0 && handlerCount == 0)
+            {
+                var hint = NexusEditorStyles.CreateHint("Roots are ready but no Signal Handlers registered. Write your first command and check the Signal Explorer.");
+                hint.style.marginTop = 12;
+                statusCard.Add(hint);
+            }
+            else if (playing)
+            {
+                var hint = NexusEditorStyles.CreateHint("System is live. Use the Live Tracer to monitor signal chains in real-time.");
+                hint.style.marginTop = 12;
+                statusCard.Add(hint);
+            }
+
+            parent.Add(statusCard);
+        }
+
+        private Label CreateStatBox(VisualElement parent, string value, string label, Color accentColor)
+        {
+            var box = new VisualElement { style = { flexGrow = 1, alignItems = Align.Center } };
+
+            var valLabel = new Label(value)
+            {
+                style = { fontSize = 28, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(accentColor) }
+            };
+            box.Add(valLabel);
+
+            var descLabel = new Label(label)
+            {
+                style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 4 }
+            };
+            box.Add(descLabel);
+
+            parent.Add(box);
+            return valLabel;
+        }
+
+        private void BuildQuickActions(VisualElement parent)
+        {
+            var groupCard = NexusEditorStyles.CreateActionGroup(parent, "QUICK ACTIONS");
+
+            var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
+
+            AddActionCard(buttonRow, "Context Wizard", "Create and manage Root contexts", NexusEditorStyles.BtnBlue, () => Window.SwitchToPlugin("Wizard"));
+            AddActionCard(buttonRow, "Hierarchy & Data", "Inspect DI container live", NexusEditorStyles.BtnTeal, () => Window.SwitchToPlugin("Hierarchy"));
+            AddActionCard(buttonRow, "Signal Explorer", "View signal mappings & test fire", NexusEditorStyles.BtnPurple, () => Window.SwitchToPlugin("Explorer"));
+            AddActionCard(buttonRow, "Live Tracer", "Monitor signal chains in real-time", NexusEditorStyles.BtnGray, () => Window.SwitchToPlugin("Tracer"));
+
+            groupCard.Add(buttonRow);
+        }
+
+        private void AddActionCard(VisualElement parent, string title, string description, Color btnColor, System.Action onClick)
+        {
+            var card = new VisualElement();
+            card.AddToClassList(NexusEditorStyles.ClassDashboardActionCard);
+
+            var titleLabel = new Label(title)
+            {
+                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue), marginBottom = 4 }
+            };
+            card.Add(titleLabel);
+
+            var descLabel = new Label(description)
+            {
+                style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 8, whiteSpace = WhiteSpace.Normal }
+            };
+            card.Add(descLabel);
+
+            var btn = NexusEditorStyles.CreateButton("Open", onClick, btnColor);
+            btn.style.marginTop = 0;
+            btn.style.marginBottom = 0;
+            btn.style.alignSelf = Align.FlexStart;
+            card.Add(btn);
+
+            // Click the whole card
+            card.RegisterCallback<MouseDownEvent>(evt => onClick());
+
+            parent.Add(card);
+        }
+
+        private void BuildFrameworkInfo(VisualElement parent)
+        {
+            var infoCard = NexusEditorStyles.CreateInfoCard(parent, "FRAMEWORK", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
+                "Nexus Observable Architecture v0.1.0\n" +
+                "Unity 6 • UI Toolkit • MIT License\n\n" +
+                "Built on a 0-GC, JIT-free generic observable framework with:\n" +
+                "• Causal Tracing — zero-allocation causality tracking\n" +
+                "• 4 Execution Modes — Sequential, Concurrent, Exclusive, Composite\n" +
+                "• Build Validation — catches priority conflicts before compile\n" +
+                "• Auto-Discovery — Lifecycle, Commands, Views and Mediators\n" +
+                "• Command Pooling — automatic pooling for 0-GC steady-state");
+        }
+
+        private void RefreshStats()
+        {
+            if (_contextStat == null) return;
 
             bool playing = Application.isPlaying;
             int contextCount = NexusEditorDataProvider.GetActiveContextCount();
@@ -32,55 +186,9 @@ namespace Nexus.Editor
             var roots = NexusEditorDataProvider.GetSceneRoots();
             int rootCount = roots?.Length ?? 0;
 
-            var cardBg = playing ? NexusEditorStyles.CardBgGreen : NexusEditorStyles.CardBg;
-            var titleColor = playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.AccentBlue;
-
-            string statusText = playing
-                ? $"<b>PLAY MODE</b> — {contextCount} active context{(contextCount != 1 ? "s" : "")}, {handlerCount} handler{(handlerCount != 1 ? "s" : "")} registered"
-                : $"<b>EDITOR MODE</b> — {rootCount} Root{(rootCount != 1 ? "s" : "")} in scene, {handlerCount} handler{(handlerCount != 1 ? "s" : "")} registered";
-
-            var statusIcon = playing ? "\u25B6" : "\u23F8"; // ▶ or ⏸
-
-            var overviewCard = NexusEditorStyles.CreateInfoCard(
-                scroll,
-                $"{statusIcon}  NEXUS SYSTEM  {(playing ? "● ACTIVE" : "○ STANDBY")}",
-                titleColor,
-                cardBg,
-                statusText);
-
-            if (!playing && rootCount == 0 && handlerCount == 0)
-            {
-                var hint = NexusEditorStyles.CreateHint(
-                    "No Roots or Signal Handlers found. Navigate to the <b>Context Wizard</b> tab to generate a root context.");
-                hint.style.marginTop = 4;
-                overviewCard.Add(hint);
-            }
-
-            if (!playing && rootCount > 0 && handlerCount == 0)
-            {
-                var hint = NexusEditorStyles.CreateHint(
-                    "Roots are ready but no Signal Handlers are registered. Check the <b>Signal Explorer</b> to write your first command.");
-                hint.style.marginTop = 4;
-                overviewCard.Add(hint);
-            }
-
-            // Quick Actions Panel
-            var actionsCard = NexusEditorStyles.CreateActionGroup(scroll, "QUICK ACTIONS");
-            NexusEditorStyles.AddActionButton(actionsCard, "Context Setup Wizard", () => Window.SwitchToPlugin("Wizard"), NexusEditorStyles.BtnBlue);
-            NexusEditorStyles.AddActionButton(actionsCard, "Open Hierarchy & Data", () => Window.SwitchToPlugin("Hierarchy"), NexusEditorStyles.BtnTeal);
-            NexusEditorStyles.AddActionButton(actionsCard, "View Signal Explorer", () => Window.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnTeal);
-            NexusEditorStyles.AddActionButton(actionsCard, "Open Live Tracer", () => Window.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnPurple);
-
-            // Framework Details
-            NexusEditorStyles.CreateInfoCard(scroll, "NEXUS OBSERVABLE SUITE", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
-                "Nexus is built on a 0-GC, JIT-free generic observable framework designed for production gaming.\n\n" +
-                "• <b>Context Wizard</b>: Handles scaffolding lifecycle components.\n" +
-                "• <b>Hierarchy & Data</b>: Live view of DI injection layers and values.\n" +
-                "• <b>Signal Explorer</b>: Inspects static signal routes and allows play-mode test firing.\n" +
-                "• <b>Live Tracer</b>: Displays time-travel profiling logs for tracing bugs.");
-
-            _view.Add(scroll);
-            return _view;
+            _contextStat.text = contextCount.ToString();
+            _handlerStat.text = handlerCount.ToString();
+            _rootStat.text = rootCount.ToString();
         }
     }
 }
