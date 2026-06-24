@@ -19,7 +19,8 @@ namespace Nexus.Editor
         {
             CreateRoot = 0,
             ViewMediatorGen = 1,
-            CleanDeletion = 2
+            CleanDeletion = 2,
+            SignalCommandGen = 3
         }
 
         // Custom path inputs
@@ -39,6 +40,11 @@ namespace Nexus.Editor
         private string _wizardViewTargetRootName = "";
         private bool _wizardCreateViewGo = true;
 
+        // Inputs for Signal/Command Gen
+        private string _wizardSignalName = "PlayerScoreChanged";
+        private string _wizardCommandName = "UpdateScoreCommand";
+        private string _wizardSignalTargetRootName = "";
+
         // Inputs for Clean Deletion
         private string _wizardRootToDeleteName = "";
 
@@ -50,6 +56,7 @@ namespace Nexus.Editor
         
         private DropdownField _parentRootDropdown;
         private DropdownField _viewTargetRootDropdown;
+        private DropdownField _signalTargetRootDropdown;
         private DropdownField _deleteRootDropdown;
 
         private List<string> _wizardAvailableAssemblies = new();
@@ -69,10 +76,12 @@ namespace Nexus.Editor
             
             var btnCreateRoot = CreateSubTabButton("Create Root", SubTab.CreateRoot);
             var btnViewGen = CreateSubTabButton("View/Mediator Gen", SubTab.ViewMediatorGen);
+            var btnSignalCmdGen = CreateSubTabButton("Signal/Cmd Gen", SubTab.SignalCommandGen);
             var btnDelete = CreateSubTabButton("Clean Deletion", SubTab.CleanDeletion);
 
             tabHeader.Add(btnCreateRoot);
             tabHeader.Add(btnViewGen);
+            tabHeader.Add(btnSignalCmdGen);
             tabHeader.Add(btnDelete);
             _contentRoot.Add(tabHeader);
 
@@ -162,6 +171,9 @@ namespace Nexus.Editor
                     break;
                 case SubTab.ViewMediatorGen:
                     BuildViewMediatorGenTab();
+                    break;
+                case SubTab.SignalCommandGen:
+                    BuildSignalCommandGenTab();
                     break;
                 case SubTab.CleanDeletion:
                     BuildCleanDeletionTab();
@@ -317,6 +329,39 @@ namespace Nexus.Editor
             genGroup.Add(genBtn);
         }
 
+        private void BuildSignalCommandGenTab()
+        {
+            var genGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "GENERATE SIGNAL & COMMAND");
+
+            var signalNameField = new TextField("Signal Name") { value = _wizardSignalName };
+            signalNameField.RegisterValueChangedCallback(evt => _wizardSignalName = evt.newValue);
+            genGroup.Add(signalNameField);
+
+            var commandNameField = new TextField("Command Name") { value = _wizardCommandName };
+            commandNameField.RegisterValueChangedCallback(evt => _wizardCommandName = evt.newValue);
+            genGroup.Add(commandNameField);
+
+            var rootChoices = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
+            if (rootChoices.Count == 0)
+            {
+                var errorLabel = new Label("No active Roots found in scene. Create a Root first.") { style = { color = Color.red, fontSize = 10, marginTop = 5 } };
+                genGroup.Add(errorLabel);
+                return;
+            }
+
+            if (string.IsNullOrEmpty(_wizardSignalTargetRootName) || !rootChoices.Contains(_wizardSignalTargetRootName))
+            {
+                _wizardSignalTargetRootName = rootChoices[0];
+            }
+
+            _signalTargetRootDropdown = new DropdownField("Target Root Context", rootChoices, rootChoices.IndexOf(_wizardSignalTargetRootName));
+            _signalTargetRootDropdown.RegisterValueChangedCallback(evt => _wizardSignalTargetRootName = evt.newValue);
+            genGroup.Add(_signalTargetRootDropdown);
+
+            var genBtn = NexusEditorStyles.CreateButton("Generate Signal & Command Files", RunGenerateSignalAndCommand, NexusEditorStyles.BtnBlue);
+            genGroup.Add(genBtn);
+        }
+
         private void BuildCleanDeletionTab()
         {
             var deleteGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "CLEAN DELETION TOOL");
@@ -348,6 +393,63 @@ namespace Nexus.Editor
 
             var deleteBtn = NexusEditorStyles.CreateButton("DELETE ROOT & ALL RELATED ASSETS", RunDeleteRootContext, NexusEditorStyles.AccentRed);
             deleteGroup.Add(deleteBtn);
+
+            var cleanerGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "DEAD CODE CLEANER");
+            var scanBtn = NexusEditorStyles.CreateButton("Scan for Unused Signals (Regex)", ScanForDeadSignals, NexusEditorStyles.BtnBlue);
+            cleanerGroup.Add(scanBtn);
+        }
+
+        private void ScanForDeadSignals()
+        {
+            var signalTypes = new HashSet<Type>();
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.GetName().Name.StartsWith("System") || assembly.GetName().Name.StartsWith("Unity")) continue;
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.IsValueType && !type.IsPrimitive && !type.IsEnum && type.Name.EndsWith("Signal"))
+                        {
+                            signalTypes.Add(type);
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            var usedSignals = new HashSet<Type>();
+            var allScripts = AssetDatabase.FindAssets("t:MonoScript").Select(AssetDatabase.GUIDToAssetPath).ToArray();
+            
+            foreach (var path in allScripts)
+            {
+                if (path.Contains("Package") || path.Contains("Plugins")) continue;
+                var content = File.ReadAllText(path);
+                
+                // Remove comment blocks before scanning to avoid false positives in code comments
+                var cleanContent = System.Text.RegularExpressions.Regex.Replace(content, @"//.*|/\*[\s\S]*?\*/", "");
+                
+                foreach (var signal in signalTypes)
+                {
+                    // If signal name appears in code (other than its own definition)
+                    if (cleanContent.Contains(signal.Name) && !path.EndsWith(signal.Name + ".cs"))
+                    {
+                        usedSignals.Add(signal);
+                    }
+                }
+            }
+
+            var deadSignals = signalTypes.Except(usedSignals).ToList();
+            if (deadSignals.Count == 0)
+            {
+                EditorUtility.DisplayDialog("Scanner", "No completely unused signals found.", "OK");
+                return;
+            }
+
+            string report = "Potentially dead signals (no references found outside definition):\n\n";
+            foreach (var ds in deadSignals) report += $"- {ds.Name}\n";
+            
+            EditorUtility.DisplayDialog("Dead Signals Found", report, "OK");
         }
 
         private void BrowseFolder(Action<string> onFolderSelected)
@@ -390,6 +492,16 @@ namespace Nexus.Editor
                 {
                     _wizardViewTargetRootName = rootNames[0];
                     _viewTargetRootDropdown.value = _wizardViewTargetRootName;
+                }
+            }
+
+            if (_signalTargetRootDropdown != null)
+            {
+                _signalTargetRootDropdown.choices = rootNames;
+                if (rootNames.Count > 0 && !rootNames.Contains(_wizardSignalTargetRootName))
+                {
+                    _wizardSignalTargetRootName = rootNames[0];
+                    _signalTargetRootDropdown.value = _wizardSignalTargetRootName;
                 }
             }
 
@@ -691,6 +803,41 @@ namespace Nexus.Editor
             catch (Exception ex)
             {
                 Debug.LogError($"[Nexus] View/Mediator generation failed: {ex.Message}");
+            }
+        }
+
+        private void RunGenerateSignalAndCommand()
+        {
+            var targetRoot = _cachedSceneRoots.FirstOrDefault(r => r.gameObject.name == _wizardSignalTargetRootName);
+            if (targetRoot == null) return;
+
+            string contextName = targetRoot.ContextData != null ? targetRoot.ContextData.name.Replace("ContextData", "") : targetRoot.gameObject.name.Replace("Root", "");
+            string signalsDir = Path.Combine(_wizardScriptsPath, contextName, "Signals");
+            string commandsDir = Path.Combine(_wizardScriptsPath, contextName, "Commands");
+
+            try
+            {
+                EnsureFolderExists(signalsDir);
+                EnsureFolderExists(commandsDir);
+
+                string signalPath = Path.Combine(signalsDir, $"{_wizardSignalName}.cs");
+                string commandPath = Path.Combine(commandsDir, $"{_wizardCommandName}.cs");
+
+                if (File.Exists(signalPath) || File.Exists(commandPath))
+                {
+                    if (!EditorUtility.DisplayDialog("Overwrite Files?", $"Files for {_wizardSignalName} or {_wizardCommandName} already exist. Do you want to overwrite them?", "Yes", "No"))
+                        return;
+                }
+
+                File.WriteAllText(signalPath, NexusTemplateProvider.GetGenericSignalBoilerplate(_wizardSignalName, contextName));
+                File.WriteAllText(commandPath, NexusTemplateProvider.GetGenericCommandBoilerplate(_wizardCommandName, _wizardSignalName, contextName));
+
+                AssetDatabase.Refresh();
+                EditorUtility.DisplayDialog("Generated successfully", $"Successfully generated {_wizardSignalName} under {signalsDir} and {_wizardCommandName} under {commandsDir}.", "OK");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Nexus] Signal/Command generation failed: {ex.Message}");
             }
         }
 

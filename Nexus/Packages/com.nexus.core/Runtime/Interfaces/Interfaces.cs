@@ -48,6 +48,16 @@ namespace Nexus.Core
     {
     }
 
+    /// <summary>
+    /// Defines a model that supports saving and restoring its internal state snapshot.
+    /// Used by NetworkSignalBus to handle deterministic rollback and state recovery in multiplayer games.
+    /// </summary>
+    public interface ISnapshotableModel<TState> where TState : struct
+    {
+        TState CaptureSnapshot();
+        void RestoreSnapshot(TState snapshot);
+    }
+
     public interface ICommandBindingBuilder<TSignal> where TSignal : struct
     {
         ICommandBindingBuilder<TSignal> To<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class;

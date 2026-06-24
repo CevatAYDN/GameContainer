@@ -32,7 +32,7 @@ namespace Nexus.Editor
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 string name = assembly.FullName;
-                if (name.StartsWith("System") || name.StartsWith("Microsoft") || name.StartsWith("Unity") || name.StartsWith("mscorlib"))
+                if (name.StartsWith("System") || name.StartsWith("Microsoft") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("nunit"))
                     continue;
                 try
                 {

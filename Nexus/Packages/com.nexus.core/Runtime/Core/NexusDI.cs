@@ -24,6 +24,16 @@ namespace Nexus.Core
         private readonly Dictionary<Type, Binding> _bindings = new();
         private readonly HashSet<object> _resolvedSingletons = new();
 
+        private static readonly Dictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
+
+        /// <summary>
+        /// Registers a compile-time generated injector action for a class to bypass runtime reflection in AOT.
+        /// </summary>
+        public static void RegisterInjector<T>(Action<T, NexusDI> injector) where T : class
+        {
+            s_customInjectors[typeof(T)] = (instance, di) => injector((T)instance, di);
+        }
+
         private class InjectableField
         {
             public FieldInfo Field { get; set; }
@@ -306,6 +316,13 @@ namespace Nexus.Core
             }
 
             var type = instance.GetType();
+
+            if (s_customInjectors.TryGetValue(type, out var injector))
+            {
+                injector(instance, this);
+                return;
+            }
+            
             var meta = GetOrCreateInjectMetadata(type);
             
             // Inject fields

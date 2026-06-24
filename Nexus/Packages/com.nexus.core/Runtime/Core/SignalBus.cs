@@ -13,9 +13,58 @@ namespace Nexus.Core
 {
 
 
+    internal class SubscriptionNode
+    {
+        public object Handler;
+        public object RawSubscription;
+        public bool IsActive = true;
+        public SubscriptionNode Next;
+
+        public void Reset()
+        {
+            Handler = null;
+            RawSubscription = null;
+            IsActive = true;
+            Next = null;
+        }
+    }
+
+    internal static class SubscriptionNodePool
+    {
+        private static readonly Stack<SubscriptionNode> s_pool = new();
+
+        public static SubscriptionNode Rent(object handler, object rawSub)
+        {
+            lock (s_pool)
+            {
+                if (s_pool.Count > 0)
+                {
+                    var node = s_pool.Pop();
+                    node.Handler = handler;
+                    node.RawSubscription = rawSub;
+                    node.IsActive = true;
+                    node.Next = null;
+                    return node;
+                }
+            }
+            return new SubscriptionNode { Handler = handler, RawSubscription = rawSub };
+        }
+
+        public static void Return(SubscriptionNode node)
+        {
+            node.Reset();
+            lock (s_pool)
+            {
+                s_pool.Push(node);
+            }
+        }
+    }
+
     [Preserve]
     public class SignalBus : ISignalBus, IDisposable
     {
+        public static event Action<Exception, string> OnUnhandledException;
+
         private readonly NexusDI _container;
         private readonly CommandPoolManager _poolManager;
         private readonly IContext _context;
@@ -26,7 +75,9 @@ namespace Nexus.Core
 
         public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers => _commandHandlers;
 
-        private readonly Dictionary<Type, List<object>> _subscriptions = new();
+        private readonly Dictionary<Type, SubscriptionNode> _subscriptions = new();
+        private readonly object _subLock = new();
+        private bool _pendingCleanups;
 
         // Precomputed cache: does this signal type have at least one async handler?
         // Used by FireInternal to decide whether to delegate to the async path.
@@ -175,24 +226,15 @@ namespace Nexus.Core
         public ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct
         {
             var type = typeof(T);
-            if (!_subscriptions.TryGetValue(type, out var list))
-            {
-                list = new List<object>();
-                _subscriptions[type] = list;
-            }
-
             SignalSubscription<T> sub = null;
-            sub = new SignalSubscription<T>(handler, _context.LifetimeToken, () =>
-            {
-                lock (list)
-                {
-                    list.Remove(sub);
-                }
-            });
+            sub = new SignalSubscription<T>(handler, _context.LifetimeToken, () => Unsubscribe(type, sub));
 
-            lock (list)
+            lock (_subLock)
             {
-                list.Add(sub);
+                _subscriptions.TryGetValue(type, out var head);
+                var node = SubscriptionNodePool.Rent(handler, sub);
+                node.Next = head;
+                _subscriptions[type] = node;
             }
             return sub;
         }
@@ -200,26 +242,81 @@ namespace Nexus.Core
         public ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct
         {
             var type = typeof(T);
-            if (!_subscriptions.TryGetValue(type, out var list))
-            {
-                list = new List<object>();
-                _subscriptions[type] = list;
-            }
-
             AsyncSignalSubscription<T> sub = null;
-            sub = new AsyncSignalSubscription<T>(handler, _context.LifetimeToken, () =>
-            {
-                lock (list)
-                {
-                    list.Remove(sub);
-                }
-            });
+            sub = new AsyncSignalSubscription<T>(handler, _context.LifetimeToken, () => Unsubscribe(type, sub));
 
-            lock (list)
+            lock (_subLock)
             {
-                list.Add(sub);
+                _subscriptions.TryGetValue(type, out var head);
+                var node = SubscriptionNodePool.Rent(handler, sub);
+                node.Next = head;
+                _subscriptions[type] = node;
             }
             return sub;
+        }
+
+        private void Unsubscribe(Type type, object rawSub)
+        {
+            lock (_subLock)
+            {
+                if (_subscriptions.TryGetValue(type, out var current))
+                {
+                    while (current != null)
+                    {
+                        if (current.RawSubscription == rawSub)
+                        {
+                            current.IsActive = false;
+                            _pendingCleanups = true;
+                            break;
+                        }
+                        current = current.Next;
+                    }
+                }
+            }
+        }
+
+        private void SweepDeadNodes()
+        {
+            lock (_subLock)
+            {
+                if (!_pendingCleanups) return;
+                _pendingCleanups = false;
+
+                var keys = new List<Type>(_subscriptions.Keys);
+                foreach (var type in keys)
+                {
+                    if (_subscriptions.TryGetValue(type, out var current))
+                    {
+                        SubscriptionNode prev = null;
+                        while (current != null)
+                        {
+                            if (!current.IsActive)
+                            {
+                                var next = current.Next;
+                                if (prev == null)
+                                {
+                                    if (next == null)
+                                        _subscriptions.Remove(type);
+                                    else
+                                        _subscriptions[type] = next;
+                                }
+                                else
+                                {
+                                    prev.Next = next;
+                                }
+                                var temp = current;
+                                current = next;
+                                SubscriptionNodePool.Return(temp);
+                            }
+                            else
+                            {
+                                prev = current;
+                                current = current.Next;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         private void FireInternal<T>(T signal, bool isCrossContextSource) where T : struct
@@ -301,26 +398,16 @@ namespace Nexus.Core
                 }
 
                 // Process subscriptions (sync-only path — no async subs here)
-                if (_subscriptions.TryGetValue(type, out var subs))
+                if (_subscriptions.TryGetValue(type, out var node))
                 {
-                    var subsCopy = GetPooledList();
-                    lock (subs)
+                    var current = node;
+                    while (current != null)
                     {
-                        subsCopy.AddRange(subs);
-                    }
-                    try
-                    {
-                        for (int i = 0; i < subsCopy.Count; i++)
+                        if (current.IsActive && current.Handler is Action<T> syncSub)
                         {
-                            if (subsCopy[i] is SignalSubscription<T> syncSub)
-                            {
-                                syncSub.Invoke(signal);
-                            }
+                            syncSub(signal);
                         }
-                    }
-                    finally
-                    {
-                        ReturnPooledList(subsCopy);
+                        current = current.Next;
                     }
                 }
 
@@ -352,6 +439,10 @@ namespace Nexus.Core
                 s_DispatchMarker.End();
 #endif
                 s_stackDepth--;
+                if (s_stackDepth == 0 && _pendingCleanups)
+                {
+                    SweepDeadNodes();
+                }
             }
         }
 
@@ -368,6 +459,7 @@ namespace Nexus.Core
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                OnUnhandledException?.Invoke(ex, $"Async bridge failed for signal '{typeof(T).FullName}'");
                 UnityEngine.Debug.LogError($"[Nexus] Async bridge failed for signal '{typeof(T).FullName}': {ex.Message}\n{ex.StackTrace}");
             }
         }
@@ -377,18 +469,19 @@ namespace Nexus.Core
         /// </summary>
         private bool HasAsyncSubscriptions(Type signalType)
         {
-            if (!_subscriptions.TryGetValue(signalType, out var subs))
+            if (!_subscriptions.TryGetValue(signalType, out var node))
                 return false;
 
-            lock (subs)
+            var current = node;
+            while (current != null)
             {
-                for (int i = 0; i < subs.Count; i++)
+                if (current.IsActive && current.RawSubscription != null)
                 {
-                    // AsyncSignalSubscription<T> type name starts with "AsyncSignal"
-                    var subType = subs[i].GetType();
+                    var subType = current.RawSubscription.GetType();
                     if (subType.Name.StartsWith("AsyncSignalSubscription"))
                         return true;
                 }
+                current = current.Next;
             }
             return false;
         }
@@ -454,31 +547,24 @@ namespace Nexus.Core
                 }
 
                 // Subscriptions
-                if (_subscriptions.TryGetValue(type, out var subs))
+                if (_subscriptions.TryGetValue(type, out var node))
                 {
-                    var subsCopy = GetPooledList();
-                    lock (subs)
+                    var current = node;
+                    while (current != null)
                     {
-                        subsCopy.AddRange(subs);
-                    }
-                    try
-                    {
-                        for (int i = 0; i < subsCopy.Count; i++)
+                        if (current.IsActive)
                         {
-                            var sub = subsCopy[i];
-                            if (sub is SignalSubscription<T> syncSub)
+                            var handler = current.Handler;
+                            if (handler is Action<T> syncSub)
                             {
-                                syncSub.Invoke(signal);
+                                syncSub(signal);
                             }
-                            else if (sub is AsyncSignalSubscription<T> asyncSub)
+                            else if (handler is Func<T, CancellationToken, ValueTask> asyncSub)
                             {
-                                await asyncSub.InvokeAsync(signal, _context.LifetimeToken);
+                                await asyncSub(signal, _context.LifetimeToken);
                             }
                         }
-                    }
-                    finally
-                    {
-                        ReturnPooledList(subsCopy);
+                        current = current.Next;
                     }
                 }
 
@@ -489,12 +575,12 @@ namespace Nexus.Core
                     {
                         // Run concurrently
                         int taskCount = handlers.Count;
-                        var tasks = System.Buffers.ArrayPool<ValueTask>.Shared.Rent(taskCount);
+                        var tasks = System.Buffers.ArrayPool<Task>.Shared.Rent(taskCount);
                         try
                         {
                             for (int i = 0; i < taskCount; i++)
                             {
-                                tasks[i] = ExecuteCommandAsync(handlers[i], signal, _context.LifetimeToken);
+                                tasks[i] = ExecuteCommandAsync(handlers[i], signal, _context.LifetimeToken).AsTask();
                             }
                             
                             for (int i = 0; i < taskCount; i++)
@@ -504,7 +590,7 @@ namespace Nexus.Core
                         }
                         finally
                         {
-                            System.Buffers.ArrayPool<ValueTask>.Shared.Return(tasks);
+                            System.Buffers.ArrayPool<Task>.Shared.Return(tasks);
                         }
                     }
                     else
@@ -540,6 +626,10 @@ namespace Nexus.Core
             finally
             {
                 s_stackDepth--;
+                if (s_stackDepth == 0 && _pendingCleanups)
+                {
+                    SweepDeadNodes();
+                }
             }
         }
 
@@ -1358,14 +1448,19 @@ namespace Nexus.Core
 
         public void Dispose()
         {
-            // Dispose all active subscriptions using a copy to avoid modification exceptions
+            // Dispose all active subscriptions
             foreach (var kvp in _subscriptions)
             {
-                var subsCopy = new List<object>(kvp.Value);
-                foreach (var sub in subsCopy)
+                var current = kvp.Value;
+                while (current != null)
                 {
-                    if (sub is IDisposable disposable)
+                    if (current.IsActive && current.RawSubscription is IDisposable disposable)
+                    {
                         disposable.Dispose();
+                    }
+                    var temp = current;
+                    current = current.Next;
+                    SubscriptionNodePool.Return(temp);
                 }
             }
             _subscriptions.Clear();

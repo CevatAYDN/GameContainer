@@ -36,6 +36,33 @@ namespace Nexus.Core
             Reset();
         }
 
+        /// <summary>
+        /// Creates and registers a pure code-based Context without requiring a Root GameObject in the scene.
+        /// Ideal for tests, dedicated servers, or strictly data-oriented architectures.
+        /// </summary>
+        public static async System.Threading.Tasks.Task<IContext> CreatePureContextAsync(string scopeTag, string[] assemblyScopes = null)
+        {
+            var data = ScriptableObject.CreateInstance<ContextData>();
+            data.name = $"{scopeTag}ContextData_Pure";
+            data.ScopeTag = scopeTag;
+            if (assemblyScopes != null)
+            {
+                data.AssemblyScopes = assemblyScopes;
+            }
+
+            var context = new Context(null, data);
+            context.Configure();
+
+            if (context.Container.IsRegistered(typeof(IContextLifecycle)))
+            {
+                var lifecycle = context.Container.Resolve<IContextLifecycle>();
+                await lifecycle.OnInitializeAsync(context.LifetimeToken);
+                await lifecycle.OnStartAsync(context.LifetimeToken);
+            }
+
+            return context;
+        }
+
         /// <summary>Disposes all active contexts and clears the registry. Called automatically on domain reload.</summary>
         public static void Reset()
         {

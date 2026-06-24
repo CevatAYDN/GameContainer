@@ -205,6 +205,11 @@ namespace Nexus.Editor
                 addedAny = true;
             }
 
+            if (_allEvents.Count > 5000)
+            {
+                _allEvents.RemoveRange(0, _allEvents.Count - 5000);
+            }
+
             if (addedAny)
             {
                 BuildChildrenCache();

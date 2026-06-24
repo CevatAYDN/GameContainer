@@ -296,49 +296,105 @@ namespace Nexus.Editor
 
         private static void ValidateContextDataDependencies(ref int errorCount, ref int warningCount)
         {
-            // Plan §5 — ContextData DependsOn validates that dependency chains don't form cycles
-            var contextDataAssets = AssetDatabase.FindAssets("t:ContextData");
-            var dataByName = new Dictionary<string, ContextData>();
+            var dependenciesByName = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
 
+            // 1. Gather from ScriptableObjects
+            var contextDataAssets = AssetDatabase.FindAssets("t:ContextData");
             foreach (var guid in contextDataAssets)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
                 var data = AssetDatabase.LoadAssetAtPath<ContextData>(path);
-                if (data != null && !string.IsNullOrEmpty(data.name))
+                if (data != null)
                 {
-                    dataByName[data.name] = data;
+                    string contextName = data.name.Replace("ContextData", "");
+                    if (!dependenciesByName.TryGetValue(contextName, out var deps))
+                    {
+                        deps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        dependenciesByName[contextName] = deps;
+                    }
+                    if (data.DependsOn != null)
+                    {
+                        foreach (var dep in data.DependsOn)
+                        {
+                            if (!string.IsNullOrEmpty(dep)) deps.Add(dep);
+                        }
+                    }
                 }
             }
 
-            // DFS-based cycle detection across all dependencies
-            foreach (var kvp in dataByName)
+            // 2. Gather from IContextLifecycle Attributes (git-friendly distributed registration)
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                var visiting = new HashSet<string>();
-                var visited = new HashSet<string>();
-                if (HasDependencyCycle(kvp.Key, dataByName, visiting, visited, new List<string>()))
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.IsClass && !type.IsAbstract && typeof(IContextLifecycle).IsAssignableFrom(type))
+                        {
+                            var attrs = type.GetCustomAttributes<ContextDependsOnAttribute>();
+                            if (attrs != null)
+                            {
+                                string scope = type.Name;
+                                if (scope.EndsWith("ContextLifecycle", StringComparison.OrdinalIgnoreCase))
+                                    scope = scope.Substring(0, scope.Length - 16);
+                                else if (scope.EndsWith("Lifecycle", StringComparison.OrdinalIgnoreCase))
+                                    scope = scope.Substring(0, scope.Length - 9);
+
+                                if (!dependenciesByName.TryGetValue(scope, out var deps))
+                                {
+                                    deps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                    dependenciesByName[scope] = deps;
+                                }
+
+                                foreach (var attr in attrs)
+                                {
+                                    if (!string.IsNullOrEmpty(attr.DependencyScopeName))
+                                    {
+                                        deps.Add(attr.DependencyScopeName);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (ReflectionTypeLoadException) { }
+            }
+
+            // DFS-based cycle detection across all dependencies
+            foreach (var kvp in dependenciesByName)
+            {
+                var visiting = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var visited = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                if (HasDependencyCycle(kvp.Key, dependenciesByName, visiting, visited, new List<string>()))
                 {
                     errorCount++;
                 }
             }
         }
 
-        private static bool HasDependencyCycle(string current, Dictionary<string, ContextData> dataByName, HashSet<string> visiting, HashSet<string> visited, List<string> path)
+        private static bool HasDependencyCycle(string current, Dictionary<string, HashSet<string>> dependenciesByName, HashSet<string> visiting, HashSet<string> visited, List<string> path)
         {
             if (visited.Contains(current)) return false;
             if (!visiting.Add(current))
             {
                 path.Add(current);
-                Debug.LogError($"[Nexus Error] Circular ContextData Dependency: Circular DependsOn chain detected involving '{current}'. Chain: {string.Join(" → ", path)}");
+                Debug.LogError($"[Nexus Error] Circular Context Dependency: Circular dependency chain detected involving '{current}'. Chain: {string.Join(" → ", path)}");
                 return true;
             }
 
             path.Add(current);
 
-            if (dataByName.TryGetValue(current, out var data) && data.DependsOn != null)
+            if (dependenciesByName.TryGetValue(current, out var deps))
             {
-                foreach (var dep in data.DependsOn)
+                foreach (var dep in deps)
                 {
-                    if (!string.IsNullOrEmpty(dep) && HasDependencyCycle(dep, dataByName, visiting, visited, path))
+                    if (HasDependencyCycle(dep, dependenciesByName, visiting, visited, path))
                     {
                         return true;
                     }
@@ -446,8 +502,18 @@ namespace Nexus.Editor
                             // that does not implement IResettable is a potential state leak
                             if (!implementsResettable)
                             {
-                                Debug.LogWarning($"[Nexus Warning] Command State Leak Risk: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable. This field may retain state across pooled reuses. Fix: Implement IResettable and clear state in Reset(), or mark the field as readonly.");
-                                warningCount++;
+                                string strictQA = System.Environment.GetEnvironmentVariable("NEXUS_STRICT_QA_LEAK");
+                                bool errorOnLeak = !string.IsNullOrEmpty(strictQA) && (strictQA == "1" || strictQA.Equals("true", StringComparison.OrdinalIgnoreCase));
+                                if (errorOnLeak)
+                                {
+                                    Debug.LogError($"[Nexus Error] Command State Leak Violation: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable.");
+                                    errorCount++;
+                                }
+                                else
+                                {
+                                    Debug.LogWarning($"[Nexus Warning] Command State Leak Risk: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable. This field may retain state across pooled reuses. Fix: Implement IResettable and clear state in Reset(), or mark the field as readonly.");
+                                    warningCount++;
+                                }
                             }
                         }
                     }
@@ -550,10 +616,29 @@ namespace Nexus.Editor
 
         public void OnPreprocessBuild(UnityEditor.Build.Reporting.BuildReport report)
         {
+            string bypassEnv = System.Environment.GetEnvironmentVariable("NEXUS_DISABLE_VALIDATION");
+            bool disableValidation = !string.IsNullOrEmpty(bypassEnv) && (bypassEnv == "1" || bypassEnv.Equals("true", StringComparison.OrdinalIgnoreCase));
+            
+            string warnEnv = System.Environment.GetEnvironmentVariable("NEXUS_VALIDATION_WARN_ONLY");
+            bool warnOnly = !string.IsNullOrEmpty(warnEnv) && (warnEnv == "1" || warnEnv.Equals("true", StringComparison.OrdinalIgnoreCase));
+
+            if (disableValidation)
+            {
+                UnityEngine.Debug.Log("[Nexus] Architecture Validation bypassed via NEXUS_DISABLE_VALIDATION environment variable.");
+                return;
+            }
+
             bool success = BuildValidation.Validate();
             if (!success)
             {
-                throw new BuildPlayerWindow.BuildMethodException("Nexus Architecture Validation Failed. See Console for details.");
+                if (warnOnly)
+                {
+                    UnityEngine.Debug.LogWarning("[Nexus] Architecture Validation failed, but continuing build because NEXUS_VALIDATION_WARN_ONLY is enabled.");
+                }
+                else
+                {
+                    throw new UnityEditor.Build.BuildFailedException("Nexus Architecture Validation Failed. See Console for details.");
+                }
             }
         }
     }

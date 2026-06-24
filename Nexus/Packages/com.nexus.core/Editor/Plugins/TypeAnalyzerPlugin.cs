@@ -108,7 +108,9 @@ namespace Nexus.Editor
                 foreach (var assembly in assemblies)
                 {
                     var assemblyName = assembly.GetName().Name;
-                    if (assemblyName.StartsWith("System") || assemblyName.StartsWith("mscorlib") || assemblyName.StartsWith("Mono"))
+                    if (assemblyName.StartsWith("System") || assemblyName.StartsWith("mscorlib") || assemblyName.StartsWith("Mono") ||
+                        assemblyName.StartsWith("UnityEngine") || assemblyName.StartsWith("UnityEditor") || assemblyName.StartsWith("Unity.") ||
+                        assemblyName.StartsWith("Microsoft.") || assemblyName.StartsWith("nunit") || assemblyName.Contains("Editor"))
                         continue;
 
                     try
@@ -180,7 +182,9 @@ namespace Nexus.Editor
             foreach (var assembly in assemblies)
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono"))
+                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || 
+                    name.StartsWith("UnityEngine") || name.StartsWith("UnityEditor") || name.StartsWith("Unity.") ||
+                    name.StartsWith("Microsoft.") || name.StartsWith("nunit") || name.Contains("Editor"))
                     continue;
 
                 try

@@ -1,9 +1,9 @@
 {
   "name": "com.nexus.core",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "displayName": "Nexus Observable Architecture",
-  "description": "An open source observable architecture for Unity 6 featuring 0 GC allocation, execution modes, causal tracing, and build validation.",
-  "unity": "6000.0",
+  "description": "An open source observable architecture for Unity 2022.3+ featuring 0 GC allocation, execution modes, causal tracing, and build validation.",
+  "unity": "2022.3",
   "dependencies": {},
   "keywords": [
     "nexus",

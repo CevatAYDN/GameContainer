@@ -114,4 +114,19 @@ namespace Nexus.Core
             MediatorType = mediatorType;
         }
     }
+
+    /// <summary>
+    /// Specifies that a context lifecycle depends on another context lifecycle by its scope name.
+    /// Helps build decentralized validation maps and prevents Git merge conflicts in monolit ContextData files.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = true, Inherited = false)]
+    [Preserve]
+    public sealed class ContextDependsOnAttribute : Attribute
+    {
+        public string DependencyScopeName { get; }
+        public ContextDependsOnAttribute(string dependencyScopeName)
+        {
+            DependencyScopeName = dependencyScopeName;
+        }
+    }
 }

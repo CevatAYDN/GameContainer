@@ -1,0 +1,25 @@
+{
+    "name": "com.nexus.core.dots",
+    "rootNamespace": "Nexus.DOTS",
+    "references": [
+        "com.nexus.core",
+        "Unity.Collections"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": true,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "UNITY_COLLECTIONS"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.collections",
+            "expression": "1.0.0",
+            "define": "UNITY_COLLECTIONS"
+        }
+    ],
+    "noEngineReferences": false
+}

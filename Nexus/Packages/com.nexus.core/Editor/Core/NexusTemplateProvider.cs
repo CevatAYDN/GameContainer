@@ -272,5 +272,37 @@ namespace Nexus
 }}
 ";
         }
+
+        public static string GetGenericSignalBoilerplate(string signalName, string contextName)
+        {
+            return $@"namespace Nexus
+{{
+    public readonly struct {signalName}
+    {{
+        public readonly string Message;
+        public {signalName}(string message) => Message = message;
+    }}
+}}
+";
+        }
+
+        public static string GetGenericCommandBoilerplate(string commandName, string signalName, string contextName)
+        {
+            return $@"using Nexus.Core;
+using UnityEngine;
+
+namespace Nexus
+{{
+    [SignalHandler(typeof({signalName}))]
+    public class {commandName} : ICommand<{signalName}>
+    {{
+        public void Execute({signalName} signal)
+        {{
+            Debug.Log($""[{commandName}] Executed with message: {{signal.Message}}"");
+        }}
+    }}
+}}
+";
+        }
     }
 }

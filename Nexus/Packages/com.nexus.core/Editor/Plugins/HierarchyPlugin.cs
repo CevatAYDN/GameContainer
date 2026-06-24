@@ -513,12 +513,6 @@ namespace Nexus.Editor
             {
                 Undo.RecordObject(unityObj, "Modify Model Member");
             }
-            else
-            {
-                // Non-UnityEngine.Object singletons (plain C# models) can't use Undo,
-                // but we log the change for auditability.
-                Debug.Log($"[Nexus] DI Inspector: value changed on {instance?.GetType().Name} (Undo not available for non-Unity objects)");
-            }
         }
 
         // Keep values in expanded foldouts updated (called dynamically by Scheduler in NexusWindow)
