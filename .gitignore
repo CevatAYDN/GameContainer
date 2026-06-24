@@ -1,4 +1,9 @@
-# Unity-specific ignores
+# ── Nexus UPM Package ─────────────────────────────────
+# The package lives under Nexus/Packages/com.nexus.core/
+# and its Runtime/Editor/Tests are tracked by git.
+# Unity project files under Nexus/ are generated.
+
+# Unity project-specific ignores (under Nexus/)
 /[Nn]exus/[Ll]ibrary/
 /[Nn]exus/[Tt]emp/
 /[Nn]exus/[Oo]bj/
@@ -6,18 +11,44 @@
 /[Nn]exus/[Bb]uilds/
 /[Nn]exus/[Ll]ogs/
 /[Nn]exus/[Uu]serSettings/
-/[Nn]exus/[MemoryCaptures]/
+/[Nn]exus/[Mm]emoryCaptures/
 /[Nn]exus/ProjectSettings/ProjectVersion.txt.mdown
+
+# Unity generated project files (regenerated on every import)
+*.csproj
+*.slnx
+*.sln
+
+# But keep the UPM package meta files and actual source csproj
+!Nexus/Packages/com.nexus.core/*.csproj
+
+# Unity generated meta files are tracked (needed for Unity packages)
+# but these generated folders should not have meta commits:
+/[Nn]exus/[Ll]ibrary.meta
+/[Nn]exus/[Tt]emp.meta
+/[Nn]exus/[Oo]bj.meta
+/[Nn]exus/[Bb]uild.meta
+/[Nn]exus/[Bb]uilds.meta
+/[Nn]exus/[Ll]ogs.meta
+/[Nn]exus/[Uu]serSettings.meta
+
+# Log files (test results, runtime logs)
+*.log
+*.log.meta
 
 # Visual Studio / Rider ignores
 .vs/
+.vscode/
 .idea/
 *.sln.imsp
 *.csproj.user
 *.sln.docstate
 *.slnx.user
-.vscode/
 
 # OS-specific ignores
 .DS_Store
 Thumbs.db
+
+# OpenCode / IDE scratch
+.omo/
+OPENCODE_CONTINUE.md
