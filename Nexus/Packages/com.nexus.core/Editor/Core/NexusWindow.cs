@@ -16,6 +16,17 @@ namespace Nexus.Editor
     /// </summary>
     public partial class NexusWindow : EditorWindow
     {
+        // Distinct colors for each plugin's sidebar icon (used as colored circles).
+        private static readonly Dictionary<string, Color> PluginIconColors = new()
+        {
+            { "Dashboard", new Color(0.3f, 0.8f, 1f) },     // AccentBlue
+            { "Wizard", new Color(1f, 0.85f, 0.3f) },       // AccentYellow
+            { "Hierarchy", new Color(0.4f, 1f, 0.4f) },     // AccentGreen
+            { "Explorer", new Color(0.8f, 0.6f, 0.9f) },    // AccentPurple
+            { "Tracer", new Color(1f, 0.7f, 0.2f) },        // AccentOrange
+            { "TypeAnalyzer", new Color(0.6f, 0.6f, 0.6f) },// TextSecondary
+        };
+
         private List<INexusEditorPlugin> _plugins = new();
         private INexusEditorPlugin _activePlugin;
 
@@ -38,7 +49,7 @@ namespace Nexus.Editor
             DiscoverPlugins();
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
-            
+
             NexusRuntime.OnContextRegistered += OnContextEvent;
             NexusRuntime.OnContextUnregistered += OnContextEvent;
 
@@ -52,7 +63,7 @@ namespace Nexus.Editor
         {
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
-            
+
             NexusRuntime.OnContextRegistered -= OnContextEvent;
             NexusRuntime.OnContextUnregistered -= OnContextEvent;
 
@@ -81,40 +92,69 @@ namespace Nexus.Editor
         private void CreateGUI()
         {
             var root = rootVisualElement;
+
+            // Load USS theme
+            NexusEditorStyles.LoadTheme(root);
+
             root.style.flexDirection = FlexDirection.Row;
             root.style.backgroundColor = new StyleColor(NexusEditorStyles.Background);
 
             // Left Sidebar
             _sidebar = new VisualElement();
-            _sidebar.style.width = 180;
+            _sidebar.style.width = 200;
             _sidebar.style.borderRightWidth = 1;
             _sidebar.style.borderRightColor = new StyleColor(NexusEditorStyles.BorderColor);
             _sidebar.style.backgroundColor = new StyleColor(new Color(0.1f, 0.1f, 0.12f));
-            _sidebar.style.paddingTop = 15;
+            _sidebar.style.paddingTop = 20;
             _sidebar.style.paddingLeft = 8;
             _sidebar.style.paddingRight = 8;
 
             // Brand Header
             var brandLabel = new Label("NEXUS");
             brandLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            brandLabel.style.fontSize = 20;
+            brandLabel.style.fontSize = 22;
             brandLabel.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
             brandLabel.style.marginBottom = 2;
             brandLabel.style.alignSelf = Align.Center;
+            brandLabel.style.letterSpacing = 3;
             _sidebar.Add(brandLabel);
 
             var subtitleLabel = new Label("Architecture Suite");
             subtitleLabel.style.fontSize = 9;
             subtitleLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
-            subtitleLabel.style.marginBottom = 20;
+            subtitleLabel.style.marginBottom = 24;
             subtitleLabel.style.alignSelf = Align.Center;
+            subtitleLabel.style.letterSpacing = 1;
             _sidebar.Add(subtitleLabel);
 
-            // Build dynamic Tab Buttons based on plugins
+            // Separator
+            var sep = new VisualElement();
+            sep.style.height = 1;
+            sep.style.backgroundColor = new StyleColor(NexusEditorStyles.BorderColor);
+            sep.style.marginBottom = 8;
+            sep.style.marginLeft = 4;
+            sep.style.marginRight = 4;
+            _sidebar.Add(sep);
+
+            // Dynamic Tab Buttons with icons
             foreach (var plugin in _plugins)
             {
                 AddTabButton(plugin.DisplayName, plugin.Id);
             }
+
+            // Version at bottom of sidebar
+            var spacer = new VisualElement { style = { flexGrow = 1 } };
+            _sidebar.Add(spacer);
+
+            var versionLabel = new Label("v0.1.0");
+            versionLabel.style.fontSize = 9;
+            versionLabel.style.color = new StyleColor(NexusEditorStyles.DimText);
+            versionLabel.style.alignSelf = Align.Center;
+            versionLabel.style.marginBottom = 8;
+            versionLabel.style.paddingTop = 8;
+            versionLabel.style.borderTopWidth = 1;
+            versionLabel.style.borderTopColor = new StyleColor(NexusEditorStyles.BorderColor);
+            _sidebar.Add(versionLabel);
 
             root.Add(_sidebar);
 
@@ -185,7 +225,7 @@ namespace Nexus.Editor
 
         private void AddTabButton(string label, string pluginId)
         {
-            var btn = new Button(() => SwitchToPlugin(pluginId)) { text = label };
+            var btn = new Button(() => SwitchToPlugin(pluginId));
             btn.name = $"Tab_{pluginId}";
             btn.style.backgroundColor = new StyleColor(Color.clear);
             btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
@@ -202,10 +242,22 @@ namespace Nexus.Editor
             btn.style.borderBottomWidth = 0;
             btn.style.borderLeftWidth = 0;
             btn.style.borderRightWidth = 0;
-            btn.style.marginTop = 3;
-            btn.style.marginBottom = 3;
+            btn.style.marginTop = 2;
+            btn.style.marginBottom = 2;
             btn.style.unityFontStyleAndWeight = FontStyle.Normal;
-            btn.style.alignItems = Align.FlexStart;
+            btn.style.alignItems = Align.Center;
+            btn.style.flexDirection = FlexDirection.Row;
+
+            // Add colored dot icon
+            if (PluginIconColors.TryGetValue(pluginId, out var iconColor))
+            {
+                var icon = NexusEditorStyles.CreateColorIcon(iconColor);
+                btn.Add(icon);
+            }
+
+            // Add label
+            var txtLabel = new Label(label);
+            btn.Add(txtLabel);
 
             _sidebar.Add(btn);
         }
@@ -213,7 +265,13 @@ namespace Nexus.Editor
         public void SwitchToPlugin(string pluginId)
         {
             var targetPlugin = _plugins.FirstOrDefault(p => p.Id == pluginId);
-            if (targetPlugin == null) return;
+            if (targetPlugin == null || targetPlugin == _activePlugin) return;
+
+            // Dispose the old plugin view before switching
+            if (_activePlugin != null)
+            {
+                try { _activePlugin.OnDisable(); } catch (Exception ex) { Debug.LogException(ex); }
+            }
 
             _activePlugin = targetPlugin;
 
@@ -225,7 +283,7 @@ namespace Nexus.Editor
                 {
                     if (plugin.Id == pluginId)
                     {
-                        btn.style.backgroundColor = new StyleColor(new Color(0.18f, 0.22f, 0.28f));
+                        btn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
                         btn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
                         btn.style.unityFontStyleAndWeight = FontStyle.Bold;
                     }
@@ -245,7 +303,7 @@ namespace Nexus.Editor
         {
             if (_contentArea == null || _activePlugin == null) return;
             _contentArea.Clear();
-            
+
             try
             {
                 _contentArea.Add(_activePlugin.CreateView());
@@ -253,7 +311,7 @@ namespace Nexus.Editor
             catch (Exception ex)
             {
                 Debug.LogException(ex);
-                _contentArea.Add(new Label($"Error loading eklenti view: {ex.Message}") { style = { color = Color.red } });
+                _contentArea.Add(new Label($"Error loading plugin view: {ex.Message}") { style = { color = Color.red } });
             }
         }
 

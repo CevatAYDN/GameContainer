@@ -57,38 +57,12 @@ namespace Nexus.Editor
             var view = new VisualElement { style = { flexGrow = 1 } };
 
             // Toolbar
-            var toolbar = new VisualElement
-            {
-                style =
-                {
-                    flexDirection = FlexDirection.Row,
-                    paddingLeft = 10,
-                    paddingRight = 10,
-                    paddingTop = 8,
-                    paddingBottom = 8,
-                    borderBottomWidth = 1,
-                    borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor),
-                    alignItems = Align.Center
-                }
-            };
-
-            var titleLabel = new Label("TYPE COUPLING ANALYZER");
-            titleLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            titleLabel.style.fontSize = 12;
-            titleLabel.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
-            titleLabel.style.marginRight = 20;
-            toolbar.Add(titleLabel);
+            var toolbar = NexusEditorStyles.CreateToolbar("TYPE COUPLING ANALYZER");
 
             _searchField = new TextField("Type Name") { value = _searchedTypeName, style = { flexGrow = 1, color = Color.white } };
             toolbar.Add(_searchField);
 
-            var analyzeButton = new Button(AnalyzeType) { text = "Analyze" };
-            analyzeButton.style.backgroundColor = new StyleColor(new Color(0.25f, 0.25f, 0.28f));
-            analyzeButton.style.borderTopLeftRadius = 4;
-            analyzeButton.style.borderTopRightRadius = 4;
-            analyzeButton.style.borderBottomLeftRadius = 4;
-            analyzeButton.style.borderBottomRightRadius = 4;
-            analyzeButton.style.color = Color.white;
+            var analyzeButton = NexusEditorStyles.CreateButton("Analyze", AnalyzeType, NexusEditorStyles.BtnGray);
             analyzeButton.style.marginLeft = 10;
             toolbar.Add(analyzeButton);
 
@@ -121,7 +95,7 @@ namespace Nexus.Editor
             _searchedTypeName = _searchField?.value ?? _searchedTypeName;
             if (string.IsNullOrEmpty(_searchedTypeName))
             {
-                var label = new Label("Please enter a type name to analyze.") { style = { color = Color.gray, alignSelf = Align.Center, marginTop = 20 } };
+                    var label = NexusEditorStyles.CreateEmptyState("Please enter a type name to analyze.");
                 _scrollView.Add(label);
                 return;
             }
@@ -155,7 +129,7 @@ namespace Nexus.Editor
 
                 if (targetType == null)
                 {
-                    var label = new Label($"Could not find type '{_searchedTypeName}' in active assemblies.") { style = { color = new StyleColor(new Color(1f, 0.4f, 0.4f)), alignSelf = Align.Center, marginTop = 20 } };
+                    var label = new Label($"Could not find type '{_searchedTypeName}' in active assemblies.") { style = { color = new StyleColor(NexusEditorStyles.AccentRed), alignSelf = Align.Center, marginTop = 20 } };
                     _scrollView.Add(label);
                     return;
                 }
@@ -185,7 +159,7 @@ namespace Nexus.Editor
             selectedTypeHeader.style.fontSize = 14;
             selectedTypeHeader.style.color = Color.white;
             selectedTypeHeader.style.borderBottomWidth = 1;
-            selectedTypeHeader.style.borderBottomColor = new StyleColor(new Color(0.25f, 0.25f, 0.28f));
+            selectedTypeHeader.style.borderBottomColor = new StyleColor(NexusEditorStyles.BorderLight);
             selectedTypeHeader.style.paddingBottom = 6;
             _scrollView.Add(selectedTypeHeader);
 
@@ -266,6 +240,7 @@ namespace Nexus.Editor
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
             title.style.fontSize = 11;
+            title.style.marginBottom = 4;
             section.Add(title);
 
             var list = new VisualElement { style = { marginLeft = 10, marginTop = 5 } };

@@ -38,6 +38,7 @@ namespace Nexus.Editor
         private readonly List<TraceEvent> _allEvents = new();
         private readonly List<TraceEventElement> _renderedItems = new();
         private readonly Dictionary<int, List<TraceEvent>> _childrenCache = new();
+        private readonly Dictionary<int, TraceEvent> _parentCache = new();
         private readonly Dictionary<int, int> _depthsCache = new();
 
         private IVisualElementScheduledItem _updateSchedule;
@@ -104,7 +105,7 @@ namespace Nexus.Editor
             filterBar.Add(new Label("  ") { style = { width = 5 } });
 
             var clearBtn = new Button(ClearTraces) { text = "Clear" };
-            clearBtn.style.backgroundColor = new StyleColor(new Color(0.25f, 0.25f, 0.28f));
+            clearBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.BtnGray);
             clearBtn.style.color = Color.white;
             filterBar.Add(clearBtn);
 
@@ -127,9 +128,9 @@ namespace Nexus.Editor
             filterBar.Add(MakeFilterButton("MOD", () => { _filterModelChange = !_filterModelChange; RefreshTracerLogs(); }, () => _filterModelChange));
 
             filterBar.Add(new Label(" Status:") { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
-            filterBar.Add(MakeFilterButton("OK", () => { _filterOk = !_filterOk; RefreshTracerLogs(); }, () => _filterOk, new Color(0.3f, 0.8f, 0.3f)));
-            filterBar.Add(MakeFilterButton("FAIL", () => { _filterFailed = !_filterFailed; RefreshTracerLogs(); }, () => _filterFailed, new Color(1f, 0.3f, 0.3f)));
-            filterBar.Add(MakeFilterButton("CANCEL", () => { _filterCancelled = !_filterCancelled; RefreshTracerLogs(); }, () => _filterCancelled, new Color(1f, 0.7f, 0.2f)));
+            filterBar.Add(MakeFilterButton("OK", () => { _filterOk = !_filterOk; RefreshTracerLogs(); }, () => _filterOk, NexusEditorStyles.AccentGreen));
+            filterBar.Add(MakeFilterButton("FAIL", () => { _filterFailed = !_filterFailed; RefreshTracerLogs(); }, () => _filterFailed, NexusEditorStyles.AccentRed));
+            filterBar.Add(MakeFilterButton("CANCEL", () => { _filterCancelled = !_filterCancelled; RefreshTracerLogs(); }, () => _filterCancelled, NexusEditorStyles.AccentYellow));
 
             _view.Add(filterBar);
 
@@ -141,7 +142,7 @@ namespace Nexus.Editor
             _tracerScrollView.style.borderRightColor = new StyleColor(NexusEditorStyles.BorderColor);
             splitPane.Add(_tracerScrollView);
 
-            _detailPanel = new VisualElement { style = { width = new Length(40, LengthUnit.Percent), backgroundColor = new StyleColor(new Color(0.08f, 0.08f, 0.1f)), paddingLeft = 12, paddingRight = 12, paddingTop = 12, display = DisplayStyle.None } };
+            _detailPanel = new VisualElement { style = { width = new Length(40, LengthUnit.Percent), backgroundColor = new StyleColor(NexusEditorStyles.DarkPanel), paddingLeft = 12, paddingRight = 12, paddingTop = 12, display = DisplayStyle.None } };
             _detailContent = new Label { style = { color = new StyleColor(NexusEditorStyles.TextPrimary), fontSize = 10, whiteSpace = WhiteSpace.Normal } };
             _detailPanel.Add(_detailContent);
             splitPane.Add(_detailPanel);
@@ -173,6 +174,7 @@ namespace Nexus.Editor
             _allEvents.Clear();
             _renderedItems.Clear();
             _childrenCache.Clear();
+            _parentCache.Clear();
             _depthsCache.Clear();
         }
 
@@ -213,6 +215,12 @@ namespace Nexus.Editor
         private void BuildChildrenCache()
         {
             _childrenCache.Clear();
+            _parentCache.Clear();
+            // Build an id -> event lookup first, then wire up parent relationships
+            var eventById = new Dictionary<int, TraceEvent>();
+            foreach (var ev in _allEvents)
+                eventById[ev.Id] = ev;
+
             foreach (var ev in _allEvents)
             {
                 if (ev.ParentId != -1)
@@ -223,6 +231,8 @@ namespace Nexus.Editor
                         _childrenCache[ev.ParentId] = list;
                     }
                     list.Add(ev);
+                    if (eventById.TryGetValue(ev.ParentId, out var parent))
+                        _parentCache[ev.Id] = parent;
                 }
             }
         }
@@ -301,7 +311,7 @@ namespace Nexus.Editor
 
         private Button MakeFilterButton(string label, Action onClick, Func<bool> isActive, Color? activeColor = null)
         {
-            var activeBg = activeColor ?? new Color(0.2f, 0.35f, 0.5f);
+            var activeBg = activeColor ?? NexusEditorStyles.BtnBlue;
             Button btn = null;
             btn = new Button(() =>
             {
@@ -333,8 +343,8 @@ namespace Nexus.Editor
             }
             else
             {
-                btn.style.backgroundColor = new StyleColor(new Color(0.15f, 0.15f, 0.17f));
-                btn.style.color = new StyleColor(new Color(0.4f, 0.4f, 0.4f));
+                btn.style.backgroundColor = new StyleColor(NexusEditorStyles.RowAlt);
+                btn.style.color = new StyleColor(NexusEditorStyles.DimText);
             }
         }
 
@@ -344,6 +354,7 @@ namespace Nexus.Editor
             _allEvents.Clear();
             _renderedItems.Clear();
             _childrenCache.Clear();
+            _parentCache.Clear();
             _depthsCache.Clear();
             _selectedEventId = -1;
             
@@ -353,8 +364,6 @@ namespace Nexus.Editor
 
         private void OnTraceEventClicked(TraceEvent ev)
         {
-            if (!_isPaused) return;
-
             if (_selectedEventId == ev.Id)
             {
                 _detailPanel.style.display = DisplayStyle.None;
@@ -380,13 +389,9 @@ namespace Nexus.Editor
             sb.AppendLine($"Time: {ev.Timestamp:F3}s");
             sb.AppendLine($"Parent ID: {(ev.ParentId == -1 ? "None (root)" : ev.ParentId.ToString())}");
 
-            if (ev.ParentId != -1)
+            if (ev.ParentId != -1 && _parentCache.TryGetValue(ev.Id, out var parent))
             {
-                var parent = _allEvents.Find(e => e.Id == ev.ParentId);
-                if (parent.Id > 0)
-                {
-                    sb.AppendLine($"\n<b>Parent Event:</b> #{parent.Id} [{parent.Type}] {parent.TypeName}");
-                }
+                sb.AppendLine($"\n<b>Parent Event:</b> #{parent.Id} [{parent.Type}] {parent.TypeName}");
             }
 
             if (_childrenCache.TryGetValue(ev.Id, out var children) && children.Count > 0)
@@ -424,75 +429,49 @@ namespace Nexus.Editor
 
                 RegisterCallback<MouseDownEvent>(evt => onClick(ev));
 
-                Color bgColor;
                 Color dotColor;
 
                 switch (ev.Status)
                 {
                     case TraceStatus.Failed:
-                        bgColor = new Color(0.25f, 0.1f, 0.1f, 0.4f);
-                        dotColor = new Color(1f, 0.3f, 0.3f);
+                        style.backgroundColor = new StyleColor(new Color(0.25f, 0.1f, 0.1f, 0.4f));
+                        dotColor = NexusEditorStyles.AccentRed;
                         break;
                     case TraceStatus.Cancelled:
-                        bgColor = new Color(0.25f, 0.2f, 0.1f, 0.4f);
-                        dotColor = new Color(1f, 0.7f, 0.2f);
+                        style.backgroundColor = new StyleColor(new Color(0.25f, 0.2f, 0.1f, 0.4f));
+                        dotColor = NexusEditorStyles.AccentYellow;
                         break;
                     default:
-                        bgColor = new Color(0.12f, 0.18f, 0.12f, 0.4f);
-                        dotColor = new Color(0.3f, 1f, 0.3f);
+                        style.backgroundColor = new StyleColor(new Color(0.12f, 0.18f, 0.12f, 0.4f));
+                        dotColor = NexusEditorStyles.AccentGreen;
                         break;
                 }
 
                 if (isSelected)
                 {
-                    bgColor = new Color(0.2f, 0.3f, 0.5f, 0.6f);
+                    style.backgroundColor = new StyleColor(new Color(0.2f, 0.3f, 0.5f, 0.6f));
                 }
 
-                style.backgroundColor = new StyleColor(bgColor);
-
-                var statusDot = new VisualElement();
-                statusDot.style.width = 6;
-                statusDot.style.height = 6;
-                statusDot.style.borderTopLeftRadius = 3;
-                statusDot.style.borderTopRightRadius = 3;
-                statusDot.style.borderBottomLeftRadius = 3;
-                statusDot.style.borderBottomRightRadius = 3;
-                statusDot.style.marginRight = 6;
-                statusDot.style.backgroundColor = new StyleColor(dotColor);
+                var statusDot = NexusEditorStyles.CreateStatusDot(dotColor);
                 Add(statusDot);
 
                 if (depth > 0)
                 {
-                    var branchLabel = new Label("└─ ") { style = { color = new StyleColor(new Color(0.4f, 0.4f, 0.4f)), marginRight = 2 } };
+                    var branchLabel = new Label("└─ ") { style = { color = new StyleColor(NexusEditorStyles.DimText), marginRight = 2 } };
                     Add(branchLabel);
                 }
 
-                var typeTag = new Label(ev.Type.ToString().ToUpper());
-                typeTag.style.unityFontStyleAndWeight = FontStyle.Bold;
-                typeTag.style.fontSize = 8;
-                typeTag.style.paddingLeft = 4;
-                typeTag.style.paddingRight = 4;
-                typeTag.style.paddingTop = 1;
-                typeTag.style.paddingBottom = 1;
-                typeTag.style.borderTopLeftRadius = 2;
-                typeTag.style.borderTopRightRadius = 2;
-                typeTag.style.borderBottomLeftRadius = 2;
-                typeTag.style.borderBottomRightRadius = 2;
-                typeTag.style.marginRight = 6;
-
+                VisualElement typeTag;
                 switch (ev.Type)
                 {
                     case TraceEventType.Signal:
-                        typeTag.style.backgroundColor = new StyleColor(new Color(0.1f, 0.35f, 0.5f));
-                        typeTag.style.color = new StyleColor(new Color(0.7f, 0.9f, 1f));
+                        typeTag = NexusEditorStyles.CreateTag(ev.Type.ToString().ToUpper(), NexusEditorStyles.BtnBlue, NexusEditorStyles.AccentBlueText);
                         break;
                     case TraceEventType.Command:
-                        typeTag.style.backgroundColor = new StyleColor(new Color(0.4f, 0.2f, 0.5f));
-                        typeTag.style.color = new StyleColor(new Color(0.9f, 0.7f, 1f));
+                        typeTag = NexusEditorStyles.CreateTag(ev.Type.ToString().ToUpper(), NexusEditorStyles.BtnPurple, NexusEditorStyles.AccentPurpleText);
                         break;
                     default:
-                        typeTag.style.backgroundColor = new StyleColor(new Color(0.3f, 0.3f, 0.35f));
-                        typeTag.style.color = new StyleColor(new Color(0.8f, 0.8f, 0.8f));
+                        typeTag = NexusEditorStyles.CreateTag(ev.Type.ToString().ToUpper(), new Color(0.3f, 0.3f, 0.35f), new Color(0.8f, 0.8f, 0.8f));
                         break;
                 }
                 Add(typeTag);
@@ -502,11 +481,11 @@ namespace Nexus.Editor
 
                 if (ev.Type == TraceEventType.Command)
                 {
-                    var modeLabel = new Label($"[{ev.Mode}]") { style = { fontSize = 8, color = new StyleColor(new Color(0.6f, 0.6f, 0.6f)), marginLeft = 8 } };
+                    var modeLabel = new Label($"[{ev.Mode}]") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), marginLeft = 8 } };
                     Add(modeLabel);
                 }
 
-                var timeLabel = new Label($"{ev.Timestamp:F3}s") { style = { fontSize = 8, color = new StyleColor(new Color(0.5f, 0.5f, 0.5f)), marginLeft = StyleKeyword.Auto } };
+                var timeLabel = new Label($"{ev.Timestamp:F3}s") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), marginLeft = StyleKeyword.Auto } };
                 Add(timeLabel);
             }
         }

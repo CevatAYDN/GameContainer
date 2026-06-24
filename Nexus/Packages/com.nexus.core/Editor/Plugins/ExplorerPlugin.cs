@@ -40,17 +40,17 @@ namespace Nexus.Editor
         private static List<string> s_cachedAssemblies;
         private static List<Type> s_cachedSignalTypes;
 
-        private struct MappingInfo
+        private readonly struct MappingInfo
         {
-            public string SignalName;
-            public string CommandName;
-            public string Mode;
-            public string Priority;
-            public bool IsAsync;
-            public string AssemblyName;
-            public Type SignalType;
+            internal string SignalName { get; }
+            internal string CommandName { get; }
+            internal string Mode { get; }
+            internal string Priority { get; }
+            internal bool IsAsync { get; }
+            internal string AssemblyName { get; }
+            internal Type SignalType { get; }
 
-            public MappingInfo(string signalName, string commandName, string mode, string priority, bool isAsync, string assemblyName, Type signalType)
+            internal MappingInfo(string signalName, string commandName, string mode, string priority, bool isAsync, string assemblyName, Type signalType)
             {
                 SignalName = signalName;
                 CommandName = commandName;
@@ -96,7 +96,7 @@ namespace Nexus.Editor
             filtersToolbar.Add(_assemblyDropdown);
 
             var scanBtn = new Button(ForceScanExplorer) { text = "Refresh Cache" };
-            scanBtn.style.backgroundColor = new StyleColor(new Color(0.25f, 0.25f, 0.28f));
+            scanBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.BtnGray);
             scanBtn.style.color = Color.white;
             scanBtn.style.fontSize = 10;
             filtersToolbar.Add(scanBtn);
@@ -104,7 +104,7 @@ namespace Nexus.Editor
             leftContainer.Add(filtersToolbar);
 
             // Table Headers
-            var headers = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingLeft = 12, paddingRight = 12, paddingTop = 6, paddingBottom = 6, backgroundColor = new StyleColor(new Color(0.16f, 0.16f, 0.18f)), borderBottomWidth = 1, borderBottomColor = new StyleColor(new Color(0.25f, 0.25f, 0.27f)) } };
+            var headers = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingLeft = 12, paddingRight = 12, paddingTop = 6, paddingBottom = 6, backgroundColor = new StyleColor(NexusEditorStyles.TableHeaderBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderLight) } };
             headers.Add(new Label("Signal Type") { style = { width = new Length(40, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
             headers.Add(new Label("Handler / Command") { style = { width = new Length(40, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
             headers.Add(new Label("Mode") { style = { width = new Length(20, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
@@ -300,9 +300,9 @@ namespace Nexus.Editor
                 
                 bool isSelected = _testerSelectedSignalType != null && _testerSelectedSignalType == map.SignalType;
                 if (isSelected)
-                    row.style.backgroundColor = new StyleColor(new Color(0.18f, 0.22f, 0.28f));
+                    row.style.backgroundColor = new StyleColor(NexusEditorStyles.SelectedRow);
                 else
-                    row.style.backgroundColor = new StyleColor(alternate ? new Color(0.15f, 0.15f, 0.17f) : new Color(0.18f, 0.18f, 0.2f));
+                    row.style.backgroundColor = new StyleColor(alternate ? NexusEditorStyles.RowAlt : NexusEditorStyles.RowBase);
                 
                 alternate = !alternate;
 
@@ -315,7 +315,7 @@ namespace Nexus.Editor
                     });
                 }
 
-                var l1 = new Label(map.SignalName) { style = { width = new Length(40, LengthUnit.Percent), color = new Color(0.7f, 0.85f, 1f), unityFontStyleAndWeight = FontStyle.Bold, fontSize = 10 } };
+                var l1 = new Label(map.SignalName) { style = { width = new Length(40, LengthUnit.Percent), color = new StyleColor(NexusEditorStyles.SignalBlue), unityFontStyleAndWeight = FontStyle.Bold, fontSize = 10 } };
                 
                 var handlerContainer = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, width = new Length(40, LengthUnit.Percent) } };
                 var l2 = new Label(map.CommandName) { style = { color = Color.white, fontSize = 10 } };
@@ -323,28 +323,12 @@ namespace Nexus.Editor
 
                 if (map.IsAsync)
                 {
-                    var badge = new Label("⚡ ASYNC")
-                    {
-                        style = {
-                            fontSize = 7,
-                            backgroundColor = new StyleColor(new Color(0.45f, 0.35f, 0.15f)),
-                            color = new StyleColor(new Color(1f, 0.8f, 0.2f)),
-                            paddingLeft = 2,
-                            paddingRight = 2,
-                            paddingTop = 1,
-                            paddingBottom = 1,
-                            marginLeft = 4,
-                            borderTopLeftRadius = 2,
-                            borderTopRightRadius = 2,
-                            borderBottomLeftRadius = 2,
-                            borderBottomRightRadius = 2,
-                            unityFontStyleAndWeight = FontStyle.Bold
-                        }
-                    };
+                    var badge = NexusEditorStyles.CreatePill("ASYNC", NexusEditorStyles.CardBgYellow, NexusEditorStyles.AccentYellow);
+                    badge.style.marginLeft = 4;
                     handlerContainer.Add(badge);
                 }
 
-                var l3 = new Label(map.Mode) { style = { width = new Length(20, LengthUnit.Percent), color = new Color(0.8f, 0.6f, 0.9f), fontSize = 9 } };
+                var l3 = new Label(map.Mode) { style = { width = new Length(20, LengthUnit.Percent), color = new StyleColor(NexusEditorStyles.AccentPurpleText), fontSize = 9 } };
 
                 row.Add(l1);
                 row.Add(handlerContainer);
@@ -425,7 +409,7 @@ namespace Nexus.Editor
             _testerFormContainer.Add(_contextTargetDropdown);
 
             // Fire Button
-            _fireButton = NexusEditorStyles.CreateButton("Fire Test Signal ⚡", FireSelectedSignal, new Color(0.4f, 1f, 0.4f));
+            _fireButton = NexusEditorStyles.CreateButton("Fire Test Signal", FireSelectedSignal, NexusEditorStyles.BtnGreen);
             _fireButton.style.marginTop = 10;
             _fireButton.style.height = 30;
             _testerFormContainer.Add(_fireButton);

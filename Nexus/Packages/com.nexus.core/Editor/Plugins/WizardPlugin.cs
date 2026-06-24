@@ -15,6 +15,13 @@ namespace Nexus.Editor
         public override string DisplayName => "Context Wizard";
         public override int Order => 1;
 
+        private enum SubTab
+        {
+            CreateRoot = 0,
+            ViewMediatorGen = 1,
+            CleanDeletion = 2
+        }
+
         // Custom path inputs
         private string _wizardScriptsPath = "Assets/Scripts/Nexus";
         private string _wizardSettingsPath = "Assets/Settings";
@@ -48,7 +55,7 @@ namespace Nexus.Editor
         private List<string> _wizardAvailableAssemblies = new();
         private Root[] _cachedSceneRoots = Array.Empty<Root>();
 
-        private int _selectedSubTab = 0; // 0 = Create Root, 1 = View/Mediator Gen, 2 = Clean Deletion
+        private SubTab _selectedSubTab = SubTab.CreateRoot;
 
         public override VisualElement CreateView()
         {
@@ -60,9 +67,9 @@ namespace Nexus.Editor
             // Tab navigation buttons
             var tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
             
-            var btnCreateRoot = CreateSubTabButton("Create Root", 0);
-            var btnViewGen = CreateSubTabButton("View/Mediator Gen", 1);
-            var btnDelete = CreateSubTabButton("Clean Deletion", 2);
+            var btnCreateRoot = CreateSubTabButton("Create Root", SubTab.CreateRoot);
+            var btnViewGen = CreateSubTabButton("View/Mediator Gen", SubTab.ViewMediatorGen);
+            var btnDelete = CreateSubTabButton("Clean Deletion", SubTab.CleanDeletion);
 
             tabHeader.Add(btnCreateRoot);
             tabHeader.Add(btnViewGen);
@@ -93,16 +100,16 @@ namespace Nexus.Editor
             UpdateDropdownChoices();
         }
 
-        private Button CreateSubTabButton(string label, int index)
+        private Button CreateSubTabButton(string label, SubTab tab)
         {
             var btn = new Button(() =>
             {
-                _selectedSubTab = index;
+                _selectedSubTab = tab;
                 HighlightActiveSubTab();
                 RenderSubTab();
             }) { text = label };
-            
-            btn.name = $"SubTab_{index}";
+
+            btn.name = $"SubTab_{(int)tab}";
             btn.style.backgroundColor = new StyleColor(Color.clear);
             btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
             btn.style.borderTopWidth = 0;
@@ -122,14 +129,15 @@ namespace Nexus.Editor
         private void HighlightActiveSubTab()
         {
             if (_contentRoot == null) return;
-            for (int i = 0; i < 3; i++)
+            foreach (SubTab tab in Enum.GetValues(typeof(SubTab)))
             {
-                var btn = _contentRoot.Q<Button>($"SubTab_{i}");
+                int idx = (int)tab;
+                var btn = _contentRoot.Q<Button>($"SubTab_{idx}");
                 if (btn != null)
                 {
-                    if (i == _selectedSubTab)
+                    if (tab == _selectedSubTab)
                     {
-                        btn.style.backgroundColor = new StyleColor(new Color(0.18f, 0.22f, 0.28f));
+                        btn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
                         btn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
                     }
                     else
@@ -149,13 +157,13 @@ namespace Nexus.Editor
 
             switch (_selectedSubTab)
             {
-                case 0:
+                case SubTab.CreateRoot:
                     BuildCreateRootTab();
                     break;
-                case 1:
+                case SubTab.ViewMediatorGen:
                     BuildViewMediatorGenTab();
                     break;
-                case 2:
+                case SubTab.CleanDeletion:
                     BuildCleanDeletionTab();
                     break;
             }
@@ -199,7 +207,7 @@ namespace Nexus.Editor
             creationGroup.Add(scopeTagField);
 
             // Path Configuration
-            var pathsGroup = new VisualElement { style = { marginTop = 5, borderTopWidth = 1, borderTopColor = new StyleColor(new Color(0.2f, 0.2f, 0.22f)), paddingTop = 5 } };
+            var pathsGroup = new VisualElement { style = { marginTop = 5, borderTopWidth = 1, borderTopColor = new StyleColor(NexusEditorStyles.BorderColor), paddingTop = 5 } };
             pathsGroup.Add(new Label("Paths Configuration") { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginBottom = 4 } });
 
             var scriptsPathRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
@@ -233,7 +241,7 @@ namespace Nexus.Editor
             foldout.style.marginTop = 6;
             
             var scrollHeight = Mathf.Min(_wizardAvailableAssemblies.Count * 20 + 5, 120);
-            var assembliesScroll = new ScrollView { style = { height = scrollHeight, borderLeftWidth = 1, borderLeftColor = new StyleColor(new Color(0.2f, 0.2f, 0.22f)), paddingLeft = 10 } };
+            var assembliesScroll = new ScrollView { style = { height = scrollHeight, borderLeftWidth = 1, borderLeftColor = new StyleColor(NexusEditorStyles.BorderColor), paddingLeft = 10 } };
             
             foreach (var assemblyName in _wizardAvailableAssemblies)
             {
@@ -335,28 +343,10 @@ namespace Nexus.Editor
                            "- The associated ContextData ScriptableObject.\n" +
                            "- The generated script directory under Assets/Scripts/Nexus/<ContextName>/\n\n" +
                            "Make sure you have backed up your custom script changes before committing!";
-            var warningBox = new Label(warnText)
-            {
-                style =
-                {
-                    color = new StyleColor(NexusEditorStyles.AccentOrange),
-                    backgroundColor = new StyleColor(new Color(0.2f, 0.15f, 0.1f)),
-                    paddingLeft = 8,
-                    paddingRight = 8,
-                    paddingTop = 8,
-                    paddingBottom = 8,
-                    marginTop = 8,
-                    fontSize = 10,
-                    whiteSpace = WhiteSpace.Normal,
-                    borderTopLeftRadius = 4,
-                    borderTopRightRadius = 4,
-                    borderBottomLeftRadius = 4,
-                    borderBottomRightRadius = 4
-                }
-            };
+            var warningBox = NexusEditorStyles.CreateWarningBox(warnText);
             deleteGroup.Add(warningBox);
 
-            var deleteBtn = NexusEditorStyles.CreateButton("DELETE ROOT & ALL RELATED ASSETS", RunDeleteRootContext, new Color(1f, 0.3f, 0.3f));
+            var deleteBtn = NexusEditorStyles.CreateButton("DELETE ROOT & ALL RELATED ASSETS", RunDeleteRootContext, NexusEditorStyles.AccentRed);
             deleteGroup.Add(deleteBtn);
         }
 
@@ -510,7 +500,7 @@ namespace Nexus.Editor
         private void CreateDefaultManifest()
         {
             var manifest = ScriptableObject.CreateInstance<NexusBootstrapManifest>();
-            manifest.DefaultContextNames = new string[] { "Global", "Gameplay", "UI" };
+            manifest.DefaultContextNames = new[] { "Global", "Gameplay", "UI" };
             manifest.GenerateSampleSignals = true;
             manifest.GenerateSampleCommands = true;
             manifest.EnableInspector = true;
@@ -651,12 +641,12 @@ namespace Nexus.Editor
                 $"Root Created: {goName}",
                 $"Successfully created {goName} (ScopeTag: {scopeTag}).\n\n" +
                 "--- NEXT STEPS ---\n\n" +
-                "1. Sinyalleri İzleme  → Live Tracer sekmesini açın.\n" +
-                "2. Mimarileri Tanımla → Lifecycle ve Command sınıflarını doldurun.\n" +
-                "3. Play Mode'a Geçin   → Sinyal akışını canlı gözlemleyin.",
-                "Sinyal Takibine Git",
-                "Signal Explorer'a Git",
-                "Tamam"
+                "1. Open Live Tracer to monitor signal flow in real-time.\n" +
+                "2. Fill in Lifecycle and Command classes for your business logic.\n" +
+                "3. Enter Play Mode to observe signal chains live.",
+                "Open Live Tracer",
+                "Open Signal Explorer",
+                "OK"
             );
 
             if (choice == 0)

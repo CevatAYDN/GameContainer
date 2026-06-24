@@ -148,7 +148,7 @@ namespace Nexus.Editor
             card.style.borderBottomWidth = 1;
             card.style.borderLeftWidth = 1;
             card.style.borderRightWidth = 1;
-            var borderColor = new StyleColor(new Color(0.25f, 0.25f, 0.28f));
+            var borderColor = new StyleColor(NexusEditorStyles.BorderLight);
             card.style.borderTopColor = borderColor;
             card.style.borderBottomColor = borderColor;
             card.style.borderLeftColor = borderColor;
@@ -165,7 +165,7 @@ namespace Nexus.Editor
             card.style.marginBottom = 6;
 
             bool isInspected = _selectedContext == ctx;
-            card.style.backgroundColor = isInspected ? new StyleColor(new Color(0.18f, 0.22f, 0.26f)) : new StyleColor(new Color(0.15f, 0.15f, 0.17f));
+            card.style.backgroundColor = isInspected ? new StyleColor(NexusEditorStyles.HighlightBg) : new StyleColor(NexusEditorStyles.RowAlt);
 
             // Mouse down selection callback
             card.RegisterCallback<MouseDownEvent>(evt =>
@@ -191,24 +191,7 @@ namespace Nexus.Editor
                 }
             }
 
-            var pill = new Label($"{handlerCount} Handlers")
-            {
-                style = {
-                    fontSize = 8,
-                    backgroundColor = new StyleColor(new Color(0.2f, 0.35f, 0.2f)),
-                    color = new StyleColor(new Color(0.6f, 1f, 0.6f)),
-                    paddingLeft = 3,
-                    paddingRight = 3,
-                    paddingTop = 1,
-                    paddingBottom = 1,
-                    marginLeft = 6,
-                    borderTopLeftRadius = 2,
-                    borderTopRightRadius = 2,
-                    borderBottomLeftRadius = 2,
-                    borderBottomRightRadius = 2,
-                    unityFontStyleAndWeight = FontStyle.Bold
-                }
-            };
+            var pill = NexusEditorStyles.CreatePill($"{handlerCount} Handlers", NexusEditorStyles.CardBgGreen, NexusEditorStyles.AccentGreenText);
             header.Add(pill);
 
             if (ctx.ContextData != null)
@@ -217,9 +200,9 @@ namespace Nexus.Editor
                 {
                     Selection.activeObject = ctx.ContextData;
                     EditorGUIUtility.PingObject(ctx.ContextData);
-                }) { text = "Config SO ↗" };
+                }) { text = "Config SO" };
                 pingBtn.style.fontSize = 8;
-                pingBtn.style.backgroundColor = new StyleColor(new Color(0.2f, 0.2f, 0.22f));
+                pingBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.BtnGray);
                 pingBtn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
                 pingBtn.style.marginLeft = StyleKeyword.Auto;
                 pingBtn.style.paddingLeft = 4;
@@ -252,7 +235,7 @@ namespace Nexus.Editor
             // Recursively draw child contexts
             if (childMap.TryGetValue(ctx, out var children) && children.Count > 0)
             {
-                var childrenContainer = new VisualElement { style = { marginTop = 8, paddingLeft = 10, borderLeftWidth = 1, borderLeftColor = new StyleColor(new Color(0.25f, 0.25f, 0.28f)) } };
+                var childrenContainer = new VisualElement { style = { marginTop = 8, paddingLeft = 10, borderLeftWidth = 1, borderLeftColor = new StyleColor(NexusEditorStyles.BorderLight) } };
                 foreach (var child in children)
                 {
                     childrenContainer.Add(RenderContextCard(child, childMap));
@@ -271,23 +254,20 @@ namespace Nexus.Editor
 
             if (!Application.isPlaying)
             {
-                var card = new Label("Enter Play Mode to inspect DI Container details.") { style = { color = Color.gray, fontSize = 11, alignSelf = Align.Center, marginTop = 20 } };
-                _inspectorScroll.Add(card);
+                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState("Enter Play Mode to inspect DI Container details."));
                 return;
             }
 
             if (_selectedContext == null)
             {
-                var card = new Label("Select a Context card on the left panel to inspect its resolved dependencies.") { style = { color = Color.gray, fontSize = 11, alignSelf = Align.Center, marginTop = 20 } };
-                _inspectorScroll.Add(card);
+                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState("Select a Context card on the left panel to inspect its resolved dependencies."));
                 return;
             }
 
             var singletons = _selectedContext.Container.GetRegisteredSingletons();
             if (singletons == null || singletons.Count == 0)
             {
-                var card = new Label("No resolved singletons or models found in this context's container.") { style = { color = Color.gray, fontSize = 11, alignSelf = Align.Center, marginTop = 20 } };
-                _inspectorScroll.Add(card);
+                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState("No resolved singletons or models found in this context's container."));
                 return;
             }
 
@@ -532,6 +512,12 @@ namespace Nexus.Editor
             if (instance is UnityEngine.Object unityObj)
             {
                 Undo.RecordObject(unityObj, "Modify Model Member");
+            }
+            else
+            {
+                // Non-UnityEngine.Object singletons (plain C# models) can't use Undo,
+                // but we log the change for auditability.
+                Debug.Log($"[Nexus] DI Inspector: value changed on {instance?.GetType().Name} (Undo not available for non-Unity objects)");
             }
         }
 
