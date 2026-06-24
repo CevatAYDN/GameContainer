@@ -127,16 +127,43 @@ namespace Nexus
 ---
 
 #### Step 4: Business Logic and Command Mapping
-Create the business logic that runs when the signal is dispatched using `ICommand` or `IAsyncCommand`:
+Create the business logic that runs when the signal is dispatched. You can choose between two styles:
+
+##### Style A: Performant Generic Command (Recommended for 0-GC & AOT)
+Implement the `ICommand<TSignal>` interface and bind it explicitly in your Lifecycle class (see Step 3):
 
 ```csharp
 using Nexus.Core;
 using UnityEngine;
 
-[SignalHandler(typeof(DamageSignal))] // This command runs when DamageSignal is dispatched
+public class DamageCommand : ICommand<DamageSignal>
+{
+    [Inject] private IPlayerModel _playerModel; // Model dependency
+
+    public void Execute(DamageSignal signal)
+    {
+        _playerModel.Health -= signal.Amount;
+        Debug.Log($"Damage processed: {signal.Amount}. New Health: {_playerModel.Health}");
+    }
+}
+```
+
+Add this binding to your Lifecycle class:
+```csharp
+builder.BindCommand<DamageSignal, DamageCommand>();
+```
+
+##### Style B: Auto-Discovered Command (Reflection Fallback)
+Implement the non-generic `ICommand` interface and decorate the class with the `[SignalHandler]` attribute. Nexus will automatically discover and register it:
+
+```csharp
+using Nexus.Core;
+using UnityEngine;
+
+[SignalHandler(typeof(DamageSignal))] // Auto-discovered and registered by Nexus
 public class DamageCommand : ICommand
 {
-    // The dispatched signal content is automatically injected by Nexus
+    // The signal payload is injected into a field matching the type or named _signal
     private readonly DamageSignal _signal; 
     
     [Inject] private IPlayerModel _playerModel; // Model dependency
@@ -148,6 +175,7 @@ public class DamageCommand : ICommand
     }
 }
 ```
+*(Note: Style B uses reflection to set the signal field, which introduces a minor performance overhead and prints a warning on AOT platforms like WebGL/consoles).*
 
 ---
 
@@ -196,11 +224,39 @@ public class PlayerMediator : Mediator<PlayerView>
 ---
 
 #### Step 6: Dispatch the Signal (Execution)
-Now you can dispatch your signal and trigger the entire cycle from any MonoBehaviour, Mediator, or service class:
+You can dispatch your signal and trigger the cycle from different contexts:
 
+##### 1. Inside a Mediator
+Since the `Mediator` base class provides a built-in `SignalBus` instance property, you can call it directly:
 ```csharp
-// Dispatch the signal (executes asynchronously/synchronously in order with fire-and-forget)
 SignalBus.Fire(new DamageSignal(10));
+```
+
+##### 2. Inside a Dependency-Injected Class (Lifecycle, Services, etc.)
+Inject the `ISignalBus` interface via property or field injection:
+```csharp
+[Inject] private ISignalBus _signalBus;
+
+public void DealDamage()
+{
+    _signalBus.Fire(new DamageSignal(10));
+}
+```
+
+##### 3. From a Standard MonoBehaviour (e.g. Collision trigger in a scene)
+Find the nearest parent Context Root component to access the active SignalBus:
+```csharp
+public class DamageTrigger : MonoBehaviour
+{
+    private void OnCollisionEnter(Collision collision)
+    {
+        var root = GetComponentInParent<Root>();
+        if (root != null && root.Context != null)
+        {
+            root.Context.SignalBus.Fire(new DamageSignal(10));
+        }
+    }
+}
 ```
 
 ---
@@ -338,16 +394,43 @@ namespace Nexus
 ---
 
 #### Adım 4: İş Mantığı ve Komut Eşleme (Command)
-Sinyal fırlatıldığında çalışacak iş mantığını `ICommand` veya `IAsyncCommand` kullanarak oluşturun:
+Sinyal fırlatıldığında çalışacak iş mantığını iki farklı yöntemle tanımlayabilirsiniz:
+
+##### Yöntem A: Yüksek Performanslı Generic Komut (0-GC & AOT için Önerilen)
+`ICommand<TSignal>` arayüzünü uygulayın ve komutu Lifecycle sınıfınızda el ile bağlayın (bkz. Adım 3):
 
 ```csharp
 using Nexus.Core;
 using UnityEngine;
 
-[SignalHandler(typeof(DamageSignal))] // DamageSignal fırlatıldığında bu komut çalışır
+public class DamageCommand : ICommand<DamageSignal>
+{
+    [Inject] private IPlayerModel _playerModel; // Model bağımlılığı
+
+    public void Execute(DamageSignal signal)
+    {
+        _playerModel.Health -= signal.Amount;
+        Debug.Log($"Damage processed: {signal.Amount}. New Health: {_playerModel.Health}");
+    }
+}
+```
+
+Bu bağlantıyı Lifecycle sınıfınızda yapılandırın:
+```csharp
+builder.BindCommand<DamageSignal, DamageCommand>();
+```
+
+##### Yöntem B: Otomatik Keşfedilen Komut (Yansıma / Reflection Yöntemi)
+Sınıfı `[SignalHandler]` özniteliği ile işaretleyin ve generic olmayan `ICommand` arayüzünü uygulayın. Nexus bu komutu otomatik olarak tarayıp kaydedecektir:
+
+```csharp
+using Nexus.Core;
+using UnityEngine;
+
+[SignalHandler(typeof(DamageSignal))] // Nexus tarafından otomatik olarak taranıp kaydedilir
 public class DamageCommand : ICommand
 {
-    // Tetiklenen sinyal içeriği Nexus tarafından otomatik enjekte edilir
+    // Tetiklenen sinyal içeriği Nexus tarafından yansıma yoluyla otomatik enjekte edilir
     private readonly DamageSignal _signal; 
     
     [Inject] private IPlayerModel _playerModel; // Model bağımlılığı
@@ -359,6 +442,7 @@ public class DamageCommand : ICommand
     }
 }
 ```
+*(Not: Yöntem B, sinyal değerini enjekte etmek için reflection kullandığından AOT platformlarında (WebGL, Konsollar vb.) hafif bir performans uyarısı verir).*
 
 ---
 
@@ -407,11 +491,39 @@ public class PlayerMediator : Mediator<PlayerView>
 ---
 
 #### Adım 6: Sinyali Fırlatın (Execution)
-Artık herhangi bir MonoBehaviour içinden, Mediator'dan veya servis sınıfından sinyalinizi fırlatıp tüm döngüyü tetikleyebilirsiniz:
+Sinyalinizi projenin farklı katmanlarından fırlatabilirsiniz:
 
+##### 1. Bir Mediator İçinden
+`Mediator` ana sınıfı doğrudan bir `SignalBus` özelliğine (property) sahip olduğu için doğrudan çağrı yapabilirsiniz:
 ```csharp
-// Sinyali fırlatın (Fire-and-forget fix ile asenkron/senkron sıralı yürütülür)
 SignalBus.Fire(new DamageSignal(10));
+```
+
+##### 2. Dependency Injection Alan Bir Sınıf İçinden (Servisler, Lifecycle vb.)
+`ISignalBus` arayüzünü enjekte edin:
+```csharp
+[Inject] private ISignalBus _signalBus;
+
+public void DealDamage()
+{
+    _signalBus.Fire(new DamageSignal(10));
+}
+```
+
+##### 3. Standart Bir MonoBehaviour İçinden (Örn: Sahnede Çarpışma Tetikleyicisi)
+En yakın ebeveyn Context Root nesnesini bularak sinyali gönderin:
+```csharp
+public class DamageTrigger : MonoBehaviour
+{
+    private void OnCollisionEnter(Collision collision)
+    {
+        var root = GetComponentInParent<Root>();
+        if (root != null && root.Context != null)
+        {
+            root.Context.SignalBus.Fire(new DamageSignal(10));
+        }
+    }
+}
 ```
 
 ---
