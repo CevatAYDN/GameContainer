@@ -85,21 +85,39 @@ namespace Nexus.Editor
             // Scheduled refresh while in Play Mode
             _root.schedule.Execute(OnScheduledRefresh).Every(250);
 
+            // Ensure play-mode subscription is active (survives tab switch cycles)
+            if (!_subscribedToPlayMode)
+            {
+                EditorApplication.playModeStateChanged += OnPlayModeChange;
+                _subscribedToPlayMode = true;
+            }
+
             RefreshSnapshot();
             RenderActiveSection();
             return _root;
         }
 
+        private bool _subscribedToPlayMode;
+
         public override void OnEnable()
         {
             base.OnEnable();
-            EditorApplication.playModeStateChanged += OnPlayModeChange;
+            // Registration handled in CreateView to survive tab switches
         }
 
         public override void OnDisable()
         {
             base.OnDisable();
-            EditorApplication.playModeStateChanged -= OnPlayModeChange;
+            UnsubscribePlayMode();
+        }
+
+        private void UnsubscribePlayMode()
+        {
+            if (_subscribedToPlayMode)
+            {
+                EditorApplication.playModeStateChanged -= OnPlayModeChange;
+                _subscribedToPlayMode = false;
+            }
         }
 
         private void OnPlayModeChange(PlayModeStateChange change)

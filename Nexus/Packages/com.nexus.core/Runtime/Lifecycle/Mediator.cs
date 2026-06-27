@@ -35,10 +35,15 @@ namespace Nexus.Core
         /// <param name="signalBus">The signal bus for subscriptions.</param>
         public void Bind(object view, ISignalBus signalBus)
         {
+            if (view == null)
+                throw new ArgumentNullException(nameof(view));
+            if (signalBus == null)
+                throw new ArgumentNullException(nameof(signalBus));
+
             View = view as TView;
             if (View == null)
             {
-                throw new InvalidCastException($"Cannot bind view of type {view?.GetType().Name} to Mediator of type {GetType().Name} expecting {typeof(TView).Name}");
+                throw new InvalidCastException($"Cannot bind view of type {view.GetType().Name} to Mediator of type {GetType().Name} expecting {typeof(TView).Name}");
             }
             SignalBus = signalBus;
             OnBind();

@@ -825,7 +825,9 @@ namespace Nexus.Core
                     else if (command is IAsyncCommand<TSignal> genericAsyncCmd)
                     {
                         var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, ct)).AsTask().GetAwaiter().GetResult();
+                        var capturedCmd = genericAsyncCmd;
+                        var capturedSignal = signal;
+                        FireAsyncUnsafe(async () => await ExecuteWithDecoratorsAsync(capturedCmd, async () => await capturedCmd.ExecuteAsync(capturedSignal, ct)));
                     }
                     else
                     {
@@ -833,7 +835,7 @@ namespace Nexus.Core
                         UnityEngine.Debug.LogWarning($"[Nexus Performance Warning] Command '{handler.CommandType.Name}' handles signal '{typeof(TSignal).Name}' but does not implement ICommand<{typeof(TSignal).Name}> or IAsyncCommand<{typeof(TSignal).Name}>. Fallback to reflection injection is used, causing performance overhead/boxing on AOT.");
 #endif
                         SignalInjector<TSignal>.Inject(command, signal);
- 
+  
                         if (command is ICommand syncCmd)
                         {
                             ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
@@ -841,7 +843,8 @@ namespace Nexus.Core
                         else if (command is IAsyncCommand asyncCmd)
                         {
                             var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                            ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct)).AsTask().GetAwaiter().GetResult();
+                            var capturedCmd = asyncCmd;
+                            FireAsyncUnsafe(async () => await ExecuteWithDecoratorsAsync(capturedCmd, async () => await capturedCmd.ExecuteAsync(ct)));
                         }
                     }
                     shouldRun = false; // completed successfully
@@ -902,7 +905,8 @@ namespace Nexus.Core
                     else if (command is IAsyncCommand asyncCmd)
                     {
                         var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct)).AsTask().GetAwaiter().GetResult();
+                        var capturedCmd = asyncCmd;
+                        FireAsyncUnsafe(async () => await ExecuteWithDecoratorsAsync(capturedCmd, async () => await capturedCmd.ExecuteAsync(ct)));
                     }
                     shouldRun = false; // completed successfully
 #if NEXUS_DEBUG
@@ -934,6 +938,19 @@ namespace Nexus.Core
                         _poolManager.ReturnCommand(handler.CommandType, command);
                     }
                 }
+            }
+        }
+
+        [System.Diagnostics.DebuggerStepThrough]
+        private async void FireAsyncUnsafe(Func<ValueTask> asyncAction)
+        {
+            try
+            {
+                await asyncAction();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                UnityEngine.Debug.LogError($"[Nexus] FireAsyncUnsafe: async command execution failed: {ex.Message}");
             }
         }
 
@@ -1157,7 +1174,8 @@ namespace Nexus.Core
             }
             else
             {
-                newSetter = (target, val) => { }; // No-op fallback
+                UnityEngine.Debug.LogWarning($"[Nexus] Signal injection: no matching field or property found in '{commandType.Name}' for signal type '{signalType.Name}'. Command will execute with default signal values.");
+                newSetter = (target, val) => { };
             }
 
             s_signalSetterCache[cacheKey] = newSetter;
@@ -1200,100 +1218,129 @@ namespace Nexus.Core
 
         private async void ExecuteCompositeCommandAsync(CompositeTriggerState trigger, object command)
         {
-#if NEXUS_DEBUG
-            int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
-#endif
-            bool inFlightIncremented = false;
-            try
+            int retryCount = 0;
+            bool shouldRun = true;
+
+            while (shouldRun)
             {
-                if (command is ICommand syncCmd)
+                bool inFlightIncremented = false;
+#if NEXUS_DEBUG
+                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
+#endif
+                try
                 {
-                    syncCmd.Execute();
-                }
-                else if (command is IAsyncCommand asyncCmd)
-                {
-                    var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                    Interlocked.Increment(ref _inFlightAsyncCommands);
-                    inFlightIncremented = true;
-                    try
+                    if (command is ICommand syncCmd)
                     {
-                        await asyncCmd.ExecuteAsync(ct);
+                        syncCmd.Execute();
                     }
-                    finally
+                    else if (command is IAsyncCommand asyncCmd)
                     {
-                        if (inFlightIncremented)
+                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                        Interlocked.Increment(ref _inFlightAsyncCommands);
+                        inFlightIncremented = true;
+                        try
                         {
-                            Interlocked.Decrement(ref _inFlightAsyncCommands);
-                            inFlightIncremented = false;
+                            await asyncCmd.ExecuteAsync(ct);
+                        }
+                        finally
+                        {
+                            if (inFlightIncremented)
+                            {
+                                Interlocked.Decrement(ref _inFlightAsyncCommands);
+                                inFlightIncremented = false;
+                            }
                         }
                     }
-                }
+                    shouldRun = false;
 #if NEXUS_DEBUG
-                NexusTrace.EndEvent(traceId, TraceStatus.OK);
+                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
 #endif
-            }
-            catch (Exception ex)
-            {
-#if NEXUS_DEBUG
-                NexusTrace.EndEvent(traceId, TraceStatus.Failed);
-#endif
-                int retry = 0;
-                HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retry);
-            }
-            finally
-            {
-                if (inFlightIncremented)
-                {
-                    Interlocked.Decrement(ref _inFlightAsyncCommands);
                 }
-                if (command != null)
+                catch (Exception ex)
                 {
-                    _poolManager.ReturnCommand(trigger.CommandType, command);
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
+                    var action = HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
+                    if (action == RecoveryAction.Retry)
+                    {
+                        retryCount++;
+                    }
+                    else
+                    {
+                        shouldRun = false;
+                    }
+                }
+                finally
+                {
+                    if (inFlightIncremented)
+                    {
+                        Interlocked.Decrement(ref _inFlightAsyncCommands);
+                    }
+                    if (command != null && !shouldRun)
+                    {
+                        _poolManager.ReturnCommand(trigger.CommandType, command);
+                    }
                 }
             }
         }
 
         private void ExecuteCompositeCommand(CompositeTriggerState trigger)
         {
-#if NEXUS_DEBUG
-            int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
-#endif
-            object command = null;
-            try
-            {
-                command = _poolManager.GetCommand(trigger.CommandType);
-                _container.Inject(command);
+            int retryCount = 0;
+            bool shouldRun = true;
 
-                if (command is ICommand syncCmd)
-                {
-                    syncCmd.Execute();
-                }
-                else if (command is IAsyncCommand asyncCmd)
-                {
-                    // Async composite — dispatch via async void with proper tracking
-                    // Pass the command to the async method; it will handle pool return
-                    var cmdForAsync = command;
-                    command = null; // Prevent finally from returning it; async method owns it now
-                    ExecuteCompositeCommandAsync(trigger, cmdForAsync);
-                    return;
-                }
-#if NEXUS_DEBUG
-                NexusTrace.EndEvent(traceId, TraceStatus.OK);
-#endif
-            }
-            catch (Exception ex)
+            while (shouldRun)
             {
+                object command = null;
 #if NEXUS_DEBUG
-                NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
 #endif
-                int retry = 0;
-                HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retry);
-            }
-            finally
-            {
-                if (command != null)
+                try
                 {
-                    _poolManager.ReturnCommand(trigger.CommandType, command);
+                    command = _poolManager.GetCommand(trigger.CommandType);
+                    _container.Inject(command);
+
+                    if (command is ICommand syncCmd)
+                    {
+                        syncCmd.Execute();
+                    }
+                    else if (command is IAsyncCommand asyncCmd)
+                    {
+                        // Async composite — dispatch via async void with proper tracking
+                        // Pass the command to the async method; it will handle pool return
+                        var cmdForAsync = command;
+                        command = null; // Prevent finally from returning it; async method owns it now
+                        ExecuteCompositeCommandAsync(trigger, cmdForAsync);
+                        shouldRun = false;
+                        return;
+                    }
+                    shouldRun = false;
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
+#endif
+                }
+                catch (Exception ex)
+                {
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
+                    var action = HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
+                    if (action == RecoveryAction.Retry)
+                    {
+                        retryCount++;
+                    }
+                    else
+                    {
+                        shouldRun = false;
+                    }
+                }
+                finally
+                {
+                    if (command != null)
+                    {
+                        _poolManager.ReturnCommand(trigger.CommandType, command);
+                    }
                 }
             }
         }

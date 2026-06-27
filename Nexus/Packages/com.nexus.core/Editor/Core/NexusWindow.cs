@@ -149,7 +149,7 @@ namespace Nexus.Editor
             var spacer = new VisualElement { style = { flexGrow = 1 } };
             _sidebar.Add(spacer);
 
-            var versionLabel = new Label("v0.1.0");
+            var versionLabel = new Label("v0.2.0");
             versionLabel.style.fontSize = 9;
             versionLabel.style.color = new StyleColor(NexusEditorStyles.DimText);
             versionLabel.style.alignSelf = Align.Center;
