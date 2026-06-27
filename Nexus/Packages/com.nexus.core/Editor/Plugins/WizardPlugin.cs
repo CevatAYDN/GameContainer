@@ -35,6 +35,12 @@ namespace Nexus.Editor
         private bool _wizardGenerateLifecycleScript = true;
         private bool _wizardGenerateSampleArchitecture = true;
 
+        // Factory Modules
+        private bool _wizardModIAP = false;
+        private bool _wizardModAds = false;
+        private bool _wizardModAnalytics = false;
+        private bool _wizardModInventory = false;
+
         // Inputs for View/Mediator Gen
         private string _wizardViewName = "GameplayHUD";
         private string _wizardViewTargetRootName = "";
@@ -285,6 +291,27 @@ namespace Nexus.Editor
             
             creationGroup.Add(toggleLifecycle);
             creationGroup.Add(toggleBoilerplate);
+
+            // Factory Modules
+            var modulesFoldout = new Foldout { text = "Game Factory Core Modules", value = true, style = { marginTop = 5 } };
+            
+            var toggleIAP = new Toggle("In-App Purchases (IAP)") { value = _wizardModIAP };
+            toggleIAP.RegisterValueChangedCallback(evt => _wizardModIAP = evt.newValue);
+            modulesFoldout.Add(toggleIAP);
+
+            var toggleAds = new Toggle("Ads Network") { value = _wizardModAds };
+            toggleAds.RegisterValueChangedCallback(evt => _wizardModAds = evt.newValue);
+            modulesFoldout.Add(toggleAds);
+
+            var toggleAnalytics = new Toggle("Analytics") { value = _wizardModAnalytics };
+            toggleAnalytics.RegisterValueChangedCallback(evt => _wizardModAnalytics = evt.newValue);
+            modulesFoldout.Add(toggleAnalytics);
+
+            var toggleInventory = new Toggle("Inventory / Economy") { value = _wizardModInventory };
+            toggleInventory.RegisterValueChangedCallback(evt => _wizardModInventory = evt.newValue);
+            modulesFoldout.Add(toggleInventory);
+
+            creationGroup.Add(modulesFoldout);
 
             // Validation & Build Action
             _validationLabel = new Label { style = { color = new StyleColor(NexusEditorStyles.AccentOrange), fontSize = 10, marginTop = 8, whiteSpace = WhiteSpace.Normal } };
@@ -661,11 +688,26 @@ namespace Nexus.Editor
 
         private void RunCreateRoot()
         {
-            CreateRootContext(_wizardContextName, _wizardScopeTag);
+            try
+            {
+                CreateRootContext(_wizardContextName, _wizardScopeTag);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Nexus Factory Error] {ex.Message}");
+                EditorUtility.DisplayDialog("Nexus Factory Error", ex.Message, "OK");
+            }
         }
 
         private void CreateRootContext(string contextName, string scopeTag)
         {
+            if (string.IsNullOrWhiteSpace(contextName))
+                throw new InvalidOperationException("Context Name cannot be empty.");
+
+            string path = Path.Combine(_wizardSettingsPath, $"{contextName}ContextData.asset");
+            if (File.Exists(path))
+                throw new InvalidOperationException($"A ContextData asset already exists at {path}. Use a different Context Name or delete the existing one.");
+
             var go = new GameObject($"{contextName}Root");
             var root = go.AddComponent<Root>();
 
@@ -727,6 +769,12 @@ namespace Nexus.Editor
                     File.WriteAllText(Path.Combine(viewsDir, $"{contextName}View.cs"), NexusTemplateProvider.GetViewBoilerplate(contextName));
                     File.WriteAllText(Path.Combine(viewsDir, $"{contextName}Mediator.cs"), NexusTemplateProvider.GetMediatorBoilerplate(contextName));
 
+                    // Generate Factory Modules
+                    if (_wizardModIAP) GenerateModuleSkeleton(contextDir, "IAP");
+                    if (_wizardModAds) GenerateModuleSkeleton(contextDir, "Ads");
+                    if (_wizardModAnalytics) GenerateModuleSkeleton(contextDir, "Analytics");
+                    if (_wizardModInventory) GenerateModuleSkeleton(contextDir, "Inventory");
+
                     scriptPath = Path.Combine(contextDir, $"{contextName}Lifecycle.cs");
                     File.WriteAllText(scriptPath, NexusTemplateProvider.GetLifecycleBoilerplateWithBindings(contextName));
                 }
@@ -745,6 +793,15 @@ namespace Nexus.Editor
             OnHierarchyChanged();
 
             ShowPostCreationGuide(go.name, contextName, scopeTag);
+        }
+
+        private void GenerateModuleSkeleton(string parentDir, string moduleName)
+        {
+            string moduleDir = Path.Combine(parentDir, "Modules", moduleName);
+            EnsureFolderExists(moduleDir);
+            EnsureFolderExists(Path.Combine(moduleDir, "Signals"));
+            EnsureFolderExists(Path.Combine(moduleDir, "Models"));
+            EnsureFolderExists(Path.Combine(moduleDir, "Commands"));
         }
 
         private void ShowPostCreationGuide(string goName, string contextName, string scopeTag)

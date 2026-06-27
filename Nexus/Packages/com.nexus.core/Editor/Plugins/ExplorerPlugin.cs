@@ -32,6 +32,10 @@ namespace Nexus.Editor
         private List<MappingInfo> _allMappings = new();
         private readonly List<VisualElement> _renderedRows = new();
 
+        private enum ExplorerTab { Signals, LiveModels }
+        private ExplorerTab _selectedTab = ExplorerTab.Signals;
+        private VisualElement _tabContent;
+
         private Type _testerSelectedSignalType;
         private object _testerSignalInstance;
         private FieldInfo[] _testerSignalFields;
@@ -69,14 +73,89 @@ namespace Nexus.Editor
             var toolbar = NexusEditorStyles.CreateToolbar("SIGNAL EXPLORER & PLAY-MODE TESTER");
             _view.Add(toolbar);
 
+            var tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
+            
+            var btnSignals = CreateTabButton("Signal Explorer", ExplorerTab.Signals);
+            var btnModels = CreateTabButton("Live Models", ExplorerTab.LiveModels);
+
+            tabHeader.Add(btnSignals);
+            tabHeader.Add(btnModels);
+            _view.Add(tabHeader);
+
+            _tabContent = new VisualElement { style = { flexGrow = 1 } };
+            _view.Add(_tabContent);
+
+            ScanExplorerAndPopulate();
+
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+            
+            RenderTab();
+
+            return _view;
+        }
+
+        private Button CreateTabButton(string label, ExplorerTab tab)
+        {
+            var btn = new Button(() =>
+            {
+                _selectedTab = tab;
+                RenderTab();
+            }) { text = label };
+
+            btn.name = $"Tab_{(int)tab}";
+            btn.style.backgroundColor = new StyleColor(Color.clear);
+            btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
+            btn.style.borderTopWidth = 0;
+            btn.style.borderBottomWidth = 0;
+            btn.style.borderLeftWidth = 0;
+            btn.style.borderRightWidth = 0;
+            btn.style.paddingLeft = 12;
+            btn.style.paddingRight = 12;
+            btn.style.paddingTop = 8;
+            btn.style.paddingBottom = 8;
+            btn.style.fontSize = 11;
+            btn.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+            return btn;
+        }
+
+        private void RenderTab()
+        {
+            if (_tabContent == null) return;
+            _tabContent.Clear();
+
+            foreach (ExplorerTab tab in Enum.GetValues(typeof(ExplorerTab)))
+            {
+                var btn = _view.Q<Button>($"Tab_{(int)tab}");
+                if (btn != null)
+                {
+                    if (tab == _selectedTab)
+                    {
+                        btn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
+                        btn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
+                    }
+                    else
+                    {
+                        btn.style.backgroundColor = new StyleColor(Color.clear);
+                        btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
+                    }
+                }
+            }
+
+            if (_selectedTab == ExplorerTab.Signals)
+                BuildSignalsTab();
+            else
+                BuildLiveModelsTab();
+        }
+
+        private void BuildSignalsTab()
+        {
             var splitView = new VisualElement { style = { flexDirection = FlexDirection.Row, flexGrow = 1 } };
 
-            // Left Side: List of static mappings
             var leftContainer = new VisualElement { style = { width = new Length(60, LengthUnit.Percent) } };
             leftContainer.style.borderRightWidth = 1;
             leftContainer.style.borderRightColor = new StyleColor(NexusEditorStyles.BorderColor);
 
-            // Filters toolbar
             var filtersToolbar = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingLeft = 10, paddingRight = 10, paddingTop = 6, paddingBottom = 6, borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor), alignItems = Align.Center } };
 
             _searchField = new TextField { value = _searchQuery, style = { width = 130, marginRight = 10, height = 20 } };
@@ -103,7 +182,6 @@ namespace Nexus.Editor
 
             leftContainer.Add(filtersToolbar);
 
-            // Table Headers
             var headers = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingLeft = 12, paddingRight = 12, paddingTop = 6, paddingBottom = 6, backgroundColor = new StyleColor(NexusEditorStyles.TableHeaderBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderLight) } };
             headers.Add(new Label("Signal Type") { style = { width = new Length(40, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
             headers.Add(new Label("Handler / Command") { style = { width = new Length(40, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
@@ -114,7 +192,6 @@ namespace Nexus.Editor
             leftContainer.Add(_explorerScrollView);
             splitView.Add(leftContainer);
 
-            // Right Side: tester panel
             var rightContainer = new VisualElement { style = { width = new Length(40, LengthUnit.Percent), paddingLeft = 12, paddingRight = 12, paddingTop = 10, paddingBottom = 10 } };
             var testerTitle = new Label("SIGNAL PLAY-MODE TESTER") { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 12, color = new StyleColor(Color.gray), marginBottom = 10 } };
             rightContainer.Add(testerTitle);
@@ -128,14 +205,103 @@ namespace Nexus.Editor
 
             rightContainer.Add(_testerPanel);
             splitView.Add(rightContainer);
-            _view.Add(splitView);
+            _tabContent.Add(splitView);
 
-            ScanExplorerAndPopulate();
+            FilterAndPopulateExplorerRows();
+            RefreshTesterView();
+        }
 
-            // Hook playmode state changes to update the target context dropdown
-            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+        private void BuildLiveModelsTab()
+        {
+            var container = new ScrollView { style = { flexGrow = 1, paddingLeft = 10, paddingRight = 10, paddingTop = 10 } };
+            
+            if (!Application.isPlaying)
+            {
+                container.Add(new Label("Live Models are only available in Play Mode.") { style = { color = NexusEditorStyles.TextSecondary, fontStyle = FontStyle.Italic } });
+                _tabContent.Add(container);
+                return;
+            }
 
-            return _view;
+            var activeContexts = NexusRuntime.ActiveContexts;
+            if (activeContexts.Count == 0)
+            {
+                container.Add(new Label("No active Contexts found.") { style = { color = NexusEditorStyles.TextSecondary } });
+                _tabContent.Add(container);
+                return;
+            }
+
+            var refreshBtn = NexusEditorStyles.CreateButton("Refresh Data", RenderTab, NexusEditorStyles.BtnBlue);
+            refreshBtn.style.alignSelf = Align.FlexStart;
+            refreshBtn.style.marginBottom = 10;
+            container.Add(refreshBtn);
+
+            foreach (var ctx in activeContexts)
+            {
+                if (ctx is not Context castedCtx) continue;
+                var contextData = castedCtx.ContextData;
+                string ctxName = contextData != null ? contextData.name.Replace("ContextData", "") : "Unnamed Context";
+
+                var foldout = new Foldout { text = $"Context: {ctxName} ({castedCtx.ScopeTag})", value = true };
+                foldout.style.backgroundColor = new StyleColor(NexusEditorStyles.PanelBg);
+                foldout.style.borderBottomWidth = 1;
+                foldout.style.borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor);
+                foldout.style.marginBottom = 5;
+                foldout.style.paddingLeft = 5;
+                foldout.style.paddingTop = 5;
+
+                var containerField = typeof(NexusDI).GetField("_bindings", BindingFlags.NonPublic | BindingFlags.Instance);
+                if (containerField != null)
+                {
+                    var bindings = containerField.GetValue(castedCtx.Container) as System.Collections.IDictionary;
+                    if (bindings != null)
+                    {
+                        foreach (System.Collections.DictionaryEntry entry in bindings)
+                        {
+                            Type interfaceType = entry.Key as Type;
+                            object bindingObj = entry.Value;
+                            
+                            var instanceProp = bindingObj.GetType().GetProperty("Instance", BindingFlags.Public | BindingFlags.Instance);
+                            if (instanceProp != null)
+                            {
+                                object instance = instanceProp.GetValue(bindingObj);
+                                if (instance != null)
+                                {
+                                    if (instance is IContext || instance is NexusDI || instance is CommandPoolManager || instance is ISignalBus)
+                                        continue;
+
+                                    var instanceType = instance.GetType();
+                                    
+                                    var modelFoldout = new Foldout { text = $"{interfaceType.Name} -> {instanceType.Name}", value = false };
+                                    modelFoldout.style.marginLeft = 15;
+                                    modelFoldout.style.color = new StyleColor(NexusEditorStyles.AccentGreen);
+
+                                    var props = instanceType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+                                    foreach (var prop in props)
+                                    {
+                                        if (!prop.CanRead) continue;
+                                        try
+                                        {
+                                            object val = prop.GetValue(instance);
+                                            string valStr = val != null ? val.ToString() : "null";
+                                            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15 } };
+                                            row.Add(new Label(prop.Name) { style = { width = 150, color = NexusEditorStyles.TextSecondary } });
+                                            row.Add(new Label(valStr) { style = { color = Color.white } });
+                                            modelFoldout.Add(row);
+                                        }
+                                        catch { }
+                                    }
+                                    
+                                    foldout.Add(modelFoldout);
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                container.Add(foldout);
+            }
+
+            _tabContent.Add(container);
         }
 
         public override void OnDisable()
