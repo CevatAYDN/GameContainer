@@ -17,7 +17,7 @@ namespace Nexus.Editor
     {
         public override string Id => "GameManager";
         public override string DisplayName => "Game Manager";
-        public override int Order => 2;
+        public override int Order => 6;
 
         // ─── Categories ────────────────────────────────────────
         private enum Section { Overview, Contexts, Models, Signals, Commands, Views, Services, Live, SignalTest }

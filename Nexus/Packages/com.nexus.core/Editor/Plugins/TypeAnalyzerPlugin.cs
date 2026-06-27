@@ -13,7 +13,7 @@ namespace Nexus.Editor
     {
         public override string Id => "TypeAnalyzer";
         public override string DisplayName => "Type Analyzer";
-        public override int Order => 5;
+        public override int Order => 7;
 
         private TextField _searchField;
         private ScrollView _scrollView;
@@ -58,15 +58,32 @@ namespace Nexus.Editor
 
             // Toolbar
             var toolbar = NexusEditorStyles.CreateToolbar("TYPE COUPLING ANALYZER");
+            view.Add(toolbar);
+
+            // Filter bar (separate from toolbar — keeps title distinct from controls)
+            var filterBar = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    paddingLeft = 10,
+                    paddingRight = 10,
+                    paddingTop = 6,
+                    paddingBottom = 6,
+                    borderBottomWidth = 1,
+                    borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor),
+                    alignItems = Align.Center
+                }
+            };
 
             _searchField = new TextField("Type Name") { value = _searchedTypeName, style = { flexGrow = 1, color = Color.white } };
-            toolbar.Add(_searchField);
+            filterBar.Add(_searchField);
 
             var analyzeButton = NexusEditorStyles.CreateButton("Analyze", AnalyzeType, NexusEditorStyles.BtnGray);
             analyzeButton.style.marginLeft = 10;
-            toolbar.Add(analyzeButton);
+            filterBar.Add(analyzeButton);
 
-            view.Add(toolbar);
+            view.Add(filterBar);
 
             // Scrollview
             _scrollView = new ScrollView

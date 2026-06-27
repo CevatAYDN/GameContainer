@@ -102,7 +102,7 @@ namespace Nexus.Editor
                     }
                     else continue;
 
-                    if (rawValue is ModelData value && value != null && value.name == modelData.name)
+                    if (rawValue is ModelData value && value != null && ReferenceEquals(value, modelData))
                     {
                         if (hasClassLiveReload || member.GetCustomAttribute<LiveReloadAttribute>() != null)
                         {

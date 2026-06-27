@@ -157,6 +157,17 @@ namespace Nexus.Editor
 
         private void DrawGraph(Dictionary<Type, List<Type>> mappings)
         {
+            if (mappings == null || mappings.Count == 0)
+            {
+                _graphView.ClearGraph();
+                var emptyLabel = new Label("No signal mappings found. Define [SignalHandler] commands or enter Play Mode to see runtime registrations.")
+                {
+                    style = { color = new StyleColor(NexusEditorStyles.TextSecondary), alignSelf = Align.Center, marginTop = 30 }
+                };
+                _graphView.Add(emptyLabel);
+                return;
+            }
+
             int yOffset = 0;
             foreach (var kvp in mappings)
             {

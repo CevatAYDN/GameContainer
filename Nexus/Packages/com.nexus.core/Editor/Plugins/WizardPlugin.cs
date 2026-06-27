@@ -617,10 +617,23 @@ namespace Nexus.Editor
 
         private void ValidateViewGenForm(TextField field)
         {
-            var btn = _subTabContent.Q<Button>();
-            if (btn != null)
+            // Find the "Generate" button specifically, not the first button (which could be Browse).
+            var genBtn = _subTabContent.Q<Button>(className: "nexus-btn");
+            if (genBtn == null)
             {
-                btn.SetEnabled(!string.IsNullOrWhiteSpace(_wizardViewName));
+                // Fallback: find by text content
+                foreach (var child in _subTabContent.Children())
+                {
+                    if (child is Button btn && btn.text.StartsWith("Generate"))
+                    {
+                        genBtn = btn;
+                        break;
+                    }
+                }
+            }
+            if (genBtn != null)
+            {
+                genBtn.SetEnabled(!string.IsNullOrWhiteSpace(_wizardViewName));
             }
         }
 
