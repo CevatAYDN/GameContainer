@@ -75,9 +75,19 @@ namespace Nexus.Editor
                     continue;
                 }
 
-                foreach (var type in assembly.GetTypes())
+                Type[] types;
+                try
                 {
-                    if (type.IsClass && !type.IsAbstract)
+                    types = assembly.GetTypes();
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    types = ex.Types;
+                }
+
+                foreach (var type in types)
+                {
+                    if (type != null && type.IsClass && !type.IsAbstract)
                     {
                         var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
                         foreach (var attr in attrs)

@@ -113,19 +113,24 @@ namespace Nexus.Editor
                         assemblyName.StartsWith("Microsoft.") || assemblyName.StartsWith("nunit") || assemblyName.Contains("Editor"))
                         continue;
 
+                    Type[] types;
                     try
                     {
-                        var types = assembly.GetTypes();
-                        foreach (var t in types)
+                        types = assembly.GetTypes();
+                    }
+                    catch (ReflectionTypeLoadException ex)
+                    {
+                        types = ex.Types;
+                    }
+
+                    foreach (var t in types)
+                    {
+                        if (t != null && (t.Name.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase) || t.FullName.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase)))
                         {
-                            if (t.Name.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase) || t.FullName.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase))
-                            {
-                                targetType = t;
-                                break;
-                            }
+                            targetType = t;
+                            break;
                         }
                     }
-                    catch (ReflectionTypeLoadException) { }
                     if (targetType != null) break;
                 }
 
@@ -189,8 +194,19 @@ namespace Nexus.Editor
 
                 try
                 {
-                    foreach (var type in assembly.GetTypes())
+                    Type[] types;
+                    try
                     {
+                        types = assembly.GetTypes();
+                    }
+                    catch (ReflectionTypeLoadException ex)
+                    {
+                        types = ex.Types;
+                    }
+
+                    foreach (var type in types)
+                    {
+                        if (type == null) continue;
                         // Scan [Inject] fields
                         var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                         foreach (var f in fields)
