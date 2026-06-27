@@ -22,7 +22,7 @@ namespace Nexus.Editor
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.Contains("Test") || name.Contains("test"))
                     continue;
 
                 try
@@ -134,16 +134,16 @@ namespace Nexus.Editor
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var f in fields)
                 {
-                    if (f.GetCustomAttribute<InjectAttribute>() != null)
+                    if (f.GetCustomAttribute<InjectAttribute>() != null && !f.FieldType.IsValueType)
                     {
                         if (f.IsPublic)
                         {
-                            sb.AppendLine($"                instance.{f.Name} = di.Resolve<{f.FieldType.FullName}>();");
+                            sb.AppendLine($"                instance.{f.Name} = di.Resolve<{f.FieldType.FullName.Replace("+", ".")}>();");
                         }
                         else
                         {
                             // Private field fallback via reflection, but compile-time cached / warning
-                            sb.AppendLine($"                typeof({fullName}).GetField(\"{f.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(instance, di.Resolve<{f.FieldType.FullName}>());");
+                            sb.AppendLine($"                typeof({fullName}).GetField(\"{f.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(instance, di.Resolve<{f.FieldType.FullName.Replace("+", ".")}>());");
                         }
                     }
                 }
@@ -152,18 +152,18 @@ namespace Nexus.Editor
                 var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var p in properties)
                 {
-                    if (p.GetCustomAttribute<InjectAttribute>() != null)
+                    if (p.GetCustomAttribute<InjectAttribute>() != null && !p.PropertyType.IsValueType)
                     {
                         var setMethod = p.GetSetMethod(true);
                         if (setMethod != null)
                         {
                             if (setMethod.IsPublic)
                             {
-                                sb.AppendLine($"                instance.{p.Name} = di.Resolve<{p.PropertyType.FullName}>();");
+                                sb.AppendLine($"                instance.{p.Name} = di.Resolve<{p.PropertyType.FullName.Replace("+", ".")}>();");
                             }
                             else
                             {
-                                sb.AppendLine($"                typeof({fullName}).GetProperty(\"{p.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(instance, di.Resolve<{p.PropertyType.FullName}>());");
+                                sb.AppendLine($"                typeof({fullName}).GetProperty(\"{p.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).SetValue(instance, di.Resolve<{p.PropertyType.FullName.Replace("+", ".")}>());");
                             }
                         }
                     }
@@ -175,11 +175,20 @@ namespace Nexus.Editor
                 {
                     if (m.GetCustomAttribute<InjectAttribute>() != null)
                     {
+                        bool hasValueTypeParams = false;
                         var paramList = new List<string>();
                         foreach (var p in m.GetParameters())
                         {
-                            paramList.Add($"di.Resolve<{p.ParameterType.FullName}>()");
+                            if (p.ParameterType.IsValueType)
+                            {
+                                hasValueTypeParams = true;
+                                break;
+                            }
+                            paramList.Add($"di.Resolve<{p.ParameterType.FullName.Replace("+", ".")}>()");
                         }
+                        
+                        if (hasValueTypeParams) continue;
+
                         if (m.IsPublic)
                         {
                             sb.AppendLine($"                instance.{m.Name}({string.Join(", ", paramList)});");
