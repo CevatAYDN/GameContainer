@@ -130,7 +130,6 @@ namespace Nexus.Editor
             foreach (var (s, label, color) in sections)
             {
                 var btn = new Button(() => SelectSection(s));
-                btn.text = label;
                 btn.name = $"gm_{s}";
                 btn.style.unityFontStyleAndWeight = FontStyle.Bold;
                 btn.style.fontSize = 10;
@@ -140,6 +139,7 @@ namespace Nexus.Editor
                 btn.style.paddingBottom = 5;
                 btn.style.marginLeft = 2;
                 btn.style.marginRight = 2;
+                btn.style.marginBottom = 4;
                 btn.style.borderTopLeftRadius = 4;
                 btn.style.borderTopRightRadius = 4;
                 btn.style.borderBottomLeftRadius = 4;
@@ -149,11 +149,19 @@ namespace Nexus.Editor
                 btn.style.borderLeftWidth = 0;
                 btn.style.borderRightWidth = 0;
                 btn.style.backgroundColor = new StyleColor(Color.clear);
-                btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
+                btn.style.flexShrink = 0;
+                btn.style.alignItems = Align.Center;
+                btn.style.flexDirection = FlexDirection.Row;
 
-                // Colored dot
+                // Colored dot — do NOT use btn.text = label; add explicit Label child
+                // so dot and text share the same flex layout (Button + text property
+                // uses a separate rendering path from child elements, causing misalignment).
                 var dot = NexusEditorStyles.CreateStatusDot(color, 6);
-                btn.Insert(0, dot);
+                btn.Add(dot);
+
+                var txtLabel = new Label(label);
+                txtLabel.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
+                btn.Add(txtLabel);
 
                 _breadcrumb.Add(btn);
                 _sectionButtons[s] = btn;
@@ -178,9 +186,15 @@ namespace Nexus.Editor
                 kvp.Value.style.backgroundColor = active
                     ? new StyleColor(NexusEditorStyles.HighlightBg)
                     : new StyleColor(Color.clear);
-                kvp.Value.style.color = active
-                    ? new StyleColor(NexusEditorStyles.AccentBlue)
-                    : new StyleColor(NexusEditorStyles.TextPrimary);
+
+                // Find the explicit Label child (we no longer use btn.text = label)
+                var txtLabel = kvp.Value.Q<Label>();
+                if (txtLabel != null)
+                {
+                    txtLabel.style.color = active
+                        ? new StyleColor(NexusEditorStyles.AccentBlue)
+                        : new StyleColor(NexusEditorStyles.TextPrimary);
+                }
             }
         }
 
