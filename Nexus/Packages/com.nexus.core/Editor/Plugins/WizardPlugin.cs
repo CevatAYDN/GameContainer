@@ -727,8 +727,8 @@ namespace Nexus.Editor
 
             EnsureFolderExists(_wizardSettingsPath);
 
-            string path = Path.Combine(_wizardSettingsPath, $"{contextName}ContextData.asset");
-            AssetDatabase.CreateAsset(contextData, path);
+            string assetPath = Path.Combine(_wizardSettingsPath, $"{contextName}ContextData.asset");
+            AssetDatabase.CreateAsset(contextData, assetPath);
             AssetDatabase.SaveAssets();
 
             var serializedRoot = new SerializedObject(root);

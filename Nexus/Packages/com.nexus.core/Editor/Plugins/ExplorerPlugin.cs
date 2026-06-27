@@ -217,7 +217,7 @@ namespace Nexus.Editor
             
             if (!Application.isPlaying)
             {
-                container.Add(new Label("Live Models are only available in Play Mode.") { style = { color = NexusEditorStyles.TextSecondary, fontStyle = FontStyle.Italic } });
+                container.Add(new Label("Live Models are only available in Play Mode.") { style = { color = NexusEditorStyles.TextSecondary, unityFontStyleAndWeight = FontStyle.Italic } });
                 _tabContent.Add(container);
                 return;
             }
@@ -242,7 +242,7 @@ namespace Nexus.Editor
                 string ctxName = contextData != null ? contextData.name.Replace("ContextData", "") : "Unnamed Context";
 
                 var foldout = new Foldout { text = $"Context: {ctxName} ({castedCtx.ScopeTag})", value = true };
-                foldout.style.backgroundColor = new StyleColor(NexusEditorStyles.PanelBg);
+                foldout.style.backgroundColor = new StyleColor(NexusEditorStyles.CardBg);
                 foldout.style.borderBottomWidth = 1;
                 foldout.style.borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor);
                 foldout.style.marginBottom = 5;
@@ -278,7 +278,7 @@ namespace Nexus.Editor
                                     var props = instanceType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
                                     foreach (var prop in props)
                                     {
-                                        if (!prop.CanRead) continue;
+                                        if (!prop.CanRead || prop.GetIndexParameters().Length > 0) continue;
                                         try
                                         {
                                             object val = prop.GetValue(instance);

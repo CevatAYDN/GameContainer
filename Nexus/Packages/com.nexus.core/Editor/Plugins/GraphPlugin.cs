@@ -20,8 +20,8 @@ namespace Nexus.Editor
         private SignalGraphView _graphView;
         
         // Cache to colorize nodes during trace
-        private Dictionary<Type, Node> _signalNodes = new();
-        private Dictionary<Type, Node> _handlerNodes = new();
+        private Dictionary<string, Node> _signalNodes = new();
+        private Dictionary<string, Node> _handlerNodes = new();
 
         public override VisualElement CreateView()
         {
@@ -100,14 +100,14 @@ namespace Nexus.Editor
 
                 var signalNode = _graphView.CreateSignalNode(signalType.Name, new Vector2(100, yOffset));
                 _graphView.AddElement(signalNode);
-                _signalNodes[signalType] = signalNode;
+                _signalNodes[signalType.Name] = signalNode;
 
                 int handlerYOffset = yOffset;
                 foreach (var handlerType in handlerTypes)
                 {
                     var handlerNode = _graphView.CreateHandlerNode(handlerType.Name, new Vector2(400, handlerYOffset));
                     _graphView.AddElement(handlerNode);
-                    _handlerNodes[handlerType] = handlerNode;
+                    _handlerNodes[handlerType.Name] = handlerNode;
 
                     var edge = _graphView.ConnectNodes(signalNode.outputContainer.Q<Port>(), handlerNode.inputContainer.Q<Port>());
                     if (edge != null)
@@ -122,19 +122,17 @@ namespace Nexus.Editor
 
         public void Write(in TraceEvent traceEvent)
         {
-            if (traceEvent.Type == TraceEventType.SignalFired)
+            if (traceEvent.Type == TraceEventType.Signal)
             {
-                Type type = traceEvent.TargetType;
-                if (type != null && _signalNodes.TryGetValue(type, out var node))
+                if (_signalNodes.TryGetValue(traceEvent.TypeName, out var node))
                 {
                     // Basic animation/highlight effect
                     HighlightNode(node, new Color(0.2f, 0.8f, 0.2f, 0.8f));
                 }
             }
-            else if (traceEvent.Type == TraceEventType.CommandExecuted)
+            else if (traceEvent.Type == TraceEventType.Command)
             {
-                Type type = traceEvent.TargetType;
-                if (type != null && _handlerNodes.TryGetValue(type, out var node))
+                if (_handlerNodes.TryGetValue(traceEvent.TypeName, out var node))
                 {
                     HighlightNode(node, new Color(0.2f, 0.8f, 0.8f, 0.8f));
                 }
@@ -183,7 +181,7 @@ namespace Nexus.Editor
             
             node.mainContainer.style.backgroundColor = new StyleColor(new Color(0.2f, 0.4f, 0.2f, 0.8f));
 
-            var outputPort = InstantiatePort(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(bool));
+            var outputPort = node.InstantiatePort(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(bool));
             outputPort.portName = "Fires";
             node.outputContainer.Add(outputPort);
 
@@ -201,7 +199,7 @@ namespace Nexus.Editor
 
             node.mainContainer.style.backgroundColor = new StyleColor(new Color(0.2f, 0.3f, 0.5f, 0.8f));
 
-            var inputPort = InstantiatePort(Orientation.Horizontal, Direction.Input, Port.Capacity.Multi, typeof(bool));
+            var inputPort = node.InstantiatePort(Orientation.Horizontal, Direction.Input, Port.Capacity.Multi, typeof(bool));
             inputPort.portName = "Listens";
             node.inputContainer.Add(inputPort);
 

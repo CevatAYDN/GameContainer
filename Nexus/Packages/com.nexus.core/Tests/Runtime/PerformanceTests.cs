@@ -19,11 +19,10 @@ namespace Nexus.Tests
             public PerfSignal(int index) => Index = index;
         }
 
-        public class PerfCommand : ICommand
+        public class PerfCommand : ICommand<PerfSignal>
         {
             public static int ExecutionCount;
-            public PerfSignal Signal;
-            public void Execute() { ExecutionCount++; }
+            public void Execute(PerfSignal signal) { ExecutionCount++; }
         }
 
         [SetUp]

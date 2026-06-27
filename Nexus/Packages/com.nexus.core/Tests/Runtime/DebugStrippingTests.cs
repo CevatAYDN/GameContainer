@@ -19,6 +19,9 @@ namespace Nexus.Tests
         [Test]
         public void Trace_WhenDebugSymbolNotPresent_StripsTracingOverhead()
         {
+#if NEXUS_DEBUG
+            Assert.Ignore("Test is only valid when NEXUS_DEBUG is not defined.");
+#else
             // Reset state
             NexusTrace.Reset();
             
@@ -48,6 +51,7 @@ namespace Nexus.Tests
             {
                 NexusTrace.RemoveSink(sink);
             }
+#endif
         }
     }
 }

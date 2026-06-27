@@ -24,6 +24,7 @@ namespace Nexus.Editor
             { "Hierarchy", new Color(0.4f, 1f, 0.4f) },     // AccentGreen
             { "Explorer", new Color(0.8f, 0.6f, 0.9f) },    // AccentPurple
             { "Tracer", new Color(1f, 0.7f, 0.2f) },        // AccentOrange
+            { "Graph", new Color(0.9f, 0.4f, 0.4f) },       // AccentRed
             { "TypeAnalyzer", new Color(0.6f, 0.6f, 0.6f) },// TextSecondary
         };
 
