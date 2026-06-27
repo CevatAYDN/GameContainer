@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
@@ -70,6 +71,29 @@ namespace Nexus.Core
         void BindModel<TImplementation>() where TImplementation : class;
         void BindModelInstance<TInterface>(TInterface instance) where TInterface : class;
         
+        /// <summary>
+        /// Binds a reactive model (implements <see cref="IReactiveModel"/>) as a singleton.
+        /// After configuration, the Nexus runtime automatically calls <see cref="IReactiveModel.OnBind"/>
+        /// on all registered reactive models.
+        /// </summary>
+        void BindReactiveModel<TInterface, TImplementation>() 
+            where TImplementation : class, TInterface, IReactiveModel;
+
+        /// <summary>Binds a self-referencing reactive model as a singleton.</summary>
+        void BindReactiveModel<TImplementation>() 
+            where TImplementation : class, IReactiveModel;
+        
+        /// <summary>
+        /// Binds a service interface to its implementation. Services implement <see cref="INexusService"/>
+        /// and receive automatic lifecycle management (initialization + disposal).
+        /// </summary>
+        void BindService<TInterface, TImplementation>() 
+            where TImplementation : class, TInterface, INexusService;
+
+        /// <summary>Binds a self-referencing service as a singleton.</summary>
+        void BindService<TImplementation>() 
+            where TImplementation : class, INexusService;
+        
         void Bind<TInterface, TImplementation>() where TImplementation : class, TInterface;
         void Bind<T>() where T : class;
         void BindInstance<T>(T instance) where T : class;
@@ -96,6 +120,7 @@ namespace Nexus.Core
     {
         ISignalBus SignalBus { get; }
         CancellationToken LifetimeToken { get; }
+        string ScopeTag { get; }
         void RegisterView(IView view);
         void UnregisterView(IView view);
         T Resolve<T>() where T : class;
@@ -106,10 +131,32 @@ namespace Nexus.Core
 
     public interface ISignalBus
     {
+        /// <summary>
+        /// Enumerates all signal→handler registrations (from fluent API + attributes).
+        /// Key is signal Type; value is the list of registered command handlers.
+        /// Empty if the context has not been configured yet.
+        /// </summary>
+        IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers { get; }
+
         void Fire<T>(T signal) where T : struct;
         ValueTask FireAsync<T>(T signal) where T : struct;
         void FireThreadSafe<T>(T signal) where T : struct;
         void FireNextFrame<T>(T signal) where T : struct;
+
+        /// <summary>
+        /// Fires a signal asynchronously with a timeout. If the command chain does not complete
+        /// within the specified milliseconds, a <see cref="OperationCanceledException"/> is thrown.
+        /// </summary>
+        /// <param name="signal">The signal data.</param>
+        /// <param name="timeoutMilliseconds">Maximum execution time in milliseconds.</param>
+        ValueTask FireAsyncWithTimeout<T>(T signal, int timeoutMilliseconds) where T : struct;
+
+        /// <summary>
+        /// Fires a signal asynchronously without awaiting the result. Errors are logged by default;
+        /// provide an <paramref name="onError"/> callback for custom error handling.
+        /// </summary>
+        void FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct;
+
         ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct;
         ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct;
     }

@@ -75,6 +75,27 @@ namespace Nexus.Core
 
         public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers => _commandHandlers;
 
+        /// <summary>
+        /// Returns all registered signal→handler mappings.
+        /// Populated by both fluent API (BindSignal/To) and attribute-based discovery.
+        /// </summary>
+        public IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers
+        {
+            get
+            {
+                // Allocate-once wrapper: SignalBus is fully configured before runtime use
+                if (_cachedRegistered == null)
+                {
+                    var dict = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>(_commandHandlers.Count);
+                    foreach (var kvp in _commandHandlers)
+                        dict[kvp.Key] = kvp.Value;
+                    _cachedRegistered = dict;
+                }
+                return _cachedRegistered;
+            }
+        }
+        private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _cachedRegistered;
+
         private readonly Dictionary<Type, SubscriptionNode> _subscriptions = new();
         private readonly object _subLock = new();
         private bool _pendingCleanups;
@@ -221,6 +242,40 @@ namespace Nexus.Core
         {
             var hybridQueue = _container.Resolve<HybridQueue>();
             hybridQueue.EnqueueNextFrame(signal);
+        }
+
+        public async ValueTask FireAsyncWithTimeout<T>(T signal, int timeoutMilliseconds) where T : struct
+        {
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_context.LifetimeToken);
+            timeoutCts.CancelAfter(timeoutMilliseconds);
+            try
+            {
+                await FireInternalAsync(signal, isCrossContextSource: false, timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (!_context.LifetimeToken.IsCancellationRequested)
+            {
+                UnityEngine.Debug.LogError($"[Nexus] Async signal '{typeof(T).Name}' timed out after {timeoutMilliseconds}ms.");
+                throw;
+            }
+        }
+
+        public async void FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct
+        {
+            try
+            {
+                await FireInternalAsync(signal, isCrossContextSource: false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                if (onError != null)
+                {
+                    onError(ex);
+                }
+                else
+                {
+                    UnityEngine.Debug.LogError($"[Nexus] FireAsyncAndForget signal '{typeof(T).Name}' failed: {ex.Message}");
+                }
+            }
         }
 
         public ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct
@@ -488,7 +543,16 @@ namespace Nexus.Core
 
         private async ValueTask FireInternalAsync<T>(T signal, bool isCrossContextSource) where T : struct
         {
+            await FireInternalAsync(signal, isCrossContextSource, _context.LifetimeToken);
+        }
+
+        private async ValueTask FireInternalAsync<T>(T signal, bool isCrossContextSource, CancellationToken ct) where T : struct
+        {
             s_stackDepth++;
+
+            // Capture the command-scoped token for use in the nested scopes below.
+            // This allows FireAsyncWithTimeout to cancel command execution via a linked token.
+            var commandCt = ct;
             if (s_stackDepth > MaxStackDepth)
             {
                 s_stackDepth = 0;
@@ -580,7 +644,7 @@ namespace Nexus.Core
                         {
                             for (int i = 0; i < taskCount; i++)
                             {
-                                tasks[i] = ExecuteCommandAsync(handlers[i], signal, _context.LifetimeToken).AsTask();
+                                tasks[i] = ExecuteCommandAsync(handlers[i], signal, commandCt).AsTask();
                             }
                             
                             for (int i = 0; i < taskCount; i++)
@@ -600,7 +664,7 @@ namespace Nexus.Core
                         {
                             if (handler.IsAsync)
                             {
-                                await ExecuteCommandAsync(handler, signal, _context.LifetimeToken);
+                                await ExecuteCommandAsync(handler, signal, commandCt);
                             }
                             else
                             {

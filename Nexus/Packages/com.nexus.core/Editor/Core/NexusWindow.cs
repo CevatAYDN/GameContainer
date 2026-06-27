@@ -26,6 +26,8 @@ namespace Nexus.Editor
             { "Tracer", new Color(1f, 0.7f, 0.2f) },        // AccentOrange
             { "Graph", new Color(0.9f, 0.4f, 0.4f) },       // AccentRed
             { "TypeAnalyzer", new Color(0.6f, 0.6f, 0.6f) },// TextSecondary
+            { "GameManager", new Color(0.3f, 1f, 0.8f) },   // AccentTeal
+            { "Help", new Color(0.6f, 0.6f, 1f) },         // AccentLavender
         };
 
         private List<INexusEditorPlugin> _plugins = new();

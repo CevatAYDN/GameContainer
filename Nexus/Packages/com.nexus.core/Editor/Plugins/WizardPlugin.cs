@@ -18,9 +18,10 @@ namespace Nexus.Editor
         private enum SubTab
         {
             CreateRoot = 0,
-            ViewMediatorGen = 1,
-            CleanDeletion = 2,
-            SignalCommandGen = 3
+            ServiceGen = 1,
+            ViewMediatorGen = 2,
+            CleanDeletion = 3,
+            SignalCommandGen = 4
         }
 
         // Custom path inputs
@@ -40,6 +41,9 @@ namespace Nexus.Editor
         private bool _wizardModAds = false;
         private bool _wizardModAnalytics = false;
         private bool _wizardModInventory = false;
+
+        // Inputs for Service Gen
+        private string _wizardServiceName = "PlayerDataService";
 
         // Inputs for View/Mediator Gen
         private string _wizardViewName = "GameplayHUD";
@@ -81,11 +85,13 @@ namespace Nexus.Editor
             var tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
             
             var btnCreateRoot = CreateSubTabButton("Create Root", SubTab.CreateRoot);
+            var btnServiceGen = CreateSubTabButton("Service Gen", SubTab.ServiceGen);
             var btnViewGen = CreateSubTabButton("View/Mediator Gen", SubTab.ViewMediatorGen);
             var btnSignalCmdGen = CreateSubTabButton("Signal/Cmd Gen", SubTab.SignalCommandGen);
             var btnDelete = CreateSubTabButton("Clean Deletion", SubTab.CleanDeletion);
 
             tabHeader.Add(btnCreateRoot);
+            tabHeader.Add(btnServiceGen);
             tabHeader.Add(btnViewGen);
             tabHeader.Add(btnSignalCmdGen);
             tabHeader.Add(btnDelete);
@@ -174,6 +180,9 @@ namespace Nexus.Editor
             {
                 case SubTab.CreateRoot:
                     BuildCreateRootTab();
+                    break;
+                case SubTab.ServiceGen:
+                    BuildServiceGenTab();
                     break;
                 case SubTab.ViewMediatorGen:
                     BuildViewMediatorGenTab();
@@ -387,6 +396,32 @@ namespace Nexus.Editor
 
             var genBtn = NexusEditorStyles.CreateButton("Generate Signal & Command Files", RunGenerateSignalAndCommand, NexusEditorStyles.BtnBlue);
             genGroup.Add(genBtn);
+        }
+
+        private void BuildServiceGenTab()
+        {
+            var genGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "GENERATE SERVICE");
+            genGroup.style.marginBottom = 8;
+
+            var serviceNameField = new TextField("Service Name") { value = _wizardServiceName };
+            serviceNameField.RegisterValueChangedCallback(evt => { _wizardServiceName = evt.newValue; });
+            genGroup.Add(serviceNameField);
+
+            var serviceDescription = NexusEditorStyles.CreateHint(
+                "Generates an INexusService interface + NexusService<T> implementation " +
+                "with InitializeAsync and OnDispose lifecycle hooks.");
+            genGroup.Add(serviceDescription);
+
+            var genBtn = NexusEditorStyles.CreateButton("Generate Service Files", RunGenerateService, NexusEditorStyles.BtnBlue);
+            genGroup.Add(genBtn);
+
+            var advancedGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "SERVICE BINDING HELP");
+            var hint = NexusEditorStyles.CreateHint(
+                "In your Lifecycle's OnConfigure(IContextBuilder builder):\n" +
+                "  builder.BindService<I{ServiceName}, {ServiceName}>();\n\n" +
+                "Nexus auto-initializes all services in registration order after Configure().\n" +
+                "Services are disposed in reverse order when the context is torn down.");
+            advancedGroup.Add(hint);
         }
 
         private void BuildCleanDeletionTab()
@@ -860,6 +895,47 @@ namespace Nexus.Editor
             catch (Exception ex)
             {
                 Debug.LogError($"[Nexus] View/Mediator generation failed: {ex.Message}");
+            }
+        }
+
+        private void RunGenerateService()
+        {
+            if (string.IsNullOrWhiteSpace(_wizardServiceName))
+            {
+                EditorUtility.DisplayDialog("Error", "Service Name cannot be empty.", "OK");
+                return;
+            }
+
+            var targetRoot = _cachedSceneRoots.FirstOrDefault();
+            string contextName = targetRoot?.ContextData != null
+                ? targetRoot.ContextData.name.Replace("ContextData", "")
+                : "Gameplay";
+
+            string servicesDir = Path.Combine(_wizardScriptsPath, contextName, "Services");
+
+            try
+            {
+                EnsureFolderExists(servicesDir);
+
+                string servicePath = Path.Combine(servicesDir, $"{_wizardServiceName}.cs");
+
+                if (File.Exists(servicePath))
+                {
+                    if (!EditorUtility.DisplayDialog("Overwrite File?",
+                            $"File for {_wizardServiceName} already exists. Overwrite?", "Yes", "No"))
+                        return;
+                }
+
+                File.WriteAllText(servicePath,
+                    NexusTemplateProvider.GetGenericServiceBoilerplate(_wizardServiceName, contextName));
+
+                AssetDatabase.Refresh();
+                EditorUtility.DisplayDialog("Generated successfully",
+                    $"Successfully generated {_wizardServiceName} under {servicesDir}.", "OK");
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Nexus] Service generation failed: {ex.Message}");
             }
         }
 

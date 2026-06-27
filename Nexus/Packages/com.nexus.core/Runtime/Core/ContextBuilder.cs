@@ -1,71 +1,81 @@
 using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
-    /// <summary>
-    /// Default implementation of <see cref="IContextBuilder"/>.
-    /// Provides a fluent API for registering models, commands, and general bindings during context configuration.
-    /// </summary>
     [Preserve]
     public class ContextBuilder : IContextBuilder
     {
         private readonly NexusDI _container;
         private readonly SignalBus _signalBus;
+        private readonly List<Type> _reactiveModelTypes = new();
+        private readonly List<Type> _serviceTypes = new();
 
-        /// <summary>Creates a new <see cref="ContextBuilder"/> wrapping the given DI container and signal bus.</summary>
-        /// <param name="container">The DI container for binding models and services.</param>
-        /// <param name="signalBus">The signal bus for registering command handlers.</param>
         public ContextBuilder(NexusDI container, SignalBus signalBus)
         {
             _container = container;
             _signalBus = signalBus;
         }
 
-        /// <summary>Binds a model interface to its singleton implementation.</summary>
-        /// <typeparam name="TInterface">The model interface type.</typeparam>
-        /// <typeparam name="TImplementation">The concrete implementation type (must be a class).</typeparam>
         public void BindModel<TInterface, TImplementation>() where TImplementation : class, TInterface
         {
             _container.Bind<TInterface, TImplementation>(isSingleton: true);
         }
 
-        /// <summary>Binds a self-referencing model as a singleton.</summary>
-        /// <typeparam name="TImplementation">The concrete model type.</typeparam>
         public void BindModel<TImplementation>() where TImplementation : class
         {
             _container.Bind<TImplementation>(isSingleton: true);
         }
 
-        /// <summary>Binds an existing model instance by interface type.</summary>
-        /// <typeparam name="TInterface">The model interface type.</typeparam>
-        /// <param name="instance">The existing instance to bind.</param>
         public void BindModelInstance<TInterface>(TInterface instance) where TInterface : class
         {
             _container.BindInstance(instance);
         }
 
-        /// <summary>Binds an interface to its singleton implementation (general-purpose).</summary>
-        /// <typeparam name="TInterface">The service interface type.</typeparam>
-        /// <typeparam name="TImplementation">The concrete implementation type.</typeparam>
+        public void BindReactiveModel<TInterface, TImplementation>()
+            where TImplementation : class, TInterface, IReactiveModel
+        {
+            _container.Bind<TInterface, TImplementation>(isSingleton: true);
+            _reactiveModelTypes.Add(typeof(TImplementation));
+        }
+
+        public void BindReactiveModel<TImplementation>()
+            where TImplementation : class, IReactiveModel
+        {
+            _container.Bind<TImplementation>(isSingleton: true);
+            _reactiveModelTypes.Add(typeof(TImplementation));
+        }
+
         public void Bind<TInterface, TImplementation>() where TImplementation : class, TInterface
         {
             _container.Bind<TInterface, TImplementation>(isSingleton: true);
         }
 
-        /// <summary>Binds a self-referencing service as a singleton.</summary>
-        /// <typeparam name="T">The service type.</typeparam>
         public void Bind<T>() where T : class
         {
             _container.Bind<T>(isSingleton: true);
         }
 
-        /// <summary>Binds an existing instance by type.</summary>
-        /// <typeparam name="T">The service type.</typeparam>
-        /// <param name="instance">The existing instance to bind.</param>
         public void BindInstance<T>(T instance) where T : class
         {
             _container.BindInstance(instance);
+        }
+
+        public void BindService<TInterface, TImplementation>()
+            where TImplementation : class, TInterface, INexusService
+        {
+            _container.Bind<TInterface, TImplementation>(isSingleton: true);
+            _serviceTypes.Add(typeof(TImplementation));
+        }
+
+        public void BindService<TImplementation>()
+            where TImplementation : class, INexusService
+        {
+            _container.Bind<TImplementation>(isSingleton: true);
+            _serviceTypes.Add(typeof(TImplementation));
         }
 
         /// <summary>
@@ -119,15 +129,40 @@ namespace Nexus.Core
             return new CommandBindingBuilder<TSignal>(this);
         }
 
-        /// <summary>
-        /// Fires a signal immediately through the context's signal bus.
-        /// Convenience wrapper around <see cref="SignalBus.Fire{T}"/>.
-        /// </summary>
-        /// <typeparam name="T">The signal struct type.</typeparam>
-        /// <param name="signal">The signal data to fire.</param>
         public void Fire<T>(T signal) where T : struct
         {
             _signalBus.Fire(signal);
+        }
+
+        internal IReadOnlyList<Type> ReactiveModelTypes => _reactiveModelTypes;
+        internal IReadOnlyList<Type> ServiceTypes => _serviceTypes;
+
+        internal async ValueTask InitializeReactiveModelsAsync(ISignalBus signalBus, CancellationToken ct)
+        {
+            foreach (var modelType in _reactiveModelTypes)
+            {
+                if (ct.IsCancellationRequested) break;
+
+                var model = _container.Resolve(modelType) as IReactiveModel;
+                if (model != null)
+                {
+                    await model.OnBind(ct);
+                }
+            }
+        }
+
+        internal async ValueTask InitializeServicesAsync(CancellationToken ct)
+        {
+            foreach (var serviceType in _serviceTypes)
+            {
+                if (ct.IsCancellationRequested) break;
+
+                var service = _container.Resolve(serviceType) as INexusService;
+                if (service != null)
+                {
+                    await service.InitializeAsync(ct);
+                }
+            }
         }
     }
 

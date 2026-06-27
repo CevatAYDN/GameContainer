@@ -73,14 +73,13 @@ namespace Nexus.Samples
 
         public static string GetModelInterfaceBoilerplate(string contextName)
         {
-            return $@"using System;
+            return $@"using Nexus.Core;
 
 namespace Nexus
 {{
     public interface I{contextName}Model
     {{
-        int Counter {{ get; }}
-        event Action<int> OnCounterChanged;
+        ObservableProperty<int> Counter {{ get; }}
         void Increment(int amount);
     }}
 }}
@@ -89,21 +88,21 @@ namespace Nexus
 
         public static string GetModelImplementationBoilerplate(string contextName)
         {
-            return $@"using System;
-using UnityEngine;
+            return $@"using System.Threading;
+using System.Threading.Tasks;
+using Nexus.Core;
 
 namespace Nexus
 {{
-    public class {contextName}Model : I{contextName}Model
+    public class {contextName}Model : I{contextName}Model, IReactiveModel
     {{
-        public int Counter {{ get; private set; }}
-        public event Action<int> OnCounterChanged;
+        public readonly ObservableProperty<int> Counter = new(0);
+
+        public ValueTask OnBind(CancellationToken ct) => default;
 
         public void Increment(int amount)
         {{
-            Counter += amount;
-            Debug.Log($""[{{nameof({contextName}Model)}}] Counter changed to: {{Counter}}"");
-            OnCounterChanged?.Invoke(Counter);
+            Counter.Value += amount;
         }}
     }}
 }}
@@ -183,14 +182,17 @@ namespace Nexus
 
         protected override void OnBind()
         {{
-            Model.OnCounterChanged += OnModelCounterChanged;
+            Model.Counter.OnChanged((oldVal, newVal) =>
+            {{
+                View.UpdateCounterText(newVal);
+            }});
             View.UpdateCounterText(Model.Counter);
             View.OnButtonClicked += OnViewButtonClicked;
         }}
 
         protected override void OnUnbind()
         {{
-            if (Model != null) Model.OnCounterChanged -= OnModelCounterChanged;
+            Model.Counter.ClearOnChanged();
             if (View != null) View.OnButtonClicked -= OnViewButtonClicked;
         }}
 
@@ -198,10 +200,34 @@ namespace Nexus
         {{
             SignalBus.Fire(new {contextName}CounterSignal(1));
         }}
+    }}
+}}
+";
+        }
 
-        private void OnModelCounterChanged(int newValue)
+        public static string GetServiceBoilerplate(string serviceName, string contextName)
+        {
+            return $@"using System.Threading;
+using System.Threading.Tasks;
+using Nexus.Core;
+
+namespace Nexus
+{{
+    public interface I{serviceName} : INexusService
+    {{
+    }}
+
+    public class {serviceName} : NexusService<I{serviceName}>, I{serviceName}
+    {{
+        public override async ValueTask InitializeAsync(CancellationToken ct)
         {{
-            View.UpdateCounterText(newValue);
+            // Service initialization logic here
+            await Task.CompletedTask;
+        }}
+
+        public override void OnDispose()
+        {{
+            // Cleanup logic here
         }}
     }}
 }}
@@ -221,7 +247,13 @@ namespace Nexus
     {{
         public void OnConfigure(IContextBuilder builder)
         {{
-            builder.BindModel<I{contextName}Model, {contextName}Model>();
+            // Reactive model (auto-notifies views on property changes)
+            builder.BindReactiveModel<I{contextName}Model, {contextName}Model>();
+
+            // Managed service (initialized after configuration, disposed on shutdown)
+            // builder.BindService<IMyService, MyService>();
+
+            // Signal → Command binding
             builder.BindSignal<{contextName}CounterSignal>().To<{contextName}IncrementCommand>();
         }}
 
@@ -299,6 +331,33 @@ namespace Nexus
         public void Execute({signalName} signal)
         {{
             Debug.Log($""[{commandName}] Executed with message: {{signal.Message}}"");
+        }}
+    }}
+}}
+";
+        }
+
+        public static string GetGenericServiceBoilerplate(string serviceName, string contextName)
+        {
+            return $@"using System.Threading;
+using System.Threading.Tasks;
+using Nexus.Core;
+
+namespace Nexus
+{{
+    public interface I{serviceName} : INexusService
+    {{
+    }}
+
+    public class {serviceName} : NexusService<I{serviceName}>, I{serviceName}
+    {{
+        public override async ValueTask InitializeAsync(CancellationToken ct)
+        {{
+            await Task.CompletedTask;
+        }}
+
+        public override void OnDispose()
+        {{
         }}
     }}
 }}

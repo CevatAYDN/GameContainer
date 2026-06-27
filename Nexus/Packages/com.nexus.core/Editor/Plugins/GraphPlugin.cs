@@ -61,9 +61,61 @@ namespace Nexus.Editor
             _signalNodes.Clear();
             _handlerNodes.Clear();
 
-            // Scan assemblies for Handlers and map them
+            // Priority 1: Read registrations from live runtime contexts (Play Mode)
+            // This captures both fluent API and attribute-based bindings.
+            var runtimeMappings = CollectRuntimeMappings();
+            if (runtimeMappings != null)
+            {
+                DrawGraph(runtimeMappings);
+                return;
+            }
+
+            // Priority 2: Fall back to assembly scan for [SignalHandler] attributes
+            // (Editor Mode, no active contexts)
+            var attributeMappings = CollectAttributeMappings();
+            DrawGraph(attributeMappings);
+        }
+
+        /// <summary>
+        /// Reads signal→handler mappings from all active Nexus runtime contexts.
+        /// Returns null if no active contexts exist (e.g. Editor Mode, before Play Mode).
+        /// </summary>
+        private static Dictionary<Type, List<Type>> CollectRuntimeMappings()
+        {
+            var contexts = NexusRuntime.ActiveContexts;
+            if (contexts == null || contexts.Count == 0)
+                return null;
+
+            var mappings = new Dictionary<Type, List<Type>>();
+            foreach (var ctx in contexts)
+            {
+                var handlers = ctx.SignalBus.RegisteredHandlers;
+                if (handlers == null || handlers.Count == 0)
+                    continue;
+
+                foreach (var kvp in handlers)
+                {
+                    if (!mappings.ContainsKey(kvp.Key))
+                        mappings[kvp.Key] = new List<Type>();
+
+                    foreach (var info in kvp.Value)
+                    {
+                        if (info.CommandType != null && !mappings[kvp.Key].Contains(info.CommandType))
+                            mappings[kvp.Key].Add(info.CommandType);
+                    }
+                }
+            }
+            return mappings;
+        }
+
+        /// <summary>
+        /// Scans assemblies for [SignalHandler] attributes as a fallback.
+        /// Only detects attribute-based registration, not fluent API bindings.
+        /// </summary>
+        private static Dictionary<Type, List<Type>> CollectAttributeMappings()
+        {
             var assemblies = AppDomain.CurrentDomain.GetAssemblies();
-            var mappings = new Dictionary<Type, List<Type>>(); // SignalType -> List of HandlerTypes
+            var mappings = new Dictionary<Type, List<Type>>();
 
             foreach (var assembly in assemblies)
             {
@@ -100,8 +152,11 @@ namespace Nexus.Editor
                     }
                 }
             }
+            return mappings;
+        }
 
-            // Draw Nodes
+        private void DrawGraph(Dictionary<Type, List<Type>> mappings)
+        {
             int yOffset = 0;
             foreach (var kvp in mappings)
             {

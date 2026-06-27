@@ -79,18 +79,20 @@ namespace Nexus.Core
         public readonly object Signal;
         /// <summary>The number of retry attempts made (0 for first failure).</summary>
         public readonly int RetryCount;
+        /// <summary>True if the failure was caused by a timeout (OperationCanceledException from timeout).</summary>
+        public readonly bool IsTimeout;
 
         /// <summary>Creates a new <see cref="CommandFailureContext"/>.</summary>
-        /// <param name="exception">The exception that caused the failure.</param>
-        /// <param name="commandType">The type of command that failed.</param>
-        /// <param name="signal">The signal that triggered the command.</param>
-        /// <param name="retryCount">The number of retry attempts made.</param>
-        public CommandFailureContext(Exception exception, Type commandType, object signal, int retryCount)
+        public CommandFailureContext(Exception exception, Type commandType, object signal, int retryCount) : this(exception, commandType, signal, retryCount, false) { }
+
+        /// <summary>Creates a new <see cref="CommandFailureContext"/> with timeout info.</summary>
+        public CommandFailureContext(Exception exception, Type commandType, object signal, int retryCount, bool isTimeout)
         {
             Exception = exception;
             CommandType = commandType;
             Signal = signal;
             RetryCount = retryCount;
+            IsTimeout = isTimeout;
         }
     }
 }

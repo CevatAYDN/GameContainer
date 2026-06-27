@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
+using System.Threading.Tasks;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
@@ -15,6 +16,7 @@ namespace Nexus.Core
         private readonly ViewBinder _viewBinder;
         private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
         private readonly object _pluginsLock = new();
+        private ContextBuilder _builder;
         private bool _disposed;
 
         private class ScannedHandlerData
@@ -88,7 +90,7 @@ namespace Nexus.Core
 
         public void Configure()
         {
-            var builder = new ContextBuilder(Container, SignalBusInternal);
+            _builder = new ContextBuilder(Container, SignalBusInternal);
             
             // Auto-discover lifecycle class if not explicitly registered as a component
             if (!Container.IsRegistered(typeof(IContextLifecycle)))
@@ -115,11 +117,23 @@ namespace Nexus.Core
             if (Container.IsRegistered(typeof(IContextLifecycle)))
             {
                 var lifecycle = Container.Resolve<IContextLifecycle>();
-                lifecycle.OnConfigure(builder);
+                lifecycle.OnConfigure(_builder);
             }
 
             // Scan and register attributes
-            ScanAssembliesAndRegister(builder);
+            ScanAssembliesAndRegister(_builder);
+        }
+
+        internal async ValueTask InitializeReactiveModelsAsync(CancellationToken ct)
+        {
+            if (_builder != null)
+                await _builder.InitializeReactiveModelsAsync(SignalBus, ct);
+        }
+
+        internal async ValueTask InitializeServicesAsync(CancellationToken ct)
+        {
+            if (_builder != null)
+                await _builder.InitializeServicesAsync(ct);
         }
 
         private Type FindLifecycleTypeByConvention()
@@ -402,6 +416,24 @@ namespace Nexus.Core
                 catch (Exception ex)
                 {
                     UnityEngine.Debug.LogException(ex);
+                }
+            }
+
+            // Dispose all registered services in reverse order
+            if (_builder != null)
+            {
+                var serviceTypes = _builder.ServiceTypes;
+                for (int i = serviceTypes.Count - 1; i >= 0; i--)
+                {
+                    try
+                    {
+                        var service = Container.Resolve(serviceTypes[i]) as INexusService;
+                        service?.OnDispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        UnityEngine.Debug.LogException(ex);
+                    }
                 }
             }
 

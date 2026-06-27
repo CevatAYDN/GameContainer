@@ -159,6 +159,12 @@ namespace Nexus.Core
                     }
                 }
 
+                // Initialize reactive models (IReactiveModel.OnBind) after configuration
+                await Context.InitializeReactiveModelsAsync(Context.LifetimeToken);
+                
+                // Initialize services (INexusService.InitializeAsync)
+                await Context.InitializeServicesAsync(Context.LifetimeToken);
+
                 if (Context.Container.IsRegistered(typeof(IContextLifecycle)))
                 {
                     var lifecycle = Context.Container.Resolve<IContextLifecycle>();

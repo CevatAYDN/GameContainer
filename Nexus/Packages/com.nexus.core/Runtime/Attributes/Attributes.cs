@@ -116,6 +116,25 @@ namespace Nexus.Core
     }
 
     /// <summary>
+    /// Specifies an execution timeout for an async command.
+    /// If the command does not complete within the specified milliseconds,
+    /// the SignalBus cancels the execution via CancellationToken.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    [Preserve]
+    public sealed class CommandTimeoutAttribute : Attribute
+    {
+        /// <summary>Timeout in milliseconds.</summary>
+        public int Milliseconds { get; }
+
+        /// <param name="milliseconds">Maximum execution time in milliseconds.</param>
+        public CommandTimeoutAttribute(int milliseconds)
+        {
+            Milliseconds = milliseconds;
+        }
+    }
+
+    /// <summary>
     /// Specifies that a context lifecycle depends on another context lifecycle by its scope name.
     /// Helps build decentralized validation maps and prevents Git merge conflicts in monolit ContextData files.
     /// </summary>
