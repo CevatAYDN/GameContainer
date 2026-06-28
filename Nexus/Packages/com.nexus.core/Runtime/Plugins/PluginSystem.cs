@@ -95,6 +95,10 @@ namespace Nexus.Core
                 throw new UnauthorizedPluginAccessException($"Plugin '{_plugin.Manifest.Name}' is not authorized to register SignalInterceptors. Please declare SignalInterceptor capability in manifest.");
             }
             _interceptors.Add(interceptor);
+            if (_context is Context ctx)
+            {
+                ctx.IncrementInterceptorsCount();
+            }
         }
 
         public void RegisterCommandDecorator(ICommandDecorator decorator)
@@ -130,6 +134,13 @@ namespace Nexus.Core
             foreach (var sink in _traceSinks)
             {
                 NexusTrace.RemoveSink(sink);
+            }
+            if (_context is Context ctx)
+            {
+                for (int i = 0; i < _interceptors.Count; i++)
+                {
+                    ctx.DecrementInterceptorsCount();
+                }
             }
             _interceptors.Clear();
             _decorators.Clear();

@@ -15,9 +15,16 @@ namespace Nexus.Core
         private readonly CancellationTokenSource _cts = new();
         private readonly ViewBinder _viewBinder;
         private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
+        private volatile List<(INexusPlugin plugin, PluginContext context)> _pluginsReadOnlyCopy = new();
         private readonly object _pluginsLock = new();
+        private int _interceptorsCount;
         private ContextBuilder _builder;
         private bool _disposed;
+
+        public List<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
+        public bool HasInterceptors => _interceptorsCount > 0;
+        public void IncrementInterceptorsCount() => System.Threading.Interlocked.Increment(ref _interceptorsCount);
+        public void DecrementInterceptorsCount() => System.Threading.Interlocked.Decrement(ref _interceptorsCount);
 
         private class ScannedHandlerData
         {
@@ -371,6 +378,7 @@ namespace Nexus.Core
 
                 var pluginContext = new PluginContext(plugin, this);
                 _plugins.Add((plugin, pluginContext));
+                _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>(_plugins);
                 plugin.OnPluginRegistered(pluginContext);
             }
         }
@@ -394,6 +402,7 @@ namespace Nexus.Core
                 {
                     var p = _plugins[index];
                     _plugins.RemoveAt(index);
+                    _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>(_plugins);
                     p.context.Clear();
                     p.plugin.OnPluginRemoved();
                 }
@@ -439,20 +448,27 @@ namespace Nexus.Core
 
             _viewBinder.Dispose();
 
-            // Clean up plugins in reverse order
-            for (int i = _plugins.Count - 1; i >= 0; i--)
+            // Clean up plugins in reverse order under lock snapshot
+            List<(INexusPlugin plugin, PluginContext context)> pluginSnapshot;
+            lock (_pluginsLock)
+            {
+                pluginSnapshot = new List<(INexusPlugin plugin, PluginContext context)>(_plugins);
+                _plugins.Clear();
+                _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>();
+            }
+
+            for (int i = pluginSnapshot.Count - 1; i >= 0; i--)
             {
                 try
                 {
-                    _plugins[i].context.Clear();
-                    _plugins[i].plugin.OnPluginRemoved();
+                    pluginSnapshot[i].context.Clear();
+                    pluginSnapshot[i].plugin.OnPluginRemoved();
                 }
                 catch (Exception ex)
                 {
                     UnityEngine.Debug.LogException(ex);
                 }
             }
-            _plugins.Clear();
 
             NexusRuntime.UnregisterContext(this);
             
@@ -461,6 +477,14 @@ namespace Nexus.Core
             PoolManager.Clear();
             Container.Dispose();
             _cts.Dispose();
+        }
+
+        public static void ClearAssemblyScanCache()
+        {
+            lock (s_scanLock)
+            {
+                s_assemblyScanCache.Clear();
+            }
         }
     }
 }

@@ -47,13 +47,17 @@ Nexus is designed to solve debuggability and observability issues common in trad
 
 Nexus is a standalone **Unity Package Manager (UPM)** package. To integrate it into your project:
 
+> [!NOTE]
+> **Repository vs. Package Naming**
+> The root repository is named `GameContainer` because it serves as the parent container/monorepo for the game and architectural modules. However, the package is named `com.nexus.core` to ensure clean, decoupled modularity inside the Unity Package Manager.
+
 1. Open your project's `Packages/manifest.json` file.
 2. Add the Git URL or local disk path of the package to the `dependencies` block:
 
 ```json
 {
   "dependencies": {
-    "com.nexus.core": "https://github.com/<username>/<repo>.git?path=Nexus/Packages/com.nexus.core",
+    "com.nexus.core": "https://github.com/CevatAYDN/Pixel-Flow-Clone.git?path=GameContainer/Nexus/Packages/com.nexus.core",
     ...
   }
 }

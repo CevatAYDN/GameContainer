@@ -168,6 +168,8 @@ namespace Nexus.Core
 
         [ThreadStatic]
         private static HashSet<Type> s_resolutionStack;
+        [ThreadStatic]
+        private static HashSet<Type> s_constructingSingletons;
 
         private class Binding
         {
@@ -211,12 +213,21 @@ namespace Nexus.Core
 
         public void BindInstance<T>(T instance) where T : class
         {
+            BindInstance(instance, disposeWithContainer: true);
+        }
+
+        public void BindInstance<T>(T instance, bool disposeWithContainer) where T : class
+        {
             _bindings[typeof(T)] = new Binding
             {
                 ConcreteType = typeof(T),
                 Instance = instance,
                 IsSingleton = true
             };
+            if (disposeWithContainer)
+            {
+                _resolvedSingletons.Add(instance);
+            }
         }
 
         public void BindFactory<T>(Func<T> factory) where T : class
@@ -250,6 +261,10 @@ namespace Nexus.Core
             {
                 if (binding.Instance != null)
                 {
+                    if (s_constructingSingletons != null && s_constructingSingletons.Contains(type))
+                    {
+                        throw new InvalidOperationException($"Circular dependency detected: Type {type.FullName} is already in construction/injection phase.");
+                    }
                     return binding.Instance;
                 }
 
@@ -268,6 +283,7 @@ namespace Nexus.Core
                     throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}. Resolution chain forms a cycle.");
                 }
 
+                bool addedToConstructing = false;
                 try
                 {
                     if (binding.IsSingleton)
@@ -275,6 +291,12 @@ namespace Nexus.Core
                         var instance = CreateInstance(binding.ConcreteType);
                         binding.Instance = instance;
                         _resolvedSingletons.Add(instance);
+
+                        if (s_constructingSingletons == null)
+                            s_constructingSingletons = new HashSet<Type>();
+                        s_constructingSingletons.Add(type);
+                        addedToConstructing = true;
+
                         Inject(instance);
                         return instance;
                     }
@@ -286,6 +308,10 @@ namespace Nexus.Core
                 finally
                 {
                     s_resolutionStack.Remove(type);
+                    if (addedToConstructing)
+                    {
+                        s_constructingSingletons.Remove(type);
+                    }
                 }
             }
 
@@ -409,6 +435,10 @@ namespace Nexus.Core
         public static void ClearInjectedReferences(object instance)
         {
             if (instance == null) return;
+            if (instance is IResettable resettable)
+            {
+                resettable.Reset();
+            }
             var type = instance.GetType();
 
             var meta = s_clearMetadataCache.GetOrAdd(type, t =>
@@ -479,6 +509,13 @@ namespace Nexus.Core
             }
             _resolvedSingletons.Clear();
             _bindings.Clear();
+        }
+
+        public static void ClearCaches()
+        {
+            s_customInjectors.Clear();
+            s_injectMetadataCache.Clear();
+            s_clearMetadataCache.Clear();
         }
     }
 }

@@ -12,21 +12,6 @@ namespace Nexus.Netcode
     }
 
     /// <summary>
-    /// Buffered tick-based event wrapper for deterministic replication and rollback simulation.
-    /// </summary>
-    public struct BufferedNetworkSignal
-    {
-        public int Tick { get; }
-        public object Signal { get; }
-
-        public BufferedNetworkSignal(int tick, object signal)
-        {
-            Tick = tick;
-            Signal = signal;
-        }
-    }
-
-    /// <summary>
     /// Non-generic interface to allow NetworkSignalBus to manage multiple snapshot handlers dynamically.
     /// </summary>
     public interface INetworkModelSnapshotHandler
@@ -64,14 +49,82 @@ namespace Nexus.Netcode
 
         public void Prune(int tick)
         {
+            // Backwards index loop to prune without allocations (0-GC)
             var keys = new List<int>(_snapshots.Keys);
-            foreach (var k in keys)
+            for (int i = keys.Count - 1; i >= 0; i--)
             {
+                int k = keys[i];
                 if (k < tick)
                 {
                     _snapshots.Remove(k);
                 }
             }
+        }
+    }
+
+    public interface INetworkSignalHistory
+    {
+        void ReplaySignals(int tick, ISignalBus localSignalBus);
+        void RemoveSignalsAfter(int tick);
+        void Prune(int tick);
+        void Clear();
+    }
+
+    public struct BufferedNetworkSignal<T> where T : struct
+    {
+        public int Tick;
+        public T Signal;
+    }
+
+    public class NetworkSignalHistory<T> : INetworkSignalHistory where T : struct, INetworkSignal
+    {
+        private readonly List<BufferedNetworkSignal<T>> _signals = new();
+
+        public List<BufferedNetworkSignal<T>> Signals => _signals;
+
+        public void Add(int tick, T signal)
+        {
+            _signals.Add(new BufferedNetworkSignal<T> { Tick = tick, Signal = signal });
+        }
+
+        public void ReplaySignals(int tick, ISignalBus localSignalBus)
+        {
+            for (int i = 0; i < _signals.Count; i++)
+            {
+                if (_signals[i].Tick == tick)
+                {
+                    localSignalBus.Fire(_signals[i].Signal);
+                }
+            }
+        }
+
+        public void RemoveSignalsAfter(int tick)
+        {
+            // Backwards index loop to prune without allocations (0-GC)
+            for (int i = _signals.Count - 1; i >= 0; i--)
+            {
+                if (_signals[i].Tick > tick)
+                {
+                    _signals.RemoveAt(i);
+                }
+            }
+        }
+
+        public void Prune(int tick)
+        {
+            // Backwards index loop to prune older history
+            for (int i = _signals.Count - 1; i >= 0; i--)
+            {
+                if (_signals[i].Tick < tick)
+                {
+                    _signals.RemoveAt(i);
+                }
+            }
+        }
+
+        public void Clear()
+        {
+            _signals.Clear();
         }
     }
 
@@ -87,16 +140,27 @@ namespace Nexus.Netcode
         public static Action<ISignalBus, object> CustomDispatcher;
 
         private readonly ISignalBus _localSignalBus;
-        private readonly List<BufferedNetworkSignal> _signalHistory = new();
+        private readonly Dictionary<Type, INetworkSignalHistory> _histories = new();
         private readonly List<INetworkModelSnapshotHandler> _modelHandlers = new();
         private int _currentTick;
 
         public int CurrentTick => _currentTick;
-        public IReadOnlyList<BufferedNetworkSignal> SignalHistory => _signalHistory;
+        public Dictionary<Type, INetworkSignalHistory> Histories => _histories;
 
         public NetworkSignalBus(ISignalBus localSignalBus)
         {
             _localSignalBus = localSignalBus;
+        }
+
+        private NetworkSignalHistory<T> GetOrCreateHistory<T>() where T : struct, INetworkSignal
+        {
+            var type = typeof(T);
+            if (!_histories.TryGetValue(type, out var history))
+            {
+                history = new NetworkSignalHistory<T>();
+                _histories[type] = history;
+            }
+            return (NetworkSignalHistory<T>)history;
         }
 
         /// <summary>
@@ -125,7 +189,7 @@ namespace Nexus.Netcode
         /// </summary>
         public void Fire<T>(T signal) where T : struct, INetworkSignal
         {
-            _signalHistory.Add(new BufferedNetworkSignal(_currentTick, signal));
+            GetOrCreateHistory<T>().Add(_currentTick, signal);
             _localSignalBus.Fire(signal);
         }
 
@@ -134,7 +198,7 @@ namespace Nexus.Netcode
         /// </summary>
         public void FireAtTick<T>(T signal, int tick) where T : struct, INetworkSignal
         {
-            _signalHistory.Add(new BufferedNetworkSignal(tick, signal));
+            GetOrCreateHistory<T>().Add(tick, signal);
             
             if (tick == _currentTick)
             {
@@ -149,7 +213,10 @@ namespace Nexus.Netcode
         public void RollbackAndResimulate(int rollbackTick, int targetTick)
         {
             // Prune signals that occurred after the target tick (future prediction mistakes)
-            _signalHistory.RemoveAll(s => s.Tick > targetTick);
+            foreach (var history in _histories.Values)
+            {
+                history.RemoveSignalsAfter(targetTick);
+            }
 
             // Restore models to the rollback tick state first
             for (int i = 0; i < _modelHandlers.Count; i++)
@@ -168,23 +235,9 @@ namespace Nexus.Netcode
                     _modelHandlers[i].Capture(_currentTick);
                 }
 
-                for (int i = 0; i < _signalHistory.Count; i++)
+                foreach (var history in _histories.Values)
                 {
-                    var buffered = _signalHistory[i];
-                    if (buffered.Tick == _currentTick)
-                    {
-                        if (CustomDispatcher != null)
-                        {
-                            CustomDispatcher(_localSignalBus, buffered.Signal);
-                        }
-                        else
-                        {
-                            // Reflect fire method fallback
-                            var signalType = buffered.Signal.GetType();
-                            var fireMethod = typeof(ISignalBus).GetMethod("Fire").MakeGenericMethod(signalType);
-                            fireMethod.Invoke(_localSignalBus, new[] { buffered.Signal });
-                        }
-                    }
+                    history.ReplaySignals(_currentTick, _localSignalBus);
                 }
                 _currentTick++;
             }
@@ -195,7 +248,10 @@ namespace Nexus.Netcode
         /// </summary>
         public void PruneHistory(int confirmedTick)
         {
-            _signalHistory.RemoveAll(s => s.Tick < confirmedTick);
+            foreach (var history in _histories.Values)
+            {
+                history.Prune(confirmedTick);
+            }
             for (int i = 0; i < _modelHandlers.Count; i++)
             {
                 _modelHandlers[i].Prune(confirmedTick);
@@ -207,7 +263,7 @@ namespace Nexus.Netcode
         /// </summary>
         public void Clear()
         {
-            _signalHistory.Clear();
+            _histories.Clear();
             _modelHandlers.Clear();
         }
     }

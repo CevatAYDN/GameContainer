@@ -82,6 +82,9 @@ namespace Nexus.Core
                 s_activeContexts.Clear();
                 s_contextSet.Clear();
             }
+
+            NexusDI.ClearCaches();
+            Context.ClearAssemblyScanCache();
         }
 
         /// <summary>Registers a context as active. Thread-safe.</summary>
