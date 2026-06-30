@@ -1,0 +1,9 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "lsp": {
+    "servers": {
+      "command": ["C:\\Users\\wwwla\\tools\\omnisharp\\OmniSharp.exe", "--lsp"],
+      "extensions": [".cs"]
+    }
+  }
+}
