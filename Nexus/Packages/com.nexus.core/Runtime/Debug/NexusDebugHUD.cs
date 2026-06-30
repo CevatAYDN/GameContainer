@@ -5,12 +5,6 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
-    /// <summary>
-    /// In-game debug overlay for Nexus. Toggle with F12.
-    /// Shows active contexts, recent signal traffic, and command errors.
-    ///
-    /// Attach to any GameObject in the scene or use the Nexus Wizard to add it.
-    /// </summary>
     [AddComponentMenu("Nexus/Debug HUD")]
     [Preserve]
     public class NexusDebugHUD : MonoBehaviour
@@ -34,6 +28,12 @@ namespace Nexus.Core
         private float _fps;
         private float _fpsTimer;
 
+        // Cached styles — created once, reused every frame (no GC)
+        private GUIStyle _boxStyle;
+        private GUIStyle _labelStyle;
+        private Texture2D _bgTexture;
+        private float _lastBoxWidth;
+
         private void Start()
         {
             _isVisible = showOnStart;
@@ -46,7 +46,6 @@ namespace Nexus.Core
                 _isVisible = !_isVisible;
             }
 
-            // FPS counter
             _frameCount++;
             _fpsTimer += Time.unscaledDeltaTime;
             if (_fpsTimer >= 0.5f)
@@ -57,112 +56,120 @@ namespace Nexus.Core
             }
         }
 
-        private void OnGUI()
+        private void EnsureStyles(float width)
         {
-            if (!_isVisible) return;
+            bool sizeChanged = Math.Abs(width - _lastBoxWidth) > 1f;
+            if (_boxStyle != null && !sizeChanged) return;
 
-            var boxStyle = new GUIStyle(GUI.skin.box)
+            _lastBoxWidth = width;
+
+            if (_bgTexture != null)
+            {
+                Destroy(_bgTexture);
+                _bgTexture = null;
+            }
+            _bgTexture = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+            _bgTexture.SetPixel(0, 0, backgroundColor);
+            _bgTexture.SetPixel(0, 1, backgroundColor);
+            _bgTexture.SetPixel(1, 0, backgroundColor);
+            _bgTexture.SetPixel(1, 1, backgroundColor);
+            _bgTexture.Apply();
+
+            _boxStyle = new GUIStyle(GUI.skin.box)
             {
                 fontSize = fontSize,
-                normal = { textColor = textColor, background = MakeTex(2, 2, backgroundColor) },
+                normal = { textColor = textColor, background = _bgTexture },
                 alignment = TextAnchor.UpperLeft,
                 wordWrap = false,
                 richText = true
             };
 
-            var labelStyle = new GUIStyle(GUI.skin.label)
+            _labelStyle = new GUIStyle(GUI.skin.label)
             {
                 fontSize = fontSize,
                 richText = true,
                 normal = { textColor = textColor }
             };
+        }
 
-            float width = 420;
-            float x = 10;
-            float y = 10;
+        private void OnGUI()
+        {
+            if (!_isVisible) return;
 
-            // Header
-            string header = $"<b>NEXUS DEBUG</b>  FPS: {_fps:F1}  |  {DateTime.Now:HH:mm:ss}";
-            float headerHeight = 24;
-            GUI.Box(new Rect(x, y, width, headerHeight), header, boxStyle);
+            const float width = 420;
+            const float x = 10;
+            const float y = 10;
 
+            EnsureStyles(width);
+
+            const float headerHeight = 24;
+            int ctxCount = NexusRuntime.ActiveContexts?.Count ?? 0;
+            string header = $"<b>NEXUS DEBUG</b>  FPS: {_fps:F1}  |  {ctxCount} ctx(s)";
+            GUI.Box(new Rect(x, y, width, headerHeight), header, _boxStyle);
+
+            const float contentHeight = 300;
             float contentY = y + headerHeight + 2;
-            float contentHeight = 300;
 
-            // Content scroll area
-            GUILayout.BeginArea(new Rect(x, contentY, width, contentHeight), boxStyle);
+            GUILayout.BeginArea(new Rect(x, contentY, width, contentHeight), _boxStyle);
             GUILayout.BeginVertical();
 
-            // Active contexts
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts != null && contexts.Count > 0)
             {
-                GUILayout.Label($"<color=#66ff66>■ Contexts:</color> {contexts.Count} active", labelStyle);
+                GUILayout.Label($"<color=#66ff66>\u25a0 Contexts:</color> {contexts.Count} active", _labelStyle);
                 foreach (var ctx in contexts)
                 {
-                    string parentInfo = ctx.Parent != null ? $" → parent: {ctx.Parent.ScopeTag}" : " (root)";
-                    GUILayout.Label($"  {ctx.ScopeTag ?? "(no tag)"}{parentInfo}", labelStyle);
+                    string parentInfo = ctx.Parent != null ? $" \u2192 parent: {ctx.Parent.ScopeTag}" : " (root)";
+                    GUILayout.Label($"  {ctx.ScopeTag ?? "(no tag)"}{parentInfo}", _labelStyle);
                 }
             }
             else
             {
-                GUILayout.Label("<color=#888888>■ No active contexts</color>", labelStyle);
+                GUILayout.Label("<color=#888888>\u25a0 No active contexts</color>", _labelStyle);
             }
 
             GUILayout.Space(4);
 
-            // Recent log
-            GUILayout.Label($"<color=#88ccff>■ Recent ({_logLines.Count} lines)</color>", labelStyle);
+            GUILayout.Label($"<color=#88ccff>\u25a0 Recent ({_logLines.Count} lines)</color>", _labelStyle);
             lock (_logLines)
             {
                 int start = Math.Max(0, _logLines.Count - maxLogLines);
                 for (int i = start; i < _logLines.Count; i++)
                 {
-                    GUILayout.Label(_logLines[i], labelStyle);
+                    GUILayout.Label(_logLines[i], _labelStyle);
                 }
             }
 
             GUILayout.EndVertical();
             GUILayout.EndArea();
 
-            // Close hint at bottom
             float bottomY = contentY + contentHeight + 2;
-            GUI.Box(new Rect(x, bottomY, width, 20), $"Press {toggleKey} to close", boxStyle);
+            GUI.Box(new Rect(x, bottomY, width, 20), $"Press {toggleKey} to close", _boxStyle);
         }
 
-        /// <summary>
-        /// Logs a signal-related message to the HUD buffer.
-        /// Call from commands or mediators for real-time feedback.
-        /// </summary>
         public void LogSignal(string signalName, string message = "")
         {
             lock (_logLines)
             {
-                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(signalColor)}>▸ {signalName}</color> {message}");
+                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(signalColor)}>\u25b8 {signalName}</color> {message}");
                 TrimLog();
             }
         }
 
-        /// <summary>
-        /// Logs an error to the HUD buffer.
-        /// </summary>
         public void LogError(string message)
         {
             lock (_logLines)
             {
-                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(errorColor)}>✖ ERR:</color> {message}");
+                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(errorColor)}>\u2716 ERR:</color> {message}");
                 TrimLog();
             }
         }
 
-        /// <summary>
-        /// Logs a warning to the HUD buffer.
-        /// </summary>
         public void LogWarning(string message)
         {
             lock (_logLines)
             {
-                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(warningColor)}>⚠ WARN:</color> {message}");
+                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(warningColor)}>\u26a0 WARN:</color> {message}");
                 TrimLog();
             }
         }
@@ -173,15 +180,13 @@ namespace Nexus.Core
                 _logLines.RemoveRange(0, _logLines.Count - maxLogLines);
         }
 
-        private static Texture2D MakeTex(int w, int h, Color col)
+        private void OnDestroy()
         {
-            var pix = new Color[w * h];
-            for (int i = 0; i < pix.Length; i++)
-                pix[i] = col;
-            var tex = new Texture2D(w, h);
-            tex.SetPixels(pix);
-            tex.Apply();
-            return tex;
+            if (_bgTexture != null)
+            {
+                Destroy(_bgTexture);
+                _bgTexture = null;
+            }
         }
     }
 }

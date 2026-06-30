@@ -28,6 +28,8 @@ namespace Nexus.Netcode
     {
         private readonly ISnapshotableModel<TState> _model;
         private readonly Dictionary<int, TState> _snapshots = new();
+        // Reusable list to avoid allocating a new List per Prune call (0-GC steady state).
+        private readonly List<int> _keysToPrune = new();
 
         public NetworkModelSnapshotHandler(ISnapshotableModel<TState> model)
         {
@@ -49,15 +51,14 @@ namespace Nexus.Netcode
 
         public void Prune(int tick)
         {
-            // Backwards index loop to prune without allocations (0-GC)
-            var keys = new List<int>(_snapshots.Keys);
-            for (int i = keys.Count - 1; i >= 0; i--)
+            _keysToPrune.Clear();
+            foreach (int k in _snapshots.Keys)
             {
-                int k = keys[i];
-                if (k < tick)
-                {
-                    _snapshots.Remove(k);
-                }
+                if (k < tick) _keysToPrune.Add(k);
+            }
+            for (int i = 0; i < _keysToPrune.Count; i++)
+            {
+                _snapshots.Remove(_keysToPrune[i]);
             }
         }
     }
@@ -145,7 +146,7 @@ namespace Nexus.Netcode
         private int _currentTick;
 
         public int CurrentTick => _currentTick;
-        public Dictionary<Type, INetworkSignalHistory> Histories => _histories;
+        public IReadOnlyDictionary<Type, INetworkSignalHistory> Histories => _histories;
 
         public NetworkSignalBus(ISignalBus localSignalBus)
         {

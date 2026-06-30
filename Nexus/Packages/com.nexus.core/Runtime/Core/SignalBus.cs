@@ -63,10 +63,44 @@ namespace Nexus.Core
         }
     }
 
+    /// <summary>
+    /// Runs async work in a fire-and-forget manner. Uses async Task internally
+    /// (not async void) so unhandled exceptions are caught by the Task infrastructure
+    /// rather than crashing the process on the Unity SynchronizationContext.
+    /// </summary>
+    internal static class SafeAsyncRunner
+    {
+        public static void Run(Func<ValueTask> func, string errorContext)
+        {
+            // Fire-and-forget: the Task is not awaited, but the async state machine
+            // uses async Task (not async void), meaning exceptions are captured on
+            // the Task and never escape to the Unity SynchronizationContext.
+            _ = RunAsync(func, errorContext);
+        }
+
+        private static async Task RunAsync(Func<ValueTask> func, string errorContext)
+        {
+            try
+            {
+                await func().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                SignalBus.RaiseUnhandledException(ex, errorContext);
+                UnityEngine.Debug.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+    }
+
     [Preserve]
     public class SignalBus : ISignalBus, IDisposable
     {
         public static event Action<Exception, string> OnUnhandledException;
+
+        internal static void RaiseUnhandledException(Exception ex, string context)
+        {
+            OnUnhandledException?.Invoke(ex, context);
+        }
 
         private readonly NexusDI _container;
         private readonly CommandPoolManager _poolManager;
@@ -101,6 +135,7 @@ namespace Nexus.Core
 
         private readonly Dictionary<Type, SubscriptionNode> _subscriptions = new();
         private readonly object _subLock = new();
+        private readonly object _compositeLock = new();
         private bool _pendingCleanups;
 
         // Precomputed cache: does this signal type have at least one async handler?
@@ -143,6 +178,16 @@ namespace Nexus.Core
             _container = container;
             _poolManager = poolManager;
             _context = context;
+        }
+
+        private static bool ImplementsGenericInterface(Type type, Type genericInterface)
+        {
+            foreach (var iface in type.GetInterfaces())
+            {
+                if (iface.IsGenericType && iface.GetGenericTypeDefinition() == genericInterface)
+                    return true;
+            }
+            return false;
         }
 
         public void RegisterCommand(Type signalType, Type commandType, ExecutionMode mode, int priority, bool isAsync)
@@ -218,8 +263,8 @@ namespace Nexus.Core
         {
             if (signalTypes == null || signalTypes.Length == 0)
                 throw new ArgumentException("Composite command requires at least one signal type.", nameof(signalTypes));
-            if (signalTypes.Length > 64)
-                throw new ArgumentException($"Composite command supports a maximum of 64 signal types. Received {signalTypes.Length}.", nameof(signalTypes));
+            if (signalTypes.Length > 64 || signalTypes.Length == 0)
+                throw new ArgumentException($"Composite command requires between 1 and 64 signal types. Received {signalTypes.Length}.", nameof(signalTypes));
 
             var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority);
             _allCompositeTriggers.Add(state);
@@ -275,7 +320,7 @@ namespace Nexus.Core
             }
         }
 
-        public async void FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct
+        public async ValueTask FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct
         {
             try
             {
@@ -412,7 +457,7 @@ namespace Nexus.Core
                 UnityEngine.Debug.LogError(
                     $"[Nexus] Synchronous Fire() was called for signal '{typeof(T).FullName}', but it has asynchronous handlers or subscriptions registered. " +
                     "This violates sequential ordering guarantees and will run fire-and-forget. Please use FireAsync() or FireAsyncAndForget().");
-                FireInternalAsyncFromSync(signal, isCrossContextSource);
+                _ = FireInternalAsyncFromSync(signal, isCrossContextSource);
                 return;
 #endif
             }
@@ -530,7 +575,7 @@ namespace Nexus.Core
         /// to properly await all handlers in order. Exceptions are caught and logged
         /// via the standard recovery pipeline.
         /// </summary>
-        private async void FireInternalAsyncFromSync<T>(T signal, bool isCrossContextSource) where T : struct
+        private async ValueTask FireInternalAsyncFromSync<T>(T signal, bool isCrossContextSource) where T : struct
         {
             try
             {
@@ -1178,117 +1223,108 @@ namespace Nexus.Core
             if (!_compositeTriggersBySignal.TryGetValue(signalType, out var triggers))
                 return;
 
-            foreach (var trigger in triggers)
+            lock (_compositeLock)
             {
-                if (trigger.IsCompleted) continue;
-
-                // Find index of signalType in required signals
-                int index = Array.IndexOf(trigger.RequiredSignals, signalType);
-                if (index >= 0)
+                foreach (var trigger in triggers)
                 {
-                    trigger.CurrentMask |= (1UL << index);
-                    
-                    if (trigger.CurrentMask == trigger.TargetMask)
-                    {
-                        // Trigger the command!
-                        ExecuteCompositeCommand(trigger);
+                    if (trigger.IsCompleted) continue;
 
-                        if (trigger.OneShot)
+                    int index = Array.IndexOf(trigger.RequiredSignals, signalType);
+                    if (index >= 0)
+                    {
+                        trigger.CurrentMask |= (1UL << index);
+                        
+                        if (trigger.CurrentMask == trigger.TargetMask)
                         {
-                            trigger.IsCompleted = true;
-                        }
-                        else
-                        {
-                            // Reset bitmask
-                            trigger.CurrentMask = 0;
+                            ExecuteCompositeCommand(trigger);
+
+                            if (trigger.OneShot)
+                            {
+                                trigger.IsCompleted = true;
+                            }
+                            else
+                            {
+                                trigger.CurrentMask = 0;
+                            }
                         }
                     }
                 }
             }
         }
 
-        private async void ExecuteCompositeCommandAsync(CompositeTriggerState trigger, object command)
+        private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command)
         {
-            try
-            {
-                int retryCount = 0;
-                bool shouldRun = true;
+            int retryCount = 0;
+            bool shouldRun = true;
 
-                while (shouldRun)
-                {
-                    bool inFlightIncremented = false;
-#if NEXUS_DEBUG
-                    int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
-#endif
-                    try
-                    {
-                        if (command is ICommand syncCmd)
-                        {
-                            syncCmd.Execute();
-                        }
-                        else if (command is IAsyncCommand asyncCmd)
-                        {
-                            var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                            Interlocked.Increment(ref _inFlightAsyncCommands);
-                            inFlightIncremented = true;
-                            try
-                            {
-                                await asyncCmd.ExecuteAsync(ct);
-                            }
-                            finally
-                            {
-                                if (inFlightIncremented)
-                                {
-                                    Interlocked.Decrement(ref _inFlightAsyncCommands);
-                                    inFlightIncremented = false;
-                                }
-                            }
-                        }
-                        shouldRun = false;
-#if NEXUS_DEBUG
-                        NexusTrace.EndEvent(traceId, TraceStatus.OK);
-#endif
-                    }
-                    catch (Exception ex)
-                    {
-#if NEXUS_DEBUG
-                        NexusTrace.EndEvent(traceId, TraceStatus.Failed);
-#endif
-                        var action = HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
-                        if (action == RecoveryAction.Retry)
-                        {
-                            retryCount++;
-                        }
-                        else
-                        {
-                            shouldRun = false;
-                            // Route the unhandled exception to the central pipeline
-                            OnUnhandledException?.Invoke(ex, $"Composite command '{trigger.CommandType.FullName}' failed.");
-                            UnityEngine.Debug.LogError($"[Nexus] Composite command '{trigger.CommandType.FullName}' failed: {ex.Message}\n{ex.StackTrace}");
-                        }
-                    }
-                    finally
-                    {
-                        if (inFlightIncremented)
-                        {
-                            Interlocked.Decrement(ref _inFlightAsyncCommands);
-                        }
-                        if (command != null && !shouldRun)
-                        {
-                            _poolManager.ReturnCommand(trigger.CommandType, command);
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
+            while (shouldRun)
             {
-                OnUnhandledException?.Invoke(ex, $"Fatal error in composite command execution for '{trigger.CommandType.FullName}'");
-                UnityEngine.Debug.LogError($"[Nexus] Fatal error in composite command '{trigger.CommandType.FullName}': {ex.Message}\n{ex.StackTrace}");
-                if (command != null)
+                bool inFlightIncremented = false;
+#if NEXUS_DEBUG
+                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
+#endif
+                try
                 {
-                    _poolManager.ReturnCommand(trigger.CommandType, command);
+                    if (command is ICommand syncCmd)
+                    {
+                        syncCmd.Execute();
+                    }
+                    else if (command is IAsyncCommand asyncCmd)
+                    {
+                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                        Interlocked.Increment(ref _inFlightAsyncCommands);
+                        inFlightIncremented = true;
+                        try
+                        {
+                            await asyncCmd.ExecuteAsync(ct);
+                        }
+                        finally
+                        {
+                            if (inFlightIncremented)
+                            {
+                                Interlocked.Decrement(ref _inFlightAsyncCommands);
+                                inFlightIncremented = false;
+                            }
+                        }
+                    }
+                    shouldRun = false;
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
+#endif
+                }
+                catch (Exception ex)
+                {
+#if NEXUS_DEBUG
+                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
+#endif
+                    var action = HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
+                    if (action == RecoveryAction.Retry)
+                    {
+                        retryCount++;
+                    }
+                    else
+                    {
+                        shouldRun = false;
+                    }
+                }
+                finally
+                {
+                    if (inFlightIncremented)
+                    {
+                        Interlocked.Decrement(ref _inFlightAsyncCommands);
+                    }
+                    if (command != null && !shouldRun)
+                    {
+                        _poolManager.ReturnCommand(trigger.CommandType, command);
+                    }
                 }
             }
+        }
+
+        private void ExecuteCompositeCommandAsync(CompositeTriggerState trigger, object command)
+        {
+            SafeAsyncRunner.Run(() => ExecuteCompositeCommandAsyncCore(trigger, command), 
+                $"Composite command '{trigger.CommandType.FullName}' failed.");
         }
 
         private void ExecuteCompositeCommand(CompositeTriggerState trigger)
@@ -1313,8 +1349,6 @@ namespace Nexus.Core
                     }
                     else if (command is IAsyncCommand asyncCmd)
                     {
-                        // Async composite — dispatch via async void with proper tracking
-                        // Pass the command to the async method; it will handle pool return
                         var cmdForAsync = command;
                         command = null; // Prevent finally from returning it; async method owns it now
                         ExecuteCompositeCommandAsync(trigger, cmdForAsync);
@@ -1565,24 +1599,25 @@ namespace Nexus.Core
 
         public void Dispose()
         {
-            // Dispose all active subscriptions
-            foreach (var kvp in _subscriptions)
+            lock (_subLock)
             {
-                var current = kvp.Value;
-                while (current != null)
+                foreach (var kvp in _subscriptions)
                 {
-                    if (current.IsActive && current.RawSubscription is IDisposable disposable)
+                    var current = kvp.Value;
+                    while (current != null)
                     {
-                        disposable.Dispose();
+                        if (current.IsActive && current.RawSubscription is IDisposable disposable)
+                        {
+                            disposable.Dispose();
+                        }
+                        var temp = current;
+                        current = current.Next;
+                        SubscriptionNodePool.Return(temp);
                     }
-                    var temp = current;
-                    current = current.Next;
-                    SubscriptionNodePool.Return(temp);
                 }
+                _subscriptions.Clear();
             }
-            _subscriptions.Clear();
 
-            // Warn if there are in-flight async commands that haven't completed
             if (_inFlightAsyncCommands > 0)
             {
                 UnityEngine.Debug.LogWarning($"[Nexus] SignalBus disposed while {_inFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
