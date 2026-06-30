@@ -40,7 +40,12 @@ namespace Nexus.Core
             RequiredSignals = requiredSignals;
             OneShot = oneShot;
             Priority = priority;
-            TargetMask = (1UL << requiredSignals.Length) - 1;
+            // Safe bitmask calculation: for count == 64, (1UL << 64) is undefined
+            // (the runtime masks shift to low-order 6 bits, yielding 1 instead of 0).
+            // We handle 64 as a special case: set all 64 bits explicitly.
+            TargetMask = requiredSignals.Length == 64
+                ? ulong.MaxValue
+                : (1UL << requiredSignals.Length) - 1;
             CurrentMask = 0;
             IsCompleted = false;
         }

@@ -23,6 +23,7 @@ namespace Nexus.Core
         private readonly NexusDI _parent;
         private readonly Dictionary<Type, Binding> _bindings = new();
         private readonly HashSet<object> _resolvedSingletons = new();
+        private volatile bool _disposed;
 
         private static readonly Dictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
 
@@ -483,11 +484,22 @@ namespace Nexus.Core
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
+
+            var alreadyDisposed = new HashSet<object>();
             foreach (var instance in _resolvedSingletons)
             {
-                if (instance is IDisposable disposable)
+                if (instance is IDisposable disposable && alreadyDisposed.Add(instance))
                 {
-                    disposable.Dispose();
+                    try
+                    {
+                        disposable.Dispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        UnityEngine.Debug.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
+                    }
                 }
             }
             _resolvedSingletons.Clear();
@@ -496,15 +508,29 @@ namespace Nexus.Core
 
         public async ValueTask DisposeAsync()
         {
+            if (_disposed) return;
+            _disposed = true;
+
+            var alreadyDisposed = new HashSet<object>();
             foreach (var instance in _resolvedSingletons)
             {
-                if (instance is IAsyncDisposable asyncDisposable)
+                if (alreadyDisposed.Add(instance))
                 {
-                    await asyncDisposable.DisposeAsync();
-                }
-                else if (instance is IDisposable disposable)
-                {
-                    disposable.Dispose();
+                    try
+                    {
+                        if (instance is IAsyncDisposable asyncDisposable)
+                        {
+                            await asyncDisposable.DisposeAsync();
+                        }
+                        else if (instance is IDisposable disposable)
+                        {
+                            disposable.Dispose();
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        UnityEngine.Debug.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
+                    }
                 }
             }
             _resolvedSingletons.Clear();

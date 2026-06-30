@@ -19,7 +19,7 @@ namespace Nexus.Core
         private readonly object _pluginsLock = new();
         private int _interceptorsCount;
         private ContextBuilder _builder;
-        private bool _disposed;
+        private volatile bool _disposed;
 
         public List<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
         public bool HasInterceptors => _interceptorsCount > 0;
