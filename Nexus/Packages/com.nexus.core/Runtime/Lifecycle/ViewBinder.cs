@@ -102,13 +102,17 @@ namespace Nexus.Core
         private readonly Dictionary<IView, IMediator> _activeMediators = new();
         private readonly Dictionary<Type, Stack<IMediator>> _mediatorPools = new();
 
+        private readonly int _maxMediatorPoolSize = 64;
+
         /// <summary>Creates a new <see cref="ViewBinder"/> for the given context.</summary>
         /// <param name="context">The context that owns this binder.</param>
         /// <param name="container">The DI container for resolving mediators.</param>
-        public ViewBinder(IContext context, NexusDI container)
+        /// <param name="maxMediatorPoolSize">Maximum number of mediator instances to pool per type (default: 64).</param>
+        public ViewBinder(IContext context, NexusDI container, int maxMediatorPoolSize = 64)
         {
             _context = context;
             _container = container;
+            _maxMediatorPoolSize = maxMediatorPoolSize;
         }
 
         /// <summary>
@@ -170,8 +174,6 @@ namespace Nexus.Core
             return (IMediator)_container.Resolve(mediatorType);
         }
 
-        private const int MaxMediatorPoolSize = 64;
-
         private void ReturnMediator(IMediator mediator)
         {
             var type = mediator.GetType();
@@ -182,7 +184,7 @@ namespace Nexus.Core
             }
             
             CleanupMediator(mediator);
-            if (pool.Count < MaxMediatorPoolSize)
+            if (pool.Count < _maxMediatorPoolSize)
             {
                 pool.Push(mediator);
             }

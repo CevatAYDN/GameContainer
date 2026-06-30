@@ -22,6 +22,8 @@ namespace Nexus.Core
         [Header("Configuration")]
         [SerializeField] private ContextData contextData;
         [SerializeField] private int initializationPriority = 0;
+        [SerializeField] private int parentTimeoutFrames = 900;
+        [SerializeField] private int siblingTimeoutFrames = 900;
 
         /// <summary>The Nexus context owned by this root.</summary>
         public Context Context { get; private set; }
@@ -33,6 +35,14 @@ namespace Nexus.Core
         public ContextData ContextData => contextData;
         /// <summary>Parent root in the context hierarchy (null for root contexts).</summary>
         public Root ParentRoot => parentRoot;
+
+        // Lifecycle components discovered during InitializeContext, cached for Start().
+        // This avoids the Dictionary key collision in BindInstance<IContextLifecycle> 
+        // which would overwrite all but the last lifecycle.
+        private IContextLifecycle[] _lifecycles = Array.Empty<IContextLifecycle>();
+
+        // Reusable list for sibling wait collection to avoid per-Start allocation.
+        private readonly List<Root> _siblingsToWait = new();
 
         // Registry to avoid FindObjectsByType in every Start()
         private static readonly List<Root> s_allRoots = new();
@@ -86,10 +96,12 @@ namespace Nexus.Core
             Context = new Context(parentContext, contextData);
 
             // Register any IContextLifecycle component on this GameObject
-            var lifecycles = GetComponents<IContextLifecycle>();
-            foreach (var lifecycle in lifecycles)
+            // Also cache locally because NexusDI's Dictionary<Type, Binding> only stores one
+            // binding per key — BindInstance<IContextLifecycle> would overwrite earlier entries.
+            _lifecycles = GetComponents<IContextLifecycle>();
+            for (int i = 0; i < _lifecycles.Length; i++)
             {
-                Context.Container.BindInstance(lifecycle);
+                Context.Container.BindInstance(_lifecycles[i]);
             }
 
             Context.Configure();
@@ -107,7 +119,7 @@ namespace Nexus.Core
                 // Wait for parent root to be initialized first (with timeout)
                 if (parentRoot != null)
                 {
-                    int timeoutFrames = 900; // ~15 seconds at 60fps
+                    int timeoutFrames = parentTimeoutFrames;
                     while (!parentRoot.IsInitialized && timeoutFrames > 0)
                     {
                         await Awaitable.NextFrameAsync(Context.LifetimeToken);
@@ -122,7 +134,7 @@ namespace Nexus.Core
 
                 // Wait for sibling roots with higher priority to initialize (with timeout)
                 EnsureRegistry();
-                var siblingsToWait = new List<Root>();
+                _siblingsToWait.Clear();
                 foreach (var r in s_allRoots)
                 {
                     if (r == this) continue;
@@ -140,13 +152,13 @@ namespace Nexus.Core
 
                     if (runsBeforeUs)
                     {
-                        siblingsToWait.Add(r);
+                        _siblingsToWait.Add(r);
                     }
                 }
 
-                foreach (var sibling in siblingsToWait)
+                foreach (var sibling in _siblingsToWait)
                 {
-                    int timeoutFrames = 900;
+                    int timeoutFrames = siblingTimeoutFrames;
                     while (sibling != null && !sibling.IsInitialized && timeoutFrames > 0)
                     {
                         await Awaitable.NextFrameAsync(Context.LifetimeToken);
@@ -165,15 +177,15 @@ namespace Nexus.Core
                 // Initialize services (INexusService.InitializeAsync)
                 await Context.InitializeServicesAsync(Context.LifetimeToken);
 
-                if (Context.Container.IsRegistered(typeof(IContextLifecycle)))
+                // Run all registered lifecycles. We iterate the cached _lifecycles array
+                // instead of resolving from DI because NexusDI stores only one binding per type.
+                for (int i = 0; i < _lifecycles.Length; i++)
                 {
-                    var lifecycle = Context.Container.Resolve<IContextLifecycle>();
-                    
-                    // Asynchronous initialization phase
-                    await lifecycle.OnInitializeAsync(Context.LifetimeToken);
-                    
-                    // Asynchronous start phase
-                    await lifecycle.OnStartAsync(Context.LifetimeToken);
+                    await _lifecycles[i].OnInitializeAsync(Context.LifetimeToken);
+                }
+                for (int i = 0; i < _lifecycles.Length; i++)
+                {
+                    await _lifecycles[i].OnStartAsync(Context.LifetimeToken);
                 }
 
                 IsInitialized = true;
