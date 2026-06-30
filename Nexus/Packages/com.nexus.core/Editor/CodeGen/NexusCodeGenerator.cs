@@ -12,6 +12,43 @@ namespace Nexus.Editor
 {
     public static class NexusCodeGenerator
     {
+        private const string AutoGenKey = "Nexus.AutoGenerateAOTBinder";
+        
+        public static bool AutoGenerateEnabled
+        {
+            get => EditorPrefs.GetBool(AutoGenKey, false);
+            set => EditorPrefs.SetBool(AutoGenKey, value);
+        }
+
+        [MenuItem("Nexus/Auto-Generate AOT on Script Reload")]
+        private static void ToggleAutoGenerate()
+        {
+            AutoGenerateEnabled = !AutoGenerateEnabled;
+            Menu.SetChecked("Nexus/Auto-Generate AOT on Script Reload", AutoGenerateEnabled);
+            Debug.Log($"[Nexus] Auto-Generate AOT Binder on script reload: {(AutoGenerateEnabled ? "ENABLED" : "DISABLED")}");
+        }
+
+        [MenuItem("Nexus/Auto-Generate AOT on Script Reload", true)]
+        private static bool ToggleAutoGenerateValidate()
+        {
+            Menu.SetChecked("Nexus/Auto-Generate AOT on Script Reload", AutoGenerateEnabled);
+            return true;
+        }
+
+        [UnityEditor.Callbacks.DidReloadScripts]
+        private static void OnScriptsReloaded()
+        {
+            if (!AutoGenerateEnabled) return;
+            try
+            {
+                GenerateBinder();
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus] Auto-generate AOT binder failed (non-critical): {ex.Message}");
+            }
+        }
+
         [MenuItem("Nexus/Generate AOT Binder")]
         public static void GenerateBinder()
         {
@@ -23,7 +60,7 @@ namespace Nexus.Editor
             foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.Contains("Test") || name.Contains("test"))
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf(".Editor", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
                 try

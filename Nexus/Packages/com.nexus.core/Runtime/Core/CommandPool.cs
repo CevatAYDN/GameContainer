@@ -100,6 +100,14 @@ namespace Nexus.Core
         {
             _pool.Clear();
         }
+
+        internal static void ClearStateLeakWarningsStatic()
+        {
+            lock (s_stateLeakWarningIssued)
+            {
+                s_stateLeakWarningIssued.Clear();
+            }
+        }
     }
 
     /// <summary>
@@ -153,6 +161,14 @@ namespace Nexus.Core
                 pool.Clear();
             }
             _pools.Clear();
+        }
+    }
+
+    internal static class CommandPoolStatics
+    {
+        internal static void ClearStateLeakWarnings()
+        {
+            CommandPool.ClearStateLeakWarningsStatic();
         }
     }
 }

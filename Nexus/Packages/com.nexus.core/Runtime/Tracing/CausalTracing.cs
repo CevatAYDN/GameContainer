@@ -176,13 +176,13 @@ namespace Nexus.Core
             }
 
             int eventId = Interlocked.Increment(ref s_globalEventIdCounter);
-            
-            // Advance ring buffer index with Interlocked for thread safety
-            int newIndex = Interlocked.Increment(ref s_ringBufferIndex);
-            s_ringBufferIndex = newIndex % MaxEvents;
-            if (s_ringBufferIndex < 0) s_ringBufferIndex = 0;
+
+            // Compute index from the unique newIndex value, not from the shared
+            // s_ringBufferIndex field. This avoids a TOCTOU race where two threads
+            // read a stale index after the Interlocked.Increment.
+            int rawIndex = Interlocked.Increment(ref s_ringBufferIndex);
+            int index = ((rawIndex % MaxEvents) + MaxEvents) % MaxEvents;
             Interlocked.Increment(ref s_totalEventsWritten);
-            int index = s_ringBufferIndex;
 
             s_currentFrame.Value = new TraceFrame(parentId, index, s_currentFrame.Value);
             s_currentActiveEventId.Value = eventId;

@@ -61,6 +61,14 @@ namespace Nexus.Core
                 s_pool.Push(node);
             }
         }
+
+        public static void Clear()
+        {
+            lock (s_pool)
+            {
+                s_pool.Clear();
+            }
+        }
     }
 
     /// <summary>
@@ -439,6 +447,8 @@ namespace Nexus.Core
         private void FireInternal<T>(T signal, bool isCrossContextSource) where T : struct
         {
             var type = typeof(T);
+
+            NexusRuntime.Metrics.RecordSignalDispatched();
 
             // Plan §1.4.1 — If this signal has ANY async handlers registered,
             // delegate to the async path to preserve Sequential ordering guarantees.
@@ -871,6 +881,8 @@ namespace Nexus.Core
         {
             int retryCount = 0;
             bool shouldRun = true;
+
+            NexusRuntime.Metrics.RecordCommandExecuted();
 
             while (shouldRun)
             {
@@ -1626,6 +1638,17 @@ namespace Nexus.Core
             _commandHandlers.Clear();
             _compositeTriggersBySignal.Clear();
             _allCompositeTriggers.Clear();
+        }
+
+        internal static void ClearStaticCaches()
+        {
+            s_signalSetterCache.Clear();
+            lock (s_listPool)
+            {
+                s_listPool.Clear();
+            }
+            SubscriptionNodePool.Clear();
+            OnUnhandledException = null;
         }
     }
 

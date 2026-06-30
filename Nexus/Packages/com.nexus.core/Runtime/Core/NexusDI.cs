@@ -132,12 +132,26 @@ namespace Nexus.Core
 
                     if (targetCtor == null)
                     {
-                        targetCtor = constructors[0];
-                        for (int i = 1; i < constructors.Length; i++)
+                        // Try parameterless constructor first (safest)
+                        foreach (var ctor in constructors)
                         {
-                            if (constructors[i].GetParameters().Length > targetCtor.GetParameters().Length)
+                            if (ctor.GetParameters().Length == 0)
                             {
-                                targetCtor = constructors[i];
+                                targetCtor = ctor;
+                                break;
+                            }
+                        }
+
+                        // Fallback: constructor with most reference-type parameters
+                        if (targetCtor == null)
+                        {
+                            targetCtor = constructors[0];
+                            for (int i = 1; i < constructors.Length; i++)
+                            {
+                                if (constructors[i].GetParameters().Length > targetCtor.GetParameters().Length)
+                                {
+                                    targetCtor = constructors[i];
+                                }
                             }
                         }
                     }
@@ -169,8 +183,13 @@ namespace Nexus.Core
 
         [ThreadStatic]
         private static HashSet<Type> s_resolutionStack;
-        [ThreadStatic]
-        private static HashSet<Type> s_constructingSingletons;
+
+        // Global (cross-thread) set to detect circular singleton construction.
+        // ThreadStatic would not work because two threads could each see their own
+        // empty set and both proceed to construct the same singleton.
+        // Protected by s_singletonLock; C# lock is reentrant so recursive Resolve() is safe.
+        private static readonly HashSet<Type> s_constructingSingletons = new();
+        private static readonly object s_singletonLock = new();
 
         private class Binding
         {
@@ -262,7 +281,7 @@ namespace Nexus.Core
             {
                 if (binding.Instance != null)
                 {
-                    if (s_constructingSingletons != null && s_constructingSingletons.Contains(type))
+                    if (s_constructingSingletons.Contains(type))
                     {
                         throw new InvalidOperationException($"Circular dependency detected: Type {type.FullName} is already in construction/injection phase.");
                     }
@@ -274,13 +293,11 @@ namespace Nexus.Core
                     return binding.Factory();
                 }
 
-                // Circular dependency detection
                 if (s_resolutionStack == null)
                     s_resolutionStack = new HashSet<Type>();
 
                 if (!s_resolutionStack.Add(type))
                 {
-                    s_resolutionStack.Clear();
                     throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}. Resolution chain forms a cycle.");
                 }
 
@@ -289,17 +306,24 @@ namespace Nexus.Core
                 {
                     if (binding.IsSingleton)
                     {
-                        var instance = CreateInstance(binding.ConcreteType);
-                        binding.Instance = instance;
-                        _resolvedSingletons.Add(instance);
+                        // Double-checked locking to prevent two threads from creating
+                        // the same singleton. C# lock is reentrant, so recursive Resolve()
+                        // calls from Inject() on the same thread will not deadlock.
+                        lock (s_singletonLock)
+                        {
+                            if (binding.Instance != null)
+                                return binding.Instance;
 
-                        if (s_constructingSingletons == null)
-                            s_constructingSingletons = new HashSet<Type>();
-                        s_constructingSingletons.Add(type);
-                        addedToConstructing = true;
+                            s_constructingSingletons.Add(type);
+                            addedToConstructing = true;
 
-                        Inject(instance);
-                        return instance;
+                            var instance = CreateInstance(binding.ConcreteType);
+                            binding.Instance = instance;
+                            _resolvedSingletons.Add(instance);
+
+                            Inject(instance);
+                            return instance;
+                        }
                     }
 
                     var transientInstance = CreateInstance(binding.ConcreteType);
@@ -542,6 +566,10 @@ namespace Nexus.Core
             s_customInjectors.Clear();
             s_injectMetadataCache.Clear();
             s_clearMetadataCache.Clear();
+            lock (s_singletonLock)
+            {
+                s_constructingSingletons.Clear();
+            }
         }
     }
 }

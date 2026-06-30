@@ -85,6 +85,63 @@ namespace Nexus.Core
 
             NexusDI.ClearCaches();
             Context.ClearAssemblyScanCache();
+            SignalBus.ClearStaticCaches();
+            Root.ClearRegistry();
+            CommandPoolStatics.ClearStateLeakWarnings();
+        }
+
+        public static class Metrics
+        {
+            public static long TotalSignalsDispatched;
+            public static long TotalCommandsExecuted;
+            public static int ActiveContextCount => s_activeContexts.Count;
+
+            // Rate fields are written by the runtime (game thread, via SignalBus)
+            // and read by the editor (editor thread). Without volatile, the editor
+            // can see stale values on ARM platforms with weak memory ordering.
+            private static volatile float s_signalsPerSecond;
+            private static volatile float s_commandsPerSecond;
+            public static float SignalsPerSecond => s_signalsPerSecond;
+            public static float CommandsPerSecond => s_commandsPerSecond;
+
+            // _prevSignals/_prevCommands are 64-bit; use Interlocked for atomic
+            // access on 32-bit platforms. _lastSampleTime is float; volatile
+            // ensures 32-bit atomic write/read on all platforms.
+            private static long _prevSignals;
+            private static long _prevCommands;
+            private static volatile float _lastSampleTime;
+            private static readonly object _rateLock = new();
+
+            internal static void RecordSignalDispatched()
+            {
+                System.Threading.Interlocked.Increment(ref TotalSignalsDispatched);
+            }
+
+            internal static void RecordCommandExecuted()
+            {
+                System.Threading.Interlocked.Increment(ref TotalCommandsExecuted);
+            }
+
+            public static void UpdateRates()
+            {
+                // Lock to make the rate calculation atomic across all fields.
+                // Metrics are not a hot path so lock overhead is acceptable.
+                lock (_rateLock)
+                {
+                    float now = UnityEngine.Time.time;
+                    float delta = now - _lastSampleTime;
+                    if (delta > 0.5f)
+                    {
+                        long currSignals = System.Threading.Interlocked.Read(ref TotalSignalsDispatched);
+                        long currCommands = System.Threading.Interlocked.Read(ref TotalCommandsExecuted);
+                        s_signalsPerSecond = (currSignals - _prevSignals) / delta;
+                        s_commandsPerSecond = (currCommands - _prevCommands) / delta;
+                        System.Threading.Interlocked.Exchange(ref _prevSignals, currSignals);
+                        System.Threading.Interlocked.Exchange(ref _prevCommands, currCommands);
+                        _lastSampleTime = now;
+                    }
+                }
+            }
         }
 
         /// <summary>Registers a context as active. Thread-safe.</summary>

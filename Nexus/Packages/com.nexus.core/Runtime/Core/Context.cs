@@ -95,12 +95,18 @@ namespace Nexus.Core
             NexusRuntime.RegisterContext(this);
         }
 
-        public void Configure()
+        public void Configure(IContextLifecycle[] lifecycles = null)
         {
             _builder = new ContextBuilder(Container, SignalBusInternal);
-            
+
+            var allLifecycles = new List<IContextLifecycle>();
+            if (lifecycles != null)
+            {
+                allLifecycles.AddRange(lifecycles);
+            }
+
             // Auto-discover lifecycle class if not explicitly registered as a component
-            if (!Container.IsRegistered(typeof(IContextLifecycle)))
+            if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
             {
                 var lifecycleType = FindLifecycleTypeByConvention();
                 if (lifecycleType != null)
@@ -111,6 +117,7 @@ namespace Nexus.Core
                         if (instance != null)
                         {
                             Container.BindInstance<IContextLifecycle>(instance);
+                            allLifecycles.Add(instance);
                         }
                     }
                     catch (Exception ex)
@@ -120,10 +127,16 @@ namespace Nexus.Core
                 }
             }
 
-            // Call user lifecycle OnConfigure if registered
-            if (Container.IsRegistered(typeof(IContextLifecycle)))
+            // Fallback: DI-registered lifecycle (for backward compatibility)
+            if (allLifecycles.Count == 0 && Container.IsRegistered(typeof(IContextLifecycle)))
             {
                 var lifecycle = Container.Resolve<IContextLifecycle>();
+                allLifecycles.Add(lifecycle);
+            }
+
+            // Call OnConfigure for all registered lifecycles
+            foreach (var lifecycle in allLifecycles)
+            {
                 lifecycle.OnConfigure(_builder);
             }
 

@@ -166,14 +166,15 @@ namespace Nexus.Editor
         private void BuildFrameworkInfo(VisualElement parent)
         {
             var infoCard = NexusEditorStyles.CreateInfoCard(parent, "FRAMEWORK", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
-                "Nexus Observable Architecture v0.1.0\n" +
+                "Nexus Observable Architecture v0.3.0\n" +
                 "Unity 6 • UI Toolkit • MIT License\n\n" +
                 "Built on a 0-GC, JIT-free generic observable framework with:\n" +
                 "• Causal Tracing — zero-allocation causality tracking\n" +
                 "• 4 Execution Modes — Sequential, Concurrent, Exclusive, Composite\n" +
                 "• Build Validation — catches priority conflicts before compile\n" +
                 "• Auto-Discovery — Lifecycle, Commands, Views and Mediators\n" +
-                "• Command Pooling — automatic pooling for 0-GC steady-state");
+                "• Command Pooling — automatic pooling for 0-GC steady-state\n\n" +
+                "Editor Suite: 9 plugins, Code Generator, Live Tracer, Graph Viewer, Type Analyzer");
         }
 
         private void RefreshStats()

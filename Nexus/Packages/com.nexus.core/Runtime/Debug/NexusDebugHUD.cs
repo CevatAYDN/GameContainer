@@ -62,6 +62,7 @@ namespace Nexus.Core
             if (_boxStyle != null && !sizeChanged) return;
 
             _lastBoxWidth = width;
+            _boxStyle = null;
 
             if (_bgTexture != null)
             {

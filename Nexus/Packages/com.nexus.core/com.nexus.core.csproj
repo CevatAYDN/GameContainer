@@ -79,6 +79,13 @@
     <Compile Include="Runtime\Queue\HybridQueue.cs" />
     <Compile Include="Runtime\Testing\NexusTestContext.cs" />
     <Compile Include="Runtime\Core\NexusRuntime.cs" />
+    <Compile Include="Runtime\Models\IReactiveModel.cs" />
+    <Compile Include="Runtime\Services\INexusService.cs" />
+    <Compile Include="Runtime\Services\NexusService.cs" />
+    <Compile Include="Runtime\Extensions\GameSaveManager.cs" />
+    <Compile Include="Runtime\Extensions\SceneManagerExtensions.cs" />
+    <Compile Include="Runtime\Debug\NexusDebugHUD.cs" />
+    <Compile Include="Runtime\Models\ObservableProperty.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Runtime\link.xml" />

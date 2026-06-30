@@ -40,6 +40,9 @@ namespace Nexus.Editor
                 // 3. Validate ContextData DependsOn for cycles
                 ValidateContextDataDependencies(ref errorCount, ref warningCount);
 
+                // 3b. Validate ContextData configuration integrity (AssemblyScopes, DependsOn)
+                ValidateContextDataConfiguration(ref errorCount, ref warningCount);
+
                 // 4. Validate scene Roots and context hierarchies
                 ValidateSceneHierarchy(ref errorCount, ref warningCount);
 
@@ -405,6 +408,70 @@ namespace Nexus.Editor
             visiting.Remove(current);
             visited.Add(current);
             return false;
+        }
+
+        private static void ValidateContextDataConfiguration(ref int errorCount, ref int warningCount)
+        {
+            var contextDataAssets = AssetDatabase.FindAssets("t:ContextData");
+            var loadedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                try
+                {
+                    loadedAssemblies.Add(assembly.GetName().Name);
+                }
+                catch { }
+            }
+
+            foreach (var guid in contextDataAssets)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var data = AssetDatabase.LoadAssetAtPath<ContextData>(path);
+                if (data == null) continue;
+
+                string name = data.name.Replace("ContextData", "");
+
+                if (data.AssemblyScopes != null)
+                {
+                    foreach (var scope in data.AssemblyScopes)
+                    {
+                        if (!loadedAssemblies.Contains(scope))
+                        {
+                            Debug.LogWarning($"[Nexus Warning] ContextData '{name}': Assembly scope '{scope}' is not found in loaded assemblies. This assembly may not exist or may not be loaded yet.");
+                            warningCount++;
+                        }
+                    }
+                }
+
+                if (data.DependsOn != null)
+                {
+                    foreach (var dep in data.DependsOn)
+                    {
+                        bool found = false;
+                        foreach (var otherGuid in contextDataAssets)
+                        {
+                            var otherPath = AssetDatabase.GUIDToAssetPath(otherGuid);
+                            var otherData = AssetDatabase.LoadAssetAtPath<ContextData>(otherPath);
+                            if (otherData != null && otherData != data)
+                            {
+                                string otherScope = string.IsNullOrEmpty(otherData.ScopeTag)
+                                    ? otherData.name.Replace("ContextData", "")
+                                    : otherData.ScopeTag;
+                                if (string.Equals(otherScope, dep, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    found = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!found)
+                        {
+                            Debug.LogWarning($"[Nexus Warning] ContextData '{name}': DependsOn '{dep}' does not match any known ContextData scope tag or name. Dependency may be unresolved.");
+                            warningCount++;
+                        }
+                    }
+                }
+            }
         }
 
         private static void ValidateSceneHierarchy(ref int errorCount, ref int warningCount)

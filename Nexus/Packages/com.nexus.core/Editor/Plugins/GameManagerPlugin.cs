@@ -749,13 +749,41 @@ namespace Nexus.Editor
         private void RenderLive()
         {
             bool playing = Application.isPlaying;
-            AddSectionHeader("LIVE MODEL INSPECTOR" + (playing ? "" : " (Play Mode only)"), new Color(1f, 0.5f, 0.8f));
+            AddSectionHeader("LIVE MODEL & PERFORMANCE INSPECTOR" + (playing ? "" : " (Play Mode only)"), new Color(1f, 0.5f, 0.8f));
 
             if (!playing)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("Enter Play Mode to inspect live model values."));
+                _content.Add(NexusEditorStyles.CreateEmptyState("Enter Play Mode to inspect live model values and performance metrics."));
                 return;
             }
+
+            NexusRuntime.Metrics.UpdateRates();
+
+            // Performance Metrics Panel
+            var perfCard = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
+            perfCard.style.marginBottom = 10;
+            perfCard.style.marginLeft = 10;
+            perfCard.style.marginRight = 10;
+
+            var perfTitle = new Label("PERFORMANCE METRICS")
+            {
+                style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentYellow), marginBottom = 8 }
+            };
+            perfCard.Add(perfTitle);
+
+            var perfRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
+            perfRow.Add(CreateMetricBox("Signals/s", $"{NexusRuntime.Metrics.SignalsPerSecond:F1}", NexusEditorStyles.AccentBlue));
+            perfRow.Add(CreateMetricBox("Commands/s", $"{NexusRuntime.Metrics.CommandsPerSecond:F1}", NexusEditorStyles.AccentGreen));
+            perfRow.Add(CreateMetricBox("Total Signals", $"{NexusRuntime.Metrics.TotalSignalsDispatched:N0}", NexusEditorStyles.AccentPurple));
+            perfRow.Add(CreateMetricBox("Total Cmds", $"{NexusRuntime.Metrics.TotalCommandsExecuted:N0}", NexusEditorStyles.AccentOrange));
+            perfCard.Add(perfRow);
+
+            var sysRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 6 } };
+            sysRow.Add(CreateMetricBox("GC Alloc", $"{System.GC.GetTotalMemory(false) / 1024 / 1024:N1} MB", NexusEditorStyles.TextSecondary));
+            sysRow.Add(CreateMetricBox("Contexts", $"{NexusRuntime.Metrics.ActiveContextCount}", NexusEditorStyles.TextSecondary));
+            perfCard.Add(sysRow);
+
+            _content.Add(perfCard);
 
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts == null || contexts.Count == 0)
@@ -772,12 +800,28 @@ namespace Nexus.Editor
                 };
                 _content.Add(ctxLabel);
 
-                // Try to resolve IReactiveModel instances — we can't enumerate DI easily,
-                // but we can show the context info and suggest using the Tracer
                 var hint = NexusEditorStyles.CreateHint("Live model inspection resolves IReactiveModel instances. Open the Live Tracer for real-time signal monitoring.");
                 hint.style.marginLeft = 15;
                 _content.Add(hint);
             }
+        }
+
+        private VisualElement CreateMetricBox(string label, string value, Color accent)
+        {
+            var box = new VisualElement
+            {
+                style =
+                {
+                    flexGrow = 1, alignItems = Align.Center, paddingLeft = 6, paddingRight = 6,
+                    paddingTop = 4, paddingBottom = 4, marginRight = 4,
+                    borderRightWidth = 1, borderRightColor = new StyleColor(NexusEditorStyles.BorderColor)
+                }
+            };
+            var valLabel = new Label(value) { style = { fontSize = 16, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(accent) } };
+            var descLabel = new Label(label) { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary) } };
+            box.Add(valLabel);
+            box.Add(descLabel);
+            return box;
         }
 
         // ─── Signal Test Panel ─────────────────────────────────

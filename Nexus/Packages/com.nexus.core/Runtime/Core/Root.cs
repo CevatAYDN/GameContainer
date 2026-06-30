@@ -56,7 +56,15 @@ namespace Nexus.Core
         private void OnDisable()
         {
             s_registryDirty = true;
-            s_allRoots.Clear();
+        }
+
+        internal static void ClearRegistry()
+        {
+            lock (s_allRoots)
+            {
+                s_allRoots.Clear();
+            }
+            s_registryDirty = true;
         }
 
         private static void EnsureRegistry()
@@ -104,7 +112,7 @@ namespace Nexus.Core
                 Context.Container.BindInstance(_lifecycles[i]);
             }
 
-            Context.Configure();
+            Context.Configure(_lifecycles);
         }
 
         private async void Start()
