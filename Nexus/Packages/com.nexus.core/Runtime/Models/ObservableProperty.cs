@@ -5,19 +5,19 @@ using UnityEngine.Scripting;
 namespace Nexus.Core
 {
     /// <summary>
-    /// A lightweight, zero-additional-allocation (after construction) observable value wrapper.
+    /// A lightweight, zero-additional-allocation (steady-state) observable value wrapper.
+    ///
+    /// Supports multicast subscriptions. Subscribe/unsubscribe may allocate during
+    /// initial registration (list growth), but the notification hot path is allocation-free.
     ///
     /// Use in any model that needs to notify listeners when a value changes.
     /// <code>
     /// public class PlayerModel : IReactiveModel
     /// {
-    ///     public readonly ObservableProperty<int> Score = new(0);
-    ///     public readonly ObservableProperty<string> Name = new("Player");
+    ///     public readonly ObservableProperty&lt;int&gt; Score = new(0);
+    ///     public readonly ObservableProperty&lt;string&gt; Name = new("Player");
     /// }
     /// </code>
-    ///
-    /// Listeners subscribe via <see cref="OnChanged"/> (a single-cast callback to avoid
-    /// multicast delegate allocations).  For multiple listeners compose at the model level.
     /// </summary>
     [Preserve]
     public sealed class ObservableProperty<T>
@@ -25,9 +25,9 @@ namespace Nexus.Core
         // ── State ──────────────────────────────────────────────
         private T _value;
 
-        // Single-cast: the model (or a dedicated aggregator) bridges to the SignalBus.
-        // This keeps the hot-path allocation-free.
-        private Action<T, T> _onChanged; // (oldValue, newValue)
+        // Multicast handler list. Allocates on first subscription, then reuses capacity.
+        // Notification iteration is allocation-free (struct enumerator).
+        private List<Action<T, T>> _handlers; // (oldValue, newValue)
 
         // ── Construction ───────────────────────────────────────
         /// <summary>Creates an observable property with the given initial value.</summary>
@@ -37,7 +37,7 @@ namespace Nexus.Core
         }
 
         // ── Value ──────────────────────────────────────────────
-        /// <summary>Gets or sets the current value.  Setting triggers <see cref="OnChanged"/>.</summary>
+        /// <summary>Gets or sets the current value.  Setting triggers OnChanged.</summary>
         public T Value
         {
             get => _value;
@@ -48,7 +48,12 @@ namespace Nexus.Core
 
                 var old = _value;
                 _value = value;
-                _onChanged?.Invoke(old, value);
+                var h = _handlers;
+                if (h != null)
+                {
+                    for (int i = 0; i < h.Count; i++)
+                        h[i](old, value);
+                }
             }
         }
 
@@ -59,20 +64,25 @@ namespace Nexus.Core
         }
 
         // ── Observation ────────────────────────────────────────
-        /// <summary>
-        /// Registers a single-cast callback invoked when the value changes.
-        /// Replace an existing callback by calling again (each call overwrites).
-        /// Pass <c>null</c> to clear.
-        /// </summary>
+        /// <summary>Subscribes a handler invoked when the value changes.</summary>
         public void OnChanged(Action<T, T> handler)
         {
-            _onChanged = handler;
+            if (_handlers == null)
+                _handlers = new List<Action<T, T>>(2);
+            _handlers.Add(handler);
         }
 
-        /// <summary>Removes the change callback.</summary>
+        /// <summary>Unsubscribes a previously added handler.</summary>
+        public void RemoveOnChanged(Action<T, T> handler)
+        {
+            if (_handlers != null)
+                _handlers.Remove(handler);
+        }
+
+        /// <summary>Removes all change handlers.</summary>
         public void ClearOnChanged()
         {
-            _onChanged = null;
+            _handlers = null;
         }
 
         // ── Implicit conversion (read convenience) ─────────────

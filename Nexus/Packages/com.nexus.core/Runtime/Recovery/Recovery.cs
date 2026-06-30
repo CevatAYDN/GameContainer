@@ -1,4 +1,5 @@
 using System;
+using UnityEngine;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
@@ -93,6 +94,33 @@ namespace Nexus.Core
             Signal = signal;
             RetryCount = retryCount;
             IsTimeout = isTimeout;
+        }
+    }
+
+    /// <summary>
+    /// Default recovery strategy: retries up to 3 times, then aborts.
+    /// Logs warnings on retry and errors on abort via UnityEngine.Debug.
+    /// </summary>
+    [Preserve]
+    public sealed class DefaultRecoveryStrategy : IRecoveryStrategy
+    {
+        private readonly int _maxRetries;
+
+        public DefaultRecoveryStrategy(int maxRetries = 3)
+        {
+            _maxRetries = Math.Max(1, maxRetries);
+        }
+
+        public RecoveryDecision OnCommandFailed(CommandFailureContext failure)
+        {
+            if (failure.RetryCount < _maxRetries)
+            {
+                Debug.LogWarning($"[Nexus] Command {failure.CommandType.Name} failed (attempt {failure.RetryCount + 1}/{_maxRetries}). Retrying...\n{failure.Exception.Message}");
+                return RecoveryDecision.Retry(_maxRetries - failure.RetryCount);
+            }
+
+            Debug.LogError($"[Nexus] Command {failure.CommandType.Name} failed after {_maxRetries} retries. Aborting signal chain.\n{failure.Exception}");
+            return RecoveryDecision.Abort();
         }
     }
 }

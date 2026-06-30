@@ -155,7 +155,7 @@ namespace Nexus.Core
         /// Fires a signal asynchronously without awaiting the result. Errors are logged by default;
         /// provide an <paramref name="onError"/> callback for custom error handling.
         /// </summary>
-        void FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct;
+        ValueTask FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct;
 
         ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct;
         ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct;
