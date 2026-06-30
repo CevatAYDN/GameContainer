@@ -10,10 +10,27 @@ namespace Nexus.Editor.Tests
     [TestFixture]
     public class SignalBusTests
     {
+        /// <summary>
+        /// Instance-based result collector used by test commands to report execution state.
+        /// Replaces static fields to prevent test pollution under parallel execution.
+        /// </summary>
+        public class TestResults
+        {
+            public int ExecutedCount;
+            public int LastExecutedValue;
+            public int PriorityRunOrder;
+            public int FirstExecutedPriority;
+            public int SecondExecutedPriority;
+            public int GenericExecutedCount;
+            public int GenericLastExecutedValue;
+            public int AsyncExecutionCount;
+        }
+
         private NexusDI _container;
         private CommandPoolManager _poolManager;
         private MockContext _context;
         private SignalBus _signalBus;
+        private TestResults _results;
 
         public struct SimpleSignal
         {
@@ -25,6 +42,7 @@ namespace Nexus.Editor.Tests
         {
             public ISignalBus SignalBus => null;
             public CancellationToken LifetimeToken => CancellationToken.None;
+            public string ScopeTag => null;
             public IContext Parent => null;
             public void RegisterView(IView view) { }
             public void UnregisterView(IView view) { }
@@ -34,38 +52,37 @@ namespace Nexus.Editor.Tests
             public void Dispose() { }
         }
 
-        public static int ExecutedCount = 0;
-        public static int LastExecutedValue = 0;
-        public static int PriorityRunOrder = 0;
-        public static int FirstExecutedPriority = 0;
-        public static int SecondExecutedPriority = 0;
-
         public class TestCommand : ICommand
         {
             public SimpleSignal Signal;
+            [Inject] private TestResults _results;
             
             public void Execute()
             {
-                ExecutedCount++;
-                LastExecutedValue = Signal.Value;
+                _results.ExecutedCount++;
+                _results.LastExecutedValue = Signal.Value;
             }
         }
 
         public class HighPriorityCommand : ICommand
         {
+            [Inject] private TestResults _results;
+
             public void Execute()
             {
-                PriorityRunOrder++;
-                FirstExecutedPriority = PriorityRunOrder;
+                _results.PriorityRunOrder++;
+                _results.FirstExecutedPriority = _results.PriorityRunOrder;
             }
         }
 
         public class LowPriorityCommand : ICommand
         {
+            [Inject] private TestResults _results;
+
             public void Execute()
             {
-                PriorityRunOrder++;
-                SecondExecutedPriority = PriorityRunOrder;
+                _results.PriorityRunOrder++;
+                _results.SecondExecutedPriority = _results.PriorityRunOrder;
             }
         }
 
@@ -84,22 +101,19 @@ namespace Nexus.Editor.Tests
         public class ConcurrentSyncCommand : ICommand
         {
             public SimpleSignal Signal;
+            [Inject] private TestResults _results;
 
             public void Execute()
             {
-                ExecutedCount++;
-                LastExecutedValue = Signal.Value;
+                _results.ExecutedCount++;
+                _results.LastExecutedValue = Signal.Value;
             }
         }
 
         [SetUp]
         public void Setup()
         {
-            ExecutedCount = 0;
-            LastExecutedValue = 0;
-            PriorityRunOrder = 0;
-            FirstExecutedPriority = 0;
-            SecondExecutedPriority = 0;
+            _results = new TestResults();
 
             _container = new NexusDI();
             _poolManager = new CommandPoolManager(_container);
@@ -108,6 +122,7 @@ namespace Nexus.Editor.Tests
 
             _container.BindInstance<ISignalBus>(_signalBus);
             _container.BindInstance(_signalBus);
+            _container.BindInstance(_results);
         }
 
         [TearDown]
@@ -126,8 +141,8 @@ namespace Nexus.Editor.Tests
 
             _signalBus.Fire(new SimpleSignal(42));
 
-            Assert.AreEqual(1, ExecutedCount);
-            Assert.AreEqual(42, LastExecutedValue);
+            Assert.AreEqual(1, _results.ExecutedCount);
+            Assert.AreEqual(42, _results.LastExecutedValue);
         }
 
         [Test]
@@ -141,8 +156,8 @@ namespace Nexus.Editor.Tests
 
             _signalBus.Fire(new SimpleSignal(5));
 
-            Assert.AreEqual(1, FirstExecutedPriority);
-            Assert.AreEqual(2, SecondExecutedPriority);
+            Assert.AreEqual(1, _results.FirstExecutedPriority);
+            Assert.AreEqual(2, _results.SecondExecutedPriority);
         }
 
         [Test]
@@ -200,19 +215,18 @@ namespace Nexus.Editor.Tests
 
             await _signalBus.FireAsync(new SimpleSignal(77));
 
-            Assert.AreEqual(1, ExecutedCount);
-            Assert.AreEqual(77, LastExecutedValue);
+            Assert.AreEqual(1, _results.ExecutedCount);
+            Assert.AreEqual(77, _results.LastExecutedValue);
         }
-
-        public static int GenericExecutedCount = 0;
-        public static int GenericLastExecutedValue = 0;
 
         public class GenericTestCommand : ICommand<SimpleSignal>
         {
+            [Inject] private TestResults _results;
+
             public void Execute(SimpleSignal signal)
             {
-                GenericExecutedCount++;
-                GenericLastExecutedValue = signal.Value;
+                _results.GenericExecutedCount++;
+                _results.GenericLastExecutedValue = signal.Value;
             }
         }
 
@@ -245,31 +259,25 @@ namespace Nexus.Editor.Tests
         [Test]
         public void GenericCommand_ExecutesAndInjectsSignalWithoutReflection()
         {
-            GenericExecutedCount = 0;
-            GenericLastExecutedValue = 0;
-
             _container.Bind<GenericTestCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(GenericTestCommand), ExecutionMode.Sequential, 0, isAsync: false);
 
             _signalBus.Fire(new SimpleSignal(88));
 
-            Assert.AreEqual(1, GenericExecutedCount);
-            Assert.AreEqual(88, GenericLastExecutedValue);
+            Assert.AreEqual(1, _results.GenericExecutedCount);
+            Assert.AreEqual(88, _results.GenericLastExecutedValue);
         }
 
         [Test]
         public void FluentBindingAPI_RegistersCommandCorrectly()
         {
-            GenericExecutedCount = 0;
-            GenericLastExecutedValue = 0;
-
             var builder = new ContextBuilder(_container, _signalBus);
             builder.BindSignal<SimpleSignal>().To<GenericTestCommand>();
 
             _signalBus.Fire(new SimpleSignal(12));
 
-            Assert.AreEqual(1, GenericExecutedCount);
-            Assert.AreEqual(12, GenericLastExecutedValue);
+            Assert.AreEqual(1, _results.GenericExecutedCount);
+            Assert.AreEqual(12, _results.GenericLastExecutedValue);
         }
 
         [Test]
@@ -287,6 +295,50 @@ namespace Nexus.Editor.Tests
             var cmd = new GenericTestCommand();
             _container.Inject(cmd);
             Assert.IsTrue(adapter.InjectCalled);
+        }
+
+        public class AsyncTestCommand : IAsyncCommand<SimpleSignal>
+        {
+            [Inject] private TestResults _results;
+            public async ValueTask ExecuteAsync(SimpleSignal signal, CancellationToken ct)
+            {
+                _results.AsyncExecutionCount++;
+                await default(ValueTask);
+            }
+        }
+
+        [Test]
+        public void RegisterCommand_AsyncCommandAsSync_ThrowsException()
+        {
+            _container.Bind<AsyncTestCommand>(isSingleton: false);
+
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(AsyncTestCommand), ExecutionMode.Sequential, 0, isAsync: false);
+            });
+        }
+
+        [Test]
+        public void Fire_WithAsyncHandlers_ThrowsInDevelopmentBuild()
+        {
+            _container.Bind<AsyncTestCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(AsyncTestCommand), ExecutionMode.Sequential, 0, isAsync: true);
+
+            Assert.Throws<InvalidOperationException>(() =>
+            {
+                _signalBus.Fire(new SimpleSignal(1));
+            });
+        }
+
+        [Test]
+        public async Task FireAsync_AsyncCommand_ExecutesSuccessfully()
+        {
+            _container.Bind<AsyncTestCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(AsyncTestCommand), ExecutionMode.Sequential, 0, isAsync: true);
+
+            await _signalBus.FireAsync(new SimpleSignal(1));
+
+            Assert.AreEqual(1, _results.AsyncExecutionCount);
         }
     }
 }

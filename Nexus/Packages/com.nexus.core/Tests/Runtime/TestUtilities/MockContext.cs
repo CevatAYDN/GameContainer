@@ -11,6 +11,7 @@ namespace Nexus.Tests
     {
         public ISignalBus SignalBus => null;
         public CancellationToken LifetimeToken => CancellationToken.None;
+        public string ScopeTag => null;
         public IContext Parent => null;
         public void RegisterView(IView view) { }
         public void UnregisterView(IView view) { }

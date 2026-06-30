@@ -102,5 +102,70 @@ namespace Nexus.Editor.Tests
 
             Assert.Throws<System.InvalidOperationException>(() => di.Resolve<ValueTypeInjectedClass>());
         }
+
+        public class DisposableSingleton : System.IDisposable
+        {
+            public bool Disposed;
+            public void Dispose() => Disposed = true;
+        }
+
+        [Test]
+        public void BindInstance_Disposable_DisposedWithContainer()
+        {
+            var instance = new DisposableSingleton();
+            using var di = new NexusDI();
+            di.BindInstance(instance, disposeWithContainer: true);
+
+            Assert.IsFalse(instance.Disposed);
+
+            di.Dispose();
+
+            Assert.IsTrue(instance.Disposed);
+        }
+
+        public class SelfReferencingSingleton
+        {
+            public SelfReferencingSingleton(NexusDI di)
+            {
+                di.Resolve<SelfReferencingSingleton>();
+            }
+        }
+
+        [Test]
+        public void Resolve_CircularDependency_ThrowsException()
+        {
+            using var di = new NexusDI();
+            di.Bind<SelfReferencingSingleton>(isSingleton: true);
+
+            Assert.Throws<System.InvalidOperationException>(() => di.Resolve<SelfReferencingSingleton>());
+        }
+
+        public class ResettableCommand : Nexus.Core.IResettable
+        {
+            [Inject] public IDependency DependencyField;
+            public bool ResetCalled;
+
+            public void Reset()
+            {
+                ResetCalled = true;
+                DependencyField = null;
+            }
+        }
+
+        [Test]
+        public void ClearInjectedReferences_Resettable_CallsReset()
+        {
+            using var di = new NexusDI();
+            di.Bind<IDependency, ConcreteDependency>();
+            di.Bind<ResettableCommand>(isSingleton: false);
+
+            var cmd = di.Resolve<ResettableCommand>();
+            Assert.IsNotNull(cmd.DependencyField);
+
+            Nexus.Core.NexusDI.ClearInjectedReferences(cmd);
+
+            Assert.IsNull(cmd.DependencyField);
+            Assert.IsTrue(cmd.ResetCalled);
+        }
     }
 }

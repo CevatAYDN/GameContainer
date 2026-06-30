@@ -9,6 +9,16 @@ namespace Nexus.Tests
     [TestFixture]
     public class RecoveryTests
     {
+        /// <summary>Instance-based result collector to prevent static state pollution.</summary>
+        public class RecoveryTestResults
+        {
+            public int ThrowCount;
+            public int FallbackCount;
+            public string FallbackMessage;
+            public int AsyncFallbackCount;
+            public string AsyncFallbackMessage;
+        }
+
         public readonly struct FailSignal
         {
             public readonly string Message;
@@ -17,36 +27,34 @@ namespace Nexus.Tests
 
         public class ThrowCommand : ICommand
         {
-            public static int ExecutionCount;
+            [Inject] private RecoveryTestResults _results;
             public FailSignal Signal;
             public void Execute()
             {
-                ExecutionCount++;
+                _results.ThrowCount++;
                 throw new InvalidOperationException("Command failed intendedly: " + Signal.Message);
             }
         }
 
         public class FallbackCommand : ICommand
         {
-            public static int ExecutionCount;
-            public static string ReceivedMessage;
+            [Inject] private RecoveryTestResults _results;
             public FailSignal Signal;
             public void Execute()
             {
-                ExecutionCount++;
-                ReceivedMessage = Signal.Message;
+                _results.FallbackCount++;
+                _results.FallbackMessage = Signal.Message;
             }
         }
 
         public class AsyncFallbackCommand : IAsyncCommand
         {
-            public static int ExecutionCount;
-            public static string ReceivedMessage;
+            [Inject] private RecoveryTestResults _results;
             public FailSignal Signal;
             public ValueTask ExecuteAsync(CancellationToken ct)
             {
-                ExecutionCount++;
-                ReceivedMessage = Signal.Message;
+                _results.AsyncFallbackCount++;
+                _results.AsyncFallbackMessage = Signal.Message;
                 return default;
             }
         }
@@ -66,15 +74,12 @@ namespace Nexus.Tests
         private SignalBus _signalBus;
         private MockContext _context;
         private CustomRecoveryStrategy _strategy;
+        private RecoveryTestResults _results;
 
         [SetUp]
         public void Setup()
         {
-            ThrowCommand.ExecutionCount = 0;
-            FallbackCommand.ExecutionCount = 0;
-            FallbackCommand.ReceivedMessage = null;
-            AsyncFallbackCommand.ExecutionCount = 0;
-            AsyncFallbackCommand.ReceivedMessage = null;
+            _results = new RecoveryTestResults();
 
             _container = new NexusDI();
             _poolManager = new CommandPoolManager(_container);
@@ -83,6 +88,7 @@ namespace Nexus.Tests
             _strategy = new CustomRecoveryStrategy();
 
             _container.BindInstance<IRecoveryStrategy>(_strategy);
+            _container.BindInstance(_results);
             _container.Bind<FallbackCommand>(isSingleton: false);
             _container.Bind<AsyncFallbackCommand>(isSingleton: false);
         }
@@ -115,7 +121,7 @@ namespace Nexus.Tests
             });
 
             Assert.IsTrue(ex.Message.Contains("Retry limit reached"));
-            Assert.AreEqual(4, ThrowCommand.ExecutionCount); // 1 initial + 3 retries
+            Assert.AreEqual(4, _results.ThrowCount); // 1 initial + 3 retries
         }
 
         [Test]
@@ -129,9 +135,9 @@ namespace Nexus.Tests
 
             _signalBus.Fire(new FailSignal("FallbackTest"));
 
-            Assert.AreEqual(1, ThrowCommand.ExecutionCount);
-            Assert.AreEqual(1, FallbackCommand.ExecutionCount);
-            Assert.AreEqual("FallbackTest", FallbackCommand.ReceivedMessage);
+            Assert.AreEqual(1, _results.ThrowCount);
+            Assert.AreEqual(1, _results.FallbackCount);
+            Assert.AreEqual("FallbackTest", _results.FallbackMessage);
         }
 
         [Test]
@@ -143,12 +149,11 @@ namespace Nexus.Tests
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.FallbackAsync<AsyncFallbackCommand>();
 
-            // Triggering synchronously will delegate to async path internally since FallbackAsync is async
             await _signalBus.FireAsync(new FailSignal("FallbackAsyncTest"));
 
-            Assert.AreEqual(1, ThrowCommand.ExecutionCount);
-            Assert.AreEqual(1, AsyncFallbackCommand.ExecutionCount);
-            Assert.AreEqual("FallbackAsyncTest", AsyncFallbackCommand.ReceivedMessage);
+            Assert.AreEqual(1, _results.ThrowCount);
+            Assert.AreEqual(1, _results.AsyncFallbackCount);
+            Assert.AreEqual("FallbackAsyncTest", _results.AsyncFallbackMessage);
         }
 
         [Test]
@@ -163,13 +168,12 @@ namespace Nexus.Tests
             CommandFailedSignal? caughtFailedSignal = null;
             _signalBus.Subscribe<CommandFailedSignal>(sig => caughtFailedSignal = sig);
 
-            // Skip decision should catch the exception and NOT throw it to the caller
             Assert.DoesNotThrow(() =>
             {
                 _signalBus.Fire(new FailSignal("SkipTest"));
             });
 
-            Assert.AreEqual(1, ThrowCommand.ExecutionCount);
+            Assert.AreEqual(1, _results.ThrowCount);
             Assert.IsNotNull(caughtFailedSignal);
             Assert.AreEqual(typeof(ThrowCommand), caughtFailedSignal.Value.SourceCommand);
             Assert.IsInstanceOf<FailSignal>(caughtFailedSignal.Value.SourceSignal);
@@ -191,7 +195,7 @@ namespace Nexus.Tests
             });
 
             Assert.IsTrue(ex.Message.Contains("Execution aborted by recovery strategy"));
-            Assert.AreEqual(1, ThrowCommand.ExecutionCount); // no retries
+            Assert.AreEqual(1, _results.ThrowCount);
         }
     }
 }
