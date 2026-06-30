@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-06-28
+
+### Added
+
+- **Nexus Package CHANGELOG**: Package-specific changelog added at `Nexus/Packages/com.nexus.core/CHANGELOG.md` with full 0.2.0 breaking changes and migration guide.
+- **CI Workflows**: GameCI-based package validation and Unity test pipelines added under `.github/workflows/`.
+- **Regression & Performance Tests**: New tests covering async/sync validation, DI disposal, circular dependency detection, IResettable integration, NetworkSignalBus rollback, and zero-GC steady-state dispatch.
+
+### Changed
+
+- Package metadata updated to version `0.2.0`.
+- Repository vs. package naming clarified in README documentation.
+
 ## [0.1.0] - 2025-06-25
 
 ### Added

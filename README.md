@@ -131,10 +131,10 @@ namespace Nexus
 ---
 
 #### Step 4: Business Logic and Command Mapping
-Create the business logic that runs when the signal is dispatched. You can choose between two styles:
+Create the business logic that runs when the signal is dispatched.
 
-##### Style A: Performant Generic Command (Recommended for 0-GC & AOT)
-Implement the `ICommand<TSignal>` interface and bind it explicitly in your Lifecycle class (see Step 3):
+##### Style A: Performant Generic Command (Single Recommended Path)
+Implement the `ICommand<TSignal>` or `IAsyncCommand<TSignal>` interface and bind it explicitly in your Lifecycle class (see Step 3). This approach is 0-GC and AOT/IL2CPP compatible:
 
 ```csharp
 using Nexus.Core;
@@ -157,8 +157,8 @@ Add this binding to your Lifecycle class:
 builder.BindCommand<DamageSignal, DamageCommand>();
 ```
 
-##### Style B: Auto-Discovered Command (Reflection Fallback)
-Implement the non-generic `ICommand` interface and decorate the class with the `[SignalHandler]` attribute. Nexus will automatically discover and register it:
+##### Style B: Auto-Discovered Command (Legacy — Reflection Fallback)
+Implement the non-generic `ICommand` interface and decorate the class with the `[SignalHandler]` attribute. Nexus will automatically discover and register it. **This approach is no longer recommended** as it uses reflection-based injection, which introduces allocations and AOT stripping issues:
 
 ```csharp
 using Nexus.Core;
@@ -318,13 +318,17 @@ Nexus, geleneksel DI ve Event-Driven kütüphanelerindeki izlenebilirlik (debugg
 
 Nexus, bağımsız bir **Unity Package Manager (UPM)** paketidir. Projenize entegre etmek için:
 
+> [!NOTE]
+> **Repository vs. Package Naming**
+> Kök repository'nin adı `GameContainer` olmasının nedeni, mimarinin ana konteyner/ monorepo hedefleri olmasıdır. Ancak paket adı `com.nexus.core` olarak seçilmiştir; bu, Unity Package Manager içinde temiz, dekuple modülerlik sağlar.
+
 1. Projenizin `Packages/manifest.json` dosyasını açın.
 2. `dependencies` bloğuna paketin Git URL'ini veya local disk path'ini ekleyin:
 
 ```json
 {
   "dependencies": {
-    "com.nexus.core": "https://github.com/<username>/<repo>.git?path=Nexus/Packages/com.nexus.core",
+    "com.nexus.core": "https://github.com/CevatAYDN/Pixel-Flow-Clone.git?path=GameContainer/Nexus/Packages/com.nexus.core",
     ...
   }
 }
@@ -398,10 +402,10 @@ namespace Nexus
 ---
 
 #### Adım 4: İş Mantığı ve Komut Eşleme (Command)
-Sinyal fırlatıldığında çalışacak iş mantığını iki farklı yöntemle tanımlayabilirsiniz:
+Sinyal fırlatıldığında çalışacak iş mantığını tanımlayın.
 
-##### Yöntem A: Yüksek Performanslı Generic Komut (0-GC & AOT için Önerilen)
-`ICommand<TSignal>` arayüzünü uygulayın ve komutu Lifecycle sınıfınızda el ile bağlayın (bkz. Adım 3):
+##### Yöntem A: Yüksek Performanslı Generic Komut (Tek Önerilen Yol)
+`ICommand<TSignal>` veya `IAsyncCommand<TSignal>` arayüzünü uygulayın ve komutu Lifecycle sınıfınızda el ile bağlayın (bkz. Adım 3). Bu yöntem 0-GC ve AOT/IL2CPP uyumludur:
 
 ```csharp
 using Nexus.Core;
@@ -424,8 +428,8 @@ Bu bağlantıyı Lifecycle sınıfınızda yapılandırın:
 builder.BindCommand<DamageSignal, DamageCommand>();
 ```
 
-##### Yöntem B: Otomatik Keşfedilen Komut (Yansıma / Reflection Yöntemi)
-Sınıfı `[SignalHandler]` özniteliği ile işaretleyin ve generic olmayan `ICommand` arayüzünü uygulayın. Nexus bu komutu otomatik olarak tarayıp kaydedecektir:
+##### Yöntem B: Otomatik Keşfedilen Komut (Legacy — Reflection Düşük Performanslı)
+Sınıfı `[SignalHandler]` özniteliği ile işaretleyin ve generic olmayan `ICommand` arayüzünü uygulayın. Nexus bu komutu otomatik olarak tarayıp kaydedecektir. **Bu yaklaşım artık önerilmez**; reflection tabanlı enjeksiyon kullanır ve AOT platformlarında (WebGL, Konsolar vb.) ek görev üretir:
 
 ```csharp
 using Nexus.Core;
