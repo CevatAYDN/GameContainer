@@ -47,7 +47,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("LIVE SIGNAL & COMMAND TRACER");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("tracer_title"));
             _view.Add(toolbar);
 
 #if !NEXUS_DEBUG
@@ -59,7 +59,7 @@ namespace Nexus.Editor
                 "Full causal tracing (event trees, parent/child chains) is compiled out.\n" +
                 "Basic production trace is active below — showing recent signal dispatches.");
 
-            var enableBtn = NexusEditorStyles.CreateButton("Enable Full Causal Tracing & Recompile", () =>
+            var enableBtn = NexusEditorStyles.CreateButton(NexusLang.Get("tracer_enable"), () =>
             {
                 BuildTargetGroup group = EditorUserBuildSettings.selectedBuildTargetGroup;
                 var namedTarget = UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(group);
@@ -122,12 +122,12 @@ namespace Nexus.Editor
             });
             filterBar.Add(_pauseToggle);
 
-            filterBar.Add(new Label(" Type:") { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
+            filterBar.Add(new Label(NexusLang.Get("tracer_type_filter")) { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
             filterBar.Add(MakeFilterButton("SIG", () => { _filterSignal = !_filterSignal; RefreshTracerLogs(); }, () => _filterSignal));
             filterBar.Add(MakeFilterButton("CMD", () => { _filterCommand = !_filterCommand; RefreshTracerLogs(); }, () => _filterCommand));
             filterBar.Add(MakeFilterButton("MOD", () => { _filterModelChange = !_filterModelChange; RefreshTracerLogs(); }, () => _filterModelChange));
 
-            filterBar.Add(new Label(" Status:") { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
+            filterBar.Add(new Label(NexusLang.Get("tracer_status_filter")) { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
             filterBar.Add(MakeFilterButton("OK", () => { _filterOk = !_filterOk; RefreshTracerLogs(); }, () => _filterOk, NexusEditorStyles.AccentGreen));
             filterBar.Add(MakeFilterButton("FAIL", () => { _filterFailed = !_filterFailed; RefreshTracerLogs(); }, () => _filterFailed, NexusEditorStyles.AccentRed));
             filterBar.Add(MakeFilterButton("CANCEL", () => { _filterCancelled = !_filterCancelled; RefreshTracerLogs(); }, () => _filterCancelled, NexusEditorStyles.AccentYellow));
@@ -296,7 +296,7 @@ namespace Nexus.Editor
 
             if (!Application.isPlaying)
             {
-                _tracerScrollView.Add(new Label("Tracer is offline. Enter Play Mode to trace signals.") { style = { color = Color.gray, alignSelf = Align.Center, marginTop = 20 } });
+                _tracerScrollView.Add(new Label(NexusLang.Get("tracer_offline")) { style = { color = Color.gray, alignSelf = Align.Center, marginTop = 20 } });
                 _detailPanel.style.display = DisplayStyle.None;
                 return;
             }

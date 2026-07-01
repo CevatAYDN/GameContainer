@@ -46,7 +46,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("HIERARCHY GRAPH & DI DATA INSPECTOR");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("hierarchy_title"));
             _view.Add(toolbar);
 
             var splitView = new VisualElement { style = { flexDirection = FlexDirection.Row, flexGrow = 1 } };
@@ -60,7 +60,7 @@ namespace Nexus.Editor
             // Right Panel (DI Inspector)
             _rightPanel = new VisualElement { style = { width = new Length(50, LengthUnit.Percent), paddingLeft = 12, paddingRight = 12, paddingTop = 10, paddingBottom = 10 } };
             
-            var detailTitle = new Label("DI CONTAINER INSPECTOR") { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 12, color = new StyleColor(Color.gray), marginBottom = 10 } };
+            var detailTitle = new Label(NexusLang.Get("hierarchy_di_inspector")) { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 12, color = new StyleColor(Color.gray), marginBottom = 10 } };
             _rightPanel.Add(detailTitle);
 
             _inspectorScroll = new ScrollView { style = { flexGrow = 1 } };
@@ -230,7 +230,7 @@ namespace Nexus.Editor
 
             if (singletonCount == 0)
             {
-                singletonsList.Add(new Label("  None resolved.") { style = { fontSize = 9, color = Color.gray } });
+                singletonsList.Add(new Label(NexusLang.Get("hierarchy_none_resolved")) { style = { fontSize = 9, color = Color.gray } });
             }
             card.Add(singletonsList);
 
@@ -385,12 +385,12 @@ namespace Nexus.Editor
 
             if (fields.Length == 0 && properties.Length == 0)
             {
-                container.Add(new Label("No fields or properties available.") { style = { color = Color.gray, fontSize = 9, unityFontStyleAndWeight = FontStyle.Italic } });
+                container.Add(new Label(NexusLang.Get("hierarchy_no_fields")) { style = { color = Color.gray, fontSize = 9, unityFontStyleAndWeight = FontStyle.Italic } });
                 return;
             }
 
             // Fields section
-            var fieldsHeader = new Label("Fields") { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginTop = 4 } };
+                            var fieldsHeader = new Label(NexusLang.Get("hierarchy_fields")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginTop = 4 } };
             container.Add(fieldsHeader);
 
             foreach (var field in fields)
@@ -403,7 +403,7 @@ namespace Nexus.Editor
             }
 
             // Properties section
-            var propsHeader = new Label("Properties") { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginTop = 8 } };
+                            var propsHeader = new Label(NexusLang.Get("hierarchy_properties")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginTop = 8 } };
             container.Add(propsHeader);
 
             foreach (var prop in properties)

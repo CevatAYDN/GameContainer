@@ -78,7 +78,7 @@ namespace Nexus.Editor
         {
             _contentRoot = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("CONTEXT CREATION & UTILITIES WIZARD");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("wizard_title"));
             _contentRoot.Add(toolbar);
 
             // Tab navigation buttons
@@ -207,7 +207,7 @@ namespace Nexus.Editor
                 var hint = NexusEditorStyles.CreateHint("No NexusBootstrapManifest found in the project. Create one to enable skeleton generation.");
                 manifestGroup.Add(hint);
 
-                var createBtn = NexusEditorStyles.CreateButton("Create Default Bootstrap Manifest", CreateDefaultManifest, NexusEditorStyles.BtnBlue);
+                var createBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_create_manifest"), CreateDefaultManifest, NexusEditorStyles.BtnBlue);
                 manifestGroup.Add(createBtn);
             }
             else
@@ -217,7 +217,7 @@ namespace Nexus.Editor
                 details.Add(new Label($"Default Contexts: {string.Join(", ", manifest.DefaultContextNames)}") { style = { color = NexusEditorStyles.TextSecondary, fontSize = 9 } });
                 manifestGroup.Add(details);
 
-                var genBtn = NexusEditorStyles.CreateButton("Generate Skeleton from Manifest", () => GenerateSkeleton(manifest), NexusEditorStyles.BtnBlue);
+                var genBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_gen_skeleton"), () => GenerateSkeleton(manifest), NexusEditorStyles.BtnBlue);
                 manifestGroup.Add(genBtn);
             }
 
@@ -235,7 +235,7 @@ namespace Nexus.Editor
 
             // Path Configuration
             var pathsGroup = new VisualElement { style = { marginTop = 5, borderTopWidth = 1, borderTopColor = new StyleColor(NexusEditorStyles.BorderColor), paddingTop = 5 } };
-            pathsGroup.Add(new Label("Paths Configuration") { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginBottom = 4 } });
+            pathsGroup.Add(new Label(NexusLang.Get("wizard_paths_config")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginBottom = 4 } });
 
             var scriptsPathRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
             var scriptsPathField = new TextField("Scripts Folder") { value = _wizardScriptsPath, style = { flexGrow = 1 } };
@@ -264,7 +264,7 @@ namespace Nexus.Editor
             creationGroup.Add(_parentRootDropdown);
 
             // Assemblies Multi-select Foldout
-            var foldout = new Foldout { text = $"Assembly Scopes ({_wizardSelectedAssemblies.Count} selected)", value = false };
+            var foldout = new Foldout { text = string.Format(NexusLang.Get("wizard_assembly_scopes"), _wizardSelectedAssemblies.Count), value = false };
             foldout.style.marginTop = 6;
             
             var scrollHeight = Mathf.Min(_wizardAvailableAssemblies.Count * 20 + 5, 120);
@@ -279,7 +279,7 @@ namespace Nexus.Editor
                         _wizardSelectedAssemblies.Add(assemblyName);
                     else
                         _wizardSelectedAssemblies.Remove(assemblyName);
-                    foldout.text = $"Assembly Scopes ({_wizardSelectedAssemblies.Count} selected)";
+                    foldout.text = string.Format(NexusLang.Get("wizard_assembly_scopes"), _wizardSelectedAssemblies.Count);
                 });
                 assembliesScroll.Add(toggle);
             }
@@ -326,7 +326,7 @@ namespace Nexus.Editor
             _validationLabel = new Label { style = { color = new StyleColor(NexusEditorStyles.AccentOrange), fontSize = 10, marginTop = 8, whiteSpace = WhiteSpace.Normal } };
             creationGroup.Add(_validationLabel);
 
-            _createRootButton = NexusEditorStyles.CreateButton("Create Root & ContextData", RunCreateRoot, NexusEditorStyles.BtnBlue);
+            _createRootButton = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_create_root"), RunCreateRoot, NexusEditorStyles.BtnBlue);
             creationGroup.Add(_createRootButton);
 
             ValidateCreateRootForm();
@@ -343,7 +343,7 @@ namespace Nexus.Editor
             var rootChoices = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
             if (rootChoices.Count == 0)
             {
-                var errorLabel = new Label("No active Roots found in scene. Create a Root first.") { style = { color = Color.red, fontSize = 10, marginTop = 5 } };
+                var errorLabel = new Label(NexusLang.Get("wizard_no_roots")) { style = { color = Color.red, fontSize = 10, marginTop = 5 } };
                 genGroup.Add(errorLabel);
                 return;
             }
@@ -361,7 +361,7 @@ namespace Nexus.Editor
             toggleCreateGo.RegisterValueChangedCallback(evt => _wizardCreateViewGo = evt.newValue);
             genGroup.Add(toggleCreateGo);
 
-            var genBtn = NexusEditorStyles.CreateButton("Generate View & Mediator Files", RunGenerateViewAndMediator, NexusEditorStyles.BtnBlue);
+            var genBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_gen_view"), RunGenerateViewAndMediator, NexusEditorStyles.BtnBlue);
             genGroup.Add(genBtn);
         }
 
@@ -380,7 +380,7 @@ namespace Nexus.Editor
             var rootChoices = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
             if (rootChoices.Count == 0)
             {
-                var errorLabel = new Label("No active Roots found in scene. Create a Root first.") { style = { color = Color.red, fontSize = 10, marginTop = 5 } };
+                var errorLabel = new Label(NexusLang.Get("wizard_no_roots")) { style = { color = Color.red, fontSize = 10, marginTop = 5 } };
                 genGroup.Add(errorLabel);
                 return;
             }
@@ -394,7 +394,7 @@ namespace Nexus.Editor
             _signalTargetRootDropdown.RegisterValueChangedCallback(evt => _wizardSignalTargetRootName = evt.newValue);
             genGroup.Add(_signalTargetRootDropdown);
 
-            var genBtn = NexusEditorStyles.CreateButton("Generate Signal & Command Files", RunGenerateSignalAndCommand, NexusEditorStyles.BtnBlue);
+            var genBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_gen_signal"), RunGenerateSignalAndCommand, NexusEditorStyles.BtnBlue);
             genGroup.Add(genBtn);
         }
 
@@ -412,7 +412,7 @@ namespace Nexus.Editor
                 "with InitializeAsync and OnDispose lifecycle hooks.");
             genGroup.Add(serviceDescription);
 
-            var genBtn = NexusEditorStyles.CreateButton("Generate Service Files", RunGenerateService, NexusEditorStyles.BtnBlue);
+            var genBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_gen_service"), RunGenerateService, NexusEditorStyles.BtnBlue);
             genGroup.Add(genBtn);
 
             var advancedGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "SERVICE BINDING HELP");
@@ -431,7 +431,7 @@ namespace Nexus.Editor
             var rootChoices = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
             if (rootChoices.Count == 0)
             {
-                var errorLabel = new Label("No active Roots found in scene.") { style = { color = Color.gray, fontSize = 10, marginTop = 5 } };
+                var errorLabel = new Label(NexusLang.Get("wizard_no_roots_short")) { style = { color = Color.gray, fontSize = 10, marginTop = 5 } };
                 deleteGroup.Add(errorLabel);
                 return;
             }
@@ -453,11 +453,11 @@ namespace Nexus.Editor
             var warningBox = NexusEditorStyles.CreateWarningBox(warnText);
             deleteGroup.Add(warningBox);
 
-            var deleteBtn = NexusEditorStyles.CreateButton("DELETE ROOT & ALL RELATED ASSETS", RunDeleteRootContext, NexusEditorStyles.AccentRed);
+            var deleteBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_delete_root"), RunDeleteRootContext, NexusEditorStyles.AccentRed);
             deleteGroup.Add(deleteBtn);
 
             var cleanerGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "DEAD CODE CLEANER");
-            var scanBtn = NexusEditorStyles.CreateButton("Scan for Unused Signals (Regex)", ScanForDeadSignals, NexusEditorStyles.BtnBlue);
+            var scanBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_scan_unused"), ScanForDeadSignals, NexusEditorStyles.BtnBlue);
             cleanerGroup.Add(scanBtn);
         }
 

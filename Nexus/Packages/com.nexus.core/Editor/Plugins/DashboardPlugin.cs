@@ -221,17 +221,17 @@ namespace Nexus.Editor
 
         private void BuildQuickActions(VisualElement parent)
         {
-            var groupCard = NexusEditorStyles.CreateActionGroup(parent, "ALL TOOLS");
+            var groupCard = NexusEditorStyles.CreateActionGroup(parent, NexusLang.Get("quick_actions"));
 
-            var actions = new (string title, string desc, string pluginId)[] {
-                ("Context Wizard",     "Create Root contexts & generate code",         "Wizard"),
-                ("Hierarchy & Data",  "Inspect DI container & context tree (live)",    "Hierarchy"),
-                ("Signal Explorer",   "View signal/command mappings & test fire",      "Explorer"),
-                ("Live Tracer",       "Monitor signal chains in real-time",            "Tracer"),
-                ("Signal Graph",      "Visual graph of signal→command flow",           "Graph"),
-                ("Game Manager",      "Model/signal/command overview & performance",   "GameManager"),
-                ("Type Analyzer",     "Analyze type coupling & [Inject] dependencies", "TypeAnalyzer"),
-                ("Help & Docs",       "Quick start guides, API reference, samples",    "Help"),
+            var actions = new (string titleKey, string descKey, string pluginId)[] {
+                ("action_wizard_title",      "action_wizard_desc",      "Wizard"),
+                ("action_hierarchy_title",   "action_hierarchy_desc",   "Hierarchy"),
+                ("action_explorer_title",    "action_explorer_desc",    "Explorer"),
+                ("action_tracer_title",      "action_tracer_desc",      "Tracer"),
+                ("action_graph_title",       "action_graph_desc",       "Graph"),
+                ("action_gamemanager_title", "action_gamemanager_desc", "GameManager"),
+                ("action_typeanalyzer_title","action_typeanalyzer_desc","TypeAnalyzer"),
+                ("action_help_title",        "action_help_desc",        "Help"),
             };
 
             var colors = new[] { NexusEditorStyles.BtnBlue, NexusEditorStyles.BtnTeal,
@@ -243,7 +243,7 @@ namespace Nexus.Editor
             for (int i = 0; i < actions.Length; i++)
             {
                 var a = actions[i];
-                AddActionCard(buttonRow, a.title, a.desc, colors[i], () => Window.SwitchToPlugin(a.pluginId));
+                AddActionCard(buttonRow, NexusLang.Get(a.titleKey), NexusLang.Get(a.descKey), colors[i], () => Window.SwitchToPlugin(a.pluginId));
             }
 
             groupCard.Add(buttonRow);
@@ -286,7 +286,7 @@ namespace Nexus.Editor
             };
             card.Add(descLabel);
 
-            var btn = NexusEditorStyles.CreateButton("Open", onClick, btnColor);
+            var btn = NexusEditorStyles.CreateButton(NexusLang.Get("open"), onClick, btnColor);
             btn.style.marginTop = 0;
             btn.style.marginBottom = 0;
             btn.style.alignSelf = Align.FlexStart;
@@ -354,7 +354,7 @@ namespace Nexus.Editor
                 }
                 if (results.Count > 5)
                 {
-                    card.Add(new Label($"+ {results.Count - 5} more...")
+                    card.Add(new Label($"+ {results.Count - 5} {NexusLang.Get("more")}")
                         { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 2 } });
                 }
             }
@@ -374,16 +374,8 @@ namespace Nexus.Editor
 
         private void BuildFrameworkInfo(VisualElement parent)
         {
-            var infoCard = NexusEditorStyles.CreateInfoCard(parent, "FRAMEWORK", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
-                "Nexus Observable Architecture v0.3.0\n" +
-                "Unity 6 • UI Toolkit • MIT License\n\n" +
-                "Built on a 0-GC, JIT-free generic observable framework with:\n" +
-                "• Causal Tracing — zero-allocation causality tracking\n" +
-                "• 4 Execution Modes — Sequential, Concurrent, Exclusive, Composite\n" +
-                "• Build Validation — catches priority conflicts before compile\n" +
-                "• Auto-Discovery — Lifecycle, Commands, Views and Mediators\n" +
-                "• Command Pooling — automatic pooling for 0-GC steady-state\n\n" +
-                "Editor Suite: 9 plugins, Code Generator, Live Tracer, Graph Viewer, Type Analyzer");
+            var infoCard = NexusEditorStyles.CreateInfoCard(parent, NexusLang.Get("framework"), NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
+                NexusLang.Get("framework_desc"));
         }
 
         private void RefreshStats()

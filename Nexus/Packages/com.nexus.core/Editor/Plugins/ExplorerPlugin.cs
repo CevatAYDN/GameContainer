@@ -70,7 +70,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("SIGNAL EXPLORER & PLAY-MODE TESTER");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("explorer_title"));
             _view.Add(toolbar);
 
             var tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
@@ -183,9 +183,9 @@ namespace Nexus.Editor
             leftContainer.Add(filtersToolbar);
 
             var headers = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingLeft = 12, paddingRight = 12, paddingTop = 6, paddingBottom = 6, backgroundColor = new StyleColor(NexusEditorStyles.TableHeaderBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderLight) } };
-            headers.Add(new Label("Signal Type") { style = { width = new Length(40, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
-            headers.Add(new Label("Handler / Command") { style = { width = new Length(40, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
-            headers.Add(new Label("Mode") { style = { width = new Length(20, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
+            headers.Add(new Label(NexusLang.Get("explorer_signal_type")) { style = { width = new Length(40, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
+            headers.Add(new Label(NexusLang.Get("explorer_handler_command")) { style = { width = new Length(40, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
+            headers.Add(new Label(NexusLang.Get("explorer_mode")) { style = { width = new Length(20, LengthUnit.Percent), unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray, fontSize = 9 } });
             leftContainer.Add(headers);
 
             _explorerScrollView = new ScrollView { style = { flexGrow = 1 } };
@@ -193,7 +193,7 @@ namespace Nexus.Editor
             splitView.Add(leftContainer);
 
             var rightContainer = new VisualElement { style = { width = new Length(40, LengthUnit.Percent), paddingLeft = 12, paddingRight = 12, paddingTop = 10, paddingBottom = 10 } };
-            var testerTitle = new Label("SIGNAL PLAY-MODE TESTER") { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 12, color = new StyleColor(Color.gray), marginBottom = 10 } };
+            var testerTitle = new Label(NexusLang.Get("explorer_tester_title")) { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 12, color = new StyleColor(Color.gray), marginBottom = 10 } };
             rightContainer.Add(testerTitle);
 
             _testerPanel = new VisualElement { style = { flexGrow = 1 } };
@@ -217,7 +217,7 @@ namespace Nexus.Editor
             
             if (!Application.isPlaying)
             {
-                container.Add(new Label("Live Models are only available in Play Mode.") { style = { color = NexusEditorStyles.TextSecondary, unityFontStyleAndWeight = FontStyle.Italic } });
+                container.Add(new Label(NexusLang.Get("explorer_live_models_hint")) { style = { color = NexusEditorStyles.TextSecondary, unityFontStyleAndWeight = FontStyle.Italic } });
                 _tabContent.Add(container);
                 return;
             }
@@ -225,12 +225,12 @@ namespace Nexus.Editor
             var activeContexts = NexusRuntime.ActiveContexts;
             if (activeContexts.Count == 0)
             {
-                container.Add(new Label("No active Contexts found.") { style = { color = NexusEditorStyles.TextSecondary } });
+                container.Add(new Label(NexusLang.Get("explorer_no_contexts")) { style = { color = NexusEditorStyles.TextSecondary } });
                 _tabContent.Add(container);
                 return;
             }
 
-            var refreshBtn = NexusEditorStyles.CreateButton("Refresh Data", RenderTab, NexusEditorStyles.BtnBlue);
+            var refreshBtn = NexusEditorStyles.CreateButton(NexusLang.Get("explorer_refresh"), RenderTab, NexusEditorStyles.BtnBlue);
             refreshBtn.style.alignSelf = Align.FlexStart;
             refreshBtn.style.marginBottom = 10;
             container.Add(refreshBtn);
@@ -535,7 +535,7 @@ namespace Nexus.Editor
                 }
                 catch (Exception ex)
                 {
-                    _resultLogLabel.text = $"Create instance error: {ex.Message}";
+                    _resultLogLabel.text = string.Format(NexusLang.Get("explorer_create_error"), ex.Message);
                     _resultLogLabel.style.color = Color.red;
                 }
             }
@@ -552,20 +552,20 @@ namespace Nexus.Editor
 
             if (!Application.isPlaying)
             {
-                var label = new Label("Signal testing is only active in Play Mode. Select a signal on the left to prepare testing.") { style = { color = Color.gray, fontSize = 10, whiteSpace = WhiteSpace.Normal } };
+                var label = new Label(NexusLang.Get("explorer_testing_hint")) { style = { color = Color.gray, fontSize = 10, whiteSpace = WhiteSpace.Normal } };
                 _testerFormContainer.Add(label);
                 return;
             }
 
             if (_testerSelectedSignalType == null || _testerSignalInstance == null)
             {
-                var label = new Label("Select a signal type from the list to test fire.") { style = { color = Color.gray, fontSize = 10 } };
+                var label = new Label(NexusLang.Get("explorer_select_signal")) { style = { color = Color.gray, fontSize = 10 } };
                 _testerFormContainer.Add(label);
                 return;
             }
 
             // Signal Info Header
-            var sigLabel = new Label($"Selected Signal: {_testerSelectedSignalType.Name}") { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 11, color = Color.white, marginBottom = 8 } };
+            var sigLabel = new Label(string.Format(NexusLang.Get("explorer_selected_signal"), _testerSelectedSignalType.Name)) { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 11, color = Color.white, marginBottom = 8 } };
             _testerFormContainer.Add(sigLabel);
 
             // Dynamic fields list
@@ -581,7 +581,7 @@ namespace Nexus.Editor
             
             if (contextChoices.Count == 0)
             {
-                var noContextLabel = new Label("No active Contexts available. Play Mode target signal bus is missing.") { style = { color = Color.red, fontSize = 9 } };
+                var noContextLabel = new Label(NexusLang.Get("explorer_no_context_target")) { style = { color = Color.red, fontSize = 9 } };
                 _testerFormContainer.Add(noContextLabel);
                 return;
             }
@@ -591,13 +591,13 @@ namespace Nexus.Editor
             _testerFormContainer.Add(_contextTargetDropdown);
 
             // Fire Button
-            _fireButton = NexusEditorStyles.CreateButton("Fire Test Signal", FireSelectedSignal, NexusEditorStyles.BtnGreen);
+            _fireButton = NexusEditorStyles.CreateButton(NexusLang.Get("explorer_fire_test"), FireSelectedSignal, NexusEditorStyles.BtnGreen);
             _fireButton.style.marginTop = 10;
             _fireButton.style.height = 30;
             _testerFormContainer.Add(_fireButton);
 
             // Presets Section
-            var presetsHeader = new Label("Presets") { style = { marginTop = 15, fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray } };
+            var presetsHeader = new Label(NexusLang.Get("explorer_presets")) { style = { marginTop = 15, fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray } };
             _testerFormContainer.Add(presetsHeader);
 
             var presetRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
@@ -725,14 +725,14 @@ namespace Nexus.Editor
                 return ui;
             }
 
-            return new Label($"{field.Name}: {initialValue ?? "null"} (Unsupported Type)");
+            return new Label(string.Format(NexusLang.Get("explorer_unsupported_type"), field.Name, initialValue ?? "null"));
         }
 
         private void FireSelectedSignal()
         {
             if (_contextTargetDropdown == null || string.IsNullOrEmpty(_contextTargetDropdown.value))
             {
-                _resultLogLabel.text = "Error: Target context not selected.";
+                _resultLogLabel.text = NexusLang.Get("explorer_error_context");
                 _resultLogLabel.style.color = Color.red;
                 return;
             }
@@ -753,7 +753,7 @@ namespace Nexus.Editor
 
                 if (targetContext == null || targetContext.SignalBus == null)
                 {
-                    _resultLogLabel.text = $"Error: Target context '{_contextTargetDropdown.value}' or SignalBus is offline.";
+                    _resultLogLabel.text = string.Format(NexusLang.Get("explorer_error_offline"), _contextTargetDropdown.value);
                     _resultLogLabel.style.color = Color.yellow;
                     return;
                 }
@@ -761,7 +761,7 @@ namespace Nexus.Editor
                 var targetBus = targetContext.SignalBus as SignalBus;
                 if (targetBus == null)
                 {
-                    _resultLogLabel.text = "Error: Invalid SignalBus implementation.";
+                    _resultLogLabel.text = NexusLang.Get("explorer_error_invalid_bus");
                     _resultLogLabel.style.color = Color.red;
                     return;
                 }
@@ -772,12 +772,12 @@ namespace Nexus.Editor
 
                 fireMethod.Invoke(targetBus, new[] { _testerSignalInstance });
 
-                _resultLogLabel.text = $"\u2713 Fired: {_testerSelectedSignalType.Name} on context '{targetContext.ScopeTag}'";
+                _resultLogLabel.text = string.Format(NexusLang.Get("explorer_fired"), _testerSelectedSignalType.Name, targetContext.ScopeTag);
                 _resultLogLabel.style.color = NexusEditorStyles.AccentGreen;
             }
             catch (Exception ex)
             {
-                _resultLogLabel.text = $"Fire failed: {ex.Message}";
+                _resultLogLabel.text = string.Format(NexusLang.Get("explorer_fire_failed"), ex.Message);
                 _resultLogLabel.style.color = Color.red;
                 Debug.LogException(ex);
             }

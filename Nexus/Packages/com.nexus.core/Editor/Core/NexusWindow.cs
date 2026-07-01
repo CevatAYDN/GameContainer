@@ -36,6 +36,7 @@ namespace Nexus.Editor
         private VisualElement _sidebar;
         private VisualElement _contentArea;
         private Label _statusBar;
+        private readonly Dictionary<string, Label> _tabLabels = new();
 
         private HierarchyPlugin _hierarchyPlugin; // Keep reference to update trackers in Play Mode
 
@@ -142,7 +143,7 @@ namespace Nexus.Editor
             // Dynamic Tab Buttons with icons
             foreach (var plugin in _plugins)
             {
-                AddTabButton(plugin.DisplayName, plugin.Id);
+                AddTabButton(NexusLang.Get($"tab_{plugin.Id.ToLower()}"), plugin.Id);
             }
 
             // Version at bottom of sidebar
@@ -322,6 +323,7 @@ namespace Nexus.Editor
 
             // Add label
             var txtLabel = new Label(label);
+            _tabLabels[pluginId] = txtLabel;
             btn.Add(txtLabel);
 
             _sidebar.Add(btn);
@@ -433,6 +435,10 @@ namespace Nexus.Editor
         {
             EditorPrefs.SetString("Nexus_Locale", locale);
             NexusLang.LoadLocale(locale);
+            foreach (var kvp in _tabLabels)
+            {
+                kvp.Value.text = NexusLang.Get($"tab_{kvp.Key.ToLower()}");
+            }
             RefreshActivePlugin();
         }
     }

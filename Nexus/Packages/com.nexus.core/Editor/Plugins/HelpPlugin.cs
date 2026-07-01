@@ -22,7 +22,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("NEXUS HELP & DOCUMENTATION");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("help_title"));
             _view.Add(toolbar);
 
             _scrollView = new ScrollView { style = { flexGrow = 1, paddingLeft = 20, paddingRight = 20, paddingTop = 15, paddingBottom = 15 } };
@@ -38,77 +38,29 @@ namespace Nexus.Editor
 
         private void RenderQuickStart()
         {
-            AddSection("QUICK START", NexusEditorStyles.AccentBlue);
+            AddSection(NexusLang.Get("help_quickstart"), NexusEditorStyles.AccentBlue);
 
-            AddStep("1. Create a Root",
-                "GameObject → Nexus → Create Root (or use the Wizard tab).\n" +
-                "This creates a Root GameObject + ContextData ScriptableObject in the scene.");
-
-            AddStep("2. Define a Signal & Model",
-                "Create a signal struct and a model interface/class pair.\n" +
-                "Models can implement IReactiveModel for auto-notification via ObservableProperty<T>.");
-
-            AddStep("3. Write a Lifecycle",
-                "Create a class named {ScopeTag}Lifecycle implementing IContextLifecycle.\n" +
-                "Nexus auto-discovers it. Use OnConfigure() to bind models and commands.");
-
-            AddStep("4. Create Commands",
-                "Implement ICommand<TSignal> or IAsyncCommand<TSignal>.\n" +
-                "Bind in lifecycle: builder.BindSignal<MySignal>().To<MyCommand>();");
-
-            AddStep("5. Wire Views & Mediators",
-                "Extend View, add [Mediator(typeof(MyMediator))], create Mediator<MyView>.\n" +
-                "Use Subscribe<TSignal>() in OnBind() to react to signals.");
-
-            AddStep("6. Fire Signals",
-                "SignalBus.Fire(new MySignal(data)) — from mediators, commands, or any [Inject]ed class.");
+            AddStep(NexusLang.Get("help_step1_title"),  NexusLang.Get("help_step1_desc"));
+            AddStep(NexusLang.Get("help_step2_title"),  NexusLang.Get("help_step2_desc"));
+            AddStep(NexusLang.Get("help_step3_title"),  NexusLang.Get("help_step3_desc"));
+            AddStep(NexusLang.Get("help_step4_title"),  NexusLang.Get("help_step4_desc"));
+            AddStep(NexusLang.Get("help_step5_title"),  NexusLang.Get("help_step5_desc"));
+            AddStep(NexusLang.Get("help_step6_title"),  NexusLang.Get("help_step6_desc"));
         }
 
         private void RenderAPISummary()
         {
-            AddSection("CORE API", NexusEditorStyles.AccentPurple);
-            AddCard("SignalBus",
-                "Fire<T>(T signal) — synchronous dispatch\n" +
-                "FireAsync<T>(T signal) — awaitable async dispatch\n" +
-                "FireAsyncWithTimeout<T>(T, ms) — with timeout\n" +
-                "FireAsyncAndForget<T>(T, onError?) — fire-and-forget\n" +
-                "FireThreadSafe<T>(T) — from any thread\n" +
-                "FireNextFrame<T>(T) — deferred to next frame\n" +
-                "Subscribe<T>(Action<T>) / SubscribeAsync<T>(Func<T,CT,ValueTask>)");
-
-            AddCard("ContextBuilder",
-                "BindModel<T,I>() / BindReactiveModel<T,I>() — singleton models\n" +
-                "BindService<T,I>() — managed services with lifecycle\n" +
-                "BindSignal<T>().To<TCmd>() — fluent command binding\n" +
-                "BindCommand<T,TCmd>(mode, priority) — imperative binding\n" +
-                "BindAsyncCommand<T,TCmd>(mode, priority) — async binding");
-
-            AddCard("Execution Modes",
-                "Sequential — default, priority-ordered, one at a time\n" +
-                "Concurrent — parallel async execution\n" +
-                "Exclusive — single-handler guarantee\n" +
-                "Composite — fan-in: waits for multiple signals");
-
-            AddCard("Attributes",
-                "[SignalHandler(typeof(T))] — auto-register command\n" +
-                "[CompositeSignalHandler(T1, T2)] — fan-in trigger\n" +
-                "[CrossContext(ScopeTag?)] — cross-context signal\n" +
-                "[Inject] — DI injection point\n" +
-                "[Mediator(typeof(T))] — view-mediator binding\n" +
-                "[LiveReload] — Play Mode asset sync\n" +
-                "[CommandTimeout(ms)] — async command timeout");
-
-            AddCard("Recovery",
-                "IRecoveryStrategy.OnCommandFailed(ctx) → RecoveryDecision\n" +
-                "RecoveryDecision.Skip() — skip and continue\n" +
-                "RecoveryDecision.Retry(max:3) — retry up to N times\n" +
-                "RecoveryDecision.Abort() — stop the chain\n" +
-                "RecoveryDecision.Fallback<T>() — run alternative command");
+            AddSection(NexusLang.Get("help_coreapi"), NexusEditorStyles.AccentPurple);
+            AddCard(NexusLang.Get("help_card_signalbus"),        NexusLang.Get("help_card_signalbus_content"));
+            AddCard(NexusLang.Get("help_card_contextbuilder"),   NexusLang.Get("help_card_contextbuilder_content"));
+            AddCard(NexusLang.Get("help_card_execmodes"),        NexusLang.Get("help_card_execmodes_content"));
+            AddCard(NexusLang.Get("help_card_attributes"),       NexusLang.Get("help_card_attributes_content"));
+            AddCard(NexusLang.Get("help_card_recovery"),         NexusLang.Get("help_card_recovery_content"));
         }
 
         private void RenderVersionInfo()
         {
-            AddSection("VERSION", NexusEditorStyles.AccentGreen);
+            AddSection(NexusLang.Get("help_version_section"), NexusEditorStyles.AccentGreen);
 
             var card = new VisualElement
             {
@@ -128,20 +80,17 @@ namespace Nexus.Editor
                 }
             };
 
-            card.Add(new Label("com.nexus.core v0.3.0")
+            card.Add(new Label(NexusLang.Get("help_version"))
             {
                 style = { fontSize = 13, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue) }
             });
 
-            card.Add(new Label("Unity 6 (6000.x) | C# 9+ | .NET Standard 2.1 | UI Toolkit")
+            card.Add(new Label(NexusLang.Get("help_platform"))
             {
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 4 }
             });
 
-            card.Add(new Label("New in v0.3.0: Auto-AOT generation, Thread-safe DI locking,\n" +
-                               "Runtime performance metrics, ContextData validation,\n" +
-                               "Enhanced Contexts inspector, Fluent API command detection,\n" +
-                               "Recovery strategy integration, IReactiveModel+INexusService lifecycle.")
+            card.Add(new Label(NexusLang.Get("help_whats_new"))
             {
                 style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 4, whiteSpace = WhiteSpace.Normal }
             });
@@ -151,16 +100,16 @@ namespace Nexus.Editor
 
         private void RenderSamples()
         {
-            AddSection("SAMPLES", NexusEditorStyles.AccentOrange);
+            AddSection(NexusLang.Get("help_samples"), NexusEditorStyles.AccentOrange);
 
-            var importBtn = NexusEditorStyles.CreateButton("Import Counter Sample", () =>
+            var importBtn = NexusEditorStyles.CreateButton(NexusLang.Get("help_import_sample"), () =>
             {
                 EditorApplication.ExecuteMenuItem("Window/Package Manager");
                 Debug.Log("[Nexus] Open Package Manager → Nexus Observable Architecture → Samples to import the Counter example.");
             }, NexusEditorStyles.BtnBlue);
             _scrollView.Add(importBtn);
 
-            var hint = NexusEditorStyles.CreateHint("The Counter example demonstrates a complete MVCS cycle: Model → Command → Signal → Mediator → View.");
+            var hint = NexusEditorStyles.CreateHint(NexusLang.Get("help_samples_hint"));
             hint.style.marginTop = 4;
             _scrollView.Add(hint);
         }

@@ -29,11 +29,11 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("SIGNAL GRAPH MAP");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("graph_title"));
             _view.Add(toolbar);
 
             // Status bar below toolbar
-            _statusLabel = new Label("Graph ready. Click Refresh to build.")
+            _statusLabel = new Label(NexusLang.Get("graph_ready"))
             {
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), paddingLeft = 10, paddingTop = 4, paddingBottom = 4,
                     borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) }
@@ -44,7 +44,7 @@ namespace Nexus.Editor
             _graphView.style.flexGrow = 1;
             _view.Add(_graphView);
 
-            var refreshBtn = NexusEditorStyles.CreateButton("Refresh", BuildGraph, NexusEditorStyles.BtnBlue);
+            var refreshBtn = NexusEditorStyles.CreateButton(NexusLang.Get("graph_refresh"), BuildGraph, NexusEditorStyles.BtnBlue);
             refreshBtn.style.position = Position.Absolute;
             refreshBtn.style.top = 58;
             refreshBtn.style.right = 10;
@@ -146,7 +146,7 @@ namespace Nexus.Editor
 
             if (mappings == null || mappings.Count == 0)
             {
-                _statusLabel.text = "No signal mappings found. Define commands or enter Play Mode.";
+                _statusLabel.text = NexusLang.Get("graph_no_mappings");
                 _statusLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
                 return;
             }
@@ -163,12 +163,12 @@ namespace Nexus.Editor
                         alignSelf = Align.Center, marginTop = 20, whiteSpace = WhiteSpace.Normal }
                 };
                 _graphView.Add(warnLabel);
-                _statusLabel.text = $"⚠ {totalNodes} nodes exceeds {MaxNodes} limit — split into smaller contexts.";
+                _statusLabel.text = string.Format(NexusLang.Get("graph_overflow"), totalNodes, MaxNodes);
                 _statusLabel.style.color = new StyleColor(NexusEditorStyles.AccentOrange);
                 return;
             }
 
-            _statusLabel.text = $"Graph: {signalCount} signals → {cmdCount} commands ({totalNodes} nodes, {_totalEdgeCount} edges)";
+            _statusLabel.text = string.Format(NexusLang.Get("graph_stats"), signalCount, cmdCount, totalNodes, _totalEdgeCount);
             _statusLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
 
             int yOffset = 0;
@@ -221,7 +221,7 @@ namespace Nexus.Editor
                 yOffset = Math.Max(yOffset + 150, handlerYOffset + 50);
             }
             _totalEdgeCount = edgeCount;
-            _statusLabel.text = $"Graph: {signalCount} signals → {cmdCount} commands ({totalNodes} nodes, {edgeCount} edges)";
+            _statusLabel.text = string.Format(NexusLang.Get("graph_stats"), signalCount, cmdCount, totalNodes, edgeCount);
         }
 
         public void Write(in TraceEvent traceEvent)

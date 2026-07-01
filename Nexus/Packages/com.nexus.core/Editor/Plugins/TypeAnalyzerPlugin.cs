@@ -57,7 +57,7 @@ namespace Nexus.Editor
             var view = new VisualElement { style = { flexGrow = 1 } };
 
             // Toolbar
-            var toolbar = NexusEditorStyles.CreateToolbar("TYPE COUPLING ANALYZER");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("typeanalyzer_title"));
             view.Add(toolbar);
 
             // Filter bar (separate from toolbar — keeps title distinct from controls)
@@ -79,7 +79,7 @@ namespace Nexus.Editor
             _searchField = new TextField("Type Name") { value = _searchedTypeName, style = { flexGrow = 1, color = Color.white } };
             filterBar.Add(_searchField);
 
-            var analyzeButton = NexusEditorStyles.CreateButton("Analyze", AnalyzeType, NexusEditorStyles.BtnGray);
+            var analyzeButton = NexusEditorStyles.CreateButton(NexusLang.Get("typeanalyzer_analyze"), AnalyzeType, NexusEditorStyles.BtnGray);
             analyzeButton.style.marginLeft = 10;
             filterBar.Add(analyzeButton);
 
@@ -153,7 +153,7 @@ namespace Nexus.Editor
 
                 if (targetType == null)
                 {
-                    var label = new Label($"Could not find type '{_searchedTypeName}' in active assemblies.") { style = { color = new StyleColor(NexusEditorStyles.AccentRed), alignSelf = Align.Center, marginTop = 20 } };
+                    var label = new Label(string.Format(NexusLang.Get("typeanalyzer_not_found"), _searchedTypeName)) { style = { color = new StyleColor(NexusEditorStyles.AccentRed), alignSelf = Align.Center, marginTop = 20 } };
                     _scrollView.Add(label);
                     return;
                 }
@@ -273,7 +273,7 @@ namespace Nexus.Editor
         {
             var section = new VisualElement { style = { marginTop = 15 } };
 
-            var title = new Label("Dependencies (Required Injections):");
+            var title = new Label(NexusLang.Get("typeanalyzer_dependencies"));
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
             title.style.fontSize = 11;
@@ -320,7 +320,7 @@ namespace Nexus.Editor
 
             if (count == 0)
             {
-                list.Add(new Label("No [Inject] dependencies found.") { style = { color = Color.gray, fontSize = 10 } });
+                list.Add(new Label(NexusLang.Get("typeanalyzer_no_deps")) { style = { color = Color.gray, fontSize = 10 } });
             }
 
             section.Add(list);
@@ -331,7 +331,7 @@ namespace Nexus.Editor
         {
             var section = new VisualElement { style = { marginTop = 20 } };
 
-            var title = new Label($"Referenced By (Dependents): {dependents.Count}");
+            var title = new Label(NexusLang.Get("typeanalyzer_dependents") + $" {dependents.Count}");
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.color = new StyleColor(NexusEditorStyles.AccentPurple);
             title.style.fontSize = 11;
@@ -341,7 +341,7 @@ namespace Nexus.Editor
 
             if (dependents.Count == 0)
             {
-                list.Add(new Label("No other types are injecting this type.") { style = { color = Color.gray, fontSize = 10 } });
+                list.Add(new Label(NexusLang.Get("typeanalyzer_no_dependents")) { style = { color = Color.gray, fontSize = 10 } });
             }
             else
             {

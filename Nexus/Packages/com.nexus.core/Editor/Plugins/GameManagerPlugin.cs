@@ -57,7 +57,7 @@ namespace Nexus.Editor
         {
             _root = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("GAME MANAGER");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("gamemanager_title"));
             _root.Add(toolbar);
 
             // Breadcrumb / section bar
@@ -383,7 +383,7 @@ namespace Nexus.Editor
             var statusRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15, marginTop = 10, marginBottom = 10 } };
             var dot = NexusEditorStyles.CreateStatusDot(playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.DimText, 10);
             statusRow.Add(dot);
-            var statusText = new Label(playing ? "● ACTIVE — Play Mode" : "○ STANDBY — Editor Mode")
+            var statusText = new Label(playing ? NexusLang.Get("gamemanager_active") : NexusLang.Get("gamemanager_standby"))
             {
                 style = { fontSize = 14, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary) }
             };
@@ -419,18 +419,18 @@ namespace Nexus.Editor
             _content.Add(actionsLabel);
 
             var actionsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15, marginTop = 5, flexWrap = Wrap.Wrap } };
-            var openWizard = NexusEditorStyles.CreateButton("Open Context Wizard", () => Window?.SwitchToPlugin("Wizard"), NexusEditorStyles.BtnBlue);
+            var openWizard = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_wizard"), () => Window?.SwitchToPlugin("Wizard"), NexusEditorStyles.BtnBlue);
             actionsRow.Add(openWizard);
 
-            var openTracer = NexusEditorStyles.CreateButton("Open Live Tracer", () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal);
+            var openTracer = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_tracer"), () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal);
             openTracer.style.marginLeft = 5;
             actionsRow.Add(openTracer);
 
-            var openGraph = NexusEditorStyles.CreateButton("Open Signal Graph", () => Window?.SwitchToPlugin("Graph"), NexusEditorStyles.BtnPurple);
+            var openGraph = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_graph"), () => Window?.SwitchToPlugin("Graph"), NexusEditorStyles.BtnPurple);
             openGraph.style.marginLeft = 5;
             actionsRow.Add(openGraph);
 
-            var refreshBtn = NexusEditorStyles.CreateButton("Refresh Now", () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray);
+            var refreshBtn = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_refresh"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray);
             refreshBtn.style.marginLeft = 5;
             actionsRow.Add(refreshBtn);
 
@@ -672,9 +672,9 @@ namespace Nexus.Editor
                     marginTop = 5
                 }
             };
-            header.Add(new Label("Command") { style = { width = 180, fontSize = 9, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
-            header.Add(new Label("Signal") { style = { width = 180, fontSize = 9, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
-            header.Add(new Label("Mode") { style = { width = 100, fontSize = 9, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
+            header.Add(new Label(NexusLang.Get("gamemanager_command_col")) { style = { width = 180, fontSize = 9, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
+            header.Add(new Label(NexusLang.Get("gamemanager_signal_col")) { style = { width = 180, fontSize = 9, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
+            header.Add(new Label(NexusLang.Get("gamemanager_mode_col")) { style = { width = 100, fontSize = 9, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
             _content.Add(header);
 
             for (int i = 0; i < s.CommandEntries.Count; i++)
@@ -828,7 +828,7 @@ namespace Nexus.Editor
             perfCard.style.marginLeft = 10;
             perfCard.style.marginRight = 10;
 
-            var perfTitle = new Label("PERFORMANCE METRICS")
+                var perfTitle = new Label(NexusLang.Get("gamemanager_performance"))
             {
                 style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentYellow), marginBottom = 8 }
             };
@@ -858,7 +858,7 @@ namespace Nexus.Editor
             chartCard.style.marginLeft = 10;
             chartCard.style.marginRight = 10;
 
-            var chartTitle = new Label("RATE GRAPH")
+                var chartTitle = new Label(NexusLang.Get("gamemanager_rate_graph"))
             {
                 style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 6 }
             };
@@ -895,7 +895,7 @@ namespace Nexus.Editor
 
             foreach (var ctx in contexts)
             {
-                var ctxLabel = new Label($"Context: {ctx.ScopeTag ?? "(no tag)"}")
+                var ctxLabel = new Label(string.Format(NexusLang.Get("gamemanager_context_label"), ctx.ScopeTag ?? "(no tag)"))
                 {
                     style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentGreen), marginLeft = 15, marginTop = 8 }
                 };
@@ -971,7 +971,7 @@ namespace Nexus.Editor
             card.style.marginTop = 8;
             card.style.marginBottom = 8;
 
-            card.Add(new Label("QUICK FIRE — Click to dispatch signal with default values")
+            card.Add(new Label(NexusLang.Get("gamemanager_quick_fire"))
             {
                 style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextPrimary), marginBottom = 8 }
             });
