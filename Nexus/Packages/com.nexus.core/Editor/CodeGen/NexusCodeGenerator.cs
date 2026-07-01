@@ -57,7 +57,7 @@ namespace Nexus.Editor
             var networkSignalTypes = new List<Type>();
             
             // Gather all types containing [Inject] and all INetworkSignal implementations
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf(".Editor", StringComparison.OrdinalIgnoreCase) >= 0)

@@ -121,7 +121,7 @@ namespace Nexus.Editor
             if (!s_analysisCache.TryGetValue(cacheKey, out var cached))
             {
                 Type targetType = null;
-                var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+                var assemblies = UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies();
                 foreach (var assembly in assemblies)
                 {
                     var assemblyName = assembly.GetName().Name;
@@ -200,7 +200,7 @@ namespace Nexus.Editor
             s_assemblyCacheDirty = false;
             s_injectTargetIndex.Clear();
 
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            var assemblies = UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies();
             foreach (var assembly in assemblies)
             {
                 var name = assembly.GetName().Name;

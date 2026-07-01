@@ -29,7 +29,7 @@ namespace Nexus.Editor
             s_cachedMappings = new List<HandlerMapping>();
             s_cachedHandlerCount = 0;
 
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 string name = assembly.FullName;
                 if (name.StartsWith("System") || name.StartsWith("Microsoft") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("nunit"))

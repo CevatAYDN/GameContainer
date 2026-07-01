@@ -108,7 +108,7 @@ namespace Nexus.Editor
         private static Dictionary<Type, List<Type>> CollectAttributeMappings()
         {
             var mappings = new Dictionary<Type, List<Type>>();
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") ||

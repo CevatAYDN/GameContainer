@@ -21,12 +21,13 @@ namespace Nexus.Editor
         private Label _viewStat;
         private Label _perfStat;
         private VisualElement _validationCard;
+        private IVisualElementScheduledItem _refreshSchedule;
 
         public override VisualElement CreateView()
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("NEXUS DASHBOARD");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("dashboard").ToUpper());
             _view.Add(toolbar);
 
             var scroll = new ScrollView { style = { flexGrow = 1 } };
@@ -44,9 +45,15 @@ namespace Nexus.Editor
 
             _view.Add(scroll);
 
-            _view.schedule.Execute(RefreshStats).Every(1000);
+            _refreshSchedule = _view.schedule.Execute(RefreshStats).Every(1000);
 
             return _view;
+        }
+
+        public override void OnDisable()
+        {
+            _refreshSchedule?.Pause();
+            base.OnDisable();
         }
 
         private void BuildStatusSection(VisualElement parent)
@@ -66,7 +73,7 @@ namespace Nexus.Editor
             var statusDot = NexusEditorStyles.CreateStatusDot(titleColor, 12);
             statusRow.Add(statusDot);
 
-            var statusLabel = new Label(playing ? "  ● SYSTEM ACTIVE" : "  ○ SYSTEM STANDBY")
+                var statusLabel = new Label(playing ? "  ● " + NexusLang.Get("system_active") : "  ○ " + NexusLang.Get("system_standby"))
             {
                 style = { fontSize = 16, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(titleColor) }
             };
@@ -74,18 +81,18 @@ namespace Nexus.Editor
             statusCard.Add(statusRow);
 
             var statRow1 = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 8 } };
-            _contextStat = CreateStatBox(statRow1, contextCount.ToString(), "Contexts", NexusEditorStyles.AccentBlue);
-            _handlerStat = CreateStatBox(statRow1, handlerCount.ToString(), "Handlers", NexusEditorStyles.AccentPurple);
-            _rootStat = CreateStatBox(statRow1, rootCount.ToString(), "Roots", NexusEditorStyles.AccentYellow);
+            _contextStat = CreateStatBox(statRow1, contextCount.ToString(), NexusLang.Get("contexts"), NexusEditorStyles.AccentBlue);
+            _handlerStat = CreateStatBox(statRow1, handlerCount.ToString(), NexusLang.Get("handlers"), NexusEditorStyles.AccentPurple);
+            _rootStat = CreateStatBox(statRow1, rootCount.ToString(), NexusLang.Get("roots"), NexusEditorStyles.AccentYellow);
             statusCard.Add(statRow1);
 
             var hintText = "";
             if (!playing && rootCount == 0)
-                hintText = "Create a Root via Context Wizard to get started.";
+                hintText = NexusLang.Get("no_roots");
             else if (!playing)
-                hintText = "Ready. Enter Play Mode to activate the system.";
+                hintText = NexusLang.Get("ready");
             else
-                hintText = $"Live — {contextCount} context(s) active.";
+                hintText = string.Format(NexusLang.Get("live_hint"), contextCount);
 
             var hint = NexusEditorStyles.CreateHint(hintText);
             hint.style.marginTop = 8;
@@ -99,7 +106,7 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
             card.style.marginTop = 12;
 
-            var title = new Label("PROJECT OVERVIEW")
+            var title = new Label(NexusLang.Get("project_overview"))
             {
                 style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentYellow), marginBottom = 8 }
             };
@@ -107,7 +114,7 @@ namespace Nexus.Editor
 
             // Static scan for models, views, services
             int modelCount = 0, serviceCount = 0, commandCount = 0, viewCount = 0;
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -127,10 +134,10 @@ namespace Nexus.Editor
             }
 
             var statRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
-            _modelStat = CreateStatBox(statRow, modelCount.ToString(), "Models", NexusEditorStyles.AccentYellow);
-            _serviceStat = CreateStatBox(statRow, serviceCount.ToString(), "Services", NexusEditorStyles.AccentGreen);
-            _commandStat = CreateStatBox(statRow, commandCount.ToString(), "Commands", NexusEditorStyles.AccentOrange);
-            _viewStat = CreateStatBox(statRow, viewCount.ToString(), "Views", NexusEditorStyles.AccentBlue);
+            _modelStat = CreateStatBox(statRow, modelCount.ToString(), NexusLang.Get("models"), NexusEditorStyles.AccentYellow);
+            _serviceStat = CreateStatBox(statRow, serviceCount.ToString(), NexusLang.Get("services"), NexusEditorStyles.AccentGreen);
+            _commandStat = CreateStatBox(statRow, commandCount.ToString(), NexusLang.Get("commands"), NexusEditorStyles.AccentOrange);
+            _viewStat = CreateStatBox(statRow, viewCount.ToString(), NexusLang.Get("views"), NexusEditorStyles.AccentBlue);
             card.Add(statRow);
 
             parent.Add(card);
@@ -145,17 +152,17 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
             card.style.marginTop = 8;
 
-            var title = new Label("RUNTIME METRICS")
+            var title = new Label(NexusLang.Get("runtime_metrics"))
             {
                 style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentGreen), marginBottom = 8 }
             };
             card.Add(title);
 
             var statRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
-            _perfStat = CreateStatBox(statRow, $"{NexusRuntime.Metrics.SignalsPerSecond:F1}/s", "Signals", NexusEditorStyles.AccentBlue);
-            CreateStatBox(statRow, $"{NexusRuntime.Metrics.CommandsPerSecond:F1}/s", "Commands", NexusEditorStyles.AccentGreen);
-            CreateStatBox(statRow, $"{NexusRuntime.Metrics.TotalSignalsDispatched:N0}", "Total Sigs", NexusEditorStyles.AccentPurple);
-            CreateStatBox(statRow, $"{System.GC.GetTotalMemory(false) / 1024 / 1024:N0}M", "GC Memory", NexusEditorStyles.TextSecondary);
+            _perfStat = CreateStatBox(statRow, $"{NexusRuntime.Metrics.SignalsPerSecond:F1}/s", NexusLang.Get("perf_signals"), NexusEditorStyles.AccentBlue);
+            CreateStatBox(statRow, $"{NexusRuntime.Metrics.CommandsPerSecond:F1}/s", NexusLang.Get("perf_commands"), NexusEditorStyles.AccentGreen);
+            CreateStatBox(statRow, $"{NexusRuntime.Metrics.TotalSignalsDispatched:N0}", NexusLang.Get("total_sigs"), NexusEditorStyles.AccentPurple);
+            CreateStatBox(statRow, $"{System.GC.GetTotalMemory(false) / 1024 / 1024:N0}M", NexusLang.Get("gc_memory"), NexusEditorStyles.TextSecondary);
             card.Add(statRow);
 
             parent.Add(card);
@@ -168,7 +175,7 @@ namespace Nexus.Editor
                 var modelCard = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
                 modelCard.style.marginTop = 8;
 
-                var modelTitle = new Label("LIVE MODELS")
+                var modelTitle = new Label(NexusLang.Get("live_models"))
                 {
                     style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentPurple), marginBottom = 8 }
                 };
@@ -205,7 +212,7 @@ namespace Nexus.Editor
                     }
                 }
                 if (shown == 0)
-                    modelCard.Add(new Label("No IReactiveModel instances found.")
+                    modelCard.Add(new Label(NexusLang.Get("no_reactive_models"))
                         { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
 
                 parent.Add(modelCard);
@@ -308,7 +315,7 @@ namespace Nexus.Editor
         private void PopulateValidationCard(VisualElement card)
         {
             var titleRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 8 } };
-            titleRow.Add(new Label("BUILD VALIDATION")
+            titleRow.Add(new Label(NexusLang.Get("build_validation"))
             {
                 style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentOrange) }
             });
@@ -316,8 +323,8 @@ namespace Nexus.Editor
             if (BuildValidation.HasRun)
             {
                 var statusPill = BuildValidation.LastRunPassed
-                    ? NexusEditorStyles.CreatePill("PASS", new Color(0.1f, 0.3f, 0.1f), NexusEditorStyles.AccentGreen)
-                    : NexusEditorStyles.CreatePill("FAIL", new Color(0.3f, 0.1f, 0.1f), NexusEditorStyles.AccentRed);
+                    ? NexusEditorStyles.CreatePill(NexusLang.Get("pass"), new Color(0.1f, 0.3f, 0.1f), NexusEditorStyles.AccentGreen)
+                    : NexusEditorStyles.CreatePill(NexusLang.Get("fail"), new Color(0.3f, 0.1f, 0.1f), NexusEditorStyles.AccentRed);
                 titleRow.Add(statusPill);
             }
             card.Add(titleRow);
@@ -325,9 +332,9 @@ namespace Nexus.Editor
             if (BuildValidation.HasRun)
             {
                 var statRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginBottom = 4 } };
-                statRow.Add(new Label($"Errors: {BuildValidation.LastErrorCount}")
+                statRow.Add(new Label($"{NexusLang.Get("errors")}: {BuildValidation.LastErrorCount}")
                     { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.AccentRed), marginRight = 12 } });
-                statRow.Add(new Label($"Warnings: {BuildValidation.LastWarningCount}")
+                statRow.Add(new Label($"{NexusLang.Get("warnings")}: {BuildValidation.LastWarningCount}")
                     { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.AccentYellow) } });
                 card.Add(statRow);
 
@@ -353,13 +360,13 @@ namespace Nexus.Editor
             }
             else
             {
-                card.Add(new Label("Not run yet. Click below to validate.")
+                card.Add(new Label(NexusLang.Get("not_run_yet"))
                     { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
             }
 
             var runBtn = new Button(() => { BuildValidation.RunSilent(); RefreshValidationCard(_validationCard); })
             {
-                text = BuildValidation.HasRun ? "Re-run Validation" : "Run Build Validation",
+                text = BuildValidation.HasRun ? NexusLang.Get("rerun_validation") : NexusLang.Get("run_validation"),
                 style = { fontSize = 10, marginTop = 6, backgroundColor = new StyleColor(NexusEditorStyles.AccentOrange), color = Color.white }
             };
             card.Add(runBtn);

@@ -199,7 +199,7 @@ namespace Nexus.Editor
             var pluginType = typeof(INexusEditorPlugin);
             var foundPlugins = new List<INexusEditorPlugin>();
 
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("UnityEngine"))

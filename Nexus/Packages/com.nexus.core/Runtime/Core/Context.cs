@@ -296,7 +296,7 @@ namespace Nexus.Core
             var nexusAssembly = typeof(Context).Assembly;
             var nexusAssemblyName = nexusAssembly.GetName().Name;
 
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 if (assembly.IsDynamic) continue;
                 if (ShouldSkipDefaultScanAssembly(assembly)) continue;

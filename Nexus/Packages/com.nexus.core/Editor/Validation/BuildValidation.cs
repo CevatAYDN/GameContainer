@@ -96,7 +96,7 @@ namespace Nexus.Editor
             var signalHandlers = new Dictionary<Type, List<(Type CommandType, SignalHandlerAttribute Attr)>>();
             
             // Scan all loaded assemblies
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 // Skip system/unity assemblies to speed up
                 var name = assembly.GetName().Name;
@@ -279,7 +279,7 @@ namespace Nexus.Editor
             // Plan §4 — IDisposableModel disposal chain check
             // Scan all types implementing IDisposableModel and verify they are referenced
             // by a Context or another model that will dispose them.
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
@@ -349,7 +349,7 @@ namespace Nexus.Editor
             }
 
             // 2. Gather from IContextLifecycle Attributes (git-friendly distributed registration)
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
@@ -437,7 +437,7 @@ namespace Nexus.Editor
         {
             var contextDataAssets = AssetDatabase.FindAssets("t:ContextData");
             var loadedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 try
                 {
@@ -551,7 +551,7 @@ namespace Nexus.Editor
         /// </summary>
         private static void ValidateCommandStateLeak(ref int errorCount, ref int warningCount)
         {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
@@ -642,7 +642,7 @@ namespace Nexus.Editor
             var compositeSignalSets = new List<(Type CommandType, Type[] SignalTypes)>();
             var allHandledSignalTypes = new HashSet<Type>();
 
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))

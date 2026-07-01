@@ -83,7 +83,7 @@ namespace Nexus.Editor
             _root.Add(_content);
 
             // Scheduled refresh while in Play Mode
-            _root.schedule.Execute(OnScheduledRefresh).Every(250);
+            _refreshSchedule = _root.schedule.Execute(OnScheduledRefresh).Every(250);
 
             // Ensure play-mode subscription is active (survives tab switch cycles)
             if (!_subscribedToPlayMode)
@@ -98,6 +98,7 @@ namespace Nexus.Editor
         }
 
         private bool _subscribedToPlayMode;
+        private IVisualElementScheduledItem _refreshSchedule;
 
         public override void OnEnable()
         {
@@ -107,6 +108,7 @@ namespace Nexus.Editor
 
         public override void OnDisable()
         {
+            _refreshSchedule?.Pause();
             base.OnDisable();
             UnsubscribePlayMode();
         }
@@ -252,7 +254,7 @@ namespace Nexus.Editor
             var scannedCommands = new HashSet<(string cmd, string sig, string mode)>();
             var scannedModels = new HashSet<string>();
 
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("nunit"))
@@ -314,7 +316,7 @@ namespace Nexus.Editor
 
             // Views are harder to count statically — approximating
             var viewTypes = new HashSet<string>();
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var an = assembly.GetName().Name;
                 if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")) continue;
@@ -332,7 +334,7 @@ namespace Nexus.Editor
 
             // Services: check for registered INexusService types
             var serviceTypes = new HashSet<string>();
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var an = assembly.GetName().Name;
                 if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")) continue;
@@ -715,7 +717,7 @@ namespace Nexus.Editor
             AddSectionHeader($"VIEWS ({s.ViewCount} defined)", NexusEditorStyles.AccentBlue);
 
             var viewTypes = new HashSet<string>();
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var an = assembly.GetName().Name;
                 if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")) continue;
@@ -756,7 +758,7 @@ namespace Nexus.Editor
             AddSectionHeader($"SERVICES ({s.ServiceCount} registered)", NexusEditorStyles.AccentGreen);
 
             var serviceTypes = new HashSet<string>();
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var an = assembly.GetName().Name;
                 if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")) continue;

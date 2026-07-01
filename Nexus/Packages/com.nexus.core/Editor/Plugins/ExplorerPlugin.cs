@@ -332,7 +332,7 @@ namespace Nexus.Editor
                 s_cachedSignalTypes = new List<Type>();
 
                 var seenSignals = new HashSet<string>();
-                var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+                var assemblies = UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies();
                 var uniqueAssemblies = new HashSet<string>();
 
                 foreach (var assembly in assemblies)

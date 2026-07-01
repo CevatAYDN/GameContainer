@@ -464,7 +464,7 @@ namespace Nexus.Editor
         private void ScanForDeadSignals()
         {
             var signalTypes = new HashSet<Type>();
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 if (assembly.GetName().Name.StartsWith("System") || assembly.GetName().Name.StartsWith("Unity")) continue;
                 try
@@ -650,7 +650,7 @@ namespace Nexus.Editor
         private void PopulateAvailableAssemblies()
         {
             _wizardAvailableAssemblies.Clear();
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || 
