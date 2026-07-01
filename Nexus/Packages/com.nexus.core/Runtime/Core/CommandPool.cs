@@ -119,24 +119,20 @@ namespace Nexus.Core
         private readonly NexusDI _container;
         private readonly Dictionary<Type, CommandPool> _pools = new();
         private readonly int _initialSize;
+        private readonly int _maxSize;
 
-        /// <summary>Creates a new <see cref="CommandPoolManager"/>.</summary>
-        /// <param name="container">The DI container used to resolve command instances.</param>
-        /// <param name="initialSize">Default initial pool size for each command type.</param>
-        public CommandPoolManager(NexusDI container, int initialSize = 4)
+        public CommandPoolManager(NexusDI container, int initialSize = 4, int maxSize = 64)
         {
             _container = container;
             _initialSize = initialSize;
+            _maxSize = maxSize;
         }
 
-        /// <summary>Gets a command instance of the specified type, creating a pool if none exists.</summary>
-        /// <param name="commandType">The command type to retrieve.</param>
-        /// <returns>A command instance from the pool or newly created.</returns>
         public object GetCommand(Type commandType)
         {
             if (!_pools.TryGetValue(commandType, out var pool))
             {
-                pool = new CommandPool(commandType, () => _container.Resolve(commandType), _initialSize);
+                pool = new CommandPool(commandType, () => _container.Resolve(commandType), _initialSize, _maxSize);
                 _pools[commandType] = pool;
             }
             return pool.Get();

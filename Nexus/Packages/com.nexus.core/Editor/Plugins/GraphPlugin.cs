@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using UnityEditor;
 using UnityEditor.Experimental.GraphView;
 using UnityEngine;
@@ -16,33 +15,42 @@ namespace Nexus.Editor
         public override string DisplayName => "Signal Graph";
         public override int Order => 5;
 
+        private const int MaxNodes = 50;
+
         private VisualElement _view;
         private SignalGraphView _graphView;
-        
-        // Cache to colorize nodes during trace
+        private Label _statusLabel;
+
         private Dictionary<string, Node> _signalNodes = new();
         private Dictionary<string, Node> _handlerNodes = new();
+        private int _totalEdgeCount;
 
         public override VisualElement CreateView()
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
-            
-            var toolbar = NexusEditorStyles.CreateToolbar("LIVE SIGNAL GRAPH MAP");
+
+            var toolbar = NexusEditorStyles.CreateToolbar("SIGNAL GRAPH MAP");
             _view.Add(toolbar);
+
+            // Status bar below toolbar
+            _statusLabel = new Label("Graph ready. Click Refresh to build.")
+            {
+                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), paddingLeft = 10, paddingTop = 4, paddingBottom = 4,
+                    borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) }
+            };
+            _view.Add(_statusLabel);
 
             _graphView = new SignalGraphView();
             _graphView.style.flexGrow = 1;
             _view.Add(_graphView);
 
-            var refreshBtn = NexusEditorStyles.CreateButton("Refresh Graph", BuildGraph, NexusEditorStyles.BtnBlue);
+            var refreshBtn = NexusEditorStyles.CreateButton("Refresh", BuildGraph, NexusEditorStyles.BtnBlue);
             refreshBtn.style.position = Position.Absolute;
-            refreshBtn.style.top = 35;
+            refreshBtn.style.top = 58;
             refreshBtn.style.right = 10;
             _view.Add(refreshBtn);
 
             BuildGraph();
-
-            // Hook into NexusTrace for live node animations
             NexusTrace.AddSink(this);
 
             return _view;
@@ -60,9 +68,8 @@ namespace Nexus.Editor
             _graphView.ClearGraph();
             _signalNodes.Clear();
             _handlerNodes.Clear();
+            _totalEdgeCount = 0;
 
-            // Priority 1: Read registrations from live runtime contexts (Play Mode)
-            // This captures both fluent API and attribute-based bindings.
             var runtimeMappings = CollectRuntimeMappings();
             if (runtimeMappings != null)
             {
@@ -70,34 +77,24 @@ namespace Nexus.Editor
                 return;
             }
 
-            // Priority 2: Fall back to assembly scan for [SignalHandler] attributes
-            // (Editor Mode, no active contexts)
             var attributeMappings = CollectAttributeMappings();
             DrawGraph(attributeMappings);
         }
 
-        /// <summary>
-        /// Reads signal→handler mappings from all active Nexus runtime contexts.
-        /// Returns null if no active contexts exist (e.g. Editor Mode, before Play Mode).
-        /// </summary>
         private static Dictionary<Type, List<Type>> CollectRuntimeMappings()
         {
             var contexts = NexusRuntime.ActiveContexts;
-            if (contexts == null || contexts.Count == 0)
-                return null;
+            if (contexts == null || contexts.Count == 0) return null;
 
             var mappings = new Dictionary<Type, List<Type>>();
             foreach (var ctx in contexts)
             {
                 var handlers = ctx.SignalBus.RegisteredHandlers;
-                if (handlers == null || handlers.Count == 0)
-                    continue;
-
+                if (handlers == null || handlers.Count == 0) continue;
                 foreach (var kvp in handlers)
                 {
                     if (!mappings.ContainsKey(kvp.Key))
                         mappings[kvp.Key] = new List<Type>();
-
                     foreach (var info in kvp.Value)
                     {
                         if (info.CommandType != null && !mappings[kvp.Key].Contains(info.CommandType))
@@ -108,45 +105,29 @@ namespace Nexus.Editor
             return mappings;
         }
 
-        /// <summary>
-        /// Scans assemblies for [SignalHandler] attributes as a fallback.
-        /// Only detects attribute-based registration, not fluent API bindings.
-        /// </summary>
         private static Dictionary<Type, List<Type>> CollectAttributeMappings()
         {
-            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
             var mappings = new Dictionary<Type, List<Type>>();
-
-            foreach (var assembly in assemblies)
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
             {
-                var assemblyName = assembly.GetName().Name;
-                if (assemblyName.StartsWith("System") || assemblyName.StartsWith("mscorlib") || assemblyName.StartsWith("Mono") || 
-                    assemblyName.StartsWith("UnityEngine") || 
-                    (assemblyName.StartsWith("UnityEditor") && !assemblyName.Contains("com.nexus")))
-                {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") ||
+                    name.StartsWith("UnityEngine") || (name.StartsWith("UnityEditor") && !name.Contains("com.nexus")))
                     continue;
-                }
 
                 Type[] types;
-                try
-                {
-                    types = assembly.GetTypes();
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    types = ex.Types;
-                }
+                try { types = assembly.GetTypes(); }
+                catch (System.Reflection.ReflectionTypeLoadException ex) { types = ex.Types; }
 
                 foreach (var type in types)
                 {
                     if (type != null && type.IsClass && !type.IsAbstract)
                     {
-                        var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                        foreach (var attr in attrs)
+                        var attrs = type.GetCustomAttributes(typeof(SignalHandlerAttribute), false);
+                        foreach (SignalHandlerAttribute attr in attrs)
                         {
                             if (!mappings.ContainsKey(attr.SignalType))
                                 mappings[attr.SignalType] = new List<Type>();
-                            
                             mappings[attr.SignalType].Add(type);
                         }
                     }
@@ -157,24 +138,63 @@ namespace Nexus.Editor
 
         private void DrawGraph(Dictionary<Type, List<Type>> mappings)
         {
+            // Count total signals + commands
+            int signalCount = mappings.Count;
+            int cmdCount = 0;
+            foreach (var kvp in mappings) cmdCount += kvp.Value.Count;
+            int totalNodes = signalCount + cmdCount;
+
             if (mappings == null || mappings.Count == 0)
             {
-                _graphView.ClearGraph();
-                var emptyLabel = new Label("No signal mappings found. Define [SignalHandler] commands or enter Play Mode to see runtime registrations.")
-                {
-                    style = { color = new StyleColor(NexusEditorStyles.TextSecondary), alignSelf = Align.Center, marginTop = 30 }
-                };
-                _graphView.Add(emptyLabel);
+                _statusLabel.text = "No signal mappings found. Define commands or enter Play Mode.";
+                _statusLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
                 return;
             }
 
+            if (totalNodes > MaxNodes)
+            {
+                _graphView.ClearGraph();
+                var warnLabel = new Label(
+                    $"⚠ {totalNodes} nodes exceed the {MaxNodes} limit.\n" +
+                    "Consider splitting your architecture into multiple smaller contexts,\n" +
+                    "or use the Signal Explorer for text-based inspection.")
+                {
+                    style = { color = new StyleColor(NexusEditorStyles.AccentOrange), fontSize = 12,
+                        alignSelf = Align.Center, marginTop = 20, whiteSpace = WhiteSpace.Normal }
+                };
+                _graphView.Add(warnLabel);
+                _statusLabel.text = $"⚠ {totalNodes} nodes exceeds {MaxNodes} limit — split into smaller contexts.";
+                _statusLabel.style.color = new StyleColor(NexusEditorStyles.AccentOrange);
+                return;
+            }
+
+            _statusLabel.text = $"Graph: {signalCount} signals → {cmdCount} commands ({totalNodes} nodes, {_totalEdgeCount} edges)";
+            _statusLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
+
             int yOffset = 0;
+            int edgeCount = 0;
             foreach (var kvp in mappings)
             {
                 var signalType = kvp.Key;
                 var handlerTypes = kvp.Value;
 
+                int handlerCount = handlerTypes.Count;
+                string mode = "Sequential";
+
+                // Try to get mode from runtime registrations
+                var contexts = NexusRuntime.ActiveContexts;
+                if (contexts != null && contexts.Count > 0)
+                {
+                    var handlers = contexts[0].SignalBus.RegisteredHandlers;
+                    if (handlers != null && handlers.TryGetValue(signalType, out var infos) && infos.Count > 0)
+                    {
+                        mode = infos[0].Mode.ToString();
+                        handlerCount = infos.Count;
+                    }
+                }
+
                 var signalNode = _graphView.CreateSignalNode(signalType.Name, new Vector2(100, yOffset));
+                signalNode.tooltip = $"{signalType.FullName}\nHandlers: {handlerCount}\nMode: {mode}";
                 _graphView.AddElement(signalNode);
                 _signalNodes[signalType.Name] = signalNode;
 
@@ -182,18 +202,26 @@ namespace Nexus.Editor
                 foreach (var handlerType in handlerTypes)
                 {
                     var handlerNode = _graphView.CreateHandlerNode(handlerType.Name, new Vector2(400, handlerYOffset));
+                    handlerNode.tooltip = $"{handlerType.FullName}";
                     _graphView.AddElement(handlerNode);
                     _handlerNodes[handlerType.Name] = handlerNode;
 
-                    var edge = _graphView.ConnectNodes(signalNode.outputContainer.Q<Port>(), handlerNode.inputContainer.Q<Port>());
+                    var edge = _graphView.ConnectNodes(
+                        signalNode.outputContainer.Q<Port>(),
+                        handlerNode.inputContainer.Q<Port>());
                     if (edge != null)
+                    {
                         _graphView.AddElement(edge);
+                        edgeCount++;
+                    }
 
                     handlerYOffset += 100;
                 }
 
                 yOffset = Math.Max(yOffset + 150, handlerYOffset + 50);
             }
+            _totalEdgeCount = edgeCount;
+            _statusLabel.text = $"Graph: {signalCount} signals → {cmdCount} commands ({totalNodes} nodes, {edgeCount} edges)";
         }
 
         public void Write(in TraceEvent traceEvent)
@@ -201,17 +229,12 @@ namespace Nexus.Editor
             if (traceEvent.Type == TraceEventType.Signal)
             {
                 if (_signalNodes.TryGetValue(traceEvent.TypeName, out var node))
-                {
-                    // Basic animation/highlight effect
                     HighlightNode(node, new Color(0.2f, 0.8f, 0.2f, 0.8f));
-                }
             }
             else if (traceEvent.Type == TraceEventType.Command)
             {
                 if (_handlerNodes.TryGetValue(traceEvent.TypeName, out var node))
-                {
                     HighlightNode(node, new Color(0.2f, 0.8f, 0.8f, 0.8f));
-                }
             }
         }
 
@@ -219,8 +242,6 @@ namespace Nexus.Editor
         {
             var origColor = node.mainContainer.style.backgroundColor;
             node.mainContainer.style.backgroundColor = new StyleColor(flashColor);
-            
-            // Revert after 500ms using UI Toolkit schedule
             node.schedule.Execute(() => {
                 node.mainContainer.style.backgroundColor = origColor;
             }).StartingIn(500);
@@ -236,6 +257,9 @@ namespace Nexus.Editor
             this.AddManipulator(new RectangleSelector());
             this.AddManipulator(new ContentZoomer());
 
+            // Performance: disable pixel cache regen above 30 elements
+            zoomerMaxElementCountWithPixelCacheRegen = 30;
+
             var grid = new GridBackground();
             Insert(0, grid);
             grid.StretchToParentSize();
@@ -248,36 +272,28 @@ namespace Nexus.Editor
 
         public Node CreateSignalNode(string signalName, Vector2 position)
         {
-            var node = new Node
-            {
-                title = signalName,
-                style = { width = 150 }
-            };
+            var node = new Node { title = signalName, style = { width = 150 } };
             node.SetPosition(new Rect(position, Vector2.zero));
-            
             node.mainContainer.style.backgroundColor = new StyleColor(new Color(0.2f, 0.4f, 0.2f, 0.8f));
 
             var outputPort = node.InstantiatePort(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(bool));
-            outputPort.portName = "Fires";
+            outputPort.portName = "▶";
             node.outputContainer.Add(outputPort);
+            node.RefreshPorts();
 
             return node;
         }
 
         public Node CreateHandlerNode(string handlerName, Vector2 position)
         {
-            var node = new Node
-            {
-                title = handlerName,
-                style = { width = 150 }
-            };
+            var node = new Node { title = handlerName, style = { width = 150 } };
             node.SetPosition(new Rect(position, Vector2.zero));
-
             node.mainContainer.style.backgroundColor = new StyleColor(new Color(0.2f, 0.3f, 0.5f, 0.8f));
 
             var inputPort = node.InstantiatePort(Orientation.Horizontal, Direction.Input, Port.Capacity.Multi, typeof(bool));
-            inputPort.portName = "Listens";
+            inputPort.portName = "◀";
             node.inputContainer.Add(inputPort);
+            node.RefreshPorts();
 
             return node;
         }
@@ -285,11 +301,7 @@ namespace Nexus.Editor
         public Edge ConnectNodes(Port outputPort, Port inputPort)
         {
             if (outputPort == null || inputPort == null) return null;
-            var edge = new Edge
-            {
-                output = outputPort,
-                input = inputPort
-            };
+            var edge = new Edge { output = outputPort, input = inputPort };
             edge.input.Connect(edge);
             edge.output.Connect(edge);
             return edge;

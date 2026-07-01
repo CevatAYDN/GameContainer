@@ -15,6 +15,29 @@ namespace Nexus.Editor
         public static Action<string> WarningLogger { get; set; } = UnityEngine.Debug.LogWarning;
         public static Action<string> ErrorLogger { get; set; } = UnityEngine.Debug.LogError;
 
+        public struct Entry { public string Rule; public string Message; public bool IsError; }
+        private static readonly List<Entry> s_lastResults = new();
+        public static IReadOnlyList<Entry> LastResults => s_lastResults;
+        public static int LastErrorCount { get; private set; }
+        public static int LastWarningCount { get; private set; }
+        public static bool LastRunPassed { get; private set; }
+        public static bool HasRun { get; private set; }
+
+        public static void RunSilent()
+        {
+            s_lastResults.Clear();
+            LastErrorCount = 0;
+            LastWarningCount = 0;
+            var prevInfo = InfoLogger;
+            var prevWarn = WarningLogger;
+            var prevErr = ErrorLogger;
+            InfoLogger = _ => { };
+            WarningLogger = msg => { s_lastResults.Add(new Entry { Message = msg, IsError = false }); LastWarningCount++; };
+            ErrorLogger = msg => { s_lastResults.Add(new Entry { Message = msg, IsError = true }); LastErrorCount++; };
+            try { LastRunPassed = Validate(); } catch { LastRunPassed = false; }
+            finally { InfoLogger = prevInfo; WarningLogger = prevWarn; ErrorLogger = prevErr; HasRun = true; }
+        }
+
         private static class Debug
         {
             public static void Log(string msg) => InfoLogger(msg);

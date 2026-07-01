@@ -449,6 +449,7 @@ namespace Nexus.Core
             var type = typeof(T);
 
             NexusRuntime.Metrics.RecordSignalDispatched();
+            NexusRuntime.Metrics.RecordTrace($"▶ {typeof(T).Name}");
 
             // Plan §1.4.1 — If this signal has ANY async handlers registered,
             // delegate to the async path to preserve Sequential ordering guarantees.
@@ -883,6 +884,7 @@ namespace Nexus.Core
             bool shouldRun = true;
 
             NexusRuntime.Metrics.RecordCommandExecuted();
+            NexusRuntime.Metrics.RecordTrace($"  └ {handler.CommandType.Name}");
 
             while (shouldRun)
             {

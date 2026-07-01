@@ -77,7 +77,8 @@ namespace Nexus.Core
             Container.BindInstance<IContext>(this);
 
             var poolSize = contextData != null ? contextData.CommandPoolInitialSize : 4;
-            PoolManager = new CommandPoolManager(Container, poolSize);
+            var poolMax = contextData != null ? contextData.CommandPoolMaxSize : 64;
+            PoolManager = new CommandPoolManager(Container, poolSize, poolMax);
             Container.BindInstance(PoolManager);
 
             var bus = new SignalBus(Container, PoolManager, this);

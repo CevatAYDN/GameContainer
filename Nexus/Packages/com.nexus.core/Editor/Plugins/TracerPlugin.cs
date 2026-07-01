@@ -53,13 +53,13 @@ namespace Nexus.Editor
 #if !NEXUS_DEBUG
             var warningCard = NexusEditorStyles.CreateInfoCard(
                 _view,
-                "TRACING DISABLED (NEXUS_DEBUG MISSING)",
+                "CAUSAL TRACING: NEXUS_DEBUG DISABLED",
                 NexusEditorStyles.AccentOrange,
                 NexusEditorStyles.CardBgYellow,
-                "Causal Tracing is compiled out for performance. To enable Live Tracer, you must define the 'NEXUS_DEBUG' symbol in Project Settings.\n" +
-                "Click the button below to add it automatically and trigger a recompile.");
-            
-            var enableBtn = NexusEditorStyles.CreateButton("Enable Live Tracing & Recompile", () =>
+                "Full causal tracing (event trees, parent/child chains) is compiled out.\n" +
+                "Basic production trace is active below — showing recent signal dispatches.");
+
+            var enableBtn = NexusEditorStyles.CreateButton("Enable Full Causal Tracing & Recompile", () =>
             {
                 BuildTargetGroup group = EditorUserBuildSettings.selectedBuildTargetGroup;
                 var namedTarget = UnityEditor.Build.NamedBuildTarget.FromBuildTargetGroup(group);
@@ -73,7 +73,7 @@ namespace Nexus.Editor
                 AssetDatabase.SaveAssets();
                 Debug.Log("[Nexus] Added NEXUS_DEBUG scripting define symbol. Recompiling...");
             }, NexusEditorStyles.BtnBlue);
-            
+
             warningCard.Add(enableBtn);
 #endif
 
@@ -149,12 +149,29 @@ namespace Nexus.Editor
 
             _view.Add(splitPane);
 
-            // Fetch initial events from ring buffer once
+            // Fetch causal events from ring buffer (NEXUS_DEBUG only)
             var events = NexusTrace.GetRecentEvents(out int count);
             for (int i = 0; i < count; i++)
             {
                 _allEvents.Add(events[i]);
             }
+
+            // Production trace fallback: load from Metrics ring buffer
+            // This works even without NEXUS_DEBUG
+            if (_allEvents.Count == 0)
+            {
+                var traces = NexusRuntime.Metrics.GetRecentTraces(out int traceCount);
+                for (int i = 0; i < traceCount && _allEvents.Count < 200; i++)
+                {
+                    if (!string.IsNullOrEmpty(traces[i]))
+                    {
+                        _allEvents.Add(new TraceEvent(i, -1, TraceEventType.Signal,
+                            UnityEngine.Time.realtimeSinceStartupAsDouble, traces[i],
+                            TraceStatus.OK, ExecutionMode.Sequential));
+                    }
+                }
+            }
+
             BuildChildrenCache();
             RefreshTracerLogs();
 
@@ -184,16 +201,45 @@ namespace Nexus.Editor
             _incomingEvents.Enqueue(traceEvent);
         }
 
+        private int _productionTraceFrameCounter;
+
         private void OnMainThreadUpdate()
         {
             if (!_isPaused)
             {
                 bool hasNewEvents = ProcessIncomingQueue();
+
+                // Reload production traces every ~500ms (5 frames at 100ms interval)
+                _productionTraceFrameCounter++;
+                if (_productionTraceFrameCounter >= 5)
+                {
+                    _productionTraceFrameCounter = 0;
+                    ReloadProductionTraces();
+                    hasNewEvents = true;
+                }
+
                 if (hasNewEvents)
                 {
                     RefreshTracerLogs();
                 }
             }
+        }
+
+        private void ReloadProductionTraces()
+        {
+            if (_allEvents.Count >= 200) return;
+            var traces = NexusRuntime.Metrics.GetRecentTraces(out int traceCount);
+            for (int i = 0; i < traceCount && _allEvents.Count < 200; i++)
+            {
+                if (!string.IsNullOrEmpty(traces[i]))
+                {
+                    _allEvents.Add(new TraceEvent(
+                        _allEvents.Count, -1, TraceEventType.Signal,
+                        UnityEngine.Time.realtimeSinceStartupAsDouble, traces[i],
+                        TraceStatus.OK, ExecutionMode.Sequential));
+                }
+            }
+            if (_allEvents.Count > 0) BuildChildrenCache();
         }
 
         private bool ProcessIncomingQueue()

@@ -846,6 +846,44 @@ namespace Nexus.Editor
 
             _content.Add(perfCard);
 
+            // Real-time bar chart
+            float sigRate = NexusRuntime.Metrics.SignalsPerSecond;
+            float cmdRate = NexusRuntime.Metrics.CommandsPerSecond;
+            float maxRate = Mathf.Max(sigRate, cmdRate, 1f);
+
+            var chartCard = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
+            chartCard.style.marginBottom = 10;
+            chartCard.style.marginLeft = 10;
+            chartCard.style.marginRight = 10;
+
+            var chartTitle = new Label("RATE GRAPH")
+            {
+                style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 6 }
+            };
+            chartCard.Add(chartTitle);
+
+            // Signals/s bar
+            var sigBarRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 4 } };
+            sigBarRow.Add(new Label("Sig/s") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), width = 45 } });
+            var sigBg = new VisualElement { style = { flexGrow = 1, height = 14, backgroundColor = new StyleColor(NexusEditorStyles.RowAlt), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
+            var sigFill = new VisualElement { style = { width = new Length(Mathf.Clamp(sigRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent), height = 14, backgroundColor = new StyleColor(NexusEditorStyles.AccentBlue), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
+            sigBg.Add(sigFill);
+            sigBarRow.Add(sigBg);
+            sigBarRow.Add(new Label($"{sigRate:F1}") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), width = 40, unityFontStyleAndWeight = FontStyle.Bold } });
+            chartCard.Add(sigBarRow);
+
+            // Commands/s bar
+            var cmdBarRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
+            cmdBarRow.Add(new Label("Cmd/s") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), width = 45 } });
+            var cmdBg = new VisualElement { style = { flexGrow = 1, height = 14, backgroundColor = new StyleColor(NexusEditorStyles.RowAlt), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
+            var cmdFill = new VisualElement { style = { width = new Length(Mathf.Clamp(cmdRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent), height = 14, backgroundColor = new StyleColor(NexusEditorStyles.AccentGreen), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
+            cmdBg.Add(cmdFill);
+            cmdBarRow.Add(cmdBg);
+            cmdBarRow.Add(new Label($"{cmdRate:F1}") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentGreen), width = 40, unityFontStyleAndWeight = FontStyle.Bold } });
+            chartCard.Add(cmdBarRow);
+
+            _content.Add(chartCard);
+
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts == null || contexts.Count == 0)
             {
@@ -886,8 +924,7 @@ namespace Nexus.Editor
         }
 
         // ─── Signal Test Panel ─────────────────────────────────
-        private string _testSignalName = "MySignal";
-        private string _testSignalPayload = "test";
+        private string _testResult = "";
 
         private void RenderSignalTest()
         {
@@ -907,81 +944,105 @@ namespace Nexus.Editor
                 return;
             }
 
-            var contextChoices = new List<string>();
+            // Collect registered signal types from runtime SignalBus
+            var signalTypes = new Dictionary<string, Type>();
             foreach (var ctx in contexts)
-                contextChoices.Add(ctx.ScopeTag ?? "(no tag)");
-            int defaultIdx = contextChoices.Count > 0 ? 0 : -1;
-
-            var form = new VisualElement
             {
-                style =
+                if (ctx.SignalBus.RegisteredHandlers == null) continue;
+                foreach (var kvp in ctx.SignalBus.RegisteredHandlers)
                 {
-                    backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
-                    marginLeft = 15,
-                    marginRight = 15,
-                    marginTop = 10,
-                    paddingLeft = 12,
-                    paddingRight = 12,
-                    paddingTop = 10,
-                    paddingBottom = 10,
-                    borderTopLeftRadius = 6,
-                    borderTopRightRadius = 6,
-                    borderBottomLeftRadius = 6,
-                    borderBottomRightRadius = 6,
+                    if (!signalTypes.ContainsKey(kvp.Key.Name))
+                        signalTypes[kvp.Key.Name] = kvp.Key;
                 }
-            };
-
-            form.Add(new Label("Manual Signal Fire") { style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextPrimary), marginBottom = 8 } });
-
-            // Target context dropdown
-            var ctxDropdown = new DropdownField("Target Context", contextChoices, defaultIdx >= 0 ? defaultIdx : 0);
-            form.Add(ctxDropdown);
-
-            // Signal name input
-            var signalField = new TextField("Signal Name") { value = _testSignalName };
-            signalField.RegisterValueChangedCallback(evt => _testSignalName = evt.newValue);
-            form.Add(signalField);
-
-            // Payload input
-            var payloadField = new TextField("Payload (int)") { value = _testSignalPayload };
-            payloadField.RegisterValueChangedCallback(evt => _testSignalPayload = evt.newValue);
-            form.Add(payloadField);
-
-            // Fire button
-            var fireBtn = NexusEditorStyles.CreateButton("Fire Signal (FireAsync)", () =>
-            {
-                var scopeTag = ctxDropdown.value;
-                var ctx = contexts.FirstOrDefault(c => c.ScopeTag == scopeTag);
-                if (ctx == null) return;
-
-                if (int.TryParse(_testSignalPayload, out int intVal))
-                {
-                    // This is a generic test — we fire a signal that matches common patterns
-                    Debug.Log($"[Nexus Test] Would fire '{_testSignalName}' with payload {intVal} to context '{scopeTag}'. Use FireAsync for production.");
-                }
-                else
-                {
-                    Debug.Log($"[Nexus Test] Would fire '{_testSignalName}' with payload '{_testSignalPayload}' to context '{scopeTag}'.");
-                }
-            }, NexusEditorStyles.BtnPurple);
-            fireBtn.style.marginTop = 8;
-            form.Add(fireBtn);
-
-            var hint = NexusEditorStyles.CreateHint("Tip: The Signal Explorer plugin (Window > Nexus > Dashboard > Explorer) supports full signal inspection.");
-            hint.style.marginTop = 8;
-            form.Add(hint);
-
-            _content.Add(form);
-
-            // Show available signals from snapshot
-            AddSectionHeader("Available Signals", NexusEditorStyles.AccentPurple);
-            foreach (var sig in _snapshot.SignalNames)
-            {
-                var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15, marginTop = 2 } };
-                row.Add(NexusEditorStyles.CreateStatusDot(NexusEditorStyles.AccentPurple, 5));
-                row.Add(new Label(sig) { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.SignalBlue) } });
-                _content.Add(row);
             }
+
+            if (signalTypes.Count == 0)
+            {
+                _content.Add(NexusEditorStyles.CreateEmptyState("No registered signal types found. Register commands for your signals first."));
+                return;
+            }
+
+            // Quick-fire buttons for each signal type
+            var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBg);
+            card.style.marginLeft = 10;
+            card.style.marginRight = 10;
+            card.style.marginTop = 8;
+            card.style.marginBottom = 8;
+
+            card.Add(new Label("QUICK FIRE — Click to dispatch signal with default values")
+            {
+                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextPrimary), marginBottom = 8 }
+            });
+
+            if (!string.IsNullOrEmpty(_testResult))
+            {
+                var resultLabel = new Label(_testResult)
+                {
+                    style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.AccentGreen), marginBottom = 8, whiteSpace = WhiteSpace.Normal }
+                };
+                card.Add(resultLabel);
+            }
+
+            var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
+            foreach (var kvp in signalTypes.OrderBy(k => k.Key))
+            {
+                var signalName = kvp.Key;
+                var signalType = kvp.Value;
+
+                var fireBtn = new Button(() =>
+                {
+                    try
+                    {
+                        var ctx = contexts[0]; // Fire into first active context
+                        var instance = Activator.CreateInstance(signalType);
+                        var fireMethod = ctx.SignalBus.GetType().GetMethod("Fire");
+                        if (fireMethod != null)
+                        {
+                            var genericMethod = fireMethod.MakeGenericMethod(signalType);
+                            genericMethod.Invoke(ctx.SignalBus, new[] { instance });
+                            _testResult = $"✔ Fired {signalName} @ {System.DateTime.Now:HH:mm:ss}";
+                            Debug.Log($"[Nexus Test] Successfully fired signal '{signalName}' via context '{ctx.ScopeTag}'.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _testResult = $"✘ {signalName}: {ex.InnerException?.Message ?? ex.Message}";
+                        Debug.LogError($"[Nexus Test] Failed to fire '{signalName}': {ex.Message}");
+                    }
+                    RenderActiveSection();
+                })
+                {
+                    text = signalName,
+                    style =
+                    {
+                        fontSize = 9,
+                        paddingLeft = 8, paddingRight = 8, paddingTop = 4, paddingBottom = 4,
+                        marginRight = 4, marginBottom = 4,
+                        backgroundColor = new StyleColor(NexusEditorStyles.BtnPurple),
+                        color = Color.white,
+                        borderTopLeftRadius = 3, borderTopRightRadius = 3,
+                        borderBottomLeftRadius = 3, borderBottomRightRadius = 3
+                    }
+                };
+
+                // Tooltip: show command count and mode
+                int handlerCount = 0;
+                string mode = "Sequential";
+                if (contexts[0].SignalBus.RegisteredHandlers.TryGetValue(signalType, out var handlers) && handlers.Count > 0)
+                {
+                    handlerCount = handlers.Count;
+                    mode = handlers[0].Mode.ToString();
+                }
+                fireBtn.tooltip = $"{signalType.FullName}\n{handlerCount} handler(s), {mode} mode";
+                buttonRow.Add(fireBtn);
+            }
+
+            card.Add(buttonRow);
+            _content.Add(card);
+
+            var hint = NexusEditorStyles.CreateHint("Click any signal above to fire it into the first active context. Use the Explorer tab for signals with custom payloads.");
+            hint.style.marginLeft = 10;
+            _content.Add(hint);
         }
     }
 }

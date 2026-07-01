@@ -93,7 +93,22 @@ namespace Nexus.Editor
         internal static int GetHandlerCount()
         {
             EnsureCached();
-            return s_cachedHandlerCount;
+            // Also count runtime registrations (fluent API commands)
+            int runtimeCount = 0;
+            var contexts = NexusRuntime.ActiveContexts;
+            if (contexts != null)
+            {
+                foreach (var ctx in contexts)
+                {
+                    var handlers = ctx.SignalBus.RegisteredHandlers;
+                    if (handlers != null)
+                    {
+                        foreach (var kvp in handlers)
+                            runtimeCount += kvp.Value.Count;
+                    }
+                }
+            }
+            return s_cachedHandlerCount + runtimeCount;
         }
 
         // ── Scene roots ─────────────────────────────────────────

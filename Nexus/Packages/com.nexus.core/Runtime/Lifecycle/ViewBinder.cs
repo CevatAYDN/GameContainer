@@ -31,18 +31,32 @@ namespace Nexus.Core
         {
             if (_isBound) return;
             var root = GetComponentInParent<Root>();
-            if (root != null && root.Context != null)
+            if (root != null)
             {
-                root.Context.RegisterView(this);
-            }
-            else
-            {
-                // Fallback only when the scene has a single unambiguous active root.
-                var roots = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
-                if (roots.Length == 1 && roots[0].Context != null)
+                if (root.Context != null)
                 {
-                    roots[0].Context.RegisterView(this);
+                    root.Context.RegisterView(this);
+                    return;
                 }
+                // Root exists but Context is null — likely not initialized yet
+                // (e.g. async Addressables prefab instantiation before Root.Start())
+                if (!root.IsInitialized)
+                {
+                    UnityEngine.Debug.LogWarning($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is not yet initialized. " +
+                        "View will not bind until Root.Start() completes. Consider loading this prefab after Root initialization.");
+                }
+            }
+
+            // Fallback only when the scene has a single unambiguous active root.
+            var roots = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+            if (roots.Length == 1 && roots[0].Context != null)
+            {
+                roots[0].Context.RegisterView(this);
+            }
+            else if (roots.Length == 0)
+            {
+                UnityEngine.Debug.LogError($"[Nexus] View '{gameObject.name}' OnEnable: No Root GameObject found in scene. " +
+                    "Create a Root via GameObject → Nexus → Create Root.");
             }
         }
 

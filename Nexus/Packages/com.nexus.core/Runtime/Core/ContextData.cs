@@ -26,6 +26,8 @@ namespace Nexus.Core
 
         [Header("Performance")]
         public int CommandPoolInitialSize = 4;
+        public int CommandPoolMaxSize = 64;
+        public int TracerRingBufferSize = 2000;
 
         [Header("Metadata")]
         public string ScopeTag;
