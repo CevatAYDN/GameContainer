@@ -247,7 +247,7 @@ namespace Nexus.Editor
                     s.ContextTags.Add(ctx.ScopeTag ?? "(no tag)");
             }
 
-            // Scan assemblies for signal/command/models
+            // Scan assemblies for signal/command/models (static analysis)
             var scannedSignals = new HashSet<string>();
             var scannedCommands = new HashSet<(string cmd, string sig, string mode)>();
             var scannedModels = new HashSet<string>();
@@ -284,6 +284,25 @@ namespace Nexus.Editor
                     }
                 }
                 catch { }
+            }
+
+            // Also collect commands from live runtime SignalBus (fluent API registrations)
+            if (contexts != null)
+            {
+                foreach (var ctx in contexts)
+                {
+                    var handlers = ctx.SignalBus.RegisteredHandlers;
+                    if (handlers == null) continue;
+                    foreach (var kvp in handlers)
+                    {
+                        var signalName = kvp.Key.Name;
+                        foreach (var info in kvp.Value)
+                        {
+                            var cmdName = info.CommandType.Name;
+                            scannedCommands.Add((cmdName, signalName, info.Mode.ToString()));
+                        }
+                    }
+                }
             }
 
             s.SignalCount = scannedSignals.Count;
@@ -503,17 +522,59 @@ namespace Nexus.Editor
 
                 var header = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
                 header.Add(NexusEditorStyles.CreateStatusDot(NexusEditorStyles.AccentGreen));
-                header.Add(new Label(ctx.ScopeTag ?? "(no tag)")
+
+                // Determine display name: ScopeTag > ContextData name > "(unnamed)"
+                string displayName = ctx.ScopeTag;
+                if (string.IsNullOrEmpty(displayName) && ctx is Context c && c.ContextData != null)
+                    displayName = c.ContextData.name.Replace("ContextData", "");
+                if (string.IsNullOrEmpty(displayName))
+                    displayName = "(unnamed)";
+
+                header.Add(new Label(displayName)
                 {
                     style = { fontSize = 13, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextPrimary) }
                 });
                 header.Add(NexusEditorStyles.CreatePill(ctx.Parent != null ? "Child" : "Root", NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
                 card.Add(header);
 
-                card.Add(new Label($"Scope: {ctx.ScopeTag ?? "—"} | Parent: {ctx.Parent?.ScopeTag ?? "—"}")
+                // Show context metadata
+                var meta = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4, flexWrap = Wrap.Wrap } };
+                if (!string.IsNullOrEmpty(ctx.ScopeTag))
+                    meta.Add(NexusEditorStyles.CreatePill($"Tag: {ctx.ScopeTag}", NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
+                if (ctx is Context concreteCtx2 && concreteCtx2.ContextData != null)
+                    meta.Add(NexusEditorStyles.CreatePill($"Cfg: {concreteCtx2.ContextData.name}", NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
+                if (ctx.Parent != null)
+                    meta.Add(NexusEditorStyles.CreatePill($"Parent: {ctx.Parent.ScopeTag ?? "(unnamed)"}", NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
+
+                // Show registered command count if available
+                if (ctx.SignalBus.RegisteredHandlers != null)
                 {
-                    style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 4 }
-                });
+                    int cmdCount = 0;
+                    foreach (var kvp in ctx.SignalBus.RegisteredHandlers)
+                        cmdCount += kvp.Value.Count;
+                    if (cmdCount > 0)
+                        meta.Add(NexusEditorStyles.CreatePill($"{cmdCount} commands", NexusEditorStyles.BtnGray, NexusEditorStyles.AccentOrange));
+                }
+
+                card.Add(meta);
+
+                // Show DI bindings from this context
+                if (ctx is Context concreteCtx)
+                {
+                    var bindings = concreteCtx.Container.GetRegisteredSingletons();
+                    int modelCount = 0, serviceCount = 0, otherCount = 0;
+                    foreach (var kvp in bindings)
+                    {
+                        if (typeof(IReactiveModel).IsAssignableFrom(kvp.Key)) modelCount++;
+                        else if (typeof(INexusService).IsAssignableFrom(kvp.Key)) serviceCount++;
+                        else otherCount++;
+                    }
+                    var stats = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
+                    stats.Add(NexusEditorStyles.CreatePill($"{modelCount} models", NexusEditorStyles.BtnGray, NexusEditorStyles.AccentBlue));
+                    stats.Add(NexusEditorStyles.CreatePill($"{serviceCount} services", NexusEditorStyles.BtnGray, NexusEditorStyles.AccentGreen));
+                    stats.Add(NexusEditorStyles.CreatePill($"{otherCount} others", NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
+                    card.Add(stats);
+                }
 
                 _content.Add(card);
             }

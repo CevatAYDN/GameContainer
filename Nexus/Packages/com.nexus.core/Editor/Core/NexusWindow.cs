@@ -182,6 +182,9 @@ namespace Nexus.Editor
                 SwitchToPlugin(_plugins[0].Id);
             }
 
+            // Keyboard shortcuts: Ctrl+1..9 for tabs
+            root.RegisterCallback<KeyDownEvent>(OnKeyDown);
+
             UpdateStatusBarText();
 
             // Scheduler to update Hierarchy trackers when in Play Mode and Hierarchy tab is active
@@ -323,6 +326,32 @@ namespace Nexus.Editor
             if (_activePlugin != null && _activePlugin.Id == "Hierarchy" && Application.isPlaying)
             {
                 _hierarchyPlugin?.UpdateVisibleTrackers();
+            }
+        }
+
+        private void OnKeyDown(KeyDownEvent evt)
+        {
+            if (!evt.ctrlKey) return;
+
+            int index = -1;
+            switch (evt.keyCode)
+            {
+                case KeyCode.Alpha1: index = 0; break;
+                case KeyCode.Alpha2: index = 1; break;
+                case KeyCode.Alpha3: index = 2; break;
+                case KeyCode.Alpha4: index = 3; break;
+                case KeyCode.Alpha5: index = 4; break;
+                case KeyCode.Alpha6: index = 5; break;
+                case KeyCode.Alpha7: index = 6; break;
+                case KeyCode.Alpha8: index = 7; break;
+                case KeyCode.Alpha9: index = 8; break;
+                case KeyCode.F5: RefreshActivePlugin(); _statusBar.text += " ⚡"; return;
+            }
+
+            if (index >= 0 && index < _plugins.Count)
+            {
+                SwitchToPlugin(_plugins[index].Id);
+                evt.StopPropagation();
             }
         }
 

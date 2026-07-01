@@ -128,7 +128,7 @@ namespace Nexus.Editor
                 }
             };
 
-            card.Add(new Label("com.nexus.core v0.2.0")
+            card.Add(new Label("com.nexus.core v0.3.0")
             {
                 style = { fontSize = 13, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue) }
             });
@@ -138,9 +138,10 @@ namespace Nexus.Editor
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 4 }
             });
 
-            card.Add(new Label("New in v0.2.0: ObservableProperty<T>, IReactiveModel, NexusService<T>,\n" +
-                               "FireAsyncWithTimeout/TAndForget, GameManager Plugin, Debug HUD,\n" +
-                               "Service code generation, improved async recovery with timeout info.")
+            card.Add(new Label("New in v0.3.0: Auto-AOT generation, Thread-safe DI locking,\n" +
+                               "Runtime performance metrics, ContextData validation,\n" +
+                               "Enhanced Contexts inspector, Fluent API command detection,\n" +
+                               "Recovery strategy integration, IReactiveModel+INexusService lifecycle.")
             {
                 style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 4, whiteSpace = WhiteSpace.Normal }
             });

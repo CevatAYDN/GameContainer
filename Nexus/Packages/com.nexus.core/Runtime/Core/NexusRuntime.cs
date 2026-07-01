@@ -122,6 +122,33 @@ namespace Nexus.Core
                 System.Threading.Interlocked.Increment(ref TotalCommandsExecuted);
             }
 
+            // Production tracing ring buffer — always active, no NEXUS_DEBUG needed.
+            // TracerPlugin reads this when causal tracing is compiled out.
+            private const int TraceBufferSize = 200;
+            private static readonly string[] s_traceBuffer = new string[TraceBufferSize];
+            private static int s_traceIndex = -1;
+            private static int s_traceCount;
+
+            internal static void RecordTrace(string entry)
+            {
+                int idx = System.Threading.Interlocked.Increment(ref s_traceIndex) % TraceBufferSize;
+                if (idx < 0) idx = 0;
+                s_traceBuffer[idx] = entry;
+                if (s_traceCount < TraceBufferSize)
+                    System.Threading.Interlocked.Increment(ref s_traceCount);
+            }
+
+            public static string[] GetRecentTraces(out int count)
+            {
+                count = s_traceCount;
+                if (count == 0) return System.Array.Empty<string>();
+                var result = new string[count];
+                int start = (s_traceIndex - count + 1 + TraceBufferSize) % TraceBufferSize;
+                for (int i = 0; i < count; i++)
+                    result[i] = s_traceBuffer[(start + i) % TraceBufferSize] ?? "";
+                return result;
+            }
+
             public static void UpdateRates()
             {
                 // Lock to make the rate calculation atomic across all fields.

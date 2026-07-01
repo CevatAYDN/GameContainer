@@ -127,7 +127,7 @@ namespace Nexus.Editor
                     var assemblyName = assembly.GetName().Name;
                     if (assemblyName.StartsWith("System") || assemblyName.StartsWith("mscorlib") || assemblyName.StartsWith("Mono") ||
                         assemblyName.StartsWith("UnityEngine") || assemblyName.StartsWith("UnityEditor") || assemblyName.StartsWith("Unity.") ||
-                        assemblyName.StartsWith("Microsoft.") || assemblyName.StartsWith("nunit") || assemblyName.Contains("Editor"))
+                        assemblyName.StartsWith("Microsoft.") || assemblyName.StartsWith("nunit"))
                         continue;
 
                     Type[] types;
@@ -206,7 +206,7 @@ namespace Nexus.Editor
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || 
                     name.StartsWith("UnityEngine") || name.StartsWith("UnityEditor") || name.StartsWith("Unity.") ||
-                    name.StartsWith("Microsoft.") || name.StartsWith("nunit") || name.Contains("Editor"))
+                    name.StartsWith("Microsoft.") || name.StartsWith("nunit"))
                     continue;
 
                 try
