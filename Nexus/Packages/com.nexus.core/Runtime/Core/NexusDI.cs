@@ -421,7 +421,15 @@ namespace Nexus.Core
                 args[i] = Resolve(paramTypes[i]);
             }
 
-            return meta.Constructor.Invoke(args);
+            try
+            {
+                return meta.Constructor.Invoke(args);
+            }
+            catch (System.Reflection.TargetInvocationException ex)
+            {
+                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                throw; // unreachable
+            }
         }
 
         public IEnumerable<object> GetActiveSingletons()

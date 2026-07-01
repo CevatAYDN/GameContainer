@@ -16,8 +16,8 @@ namespace Nexus.Tests
 
         public readonly struct TestPlayerSignal : INetworkSignal
         {
-            public int PlayerId;
-            public int Health;
+            public readonly int PlayerId;
+            public readonly int Health;
             public TestPlayerSignal(int playerId, int health)
             {
                 PlayerId = playerId;

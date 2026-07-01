@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core;
 using NUnit.Framework;
 using UnityEngine;
 
@@ -226,10 +227,9 @@ namespace Nexus.Tests
             _container.Bind<WriteBlockCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(AnotherSignal), typeof(WriteBlockCommand), ExecutionMode.Concurrent, 0, isAsync: false);
 
-            await Task.WhenAll(
-                _signalBus.FireAsync(new TestSignal(1, "conc1")),
-                _signalBus.FireAsync(new AnotherSignal(2))
-            );
+            var t1 = _signalBus.FireAsync(new TestSignal(1, "conc1")).AsTask();
+            var t2 = _signalBus.FireAsync(new AnotherSignal(2)).AsTask();
+            await Task.WhenAll(t1, t2);
 
             Assert.AreEqual(2, _results.ExecutionCount, "Both concurrent commands should execute");
         }
@@ -237,18 +237,15 @@ namespace Nexus.Tests
         // ── Cancellation tests ─────────────────────────────────
 
         [Test]
-        public async Task FireAsync_CancelledToken_ThrowsOperationCanceled()
+        public void FireAsync_CancelledToken_ThrowsOperationCanceled()
         {
             _container.Bind<AsyncCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TestSignal), typeof(AsyncCommand), ExecutionMode.Sequential, 0, isAsync: true);
 
-            using var cts = new CancellationTokenSource();
-            cts.Cancel();
-
-            Assert.Throws<OperationCanceledException>(() =>
+            // FireAsyncWithTimeout with 0ms timeout triggers cancellation immediately
+            Assert.ThrowsAsync<OperationCanceledException>(async () =>
             {
-                _signalBus.FireAsync(new TestSignal(3, "cancel"), cts.Token);
-                // FireAsync returns ValueTask; the cancellation propagates through the signal bus
+                await _signalBus.FireAsyncWithTimeout(new TestSignal(3, "cancel"), 0);
             });
         }
 
@@ -258,15 +255,10 @@ namespace Nexus.Tests
             _container.Bind<AsyncCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TestSignal), typeof(AsyncCommand), ExecutionMode.Sequential, 0, isAsync: true);
 
-            using var cts = new CancellationTokenSource();
-            var task = _signalBus.FireAsync(new TestSignal(4, "async-cancel"), cts.Token);
-
-            // Cancel after a short delay
-            cts.CancelAfter(10);
-
+            // FireAsyncWithTimeout uses an internal CancellationTokenSource that propagates to commands
             try
             {
-                await task;
+                await _signalBus.FireAsyncWithTimeout(new TestSignal(4, "async-cancel"), 1);
                 // If the command completed before cancellation, that's fine too
             }
             catch (OperationCanceledException)
