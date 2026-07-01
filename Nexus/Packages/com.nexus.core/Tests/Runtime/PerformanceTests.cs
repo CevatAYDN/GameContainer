@@ -19,23 +19,27 @@ namespace Nexus.Tests
             public PerfSignal(int index) => Index = index;
         }
 
+        public class TestCounter { public int Value; }
+
         public class PerfCommand : ICommand<PerfSignal>
         {
-            public static int ExecutionCount;
-            public void Execute(PerfSignal signal) { ExecutionCount++; }
+            [Inject] public TestCounter Counter;
+            public void Execute(PerfSignal signal) { Counter.Value++; }
         }
+
+        private TestCounter _counter;
 
         [SetUp]
         public void Setup()
         {
-            PerfCommand.ExecutionCount = 0;
-
+            _counter = new TestCounter();
             _container = new NexusDI();
+            _container.BindInstance(_counter);
+            _container.Bind<PerfCommand>(isSingleton: false);
             _poolManager = new CommandPoolManager(_container);
             _context = new MockContext();
             _signalBus = new SignalBus(_container, _poolManager, _context);
 
-            _container.Bind<PerfCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(PerfSignal), typeof(PerfCommand), ExecutionMode.Sequential, 0, false);
         }
 
@@ -60,8 +64,8 @@ namespace Nexus.Tests
 
             sw.Stop();
 
-            Assert.AreEqual(count, PerfCommand.ExecutionCount);
-            Assert.Less(sw.ElapsedMilliseconds, 5000, "1000 dispatches should complete within 5 seconds");
+            Assert.AreEqual(count, _counter.Value);
+            Assert.Less(sw.ElapsedMilliseconds, 500, "1000 dispatches should complete within 500ms");
         }
 
         [Test]
@@ -87,7 +91,7 @@ namespace Nexus.Tests
             _signalBus.Fire(new PerfSignal(2));
 
             // Command pool returns cleaned commands; execute to verify pool works
-            Assert.AreEqual(2, PerfCommand.ExecutionCount);
+            Assert.AreEqual(2, _counter.Value);
 
             // Fire several more times — pool should reuse without exhausting
             for (int i = 0; i < 100; i++)
@@ -95,7 +99,7 @@ namespace Nexus.Tests
                 _signalBus.Fire(new PerfSignal(i));
             }
 
-            Assert.AreEqual(102, PerfCommand.ExecutionCount);
+            Assert.AreEqual(102, _counter.Value);
         }
 
         [Test]

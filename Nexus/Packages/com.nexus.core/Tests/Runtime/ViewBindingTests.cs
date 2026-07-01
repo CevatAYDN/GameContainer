@@ -5,6 +5,7 @@ using UnityEngine;
 namespace Nexus.Tests
 {
     [TestFixture]
+    [Category("RequiresPlayMode")]
     public class ViewBindingTests
     {
         private Context _context;

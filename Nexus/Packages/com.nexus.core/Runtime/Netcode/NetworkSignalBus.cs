@@ -54,7 +54,7 @@ namespace Nexus.Netcode
             _keysToPrune.Clear();
             foreach (int k in _snapshots.Keys)
             {
-                if (k < tick) _keysToPrune.Add(k);
+                if (k <= tick) _keysToPrune.Add(k);
             }
             for (int i = 0; i < _keysToPrune.Count; i++)
             {
@@ -116,7 +116,7 @@ namespace Nexus.Netcode
             // Backwards index loop to prune older history
             for (int i = _signals.Count - 1; i >= 0; i--)
             {
-                if (_signals[i].Tick < tick)
+                if (_signals[i].Tick <= tick)
                 {
                     _signals.RemoveAt(i);
                 }

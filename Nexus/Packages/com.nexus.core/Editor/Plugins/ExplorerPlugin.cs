@@ -44,6 +44,14 @@ namespace Nexus.Editor
         private static List<string> s_cachedAssemblies;
         private static List<Type> s_cachedSignalTypes;
 
+        [UnityEditor.Callbacks.DidReloadScripts]
+        private static void OnScriptsReloaded()
+        {
+            s_cachedMappings = null;
+            s_cachedAssemblies = null;
+            s_cachedSignalTypes = null;
+        }
+
         private readonly struct MappingInfo
         {
             internal string SignalName { get; }

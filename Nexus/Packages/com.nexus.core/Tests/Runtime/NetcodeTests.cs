@@ -62,11 +62,23 @@ namespace Nexus.Tests
             Assert.AreEqual(0, history.Signals[0].Tick);
         }
 
+        public class UpdateHealthCommand : ICommand<TestPlayerSignal>
+        {
+            [Inject] public TestPlayerSnapshot Model;
+            public void Execute(TestPlayerSignal signal)
+            {
+                Model.LastHealth = signal.Health;
+            }
+        }
+
         [Test]
         public void RollbackAndResimulate_ReplaysTypedSignals_NoReflection()
         {
             var model = new TestPlayerSnapshot();
             _networkBus.RegisterModel(model);
+            _container.BindInstance(model);
+            _container.Bind<UpdateHealthCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(TestPlayerSignal), typeof(UpdateHealthCommand), ExecutionMode.Sequential, 0, false);
 
             _networkBus.SetTick(0);
             _networkBus.Fire(new TestPlayerSignal(1, 100));

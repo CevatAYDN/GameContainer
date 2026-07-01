@@ -468,6 +468,10 @@ namespace Nexus.Core
         public static void ClearInjectedReferences(object instance)
         {
             if (instance == null) return;
+            if (instance is IResettable resettable)
+            {
+                resettable.Reset();
+            }
             var type = instance.GetType();
 
             var meta = s_clearMetadataCache.GetOrAdd(type, t =>

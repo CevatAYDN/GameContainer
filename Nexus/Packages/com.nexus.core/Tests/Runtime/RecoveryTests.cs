@@ -25,36 +25,44 @@ namespace Nexus.Tests
             public FailSignal(string message) => Message = message;
         }
 
-        public class ThrowCommand : ICommand
+        public class ThrowCommand : ICommand<FailSignal>
         {
             [Inject] private RecoveryTestResults _results;
-            public FailSignal Signal;
-            public void Execute()
+            public void Execute(FailSignal signal)
             {
                 _results.ThrowCount++;
-                throw new InvalidOperationException("Command failed intendedly: " + Signal.Message);
+                throw new InvalidOperationException("Command failed intendedly: " + signal.Message);
             }
         }
 
-        public class FallbackCommand : ICommand
+        public class FallbackCommand : ICommand, ICommand<FailSignal>
         {
             [Inject] private RecoveryTestResults _results;
             public FailSignal Signal;
-            public void Execute()
+            public void Execute() => Execute(Signal);
+            public void Execute(FailSignal signal)
             {
                 _results.FallbackCount++;
-                _results.FallbackMessage = Signal.Message;
+                _results.FallbackMessage = signal.Message;
             }
         }
 
-        public class AsyncFallbackCommand : IAsyncCommand
+        public class AsyncFallbackCommand : IAsyncCommand, IAsyncCommand<FailSignal>, ICommand, ICommand<FailSignal>
         {
             [Inject] private RecoveryTestResults _results;
             public FailSignal Signal;
-            public ValueTask ExecuteAsync(CancellationToken ct)
+
+            public void Execute() => Execute(Signal);
+            public void Execute(FailSignal signal)
             {
                 _results.AsyncFallbackCount++;
-                _results.AsyncFallbackMessage = Signal.Message;
+                _results.AsyncFallbackMessage = signal.Message;
+            }
+
+            public ValueTask ExecuteAsync(CancellationToken ct) => ExecuteAsync(Signal, ct);
+            public ValueTask ExecuteAsync(FailSignal signal, CancellationToken ct)
+            {
+                Execute(signal);
                 return default;
             }
         }

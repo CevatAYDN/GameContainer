@@ -41,6 +41,11 @@ namespace Nexus.DOTS
         {
             if (!_queue.IsCreated) return;
 
+            UnityEngine.Assertions.Assert.IsTrue(
+                System.Threading.Thread.CurrentThread.ManagedThreadId == 1,
+                "[Nexus DOTS] NativeSignalQueue.Drain() must be called from the main thread. Use DOTSSignalBridge.Update() instead."
+            );
+
             while (_queue.TryDequeue(out T signal))
             {
                 signalBus.Fire(signal);

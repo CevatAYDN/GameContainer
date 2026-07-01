@@ -116,7 +116,7 @@ namespace Nexus.Core
             if (failure.RetryCount < _maxRetries)
             {
                 Debug.LogWarning($"[Nexus] Command {failure.CommandType.Name} failed (attempt {failure.RetryCount + 1}/{_maxRetries}). Retrying...\n{failure.Exception.Message}");
-                return RecoveryDecision.Retry(_maxRetries - failure.RetryCount);
+                return RecoveryDecision.Retry(_maxRetries);
             }
 
             Debug.LogError($"[Nexus] Command {failure.CommandType.Name} failed after {_maxRetries} retries. Aborting signal chain.\n{failure.Exception}");

@@ -12,6 +12,7 @@ using UnityEngine.TestTools;
 namespace Nexus.Tests
 {
     [TestFixture]
+    [Category("RequiresPlayMode")]
     public class SiblingInitializationTests
     {
         private List<string> _initOrder;

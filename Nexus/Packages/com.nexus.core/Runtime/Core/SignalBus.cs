@@ -1316,8 +1316,8 @@ namespace Nexus.Core
 
         private RecoveryAction HandleCommandErrorWithDecision(Exception ex, Type commandType, object signal, ref int retryCount)
         {
-            if (ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
-                (ex.InnerException != null && (ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
+            if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
+                (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
             {
                 throw ex;
             }
@@ -1379,8 +1379,8 @@ namespace Nexus.Core
 
         private async ValueTask<RecoveryAction> HandleCommandErrorWithDecisionAsync(Exception ex, Type commandType, object signal, int retryCount, CancellationToken ct)
         {
-            if (ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
-                (ex.InnerException != null && (ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
+            if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
+                (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
             {
                 throw ex;
             }

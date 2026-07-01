@@ -24,10 +24,8 @@ namespace Nexus.Core
     {
         // ── State ──────────────────────────────────────────────
         private T _value;
-
-        // Multicast handler list. Allocates on first subscription, then reuses capacity.
-        // Notification iteration is allocation-free (struct enumerator).
-        private List<Action<T, T>> _handlers; // (oldValue, newValue)
+        private List<Action<T, T>> _handlers;
+        private readonly object _handlersLock = new();
 
         // ── Construction ───────────────────────────────────────
         /// <summary>Creates an observable property with the given initial value.</summary>
@@ -48,11 +46,16 @@ namespace Nexus.Core
 
                 var old = _value;
                 _value = value;
-                var h = _handlers;
-                if (h != null)
+                Action<T, T>[] snapshot = null;
+                lock (_handlersLock)
                 {
-                    for (int i = 0; i < h.Count; i++)
-                        h[i](old, value);
+                    if (_handlers != null && _handlers.Count > 0)
+                        snapshot = _handlers.ToArray();
+                }
+                if (snapshot != null)
+                {
+                    for (int i = 0; i < snapshot.Length; i++)
+                        snapshot[i](old, value);
                 }
             }
         }
@@ -67,22 +70,30 @@ namespace Nexus.Core
         /// <summary>Subscribes a handler invoked when the value changes.</summary>
         public void OnChanged(Action<T, T> handler)
         {
-            if (_handlers == null)
-                _handlers = new List<Action<T, T>>(2);
-            _handlers.Add(handler);
+            lock (_handlersLock)
+            {
+                if (_handlers == null)
+                    _handlers = new List<Action<T, T>>(2);
+                _handlers.Add(handler);
+            }
         }
 
         /// <summary>Unsubscribes a previously added handler.</summary>
         public void RemoveOnChanged(Action<T, T> handler)
         {
-            if (_handlers != null)
-                _handlers.Remove(handler);
+            lock (_handlersLock)
+            {
+                _handlers?.Remove(handler);
+            }
         }
 
         /// <summary>Removes all change handlers.</summary>
         public void ClearOnChanged()
         {
-            _handlers = null;
+            lock (_handlersLock)
+            {
+                _handlers = null;
+            }
         }
 
         // ── Implicit conversion (read convenience) ─────────────

@@ -94,7 +94,6 @@ namespace Nexus.Editor
         internal static int GetHandlerCount()
         {
             EnsureCached();
-            // Also count runtime registrations (fluent API commands)
             int runtimeCount = 0;
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts != null)

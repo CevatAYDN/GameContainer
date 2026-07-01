@@ -352,9 +352,16 @@ namespace Nexus.Editor
             if (!Directory.Exists(linkXmlFolder))
                 Directory.CreateDirectory(linkXmlFolder);
 
+            bool changed = false;
+
             // Write binder file
             string destBinderFile = Path.Combine(binderFolder, "NexusGeneratedBinder.g.cs");
-            File.WriteAllText(destBinderFile, sb.ToString());
+            string newBinderContent = sb.ToString();
+            if (!File.Exists(destBinderFile) || File.ReadAllText(destBinderFile) != newBinderContent)
+            {
+                File.WriteAllText(destBinderFile, newBinderContent);
+                changed = true;
+            }
             EnsureGitIgnore(binderFolder, "NexusGeneratedBinder.g.cs");
 
             // Write link.xml (Issue 4)
@@ -395,12 +402,20 @@ namespace Nexus.Editor
             xmlSb.AppendLine("</linker>");
 
             string destLinkXmlFile = Path.Combine(linkXmlFolder, "link.xml");
-            File.WriteAllText(destLinkXmlFile, xmlSb.ToString());
+            string newLinkXmlContent = xmlSb.ToString();
+            if (!File.Exists(destLinkXmlFile) || File.ReadAllText(destLinkXmlFile) != newLinkXmlContent)
+            {
+                File.WriteAllText(destLinkXmlFile, newLinkXmlContent);
+                changed = true;
+            }
             EnsureGitIgnore(linkXmlFolder, "link.xml");
 
-            AssetDatabase.Refresh();
-            Debug.Log($"[Nexus] AOT Binder successfully generated at {destBinderFile}");
-            Debug.Log($"[Nexus] AOT link.xml successfully generated at {destLinkXmlFile}");
+            if (changed)
+            {
+                AssetDatabase.Refresh();
+                Debug.Log($"[Nexus] AOT Binder successfully generated at {destBinderFile}");
+                Debug.Log($"[Nexus] AOT link.xml successfully generated at {destLinkXmlFile}");
+            }
         }
 
         private static void EnsureGitIgnore(string folder, string fileNameToIgnore)

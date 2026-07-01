@@ -24,6 +24,17 @@ namespace Nexus.Editor
         private Section _activeSection = Section.Overview;
         private readonly Dictionary<Section, Button> _sectionButtons = new();
 
+        private static HashSet<string> s_cachedSignals;
+        private static HashSet<(string cmd, string sig, string mode)> s_cachedCommands;
+        private static HashSet<string> s_cachedModels;
+        private static bool s_staticScanValid;
+
+        [UnityEditor.Callbacks.DidReloadScripts]
+        private static void OnScriptsReloaded()
+        {
+            s_staticScanValid = false;
+        }
+
         // ─── UI ────────────────────────────────────────────────
         private VisualElement _root;
         private ScrollView _content;
@@ -249,44 +260,51 @@ namespace Nexus.Editor
                     s.ContextTags.Add(ctx.ScopeTag ?? "(no tag)");
             }
 
-            // Scan assemblies for signal/command/models (static analysis)
-            var scannedSignals = new HashSet<string>();
-            var scannedCommands = new HashSet<(string cmd, string sig, string mode)>();
-            var scannedModels = new HashSet<string>();
-
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            if (!s_staticScanValid)
             {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("nunit"))
-                    continue;
+                s_cachedSignals = new HashSet<string>();
+                s_cachedCommands = new HashSet<(string cmd, string sig, string mode)>();
+                s_cachedModels = new HashSet<string>();
 
-                try
+                foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
                 {
-                    foreach (var type in assembly.GetTypes())
+                    var name = assembly.GetName().Name;
+                    if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("nunit"))
+                        continue;
+
+                    try
                     {
-                        if (type.IsValueType && !type.IsPrimitive && !type.IsEnum && type.Name.EndsWith("Signal"))
-                            scannedSignals.Add(type.Name);
-
-                        if (type.IsClass && !type.IsAbstract)
+                        foreach (var type in assembly.GetTypes())
                         {
-                            var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                            foreach (var attr in attrs)
-                                scannedCommands.Add((type.Name, attr.SignalType.Name, attr.Mode.ToString()));
+                            if (type.IsValueType && !type.IsPrimitive && !type.IsEnum && type.Name.EndsWith("Signal"))
+                                s_cachedSignals.Add(type.Name);
 
-                            var compAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-                            if (compAttr != null)
+                            if (type.IsClass && !type.IsAbstract)
                             {
-                                var sigs = string.Join("+", compAttr.SignalTypes.Select(t => t.Name));
-                                scannedCommands.Add((type.Name, sigs, "Composite"));
-                            }
+                                var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                                foreach (var attr in attrs)
+                                    s_cachedCommands.Add((type.Name, attr.SignalType.Name, attr.Mode.ToString()));
 
-                            if (typeof(IReactiveModel).IsAssignableFrom(type))
-                                scannedModels.Add(type.Name);
+                                var compAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                                if (compAttr != null)
+                                {
+                                    var sigs = string.Join("+", compAttr.SignalTypes.Select(t => t.Name));
+                                    s_cachedCommands.Add((type.Name, sigs, "Composite"));
+                                }
+
+                                if (typeof(IReactiveModel).IsAssignableFrom(type))
+                                    s_cachedModels.Add(type.Name);
+                            }
                         }
                     }
+                    catch { }
                 }
-                catch { }
+                s_staticScanValid = true;
             }
+
+            var scannedSignals = new HashSet<string>(s_cachedSignals);
+            var scannedCommands = new HashSet<(string cmd, string sig, string mode)>(s_cachedCommands);
+            var scannedModels = new HashSet<string>(s_cachedModels);
 
             // Also collect commands from live runtime SignalBus (fluent API registrations)
             if (contexts != null)

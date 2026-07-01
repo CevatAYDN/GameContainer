@@ -95,11 +95,6 @@ namespace Nexus.Core
 
         private void Cleanup(object command)
         {
-            if (command is IResettable resettable)
-            {
-                resettable.Reset();
-            }
-
             NexusDI.ClearInjectedReferences(command);
         }
 
