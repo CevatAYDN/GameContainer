@@ -157,29 +157,26 @@ Add this binding to your Lifecycle class:
 builder.BindCommand<DamageSignal, DamageCommand>();
 ```
 
-##### Style B: Auto-Discovered Command (Legacy — Reflection Fallback)
-Implement the non-generic `ICommand` interface and decorate the class with the `[SignalHandler]` attribute. Nexus will automatically discover and register it. **This approach is no longer recommended** as it uses reflection-based injection, which introduces allocations and AOT stripping issues:
+##### Style B: Auto-Discovered Command (Automatic Registration)
+You can still leverage the `[SignalHandler]` attribute for automatic discovery and registration, but the command **must** implement the generic `ICommand<TSignal>` or `IAsyncCommand<TSignal>` interface. The non-generic reflection-based fallback has been completely removed to enforce 0-GC AOT/IL2CPP compliance:
 
 ```csharp
 using Nexus.Core;
 using UnityEngine;
 
 [SignalHandler(typeof(DamageSignal))] // Auto-discovered and registered by Nexus
-public class DamageCommand : ICommand
+public class DamageCommand : ICommand<DamageSignal>
 {
-    // The signal payload is injected into a field matching the type or named _signal
-    private readonly DamageSignal _signal; 
-    
     [Inject] private IPlayerModel _playerModel; // Model dependency
 
-    public void Execute()
+    public void Execute(DamageSignal signal)
     {
-        _playerModel.Health -= _signal.Amount;
-        Debug.Log($"Damage processed: {_signal.Amount}. New Health: {_playerModel.Health}");
+        _playerModel.Health -= signal.Amount;
+        Debug.Log($"Damage processed: {signal.Amount}. New Health: {_playerModel.Health}");
     }
 }
 ```
-*(Note: Style B uses reflection to set the signal field, which introduces a minor performance overhead and prints a warning on AOT platforms like WebGL/consoles).*
+*(Note: All commands registered under a signal must implement generic interfaces. Non-generic commands will fail compilation or trigger a build-time validation error).*
 
 ---
 
@@ -428,29 +425,26 @@ Bu bağlantıyı Lifecycle sınıfınızda yapılandırın:
 builder.BindCommand<DamageSignal, DamageCommand>();
 ```
 
-##### Yöntem B: Otomatik Keşfedilen Komut (Legacy — Reflection Düşük Performanslı)
-Sınıfı `[SignalHandler]` özniteliği ile işaretleyin ve generic olmayan `ICommand` arayüzünü uygulayın. Nexus bu komutu otomatik olarak tarayıp kaydedecektir. **Bu yaklaşım artık önerilmez**; reflection tabanlı enjeksiyon kullanır ve AOT platformlarında (WebGL, Konsolar vb.) ek görev üretir:
+##### Yöntem B: Otomatik Keşfedilen Komut (Otomatik Kayıt)
+Otomatik keşif özelliğinden yararlanmak için yine `[SignalHandler]` özniteliğini kullanabilirsiniz, ancak komutunuz **mutlaka** generic `ICommand<TSignal>` veya `IAsyncCommand<TSignal>` arayüzünü uygulamalıdır. Eski reflection tabanlı non-generic yapı, 0-GC ve AOT/IL2CPP uyumluluğunu zorunlu kılmak amacıyla tamamen kaldırılmıştır:
 
 ```csharp
 using Nexus.Core;
 using UnityEngine;
 
 [SignalHandler(typeof(DamageSignal))] // Nexus tarafından otomatik olarak taranıp kaydedilir
-public class DamageCommand : ICommand
+public class DamageCommand : ICommand<DamageSignal>
 {
-    // Tetiklenen sinyal içeriği Nexus tarafından yansıma yoluyla otomatik enjekte edilir
-    private readonly DamageSignal _signal; 
-    
     [Inject] private IPlayerModel _playerModel; // Model bağımlılığı
 
-    public void Execute()
+    public void Execute(DamageSignal signal)
     {
-        _playerModel.Health -= _signal.Amount;
-        Debug.Log($"Damage processed: {_signal.Amount}. New Health: {_playerModel.Health}");
+        _playerModel.Health -= signal.Amount;
+        Debug.Log($"Damage processed: {signal.Amount}. New Health: {_playerModel.Health}");
     }
 }
 ```
-*(Not: Yöntem B, sinyal değerini enjekte etmek için reflection kullandığından AOT platformlarında (WebGL, Konsollar vb.) hafif bir performans uyarısı verir).*
+*(Not: Sinyale bağlanan tüm komutlar generic arayüzleri uygulamak zorundadır. Non-generic komut kullanılması durumunda derleme hatası verilir veya build validation işlemi başarısız olur).*
 
 ---
 

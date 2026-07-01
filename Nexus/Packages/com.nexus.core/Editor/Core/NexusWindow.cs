@@ -149,6 +149,65 @@ namespace Nexus.Editor
             var spacer = new VisualElement { style = { flexGrow = 1 } };
             _sidebar.Add(spacer);
 
+            // Language selector in sidebar
+            var langContainer = new VisualElement();
+            langContainer.style.flexDirection = FlexDirection.Row;
+            langContainer.style.justifyContent = Justify.Center;
+            langContainer.style.marginBottom = 12;
+            langContainer.style.paddingTop = 8;
+            langContainer.style.borderTopWidth = 1;
+            langContainer.style.borderTopColor = new StyleColor(NexusEditorStyles.BorderColor);
+
+            var enBtn = new Button(() => SetLocale("en")) { text = "EN" };
+            enBtn.style.fontSize = 9;
+            enBtn.style.paddingLeft = 8;
+            enBtn.style.paddingRight = 8;
+            enBtn.style.paddingTop = 2;
+            enBtn.style.paddingBottom = 2;
+            enBtn.style.borderTopLeftRadius = 3;
+            enBtn.style.borderBottomLeftRadius = 3;
+            enBtn.style.borderTopRightRadius = 0;
+            enBtn.style.borderBottomRightRadius = 0;
+            enBtn.style.borderRightWidth = 0;
+
+            var trBtn = new Button(() => SetLocale("tr")) { text = "TR" };
+            trBtn.style.fontSize = 9;
+            trBtn.style.paddingLeft = 8;
+            trBtn.style.paddingRight = 8;
+            trBtn.style.paddingTop = 2;
+            trBtn.style.paddingBottom = 2;
+            trBtn.style.borderTopRightRadius = 3;
+            trBtn.style.borderBottomRightRadius = 3;
+            trBtn.style.borderTopLeftRadius = 0;
+            trBtn.style.borderBottomLeftRadius = 0;
+            trBtn.style.borderLeftWidth = 0;
+
+            var cur = NexusLang.CurrentLocale;
+            if (cur == "tr")
+            {
+                trBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
+                trBtn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
+                trBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+                enBtn.style.backgroundColor = new StyleColor(Color.clear);
+                enBtn.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
+                enBtn.style.unityFontStyleAndWeight = FontStyle.Normal;
+            }
+            else
+            {
+                enBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
+                enBtn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
+                enBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
+
+                trBtn.style.backgroundColor = new StyleColor(Color.clear);
+                trBtn.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
+                trBtn.style.unityFontStyleAndWeight = FontStyle.Normal;
+            }
+
+            langContainer.Add(enBtn);
+            langContainer.Add(trBtn);
+            _sidebar.Add(langContainer);
+
             var versionLabel = new Label("v0.3.0");
             versionLabel.style.fontSize = 9;
             versionLabel.style.color = new StyleColor(NexusEditorStyles.DimText);
@@ -368,6 +427,13 @@ namespace Nexus.Editor
             _statusBar.text = playing
                 ? $"Nexus ● ACTIVE  |  {contextCount} context(s) active  |  {handlerCount} static handler(s) registered"
                 : $"Nexus ○ STANDBY  |  {rootCount} Root(s) in scene  |  Enter Play Mode to activate";
+        }
+
+        private void SetLocale(string locale)
+        {
+            EditorPrefs.SetString("Nexus_Locale", locale);
+            NexusLang.LoadLocale(locale);
+            RefreshActivePlugin();
         }
     }
 }

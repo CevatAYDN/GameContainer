@@ -75,15 +75,23 @@ namespace Nexus.Core
         /// <param name="handler">The handler to invoke.</param>
         protected void Subscribe<T>(Action<T> handler) where T : struct
         {
+            if (SignalBus == null)
+            {
+                throw new InvalidOperationException($"Cannot subscribe to signal '{typeof(T).Name}' in the Mediator constructor. Place all subscriptions inside OnBind() instead.");
+            }
             var sub = SignalBus.Subscribe(handler);
             _subscriptions.Add(sub);
         }
-
+ 
         /// <summary>Subscribes an async handler to a signal type. Auto-disposed on <see cref="Unbind"/>.</summary>
         /// <typeparam name="T">The signal struct type.</typeparam>
         /// <param name="handler">The async handler to invoke.</param>
         protected void SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct
         {
+            if (SignalBus == null)
+            {
+                throw new InvalidOperationException($"Cannot subscribe asynchronously to signal '{typeof(T).Name}' in the Mediator constructor. Place all subscriptions inside OnBind() instead.");
+            }
             var sub = SignalBus.SubscribeAsync(handler);
             _subscriptions.Add(sub);
         }

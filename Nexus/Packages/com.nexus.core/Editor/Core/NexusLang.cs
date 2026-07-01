@@ -15,7 +15,8 @@ namespace Nexus.Editor
 
         static NexusLang()
         {
-            LoadLocale(Application.isPlaying ? s_currentLocale : "en");
+            s_currentLocale = UnityEditor.EditorPrefs.GetString("Nexus_Locale", "en");
+            LoadLocale(s_currentLocale);
         }
 
         public static void LoadLocale(string locale)
