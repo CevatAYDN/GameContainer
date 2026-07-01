@@ -402,18 +402,18 @@ namespace Nexus.Editor
                 }
             };
 
-            AddStatCard(grid, "Contexts", s.ContextCount.ToString(), NexusEditorStyles.AccentGreen, "Active runtime contexts");
-            AddStatCard(grid, "Models", s.ModelCount.ToString(), NexusEditorStyles.AccentYellow, "IReactiveModel implementations");
-            AddStatCard(grid, "Signals", s.SignalCount.ToString(), NexusEditorStyles.AccentPurple, "Signal structs (ending in 'Signal')");
-            AddStatCard(grid, "Commands", s.CommandCount.ToString(), NexusEditorStyles.AccentOrange, "Command bindings (attribute + fluent)");
-            AddStatCard(grid, "Views", s.ViewCount.ToString(), NexusEditorStyles.AccentBlue, "View subclasses");
-            AddStatCard(grid, "Services", s.ServiceCount.ToString(), NexusEditorStyles.AccentGreen, "INexusService implementations");
-            AddStatCard(grid, "Scene Roots", s.RootCount.ToString(), NexusEditorStyles.DimText, "Root GameObjects in scene");
+            AddStatCard(grid, NexusLang.Get("gamemanager_stat_contexts"), s.ContextCount.ToString(), NexusEditorStyles.AccentGreen, NexusLang.Get("gamemanager_desc_contexts"));
+            AddStatCard(grid, NexusLang.Get("gamemanager_stat_models"), s.ModelCount.ToString(), NexusEditorStyles.AccentYellow, NexusLang.Get("gamemanager_desc_models"));
+            AddStatCard(grid, NexusLang.Get("gamemanager_stat_signals"), s.SignalCount.ToString(), NexusEditorStyles.AccentPurple, NexusLang.Get("gamemanager_desc_signals"));
+            AddStatCard(grid, NexusLang.Get("gamemanager_stat_commands"), s.CommandCount.ToString(), NexusEditorStyles.AccentOrange, NexusLang.Get("gamemanager_desc_commands"));
+            AddStatCard(grid, NexusLang.Get("gamemanager_stat_views"), s.ViewCount.ToString(), NexusEditorStyles.AccentBlue, NexusLang.Get("gamemanager_desc_views"));
+            AddStatCard(grid, NexusLang.Get("gamemanager_stat_services"), s.ServiceCount.ToString(), NexusEditorStyles.AccentGreen, NexusLang.Get("gamemanager_desc_services"));
+            AddStatCard(grid, NexusLang.Get("gamemanager_stat_roots"), s.RootCount.ToString(), NexusEditorStyles.DimText, NexusLang.Get("gamemanager_desc_roots"));
 
             _content.Add(grid);
 
             // Quick actions
-            var actionsLabel = NexusEditorStyles.CreateSectionTitle("QUICK ACTIONS");
+            var actionsLabel = NexusEditorStyles.CreateSectionTitle(NexusLang.Get("gamemanager_quick_actions"));
             actionsLabel.style.marginLeft = 15;
             actionsLabel.style.marginTop = 15;
             _content.Add(actionsLabel);
@@ -530,23 +530,23 @@ namespace Nexus.Editor
                 if (string.IsNullOrEmpty(displayName) && ctx is Context c && c.ContextData != null)
                     displayName = c.ContextData.name.Replace("ContextData", "");
                 if (string.IsNullOrEmpty(displayName))
-                    displayName = "(unnamed)";
+                    displayName = NexusLang.Get("gamemanager_unnamed");
 
                 header.Add(new Label(displayName)
                 {
                     style = { fontSize = 13, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextPrimary) }
                 });
-                header.Add(NexusEditorStyles.CreatePill(ctx.Parent != null ? "Child" : "Root", NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
+                header.Add(NexusEditorStyles.CreatePill(ctx.Parent != null ? NexusLang.Get("gamemanager_pill_child") : NexusLang.Get("gamemanager_pill_root"), NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
                 card.Add(header);
 
                 // Show context metadata
                 var meta = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4, flexWrap = Wrap.Wrap } };
                 if (!string.IsNullOrEmpty(ctx.ScopeTag))
-                    meta.Add(NexusEditorStyles.CreatePill($"Tag: {ctx.ScopeTag}", NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
+                    meta.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gamemanager_pill_tag"), ctx.ScopeTag), NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
                 if (ctx is Context concreteCtx2 && concreteCtx2.ContextData != null)
-                    meta.Add(NexusEditorStyles.CreatePill($"Cfg: {concreteCtx2.ContextData.name}", NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
+                    meta.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gamemanager_pill_cfg"), concreteCtx2.ContextData.name), NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
                 if (ctx.Parent != null)
-                    meta.Add(NexusEditorStyles.CreatePill($"Parent: {ctx.Parent.ScopeTag ?? "(unnamed)"}", NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
+                    meta.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gamemanager_pill_parent"), ctx.Parent.ScopeTag ?? NexusLang.Get("gamemanager_unnamed")), NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
 
                 // Show registered command count if available
                 if (ctx.SignalBus.RegisteredHandlers != null)
@@ -812,11 +812,11 @@ namespace Nexus.Editor
         private void RenderLive()
         {
             bool playing = Application.isPlaying;
-            AddSectionHeader("LIVE MODEL & PERFORMANCE INSPECTOR" + (playing ? "" : " (Play Mode only)"), new Color(1f, 0.5f, 0.8f));
+            AddSectionHeader(NexusLang.Get("gamemanager_live_title") + (playing ? "" : " (Play Mode only)"), new Color(1f, 0.5f, 0.8f));
 
             if (!playing)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("Enter Play Mode to inspect live model values and performance metrics."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gamemanager_live_playmode")));
                 return;
             }
 
@@ -835,10 +835,10 @@ namespace Nexus.Editor
             perfCard.Add(perfTitle);
 
             var perfRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
-            perfRow.Add(CreateMetricBox("Signals/s", $"{NexusRuntime.Metrics.SignalsPerSecond:F1}", NexusEditorStyles.AccentBlue));
-            perfRow.Add(CreateMetricBox("Commands/s", $"{NexusRuntime.Metrics.CommandsPerSecond:F1}", NexusEditorStyles.AccentGreen));
-            perfRow.Add(CreateMetricBox("Total Signals", $"{NexusRuntime.Metrics.TotalSignalsDispatched:N0}", NexusEditorStyles.AccentPurple));
-            perfRow.Add(CreateMetricBox("Total Cmds", $"{NexusRuntime.Metrics.TotalCommandsExecuted:N0}", NexusEditorStyles.AccentOrange));
+            perfRow.Add(CreateMetricBox(NexusLang.Get("gamemanager_metric_signals_s"), $"{NexusRuntime.Metrics.SignalsPerSecond:F1}", NexusEditorStyles.AccentBlue));
+            perfRow.Add(CreateMetricBox(NexusLang.Get("gamemanager_metric_commands_s"), $"{NexusRuntime.Metrics.CommandsPerSecond:F1}", NexusEditorStyles.AccentGreen));
+            perfRow.Add(CreateMetricBox(NexusLang.Get("gamemanager_metric_total_signals"), $"{NexusRuntime.Metrics.TotalSignalsDispatched:N0}", NexusEditorStyles.AccentPurple));
+            perfRow.Add(CreateMetricBox(NexusLang.Get("gamemanager_metric_total_cmds"), $"{NexusRuntime.Metrics.TotalCommandsExecuted:N0}", NexusEditorStyles.AccentOrange));
             perfCard.Add(perfRow);
 
             var sysRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 6 } };
@@ -960,7 +960,7 @@ namespace Nexus.Editor
 
             if (signalTypes.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No registered signal types found. Register commands for your signals first."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gamemanager_empty_signals")));
                 return;
             }
 

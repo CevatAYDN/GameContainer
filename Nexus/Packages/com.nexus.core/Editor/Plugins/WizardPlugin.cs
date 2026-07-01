@@ -84,11 +84,11 @@ namespace Nexus.Editor
             // Tab navigation buttons
             var tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
             
-            var btnCreateRoot = CreateSubTabButton("Create Root", SubTab.CreateRoot);
-            var btnServiceGen = CreateSubTabButton("Service Gen", SubTab.ServiceGen);
-            var btnViewGen = CreateSubTabButton("View/Mediator Gen", SubTab.ViewMediatorGen);
-            var btnSignalCmdGen = CreateSubTabButton("Signal/Cmd Gen", SubTab.SignalCommandGen);
-            var btnDelete = CreateSubTabButton("Clean Deletion", SubTab.CleanDeletion);
+            var btnCreateRoot = CreateSubTabButton(NexusLang.Get("wizard_subtab_create_root"), SubTab.CreateRoot);
+            var btnServiceGen = CreateSubTabButton(NexusLang.Get("wizard_subtab_service_gen"), SubTab.ServiceGen);
+            var btnViewGen = CreateSubTabButton(NexusLang.Get("wizard_subtab_view_gen"), SubTab.ViewMediatorGen);
+            var btnSignalCmdGen = CreateSubTabButton(NexusLang.Get("wizard_subtab_signal_gen"), SubTab.SignalCommandGen);
+            var btnDelete = CreateSubTabButton(NexusLang.Get("wizard_subtab_clean_deletion"), SubTab.CleanDeletion);
 
             tabHeader.Add(btnCreateRoot);
             tabHeader.Add(btnServiceGen);
@@ -201,10 +201,10 @@ namespace Nexus.Editor
             var manifest = FindBootstrapManifest();
 
             // Section 1: Manifest Generation
-            var manifestGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "BOOTSTRAP MANIFEST GENERATION");
+            var manifestGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_manifest"));
             if (manifest == null)
             {
-                var hint = NexusEditorStyles.CreateHint("No NexusBootstrapManifest found in the project. Create one to enable skeleton generation.");
+                var hint = NexusEditorStyles.CreateHint(NexusLang.Get("wizard_hint_no_manifest"));
                 manifestGroup.Add(hint);
 
                 var createBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_create_manifest"), CreateDefaultManifest, NexusEditorStyles.BtnBlue);
@@ -213,8 +213,8 @@ namespace Nexus.Editor
             else
             {
                 var details = new VisualElement { style = { paddingLeft = 10, marginTop = 4 } };
-                details.Add(new Label($"Active Manifest: {manifest.name}") { style = { color = Color.white, fontSize = 10 } });
-                details.Add(new Label($"Default Contexts: {string.Join(", ", manifest.DefaultContextNames)}") { style = { color = NexusEditorStyles.TextSecondary, fontSize = 9 } });
+                details.Add(new Label(string.Format(NexusLang.Get("wizard_label_active_manifest"), manifest.name)) { style = { color = Color.white, fontSize = 10 } });
+                details.Add(new Label(string.Format(NexusLang.Get("wizard_label_default_contexts"), string.Join(", ", manifest.DefaultContextNames))) { style = { color = NexusEditorStyles.TextSecondary, fontSize = 9 } });
                 manifestGroup.Add(details);
 
                 var genBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_gen_skeleton"), () => GenerateSkeleton(manifest), NexusEditorStyles.BtnBlue);
@@ -222,14 +222,14 @@ namespace Nexus.Editor
             }
 
             // Section 2: Custom Root Creation
-            var creationGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "CUSTOM ROOT CONTEXT CREATION");
+            var creationGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_create_root"));
 
             // Input Fields
-            var contextNameField = new TextField("Context Name") { value = _wizardContextName };
+            var contextNameField = new TextField(NexusLang.Get("wizard_field_context_name")) { value = _wizardContextName };
             contextNameField.RegisterValueChangedCallback(evt => { _wizardContextName = evt.newValue; ValidateCreateRootForm(); });
             creationGroup.Add(contextNameField);
 
-            var scopeTagField = new TextField("Scope Tag") { value = _wizardScopeTag };
+            var scopeTagField = new TextField(NexusLang.Get("wizard_field_scope_tag")) { value = _wizardScopeTag };
             scopeTagField.RegisterValueChangedCallback(evt => { _wizardScopeTag = evt.newValue; ValidateCreateRootForm(); });
             creationGroup.Add(scopeTagField);
 
@@ -238,18 +238,18 @@ namespace Nexus.Editor
             pathsGroup.Add(new Label(NexusLang.Get("wizard_paths_config")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginBottom = 4 } });
 
             var scriptsPathRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
-            var scriptsPathField = new TextField("Scripts Folder") { value = _wizardScriptsPath, style = { flexGrow = 1 } };
+            var scriptsPathField = new TextField(NexusLang.Get("wizard_field_scripts_folder")) { value = _wizardScriptsPath, style = { flexGrow = 1 } };
             scriptsPathField.RegisterValueChangedCallback(evt => { _wizardScriptsPath = evt.newValue; ValidateCreateRootForm(); });
             scriptsPathRow.Add(scriptsPathField);
-            var browseScriptsBtn = new Button(() => BrowseFolder(path => { scriptsPathField.value = path; })) { text = "Browse" };
+            var browseScriptsBtn = new Button(() => BrowseFolder(path => { scriptsPathField.value = path; })) { text = NexusLang.Get("wizard_browse") };
             scriptsPathRow.Add(browseScriptsBtn);
             pathsGroup.Add(scriptsPathRow);
 
             var settingsPathRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginTop = 4 } };
-            var settingsPathField = new TextField("Settings Folder") { value = _wizardSettingsPath, style = { flexGrow = 1 } };
+            var settingsPathField = new TextField(NexusLang.Get("wizard_field_settings_folder")) { value = _wizardSettingsPath, style = { flexGrow = 1 } };
             settingsPathField.RegisterValueChangedCallback(evt => { _wizardSettingsPath = evt.newValue; ValidateCreateRootForm(); });
             settingsPathRow.Add(settingsPathField);
-            var browseSettingsBtn = new Button(() => BrowseFolder(path => { settingsPathField.value = path; })) { text = "Browse" };
+            var browseSettingsBtn = new Button(() => BrowseFolder(path => { settingsPathField.value = path; })) { text = NexusLang.Get("wizard_browse") };
             settingsPathRow.Add(browseSettingsBtn);
             pathsGroup.Add(settingsPathRow);
 
@@ -257,7 +257,7 @@ namespace Nexus.Editor
 
             // Parent Root Dropdown
             var rootChoices = GetSceneRootNames();
-            _parentRootDropdown = new DropdownField("Parent Root", rootChoices, 0);
+            _parentRootDropdown = new DropdownField(NexusLang.Get("wizard_field_parent_root"), rootChoices, 0);
             if (rootChoices.Contains(_wizardParentRootName))
                 _parentRootDropdown.value = _wizardParentRootName;
             _parentRootDropdown.RegisterValueChangedCallback(evt => _wizardParentRootName = evt.newValue);
@@ -287,8 +287,8 @@ namespace Nexus.Editor
             creationGroup.Add(foldout);
 
             // Lifecycle toggles
-            var toggleLifecycle = new Toggle("Create Lifecycle Template") { value = _wizardGenerateLifecycleScript };
-            var toggleBoilerplate = new Toggle("Create Architecture Boilerplate") { value = _wizardGenerateSampleArchitecture };
+            var toggleLifecycle = new Toggle(NexusLang.Get("wizard_toggle_lifecycle")) { value = _wizardGenerateLifecycleScript };
+            var toggleBoilerplate = new Toggle(NexusLang.Get("wizard_toggle_boilerplate")) { value = _wizardGenerateSampleArchitecture };
             
             toggleLifecycle.RegisterValueChangedCallback(evt =>
             {
@@ -302,21 +302,21 @@ namespace Nexus.Editor
             creationGroup.Add(toggleBoilerplate);
 
             // Factory Modules
-            var modulesFoldout = new Foldout { text = "Game Factory Core Modules", value = true, style = { marginTop = 5 } };
+            var modulesFoldout = new Foldout { text = NexusLang.Get("wizard_foldout_modules"), value = true, style = { marginTop = 5 } };
             
-            var toggleIAP = new Toggle("In-App Purchases (IAP)") { value = _wizardModIAP };
+            var toggleIAP = new Toggle(NexusLang.Get("wizard_toggle_iap")) { value = _wizardModIAP };
             toggleIAP.RegisterValueChangedCallback(evt => _wizardModIAP = evt.newValue);
             modulesFoldout.Add(toggleIAP);
 
-            var toggleAds = new Toggle("Ads Network") { value = _wizardModAds };
+            var toggleAds = new Toggle(NexusLang.Get("wizard_toggle_ads")) { value = _wizardModAds };
             toggleAds.RegisterValueChangedCallback(evt => _wizardModAds = evt.newValue);
             modulesFoldout.Add(toggleAds);
 
-            var toggleAnalytics = new Toggle("Analytics") { value = _wizardModAnalytics };
+            var toggleAnalytics = new Toggle(NexusLang.Get("wizard_toggle_analytics")) { value = _wizardModAnalytics };
             toggleAnalytics.RegisterValueChangedCallback(evt => _wizardModAnalytics = evt.newValue);
             modulesFoldout.Add(toggleAnalytics);
 
-            var toggleInventory = new Toggle("Inventory / Economy") { value = _wizardModInventory };
+            var toggleInventory = new Toggle(NexusLang.Get("wizard_toggle_inventory")) { value = _wizardModInventory };
             toggleInventory.RegisterValueChangedCallback(evt => _wizardModInventory = evt.newValue);
             modulesFoldout.Add(toggleInventory);
 
@@ -334,9 +334,9 @@ namespace Nexus.Editor
 
         private void BuildViewMediatorGenTab()
         {
-            var genGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "GENERATE VIEW & MEDIATOR");
+            var genGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_view_gen"));
 
-            var viewNameField = new TextField("View Name") { value = _wizardViewName };
+            var viewNameField = new TextField(NexusLang.Get("wizard_field_view_name")) { value = _wizardViewName };
             viewNameField.RegisterValueChangedCallback(evt => { _wizardViewName = evt.newValue; ValidateViewGenForm(viewNameField); });
             genGroup.Add(viewNameField);
 
@@ -353,11 +353,11 @@ namespace Nexus.Editor
                 _wizardViewTargetRootName = rootChoices[0];
             }
 
-            _viewTargetRootDropdown = new DropdownField("Target Root Context", rootChoices, rootChoices.IndexOf(_wizardViewTargetRootName));
+            _viewTargetRootDropdown = new DropdownField(NexusLang.Get("wizard_field_target_root"), rootChoices, rootChoices.IndexOf(_wizardViewTargetRootName));
             _viewTargetRootDropdown.RegisterValueChangedCallback(evt => _wizardViewTargetRootName = evt.newValue);
             genGroup.Add(_viewTargetRootDropdown);
 
-            var toggleCreateGo = new Toggle("Create GameObject in Scene") { value = _wizardCreateViewGo };
+            var toggleCreateGo = new Toggle(NexusLang.Get("wizard_toggle_create_go")) { value = _wizardCreateViewGo };
             toggleCreateGo.RegisterValueChangedCallback(evt => _wizardCreateViewGo = evt.newValue);
             genGroup.Add(toggleCreateGo);
 
@@ -367,13 +367,13 @@ namespace Nexus.Editor
 
         private void BuildSignalCommandGenTab()
         {
-            var genGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "GENERATE SIGNAL & COMMAND");
+            var genGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_signal_gen"));
 
-            var signalNameField = new TextField("Signal Name") { value = _wizardSignalName };
+            var signalNameField = new TextField(NexusLang.Get("wizard_field_signal_name")) { value = _wizardSignalName };
             signalNameField.RegisterValueChangedCallback(evt => _wizardSignalName = evt.newValue);
             genGroup.Add(signalNameField);
 
-            var commandNameField = new TextField("Command Name") { value = _wizardCommandName };
+            var commandNameField = new TextField(NexusLang.Get("wizard_field_command_name")) { value = _wizardCommandName };
             commandNameField.RegisterValueChangedCallback(evt => _wizardCommandName = evt.newValue);
             genGroup.Add(commandNameField);
 
@@ -390,7 +390,7 @@ namespace Nexus.Editor
                 _wizardSignalTargetRootName = rootChoices[0];
             }
 
-            _signalTargetRootDropdown = new DropdownField("Target Root Context", rootChoices, rootChoices.IndexOf(_wizardSignalTargetRootName));
+            _signalTargetRootDropdown = new DropdownField(NexusLang.Get("wizard_field_target_root"), rootChoices, rootChoices.IndexOf(_wizardSignalTargetRootName));
             _signalTargetRootDropdown.RegisterValueChangedCallback(evt => _wizardSignalTargetRootName = evt.newValue);
             genGroup.Add(_signalTargetRootDropdown);
 
@@ -400,33 +400,27 @@ namespace Nexus.Editor
 
         private void BuildServiceGenTab()
         {
-            var genGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "GENERATE SERVICE");
+            var genGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_service_gen"));
             genGroup.style.marginBottom = 8;
 
-            var serviceNameField = new TextField("Service Name") { value = _wizardServiceName };
+            var serviceNameField = new TextField(NexusLang.Get("wizard_field_service_name")) { value = _wizardServiceName };
             serviceNameField.RegisterValueChangedCallback(evt => { _wizardServiceName = evt.newValue; });
             genGroup.Add(serviceNameField);
 
-            var serviceDescription = NexusEditorStyles.CreateHint(
-                "Generates an INexusService interface + NexusService<T> implementation " +
-                "with InitializeAsync and OnDispose lifecycle hooks.");
+            var serviceDescription = NexusEditorStyles.CreateHint(NexusLang.Get("wizard_hint_service_desc"));
             genGroup.Add(serviceDescription);
 
             var genBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_gen_service"), RunGenerateService, NexusEditorStyles.BtnBlue);
             genGroup.Add(genBtn);
 
-            var advancedGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "SERVICE BINDING HELP");
-            var hint = NexusEditorStyles.CreateHint(
-                "In your Lifecycle's OnConfigure(IContextBuilder builder):\n" +
-                "  builder.BindService<I{ServiceName}, {ServiceName}>();\n\n" +
-                "Nexus auto-initializes all services in registration order after Configure().\n" +
-                "Services are disposed in reverse order when the context is torn down.");
+            var advancedGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_binding_help"));
+            var hint = NexusEditorStyles.CreateHint(NexusLang.Get("wizard_hint_binding_help"));
             advancedGroup.Add(hint);
         }
 
         private void BuildCleanDeletionTab()
         {
-            var deleteGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "CLEAN DELETION TOOL");
+            var deleteGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_delete"));
 
             var rootChoices = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
             if (rootChoices.Count == 0)
@@ -441,22 +435,18 @@ namespace Nexus.Editor
                 _wizardRootToDeleteName = rootChoices[0];
             }
 
-            _deleteRootDropdown = new DropdownField("Root Context to Delete", rootChoices, rootChoices.IndexOf(_wizardRootToDeleteName));
+            _deleteRootDropdown = new DropdownField(NexusLang.Get("wizard_field_root_delete"), rootChoices, rootChoices.IndexOf(_wizardRootToDeleteName));
             _deleteRootDropdown.RegisterValueChangedCallback(evt => _wizardRootToDeleteName = evt.newValue);
             deleteGroup.Add(_deleteRootDropdown);
 
-            var warnText = "WARNING: This will permanently delete:\n" +
-                           "- The Root GameObject from the active scene.\n" +
-                           "- The associated ContextData ScriptableObject.\n" +
-                           "- The generated script directory under Assets/Scripts/Nexus/<ContextName>/\n\n" +
-                           "Make sure you have backed up your custom script changes before committing!";
+            var warnText = NexusLang.Get("wizard_warning_delete");
             var warningBox = NexusEditorStyles.CreateWarningBox(warnText);
             deleteGroup.Add(warningBox);
 
             var deleteBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_delete_root"), RunDeleteRootContext, NexusEditorStyles.AccentRed);
             deleteGroup.Add(deleteBtn);
 
-            var cleanerGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, "DEAD CODE CLEANER");
+            var cleanerGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_dead_code"));
             var scanBtn = NexusEditorStyles.CreateButton(NexusLang.Get("wizard_scan_unused"), ScanForDeadSignals, NexusEditorStyles.BtnBlue);
             cleanerGroup.Add(scanBtn);
         }
@@ -504,11 +494,11 @@ namespace Nexus.Editor
             var deadSignals = signalTypes.Except(usedSignals).ToList();
             if (deadSignals.Count == 0)
             {
-                EditorUtility.DisplayDialog("Scanner", "No completely unused signals found.", "OK");
+                EditorUtility.DisplayDialog("Scanner", NexusLang.Get("wizard_scanner_none"), "OK");
                 return;
             }
 
-            string report = "Potentially dead signals (no references found outside definition):\n\n";
+            string report = NexusLang.Get("wizard_scanner_title") + "\n\n";
             foreach (var ds in deadSignals) report += $"- {ds.Name}\n";
             
             EditorUtility.DisplayDialog("Dead Signals Found", report, "OK");
@@ -516,7 +506,7 @@ namespace Nexus.Editor
 
         private void BrowseFolder(Action<string> onFolderSelected)
         {
-            string folder = EditorUtility.OpenFolderPanel("Select Folder", "Assets", "");
+            string folder = EditorUtility.OpenFolderPanel(NexusLang.Get("wizard_browse_title"), "Assets", "");
             if (!string.IsNullOrEmpty(folder))
             {
                 // Convert absolute path to relative assets path

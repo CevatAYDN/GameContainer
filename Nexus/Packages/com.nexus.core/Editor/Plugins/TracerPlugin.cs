@@ -53,11 +53,10 @@ namespace Nexus.Editor
 #if !NEXUS_DEBUG
             var warningCard = NexusEditorStyles.CreateInfoCard(
                 _view,
-                "CAUSAL TRACING: NEXUS_DEBUG DISABLED",
+                NexusLang.Get("tracer_debug_disabled_title"),
                 NexusEditorStyles.AccentOrange,
                 NexusEditorStyles.CardBgYellow,
-                "Full causal tracing (event trees, parent/child chains) is compiled out.\n" +
-                "Basic production trace is active below — showing recent signal dispatches.");
+                NexusLang.Get("tracer_debug_disabled_desc"));
 
             var enableBtn = NexusEditorStyles.CreateButton(NexusLang.Get("tracer_enable"), () =>
             {

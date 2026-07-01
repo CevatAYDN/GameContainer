@@ -214,9 +214,7 @@ namespace Nexus.Editor
             versionLabel.style.color = new StyleColor(NexusEditorStyles.DimText);
             versionLabel.style.alignSelf = Align.Center;
             versionLabel.style.marginBottom = 8;
-            versionLabel.style.paddingTop = 8;
-            versionLabel.style.borderTopWidth = 1;
-            versionLabel.style.borderTopColor = new StyleColor(NexusEditorStyles.BorderColor);
+            versionLabel.style.paddingTop = 4;
             _sidebar.Add(versionLabel);
 
             root.Add(_sidebar);

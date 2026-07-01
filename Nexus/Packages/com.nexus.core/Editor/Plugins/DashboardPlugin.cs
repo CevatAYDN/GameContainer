@@ -22,6 +22,36 @@ namespace Nexus.Editor
         private Label _perfStat;
         private VisualElement _validationCard;
         private IVisualElementScheduledItem _refreshSchedule;
+        private static int s_cachedModelCount = -1, s_cachedServiceCount = -1, s_cachedCommandCount = -1, s_cachedViewCount = -1;
+        private static bool s_overviewCacheValid = false;
+
+        private static void RefreshOverviewCache()
+        {
+            int mc = 0, sc = 0, cc = 0, vc = 0;
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (!type.IsClass || type.IsAbstract) continue;
+                        if (typeof(IReactiveModel).IsAssignableFrom(type)) mc++;
+                        if (typeof(INexusService).IsAssignableFrom(type)) sc++;
+                        if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type)) cc++;
+                        if (typeof(View).IsAssignableFrom(type)) vc++;
+                    }
+                }
+                catch { }
+            }
+            s_cachedModelCount = mc;
+            s_cachedServiceCount = sc;
+            s_cachedCommandCount = cc;
+            s_cachedViewCount = vc;
+            s_overviewCacheValid = true;
+        }
 
         public override VisualElement CreateView()
         {
@@ -112,26 +142,8 @@ namespace Nexus.Editor
             };
             card.Add(title);
 
-            // Static scan for models, views, services
-            int modelCount = 0, serviceCount = 0, commandCount = 0, viewCount = 0;
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
-            {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0)
-                    continue;
-                try
-                {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (!type.IsClass || type.IsAbstract) continue;
-                        if (typeof(IReactiveModel).IsAssignableFrom(type)) modelCount++;
-                        if (typeof(INexusService).IsAssignableFrom(type)) serviceCount++;
-                        if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type)) commandCount++;
-                        if (typeof(View).IsAssignableFrom(type)) viewCount++;
-                    }
-                }
-                catch { }
-            }
+            if (!s_overviewCacheValid) RefreshOverviewCache();
+            int modelCount = s_cachedModelCount, serviceCount = s_cachedServiceCount, commandCount = s_cachedCommandCount, viewCount = s_cachedViewCount;
 
             var statRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
             _modelStat = CreateStatBox(statRow, modelCount.ToString(), NexusLang.Get("models"), NexusEditorStyles.AccentYellow);
@@ -167,13 +179,12 @@ namespace Nexus.Editor
 
             parent.Add(card);
 
-            // Live Model Inspector — show IReactiveModel singletons in Play Mode
             var contexts = NexusRuntime.ActiveContexts;
-            if (contexts != null && contexts.Count > 0 && contexts[0] is Context ctx)
+            if (contexts != null && contexts.Count > 0)
             {
-                var singletons = ctx.Container.GetActiveSingletons();
                 var modelCard = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
                 modelCard.style.marginTop = 8;
+                var shownTotal = 0;
 
                 var modelTitle = new Label(NexusLang.Get("live_models"))
                 {
@@ -181,37 +192,41 @@ namespace Nexus.Editor
                 };
                 modelCard.Add(modelTitle);
 
-                int shown = 0;
-                foreach (var obj in singletons)
+                foreach (var ctxObj in contexts)
                 {
-                    if (obj is IReactiveModel && shown < 8)
+                    if (ctxObj is not Context ctx || shownTotal >= 8) continue;
+                    var singletons = ctx.Container.GetActiveSingletons();
+                    foreach (var obj in singletons)
                     {
-                        var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginBottom = 3, alignItems = Align.Center } };
-                        row.Add(new Label(obj.GetType().Name)
-                            { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextPrimary), width = 140 } });
-
-                        var t = obj.GetType();
-                        int props = 0;
-                        foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                        if (obj is IReactiveModel && shownTotal < 8)
                         {
-                            if (props >= 3) break;
-                            if (!prop.CanRead || prop.GetIndexParameters().Length > 0) continue;
-                            try
+                            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginBottom = 3, alignItems = Align.Center } };
+                            row.Add(new Label(obj.GetType().Name)
+                                { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextPrimary), width = 140 } });
+
+                            var t = obj.GetType();
+                            int props = 0;
+                            foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
                             {
-                                var val = prop.GetValue(obj);
-                                var valStr = val?.ToString() ?? "null";
-                                if (valStr.Length > 20) valStr = valStr.Substring(0, 17) + "...";
-                                row.Add(new Label($"{prop.Name}={valStr}")
-                                    { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), marginLeft = 6 } });
-                                props++;
+                                if (props >= 3) break;
+                                if (!prop.CanRead || prop.GetIndexParameters().Length > 0) continue;
+                                try
+                                {
+                                    var val = prop.GetValue(obj);
+                                    var valStr = val?.ToString() ?? "null";
+                                    if (valStr.Length > 20) valStr = valStr.Substring(0, 17) + "...";
+                                    row.Add(new Label($"{prop.Name}={valStr}")
+                                        { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), marginLeft = 6 } });
+                                    props++;
+                                }
+                                catch { }
                             }
-                            catch { }
+                            modelCard.Add(row);
+                            shownTotal++;
                         }
-                        modelCard.Add(row);
-                        shown++;
                     }
                 }
-                if (shown == 0)
+                if (shownTotal == 0)
                     modelCard.Add(new Label(NexusLang.Get("no_reactive_models"))
                         { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
 

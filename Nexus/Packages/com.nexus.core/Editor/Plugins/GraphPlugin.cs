@@ -155,9 +155,7 @@ namespace Nexus.Editor
             {
                 _graphView.ClearGraph();
                 var warnLabel = new Label(
-                    $"⚠ {totalNodes} nodes exceed the {MaxNodes} limit.\n" +
-                    "Consider splitting your architecture into multiple smaller contexts,\n" +
-                    "or use the Signal Explorer for text-based inspection.")
+                    string.Format(NexusLang.Get("graph_overflow_desc"), totalNodes, MaxNodes))
                 {
                     style = { color = new StyleColor(NexusEditorStyles.AccentOrange), fontSize = 12,
                         alignSelf = Align.Center, marginTop = 20, whiteSpace = WhiteSpace.Normal }

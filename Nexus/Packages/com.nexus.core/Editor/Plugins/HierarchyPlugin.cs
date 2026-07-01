@@ -104,14 +104,14 @@ namespace Nexus.Editor
             var activeContexts = NexusRuntime.ActiveContexts;
             if (activeContexts == null || activeContexts.Count == 0)
             {
-                NexusEditorStyles.CreateInfoCard(_leftPanel, "NEXUS CONTEXT GRAPH — OFFLINE", NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBg,
-                    "No active Nexus Contexts found. Enter Play Mode to inspect context hierarchy, parent-child relationships, and resolved DI singletons.");
+                NexusEditorStyles.CreateInfoCard(_leftPanel, NexusLang.Get("hierarchy_offline_title"), NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBg,
+                    NexusLang.Get("hierarchy_offline_desc"));
 
                 int sceneRootCount = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude).Length;
                 if (sceneRootCount > 0)
                 {
-                    NexusEditorStyles.CreateInfoCard(_leftPanel, $"SCENE ROOTS DETECTED ({sceneRootCount})", NexusEditorStyles.AccentYellow, NexusEditorStyles.CardBgYellow,
-                        $"Found {sceneRootCount} Root GameObject(s) in the scene. These will initialize Contexts in Play Mode.");
+                    NexusEditorStyles.CreateInfoCard(_leftPanel, string.Format(NexusLang.Get("hierarchy_roots_detected"), sceneRootCount), NexusEditorStyles.AccentYellow, NexusEditorStyles.CardBgYellow,
+                        string.Format(NexusLang.Get("hierarchy_roots_desc"), sceneRootCount));
                 }
                 return;
             }
@@ -181,7 +181,7 @@ namespace Nexus.Editor
             // Header Row
             var header = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
             
-            var title = new Label(ctx.ScopeTag ?? "Context") { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 11, color = new StyleColor(NexusEditorStyles.AccentBlue) } };
+            var title = new Label(ctx.ScopeTag ?? NexusLang.Get("hierarchy_context_fallback")) { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 11, color = new StyleColor(NexusEditorStyles.AccentBlue) } };
             header.Add(title);
 
             int handlerCount = 0;
@@ -193,7 +193,7 @@ namespace Nexus.Editor
                 }
             }
 
-            var pill = NexusEditorStyles.CreatePill($"{handlerCount} Handlers", NexusEditorStyles.CardBgGreen, NexusEditorStyles.AccentGreenText);
+            var pill = NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("hierarchy_handlers_pill"), handlerCount), NexusEditorStyles.CardBgGreen, NexusEditorStyles.AccentGreenText);
             header.Add(pill);
 
             if (ctx.ContextData != null)
@@ -202,7 +202,7 @@ namespace Nexus.Editor
                 {
                     Selection.activeObject = ctx.ContextData;
                     EditorGUIUtility.PingObject(ctx.ContextData);
-                }) { text = "Config SO" };
+                }) { text = NexusLang.Get("hierarchy_config_so") };
                 pingBtn.style.fontSize = 8;
                 pingBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.BtnGray);
                 pingBtn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
@@ -256,25 +256,25 @@ namespace Nexus.Editor
 
             if (!Application.isPlaying)
             {
-                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState("Enter Play Mode to inspect DI Container details."));
+                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("hierarchy_empty_playmode")));
                 return;
             }
 
             if (_selectedContext == null)
             {
-                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState("Select a Context card on the left panel to inspect its resolved dependencies."));
+                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("hierarchy_empty_select")));
                 return;
             }
 
             var singletons = _selectedContext.Container.GetRegisteredSingletons();
             if (singletons == null || singletons.Count == 0)
             {
-                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState("No resolved singletons or models found in this context's container."));
+                _inspectorScroll.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("hierarchy_empty_no_data")));
                 return;
             }
 
             // Search Bar
-            var searchField = new TextField("Search Filter") { value = _searchFilter };
+            var searchField = new TextField(NexusLang.Get("hierarchy_search_filter")) { value = _searchFilter };
             searchField.RegisterValueChangedCallback(evt =>
             {
                 _searchFilter = evt.newValue;
