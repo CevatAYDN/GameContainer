@@ -200,16 +200,21 @@ namespace Nexus.Core
 
         public void RegisterCommand(Type signalType, Type commandType, ExecutionMode mode, int priority, bool isAsync)
         {
-            bool implementsAsyncCommand = typeof(IAsyncCommand).IsAssignableFrom(commandType) || 
-                ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>));
-            bool implementsSyncCommand = typeof(ICommand).IsAssignableFrom(commandType) || 
-                ImplementsGenericInterface(commandType, typeof(ICommand<>));
+            var genericSyncType = typeof(ICommand<>).MakeGenericType(signalType);
+            var genericAsyncType = typeof(IAsyncCommand<>).MakeGenericType(signalType);
+            bool implementsGenericSync = genericSyncType.IsAssignableFrom(commandType);
+            bool implementsGenericAsync = genericAsyncType.IsAssignableFrom(commandType);
 
-            if (implementsAsyncCommand && implementsSyncCommand)
+            if (!implementsGenericSync && !implementsGenericAsync)
+            {
+                throw new InvalidOperationException($"Command type {commandType.Name} registered for signal {signalType.Name} must implement either ICommand<{signalType.Name}> or IAsyncCommand<{signalType.Name}>.");
+            }
+
+            if (implementsGenericAsync && implementsGenericSync)
             {
                 throw new InvalidOperationException($"Command type {commandType.Name} cannot implement both ICommand and IAsyncCommand interfaces.");
             }
-            if (implementsAsyncCommand && !isAsync)
+            if (implementsGenericAsync && !isAsync)
             {
                 throw new InvalidOperationException($"Command type {commandType.Name} implements IAsyncCommand but is being registered as sync. It must be registered as async (isAsync: true).");
             }
@@ -774,109 +779,7 @@ namespace Nexus.Core
             }
         }
 
-        private static class SignalInjector<TSignal> where TSignal : struct
-        {
-            private static readonly Dictionary<Type, Action<object, TSignal>> s_setters = new();
-            private static readonly Dictionary<Type, MemberInfo> s_memberCache = new();
-            private static readonly Dictionary<Type, bool> s_hasMember = new();
 
-            public static void Inject(object command, TSignal signal)
-            {
-                var commandType = command.GetType();
-                
-                if (!s_hasMember.TryGetValue(commandType, out var hasMember))
-                {
-                    MemberInfo foundMember = null;
-                    var fields = commandType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    foreach (var field in fields)
-                    {
-                        if (field.FieldType == typeof(TSignal) || (field.Name.Equals("_signal", StringComparison.OrdinalIgnoreCase) && field.FieldType.IsAssignableFrom(typeof(TSignal))))
-                        {
-                            foundMember = field;
-                            break;
-                        }
-                    }
-
-                    if (foundMember == null)
-                    {
-                        var properties = commandType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                        foreach (var prop in properties)
-                        {
-                            if (prop.PropertyType == typeof(TSignal) && prop.CanWrite)
-                            {
-                                foundMember = prop;
-                                break;
-                            }
-                        }
-                    }
-
-                    hasMember = foundMember != null;
-                    s_hasMember[commandType] = hasMember;
-                    if (hasMember)
-                    {
-                        s_memberCache[commandType] = foundMember;
-                        var setter = CreateSetter(commandType, foundMember);
-                        if (setter != null)
-                        {
-                            s_setters[commandType] = setter;
-                        }
-                    }
-                }
-
-                if (hasMember)
-                {
-                    if (s_setters.TryGetValue(commandType, out var compiledSetter))
-                    {
-                        compiledSetter(command, signal);
-                    }
-                    else
-                    {
-                        var member = s_memberCache[commandType];
-                        if (member is FieldInfo f)
-                            f.SetValue(command, signal);
-                        else if (member is PropertyInfo p)
-                            p.SetValue(command, signal);
-                    }
-                }
-            }
-
-            private static Action<object, TSignal> CreateSetter(Type commandType, MemberInfo member)
-            {
-                try
-                {
-                    var targetExp = System.Linq.Expressions.Expression.Parameter(typeof(object), "target");
-                    var valueExp = System.Linq.Expressions.Expression.Parameter(typeof(TSignal), "value");
-                    var castTarget = System.Linq.Expressions.Expression.Convert(targetExp, commandType);
-                    
-                    System.Linq.Expressions.Expression memberExp = null;
-                    if (member is FieldInfo f)
-                        memberExp = System.Linq.Expressions.Expression.Field(castTarget, f);
-                    else if (member is PropertyInfo p)
-                        memberExp = System.Linq.Expressions.Expression.Property(castTarget, p);
-
-                    if (memberExp != null)
-                    {
-                        var assignExp = System.Linq.Expressions.Expression.Assign(memberExp, valueExp);
-                        var lambda = System.Linq.Expressions.Expression.Lambda<Action<object, TSignal>>(assignExp, targetExp, valueExp);
-                        return lambda.Compile();
-                    }
-                }
-                catch
-                {
-                    // Fallback to reflection
-                }
-
-                if (member is FieldInfo fieldInfo)
-                {
-                    return (target, val) => fieldInfo.SetValue(target, val);
-                }
-                else if (member is PropertyInfo propInfo)
-                {
-                    return (target, val) => propInfo.SetValue(target, val);
-                }
-                return null;
-            }
-        }
 
         private void ExecuteCommand<TSignal>(CommandHandlerInfo handler, TSignal signal) where TSignal : struct
         {
@@ -904,15 +807,7 @@ namespace Nexus.Core
                     }
                     else
                     {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                        UnityEngine.Debug.LogWarning($"[Nexus Performance Warning] Command '{handler.CommandType.Name}' handles signal '{typeof(TSignal).Name}' but does not implement ICommand<{typeof(TSignal).Name}>. Fallback to reflection injection is used, causing performance overhead/boxing on AOT.");
-#endif
-                        SignalInjector<TSignal>.Inject(command, signal);
-  
-                        if (command is ICommand syncCmd)
-                        {
-                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
-                        }
+                        throw new InvalidOperationException($"Command '{handler.CommandType.Name}' registered for signal '{typeof(TSignal).Name}' must implement ICommand<{typeof(TSignal).Name}>.");
                     }
                     shouldRun = false; // completed successfully
 #if NEXUS_DEBUG
@@ -1046,19 +941,7 @@ namespace Nexus.Core
                     }
                     else
                     {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                        UnityEngine.Debug.LogWarning($"[Nexus Performance Warning] Command '{handler.CommandType.Name}' handles signal '{typeof(TSignal).Name}' but does not implement ICommand<{typeof(TSignal).Name}> or IAsyncCommand<{typeof(TSignal).Name}>. Fallback to reflection injection is used, causing performance overhead/boxing on AOT.");
-#endif
-                        SignalInjector<TSignal>.Inject(command, signal);
- 
-                        if (command is IAsyncCommand asyncCmd)
-                        {
-                            await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
-                        }
-                        else if (command is ICommand syncCmd)
-                        {
-                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
-                        }
+                        throw new InvalidOperationException($"Command '{handler.CommandType.Name}' registered for signal '{typeof(TSignal).Name}' must implement IAsyncCommand<{typeof(TSignal).Name}> or ICommand<{typeof(TSignal).Name}>.");
                     }
                     shouldRun = false; // success
 #if NEXUS_DEBUG

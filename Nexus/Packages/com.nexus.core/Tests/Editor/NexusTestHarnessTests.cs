@@ -25,29 +25,25 @@ namespace Nexus.Editor.Tests
         }
 
         [SignalHandler(typeof(TestSignal))]
-        public class TestCommand : ICommand
+        public class TestCommand : ICommand<TestSignal>
         {
             [Inject] public TestModel Model;
-            /// <summary>Signal is injected by SignalBus via reflection, not by NexusDI.</summary>
-            public TestSignal Signal;
-
-            public void Execute()
+ 
+            public void Execute(TestSignal signal)
             {
-                Model.Value += Signal.Value;
+                Model.Value += signal.Value;
             }
         }
-
+ 
         [SignalHandler(typeof(TestSignal), Priority = 1)]
-        public class TestAsyncCommand : IAsyncCommand
+        public class TestAsyncCommand : IAsyncCommand<TestSignal>
         {
             [Inject] public TestModel Model;
-            /// <summary>Signal is injected by SignalBus via reflection, not by NexusDI.</summary>
-            public TestSignal Signal;
-
-            public async ValueTask ExecuteAsync(CancellationToken ct)
+ 
+            public async ValueTask ExecuteAsync(TestSignal signal, CancellationToken ct)
             {
                 await Task.Yield();
-                Model.Value += Signal.Value * 2;
+                Model.Value += signal.Value * 2;
             }
         }
 

@@ -57,6 +57,9 @@ namespace Nexus.Editor
                 // 1. Scan and validate signal handlers, priorities and mixed modes
                 ValidateHandlers(ref errorCount, ref warningCount);
 
+                // 1b. Validate Async/Sync Call Graph Cycles
+                ValidateAsyncCallGraph(ref errorCount, ref warningCount);
+
                 // 2. Validate model ownership chains (IDisposableModel)
                 ValidateModelOwnership(ref errorCount, ref warningCount);
 
@@ -197,8 +200,8 @@ namespace Nexus.Editor
 
                     if (!implementsGeneric)
                     {
-                        Debug.LogWarning($"[Nexus Warning] Non-Generic Command Performance Risk: Command {handler.CommandType.FullName} handles signal {signalType.Name} but does not implement ICommand<{signalType.Name}> or IAsyncCommand<{signalType.Name}>. For AOT/IL2CPP compatibility and zero GC allocation on all platforms, implementing generic interfaces is highly recommended.");
-                        warningCount++;
+                        Debug.LogError($"[Nexus Error] Generic Command Violation: Command {handler.CommandType.FullName} handles signal {signalType.Name} but does not implement ICommand<{signalType.Name}> or IAsyncCommand<{signalType.Name}>. Implement generic interfaces to eliminate reflection fallback and IL2CPP boxing.");
+                        errorCount++;
                     }
                 }
             }
@@ -276,9 +279,13 @@ namespace Nexus.Editor
 
         private static void ValidateModelOwnership(ref int errorCount, ref int warningCount)
         {
-            // Plan §4 — IDisposableModel disposal chain check
-            // Scan all types implementing IDisposableModel and verify they are referenced
-            // by a Context or another model that will dispose them.
+            var disposableModels = new List<Type>();
+            var lifecyclePaths = new List<string>();
+
+            // Find MonoScript cache for locating C# files
+            var scriptCache = BuildTypeScriptCache();
+
+            // 1. Gather all disposable models and lifecycle paths
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
@@ -291,31 +298,44 @@ namespace Nexus.Editor
                 {
                     foreach (var type in assembly.GetTypes())
                     {
-                        if (type.IsClass && !type.IsAbstract && typeof(IDisposableModel).IsAssignableFrom(type))
+                        if (type.IsClass && !type.IsAbstract)
                         {
-                            // IDisposableModel types must be registered in DI (otherwise they're leaked)
-                            // This is a best-effort static check; runtime DI registration is verified separately.
-                            bool hasValidConstructor = false;
-                            foreach (var ctor in type.GetConstructors(BindingFlags.Public | BindingFlags.Instance))
+                            if (typeof(IDisposableModel).IsAssignableFrom(type))
                             {
-                                var ps = ctor.GetParameters();
-                                if (ps.Length == 0 || Array.Exists(ps, p => p.ParameterType == typeof(NexusDI)))
-                                {
-                                    hasValidConstructor = true;
-                                    break;
-                                }
+                                disposableModels.Add(type);
                             }
-                            if (!hasValidConstructor)
+                            else if (typeof(IContextLifecycle).IsAssignableFrom(type) && scriptCache.TryGetValue(type, out var path))
                             {
-                                Debug.LogWarning($"[Nexus Warning] IDisposableModel type {type.FullName} should have a constructor that accepts DI container or is parameterless to ensure proper disposal.");
-                                warningCount++;
+                                lifecyclePaths.Add(path);
                             }
                         }
                     }
                 }
-                catch (ReflectionTypeLoadException ex)
+                catch { }
+            }
+
+            // 2. Verify each disposable model is bound in at least one lifecycle DI container
+            foreach (var modelType in disposableModels)
+            {
+                bool isBound = false;
+                foreach (var path in lifecyclePaths)
                 {
-                    Debug.LogWarning($"[Nexus] Model ownership scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
+                    try
+                    {
+                        string content = System.IO.File.ReadAllText(path);
+                        if (content.Contains(modelType.Name))
+                        {
+                            isBound = true;
+                            break;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (!isBound)
+                {
+                    Debug.LogError($"[Nexus Error] IDisposableModel Leak Violation: Model type {modelType.FullName} implements IDisposableModel but is not registered in any IContextLifecycle DI configuration. Registered models must be bound as singletons in lifecycle classes to ensure proper disposal.");
+                    errorCount++;
                 }
             }
         }
@@ -696,6 +716,258 @@ namespace Nexus.Editor
                     }
                 }
             }
+        }
+
+        private static void ValidateAsyncCallGraph(ref int errorCount, ref int warningCount)
+        {
+            var commandSignals = new Dictionary<Type, List<Type>>(); // Command -> Fired Signals
+            var signalCommands = new Dictionary<Type, List<Type>>(); // Signal -> Handlers
+
+            var scriptCache = BuildTypeScriptCache();
+            var signalTypeMap = BuildSignalTypeMap();
+
+            // 1. Gather all handlers and composite handlers
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.IsClass && !type.IsAbstract)
+                        {
+                            // Standard SignalHandler
+                            var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                            foreach (var attr in handlerAttrs)
+                            {
+                                if (!signalCommands.TryGetValue(attr.SignalType, out var list))
+                                {
+                                    list = new List<Type>();
+                                    signalCommands[attr.SignalType] = list;
+                                }
+                                if (!list.Contains(type)) list.Add(type);
+                            }
+
+                            // Composite SignalHandler
+                            var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                            if (compositeAttr != null && compositeAttr.SignalTypes != null)
+                            {
+                                foreach (var sigType in compositeAttr.SignalTypes)
+                                {
+                                    if (sigType != null)
+                                    {
+                                        if (!signalCommands.TryGetValue(sigType, out var list))
+                                        {
+                                            list = new List<Type>();
+                                            signalCommands[sigType] = list;
+                                        }
+                                        if (!list.Contains(type)) list.Add(type);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            // 2. Find fired signals for each unique command type that we found
+            var allCommands = new HashSet<Type>();
+            foreach (var cmdList in signalCommands.Values)
+            {
+                allCommands.UnionWith(cmdList);
+            }
+
+            foreach (var cmdType in allCommands)
+            {
+                var firedList = new List<Type>();
+                commandSignals[cmdType] = firedList;
+
+                if (scriptCache.TryGetValue(cmdType, out var scriptPath))
+                {
+                    try
+                    {
+                        string content = System.IO.File.ReadAllText(scriptPath);
+
+                        // Find generic Fire calls: Fire<SignalType>
+                        var genericMatches = s_fireGenericRegex.Matches(content);
+                        foreach (System.Text.RegularExpressions.Match match in genericMatches)
+                        {
+                            if (match.Groups.Count > 1)
+                            {
+                                string sigName = match.Groups[1].Value;
+                                if (signalTypeMap.TryGetValue(sigName, out var sigType))
+                                {
+                                    if (!firedList.Contains(sigType)) firedList.Add(sigType);
+                                }
+                            }
+                        }
+
+                        // Find new instantiation Fire calls: Fire(new SignalType(...))
+                        var newMatches = s_fireNewRegex.Matches(content);
+                        foreach (System.Text.RegularExpressions.Match match in newMatches)
+                        {
+                            if (match.Groups.Count > 1)
+                            {
+                                string sigName = match.Groups[1].Value;
+                                if (signalTypeMap.TryGetValue(sigName, out var sigType))
+                                {
+                                    if (!firedList.Contains(sigType)) firedList.Add(sigType);
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+
+            // 3. Construct Directed Graph
+            var graph = new Dictionary<Type, HashSet<Type>>();
+
+            // Add Signal -> Command edges
+            foreach (var kvp in signalCommands)
+            {
+                var sigType = kvp.Key;
+                if (!graph.TryGetValue(sigType, out var set))
+                {
+                    set = new HashSet<Type>();
+                    graph[sigType] = set;
+                }
+                foreach (var cmdType in kvp.Value)
+                {
+                    set.Add(cmdType);
+                }
+            }
+
+            // Add Command -> Signal edges
+            foreach (var kvp in commandSignals)
+            {
+                var cmdType = kvp.Key;
+                if (!graph.TryGetValue(cmdType, out var set))
+                {
+                    set = new HashSet<Type>();
+                    graph[cmdType] = set;
+                }
+                foreach (var sigType in kvp.Value)
+                {
+                    set.Add(sigType);
+                }
+            }
+
+            // 4. DFS Cycle Detection
+            var visited = new HashSet<Type>();
+            var visiting = new HashSet<Type>();
+            var path = new List<Type>();
+
+            foreach (var node in graph.Keys)
+            {
+                path.Clear();
+                visiting.Clear();
+                if (HasCycleDfs(node, graph, visiting, visited, path))
+                {
+                    // Extract cycle
+                    var cycleStartNode = path[path.Count - 1];
+                    int startIdx = path.IndexOf(cycleStartNode);
+                    var cycleList = path.GetRange(startIdx, path.Count - startIdx);
+                    var names = new List<string>();
+                    foreach (var t in cycleList)
+                    {
+                        names.Add(t.Name);
+                    }
+                    string cycleStr = string.Join(" → ", names);
+
+                    Debug.LogError($"[Nexus Error] Circular Command/Signal Cycle Detected: {cycleStr}. Cycles lead to stack overflows or infinite async loops.");
+                    errorCount++;
+                }
+            }
+        }
+
+        private static bool HasCycleDfs(Type current, Dictionary<Type, HashSet<Type>> graph, HashSet<Type> visiting, HashSet<Type> visited, List<Type> path)
+        {
+            if (visited.Contains(current)) return false;
+            if (!visiting.Add(current))
+            {
+                path.Add(current);
+                return true; // Cycle detected!
+            }
+            path.Add(current);
+
+            if (graph.TryGetValue(current, out var neighbors))
+            {
+                foreach (var neighbor in neighbors)
+                {
+                    if (HasCycleDfs(neighbor, graph, visiting, visited, path))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            path.RemoveAt(path.Count - 1);
+            visiting.Remove(current);
+            visited.Add(current);
+            return false;
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex s_fireGenericRegex = 
+            new(@"\.Fire[A-Za-z]*\s*<\s*([A-Za-z0-9_\.]+)\s*>", System.Text.RegularExpressions.RegexOptions.Compiled);
+            
+        private static readonly System.Text.RegularExpressions.Regex s_fireNewRegex = 
+            new(@"\.Fire[A-Za-z]*\s*\(\s*new\s+([A-Za-z0-9_\.]+)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+        private static Dictionary<Type, string> BuildTypeScriptCache()
+        {
+            var cache = new Dictionary<Type, string>();
+            var guids = AssetDatabase.FindAssets("t:MonoScript");
+            foreach (var guid in guids)
+            {
+                var path = AssetDatabase.GUIDToAssetPath(guid);
+                var script = AssetDatabase.LoadAssetAtPath<MonoScript>(path);
+                if (script != null)
+                {
+                    try
+                    {
+                        var klass = script.GetClass();
+                        if (klass != null && !cache.ContainsKey(klass))
+                        {
+                            cache[klass] = path;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return cache;
+        }
+
+        private static Dictionary<string, Type> BuildSignalTypeMap()
+        {
+            var map = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.IsValueType && !type.IsEnum && !type.IsPrimitive)
+                        {
+                            map[type.Name] = type;
+                            map[type.FullName] = type;
+                            string cleanFullName = type.FullName.Replace("+", ".");
+                            map[cleanFullName] = type;
+                        }
+                    }
+                }
+                catch { }
+            }
+            return map;
         }
     }
 

@@ -11,72 +11,72 @@ namespace Nexus.Editor.Tests
     {
         // --- Dummy types for Mixed-Mode validation ---
         public struct MixedSignal { }
-
+ 
         [SignalHandler(typeof(MixedSignal), Mode = ExecutionMode.Sequential)]
-        public class MixedCommandSeq : ICommand
+        public class MixedCommandSeq : ICommand<MixedSignal>
         {
-            public void Execute() {}
+            public void Execute(MixedSignal signal) {}
         }
-
+ 
         [SignalHandler(typeof(MixedSignal), Mode = ExecutionMode.Concurrent)]
-        public class MixedCommandConc : ICommand
+        public class MixedCommandConc : ICommand<MixedSignal>
         {
-            public void Execute() {}
+            public void Execute(MixedSignal signal) {}
         }
-
+ 
         // --- Dummy types for Exclusive-Mode validation ---
         public struct ExclusiveSignal { }
-
+ 
         [SignalHandler(typeof(ExclusiveSignal), Mode = ExecutionMode.Exclusive)]
-        public class ExclusiveCommandA : ICommand
+        public class ExclusiveCommandA : ICommand<ExclusiveSignal>
         {
-            public void Execute() {}
+            public void Execute(ExclusiveSignal signal) {}
         }
-
+ 
         [SignalHandler(typeof(ExclusiveSignal), Mode = ExecutionMode.Exclusive)]
-        public class ExclusiveCommandB : ICommand
+        public class ExclusiveCommandB : ICommand<ExclusiveSignal>
         {
-            public void Execute() {}
+            public void Execute(ExclusiveSignal signal) {}
         }
-
+ 
         // --- Dummy types for Equal Priority validation ---
         public struct EqualPrioritySignal { }
-
+ 
         [SignalHandler(typeof(EqualPrioritySignal), Mode = ExecutionMode.Sequential, Priority = 5)]
-        public class PriorityCommandA : ICommand
+        public class PriorityCommandA : ICommand<EqualPrioritySignal>
         {
-            public void Execute() {}
+            public void Execute(EqualPrioritySignal signal) {}
         }
-
+ 
         [SignalHandler(typeof(EqualPrioritySignal), Mode = ExecutionMode.Sequential, Priority = 5)]
-        public class PriorityCommandB : ICommand
+        public class PriorityCommandB : ICommand<EqualPrioritySignal>
         {
-            public void Execute() {}
+            public void Execute(EqualPrioritySignal signal) {}
         }
-
+ 
         // --- Dummy types for Concurrent Model Write validation ---
         public interface ISomeModel
         {
             int Value { get; set; } // Settable property indicates writable model
         }
-
+ 
         public struct ConcurrentWriteSignal { }
-
+ 
         [SignalHandler(typeof(ConcurrentWriteSignal), Mode = ExecutionMode.Concurrent)]
-        public class ConcurrentWriteCommand : ICommand
+        public class ConcurrentWriteCommand : ICommand<ConcurrentWriteSignal>
         {
             [Inject]
             private ISomeModel _model; // Injects writable model
-
-            public void Execute() {}
+ 
+            public void Execute(ConcurrentWriteSignal signal) {}
         }
-
+ 
         // --- Dummy types for Command State Leak validation ---
-        public class StateLeakCommand : ICommand
+        public class StateLeakCommand : ICommand<MixedSignal>
         {
             private string _mutableState; // Mutable, non-injected field (not readonly)
-
-            public void Execute() {}
+ 
+            public void Execute(MixedSignal signal) {}
         }
 
         [SetUp]

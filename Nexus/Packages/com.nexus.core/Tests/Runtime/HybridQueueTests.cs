@@ -113,5 +113,24 @@ namespace Nexus.Tests
 
             Assert.AreEqual(3, count);
         }
+
+        [Test]
+        public void PreservesChronologicalInterleavedOrder()
+        {
+            var order = new System.Collections.Generic.List<string>();
+            _signalBus.Subscribe<OrderedSignalA>(sig => order.Add("A"));
+            _signalBus.Subscribe<OrderedSignalB>(sig => order.Add("B"));
+
+            _queue.EnqueueThreadSafe(new OrderedSignalA());
+            _queue.EnqueueThreadSafe(new OrderedSignalB());
+            _queue.EnqueueThreadSafe(new OrderedSignalA());
+
+            _queue.DrainThreadSafe();
+
+            Assert.AreEqual(3, order.Count);
+            Assert.AreEqual("A", order[0]);
+            Assert.AreEqual("B", order[1]);
+            Assert.AreEqual("A", order[2]);
+        }
     }
 }

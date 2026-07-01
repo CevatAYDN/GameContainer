@@ -52,61 +52,59 @@ namespace Nexus.Editor.Tests
             public void Dispose() { }
         }
 
-        public class TestCommand : ICommand
+        public class TestCommand : ICommand<SimpleSignal>
         {
-            public SimpleSignal Signal;
             [Inject] private TestResults _results;
             
-            public void Execute()
+            public void Execute(SimpleSignal signal)
             {
                 _results.ExecutedCount++;
-                _results.LastExecutedValue = Signal.Value;
+                _results.LastExecutedValue = signal.Value;
             }
         }
 
-        public class HighPriorityCommand : ICommand
+        public class HighPriorityCommand : ICommand<SimpleSignal>
         {
             [Inject] private TestResults _results;
 
-            public void Execute()
+            public void Execute(SimpleSignal signal)
             {
                 _results.PriorityRunOrder++;
                 _results.FirstExecutedPriority = _results.PriorityRunOrder;
             }
         }
 
-        public class LowPriorityCommand : ICommand
+        public class LowPriorityCommand : ICommand<SimpleSignal>
         {
             [Inject] private TestResults _results;
 
-            public void Execute()
+            public void Execute(SimpleSignal signal)
             {
                 _results.PriorityRunOrder++;
                 _results.SecondExecutedPriority = _results.PriorityRunOrder;
             }
         }
 
-        public class ReentrantCommand : ICommand
+        public class ReentrantCommand : ICommand<SimpleSignal>
         {
 #pragma warning disable 0649
             [Inject] private ISignalBus _signalBus;
 #pragma warning restore 0649
 
-            public void Execute()
+            public void Execute(SimpleSignal signal)
             {
                 _signalBus.Fire(new SimpleSignal(10));
             }
         }
 
-        public class ConcurrentSyncCommand : ICommand
+        public class ConcurrentSyncCommand : ICommand<SimpleSignal>
         {
-            public SimpleSignal Signal;
             [Inject] private TestResults _results;
 
-            public void Execute()
+            public void Execute(SimpleSignal signal)
             {
                 _results.ExecutedCount++;
-                _results.LastExecutedValue = Signal.Value;
+                _results.LastExecutedValue = signal.Value;
             }
         }
 

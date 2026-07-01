@@ -46,8 +46,9 @@ namespace Nexus.Core
             else if (type.IsClass)
             {
                 // Bind class in container
-                bool isCommand = typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type);
-                if (isCommand)
+                bool isCommand = typeof(ICommand).IsAssignableFrom(type) || ImplementsGenericInterface(type, typeof(ICommand<>));
+                bool isAsyncCommand = typeof(IAsyncCommand).IsAssignableFrom(type) || ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
+                if (isCommand || isAsyncCommand)
                 {
                     Context.Container.Bind(type, isSingleton: false);
 
@@ -61,7 +62,7 @@ namespace Nexus.Core
                             type, 
                             attr.Mode, 
                             attr.Priority, 
-                            isAsync: typeof(IAsyncCommand).IsAssignableFrom(type)
+                            isAsync: isAsyncCommand
                         );
                     }
 
@@ -92,8 +93,8 @@ namespace Nexus.Core
         }
 
         /// <summary>Registers a synchronous command type and wires it to its signal handlers.</summary>
-        /// <typeparam name="TCommand">The command type (must implement <see cref="ICommand"/>).</typeparam>
-        public void RegisterCommand<TCommand>() where TCommand : class, ICommand
+        /// <typeparam name="TCommand">The command type.</typeparam>
+        public void RegisterCommand<TCommand>() where TCommand : class
         {
             var type = typeof(TCommand);
             Context.Container.Bind(type, isSingleton: false);
@@ -132,8 +133,8 @@ namespace Nexus.Core
         }
 
         /// <summary>Registers an asynchronous command type and wires it to its signal handlers.</summary>
-        /// <typeparam name="TCommand">The command type (must implement <see cref="IAsyncCommand"/>).</typeparam>
-        public void RegisterAsyncCommand<TCommand>() where TCommand : class, IAsyncCommand
+        /// <typeparam name="TCommand">The command type.</typeparam>
+        public void RegisterAsyncCommand<TCommand>() where TCommand : class
         {
             var type = typeof(TCommand);
             Context.Container.Bind(type, isSingleton: false);
@@ -363,6 +364,19 @@ namespace Nexus.Core
             _dispatchedSignals.Clear();
 
             Context.Dispose();
+        }
+
+        private static bool ImplementsGenericInterface(Type type, Type genericInterface)
+        {
+            if (type == null) return false;
+            foreach (var i in type.GetInterfaces())
+            {
+                if (i.IsGenericType && i.GetGenericTypeDefinition() == genericInterface)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }

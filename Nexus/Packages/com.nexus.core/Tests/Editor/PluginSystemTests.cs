@@ -14,19 +14,14 @@ namespace Nexus.Editor.Tests
         public PluginTestSignal(string message) => Message = message;
     }
 
-    public class PluginTestCommand : ICommand
+    public class PluginTestCommand : ICommand<PluginTestSignal>
     {
         public static string LastReceivedMessage;
         public static int ExecutionCount;
-
-        // Injected field (set via InjectSignal reflection — disable CS0649)
-#pragma warning disable 0649
-        private PluginTestSignal _signal;
-#pragma warning restore 0649
-
-        public void Execute()
+ 
+        public void Execute(PluginTestSignal signal)
         {
-            LastReceivedMessage = _signal.Message;
+            LastReceivedMessage = signal.Message;
             ExecutionCount++;
         }
     }

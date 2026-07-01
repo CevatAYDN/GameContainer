@@ -5,35 +5,67 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
-    /// <summary>Interface for draining a queue of signals into a <see cref="SignalBus"/>.</summary>
-    public interface IQueuedSignalDrainer
+    /// <summary>
+    /// Represents a queued signal wrapper that can be fired into a signal bus and recycled.
+    /// </summary>
+    public interface IQueuedSignal
     {
-        /// <summary>Drains all queued signals into the given signal bus.</summary>
-        /// <param name="bus">The target signal bus.</param>
-        void Drain(SignalBus bus);
+        /// <summary>Fires the wrapped signal into the given signal bus.</summary>
+        void Fire(SignalBus bus);
+        /// <summary>Releases the wrapper back to the object pool.</summary>
+        void Release();
     }
 
-    /// <summary>Thread-safe queue container for a specific signal type.</summary>
-    /// <typeparam name="T">The signal struct type.</typeparam>
-    public class TypedQueueContainer<T> : IQueuedSignalDrainer where T : struct
+    /// <summary>
+    /// Thread-safe object pool for reusing QueuedSignalWrapper instances to achieve 0 GC allocation.
+    /// </summary>
+    public static class QueuedSignalPool<T> where T : struct
     {
-        /// <summary>The underlying thread-safe queue.</summary>
-        public readonly ConcurrentQueue<T> Queue = new();
+        private static readonly ConcurrentQueue<QueuedSignalWrapper<T>> s_pool = new();
 
-        /// <summary>Dequeues all signals and fires them into the given bus.</summary>
-        /// <param name="bus">The target signal bus.</param>
-        public void Drain(SignalBus bus)
+        /// <summary>Rents a pooled wrapper initialized with the given signal.</summary>
+        public static QueuedSignalWrapper<T> Rent(T signal)
         {
-            while (Queue.TryDequeue(out var signal))
+            if (!s_pool.TryDequeue(out var wrapper))
             {
-                bus.Fire(signal);
+                wrapper = new QueuedSignalWrapper<T>();
             }
+            wrapper.Signal = signal;
+            return wrapper;
+        }
+
+        /// <summary>Returns the wrapper to the pool and resets its payload.</summary>
+        public static void Return(QueuedSignalWrapper<T> wrapper)
+        {
+            wrapper.Signal = default;
+            s_pool.Enqueue(wrapper);
+        }
+    }
+
+    /// <summary>
+    /// A pooled class wrapper for signals to avoid boxing in ConcurrentQueue.
+    /// </summary>
+    public class QueuedSignalWrapper<T> : IQueuedSignal where T : struct
+    {
+        /// <summary>The wrapped signal payload.</summary>
+        public T Signal;
+
+        /// <summary>Fires the wrapped signal into the signal bus.</summary>
+        public void Fire(SignalBus bus)
+        {
+            bus.Fire(Signal);
+        }
+
+        /// <summary>Releases the wrapper back to the pool.</summary>
+        public void Release()
+        {
+            QueuedSignalPool<T>.Return(this);
         }
     }
 
     /// <summary>
     /// Manages thread-safe and next-frame deferred signal queues.
-    /// Provides zero-allocation draining via reusable scratch lists (Plan §6.1).
+    /// Provides zero-allocation draining while preserving chronological interleaved order.
     /// Used by <see cref="Context"/> for cross-thread and deferred signal delivery.
     /// </summary>
     [Preserve]
@@ -41,16 +73,8 @@ namespace Nexus.Core
     {
         private readonly SignalBus _signalBus;
         
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, IQueuedSignalDrainer> _threadSafeQueues = new();
-        private readonly List<IQueuedSignalDrainer> _activeThreadSafeQueues = new();
-        private readonly object _lock = new();
-
-        // Reusable scratch lists to avoid GC allocation every frame (Plan §6.1 zero-alloc steady-state)
-        private readonly List<IQueuedSignalDrainer> _drainThreadSafeScratch = new();
-        private readonly List<IQueuedSignalDrainer> _drainNextFrameScratch = new();
-
-        private readonly System.Collections.Concurrent.ConcurrentDictionary<Type, IQueuedSignalDrainer> _nextFrameQueues = new();
-        private readonly List<IQueuedSignalDrainer> _activeNextFrameQueues = new();
+        private readonly ConcurrentQueue<IQueuedSignal> _threadSafeQueue = new();
+        private readonly ConcurrentQueue<IQueuedSignal> _nextFrameQueue = new();
 
         /// <summary>Creates a new <see cref="HybridQueue"/> backed by the given signal bus.</summary>
         /// <param name="signalBus">The signal bus to drain signals into.</param>
@@ -64,12 +88,8 @@ namespace Nexus.Core
         /// <param name="signal">The signal data.</param>
         public void EnqueueThreadSafe<T>(T signal) where T : struct
         {
-            var type = typeof(T);
-            if (!_threadSafeQueues.TryGetValue(type, out var queue))
-            {
-                queue = GetOrCreateThreadSafeQueue<T>();
-            }
-            ((TypedQueueContainer<T>)queue).Queue.Enqueue(signal);
+            var wrapper = QueuedSignalPool<T>.Rent(signal);
+            _threadSafeQueue.Enqueue(wrapper);
         }
 
         /// <summary>Enqueues a signal to be fired at the start of the next frame (LateUpdate drain).</summary>
@@ -77,91 +97,58 @@ namespace Nexus.Core
         /// <param name="signal">The signal data.</param>
         public void EnqueueNextFrame<T>(T signal) where T : struct
         {
-            var type = typeof(T);
-            if (!_nextFrameQueues.TryGetValue(type, out var queue))
-            {
-                queue = GetOrCreateNextFrameQueue<T>();
-            }
-            ((TypedQueueContainer<T>)queue).Queue.Enqueue(signal);
-        }
-
-        private IQueuedSignalDrainer GetOrCreateThreadSafeQueue<T>() where T : struct
-        {
-            lock (_lock)
-            {
-                var type = typeof(T);
-                if (!_threadSafeQueues.TryGetValue(type, out var queue))
-                {
-                    queue = new TypedQueueContainer<T>();
-                    _threadSafeQueues[type] = queue;
-                    _activeThreadSafeQueues.Add(queue);
-                }
-                return queue;
-            }
-        }
-
-        private IQueuedSignalDrainer GetOrCreateNextFrameQueue<T>() where T : struct
-        {
-            lock (_lock)
-            {
-                var type = typeof(T);
-                if (!_nextFrameQueues.TryGetValue(type, out var queue))
-                {
-                    queue = new TypedQueueContainer<T>();
-                    _nextFrameQueues[type] = queue;
-                    _activeNextFrameQueues.Add(queue);
-                }
-                return queue;
-            }
+            var wrapper = QueuedSignalPool<T>.Rent(signal);
+            _nextFrameQueue.Enqueue(wrapper);
         }
 
         /// <summary>
-        /// Drains all thread-safe queued signals into the signal bus.
-        /// Called from <c>Root.Update()</c>. Zero-allocation (uses reusable scratch list).
+        /// Drains all thread-safe queued signals into the signal bus in chronological order.
+        /// Called from <c>Root.Update()</c>. Zero-allocation.
         /// </summary>
         public void DrainThreadSafe()
         {
-            // Snapshot under lock to avoid concurrent modification from EnqueueThreadSafe
-            // Uses reusable scratch list to avoid GC allocation (Plan §6.1)
-            _drainThreadSafeScratch.Clear();
-            lock (_lock)
+            while (_threadSafeQueue.TryDequeue(out var queuedSignal))
             {
-                _drainThreadSafeScratch.AddRange(_activeThreadSafeQueues);
-            }
-            for (int i = 0; i < _drainThreadSafeScratch.Count; i++)
-            {
-                _drainThreadSafeScratch[i].Drain(_signalBus);
+                try
+                {
+                    queuedSignal.Fire(_signalBus);
+                }
+                finally
+                {
+                    queuedSignal.Release();
+                }
             }
         }
 
         /// <summary>
-        /// Drains all next-frame queued signals into the signal bus.
-        /// Called from <c>Root.LateUpdate()</c>. Zero-allocation (uses reusable scratch list).
+        /// Drains all next-frame queued signals into the signal bus in chronological order.
+        /// Called from <c>Root.LateUpdate()</c>. Zero-allocation.
         /// </summary>
         public void DrainNextFrame()
         {
-            // Snapshot under lock to avoid concurrent modification from EnqueueNextFrame
-            // Uses reusable scratch list to avoid GC allocation (Plan §6.1)
-            _drainNextFrameScratch.Clear();
-            lock (_lock)
+            while (_nextFrameQueue.TryDequeue(out var queuedSignal))
             {
-                _drainNextFrameScratch.AddRange(_activeNextFrameQueues);
-            }
-            for (int i = 0; i < _drainNextFrameScratch.Count; i++)
-            {
-                _drainNextFrameScratch[i].Drain(_signalBus);
+                try
+                {
+                    queuedSignal.Fire(_signalBus);
+                }
+                finally
+                {
+                    queuedSignal.Release();
+                }
             }
         }
 
-        /// <summary>Clears all queues (thread-safe and next-frame). Thread-safe.</summary>
+        /// <summary>Clears all queues. Thread-safe.</summary>
         public void Clear()
         {
-            lock (_lock)
+            while (_threadSafeQueue.TryDequeue(out var queuedSignal))
             {
-                _threadSafeQueues.Clear();
-                _activeThreadSafeQueues.Clear();
-                _nextFrameQueues.Clear();
-                _activeNextFrameQueues.Clear();
+                queuedSignal.Release();
+            }
+            while (_nextFrameQueue.TryDequeue(out var queuedSignal))
+            {
+                queuedSignal.Release();
             }
         }
     }
