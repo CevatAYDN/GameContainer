@@ -19,6 +19,7 @@ namespace Nexus.Editor
         private static void OnScriptsReloaded()
         {
             s_cacheValid = false;
+            InvalidateRootCache();
         }
 
         private static void EnsureCached()

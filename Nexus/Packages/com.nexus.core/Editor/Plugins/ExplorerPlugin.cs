@@ -75,8 +75,8 @@ namespace Nexus.Editor
 
             var tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
             
-            var btnSignals = CreateTabButton("Signal Explorer", ExplorerTab.Signals);
-            var btnModels = CreateTabButton("Live Models", ExplorerTab.LiveModels);
+            var btnSignals = CreateTabButton(NexusLang.Get("explorer_tab_signals"), ExplorerTab.Signals);
+            var btnModels = CreateTabButton(NexusLang.Get("explorer_tab_models"), ExplorerTab.LiveModels);
 
             tabHeader.Add(btnSignals);
             tabHeader.Add(btnModels);

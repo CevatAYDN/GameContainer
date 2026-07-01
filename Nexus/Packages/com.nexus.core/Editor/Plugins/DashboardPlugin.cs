@@ -25,6 +25,12 @@ namespace Nexus.Editor
         private static int s_cachedModelCount = -1, s_cachedServiceCount = -1, s_cachedCommandCount = -1, s_cachedViewCount = -1;
         private static bool s_overviewCacheValid = false;
 
+        [UnityEditor.Callbacks.DidReloadScripts]
+        private static void OnScriptsReloaded()
+        {
+            s_overviewCacheValid = false;
+        }
+
         private static void RefreshOverviewCache()
         {
             int mc = 0, sc = 0, cc = 0, vc = 0;
@@ -55,6 +61,7 @@ namespace Nexus.Editor
 
         public override VisualElement CreateView()
         {
+            _refreshSchedule?.Pause();
             _view = new VisualElement { style = { flexGrow = 1 } };
 
             var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("dashboard").ToUpper());

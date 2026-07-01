@@ -136,15 +136,15 @@ namespace Nexus.Editor
 
             var sections = new (Section s, string label, Color color)[]
             {
-                (Section.Overview,  "Overview",  NexusEditorStyles.AccentBlue),
-                (Section.Contexts,  "Contexts",  NexusEditorStyles.AccentGreen),
-                (Section.Models,    "Models",    NexusEditorStyles.AccentYellow),
-                (Section.Signals,   "Signals",   NexusEditorStyles.AccentPurple),
-                (Section.Commands,  "Commands",  NexusEditorStyles.AccentOrange),
-                (Section.Views,     "Views",     NexusEditorStyles.AccentBlue),
-                (Section.Services,  "Services",  NexusEditorStyles.AccentGreen),
-                (Section.Live,      "Live",      new Color(1f, 0.5f, 0.8f)),
-                (Section.SignalTest,"Test",      new Color(1f, 0.4f, 0.4f)),
+                (Section.Overview,  NexusLang.Get("gamemanager_section_overview"),  NexusEditorStyles.AccentBlue),
+                (Section.Contexts,  NexusLang.Get("gamemanager_section_contexts"),  NexusEditorStyles.AccentGreen),
+                (Section.Models,    NexusLang.Get("gamemanager_section_models"),    NexusEditorStyles.AccentYellow),
+                (Section.Signals,   NexusLang.Get("gamemanager_section_signals"),   NexusEditorStyles.AccentPurple),
+                (Section.Commands,  NexusLang.Get("gamemanager_section_commands"),  NexusEditorStyles.AccentOrange),
+                (Section.Views,     NexusLang.Get("gamemanager_section_views"),     NexusEditorStyles.AccentBlue),
+                (Section.Services,  NexusLang.Get("gamemanager_section_services"),  NexusEditorStyles.AccentGreen),
+                (Section.Live,      NexusLang.Get("gamemanager_section_live"),      new Color(1f, 0.5f, 0.8f)),
+                (Section.SignalTest,NexusLang.Get("gamemanager_section_test"),      new Color(1f, 0.4f, 0.4f)),
             };
 
             foreach (var (s, label, color) in sections)

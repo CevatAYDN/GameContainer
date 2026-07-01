@@ -283,6 +283,17 @@ namespace Nexus.Editor
             s_strings["gamemanager_metric_commands_s"] = "Commands/s";
             s_strings["gamemanager_metric_total_signals"] = "Total Signals";
             s_strings["gamemanager_metric_total_cmds"] = "Total Cmds";
+            s_strings["gamemanager_section_overview"] = "Overview";
+            s_strings["gamemanager_section_contexts"] = "Contexts";
+            s_strings["gamemanager_section_models"] = "Models";
+            s_strings["gamemanager_section_signals"] = "Signals";
+            s_strings["gamemanager_section_commands"] = "Commands";
+            s_strings["gamemanager_section_views"] = "Views";
+            s_strings["gamemanager_section_services"] = "Services";
+            s_strings["gamemanager_section_live"] = "Live";
+            s_strings["gamemanager_section_test"] = "Test";
+            s_strings["explorer_tab_signals"] = "Signal Explorer";
+            s_strings["explorer_tab_models"] = "Live Models";
 
             s_strings["typeanalyzer_title"] = "TYPE COUPLING ANALYZER";
             s_strings["typeanalyzer_analyze"] = "Analyze";
