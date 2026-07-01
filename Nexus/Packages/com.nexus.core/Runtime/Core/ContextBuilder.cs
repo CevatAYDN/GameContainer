@@ -39,7 +39,7 @@ namespace Nexus.Core
             where TImplementation : class, TInterface, IReactiveModel
         {
             _container.Bind<TInterface, TImplementation>(isSingleton: true);
-            _reactiveModelTypes.Add(typeof(TImplementation));
+            _reactiveModelTypes.Add(typeof(TInterface));
         }
 
         public void BindReactiveModel<TImplementation>()
@@ -68,7 +68,7 @@ namespace Nexus.Core
             where TImplementation : class, TInterface, INexusService
         {
             _container.Bind<TInterface, TImplementation>(isSingleton: true);
-            _serviceTypes.Add(typeof(TImplementation));
+            _serviceTypes.Add(typeof(TInterface));
         }
 
         public void BindService<TImplementation>()
