@@ -21,7 +21,7 @@ namespace Nexus.Core
         public IDependencyAdapter ExternalAdapter { get; set; }
         public int ActiveSingletonsCount => _resolvedSingletons.Count;
         private readonly NexusDI _parent;
-        private readonly Dictionary<Type, Binding> _bindings = new();
+        private readonly ConcurrentDictionary<Type, Binding> _bindings = new();
         private readonly HashSet<object> _resolvedSingletons = new();
         private volatile bool _disposed;
 
@@ -468,10 +468,6 @@ namespace Nexus.Core
         public static void ClearInjectedReferences(object instance)
         {
             if (instance == null) return;
-            if (instance is IResettable resettable)
-            {
-                resettable.Reset();
-            }
             var type = instance.GetType();
 
             var meta = s_clearMetadataCache.GetOrAdd(type, t =>

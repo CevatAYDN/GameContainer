@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using UnityEngine;
@@ -17,6 +18,7 @@ namespace Nexus.Core
         private readonly Type _commandType;
         private readonly Func<object> _factory;
         private readonly Stack<object> _pool = new();
+        private readonly object _poolLock = new();
         private readonly int _maxSize;
         private static readonly HashSet<Type> s_stateLeakWarningIssued = new();
 
@@ -64,9 +66,12 @@ namespace Nexus.Core
         /// <summary>Retrieves a command instance from the pool, or creates a new one if the pool is empty.</summary>
         public object Get()
         {
-            if (_pool.Count > 0)
+            lock (_poolLock)
             {
-                return _pool.Pop();
+                if (_pool.Count > 0)
+                {
+                    return _pool.Pop();
+                }
             }
             return _factory();
         }
@@ -79,9 +84,12 @@ namespace Nexus.Core
             
             Cleanup(command);
             
-            if (_pool.Count < _maxSize)
+            lock (_poolLock)
             {
-                _pool.Push(command);
+                if (_pool.Count < _maxSize)
+                {
+                    _pool.Push(command);
+                }
             }
         }
 
@@ -98,7 +106,10 @@ namespace Nexus.Core
         /// <summary>Clears all pooled instances.</summary>
         public void Clear()
         {
-            _pool.Clear();
+            lock (_poolLock)
+            {
+                _pool.Clear();
+            }
         }
 
         internal static void ClearStateLeakWarningsStatic()
@@ -117,7 +128,7 @@ namespace Nexus.Core
     public class CommandPoolManager
     {
         private readonly NexusDI _container;
-        private readonly Dictionary<Type, CommandPool> _pools = new();
+        private readonly ConcurrentDictionary<Type, CommandPool> _pools = new();
         private readonly int _initialSize;
         private readonly int _maxSize;
 
@@ -130,11 +141,8 @@ namespace Nexus.Core
 
         public object GetCommand(Type commandType)
         {
-            if (!_pools.TryGetValue(commandType, out var pool))
-            {
-                pool = new CommandPool(commandType, () => _container.Resolve(commandType), _initialSize, _maxSize);
-                _pools[commandType] = pool;
-            }
+            var pool = _pools.GetOrAdd(commandType,
+                type => new CommandPool(type, () => _container.Resolve(type), _initialSize, _maxSize));
             return pool.Get();
         }
 
@@ -152,9 +160,9 @@ namespace Nexus.Core
         /// <summary>Clears all command pools.</summary>
         public void Clear()
         {
-            foreach (var pool in _pools.Values)
+            foreach (var kvp in _pools)
             {
-                pool.Clear();
+                kvp.Value.Clear();
             }
             _pools.Clear();
         }
