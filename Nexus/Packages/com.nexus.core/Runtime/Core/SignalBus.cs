@@ -479,6 +479,12 @@ namespace Nexus.Core
             }
 
             // === FAST PATH: All handlers are synchronous ===
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (!_subscriptions.ContainsKey(type) && !_commandHandlers.ContainsKey(type))
+            {
+                UnityEngine.Debug.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
+            }
+#endif
             s_stackDepth.Value++;
             if (s_stackDepth.Value > MaxStackDepth)
             {
