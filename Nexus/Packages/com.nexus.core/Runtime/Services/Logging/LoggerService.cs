@@ -23,25 +23,25 @@ namespace Nexus.Core.Services
         public void Log(string message)
         {
             if (!IsEnabled) return;
-            Debug.Log(message);
+            UnityEngine.Debug.Log(message);
         }
 
         public void LogWarning(string message)
         {
             if (!IsEnabled) return;
-            Debug.LogWarning(message);
+            UnityEngine.Debug.LogWarning(message);
         }
 
         public void LogError(string message)
         {
             if (!IsEnabled) return;
-            Debug.LogError(message);
+            UnityEngine.Debug.LogError(message);
         }
 
         public void LogException(Exception exception)
         {
             if (!IsEnabled) return;
-            Debug.LogException(exception);
+            UnityEngine.Debug.LogException(exception);
         }
     }
 }

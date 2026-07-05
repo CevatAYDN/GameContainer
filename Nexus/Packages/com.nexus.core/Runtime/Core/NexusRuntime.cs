@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -29,6 +31,37 @@ namespace Nexus.Core
                 }
             }
         }
+
+        /// <summary>
+        /// Returns the first registered context, or null if no context has been registered.
+        /// Provides a convenient access point for services that need runtime logging
+        /// without requiring direct DI injection of ILoggerService.
+        /// </summary>
+        public static IContext CurrentContext
+        {
+            get
+            {
+                lock (s_lock)
+                {
+                    return s_activeContexts.Count > 0 ? s_activeContexts[0] : null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Safely attempts to resolve a service of type <typeparamref name="T"/> from <see cref="CurrentContext"/>.
+        /// Returns null if no context is registered or the service is not registered.
+        /// </summary>
+        public static T TryResolve<T>() where T : class
+        {
+            return CurrentContext?.TryResolve<T>();
+        }
+
+        /// <summary>
+        /// Null-safe accessor for the registered <see cref="Services.ILoggerService"/> from <see cref="CurrentContext"/>.
+        /// Returns null if no context or logger service is registered.
+        /// </summary>
+        public static Services.ILoggerService Logger => CurrentContext?.TryResolve<Services.ILoggerService>();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void InitializeOnLoad()
@@ -76,7 +109,7 @@ namespace Nexus.Core
                     }
                     catch (System.Exception ex)
                     {
-                        Debug.LogException(ex);
+                        Logger?.LogException(ex);
                     }
                 }
                 s_activeContexts.Clear();
@@ -192,7 +225,7 @@ namespace Nexus.Core
                 }
                 catch (System.Exception ex)
                 {
-                    Debug.LogException(ex);
+                    Logger?.LogException(ex);
                 }
             }
         }
@@ -218,7 +251,7 @@ namespace Nexus.Core
                 }
                 catch (System.Exception ex)
                 {
-                    Debug.LogException(ex);
+                    Logger?.LogException(ex);
                 }
             }
         }

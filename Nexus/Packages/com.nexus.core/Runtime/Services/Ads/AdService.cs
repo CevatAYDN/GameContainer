@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -75,7 +76,7 @@ namespace Nexus.Core.Services
         {
             if (!IsInterstitialAvailable(placement))
             {
-                Debug.LogWarning($"[AdService] Interstitial not ready or on cooldown for placement: {placement}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[AdService] Interstitial not ready or on cooldown for placement: {placement}");
                 onComplete?.Invoke();
                 return;
             }
@@ -88,7 +89,7 @@ namespace Nexus.Core.Services
             }
             else
             {
-                Debug.Log($"[AdService Mock] Showing Interstitial for: {placement}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[AdService Mock] Showing Interstitial for: {placement}");
                 onComplete?.Invoke();
             }
         }
@@ -101,7 +102,7 @@ namespace Nexus.Core.Services
             }
             else
             {
-                Debug.Log($"[AdService Mock] Showing Rewarded for: {placement}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[AdService Mock] Showing Rewarded for: {placement}");
                 onComplete?.Invoke(true);
             }
         }

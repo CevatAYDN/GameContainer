@@ -25,7 +25,7 @@ namespace Nexus.Core
         private readonly HashSet<object> _resolvedSingletons = new();
         private volatile bool _disposed;
 
-        private static readonly Dictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
+        private static readonly ConcurrentDictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
 
         /// <summary>
         /// Registers a compile-time generated injector action for a class to bypass runtime reflection in AOT.
@@ -263,6 +263,11 @@ namespace Nexus.Core
         public T Resolve<T>() where T : class
         {
             return (T)Resolve(typeof(T));
+        }
+
+        public T TryResolve<T>() where T : class
+        {
+            return IsRegistered(typeof(T)) ? Resolve<T>() : null;
         }
 
         public object Resolve(Type type)
@@ -530,7 +535,7 @@ namespace Nexus.Core
                     }
                     catch (Exception ex)
                     {
-                        UnityEngine.Debug.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
                     }
                 }
             }
@@ -561,7 +566,7 @@ namespace Nexus.Core
                     }
                     catch (Exception ex)
                     {
-                        UnityEngine.Debug.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
                     }
                 }
             }

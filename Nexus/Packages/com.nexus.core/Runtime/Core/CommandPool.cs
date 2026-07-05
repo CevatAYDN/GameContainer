@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -56,8 +57,8 @@ namespace Nexus.Core
                 // Non-injected, non-readonly field could leak state across pool reuse
                 if (s_stateLeakWarningIssued.Add(type))
                 {
-                    Debug.LogWarning($"[Nexus] Command '{type.Name}' has mutable field '{field.Name}' but does not implement IResettable. " +
-                        "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[Nexus] Command '{type.Name}' has mutable field '{field.Name}' but does not implement IResettable. " +
+                    "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
                     return;
                 }
             }

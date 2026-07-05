@@ -84,6 +84,29 @@ namespace Nexus.Tests
         }
 
         [Test]
+        public void RegisterView_WithoutMediatorAttribute_StillBindsContext()
+        {
+            var go = new GameObject();
+            var view = go.AddComponent<TestView>();
+            var binder = _context.Resolve<ViewBinder>();
+
+            binder.RegisterView(view);
+
+            Assert.IsTrue(view.IsBound);
+            Assert.AreSame(_context, view.BoundContext);
+
+            var activeMediatorsField = typeof(ViewBinder).GetField("_activeMediators", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var activeMediators = activeMediatorsField?.GetValue(binder) as System.Collections.IDictionary;
+            Assert.IsNotNull(activeMediators);
+            Assert.IsFalse(activeMediators.Contains(view));
+
+            binder.UnregisterView(view);
+            Assert.IsFalse(view.IsBound);
+
+            Object.DestroyImmediate(go);
+        }
+
+        [Test]
         public void RegisterView_WithMediator_InstantiatesAndBindsMediator()
         {
             var go = new GameObject();

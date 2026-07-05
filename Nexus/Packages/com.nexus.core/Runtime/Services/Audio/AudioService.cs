@@ -7,6 +7,25 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
 {
+    public interface IAudioRootProvider
+    {
+        GameObject GetOrCreateRoot();
+    }
+
+    public class DefaultAudioRootProvider : IAudioRootProvider
+    {
+        private GameObject _root;
+
+        public GameObject GetOrCreateRoot()
+        {
+            if (_root != null) return _root;
+
+            _root = new GameObject("[Nexus_AudioService]");
+            UnityEngine.Object.DontDestroyOnLoad(_root);
+            return _root;
+        }
+    }
+
     public interface IAudioService
     {
         float MasterVolume { get; set; }
@@ -24,6 +43,7 @@ namespace Nexus.Core.Services
     public class AudioService : IAudioService, INexusService, IDisposable
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
+        [Inject] public IAudioRootProvider AudioRootProvider { get; set; }
 
         private const string KeyMasterVol = "NT_AudioMasterVol";
         private const string KeyBgmVol = "NT_AudioBgmVol";
@@ -86,8 +106,12 @@ namespace Nexus.Core.Services
 
         public ValueTask InitializeAsync(CancellationToken ct)
         {
-            _audioRoot = new GameObject("[Nexus_AudioService]");
-            UnityEngine.Object.DontDestroyOnLoad(_audioRoot);
+            _audioRoot = AudioRootProvider?.GetOrCreateRoot();
+            if (_audioRoot == null)
+            {
+                _audioRoot = new GameObject("[Nexus_AudioService]");
+                UnityEngine.Object.DontDestroyOnLoad(_audioRoot);
+            }
 
             _bgmSourceActive = _audioRoot.AddComponent<AudioSource>();
             _bgmSourceActive.loop = true;
@@ -181,7 +205,10 @@ namespace Nexus.Core.Services
         {
             if (_audioRoot != null)
             {
-                UnityEngine.Object.Destroy(_audioRoot);
+                if (AudioRootProvider is DefaultAudioRootProvider)
+                {
+                    UnityEngine.Object.Destroy(_audioRoot);
+                }
                 _audioRoot = null;
             }
             _sfxPool.Clear();

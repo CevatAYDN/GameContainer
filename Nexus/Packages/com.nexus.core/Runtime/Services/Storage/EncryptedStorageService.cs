@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -94,7 +95,7 @@ namespace Nexus.Core.Services
                 byte[] computedHmac = ComputeHmac(cipherText, iv);
                 if (!CompareHashes(hmac, computedHmac))
                 {
-                    Debug.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
                     return defaultValue;
                 }
 
@@ -108,7 +109,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
                 return defaultValue;
             }
         }
@@ -142,7 +143,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[EncryptedStorage] Save write failed for key '{key}': {ex.Message}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Save write failed for key '{key}': {ex.Message}");
             }
         }
 

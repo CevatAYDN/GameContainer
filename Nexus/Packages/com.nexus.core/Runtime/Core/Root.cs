@@ -80,7 +80,7 @@ namespace Nexus.Core
 #if UNITY_EDITOR
             if (parentRoot == this)
             {
-                Debug.LogWarning($"[Nexus] Auto-fixed circular reference on Root '{gameObject.name}': parentRoot was set to itself. Resetting parentRoot to null.");
+                NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogWarning($"[Nexus] Auto-fixed circular reference on Root '{gameObject.name}': parentRoot was set to itself. Resetting parentRoot to null.");
                 parentRoot = null;
             }
 #endif
@@ -130,13 +130,14 @@ namespace Nexus.Core
                     int timeoutFrames = parentTimeoutFrames;
                     while (!parentRoot.IsInitialized && timeoutFrames > 0)
                     {
-                        await Awaitable.NextFrameAsync(Context.LifetimeToken);
+                        await Task.Yield();
+                        Context.LifetimeToken.ThrowIfCancellationRequested();
                         timeoutFrames--;
                     }
 
                     if (!parentRoot.IsInitialized)
                     {
-                        Debug.LogWarning($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Proceeding independently.");
+                        NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogWarning($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Proceeding independently.");
                     }
                 }
 
@@ -169,13 +170,14 @@ namespace Nexus.Core
                     int timeoutFrames = siblingTimeoutFrames;
                     while (sibling != null && !sibling.IsInitialized && timeoutFrames > 0)
                     {
-                        await Awaitable.NextFrameAsync(Context.LifetimeToken);
+                        await Task.Yield();
+                        Context.LifetimeToken.ThrowIfCancellationRequested();
                         timeoutFrames--;
                     }
 
                     if (sibling != null && !sibling.IsInitialized)
                     {
-                        Debug.LogWarning($"[Nexus] Root '{gameObject.name}' timed out waiting for sibling root '{sibling.gameObject.name}' to initialize. Proceeding independently.");
+                        NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogWarning($"[Nexus] Root '{gameObject.name}' timed out waiting for sibling root '{sibling.gameObject.name}' to initialize. Proceeding independently.");
                     }
                 }
 
@@ -210,7 +212,7 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[Nexus] Root initialization failed: {ex.Message}\n{ex.StackTrace}");
+                NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogError($"[Nexus] Root initialization failed: {ex.Message}\n{ex.StackTrace}");
                 if (Context != null)
                 {
                     Context.Dispose();

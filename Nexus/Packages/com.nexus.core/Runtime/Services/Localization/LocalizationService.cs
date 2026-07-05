@@ -9,23 +9,29 @@ namespace Nexus.Core.Services
     public class LocalizationService : ILocalizationService, INexusService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
+        [Inject] public ILocalizationTableProvider TableProvider { get; set; }
 
         public string CurrentLanguage { get; private set; } = "en";
         public event Action<string> OnLanguageChanged;
         public bool IsRTL => CurrentLanguage == "ar";
 
         private readonly Dictionary<string, Dictionary<string, string>> _localizedTable = new Dictionary<string, Dictionary<string, string>>();
+        private readonly object _tableLock = new();
 
         public ValueTask InitializeAsync(CancellationToken ct)
         {
             LoadSavedLanguage();
             BuildLocalizationDictionary();
+            LoadExternalTables();
             return default;
         }
 
         public void OnDispose()
         {
-            _localizedTable.Clear();
+            lock (_tableLock)
+            {
+                _localizedTable.Clear();
+            }
         }
 
         private void LoadSavedLanguage()
@@ -52,14 +58,18 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(key)) return fallback;
 
-            if (_localizedTable.TryGetValue(CurrentLanguage, out var dict) && dict.TryGetValue(key, out var val))
+            lock (_tableLock)
             {
-                return FormatRTLIfNeeded(val);
+                if (_localizedTable.TryGetValue(CurrentLanguage, out var dict) && dict.TryGetValue(key, out var val))
+                {
+                    return FormatRTLIfNeeded(val);
+                }
+                if (_localizedTable.TryGetValue("en", out var enDict) && enDict.TryGetValue(key, out var enVal))
+                {
+                    return FormatRTLIfNeeded(enVal);
+                }
             }
-            if (_localizedTable.TryGetValue("en", out var enDict) && enDict.TryGetValue(key, out var enVal))
-            {
-                return FormatRTLIfNeeded(enVal);
-            }
+
             return FormatRTLIfNeeded(!string.IsNullOrEmpty(fallback) ? fallback : key);
         }
 
@@ -73,48 +83,71 @@ namespace Nexus.Core.Services
 
         private void BuildLocalizationDictionary()
         {
-            // Default universal UI fallback strings
-            var en = new Dictionary<string, string>
+            lock (_tableLock)
             {
-                { "btn_ok", "OK" },
-                { "btn_cancel", "Cancel" },
-                { "btn_play", "Play" },
-                { "btn_retry", "Retry" },
-                { "btn_close", "Close" },
-                { "btn_settings", "Settings" },
-                { "win_title", "Level Completed!" },
-                { "fail_title", "Game Over!" }
-            };
+                // Default universal UI fallback strings
+                if (!_localizedTable.ContainsKey("en"))
+                {
+                    _localizedTable["en"] = new Dictionary<string, string>
+                    {
+                        { "btn_ok", "OK" },
+                        { "btn_cancel", "Cancel" },
+                        { "btn_play", "Play" },
+                        { "btn_retry", "Retry" },
+                        { "btn_close", "Close" },
+                        { "btn_settings", "Settings" },
+                        { "win_title", "Level Completed!" },
+                        { "fail_title", "Game Over!" }
+                    };
+                }
 
-            var tr = new Dictionary<string, string>
+                if (!_localizedTable.ContainsKey("tr"))
+                {
+                    _localizedTable["tr"] = new Dictionary<string, string>
+                    {
+                        { "btn_ok", "Tamam" },
+                        { "btn_cancel", "İptal" },
+                        { "btn_play", "Oyna" },
+                        { "btn_retry", "Tekrar Denet" },
+                        { "btn_close", "Kapat" },
+                        { "btn_settings", "Ayarlar" },
+                        { "win_title", "Bölüm Tamamlandı!" },
+                        { "fail_title", "Oyun Bitti!" }
+                    };
+                }
+            }
+        }
+
+        private void LoadExternalTables()
+        {
+            if (TableProvider == null) return;
+
+            var languages = new[] { "en", "tr" };
+            for (int i = 0; i < languages.Length; i++)
             {
-                { "btn_ok", "Tamam" },
-                { "btn_cancel", "İptal" },
-                { "btn_play", "Oyna" },
-                { "btn_retry", "Tekrar Denet" },
-                { "btn_close", "Kapat" },
-                { "btn_settings", "Ayarlar" },
-                { "win_title", "Bölüm Tamamlandı!" },
-                { "fail_title", "Oyun Bitti!" }
-            };
-
-            _localizedTable["en"] = en;
-            _localizedTable["tr"] = tr;
+                if (TableProvider.TryGetTable(languages[i], out var table) && table != null)
+                {
+                    RegisterLanguageTable(languages[i], table);
+                }
+            }
         }
 
         public void RegisterLanguageTable(string langCode, IDictionary<string, string> dictionary)
         {
             if (string.IsNullOrEmpty(langCode) || dictionary == null) return;
             string key = langCode.ToLower();
-            if (!_localizedTable.TryGetValue(key, out var table))
+            lock (_tableLock)
             {
-                table = new Dictionary<string, string>();
-                _localizedTable[key] = table;
-            }
+                if (!_localizedTable.TryGetValue(key, out var table))
+                {
+                    table = new Dictionary<string, string>();
+                    _localizedTable[key] = table;
+                }
 
-            foreach (var kvp in dictionary)
-            {
-                table[kvp.Key] = kvp.Value;
+                foreach (var kvp in dictionary)
+                {
+                    table[kvp.Key] = kvp.Value;
+                }
             }
         }
 
@@ -122,12 +155,15 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(langCode) || string.IsNullOrEmpty(key)) return;
             string langKey = langCode.ToLower();
-            if (!_localizedTable.TryGetValue(langKey, out var table))
+            lock (_tableLock)
             {
-                table = new Dictionary<string, string>();
-                _localizedTable[langKey] = table;
+                if (!_localizedTable.TryGetValue(langKey, out var table))
+                {
+                    table = new Dictionary<string, string>();
+                    _localizedTable[langKey] = table;
+                }
+                table[key] = value;
             }
-            table[key] = value;
         }
     }
 }

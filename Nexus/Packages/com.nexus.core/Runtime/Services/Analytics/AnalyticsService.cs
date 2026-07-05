@@ -1,6 +1,8 @@
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
+using UnityEngine;
 
 namespace Nexus.Core.Services
 {
@@ -18,7 +20,7 @@ namespace Nexus.Core.Services
 
         public void LogEvent(string eventName)
         {
-            UnityEngine.Debug.Log($"[NexusAnalytics] Event: {eventName}");
+            NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[NexusAnalytics] Event: {eventName}");
         }
 
         public void LogEvent(string eventName, Dictionary<string, object> parameters)
@@ -29,12 +31,12 @@ namespace Nexus.Core.Services
                 foreach (var kvp in parameters)
                     pList.Add($"{kvp.Key}: {kvp.Value}");
             }
-            UnityEngine.Debug.Log($"[NexusAnalytics] Event: {eventName} | Params: {string.Join(", ", pList)}");
+            NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[NexusAnalytics] Event: {eventName} | Params: {string.Join(", ", pList)}");
         }
 
         public void SetUserProperty(string key, string value)
         {
-            UnityEngine.Debug.Log($"[NexusAnalytics] UserProperty: {key} = {value}");
+            NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[NexusAnalytics] UserProperty: {key} = {value}");
         }
     }
 }

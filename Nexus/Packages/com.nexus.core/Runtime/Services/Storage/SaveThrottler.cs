@@ -6,9 +6,20 @@ using Nexus.Core;
 
 namespace Nexus.Core.Services
 {
+    public interface ITimeProvider
+    {
+        float Now { get; }
+    }
+
+    public class UnityTimeProvider : ITimeProvider
+    {
+        public float Now => Time.realtimeSinceStartup;
+    }
+
     public class SaveThrottler : ISaveThrottler, INexusService, ITickable
     {
         [Inject] public ITickService TickService { get; set; }
+        [Inject] public ITimeProvider TimeProvider { get; set; }
 
         private const float ThrottleSeconds = 2f;
 
@@ -17,7 +28,7 @@ namespace Nexus.Core.Services
         private bool _pendingSave;
 
         public float SecondsSinceLastSave =>
-            _lastSaveTime < 0f ? 999f : Time.realtimeSinceStartup - _lastSaveTime;
+            _lastSaveTime < 0f ? 999f : (TimeProvider?.Now ?? Time.realtimeSinceStartup) - _lastSaveTime;
 
         public ValueTask InitializeAsync(CancellationToken ct)
         {
@@ -57,7 +68,7 @@ namespace Nexus.Core.Services
 
         public void Tick()
         {
-            Tick(Time.deltaTime);
+            Tick(TimeProvider?.Now ?? Time.realtimeSinceStartup);
         }
 
         private void FlushPending()
@@ -83,7 +94,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[SaveThrottler] Save execution failed: {ex.Message}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[SaveThrottler] Save execution failed: {ex.Message}");
             }
         }
     }

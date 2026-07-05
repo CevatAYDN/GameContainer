@@ -1,5 +1,6 @@
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine;
 
 namespace Nexus.Core.Services
@@ -56,7 +57,7 @@ namespace Nexus.Core.Services
             }
             catch (System.Exception ex)
             {
-                Debug.LogWarning($"[HapticService] Failed to initialize Android Vibrator: {ex.Message}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[HapticService] Failed to initialize Android Vibrator: {ex.Message}");
             }
         }
 #endif

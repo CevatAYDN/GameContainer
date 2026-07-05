@@ -41,7 +41,14 @@ namespace Nexus.Core
                     EditorUtility.SetDirty(this);
                 }
 #endif
-                Debug.Log($"[Nexus] Migrated {name} ({GetType().Name}) from version {oldVersion} to {_version}.");
+                if (NexusRuntime.Logger != null)
+                {
+                    NexusRuntime.Logger.Log($"[Nexus] Migrated {name} ({GetType().Name}) from version {oldVersion} to {_version}.");
+                }
+                else
+                {
+                    Debug.Log($"[Nexus] Migrated {name} ({GetType().Name}) from version {oldVersion} to {_version}.");
+                }
             }
         }
 

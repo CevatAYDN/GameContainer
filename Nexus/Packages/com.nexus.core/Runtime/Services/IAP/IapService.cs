@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -57,7 +58,7 @@ namespace Nexus.Core.Services
             var productList = new List<ProductDefinition>(_catalog.Values);
             _adapter?.Initialize(productList, (success) =>
             {
-                Debug.Log($"[IapService] Store adapter initialized: {success}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[IapService] Store adapter initialized: {success}");
             });
         }
 
@@ -80,7 +81,7 @@ namespace Nexus.Core.Services
             }
             else
             {
-                Debug.Log($"[IapService Mock] Purchased product: {productId}");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[IapService Mock] Purchased product: {productId}");
                 _mockOwnedProducts.Add(productId);
                 onComplete?.Invoke(true, productId);
             }
@@ -94,7 +95,7 @@ namespace Nexus.Core.Services
             }
             else
             {
-                Debug.Log("[IapService Mock] Restored purchases");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log("[IapService Mock] Restored purchases");
                 onComplete?.Invoke(true);
             }
         }

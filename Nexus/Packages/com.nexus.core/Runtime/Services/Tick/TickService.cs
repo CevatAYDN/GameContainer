@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -158,7 +159,7 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogException(ex);
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
                 }
             }
         }
@@ -177,7 +178,7 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogException(ex);
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
                 }
             }
         }
@@ -196,7 +197,7 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogException(ex);
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
                 }
             }
         }

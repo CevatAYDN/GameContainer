@@ -8,6 +8,7 @@ using UnityEngine;
 using UnityEngine.Profiling;
 using UnityEngine.Scripting;
 using Unity.Profiling;
+using Nexus.Core.Services;
 
 namespace Nexus.Core
 {
@@ -95,7 +96,7 @@ namespace Nexus.Core
             catch (Exception ex)
             {
                 SignalBus.RaiseUnhandledException(ex, errorContext);
-                UnityEngine.Debug.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
+                NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
             }
         }
     }
@@ -117,8 +118,18 @@ namespace Nexus.Core
         private readonly Dictionary<Type, List<CommandHandlerInfo>> _commandHandlers = new();
         private readonly Dictionary<Type, List<CompositeTriggerState>> _compositeTriggersBySignal = new();
         private readonly List<CompositeTriggerState> _allCompositeTriggers = new();
+        private readonly object _handlerReadLock = new();
 
-        public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers => _commandHandlers;
+        public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers
+        {
+            get
+            {
+                lock (_handlerReadLock)
+                {
+                    return new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers);
+                }
+            }
+        }
 
         /// <summary>
         /// Returns all registered signal→handler mappings.
@@ -128,18 +139,17 @@ namespace Nexus.Core
         {
             get
             {
-                // Allocate-once wrapper: SignalBus is fully configured before runtime use
-                if (_cachedRegistered == null)
+                lock (_handlerReadLock)
                 {
                     var dict = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>(_commandHandlers.Count);
                     foreach (var kvp in _commandHandlers)
+                    {
                         dict[kvp.Key] = kvp.Value;
-                    _cachedRegistered = dict;
+                    }
+                    return dict;
                 }
-                return _cachedRegistered;
             }
         }
-        private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _cachedRegistered;
 
         private readonly Dictionary<Type, SubscriptionNode> _subscriptions = new();
         private readonly object _subLock = new();
@@ -328,7 +338,7 @@ namespace Nexus.Core
             }
             catch (OperationCanceledException) when (!_context.LifetimeToken.IsCancellationRequested)
             {
-                UnityEngine.Debug.LogError($"[Nexus] Async signal '{typeof(T).Name}' timed out after {timeoutMilliseconds}ms.");
+                NexusRuntime.Logger?.LogError($"[Nexus] Async signal '{typeof(T).Name}' timed out after {timeoutMilliseconds}ms.");
                 throw;
             }
         }
@@ -348,7 +358,7 @@ namespace Nexus.Core
                 else
                 {
                     OnUnhandledException?.Invoke(ex, $"FireAsyncAndForget failed for signal '{typeof(T).FullName}'");
-                    UnityEngine.Debug.LogError($"[Nexus] FireAsyncAndForget signal '{typeof(T).Name}' failed: {ex.Message}\n{ex.StackTrace}");
+                    NexusRuntime.Logger?.LogError($"[Nexus] FireAsyncAndForget signal '{typeof(T).Name}' failed: {ex.Message}\n{ex.StackTrace}");
                 }
             }
         }
@@ -470,7 +480,7 @@ namespace Nexus.Core
                     $"Synchronous Fire() was called for signal '{typeof(T).FullName}', but it has asynchronous handlers or subscriptions registered. " +
                     "To preserve sequential ordering and prevent race conditions, you must invoke this signal using FireAsync() and await its completion, or use FireAsyncAndForget().");
 #else
-                UnityEngine.Debug.LogError(
+                NexusRuntime.Logger?.LogError(
                     $"[Nexus] Synchronous Fire() was called for signal '{typeof(T).FullName}', but it has asynchronous handlers or subscriptions registered. " +
                     "This violates sequential ordering guarantees and will run fire-and-forget. Please use FireAsync() or FireAsyncAndForget().");
                 _ = FireInternalAsyncFromSync(signal, isCrossContextSource);
@@ -482,7 +492,7 @@ namespace Nexus.Core
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (!_subscriptions.ContainsKey(type) && !_commandHandlers.ContainsKey(type))
             {
-                UnityEngine.Debug.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
             }
 #endif
             s_stackDepth.Value++;
@@ -492,7 +502,7 @@ namespace Nexus.Core
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
 #else
-                UnityEngine.Debug.LogError($"[Nexus] Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
+                NexusRuntime.Logger?.LogError($"[Nexus] Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
                 return;
 #endif
             }
@@ -606,7 +616,7 @@ namespace Nexus.Core
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 OnUnhandledException?.Invoke(ex, $"Async bridge failed for signal '{typeof(T).FullName}'");
-                UnityEngine.Debug.LogError($"[Nexus] Async bridge failed for signal '{typeof(T).FullName}': {ex.Message}\n{ex.StackTrace}");
+                NexusRuntime.Logger?.LogError($"[Nexus] Async bridge failed for signal '{typeof(T).FullName}': {ex.Message}\n{ex.StackTrace}");
             }
         }
 
@@ -646,7 +656,7 @@ namespace Nexus.Core
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
 #else
-                UnityEngine.Debug.LogError($"[Nexus] Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
+                NexusRuntime.Logger?.LogError($"[Nexus] Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
                 return;
 #endif
             }
@@ -927,7 +937,7 @@ namespace Nexus.Core
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                         throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
 #else
-                        UnityEngine.Debug.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
                         shouldRun = false;
                         break;
 #endif
@@ -1008,7 +1018,7 @@ namespace Nexus.Core
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                         throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
 #else
-                        UnityEngine.Debug.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
                         shouldRun = false;
                         break;
 #endif
@@ -1113,7 +1123,7 @@ namespace Nexus.Core
             }
             else
             {
-                UnityEngine.Debug.LogWarning($"[Nexus] Signal injection: no matching field or property found in '{commandType.Name}' for signal type '{signalType.Name}'. Command will execute with default signal values.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Signal injection: no matching field or property found in '{commandType.Name}' for signal type '{signalType.Name}'. Command will execute with default signal values.");
                 newSetter = (target, val) => { };
             }
 
@@ -1332,11 +1342,11 @@ namespace Nexus.Core
             
             if (signal is CommandFailedSignal)
             {
-                UnityEngine.Debug.LogException(ex);
+                NexusRuntime.Logger?.LogException(ex);
                 return RecoveryAction.Abort;
             }
 
-            UnityEngine.Debug.LogError($"[Nexus] Command {commandType.Name} failed: {ex.Message}\n{ex.StackTrace}");
+            NexusRuntime.Logger?.LogError($"[Nexus] Command {commandType.Name} failed: {ex.Message}\n{ex.StackTrace}");
             
             if (_container.IsRegistered(typeof(IRecoveryStrategy)))
             {
@@ -1367,7 +1377,7 @@ namespace Nexus.Core
                     {
                         if (retryCount >= decision.MaxRetries)
                         {
-                            UnityEngine.Debug.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
+                            NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
                             throw new InvalidOperationException($"Retry limit reached for command {commandType.Name}.", ex);
                         }
                         return RecoveryAction.Retry;
@@ -1375,7 +1385,7 @@ namespace Nexus.Core
                 }
                 catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
                 {
-                    UnityEngine.Debug.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
+                    NexusRuntime.Logger?.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
                 }
             }
 
@@ -1395,11 +1405,11 @@ namespace Nexus.Core
             
             if (signal is CommandFailedSignal)
             {
-                UnityEngine.Debug.LogException(ex);
+                NexusRuntime.Logger?.LogException(ex);
                 return RecoveryAction.Abort;
             }
 
-            UnityEngine.Debug.LogError($"[Nexus] Command {commandType.Name} failed: {ex.Message}\n{ex.StackTrace}");
+            NexusRuntime.Logger?.LogError($"[Nexus] Command {commandType.Name} failed: {ex.Message}\n{ex.StackTrace}");
             
             if (_container.IsRegistered(typeof(IRecoveryStrategy)))
             {
@@ -1438,7 +1448,7 @@ namespace Nexus.Core
                     {
                         if (retryCount >= decision.MaxRetries)
                         {
-                            UnityEngine.Debug.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
+                            NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
                             throw new InvalidOperationException($"Retry limit reached for command {commandType.Name}.", ex);
                         }
                         return RecoveryAction.Retry;
@@ -1446,7 +1456,7 @@ namespace Nexus.Core
                 }
                 catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
                 {
-                    UnityEngine.Debug.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
+                    NexusRuntime.Logger?.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
                 }
             }
 
@@ -1523,7 +1533,7 @@ namespace Nexus.Core
 
             if (_inFlightAsyncCommands > 0)
             {
-                UnityEngine.Debug.LogWarning($"[Nexus] SignalBus disposed while {_inFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_inFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
             }
 
             _commandHandlers.Clear();

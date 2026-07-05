@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
@@ -106,24 +107,28 @@ namespace Nexus.Core
                 allLifecycles.AddRange(lifecycles);
             }
 
-            // Auto-discover lifecycle class if not explicitly registered as a component
-            if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
+            // Auto-discover lifecycle class only when enabled in data and not explicitly provided
+            if (_contextData == null || _contextData.EnableAutoDiscovery)
             {
-                var lifecycleType = FindLifecycleTypeByConvention();
-                if (lifecycleType != null)
+                if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
                 {
-                    try
+                    var lifecycleType = FindLifecycleTypeByConvention();
+                    if (lifecycleType != null)
                     {
-                        var instance = Activator.CreateInstance(lifecycleType) as IContextLifecycle;
-                        if (instance != null)
+                        try
                         {
-                            Container.BindInstance<IContextLifecycle>(instance);
-                            allLifecycles.Add(instance);
+                            var instance = Activator.CreateInstance(lifecycleType) as IContextLifecycle;
+                            if (instance != null)
+                            {
+                                Container.BindInstance<IContextLifecycle>(instance);
+                                allLifecycles.Add(instance);
+                            }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        UnityEngine.Debug.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
+                        catch (Exception ex)
+                {
+                    var logger = TryResolve<ILoggerService>();
+                    logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
+                }
                     }
                 }
             }
@@ -279,7 +284,7 @@ namespace Nexus.Core
                 {
                     if (logWarnings)
                     {
-                        UnityEngine.Debug.LogWarning($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
+                        TryResolve<ILoggerService>()?.LogWarning($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
                     }
                 }
             }
@@ -317,7 +322,7 @@ namespace Nexus.Core
                     }
                     catch (Exception ex)
                     {
-                        UnityEngine.Debug.LogWarning($"[Nexus] Failed to check assembly references for '{assembly.GetName().Name}': {ex.Message}");
+                        NexusRuntime.Logger?.LogWarning($"[Nexus] Failed to check assembly references for '{assembly.GetName().Name}': {ex.Message}");
                         shouldScan = false;
                     }
                 }
@@ -368,6 +373,11 @@ namespace Nexus.Core
         public T Resolve<T>() where T : class
         {
             return Container.Resolve<T>();
+        }
+
+        public T TryResolve<T>() where T : class
+        {
+            return Container.TryResolve<T>();
         }
 
         public void RegisterView(IView view)
@@ -438,7 +448,7 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    UnityEngine.Debug.LogException(ex);
+                    TryResolve<ILoggerService>()?.LogException(ex);
                 }
             }
 
@@ -455,7 +465,7 @@ namespace Nexus.Core
                     }
                     catch (Exception ex)
                     {
-                        UnityEngine.Debug.LogException(ex);
+                        TryResolve<ILoggerService>()?.LogException(ex);
                     }
                 }
             }
@@ -480,7 +490,7 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    UnityEngine.Debug.LogException(ex);
+                    TryResolve<ILoggerService>()?.LogException(ex);
                 }
             }
 

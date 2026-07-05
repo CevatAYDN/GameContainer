@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Reflection;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -42,7 +43,7 @@ namespace Nexus.Core
                 // (e.g. async Addressables prefab instantiation before Root.Start())
                 if (!root.IsInitialized)
                 {
-                    UnityEngine.Debug.LogWarning($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is not yet initialized. " +
+                    NexusRuntime.Logger?.LogWarning($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is not yet initialized. " +
                         "View will not bind until Root.Start() completes. Consider loading this prefab after Root initialization.");
                 }
             }
@@ -55,7 +56,7 @@ namespace Nexus.Core
             }
             else if (roots.Length == 0)
             {
-                UnityEngine.Debug.LogError($"[Nexus] View '{gameObject.name}' OnEnable: No Root GameObject found in scene. " +
+                NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: No Root GameObject found in scene. " +
                     "Create a Root via GameObject → Nexus → Create Root.");
             }
         }
@@ -75,7 +76,7 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                Debug.LogWarning($"[Nexus] View '{gameObject.name}' failed to unbind on disable: {ex.Message}");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] View '{gameObject.name}' failed to unbind on disable: {ex.Message}");
             }
         }
 
@@ -136,13 +137,19 @@ namespace Nexus.Core
         /// <param name="view">The view to register.</param>
         public void RegisterView(IView view)
         {
+            if (view == null) return;
             if (_activeMediators.ContainsKey(view)) return;
 
-            view.Bind(_context);
+            var mediatorAttr = view.GetType().GetCustomAttribute<MediatorAttribute>();
+            if (mediatorAttr == null)
+            {
+                var logger = _context?.Resolve<ILoggerService>();
+                logger?.LogWarning($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
+                view.Bind(_context);
+                return;
+            }
 
-            var viewType = view.GetType();
-            var mediatorAttr = viewType.GetCustomAttribute<MediatorAttribute>();
-            if (mediatorAttr == null) return;
+            view.Bind(_context);
 
             var mediatorType = mediatorAttr.MediatorType;
             var mediator = GetMediator(mediatorType);
@@ -157,6 +164,7 @@ namespace Nexus.Core
         /// <param name="view">The view to unregister.</param>
         public void UnregisterView(IView view)
         {
+            if (view == null) return;
             view.Unbind();
 
             if (_activeMediators.Remove(view, out var mediator))
@@ -220,7 +228,8 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogException(ex);
+                    var logger = _context?.Resolve<ILoggerService>();
+                    logger?.LogException(ex);
                 }
             }
             _activeMediators.Clear();

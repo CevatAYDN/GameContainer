@@ -1,5 +1,5 @@
 using System;
-using UnityEngine;
+using Nexus.Core.Services;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
@@ -113,13 +113,14 @@ namespace Nexus.Core
 
         public RecoveryDecision OnCommandFailed(CommandFailureContext failure)
         {
+            var logger = NexusRuntime.CurrentContext?.Resolve<ILoggerService>();
             if (failure.RetryCount < _maxRetries)
             {
-                Debug.LogWarning($"[Nexus] Command {failure.CommandType.Name} failed (attempt {failure.RetryCount + 1}/{_maxRetries}). Retrying...\n{failure.Exception.Message}");
+                logger?.LogWarning($"[Nexus] Command {failure.CommandType.Name} failed (attempt {failure.RetryCount + 1}/{_maxRetries}). Retrying...\n{failure.Exception.Message}");
                 return RecoveryDecision.Retry(_maxRetries);
             }
 
-            Debug.LogError($"[Nexus] Command {failure.CommandType.Name} failed after {_maxRetries} retries. Aborting signal chain.\n{failure.Exception}");
+            logger?.LogError($"[Nexus] Command {failure.CommandType.Name} failed after {_maxRetries} retries. Aborting signal chain.\n{failure.Exception}");
             return RecoveryDecision.Abort();
         }
     }

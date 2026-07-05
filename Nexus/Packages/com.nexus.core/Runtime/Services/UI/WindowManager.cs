@@ -30,8 +30,11 @@ namespace Nexus.Core.Services
     {
         Task<GameObject> OpenWindowAsync(string windowName, UILayer layer = UILayer.Screen, object args = null);
         void OpenWindow(string windowName, object args = null);
+        Task CloseWindowAsync(string windowName);
         void CloseWindow(string windowName);
+        Task CloseTopWindowAsync();
         void CloseTopWindow();
+        Task CloseAllAsync();
         void CloseAll();
         bool IsWindowOpen(string windowName);
         GameObject GetWindow(string windowName);
@@ -139,7 +142,7 @@ namespace Nexus.Core.Services
             var prefab = request.asset as GameObject;
             if (prefab == null)
             {
-                Debug.LogError($"[WindowManager] Window prefab not found at path: UI/Windows/{windowName}");
+                NexusRuntime.Logger?.LogError($"[WindowManager] Window prefab not found at path: UI/Windows/{windowName}");
                 return null;
             }
 
@@ -170,7 +173,7 @@ namespace Nexus.Core.Services
             _ = OpenWindowAsync(windowName, UILayer.Screen, args);
         }
 
-        public async void CloseWindow(string windowName)
+        public async Task CloseWindowAsync(string windowName)
         {
             if (!_activeWindows.TryGetValue(windowName, out var go) || go == null) return;
 
@@ -181,36 +184,51 @@ namespace Nexus.Core.Services
             for (int i = 0; i < lifecycles.Length; i++)
             {
                 try { await lifecycles[i].OnClosingAsync(CancellationToken.None); }
-                catch (Exception ex) { Debug.LogException(ex); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
             for (int i = 0; i < lifecycles.Length; i++)
             {
                 try { await lifecycles[i].OnClosedAsync(CancellationToken.None); }
-                catch (Exception ex) { Debug.LogException(ex); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
             UnityEngine.Object.Destroy(go);
         }
 
-        public void CloseTopWindow()
+        public void CloseWindow(string windowName)
+        {
+            _ = CloseWindowAsync(windowName);
+        }
+
+        public async Task CloseTopWindowAsync()
         {
             if (_windowHistory.Count > 0)
             {
                 var top = _windowHistory[_windowHistory.Count - 1];
-                CloseWindow(top);
+                await CloseWindowAsync(top);
             }
         }
 
-        public void CloseAll()
+        public void CloseTopWindow()
+        {
+            _ = CloseTopWindowAsync();
+        }
+
+        public async Task CloseAllAsync()
         {
             var windows = new List<string>(_activeWindows.Keys);
             foreach (var win in windows)
             {
-                CloseWindow(win);
+                await CloseWindowAsync(win);
             }
             _activeWindows.Clear();
             _windowHistory.Clear();
+        }
+
+        public void CloseAll()
+        {
+            _ = CloseAllAsync();
         }
 
         public bool IsWindowOpen(string windowName) => _activeWindows.ContainsKey(windowName);

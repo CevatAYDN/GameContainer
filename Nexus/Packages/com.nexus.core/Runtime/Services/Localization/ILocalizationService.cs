@@ -2,6 +2,11 @@ using System;
 
 namespace Nexus.Core.Services
 {
+    public interface ILocalizationTableProvider
+    {
+        bool TryGetTable(string langCode, out System.Collections.Generic.IDictionary<string, string> table);
+    }
+
     public interface ILocalizationService
     {
         string CurrentLanguage { get; }

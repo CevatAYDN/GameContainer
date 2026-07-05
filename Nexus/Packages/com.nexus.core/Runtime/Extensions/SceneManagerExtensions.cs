@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.Scripting;
@@ -60,7 +61,7 @@ namespace Nexus.Core.Extensions
                 var op = SceneManager.LoadSceneAsync(sceneName, mode);
                 if (op == null)
                 {
-                    Debug.LogError($"[Nexus] Scene '{sceneName}' not found in build settings.");
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogError($"[Nexus] Scene '{sceneName}' not found in build settings.");
                     return;
                 }
 
@@ -69,7 +70,7 @@ namespace Nexus.Core.Extensions
                 while (!op.isDone)
                 {
                     ct.ThrowIfCancellationRequested();
-                    await Awaitable.NextFrameAsync();
+                    await Task.Yield();
                 }
 
                 _signalBus.Fire(new SceneLoadedSignal(sceneName));
@@ -85,14 +86,14 @@ namespace Nexus.Core.Extensions
             var op = SceneManager.UnloadSceneAsync(sceneName);
             if (op == null)
             {
-                Debug.LogWarning($"[Nexus] Scene '{sceneName}' is not loaded or cannot be unloaded.");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[Nexus] Scene '{sceneName}' is not loaded or cannot be unloaded.");
                 return;
             }
 
             while (!op.isDone)
             {
                 ct.ThrowIfCancellationRequested();
-                await Awaitable.NextFrameAsync();
+                await Task.Yield();
             }
 
             _signalBus.Fire(new SceneUnloadedSignal(sceneName));
@@ -107,7 +108,7 @@ namespace Nexus.Core.Extensions
             }
             else
             {
-                Debug.LogWarning($"[Nexus] Cannot set active scene '{sceneName}': not loaded or invalid.");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[Nexus] Cannot set active scene '{sceneName}': not loaded or invalid.");
             }
         }
     }

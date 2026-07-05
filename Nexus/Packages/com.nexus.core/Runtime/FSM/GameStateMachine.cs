@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -46,7 +47,7 @@ namespace Nexus.Core.FSM
         {
             if (!_states.TryGetValue(stateType, out var nextState))
             {
-                Debug.LogError($"[GameStateMachine] State {stateType.Name} is not registered!");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogError($"[GameStateMachine] State {stateType.Name} is not registered!");
                 return;
             }
 
@@ -64,7 +65,7 @@ namespace Nexus.Core.FSM
                 }
                 catch (Exception ex)
                 {
-                    Debug.LogException(ex);
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
                 }
             }
 
@@ -76,7 +77,7 @@ namespace Nexus.Core.FSM
             }
             catch (Exception ex)
             {
-                Debug.LogException(ex);
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
             }
         }
 

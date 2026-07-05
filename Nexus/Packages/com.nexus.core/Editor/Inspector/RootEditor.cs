@@ -20,7 +20,7 @@ namespace Nexus.Editor.Inspector
                 fontSize = 14,
                 alignment = TextAnchor.MiddleCenter
             };
-            EditorGUILayout.LabelLabel("Nexus Root Context", headerStyle);
+            EditorGUILayout.LabelField("Nexus Root Context", headerStyle);
             EditorGUILayout.Space(5);
 
             // Status Badge

@@ -124,6 +124,7 @@ namespace Nexus.Core
         void RegisterView(IView view);
         void UnregisterView(IView view);
         T Resolve<T>() where T : class;
+        T TryResolve<T>() where T : class;
         IContext Parent { get; }
         void RegisterPlugin(INexusPlugin plugin);
         void RemovePlugin(INexusPlugin plugin);

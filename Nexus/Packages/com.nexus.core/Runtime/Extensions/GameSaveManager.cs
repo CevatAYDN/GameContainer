@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -82,7 +83,7 @@ namespace Nexus.Core.Extensions
         {
             if (_model == null)
             {
-                Debug.LogWarning("[Nexus] No save model registered. Skipping save.");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning("[Nexus] No save model registered. Skipping save.");
                 return Task.CompletedTask;
             }
 
@@ -111,7 +112,7 @@ namespace Nexus.Core.Extensions
         {
             if (_model == null)
             {
-                Debug.LogWarning("[Nexus] No save model registered. Skipping load.");
+                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning("[Nexus] No save model registered. Skipping load.");
                 return Task.FromResult(false);
             }
 
