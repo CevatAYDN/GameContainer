@@ -270,6 +270,12 @@ namespace Nexus.Core
             return IsRegistered(typeof(T)) ? Resolve<T>() : null;
         }
 
+        public object TryResolve(Type type)
+        {
+            if (type == null) return null;
+            return IsRegistered(type) ? Resolve(type) : null;
+        }
+
         public object Resolve(Type type)
         {
             if (type == typeof(NexusDI))
@@ -385,16 +391,22 @@ namespace Nexus.Core
             for (int i = 0; i < meta.Fields.Length; i++)
             {
                 var f = meta.Fields[i];
-                var resolvedValue = Resolve(f.Type);
-                f.Field.SetValue(instance, resolvedValue);
+                var resolvedValue = TryResolve(f.Type);
+                if (resolvedValue != null)
+                {
+                    f.Field.SetValue(instance, resolvedValue);
+                }
             }
 
             // Inject properties
             for (int i = 0; i < meta.Properties.Length; i++)
             {
                 var p = meta.Properties[i];
-                var resolvedValue = Resolve(p.Type);
-                p.Property.SetValue(instance, resolvedValue);
+                var resolvedValue = TryResolve(p.Type);
+                if (resolvedValue != null)
+                {
+                    p.Property.SetValue(instance, resolvedValue);
+                }
             }
 
             // Inject methods (e.g. Construct)
@@ -404,7 +416,7 @@ namespace Nexus.Core
                 var args = new object[m.ParameterTypes.Length];
                 for (int j = 0; j < m.ParameterTypes.Length; j++)
                 {
-                    args[j] = Resolve(m.ParameterTypes[j]);
+                    args[j] = TryResolve(m.ParameterTypes[j]);
                 }
                 m.Method.Invoke(instance, args);
             }
@@ -423,7 +435,7 @@ namespace Nexus.Core
             var args = new object[paramTypes.Length];
             for (int i = 0; i < paramTypes.Length; i++)
             {
-                args[i] = Resolve(paramTypes[i]);
+                args[i] = TryResolve(paramTypes[i]);
             }
 
             try

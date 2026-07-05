@@ -259,7 +259,7 @@ namespace Nexus.Editor
             preserveSb.AppendLine("        // Forces IL2CPP to preserve members that are injected");
             preserveSb.AppendLine("        public static void PreserveMembers()");
             preserveSb.AppendLine("        {");
-            preserveSb.AppendLine("            #pragma warning disable 0169, 0414, 0219");
+            preserveSb.AppendLine("            #pragma warning disable 0162, 0169, 0414, 0219");
             preserveSb.AppendLine("            if (false)");
             preserveSb.AppendLine("            {");
 
@@ -298,7 +298,7 @@ namespace Nexus.Editor
             }
 
             preserveSb.AppendLine("            }");
-            preserveSb.AppendLine("            #pragma warning restore 0169, 0414, 0219");
+            preserveSb.AppendLine("            #pragma warning restore 0162, 0169, 0414, 0219");
             preserveSb.AppendLine("        }");
 
             // Assemble the final file
