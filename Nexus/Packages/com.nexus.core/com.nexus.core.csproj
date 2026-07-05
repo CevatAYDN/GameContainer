@@ -1,4 +1,4 @@
-﻿<Project>
+<Project>
   <!-- Generated file, do not modify, your changes will be overwritten (use AssetPostprocessor.OnGeneratedCSProject) -->
   <PropertyGroup>
     <BaseIntermediateOutputPath>Temp\obj\$(MSBuildProjectName)</BaseIntermediateOutputPath>
@@ -75,6 +75,20 @@
     <Compile Include="Runtime\Core\CompositeTriggerState.cs" />
     <Compile Include="Runtime\Core\VersionedScriptableObject.cs" />
     <Compile Include="Runtime\Core\CommandFailedSignal.cs" />
+    <Compile Include="Runtime\Services\Ads\AdService.cs" />
+    <Compile Include="Runtime\Services\Analytics\AnalyticsService.cs" />
+    <Compile Include="Runtime\Services\IAP\IapService.cs" />
+    <Compile Include="Runtime\Services\UI\WindowManager.cs" />
+    <Compile Include="Runtime\Services\Logging\LoggerService.cs" />
+    <Compile Include="Runtime\Services\Logging\ILoggerService.cs" />
+    <Compile Include="Runtime\Services\Storage\SaveThrottler.cs" />
+    <Compile Include="Runtime\Services\Storage\ISaveThrottler.cs" />
+    <Compile Include="Runtime\Services\Haptics\HapticService.cs" />
+    <Compile Include="Runtime\Services\Haptics\IHapticService.cs" />
+    <Compile Include="Runtime\Services\Localization\LocalizationService.cs" />
+    <Compile Include="Runtime\Services\Localization\ILocalizationService.cs" />
+    <Compile Include="Runtime\Services\Storage\UnityPlayerPrefsService.cs" />
+    <Compile Include="Runtime\Services\Storage\IPlayerPrefsService.cs" />
     <Compile Include="Runtime\Core\SignalBus.cs" />
     <Compile Include="Runtime\Queue\HybridQueue.cs" />
     <Compile Include="Runtime\Testing\NexusTestContext.cs" />

@@ -60,7 +60,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf(".Editor", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf(".Editor", StringComparison.OrdinalIgnoreCase) >= 0 || name == "com.nexus.core")
                     continue;
 
                 try
@@ -282,12 +282,17 @@ namespace Nexus.Editor
                 var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var p in properties)
                 {
-                    if (p.GetCustomAttribute<InjectAttribute>() != null && p.GetMethod != null)
+                    if (p.GetCustomAttribute<InjectAttribute>() != null)
                     {
-                        if (p.GetMethod.IsPublic)
+                        if (p.GetMethod != null && p.GetMethod.IsPublic)
+                        {
                             preserveSb.AppendLine($"                var _p_{type.Name}_{p.Name} = default({fullName}).{p.Name};");
+                            preserveSb.AppendLine($"                _ = _p_{type.Name}_{p.Name}; // Suppress CS0219 warning");
+                        }
                         else
+                        {
                             preserveSb.AppendLine($"                var _p_{type.Name}_{p.Name} = typeof({fullName}).GetProperty(\"{p.Name}\", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
+                        }
                     }
                 }
             }
