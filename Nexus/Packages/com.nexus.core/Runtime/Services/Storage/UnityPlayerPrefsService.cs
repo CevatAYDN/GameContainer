@@ -44,6 +44,17 @@ namespace Nexus.Core.Services
             PlayerPrefs.Save();
         }
 
+        public float GetFloat(string key, float defaultValue = 0f)
+        {
+            return PlayerPrefs.GetFloat(key, defaultValue);
+        }
+
+        public void SetFloat(string key, float value)
+        {
+            PlayerPrefs.SetFloat(key, value);
+            PlayerPrefs.Save();
+        }
+
         public bool HasKey(string key)
         {
             return PlayerPrefs.HasKey(key);

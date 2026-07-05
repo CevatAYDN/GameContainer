@@ -25,6 +25,7 @@ namespace Nexus.Core
         // ── State ──────────────────────────────────────────────
         private T _value;
         private List<Action<T, T>> _handlers;
+        private Action<T, T>[] _cachedSnapshot;
         private readonly object _handlersLock = new();
 
         // ── Construction ───────────────────────────────────────
@@ -35,7 +36,7 @@ namespace Nexus.Core
         }
 
         // ── Value ──────────────────────────────────────────────
-        /// <summary>Gets or sets the current value.  Setting triggers OnChanged.</summary>
+        /// <summary>Gets or sets the current value. Setting triggers OnChanged without heap allocations.</summary>
         public T Value
         {
             get => _value;
@@ -46,16 +47,17 @@ namespace Nexus.Core
 
                 var old = _value;
                 _value = value;
-                Action<T, T>[] snapshot = null;
+                Action<T, T>[] snapshot;
                 lock (_handlersLock)
                 {
-                    if (_handlers != null && _handlers.Count > 0)
-                        snapshot = _handlers.ToArray();
+                    snapshot = _cachedSnapshot;
                 }
                 if (snapshot != null)
                 {
                     for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i](old, value);
+                    {
+                        snapshot[i]?.Invoke(old, value);
+                    }
                 }
             }
         }
@@ -70,20 +72,28 @@ namespace Nexus.Core
         /// <summary>Subscribes a handler invoked when the value changes.</summary>
         public void OnChanged(Action<T, T> handler)
         {
+            if (handler == null) return;
             lock (_handlersLock)
             {
-                if (_handlers == null)
-                    _handlers = new List<Action<T, T>>(2);
-                _handlers.Add(handler);
+                _handlers ??= new List<Action<T, T>>(2);
+                if (!_handlers.Contains(handler))
+                {
+                    _handlers.Add(handler);
+                    _cachedSnapshot = _handlers.ToArray();
+                }
             }
         }
 
         /// <summary>Unsubscribes a previously added handler.</summary>
         public void RemoveOnChanged(Action<T, T> handler)
         {
+            if (handler == null) return;
             lock (_handlersLock)
             {
-                _handlers?.Remove(handler);
+                if (_handlers != null && _handlers.Remove(handler))
+                {
+                    _cachedSnapshot = _handlers.Count > 0 ? _handlers.ToArray() : null;
+                }
             }
         }
 
@@ -92,7 +102,8 @@ namespace Nexus.Core
         {
             lock (_handlersLock)
             {
-                _handlers = null;
+                _handlers?.Clear();
+                _cachedSnapshot = null;
             }
         }
 
@@ -114,21 +125,17 @@ namespace Nexus.Core
     {
         private readonly List<T> _items = new();
 
-        // Callbacks
-        private Action<int, T> _onAdded;   // (index, item)
-        private Action<int, T> _onRemoved; // (index, item)
-        private Action _onCleared;
+        // Callbacks (multicast delegates)
+        private event Action<int, T> _onAdded;   // (index, item)
+        private event Action<int, T> _onRemoved; // (index, item)
+        private event Action _onCleared;
 
         // ── Access ─────────────────────────────────────────────
         public int Count => _items.Count;
         public T this[int index]
         {
             get => _items[index];
-            set
-            {
-                _items[index] = value;
-                // Optional: fire a "changed at index" callback if needed
-            }
+            set => _items[index] = value;
         }
 
         public ReadOnlyListWrapper<T> AsReadOnly() => new(_items);
@@ -167,9 +174,14 @@ namespace Nexus.Core
         public int IndexOf(T item) => _items.IndexOf(item);
 
         // ── Observation ────────────────────────────────────────
-        public void OnAdded(Action<int, T> handler) => _onAdded = handler;
-        public void OnRemoved(Action<int, T> handler) => _onRemoved = handler;
-        public void OnCleared(Action handler) => _onCleared = handler;
+        public void OnAdded(Action<int, T> handler) { if (handler != null) _onAdded += handler; }
+        public void RemoveOnAdded(Action<int, T> handler) { if (handler != null) _onAdded -= handler; }
+
+        public void OnRemoved(Action<int, T> handler) { if (handler != null) _onRemoved += handler; }
+        public void RemoveOnRemoved(Action<int, T> handler) { if (handler != null) _onRemoved -= handler; }
+
+        public void OnCleared(Action handler) { if (handler != null) _onCleared += handler; }
+        public void RemoveOnCleared(Action handler) { if (handler != null) _onCleared -= handler; }
 
         public void ClearAllCallbacks()
         {

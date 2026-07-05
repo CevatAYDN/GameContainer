@@ -13,6 +13,8 @@ namespace Nexus.Core.Services
         void SetBool(string key, bool value);
         string GetString(string key, string defaultValue = "");
         void SetString(string key, string value);
+        float GetFloat(string key, float defaultValue = 0f);
+        void SetFloat(string key, float value);
         bool HasKey(string key);
         void DeleteKey(string key);
         void Save();

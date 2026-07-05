@@ -2,11 +2,14 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using Nexus.Core;
 
 namespace Nexus.Core.Services
 {
-    public class SaveThrottler : ISaveThrottler, INexusService
+    public class SaveThrottler : ISaveThrottler, INexusService, ITickable
     {
+        [Inject] public ITickService TickService { get; set; }
+
         private const float ThrottleSeconds = 2f;
 
         private Action _lastSaveAction;
@@ -16,10 +19,15 @@ namespace Nexus.Core.Services
         public float SecondsSinceLastSave =>
             _lastSaveTime < 0f ? 999f : Time.realtimeSinceStartup - _lastSaveTime;
 
-        public ValueTask InitializeAsync(CancellationToken ct) => default;
+        public ValueTask InitializeAsync(CancellationToken ct)
+        {
+            TickService?.RegisterTickable(this);
+            return default;
+        }
 
         public void OnDispose()
         {
+            TickService?.UnregisterTickable(this);
             FlushPending();
             _pendingSave = false;
         }
@@ -39,12 +47,17 @@ namespace Nexus.Core.Services
             }
         }
 
-        public void Tick()
+        public void Tick(float deltaTime)
         {
             if (_pendingSave && SecondsSinceLastSave >= ThrottleSeconds)
             {
                 Flush();
             }
+        }
+
+        public void Tick()
+        {
+            Tick(Time.deltaTime);
         }
 
         private void FlushPending()
