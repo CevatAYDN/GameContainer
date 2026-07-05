@@ -90,6 +90,8 @@ namespace Nexus.Core.Services
                 {
                     _localizedTable["en"] = new Dictionary<string, string>
                     {
+                        { "app_name", "Neon Transit" },
+                        { "btn_undo", "Undo" },
                         { "btn_ok", "OK" },
                         { "btn_cancel", "Cancel" },
                         { "btn_play", "Play" },
@@ -105,6 +107,8 @@ namespace Nexus.Core.Services
                 {
                     _localizedTable["tr"] = new Dictionary<string, string>
                     {
+                        { "app_name", "Neon Transit" },
+                        { "btn_undo", "Geri Al" },
                         { "btn_ok", "Tamam" },
                         { "btn_cancel", "İptal" },
                         { "btn_play", "Oyna" },
