@@ -108,6 +108,7 @@
     <Compile Include="Runtime\Services\Economy\EconomyService.cs" />
     <Compile Include="Runtime\Services\Progression\ProgressionService.cs" />
     <Compile Include="Runtime\Services\Storage\EncryptedStorageService.cs" />
+    <Compile Include="Runtime\Services\Feedback\FeedbackService.cs" />
     <Compile Include="Runtime\Models\SecureObservableProperty.cs" />
   </ItemGroup>
   <ItemGroup>

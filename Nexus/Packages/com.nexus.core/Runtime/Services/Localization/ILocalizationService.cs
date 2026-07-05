@@ -10,5 +10,8 @@ namespace Nexus.Core.Services
         void SetLanguage(string langCode);
         string GetString(string key, string fallback = "");
         string FormatRTLIfNeeded(string text);
+        void RegisterLanguageTable(System.Collections.Generic.IDictionary<string, string> dictionary) => RegisterLanguageTable("en", dictionary);
+        void RegisterLanguageTable(string langCode, System.Collections.Generic.IDictionary<string, string> dictionary);
+        void RegisterKey(string langCode, string key, string value);
     }
 }

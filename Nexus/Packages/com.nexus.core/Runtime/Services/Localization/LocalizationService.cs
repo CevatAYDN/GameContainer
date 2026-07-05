@@ -73,66 +73,61 @@ namespace Nexus.Core.Services
 
         private void BuildLocalizationDictionary()
         {
-            // EN table
+            // Default universal UI fallback strings
             var en = new Dictionary<string, string>
             {
-                { "app_name", "Neon Transit" },
+                { "btn_ok", "OK" },
+                { "btn_cancel", "Cancel" },
                 { "btn_play", "Play" },
-                { "btn_undo", "Undo" },
-                { "btn_redo", "Redo" },
-                { "btn_viaduct", "Viaduct" },
-                { "btn_hint", "Hint" },
-                { "btn_hub", "Return to Hub" },
-                { "crisis_title", "Traffic Crisis! 🚨" },
-                { "win_title", "Level Completed! 🎉" },
-                { "daily_contracts", "Daily Contracts" },
-                { "overclock_title", "Rush Hour (Overclock)" },
-                { "welcome_offline", "Welcome Back!" },
-                { "collect_tax", "Collect Tax" },
-                { "hud_score_format", "SCORE: {0}" },
-                { "hud_hint_count_format", "HINT ({0})" },
-                { "hud_simulation_timer_format", "Simulation: {0:F1}s" },
-                { "level_completed_title", "CONGRATULATIONS!" },
-                { "level_completed_score_format", "Score: {0}" },
-                { "level_completed_stars_label", "Stars" },
-                { "crisis_desc", "Place a viaduct to resolve collision!" },
-                { "crisis_viaducts_format", "Viaducts Left: {0}" },
-                { "crisis_viaduct_btn", "Use Viaduct" },
-                { "crisis_undo_btn", "Undo / Revert" },
-                { "crisis_exhausted_msg", "Out of viaducts!" }
+                { "btn_retry", "Retry" },
+                { "btn_close", "Close" },
+                { "btn_settings", "Settings" },
+                { "win_title", "Level Completed!" },
+                { "fail_title", "Game Over!" }
             };
 
-            // TR table
             var tr = new Dictionary<string, string>
             {
-                { "app_name", "Neon Transit" },
+                { "btn_ok", "Tamam" },
+                { "btn_cancel", "İptal" },
                 { "btn_play", "Oyna" },
-                { "btn_undo", "Geri Al" },
-                { "btn_redo", "İleri Al" },
-                { "btn_viaduct", "Viyadük" },
-                { "btn_hint", "İpucu" },
-                { "btn_hub", "Şehre Dön" },
-                { "crisis_title", "Trafik Krizi! 🚨" },
-                { "win_title", "Bölüm Tamamlandı! 🎉" },
-                { "daily_contracts", "Günlük Kontratlar" },
-                { "overclock_title", "Yoğun Saat (Overclock)" },
-                { "welcome_offline", "Tekrar Hoş Geldin!" },
-                { "collect_tax", "Vergi Topla" },
-                { "hud_score_format", "SKOR: {0}" },
-                { "hud_hint_count_format", "İPUCU ({0})" },
-                { "hud_simulation_timer_format", "Simülasyon: {0:F1}s" },
-                { "level_completed_title", "TEBRİKLER!" },
-                { "level_completed_score_format", "Skor: {0}" },
-                { "level_completed_stars_label", "Yıldız" },
-                { "crisis_desc", "Çarpışmayı çözmek için viyadük yerleştirin!" },
-                { "crisis_viaducts_format", "Kalan Viyadük: {0}" },
-                { "crisis_viaduct_btn", "Viyadük Kullan" },
-                { "crisis_undo_btn", "Geri Al / Vazgeç" },
-                { "crisis_exhausted_msg", "Viyadük hakkınız bitti!" }
+                { "btn_retry", "Tekrar Denet" },
+                { "btn_close", "Kapat" },
+                { "btn_settings", "Ayarlar" },
+                { "win_title", "Bölüm Tamamlandı!" },
+                { "fail_title", "Oyun Bitti!" }
             };
 
             _localizedTable["en"] = en;
             _localizedTable["tr"] = tr;
+        }
+
+        public void RegisterLanguageTable(string langCode, IDictionary<string, string> dictionary)
+        {
+            if (string.IsNullOrEmpty(langCode) || dictionary == null) return;
+            string key = langCode.ToLower();
+            if (!_localizedTable.TryGetValue(key, out var table))
+            {
+                table = new Dictionary<string, string>();
+                _localizedTable[key] = table;
+            }
+
+            foreach (var kvp in dictionary)
+            {
+                table[kvp.Key] = kvp.Value;
+            }
+        }
+
+        public void RegisterKey(string langCode, string key, string value)
+        {
+            if (string.IsNullOrEmpty(langCode) || string.IsNullOrEmpty(key)) return;
+            string langKey = langCode.ToLower();
+            if (!_localizedTable.TryGetValue(langKey, out var table))
+            {
+                table = new Dictionary<string, string>();
+                _localizedTable[langKey] = table;
+            }
+            table[key] = value;
         }
     }
 }

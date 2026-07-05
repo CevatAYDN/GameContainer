@@ -40,6 +40,29 @@ Nexus is designed to solve debuggability and observability issues common in trad
 4. **Causal Tracing:** Zero-allocation causality tracking that shows which signal triggered which command, and which sub-signals were dispatched by that command.
 5. **Architectural Validation (Build Validation):** Catches priority conflicts, mixed-mode violations, and side effects in concurrent commands before compiling.
 6. **Error Recovery:** Customizable recovery strategies offering Retry, Fallback, and Abort logic.
+7. **AES-256 Anti-Cheat & Device-Bound Encryption:** Tamper-proof encrypted local saves (`EncryptedStorageService`) with HMAC-SHA256 integrity checks, hardware-bound seeds, and RAM memory obfuscation (`SecureObservableInt`) against memory scanners (GameGuardian/Cheat Engine).
+8. **13 Production-Ready Core Services:** Out-of-the-box engine suite tailored for Casual & Hybrid-Casual games (UI Window Stack, Audio, Haptics, Combined Juice Feedback, Object Pooling, FSM, Multi-Currency Economy, Level Progression, Mediation Ads, IAP Sandbox, Dynamic Localization, Analytics, and Encrypted Storage).
+9. **Live Play-Mode Dashboard & Custom Inspectors:** Full control via custom Inspector badges and `NexusWindow` Live Debugger for real-time Economy, Progression, and TimeScale adjustments.
+
+---
+
+### 📦 13 Production-Ready Core Services Catalog
+
+| # | Service Name | Implementation | Description |
+| :-: | :--- | :--- | :--- |
+| **1** | **`EncryptedStorageService`** | `Nexus.Core.Services.EncryptedStorageService` | AES-256 encrypted, HMAC-SHA256 tamper-proof, device-bound local save storage. |
+| **2** | **`ObjectPoolService`** | `Nexus.Core.Services.ObjectPoolService` | Universal GameObject/Component pool with prewarming, `IPoolable` callbacks, and timed auto-despawn. |
+| **3** | **`WindowManager`** | `Nexus.Core.Services.WindowManager` | Multi-layered UI canvas stack (`HUD`, `Screen`, `Popup`, `Modal`), async loading, back-button history navigation. |
+| **4** | **`AudioService`** | `Nexus.Core.Services.AudioService` | BGM playlist crossfading, 2D/3D SFX AudioSource pool, random pitch variation, volume channels. |
+| **5** | **`HapticService`** | `Nexus.Core.Services.HapticService` | Zero-alloc Android JNI handle caching, iOS Taptic Engine integration, desktop preview. |
+| **6** | **`FeedbackService`** | `Nexus.Core.Services.FeedbackService` | Orchestrates combined Audio + Haptics ("Juice") presets (`CoinCollect`, `SuccessFanfare`, `Impact`). |
+| **7** | **`AdService`** | `Nexus.Core.Services.AdService` | Mediation provider adapter pattern (AppLovin MAX/LevelPlay), interstitial cooldown, rewarded callbacks, ILRD. |
+| **8** | **`IapService`** | `Nexus.Core.Services.IapService` | Store catalog definition, purchase & restore flows, editor test sandbox. |
+| **9** | **`EconomyService`** | `Nexus.Core.Services.EconomyService` | Multi-currency transaction engine (`Coins`, `Gems`, `Energy`), `CanAfford`, reactive balance properties. |
+| **10** | **`ProgressionService`** | `Nexus.Core.Services.ProgressionService` | Level index tracking, max unlocked levels, linear/exponential/polynomial upgrade cost formulas. |
+| **11** | **`TickService`** | `Nexus.Core.Services.TickService` | Central update loop driver (`ITickable`, `IFixedTickable`, `ILateTickable`), `TimeScale`, global pause. |
+| **12** | **`LocalizationService`** | `Nexus.Core.Services.LocalizationService` | Dynamic language table registration, RTL formatting, fallback language support. |
+| **13** | **`AnalyticsService`** | `Nexus.Core.Services.AnalyticsService` | Cross-platform event tracking abstraction, parameter dictionary pooling, user property management. |
 
 ---
 
@@ -308,6 +331,29 @@ Nexus, geleneksel DI ve Event-Driven kütüphanelerindeki izlenebilirlik (debugg
 4. **Causal Tracing (Neden-Sonuç Zinciri):** Hangi sinyalin hangi komutu tetiklediğini ve o komutun hangi alt sinyalleri fırlattığını gösteren 0-alloc nedensellik takibi.
 5. **Mimarî Doğrulama (Build Validation):** Öncelik çakışmalarını, mixed-mode ihlallerini, concurrent komutlardaki yan etkileri derleme öncesinde yakalar.
 6. **Hata Kurtarma (Error Recovery):** Retry, Fallback ve Abort mantıkları sunan özelleştirilebilir kurtarma stratejileri.
+7. **AES-256 Anti-Cheat & Cihaza Özel Kriptolu Kayıt:** HMAC-SHA256 bütünsellik doğrulaması, donanım ID'li şifreleme anahtarları (`EncryptedStorageService`) ve RAM bellek tarayıcılarına (GameGuardian/Cheat Engine) karşı XOR bellek maskelemesi (`SecureObservableInt`).
+8. **13 Prodüksiyon Seviyesinde Çekirdek Servis:** Casual & Hybrid-Casual mobil oyunlar için kutudan çıkan hazır motor servisleri (UI Katman Yığını, Ses, Titreşim, Kombine Feedback/Juice, Obje Havuzlama, FSM, Çoklu Para Birimli Ekonomi, Seviye İlerlemesi, Mediasyon Reklamları, IAP Sandbox, Dinamik Yerelleştirme, Analitik ve Şifreli Kayıt).
+9. **Canlı Oyun-İçi Editör Panosu & Özel Müfettişler:** Özel Inspector rozetleri ve `NexusWindow` Canlı Hata Ayıklayıcı ile Play-Mode anında Ekonomi, Seviye ve Zaman Ölçeği (TimeScale) üzerinde tam hakimiyet.
+
+---
+
+### 📦 13 Prodüksiyon Seviyesinde Çekirdek Servis Kataloğu
+
+| # | Servis Adı | Uygulama | Açıklama |
+| :-: | :--- | :--- | :--- |
+| **1** | **`EncryptedStorageService`** | `Nexus.Core.Services.EncryptedStorageService` | AES-256 şifreli, HMAC-SHA256 kurcalama korumalı ve cihaza özel donanım anahtarlı kayıt servisi. |
+| **2** | **`ObjectPoolService`** | `Nexus.Core.Services.ObjectPoolService` | Prewarming, `IPoolable` ve süreli oto-despawn destekli evrensel GameObject/Component havuzu. |
+| **3** | **`WindowManager`** | `Nexus.Core.Services.WindowManager` | Katmanlı UI yığını (`HUD`, `Screen`, `Popup`, `Modal`), asenkron yükleme ve mobil geri tuşu geçmişi. |
+| **4** | **`AudioService`** | `Nexus.Core.Services.AudioService` | BGM playlist yumuşak geçişleri (crossfade), 2D/3D SFX audio havuzu ve pitch varyasyonu. |
+| **5** | **`HapticService`** | `Nexus.Core.Services.HapticService` | Zero-alloc Android JNI handle cachi'li titreşim yönetimi, iOS Taptic Engine ve masaüstü önizleme. |
+| **6** | **`FeedbackService`** | `Nexus.Core.Services.FeedbackService` | Oyun içi "Juice" hissi için Ses + Titreşim kombinasyon hazır ayarları (`CoinCollect`, `SuccessFanfare`, `Impact`). |
+| **7** | **`AdService`** | `Nexus.Core.Services.AdService` | Mediasyon adaptör deseni (AppLovin MAX/LevelPlay), interstitial cooldown sayacı, rewarded callbacks ve ILRD. |
+| **8** | **`IapService`** | `Nexus.Core.Services.IapService` | Mağaza ürün kataloğu, satın alım/restore akışları ve editör test sandbox'ı. |
+| **9** | **`EconomyService`** | `Nexus.Core.Services.EconomyService` | Çoklu para birimi (`Coins`, `Gems`, `Energy`), `CanAfford`, reaktif bakiyeler ve otomatik kayıt. |
+| **10** | **`ProgressionService`** | `Nexus.Core.Services.ProgressionService` | Seviye takibi, kilit açma ve Linear/Exponential/Polynomial yükseltme maliyet eğrileri. |
+| **11** | **`TickService`** | `Nexus.Core.Services.TickService` | Güncelleme döngüsü sürücüsü (`ITickable`, `IFixedTickable`, `ILateTickable`), `TimeScale` ve global duraklatma. |
+| **12** | **`LocalizationService`** | `Nexus.Core.Services.LocalizationService` | Dinamik dil tablosu kaydı, RTL Arapça desteği ve varsayılan dil fallback yapısı. |
+| **13** | **`AnalyticsService`** | `Nexus.Core.Services.AnalyticsService` | Çapraz platform analitik olay takibi, parametre sözlüğü havuzlama ve kullanıcı özellikleri. |
 
 ---
 

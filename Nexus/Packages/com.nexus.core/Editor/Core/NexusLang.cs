@@ -119,6 +119,8 @@ namespace Nexus.Editor
             s_strings["action_typeanalyzer_desc"] = "Analyze type coupling & [Inject] dependencies";
             s_strings["action_help_title"] = "Help & Docs";
             s_strings["action_help_desc"] = "Quick start guides, API reference, samples";
+            s_strings["action_casual_services_title"] = "Casual Debugger";
+            s_strings["action_casual_services_desc"] = "Play-mode live control for Economy, Level, UI, Audio & Haptics";
             s_strings["tab_dashboard"] = "Dashboard";
             s_strings["tab_wizard"] = "Wizard";
             s_strings["tab_hierarchy"] = "Hierarchy";
@@ -127,6 +129,7 @@ namespace Nexus.Editor
             s_strings["tab_graph"] = "Graph";
             s_strings["tab_gamemanager"] = "Game Manager";
             s_strings["tab_typeanalyzer"] = "Type Analyzer";
+            s_strings["tab_casual_services"] = "Casual Debugger";
             s_strings["tab_help"] = "Help";
 
             s_strings["wizard_title"] = "CONTEXT CREATION & UTILITIES WIZARD";
