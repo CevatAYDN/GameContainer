@@ -1,4 +1,0 @@
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\Editor\obj\Debug\netstandard2.1\com.nexus.core.editor.csproj.AssemblyReference.cache
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\Editor\obj\Debug\netstandard2.1\com.nexus.core.editor.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\Editor\obj\Debug\netstandard2.1\com.nexus.core.editor.csproj.CoreCompileInputs.cache
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\Editor\obj\Debug\netstandard2.1\com.nexus.core.editor.sourcelink.json

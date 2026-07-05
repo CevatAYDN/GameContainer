@@ -17,7 +17,7 @@
       "projectName": "com.nexus.core",
       "projectPath": "C:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj",
       "packagesPath": "C:\\Users\\wwwla\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\Temp\\obj\\com.nexus.core\\",
+      "outputPath": "C:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\.Temp\\obj\\com.nexus.core\\",
       "projectStyle": "PackageReference",
       "configFilePaths": [
         "C:\\Users\\wwwla\\AppData\\Roaming\\NuGet\\NuGet.Config"
