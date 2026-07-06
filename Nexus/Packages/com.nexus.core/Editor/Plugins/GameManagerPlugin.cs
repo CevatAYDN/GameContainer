@@ -428,6 +428,13 @@ namespace Nexus.Editor
             AddStatCard(grid, NexusLang.Get("gamemanager_stat_services"), s.ServiceCount.ToString(), NexusEditorStyles.AccentGreen, NexusLang.Get("gamemanager_desc_services"));
             AddStatCard(grid, NexusLang.Get("gamemanager_stat_roots"), s.RootCount.ToString(), NexusEditorStyles.DimText, NexusLang.Get("gamemanager_desc_roots"));
 
+            var gridActions = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginLeft = 15, marginTop = 8 } };
+            gridActions.Add(NexusEditorStyles.CreateButton("Open Hierarchy", () => Window?.SwitchToPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
+            gridActions.Add(NexusEditorStyles.CreateButton("Open Explorer", () => Window?.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+            gridActions.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            gridActions.Add(NexusEditorStyles.CreateButton("Open Type Analyzer", () => Window?.SwitchToPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue));
+            _content.Add(gridActions);
+
             _content.Add(grid);
 
             // Quick actions
@@ -447,6 +454,18 @@ namespace Nexus.Editor
             var openGraph = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_graph"), () => Window?.SwitchToPlugin("Graph"), NexusEditorStyles.BtnPurple);
             openGraph.style.marginLeft = 5;
             actionsRow.Add(openGraph);
+
+            var openHierarchy = NexusEditorStyles.CreateButton("Hierarchy", () => Window?.SwitchToPlugin("Hierarchy"), NexusEditorStyles.BtnGreen);
+            openHierarchy.style.marginLeft = 5;
+            actionsRow.Add(openHierarchy);
+
+            var openExplorer = NexusEditorStyles.CreateButton("Explorer", () => Window?.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple);
+            openExplorer.style.marginLeft = 5;
+            actionsRow.Add(openExplorer);
+
+            var openTypeAnalyzer = NexusEditorStyles.CreateButton("Type Analyzer", () => Window?.SwitchToPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue);
+            openTypeAnalyzer.style.marginLeft = 5;
+            actionsRow.Add(openTypeAnalyzer);
 
             var refreshBtn = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_refresh"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray);
             refreshBtn.style.marginLeft = 5;
@@ -480,6 +499,18 @@ namespace Nexus.Editor
                     borderLeftColor = new StyleColor(accent),
                 }
             };
+
+            card.RegisterCallback<MouseDownEvent>(_ =>
+            {
+                if (label.Contains("Context"))
+                {
+                    Window?.SwitchToPlugin("Hierarchy");
+                }
+                else if (label.Contains("Model") || label.Contains("Service") || label.Contains("Command") || label.Contains("View"))
+                {
+                    Window?.SwitchToPlugin("GameManager");
+                }
+            });
 
             var valLabel = new Label(value)
             {

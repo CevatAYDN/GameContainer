@@ -25,7 +25,8 @@ namespace Nexus.Core
         // ── State ──────────────────────────────────────────────
         private T _value;
         private List<Action<T, T>> _handlers;
-        private Action<T, T>[] _cachedSnapshot;
+        private Action<T, T>[] _snapshotCache;
+        private bool _snapshotDirty;
         private readonly object _handlersLock = new();
 
         // ── Construction ───────────────────────────────────────
@@ -50,7 +51,12 @@ namespace Nexus.Core
                 Action<T, T>[] snapshot;
                 lock (_handlersLock)
                 {
-                    snapshot = _cachedSnapshot;
+                    if (_snapshotDirty)
+                    {
+                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
+                        _snapshotDirty = false;
+                    }
+                    snapshot = _snapshotCache;
                 }
                 if (snapshot != null)
                 {
@@ -79,7 +85,7 @@ namespace Nexus.Core
                 if (!_handlers.Contains(handler))
                 {
                     _handlers.Add(handler);
-                    _cachedSnapshot = _handlers.ToArray();
+                    _snapshotDirty = true;
                 }
             }
         }
@@ -92,7 +98,7 @@ namespace Nexus.Core
             {
                 if (_handlers != null && _handlers.Remove(handler))
                 {
-                    _cachedSnapshot = _handlers.Count > 0 ? _handlers.ToArray() : null;
+                    _snapshotDirty = true;
                 }
             }
         }
@@ -103,7 +109,8 @@ namespace Nexus.Core
             lock (_handlersLock)
             {
                 _handlers?.Clear();
-                _cachedSnapshot = null;
+                _snapshotCache = null;
+                _snapshotDirty = false;
             }
         }
 

@@ -1,6 +1,6 @@
 using NUnit.Framework;
 using Nexus.Core;
-using System.Threading;
+using System;
 
 namespace Nexus.Tests
 {

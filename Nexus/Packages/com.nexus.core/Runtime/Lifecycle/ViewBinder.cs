@@ -54,6 +54,11 @@ namespace Nexus.Core
             {
                 roots[0].Context.RegisterView(this);
             }
+            else if (roots.Length > 1)
+            {
+                NexusRuntime.Logger?.LogWarning($"[Nexus] View '{gameObject.name}' OnEnable: Multiple Root instances found. " +
+                    "Auto-binding is ambiguous; bind manually or keep a single active Root per scene.");
+            }
             else if (roots.Length == 0)
             {
                 NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: No Root GameObject found in scene. " +
@@ -217,13 +222,14 @@ namespace Nexus.Core
             NexusDI.ClearInjectedReferences(mediator);
         }
 
-        /// <summary>Disposes all active mediators and clears all pools.</summary>
+        /// <summary>Disposes all active mediators and unbinds all views, then clears all pools.</summary>
         public void Dispose()
         {
             foreach (var kvp in _activeMediators)
             {
                 try
                 {
+                    kvp.Key.Unbind();
                     kvp.Value.Unbind();
                 }
                 catch (Exception ex)

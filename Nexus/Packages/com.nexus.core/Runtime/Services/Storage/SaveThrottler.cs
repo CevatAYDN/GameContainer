@@ -68,7 +68,10 @@ namespace Nexus.Core.Services
 
         public void Tick()
         {
-            Tick(TimeProvider?.Now ?? Time.realtimeSinceStartup);
+            if (_pendingSave && SecondsSinceLastSave >= ThrottleSeconds)
+            {
+                Flush();
+            }
         }
 
         private void FlushPending()

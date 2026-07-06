@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
 
@@ -18,6 +19,9 @@ namespace Nexus.Core
         private static readonly List<IContext> s_activeContexts = new();
         private static readonly HashSet<IContext> s_contextSet = new();
         private static readonly object s_lock = new();
+        private static volatile int s_activeContextCount;
+        private static List<IContext> s_activeContextsReadOnlyCache = new();
+        private static bool s_activeContextsCacheDirty = true;
 
         /// <summary>Returns a thread-safe snapshot of all active contexts.</summary>
         /// <remarks>Locked access via <c>s_lock</c>. Returns a snapshot to prevent race conditions during iteration.</remarks>
@@ -27,15 +31,18 @@ namespace Nexus.Core
             {
                 lock (s_lock)
                 {
-                    return new List<IContext>(s_activeContexts);
+                    if (s_activeContextsCacheDirty)
+                    {
+                        s_activeContextsReadOnlyCache = new List<IContext>(s_activeContexts);
+                        s_activeContextsCacheDirty = false;
+                    }
+                    return s_activeContextsReadOnlyCache;
                 }
             }
         }
 
         /// <summary>
         /// Returns the first registered context, or null if no context has been registered.
-        /// Provides a convenient access point for services that need runtime logging
-        /// without requiring direct DI injection of ILoggerService.
         /// </summary>
         public static IContext CurrentContext
         {
@@ -45,6 +52,49 @@ namespace Nexus.Core
                 {
                     return s_activeContexts.Count > 0 ? s_activeContexts[0] : null;
                 }
+            }
+        }
+
+        /// <summary>
+        /// Returns the currently active context for the given scope tag.
+        /// If scopeTag is null or empty, returns the first matching active context.
+        /// </summary>
+        public static IContext GetContext(string scopeTag)
+        {
+            lock (s_lock)
+            {
+                if (string.IsNullOrEmpty(scopeTag))
+                    return CurrentContext;
+
+                for (int i = 0; i < s_activeContexts.Count; i++)
+                {
+                    var context = s_activeContexts[i];
+                    if (context != null && string.Equals(context.ScopeTag, scopeTag, StringComparison.OrdinalIgnoreCase))
+                        return context;
+                }
+
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Returns all active contexts that match the provided scope tag.
+        /// </summary>
+        public static IReadOnlyList<IContext> GetContexts(string scopeTag)
+        {
+            lock (s_lock)
+            {
+                if (string.IsNullOrEmpty(scopeTag))
+                    return ActiveContexts;
+
+                var matches = new List<IContext>();
+                for (int i = 0; i < s_activeContexts.Count; i++)
+                {
+                    var context = s_activeContexts[i];
+                    if (context != null && string.Equals(context.ScopeTag, scopeTag, StringComparison.OrdinalIgnoreCase))
+                        matches.Add(context);
+                }
+                return matches;
             }
         }
 
@@ -109,25 +159,28 @@ namespace Nexus.Core
                     }
                     catch (System.Exception ex)
                     {
-                        Logger?.LogException(ex);
+                        NexusLog.Error(nameof(NexusRuntime), nameof(Reset), string.Empty, ex);
                     }
                 }
                 s_activeContexts.Clear();
                 s_contextSet.Clear();
+                s_activeContextsCacheDirty = true;
             }
 
             NexusDI.ClearCaches();
             Context.ClearAssemblyScanCache();
+            Context.ClearDefaultScanAssembliesCache();
             SignalBus.ClearStaticCaches();
             Root.ClearRegistry();
             CommandPoolStatics.ClearStateLeakWarnings();
+            NexusLog.Reset();
         }
 
         public static class Metrics
         {
             public static long TotalSignalsDispatched;
             public static long TotalCommandsExecuted;
-            public static int ActiveContextCount => s_activeContexts.Count;
+            public static int ActiveContextCount => s_activeContextCount;
 
             // Rate fields are written by the runtime (game thread, via SignalBus)
             // and read by the editor (editor thread). Without volatile, the editor
@@ -204,16 +257,18 @@ namespace Nexus.Core
             }
         }
 
-        /// <summary>Registers a context as active. Thread-safe.</summary>
-        /// <param name="context">The context to register.</param>
         public static void RegisterContext(IContext context)
         {
+            if (context == null) return;
+
             bool added = false;
             lock (s_lock)
             {
                 if (s_contextSet.Add(context))
                 {
                     s_activeContexts.Add(context);
+                    s_activeContextCount = s_activeContexts.Count;
+                    s_activeContextsCacheDirty = true;
                     added = true;
                 }
             }
@@ -225,7 +280,7 @@ namespace Nexus.Core
                 }
                 catch (System.Exception ex)
                 {
-                    Logger?.LogException(ex);
+                    NexusLog.Error(nameof(NexusRuntime), nameof(RegisterContext), string.Empty, ex);
                 }
             }
         }
@@ -240,6 +295,7 @@ namespace Nexus.Core
                 if (s_contextSet.Remove(context))
                 {
                     s_activeContexts.Remove(context);
+                    s_activeContextCount = s_activeContexts.Count;
                     removed = true;
                 }
             }
@@ -251,7 +307,7 @@ namespace Nexus.Core
                 }
                 catch (System.Exception ex)
                 {
-                    Logger?.LogException(ex);
+                    NexusLog.Error(nameof(NexusRuntime), nameof(UnregisterContext), string.Empty, ex);
                 }
             }
         }

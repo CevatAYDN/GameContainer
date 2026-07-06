@@ -33,6 +33,8 @@ namespace Nexus.Editor
 
         private List<INexusEditorPlugin> _plugins = new();
         private INexusEditorPlugin _activePlugin;
+        private bool _discoveryFailed;
+        private string _discoveryError;
 
         private VisualElement _sidebar;
         private VisualElement _contentArea;
@@ -94,9 +96,24 @@ namespace Nexus.Editor
             UpdateStatusBarText();
         }
 
+        private void RefreshDiscovery()
+        {
+            DiscoverPlugins();
+            CreateGUI();
+            Repaint();
+        }
+
+        public void OpenPlugin(string pluginId)
+        {
+            SwitchToPlugin(pluginId);
+            Repaint();
+        }
+
         private void CreateGUI()
         {
             var root = rootVisualElement;
+            root.Clear();
+            _tabLabels.Clear();
 
             // Load USS theme
             NexusEditorStyles.LoadTheme(root);
@@ -145,6 +162,32 @@ namespace Nexus.Editor
             foreach (var plugin in _plugins)
             {
                 AddTabButton(NexusLang.Get($"tab_{plugin.Id.ToLower()}"), plugin.Id);
+            }
+
+            if (_discoveryFailed)
+            {
+                _sidebar.Add(new Label($"Plugin discovery failed: {_discoveryError}")
+                {
+                    style =
+                    {
+                        color = new StyleColor(Color.red),
+                        unityTextAlign = TextAnchor.MiddleCenter,
+                        marginTop = 12,
+                        whiteSpace = WhiteSpace.Normal
+                    }
+                });
+            }
+            else if (!_plugins.Any())
+            {
+                _sidebar.Add(new Label("No Nexus plugins found")
+                {
+                    style =
+                    {
+                        color = new StyleColor(NexusEditorStyles.TextSecondary),
+                        unityTextAlign = TextAnchor.MiddleCenter,
+                        marginTop = 12
+                    }
+                });
             }
 
             // Version at bottom of sidebar
@@ -243,6 +286,7 @@ namespace Nexus.Editor
 
             // Keyboard shortcuts: Ctrl+1..9 for tabs
             root.RegisterCallback<KeyDownEvent>(OnKeyDown);
+            root.RegisterCallback<ContextClickEvent>(OnContextClick);
 
             UpdateStatusBarText();
 
@@ -254,38 +298,53 @@ namespace Nexus.Editor
         {
             _plugins.Clear();
             _hierarchyPlugin = null;
+            _discoveryFailed = false;
+            _discoveryError = null;
 
-            var pluginType = typeof(INexusEditorPlugin);
-            var foundPlugins = new List<INexusEditorPlugin>();
-
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            try
             {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("UnityEngine"))
-                    continue;
+                var pluginType = typeof(INexusEditorPlugin);
+                var foundPlugins = new List<INexusEditorPlugin>();
 
-                try
+                foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
                 {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
-                        {
-                            var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
-                            plugin.Initialize(this);
-                            foundPlugins.Add(plugin);
+                    var name = assembly.GetName().Name;
+                    if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("UnityEngine"))
+                        continue;
 
-                            if (plugin is HierarchyPlugin hp)
+                    try
+                    {
+                        foreach (var type in assembly.GetTypes())
+                        {
+                            if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
                             {
-                                _hierarchyPlugin = hp;
+                                var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
+                                plugin.Initialize(this);
+                                foundPlugins.Add(plugin);
+
+                                if (plugin is HierarchyPlugin hp)
+                                {
+                                    _hierarchyPlugin = hp;
+                                }
                             }
                         }
                     }
+                    catch (ReflectionTypeLoadException ex)
+                    {
+                        _discoveryFailed = true;
+                        _discoveryError = ex.Message;
+                    }
                 }
-                catch (ReflectionTypeLoadException) { }
-            }
 
-            // Sort plugins by their predefined order
-            _plugins = foundPlugins.OrderBy(p => p.Order).ToList();
+                // Sort plugins by their predefined order
+                _plugins = foundPlugins.OrderBy(p => p.Order).ToList();
+            }
+            catch (Exception ex)
+            {
+                _discoveryFailed = true;
+                _discoveryError = ex.Message;
+                _plugins.Clear();
+            }
         }
 
         private void AddTabButton(string label, string pluginId)
@@ -331,7 +390,12 @@ namespace Nexus.Editor
         public void SwitchToPlugin(string pluginId)
         {
             var targetPlugin = _plugins.FirstOrDefault(p => p.Id == pluginId);
-            if (targetPlugin == null || targetPlugin == _activePlugin) return;
+            if (targetPlugin == null) return;
+            if (targetPlugin == _activePlugin)
+            {
+                RefreshActivePlugin();
+                return;
+            }
 
             // Dispose the old plugin view before switching
             if (_activePlugin != null)
@@ -387,11 +451,29 @@ namespace Nexus.Editor
             {
                 _hierarchyPlugin?.UpdateVisibleTrackers();
             }
+
+            UpdateStatusBarText();
+        }
+
+        private void OnContextClick(ContextClickEvent evt)
+        {
+            if (_discoveryFailed)
+            {
+                RefreshDiscovery();
+                evt.StopPropagation();
+            }
         }
 
         private void OnKeyDown(KeyDownEvent evt)
         {
             if (!evt.ctrlKey) return;
+
+            if (evt.keyCode == KeyCode.F5)
+            {
+                RefreshDiscovery();
+                evt.StopPropagation();
+                return;
+            }
 
             int index = -1;
             switch (evt.keyCode)

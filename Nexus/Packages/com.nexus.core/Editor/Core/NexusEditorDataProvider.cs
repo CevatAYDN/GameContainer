@@ -100,6 +100,8 @@ namespace Nexus.Editor
             {
                 foreach (var ctx in contexts)
                 {
+                    if (ctx?.SignalBus == null) continue;
+
                     var handlers = ctx.SignalBus.RegisteredHandlers;
                     if (handlers != null)
                     {

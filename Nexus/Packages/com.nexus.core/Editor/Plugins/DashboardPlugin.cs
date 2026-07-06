@@ -123,6 +123,12 @@ namespace Nexus.Editor
             _rootStat = CreateStatBox(statRow1, rootCount.ToString(), NexusLang.Get("roots"), NexusEditorStyles.AccentYellow);
             statusCard.Add(statRow1);
 
+            var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("contexts"), "Open the Contexts view", NexusEditorStyles.AccentBlue, () => Window.SwitchToPlugin("Hierarchy")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("handlers"), "Open signal handlers in Explorer", NexusEditorStyles.AccentPurple, () => Window.SwitchToPlugin("Explorer")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("roots"), "Focus scene roots in Game Manager", NexusEditorStyles.AccentYellow, () => Window.SwitchToPlugin("GameManager")));
+            statusCard.Add(actionRow);
+
             var hintText = "";
             if (!playing && rootCount == 0)
                 hintText = NexusLang.Get("no_roots");
@@ -158,6 +164,13 @@ namespace Nexus.Editor
             _commandStat = CreateStatBox(statRow, commandCount.ToString(), NexusLang.Get("commands"), NexusEditorStyles.AccentOrange);
             _viewStat = CreateStatBox(statRow, viewCount.ToString(), NexusLang.Get("views"), NexusEditorStyles.AccentBlue);
             card.Add(statRow);
+
+            var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("models"), "Open the Models section", NexusEditorStyles.AccentYellow, () => Window.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("services"), "Open the Services section", NexusEditorStyles.AccentGreen, () => Window.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("commands"), "Open the Commands section", NexusEditorStyles.AccentOrange, () => Window.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("views"), "Open the Views section", NexusEditorStyles.AccentBlue, () => Window.SwitchToPlugin("GameManager")));
+            card.Add(actionRow);
 
             parent.Add(card);
         }
@@ -273,7 +286,18 @@ namespace Nexus.Editor
 
         private Label CreateStatBox(VisualElement parent, string value, string label, Color accentColor)
         {
-            var box = new VisualElement { style = { flexGrow = 1, alignItems = Align.Center, paddingLeft = 4, paddingRight = 4 } };
+            var box = new VisualElement
+            {
+                style =
+                {
+                    flexGrow = 1,
+                    alignItems = Align.Center,
+                    paddingLeft = 4,
+                    paddingRight = 4,
+                    paddingTop = 2,
+                    paddingBottom = 2,
+                }
+            };
 
             var valLabel = new Label(value)
             {
@@ -289,6 +313,33 @@ namespace Nexus.Editor
 
             parent.Add(box);
             return valLabel;
+        }
+
+        private Button CreateMetricJumpButton(string label, string tooltip, Color accentColor, System.Action onClick)
+        {
+            var button = new Button(() => onClick())
+            {
+                text = label,
+                tooltip = tooltip,
+                style =
+                {
+                    marginRight = 6,
+                    marginTop = 4,
+                    paddingLeft = 8,
+                    paddingRight = 8,
+                    paddingTop = 4,
+                    paddingBottom = 4,
+                    backgroundColor = new StyleColor(new Color(accentColor.r, accentColor.g, accentColor.b, 0.18f)),
+                    color = Color.white,
+                    borderTopLeftRadius = 4,
+                    borderTopRightRadius = 4,
+                    borderBottomLeftRadius = 4,
+                    borderBottomRightRadius = 4,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    fontSize = 9,
+                }
+            };
+            return button;
         }
 
         private void AddActionCard(VisualElement parent, string title, string description, Color btnColor, System.Action onClick)

@@ -194,7 +194,7 @@ namespace Nexus.Core
         private class Binding
         {
             public Type ConcreteType { get; set; }
-            public object Instance { get; set; }
+            public volatile object Instance;
             public bool IsSingleton { get; set; }
             public Func<object> Factory { get; set; }
         }
@@ -292,10 +292,6 @@ namespace Nexus.Core
             {
                 if (binding.Instance != null)
                 {
-                    if (s_constructingSingletons.Contains(type))
-                    {
-                        throw new InvalidOperationException($"Circular dependency detected: Type {type.FullName} is already in construction/injection phase.");
-                    }
                     return binding.Instance;
                 }
 
@@ -317,9 +313,7 @@ namespace Nexus.Core
                 {
                     if (binding.IsSingleton)
                     {
-                        // Double-checked locking to prevent two threads from creating
-                        // the same singleton. C# lock is reentrant, so recursive Resolve()
-                        // calls from Inject() on the same thread will not deadlock.
+                        object instance = null;
                         lock (s_singletonLock)
                         {
                             if (binding.Instance != null)
@@ -327,14 +321,21 @@ namespace Nexus.Core
 
                             s_constructingSingletons.Add(type);
                             addedToConstructing = true;
+                        }
 
-                            var instance = CreateInstance(binding.ConcreteType);
+                        instance = CreateInstance(binding.ConcreteType);
+
+                        lock (s_singletonLock)
+                        {
+                            if (binding.Instance != null)
+                                return binding.Instance;
+
                             binding.Instance = instance;
                             _resolvedSingletons.Add(instance);
-
-                            Inject(instance);
-                            return instance;
                         }
+
+                        Inject(instance);
+                        return instance;
                     }
 
                     var transientInstance = CreateInstance(binding.ConcreteType);

@@ -46,6 +46,7 @@ namespace Nexus.Core.Services
         private readonly Dictionary<string, GameObject> _activeWindows = new();
         private readonly Dictionary<UILayer, Transform> _layerRoots = new();
         private readonly List<string> _windowHistory = new();
+        private readonly SemaphoreSlim _windowLock = new(1, 1);
 
         private Transform _canvasRoot;
         private GameObject _canvasObject;
@@ -95,7 +96,6 @@ namespace Nexus.Core.Services
 
             _canvasRoot = _canvasObject.transform;
 
-            // Create layer roots
             foreach (UILayer layer in Enum.GetValues(typeof(UILayer)))
             {
                 var layerGo = _canvasRoot.Find(layer.ToString())?.gameObject;
@@ -127,10 +127,24 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(windowName)) return null;
 
-            if (_activeWindows.TryGetValue(windowName, out var existing) && existing != null)
+            await _windowLock.WaitAsync();
+            bool alreadyOpen;
+            try
             {
-                existing.transform.SetAsLastSibling();
-                return existing;
+                alreadyOpen = _activeWindows.TryGetValue(windowName, out var existing) && existing != null;
+                if (alreadyOpen)
+                {
+                    existing.transform.SetAsLastSibling();
+                }
+            }
+            finally
+            {
+                _windowLock.Release();
+            }
+
+            if (alreadyOpen)
+            {
+                return _activeWindows[windowName];
             }
 
             var request = Resources.LoadAsync<GameObject>($"UI/Windows/{windowName}");
@@ -149,23 +163,41 @@ namespace Nexus.Core.Services
             var targetParent = _layerRoots.TryGetValue(layer, out var layerRoot) ? layerRoot : _canvasRoot;
             var inst = UnityEngine.Object.Instantiate(prefab, targetParent);
             inst.name = windowName;
-            _activeWindows[windowName] = inst;
-            _windowHistory.Add(windowName);
 
-            var lifecycles = inst.GetComponents<IUIWindowLifecycle>();
-            for (int i = 0; i < lifecycles.Length; i++)
+            try
             {
-                await lifecycles[i].OnOpeningAsync(args, CancellationToken.None);
+                var lifecycles = inst.GetComponents<IUIWindowLifecycle>();
+                for (int i = 0; i < lifecycles.Length; i++)
+                {
+                    await lifecycles[i].OnOpeningAsync(args, CancellationToken.None);
+                }
+
+                inst.SetActive(true);
+
+                for (int i = 0; i < lifecycles.Length; i++)
+                {
+                    await lifecycles[i].OnOpenedAsync(CancellationToken.None);
+                }
+
+                await _windowLock.WaitAsync();
+                try
+                {
+                    _activeWindows[windowName] = inst;
+                    _windowHistory.Add(windowName);
+                }
+                finally
+                {
+                    _windowLock.Release();
+                }
+
+                return inst;
             }
-
-            inst.SetActive(true);
-
-            for (int i = 0; i < lifecycles.Length; i++)
+            catch (Exception ex)
             {
-                await lifecycles[i].OnOpenedAsync(CancellationToken.None);
+                NexusRuntime.Logger?.LogError($"[WindowManager] Failed to open window '{windowName}': {ex.Message}");
+                UnityEngine.Object.Destroy(inst);
+                return null;
             }
-
-            return inst;
         }
 
         public void OpenWindow(string windowName, object args = null)
@@ -176,9 +208,6 @@ namespace Nexus.Core.Services
         public async Task CloseWindowAsync(string windowName)
         {
             if (!_activeWindows.TryGetValue(windowName, out var go) || go == null) return;
-
-            _activeWindows.Remove(windowName);
-            _windowHistory.Remove(windowName);
 
             var lifecycles = go.GetComponents<IUIWindowLifecycle>();
             for (int i = 0; i < lifecycles.Length; i++)
@@ -191,6 +220,17 @@ namespace Nexus.Core.Services
             {
                 try { await lifecycles[i].OnClosedAsync(CancellationToken.None); }
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+            }
+
+            await _windowLock.WaitAsync();
+            try
+            {
+                _activeWindows.Remove(windowName);
+                _windowHistory.Remove(windowName);
+            }
+            finally
+            {
+                _windowLock.Release();
             }
 
             UnityEngine.Object.Destroy(go);
@@ -217,13 +257,21 @@ namespace Nexus.Core.Services
 
         public async Task CloseAllAsync()
         {
-            var windows = new List<string>(_activeWindows.Keys);
+            List<string> windows;
+            await _windowLock.WaitAsync();
+            try
+            {
+                windows = new List<string>(_activeWindows.Keys);
+            }
+            finally
+            {
+                _windowLock.Release();
+            }
+
             foreach (var win in windows)
             {
                 await CloseWindowAsync(win);
             }
-            _activeWindows.Clear();
-            _windowHistory.Clear();
         }
 
         public void CloseAll()
@@ -243,12 +291,22 @@ namespace Nexus.Core.Services
 
         public void Dispose()
         {
-            CloseAll();
+            // Destroy all active windows directly; lifecycle events are skipped during teardown
+            foreach (var kvp in _activeWindows)
+            {
+                if (kvp.Value != null)
+                    UnityEngine.Object.Destroy(kvp.Value);
+            }
+            _activeWindows.Clear();
+            _windowHistory.Clear();
+
             if (_canvasObject != null)
             {
                 UnityEngine.Object.Destroy(_canvasObject);
                 _canvasObject = null;
             }
+
+            _windowLock.Dispose();
         }
     }
 }

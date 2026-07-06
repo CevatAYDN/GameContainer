@@ -43,16 +43,23 @@ namespace Nexus.Core.Extensions
     {
         private readonly ISignalBus _signalBus;
         private readonly HashSet<string> _loadingScenes = new();
+        private readonly object _loadingLock = new();
 
         public SceneLoader(ISignalBus signalBus)
         {
-            _signalBus = signalBus;
+            _signalBus = signalBus ?? throw new ArgumentNullException(nameof(signalBus));
         }
 
         public async Task LoadSceneAsync(string sceneName, LoadSceneMode mode = LoadSceneMode.Additive, CancellationToken ct = default)
         {
-            if (_loadingScenes.Contains(sceneName)) return;
-            _loadingScenes.Add(sceneName);
+            lock (_loadingLock)
+            {
+                if (!_loadingScenes.Add(sceneName))
+                {
+                    NexusRuntime.Logger?.LogWarning($"[Nexus] Scene '{sceneName}' is already being loaded.");
+                    return;
+                }
+            }
 
             try
             {
@@ -77,7 +84,10 @@ namespace Nexus.Core.Extensions
             }
             finally
             {
-                _loadingScenes.Remove(sceneName);
+                lock (_loadingLock)
+                {
+                    _loadingScenes.Remove(sceneName);
+                }
             }
         }
 

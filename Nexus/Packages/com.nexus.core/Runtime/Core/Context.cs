@@ -22,8 +22,9 @@ namespace Nexus.Core
         private ContextBuilder _builder;
         private volatile bool _disposed;
 
-        public List<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
-        public bool HasInterceptors => _interceptorsCount > 0;
+        public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
+
+        public bool HasInterceptors => System.Threading.Volatile.Read(ref _interceptorsCount) > 0;
         public void IncrementInterceptorsCount() => System.Threading.Interlocked.Increment(ref _interceptorsCount);
         public void DecrementInterceptorsCount() => System.Threading.Interlocked.Decrement(ref _interceptorsCount);
 
@@ -48,12 +49,9 @@ namespace Nexus.Core
         /// Returns a snapshot of the plugins list to allow safe iteration during dispatch
         /// when plugins may register/unregister other plugins via interceptors.
         /// </summary>
-        public List<(INexusPlugin plugin, PluginContext context)> GetPluginsSnapshot()
+        public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> GetPluginsSnapshot()
         {
-            lock (_pluginsLock)
-            {
-                return new List<(INexusPlugin plugin, PluginContext context)>(_plugins);
-            }
+            return _pluginsReadOnlyCopy;
         }
         
         public ISignalBus SignalBus { get; }
@@ -125,10 +123,10 @@ namespace Nexus.Core
                             }
                         }
                         catch (Exception ex)
-                {
-                    var logger = TryResolve<ILoggerService>();
-                    logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
-                }
+                        {
+                            var logger = TryResolve<ILoggerService>();
+                            logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
+                        }
                     }
                 }
             }
@@ -344,6 +342,11 @@ namespace Nexus.Core
 
         private static List<Assembly> s_defaultScanAssemblies;
 
+        internal static void ClearDefaultScanAssembliesCache()
+        {
+            s_defaultScanAssemblies = null;
+        }
+
         private static bool ShouldSkipDefaultScanAssembly(Assembly assembly)
         {
             var name = assembly.GetName().Name;
@@ -393,6 +396,8 @@ namespace Nexus.Core
         public void RegisterPlugin(INexusPlugin plugin)
         {
             if (plugin == null) return;
+
+            PluginContext pluginContext = null;
             lock (_pluginsLock)
             {
                 foreach (var p in _plugins)
@@ -400,16 +405,26 @@ namespace Nexus.Core
                     if (p.plugin == plugin) return;
                 }
 
-                var pluginContext = new PluginContext(plugin, this);
+                pluginContext = new PluginContext(plugin, this);
                 _plugins.Add((plugin, pluginContext));
                 _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>(_plugins);
+            }
+
+            try
+            {
                 plugin.OnPluginRegistered(pluginContext);
+            }
+            catch (Exception ex)
+            {
+                TryResolve<ILoggerService>()?.LogException(ex);
             }
         }
 
         public void RemovePlugin(INexusPlugin plugin)
         {
             if (plugin == null) return;
+
+            PluginContext removedContext = null;
             lock (_pluginsLock)
             {
                 int index = -1;
@@ -427,9 +442,20 @@ namespace Nexus.Core
                     var p = _plugins[index];
                     _plugins.RemoveAt(index);
                     _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>(_plugins);
-                    p.context.Clear();
-                    p.plugin.OnPluginRemoved();
+                    removedContext = p.context;
                 }
+            }
+
+            if (removedContext == null) return;
+
+            try
+            {
+                removedContext.Clear();
+                plugin.OnPluginRemoved();
+            }
+            catch (Exception ex)
+            {
+                TryResolve<ILoggerService>()?.LogException(ex);
             }
         }
 
@@ -451,6 +477,8 @@ namespace Nexus.Core
                     TryResolve<ILoggerService>()?.LogException(ex);
                 }
             }
+
+            _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>();
 
             // Dispose all registered services in reverse order
             if (_builder != null)
@@ -493,6 +521,8 @@ namespace Nexus.Core
                     TryResolve<ILoggerService>()?.LogException(ex);
                 }
             }
+
+            _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>();
 
             NexusRuntime.UnregisterContext(this);
             

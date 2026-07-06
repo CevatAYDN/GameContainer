@@ -600,6 +600,11 @@ namespace Nexus.Editor
 
             // Fire Button
             _fireButton = NexusEditorStyles.CreateButton(NexusLang.Get("explorer_fire_test"), FireSelectedSignal, NexusEditorStyles.BtnGreen);
+
+            var openTracerButton = NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal);
+            openTracerButton.style.marginLeft = 6;
+            var openGameManagerButton = NexusEditorStyles.CreateButton("Open Game Manager", () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue);
+            openGameManagerButton.style.marginLeft = 6;
             _fireButton.style.marginTop = 10;
             _fireButton.style.height = 30;
             _testerFormContainer.Add(_fireButton);

@@ -1,47 +1,140 @@
 using System;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 
 namespace Nexus.Core.Services
 {
+    /// <summary>
+    /// Standardized log entry with structured context for every Nexus log message.
+    /// Plan §7 — Error Visibility & Standardized Logging.
+    /// </summary>
+    public readonly struct NexusLogEntry
+    {
+        public string Source { get; }
+        public string Operation { get; }
+        public string ContextId { get; }
+        public string Message { get; }
+
+        public NexusLogEntry(string source, string operation, string contextId, string message)
+        {
+            Source = source ?? "?";
+            Operation = operation ?? "?";
+            ContextId = contextId ?? "?";
+            Message = message ?? "";
+        }
+
+        public string Format()
+        {
+            var sb = new StringBuilder();
+            sb.Append("[Nexus]");
+            sb.Append('[').Append(Source).Append(']');
+            sb.Append('[').Append(Operation).Append(']');
+            if (!string.IsNullOrEmpty(ContextId) && ContextId != "?")
+                sb.Append('[').Append(ContextId).Append(']');
+            sb.Append(' ').Append(Message);
+            return sb.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Centralized logging with structured context. Every Nexus component should use
+    /// NexusLog to ensure consistent, searchable log output.
+    /// Plan §7 — Error Visibility & Standardized Logging.
+    /// </summary>
+    public static class NexusLog
+    {
+        private static ILoggerService s_instance;
+
+        internal static void Initialize(ILoggerService instance)
+        {
+            s_instance = instance;
+        }
+
+        internal static void Reset()
+        {
+            s_instance = null;
+        }
+
+        public static void Error(string source, string operation, string contextId, string message)
+        {
+            var entry = new NexusLogEntry(source, operation, contextId, message);
+            s_instance?.LogError(entry.Format());
+            Debug.LogError(entry.Format());
+        }
+
+        public static void Error(string source, string operation, string contextId, Exception ex)
+        {
+            var msg = ex?.Message ?? "null";
+            var entry = new NexusLogEntry(source, operation, contextId, msg);
+            s_instance?.LogError(entry.Format());
+            Debug.LogException(ex);
+        }
+
+        public static void Error(string source, string operation, string contextId, string message, Exception ex)
+        {
+            var combined = $"{message} | {ex?.Message}";
+            var entry = new NexusLogEntry(source, operation, contextId, combined);
+            s_instance?.LogError(entry.Format());
+            Debug.LogException(ex);
+        }
+
+        public static void Warn(string source, string operation, string contextId, string message)
+        {
+            var entry = new NexusLogEntry(source, operation, contextId, message);
+            s_instance?.LogWarning(entry.Format());
+            Debug.LogWarning(entry.Format());
+        }
+
+        public static void Info(string source, string operation, string contextId, string message)
+        {
+            var entry = new NexusLogEntry(source, operation, contextId, message);
+            s_instance?.Log(entry.Format());
+            Debug.Log(entry.Format());
+        }
+    }
+
     public class LoggerService : ILoggerService, INexusService
     {
         public bool IsEnabled { get; set; } = true;
 
         public ValueTask InitializeAsync(CancellationToken ct)
         {
-            // Build alındığında logları otomatik kapat
 #if !UNITY_EDITOR && !DEVELOPMENT_BUILD
             IsEnabled = false;
 #endif
+            NexusLog.Initialize(this);
             return default;
         }
 
-        public void OnDispose() { }
+        public void OnDispose()
+        {
+            NexusLog.Reset();
+        }
 
         public void Log(string message)
         {
             if (!IsEnabled) return;
-            UnityEngine.Debug.Log(message);
+            Debug.Log(message);
         }
 
         public void LogWarning(string message)
         {
             if (!IsEnabled) return;
-            UnityEngine.Debug.LogWarning(message);
+            Debug.LogWarning(message);
         }
 
         public void LogError(string message)
         {
             if (!IsEnabled) return;
-            UnityEngine.Debug.LogError(message);
+            Debug.LogError(message);
         }
 
         public void LogException(Exception exception)
         {
             if (!IsEnabled) return;
-            UnityEngine.Debug.LogException(exception);
+            Debug.LogException(exception);
         }
     }
 }

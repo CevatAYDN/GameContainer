@@ -152,13 +152,12 @@ namespace Nexus.Tests
         }
 
         [UnityTest]
-        public IEnumerator SiblingRoots_DeadlockTimeoutRecovery()
+        public IEnumerator SiblingRoots_SkipsInactiveSiblingImmediately()
         {
             var parentGo = new GameObject("ParentRoot");
             parentGo.SetActive(false);
             var parentRoot = parentGo.AddComponent<Root>();
 
-            // Create Sibling A (priority 0)
             var childGoA = new GameObject("ChildA");
             childGoA.transform.SetParent(parentGo.transform);
             var lifecycleA = childGoA.AddComponent<TestLifecycleComponent>();
@@ -168,29 +167,16 @@ namespace Nexus.Tests
             SetPrivateField(rootA, "parentRoot", parentRoot);
             SetPrivateField(rootA, "initializationPriority", 0);
 
-            // Create Sibling B (priority 10, runs first, but we make it fail to initialize by destroying it or disabling it)
             var childGoB = new GameObject("ChildB");
             childGoB.transform.SetParent(parentGo.transform);
             var rootB = childGoB.AddComponent<Root>();
             SetPrivateField(rootB, "parentRoot", parentRoot);
             SetPrivateField(rootB, "initializationPriority", 10);
-            
-            // Sibling B is disabled! It won't initialize, but Sibling A has a timeout to recover!
             childGoB.SetActive(false);
 
             parentGo.SetActive(true);
-
-            // Wait a few frames (timeout is 900 frames, but wait! 900 frames in test might take ~15 seconds. Let's make the timeout smaller?
-            // Wait, in Root.cs, we wrote:
-            // "int timeoutFrames = 900;"
-            // To test it quickly without waiting 15 seconds in the test, we can use reflection to set a shorter timeout or just verify that if it's inactive, it's skipped immediately!
-            // Yes! Our code says:
-            // "if (!r.gameObject.activeInHierarchy || !r.enabled) continue;"
-            // Since ChildB is inactive in hierarchy, it is SKIPPED IMMEDIATELY! So Sibling A won't even wait for B!
-            // Let's verify this immediate skip!
             yield return new WaitForSeconds(0.1f);
 
-            // ChildA should initialize immediately since ChildB is inactive
             Assert.AreEqual(3, _initOrder.Count);
             Assert.AreEqual("ChildA_InitStart", _initOrder[0]);
 

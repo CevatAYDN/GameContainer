@@ -59,6 +59,11 @@ namespace Nexus.Core.Services
 
         public ValueTask InitializeAsync(CancellationToken ct)
         {
+            if (_driverObject != null)
+            {
+                return default;
+            }
+
             _driverObject = new GameObject("[Nexus_TickDriver]");
             UnityEngine.Object.DontDestroyOnLoad(_driverObject);
             _driver = _driverObject.AddComponent<TickDriver>();

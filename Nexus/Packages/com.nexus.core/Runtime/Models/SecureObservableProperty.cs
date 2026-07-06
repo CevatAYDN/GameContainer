@@ -14,7 +14,8 @@ namespace Nexus.Core
         private int _obscuredValue;
         private int _cryptoKey;
         private List<Action<int, int>> _handlers;
-        private Action<int, int>[] _cachedSnapshot;
+        private Action<int, int>[] _snapshotCache;
+        private bool _snapshotDirty;
         private readonly object _handlersLock = new();
 
         public SecureObservableInt(int initialValue = 0)
@@ -38,7 +39,12 @@ namespace Nexus.Core
                 Action<int, int>[] snapshot;
                 lock (_handlersLock)
                 {
-                    snapshot = _cachedSnapshot;
+                    if (_snapshotDirty)
+                    {
+                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
+                        _snapshotDirty = false;
+                    }
+                    snapshot = _snapshotCache;
                 }
                 if (snapshot != null)
                 {
@@ -65,7 +71,7 @@ namespace Nexus.Core
                 if (!_handlers.Contains(handler))
                 {
                     _handlers.Add(handler);
-                    _cachedSnapshot = _handlers.ToArray();
+                    _snapshotDirty = true;
                 }
             }
         }
@@ -77,7 +83,7 @@ namespace Nexus.Core
             {
                 if (_handlers != null && _handlers.Remove(handler))
                 {
-                    _cachedSnapshot = _handlers.Count > 0 ? _handlers.ToArray() : null;
+                    _snapshotDirty = true;
                 }
             }
         }
@@ -87,7 +93,8 @@ namespace Nexus.Core
             lock (_handlersLock)
             {
                 _handlers?.Clear();
-                _cachedSnapshot = null;
+                _snapshotCache = null;
+                _snapshotDirty = false;
             }
         }
 

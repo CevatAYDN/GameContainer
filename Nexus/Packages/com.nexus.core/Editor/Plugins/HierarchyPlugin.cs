@@ -172,9 +172,19 @@ namespace Nexus.Editor
             // Mouse down selection callback
             card.RegisterCallback<MouseDownEvent>(evt =>
             {
-                _selectedContext = ctx;
-                RebuildContextTree();
-                RebuildInspector();
+                if (evt.clickCount == 2)
+                {
+                    if (Window != null)
+                    {
+                        Window.OpenPlugin("GameManager");
+                    }
+                }
+                else
+                {
+                    _selectedContext = ctx;
+                    RebuildContextTree();
+                    RebuildInspector();
+                }
                 evt.StopPropagation();
             });
 
