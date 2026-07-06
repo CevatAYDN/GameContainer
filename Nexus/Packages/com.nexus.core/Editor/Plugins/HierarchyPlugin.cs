@@ -224,6 +224,12 @@ namespace Nexus.Editor
 
             card.Add(header);
 
+            var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
+            actionRow.Add(new Button(() => Window?.OpenPlugin("GameManager")) { text = "Open Game Manager" });
+            actionRow.Add(new Button(() => Window?.OpenPlugin("Explorer")) { text = "Open Explorer" });
+            actionRow.Add(new Button(() => Window?.OpenPlugin("Tracer")) { text = "Open Tracer" });
+            card.Add(actionRow);
+
             // Nested active singletons list
             var singletonsList = new VisualElement { style = { marginTop = 6 } };
             var activeSingletons = ctx.Container.GetActiveSingletons();

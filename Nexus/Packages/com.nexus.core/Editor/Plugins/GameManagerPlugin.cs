@@ -42,6 +42,8 @@ namespace Nexus.Editor
         private const double RefreshInterval = 0.5;
 
         private VisualElement _breadcrumb;
+        private TextField _quickFindField;
+        private string _searchQuery = string.Empty;
 
         // ─── Cached data (refreshed on demand) ─────────────────
         private class Snapshot
@@ -93,6 +95,22 @@ namespace Nexus.Editor
             _content = new ScrollView { style = { flexGrow = 1 } };
             _root.Add(_content);
 
+            var quickBar = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginLeft = 12, marginRight = 12, marginTop = 8 } };
+            _quickFindField = new TextField { value = string.Empty, isDelayed = false };
+            _quickFindField.style.flexGrow = 1;
+            _quickFindField.label = "Quick Find";
+            _quickFindField.tooltip = "Type a section name such as contexts, signals, models, services, live";
+            _quickFindField.RegisterValueChangedCallback(evt =>
+            {
+                _searchQuery = evt.newValue?.Trim() ?? string.Empty;
+                if (string.IsNullOrEmpty(_searchQuery))
+                    return;
+            });
+            quickBar.Add(_quickFindField);
+            quickBar.Add(NexusEditorStyles.CreateButton("Go", ExecuteQuickFind, NexusEditorStyles.BtnBlue));
+            quickBar.Add(NexusEditorStyles.CreateButton("Refresh All", () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
+            _root.Add(quickBar);
+
             // Scheduled refresh while in Play Mode
             _refreshSchedule = _root.schedule.Execute(OnScheduledRefresh).Every(250);
 
@@ -137,6 +155,22 @@ namespace Nexus.Editor
         {
             RefreshSnapshot();
             RenderActiveSection();
+        }
+
+        private void ExecuteQuickFind()
+        {
+            var query = (_searchQuery ?? string.Empty).Trim().ToLowerInvariant();
+            if (string.IsNullOrEmpty(query)) return;
+
+            if (query.Contains("context")) SelectSection(Section.Contexts);
+            else if (query.Contains("model")) SelectSection(Section.Models);
+            else if (query.Contains("signal")) SelectSection(Section.Signals);
+            else if (query.Contains("command")) SelectSection(Section.Commands);
+            else if (query.Contains("view")) SelectSection(Section.Views);
+            else if (query.Contains("service")) SelectSection(Section.Services);
+            else if (query.Contains("live")) SelectSection(Section.Live);
+            else if (query.Contains("test")) SelectSection(Section.SignalTest);
+            else SelectSection(Section.Overview);
         }
 
         // ─── Breadcrumb ────────────────────────────────────────
@@ -429,10 +463,11 @@ namespace Nexus.Editor
             AddStatCard(grid, NexusLang.Get("gamemanager_stat_roots"), s.RootCount.ToString(), NexusEditorStyles.DimText, NexusLang.Get("gamemanager_desc_roots"));
 
             var gridActions = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginLeft = 15, marginTop = 8 } };
-            gridActions.Add(NexusEditorStyles.CreateButton("Open Hierarchy", () => Window?.SwitchToPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
-            gridActions.Add(NexusEditorStyles.CreateButton("Open Explorer", () => Window?.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple));
-            gridActions.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal));
-            gridActions.Add(NexusEditorStyles.CreateButton("Open Type Analyzer", () => Window?.SwitchToPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue));
+            gridActions.Add(NexusEditorStyles.CreateButton("Open Hierarchy", () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
+            gridActions.Add(NexusEditorStyles.CreateButton("Open Explorer", () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+            gridActions.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            gridActions.Add(NexusEditorStyles.CreateButton("Open Type Analyzer", () => Window?.OpenPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue));
+            gridActions.Add(NexusEditorStyles.CreateButton("Refresh", () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
             _content.Add(gridActions);
 
             _content.Add(grid);
@@ -444,26 +479,26 @@ namespace Nexus.Editor
             _content.Add(actionsLabel);
 
             var actionsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15, marginTop = 5, flexWrap = Wrap.Wrap } };
-            var openWizard = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_wizard"), () => Window?.SwitchToPlugin("Wizard"), NexusEditorStyles.BtnBlue);
+            var openWizard = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_wizard"), () => Window?.OpenPlugin("Wizard"), NexusEditorStyles.BtnBlue);
             actionsRow.Add(openWizard);
 
-            var openTracer = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_tracer"), () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal);
+            var openTracer = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal);
             openTracer.style.marginLeft = 5;
             actionsRow.Add(openTracer);
 
-            var openGraph = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_graph"), () => Window?.SwitchToPlugin("Graph"), NexusEditorStyles.BtnPurple);
+            var openGraph = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_graph"), () => Window?.OpenPlugin("Graph"), NexusEditorStyles.BtnPurple);
             openGraph.style.marginLeft = 5;
             actionsRow.Add(openGraph);
 
-            var openHierarchy = NexusEditorStyles.CreateButton("Hierarchy", () => Window?.SwitchToPlugin("Hierarchy"), NexusEditorStyles.BtnGreen);
+            var openHierarchy = NexusEditorStyles.CreateButton("Hierarchy", () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen);
             openHierarchy.style.marginLeft = 5;
             actionsRow.Add(openHierarchy);
 
-            var openExplorer = NexusEditorStyles.CreateButton("Explorer", () => Window?.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple);
+            var openExplorer = NexusEditorStyles.CreateButton("Explorer", () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple);
             openExplorer.style.marginLeft = 5;
             actionsRow.Add(openExplorer);
 
-            var openTypeAnalyzer = NexusEditorStyles.CreateButton("Type Analyzer", () => Window?.SwitchToPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue);
+            var openTypeAnalyzer = NexusEditorStyles.CreateButton("Type Analyzer", () => Window?.OpenPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue);
             openTypeAnalyzer.style.marginLeft = 5;
             actionsRow.Add(openTypeAnalyzer);
 
@@ -500,15 +535,16 @@ namespace Nexus.Editor
                 }
             };
 
-            card.RegisterCallback<MouseDownEvent>(_ =>
+            card.RegisterCallback<MouseDownEvent>(evt =>
             {
+                if (evt.clickCount != 2) return;
                 if (label.Contains("Context"))
                 {
-                    Window?.SwitchToPlugin("Hierarchy");
+                    Window?.OpenPlugin("Hierarchy");
                 }
                 else if (label.Contains("Model") || label.Contains("Service") || label.Contains("Command") || label.Contains("View"))
                 {
-                    Window?.SwitchToPlugin("GameManager");
+                    Window?.OpenPlugin("GameManager");
                 }
             });
 
@@ -570,6 +606,20 @@ namespace Nexus.Editor
                         borderBottomRightRadius = 4,
                     }
                 };
+
+                card.RegisterCallback<MouseDownEvent>(evt =>
+                {
+                    if (evt.clickCount == 2)
+                    {
+                        Window?.OpenPlugin("Hierarchy");
+                    }
+                });
+
+                var rowActionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
+                rowActionRow.Add(NexusEditorStyles.CreateButton("Open Hierarchy", () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
+                rowActionRow.Add(NexusEditorStyles.CreateButton("Open Explorer", () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+                rowActionRow.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+                card.Add(rowActionRow);
 
                 var header = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
                 header.Add(NexusEditorStyles.CreateStatusDot(NexusEditorStyles.AccentGreen));
@@ -653,6 +703,11 @@ namespace Nexus.Editor
                 var lbl = new Label(name) { style = { fontSize = 11, color = new StyleColor(NexusEditorStyles.TextPrimary) } };
                 row.Add(lbl);
                 row.Add(NexusEditorStyles.CreatePill("IReactiveModel", NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
+                row.RegisterCallback<MouseDownEvent>(evt =>
+                {
+                    if (evt.clickCount == 2)
+                        Window?.OpenPlugin("Hierarchy");
+                });
                 _content.Add(row);
             }
         }
@@ -686,6 +741,12 @@ namespace Nexus.Editor
                 {
                     row.Add(NexusEditorStyles.CreatePill("unhandled", new Color(0.3f, 0.15f, 0.15f), new Color(1f, 0.4f, 0.4f)));
                 }
+
+                row.RegisterCallback<MouseDownEvent>(evt =>
+                {
+                    if (evt.clickCount == 2)
+                        Window?.OpenPlugin("Explorer");
+                });
 
                 _content.Add(row);
             }
@@ -841,6 +902,11 @@ namespace Nexus.Editor
                 row.Add(new Label(parts[0]) { style = { fontSize = 11, color = new StyleColor(NexusEditorStyles.TextPrimary), width = 200 } });
                 if (parts.Length > 1)
                     row.Add(new Label(parts[1]) { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
+                row.RegisterCallback<MouseDownEvent>(evt =>
+                {
+                    if (evt.clickCount == 2)
+                        Window?.OpenPlugin("Hierarchy");
+                });
                 _content.Add(row);
             }
         }

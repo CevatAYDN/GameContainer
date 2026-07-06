@@ -24,6 +24,7 @@ namespace Nexus.Editor
         private VisualElement _testerPanel;
         private ScrollView _testerFormContainer;
         private DropdownField _contextTargetDropdown;
+        private Button _refreshTargetsButton;
         private Button _fireButton;
         private Label _resultLogLabel;
 
@@ -586,7 +587,13 @@ namespace Nexus.Editor
             // Context target selection (addresses multi-context concerns!)
             var activeContexts = NexusRuntime.ActiveContexts;
             var contextChoices = activeContexts.Select(c => c is Context ctx ? ctx.ScopeTag : "Unknown").ToList();
-            
+
+            var topActions = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginBottom = 6 } };
+            topActions.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            topActions.Add(NexusEditorStyles.CreateButton("Open Game Manager", () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
+            topActions.Add(NexusEditorStyles.CreateButton("Refresh Targets", RefreshTesterView, NexusEditorStyles.BtnGray));
+            _testerFormContainer.Add(topActions);
+
             if (contextChoices.Count == 0)
             {
                 var noContextLabel = new Label(NexusLang.Get("explorer_no_context_target")) { style = { color = Color.red, fontSize = 9 } };
@@ -596,15 +603,16 @@ namespace Nexus.Editor
 
             var defaultContext = contextChoices[0];
             _contextTargetDropdown = new DropdownField("Target Context", contextChoices, 0);
+            _contextTargetDropdown.tooltip = "Fire the test signal into the selected context";
             _testerFormContainer.Add(_contextTargetDropdown);
+
+            _refreshTargetsButton = NexusEditorStyles.CreateButton("Refresh Contexts", RefreshTesterView, NexusEditorStyles.BtnGray);
+            _refreshTargetsButton.style.marginTop = 4;
+            _testerFormContainer.Add(_refreshTargetsButton);
 
             // Fire Button
             _fireButton = NexusEditorStyles.CreateButton(NexusLang.Get("explorer_fire_test"), FireSelectedSignal, NexusEditorStyles.BtnGreen);
-
-            var openTracerButton = NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal);
-            openTracerButton.style.marginLeft = 6;
-            var openGameManagerButton = NexusEditorStyles.CreateButton("Open Game Manager", () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue);
-            openGameManagerButton.style.marginLeft = 6;
+            _fireButton.tooltip = "Fire the selected signal into the target context";
             _fireButton.style.marginTop = 10;
             _fireButton.style.height = 30;
             _testerFormContainer.Add(_fireButton);
@@ -754,7 +762,7 @@ namespace Nexus.Editor
             {
                 var activeContexts = NexusRuntime.ActiveContexts;
                 Context targetContext = null;
-                
+
                 foreach (var ctx in activeContexts)
                 {
                     if (ctx is Context context && context.ScopeTag == _contextTargetDropdown.value)
@@ -762,6 +770,11 @@ namespace Nexus.Editor
                         targetContext = context;
                         break;
                     }
+                }
+
+                if (targetContext == null)
+                {
+                    targetContext = activeContexts.OfType<Context>().FirstOrDefault();
                 }
 
                 if (targetContext == null || targetContext.SignalBus == null)
