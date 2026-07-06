@@ -37,6 +37,7 @@ namespace Nexus.Editor
         private string _discoveryError;
 
         private VisualElement _sidebar;
+        private VisualElement _contextActionBar;
         private VisualElement _contentArea;
         private Label _statusBar;
         private readonly Dictionary<string, Label> _tabLabels = new();
@@ -268,6 +269,9 @@ namespace Nexus.Editor
             rightPanel.style.flexGrow = 1;
             rightPanel.style.flexDirection = FlexDirection.Column;
 
+            _contextActionBar = new VisualElement();
+            rightPanel.Add(_contextActionBar);
+
             _contentArea = new VisualElement();
             _contentArea.style.flexGrow = 1;
             rightPanel.Add(_contentArea);
@@ -432,6 +436,7 @@ namespace Nexus.Editor
         private void RefreshActivePlugin()
         {
             if (_contentArea == null || _activePlugin == null) return;
+            UpdateContextActionBar();
             _contentArea.Clear();
 
             try
@@ -443,6 +448,124 @@ namespace Nexus.Editor
                 Debug.LogException(ex);
                 _contentArea.Add(new Label($"Error loading plugin view: {ex.Message}") { style = { color = Color.red } });
             }
+        }
+
+        private void UpdateContextActionBar()
+        {
+            if (_contextActionBar == null || _activePlugin == null) return;
+            _contextActionBar.Clear();
+
+            var row = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    paddingLeft = 12,
+                    paddingRight = 12,
+                    paddingTop = 6,
+                    paddingBottom = 6,
+                    backgroundColor = new StyleColor(new Color(0.14f, 0.14f, 0.17f)),
+                    borderBottomWidth = 1,
+                    borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor)
+                }
+            };
+
+            var tagLabel = new Label($"ACTIONS ({_activePlugin.DisplayName.ToUpper()})")
+            {
+                style =
+                {
+                    fontSize = 10,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    color = new StyleColor(NexusEditorStyles.AccentBlue),
+                    marginRight = 12
+                }
+            };
+            row.Add(tagLabel);
+
+            switch (_activePlugin.Id)
+            {
+                case "Dashboard":
+                    AddContextActionButton(row, "⚡ CodeGen", () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue);
+                    AddContextActionButton(row, "➕ Create Root", () => {
+                        var go = new GameObject("NexusRoot");
+                        go.AddComponent<Root>();
+                        Undo.RegisterCreatedObjectUndo(go, "Create Nexus Root");
+                        Selection.activeObject = go;
+                    }, NexusEditorStyles.BtnTeal);
+                    AddContextActionButton(row, "🌐 Explorer", () => SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple);
+                    AddContextActionButton(row, "📊 GameManager", () => SwitchToPlugin("GameManager"), NexusEditorStyles.BtnGray);
+                    break;
+
+                case "Wizard":
+                    AddContextActionButton(row, "⚡ Run CodeGen", () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue);
+                    AddContextActionButton(row, "➕ Create Model", () => SwitchToPlugin("Wizard"), NexusEditorStyles.AccentYellow);
+                    break;
+
+                case "Hierarchy":
+                    AddContextActionButton(row, "🎯 Select Active Root", () => {
+                        var roots = NexusEditorDataProvider.GetSceneRoots();
+                        if (roots != null && roots.Length > 0) Selection.activeGameObject = roots[0].gameObject;
+                    }, NexusEditorStyles.BtnGreen);
+                    AddContextActionButton(row, "🧹 Clear Caches", () => {
+                        NexusRuntime.Reset();
+                        RefreshActivePlugin();
+                    }, NexusEditorStyles.AccentRed);
+                    break;
+
+                case "Explorer":
+                    AddContextActionButton(row, "⚡ CodeGen", () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue);
+                    AddContextActionButton(row, "🔍 Scan Types", () => SwitchToPlugin("TypeAnalyzer"), NexusEditorStyles.BtnPurple);
+                    break;
+
+                case "Tracer":
+                    AddContextActionButton(row, "🧹 Clear Buffer", () => RefreshActivePlugin(), NexusEditorStyles.AccentRed);
+                    break;
+
+                case "CasualServices":
+                case "casual_services":
+                    AddContextActionButton(row, "📳 Test Haptic", () => SwitchToPlugin("casual_services"), new Color(0.8f, 0.3f, 0.6f));
+                    break;
+            }
+
+            var spacer = new VisualElement { style = { flexGrow = 1 } };
+            row.Add(spacer);
+
+            bool playing = Application.isPlaying;
+            var statusPill = NexusEditorStyles.CreatePill(
+                playing ? "PLAY MODE ACTIVE" : "EDIT MODE",
+                playing ? new Color(0.1f, 0.4f, 0.2f) : new Color(0.3f, 0.3f, 0.3f),
+                playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary
+            );
+            statusPill.style.fontSize = 8;
+            row.Add(statusPill);
+
+            _contextActionBar.Add(row);
+        }
+
+        private void AddContextActionButton(VisualElement parent, string label, System.Action onClick, Color color)
+        {
+            var btn = new Button(() => onClick())
+            {
+                text = label,
+                style =
+                {
+                    marginRight = 6,
+                    paddingLeft = 8,
+                    paddingRight = 8,
+                    paddingTop = 3,
+                    paddingBottom = 3,
+                    fontSize = 9,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    backgroundColor = new StyleColor(color),
+                    color = Color.white,
+                    borderTopLeftRadius = 3,
+                    borderTopRightRadius = 3,
+                    borderBottomLeftRadius = 3,
+                    borderBottomRightRadius = 3
+                }
+            };
+            parent.Add(btn);
         }
 
         private void OnScheduledUpdate()

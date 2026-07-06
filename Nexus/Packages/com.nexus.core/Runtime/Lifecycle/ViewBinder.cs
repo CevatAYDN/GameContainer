@@ -149,7 +149,7 @@ namespace Nexus.Core
             if (mediatorAttr == null)
             {
                 var logger = _context?.Resolve<ILoggerService>();
-                logger?.LogWarning($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
+                logger?.Log($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
                 view.Bind(_context);
                 return;
             }

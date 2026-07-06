@@ -74,6 +74,7 @@ namespace Nexus.Editor
             scroll.style.paddingBottom = 20;
 
             BuildStatusSection(scroll);
+            BuildQuickFindSection(scroll);
             BuildOverviewSection(scroll);
             BuildQuickActions(scroll);
             BuildRuntimeSection(scroll);
@@ -142,6 +143,193 @@ namespace Nexus.Editor
             statusCard.Add(hint);
 
             parent.Add(statusCard);
+        }
+
+        private string _quickSearchQuery = "";
+        private VisualElement _quickFindResultsContainer;
+
+        private void BuildQuickFindSection(VisualElement parent)
+        {
+            var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBg);
+            card.style.marginTop = 12;
+
+            var titleRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 8 } };
+            var title = new Label("GLOBAL QUICK FIND / COMMAND PALETTE")
+            {
+                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue) }
+            };
+            titleRow.Add(title);
+            card.Add(titleRow);
+
+            var searchRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
+            var searchInput = new TextField
+            {
+                value = _quickSearchQuery,
+                tooltip = "Search Signals, Commands, Models, Services, Views... (e.g. CityModel, EnterDistrictCommand)",
+                style = { flexGrow = 1, height = 24, fontSize = 11 }
+            };
+
+            searchInput.RegisterValueChangedCallback(evt =>
+            {
+                _quickSearchQuery = evt.newValue;
+                UpdateQuickFindResults();
+            });
+
+            searchRow.Add(searchInput);
+
+            var clearBtn = new Button(() =>
+            {
+                searchInput.value = "";
+                _quickSearchQuery = "";
+                UpdateQuickFindResults();
+            })
+            {
+                text = "Clear",
+                style =
+                {
+                    marginLeft = 6,
+                    height = 24,
+                    fontSize = 9,
+                    backgroundColor = new StyleColor(NexusEditorStyles.BtnGray),
+                    color = Color.white
+                }
+            };
+            searchRow.Add(clearBtn);
+
+            card.Add(searchRow);
+
+            _quickFindResultsContainer = new VisualElement { style = { marginTop = 8 } };
+            card.Add(_quickFindResultsContainer);
+
+            parent.Add(card);
+
+            if (!string.IsNullOrEmpty(_quickSearchQuery))
+            {
+                UpdateQuickFindResults();
+            }
+        }
+
+        private void UpdateQuickFindResults()
+        {
+            if (_quickFindResultsContainer == null) return;
+            _quickFindResultsContainer.Clear();
+
+            if (string.IsNullOrWhiteSpace(_quickSearchQuery)) return;
+
+            string query = _quickSearchQuery.Trim().ToLowerInvariant();
+            int matchCount = 0;
+
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (!type.IsClass || type.IsAbstract) continue;
+                        if (matchCount >= 10) break;
+
+                        if (type.Name.ToLowerInvariant().Contains(query))
+                        {
+                            string category = "CLASS";
+                            Color color = NexusEditorStyles.TextSecondary;
+
+                            if (typeof(IReactiveModel).IsAssignableFrom(type))
+                            {
+                                category = "MODEL";
+                                color = NexusEditorStyles.AccentYellow;
+                            }
+                            else if (typeof(INexusService).IsAssignableFrom(type))
+                            {
+                                category = "SERVICE";
+                                color = NexusEditorStyles.AccentGreen;
+                            }
+                            else if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type))
+                            {
+                                category = "COMMAND";
+                                color = NexusEditorStyles.AccentOrange;
+                            }
+                            else if (typeof(View).IsAssignableFrom(type))
+                            {
+                                category = "VIEW";
+                                color = NexusEditorStyles.AccentBlue;
+                            }
+
+                            var resultRow = new VisualElement
+                            {
+                                style =
+                                {
+                                    flexDirection = FlexDirection.Row,
+                                    alignItems = Align.Center,
+                                    paddingLeft = 8,
+                                    paddingRight = 8,
+                                    paddingTop = 4,
+                                    paddingBottom = 4,
+                                    marginBottom = 2,
+                                    backgroundColor = new StyleColor(NexusEditorStyles.RowBase),
+                                    borderTopLeftRadius = 3,
+                                    borderTopRightRadius = 3,
+                                    borderBottomLeftRadius = 3,
+                                    borderBottomRightRadius = 3
+                                }
+                            };
+
+                            var catPill = NexusEditorStyles.CreatePill(category, new Color(color.r, color.g, color.b, 0.2f), color);
+                            catPill.style.marginRight = 8;
+                            resultRow.Add(catPill);
+
+                            var nameLabel = new Label(type.Name)
+                            {
+                                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = Color.white, flexGrow = 1 }
+                            };
+                            resultRow.Add(nameLabel);
+
+                            var targetType = type;
+
+                            var copyBtn = new Button(() =>
+                            {
+                                UnityEditor.EditorGUIUtility.systemCopyBuffer = targetType.FullName;
+                            })
+                            {
+                                text = "📋 Copy",
+                                style = { fontSize = 8, marginRight = 4, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white }
+                            };
+                            resultRow.Add(copyBtn);
+
+                            var openBtn = new Button(() =>
+                            {
+                                var guids = UnityEditor.AssetDatabase.FindAssets($"{targetType.Name} t:Script");
+                                if (guids.Length > 0)
+                                {
+                                    var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[0]);
+                                    var obj = UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+                                    if (obj != null) UnityEditor.AssetDatabase.OpenAsset(obj);
+                                }
+                            })
+                            {
+                                text = "🔍 Open",
+                                style = { fontSize = 8, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue), color = Color.white }
+                            };
+                            resultRow.Add(openBtn);
+
+                            _quickFindResultsContainer.Add(resultRow);
+                            matchCount++;
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            if (matchCount == 0)
+            {
+                _quickFindResultsContainer.Add(new Label($"No types found matching '{_quickSearchQuery}'")
+                {
+                    style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 4 }
+                });
+            }
         }
 
         private void BuildOverviewSection(VisualElement parent)

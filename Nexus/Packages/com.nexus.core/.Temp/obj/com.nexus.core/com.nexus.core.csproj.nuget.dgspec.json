@@ -1,17 +1,17 @@
 {
   "format": 1,
   "restore": {
-    "c:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj": {}
+    "C:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj": {}
   },
   "projects": {
-    "c:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj": {
+    "C:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj": {
       "version": "1.0.0",
       "restore": {
-        "projectUniqueName": "c:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj",
+        "projectUniqueName": "C:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj",
         "projectName": "com.nexus.core",
-        "projectPath": "c:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj",
+        "projectPath": "C:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\com.nexus.core.csproj",
         "packagesPath": "C:\\Users\\wwwla\\.nuget\\packages\\",
-        "outputPath": "c:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\.Temp\\obj\\com.nexus.core\\",
+        "outputPath": "C:\\Users\\wwwla\\Documents\\Github\\Pixel-Flow-Clone\\GameContainer\\Nexus\\Packages\\com.nexus.core\\.Temp\\obj\\com.nexus.core\\",
         "projectStyle": "PackageReference",
         "configFilePaths": [
           "C:\\Users\\wwwla\\AppData\\Roaming\\NuGet\\NuGet.Config"

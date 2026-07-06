@@ -289,6 +289,48 @@ namespace Nexus.Editor
                 return;
             }
 
+            // Context Action Bar
+            var contextBar = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    marginBottom = 8,
+                    paddingLeft = 8,
+                    paddingRight = 8,
+                    paddingTop = 6,
+                    paddingBottom = 6,
+                    backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
+                    borderTopLeftRadius = 4,
+                    borderTopRightRadius = 4,
+                    borderBottomLeftRadius = 4,
+                    borderBottomRightRadius = 4
+                }
+            };
+
+            var scopeLabel = new Label($"CONTEXT: {_selectedContext.ScopeTag ?? "Default"}")
+            {
+                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentGreen), flexGrow = 1 }
+            };
+            contextBar.Add(scopeLabel);
+
+            var gcBtn = new Button(() => { System.GC.Collect(); RebuildInspector(); })
+            {
+                text = "🗑️ Force GC",
+                style = { fontSize = 8, marginRight = 4, height = 20, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white }
+            };
+            contextBar.Add(gcBtn);
+
+            var resetBtn = new Button(() => { NexusRuntime.Reset(); RebuildContextTree(); RebuildInspector(); })
+            {
+                text = "🧹 Reset Contexts",
+                style = { fontSize = 8, height = 20, backgroundColor = new StyleColor(NexusEditorStyles.AccentRed), color = Color.white }
+            };
+            contextBar.Add(resetBtn);
+
+            _inspectorScroll.Add(contextBar);
+
             // Search Bar
             var searchField = new TextField(NexusLang.Get("hierarchy_search_filter")) { value = _searchFilter };
             searchField.RegisterValueChangedCallback(evt =>

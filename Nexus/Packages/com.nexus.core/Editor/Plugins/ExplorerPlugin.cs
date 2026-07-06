@@ -519,11 +519,42 @@ namespace Nexus.Editor
                     handlerContainer.Add(badge);
                 }
 
-                var l3 = new Label(map.Mode) { style = { width = new Length(20, LengthUnit.Percent), color = new StyleColor(NexusEditorStyles.AccentPurpleText), fontSize = 9 } };
+                var modeContainer = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, width = new Length(20, LengthUnit.Percent) } };
+                var l3 = new Label(map.Mode) { style = { color = new StyleColor(NexusEditorStyles.AccentPurpleText), fontSize = 9, flexGrow = 1 } };
+                modeContainer.Add(l3);
+
+                string sigName = map.SignalName;
+                string cmdName = map.CommandName;
+
+                var copyBtn = new Button(() => { EditorGUIUtility.systemCopyBuffer = sigName; })
+                {
+                    text = "📋",
+                    tooltip = "Copy Signal Name",
+                    style = { fontSize = 8, width = 18, height = 16, marginRight = 2, paddingLeft = 0, paddingRight = 0, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white }
+                };
+                modeContainer.Add(copyBtn);
+
+                var openBtn = new Button(() =>
+                {
+                    string targetName = cmdName != "No Handler" ? cmdName : sigName;
+                    var guids = AssetDatabase.FindAssets($"{targetName} t:Script");
+                    if (guids.Length > 0)
+                    {
+                        var path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                        var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+                        if (obj != null) AssetDatabase.OpenAsset(obj);
+                    }
+                })
+                {
+                    text = "🔍",
+                    tooltip = "Open Script in IDE",
+                    style = { fontSize = 8, width = 18, height = 16, paddingLeft = 0, paddingRight = 0, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue), color = Color.white }
+                };
+                modeContainer.Add(openBtn);
 
                 row.Add(l1);
                 row.Add(handlerContainer);
-                row.Add(l3);
+                row.Add(modeContainer);
                 _explorerScrollView.Add(row);
                 _renderedRows.Add(row);
             }
