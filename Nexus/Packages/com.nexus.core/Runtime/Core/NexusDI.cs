@@ -133,19 +133,26 @@ namespace Nexus.Core
 
                     if (targetCtor == null)
                     {
-                        // Try parameterless constructor first (safest)
-                        foreach (var ctor in constructors)
+                        if (constructors.Length == 1)
                         {
-                            if (ctor.GetParameters().Length == 0)
-                            {
-                                targetCtor = ctor;
-                                break;
-                            }
+                            targetCtor = constructors[0];
                         }
-
-                        if (targetCtor == null)
+                        else
                         {
-                            throw new InvalidOperationException($"No suitable constructor found for type {t.FullName}. A type must either have a parameterless constructor or a constructor decorated with [Inject].");
+                            // Try parameterless constructor first (safest)
+                            foreach (var ctor in constructors)
+                            {
+                                if (ctor.GetParameters().Length == 0)
+                                {
+                                    targetCtor = ctor;
+                                    break;
+                                }
+                            }
+
+                            if (targetCtor == null)
+                            {
+                                throw new InvalidOperationException($"No suitable constructor found for type {t.FullName}. A type must either have a parameterless constructor or a constructor decorated with [Inject].");
+                            }
                         }
                     }
                 }
