@@ -13,7 +13,7 @@ namespace Nexus.Editor
     public class ExplorerPlugin : NexusEditorPlugin
     {
         public override string Id => "Explorer";
-        public override string DisplayName => "Signal Explorer";
+        public override string DisplayName => NexusLang.Get("action_explorer_title");
         public override int Order => 3;
 
         private VisualElement _view;

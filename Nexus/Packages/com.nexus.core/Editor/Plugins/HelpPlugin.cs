@@ -12,7 +12,7 @@ namespace Nexus.Editor
     public class HelpPlugin : NexusEditorPlugin
     {
         public override string Id => "Help";
-        public override string DisplayName => "Help & Docs";
+        public override string DisplayName => NexusLang.Get("action_help_title");
         public override int Order => 10;
 
         private VisualElement _view;

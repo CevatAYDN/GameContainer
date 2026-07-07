@@ -11,7 +11,7 @@ namespace Nexus.Editor
     public class ErrorDashboardPlugin : NexusEditorPlugin
     {
         public override string Id => "ErrorDashboard";
-        public override string DisplayName => "Error Dashboard";
+        public override string DisplayName => NexusLang.Get("tab_errordashboard");
         public override int Order => 8;
 
         private VisualElement _view;
@@ -22,7 +22,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("ERROR DASHBOARD");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("tab_error_dashboard").ToUpper());
             _view.Add(toolbar);
 
             var header = new Label("Error Collection System")

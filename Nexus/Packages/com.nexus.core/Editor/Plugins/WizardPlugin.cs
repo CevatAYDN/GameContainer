@@ -12,7 +12,7 @@ namespace Nexus.Editor
     public class WizardPlugin : NexusEditorPlugin
     {
         public override string Id => "Wizard";
-        public override string DisplayName => "Context Wizard";
+        public override string DisplayName => NexusLang.Get("action_wizard_title");
         public override int Order => 1;
 
         private enum SubTab

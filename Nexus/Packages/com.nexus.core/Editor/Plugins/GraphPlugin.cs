@@ -12,7 +12,7 @@ namespace Nexus.Editor
     public class GraphPlugin : NexusEditorPlugin, INexusTraceSink
     {
         public override string Id => "Graph";
-        public override string DisplayName => "Signal Graph";
+        public override string DisplayName => NexusLang.Get("action_graph_title");
         public override int Order => 5;
 
         private const int MaxNodes = 50;

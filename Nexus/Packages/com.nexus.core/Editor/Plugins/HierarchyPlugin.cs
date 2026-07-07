@@ -13,7 +13,7 @@ namespace Nexus.Editor
     public class HierarchyPlugin : NexusEditorPlugin
     {
         public override string Id => "Hierarchy";
-        public override string DisplayName => "Hierarchy & Data";
+        public override string DisplayName => NexusLang.Get("action_hierarchy_title");
         public override int Order => 2;
 
         private VisualElement _view;

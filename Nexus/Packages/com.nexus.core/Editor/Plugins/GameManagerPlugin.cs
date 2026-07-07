@@ -16,7 +16,7 @@ namespace Nexus.Editor
     public class GameManagerPlugin : NexusEditorPlugin
     {
         public override string Id => "GameManager";
-        public override string DisplayName => "Game Manager";
+        public override string DisplayName => NexusLang.Get("action_gamemanager_title");
         public override int Order => 6;
 
         // ─── Categories ────────────────────────────────────────

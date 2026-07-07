@@ -11,7 +11,7 @@ namespace Nexus.Editor
     public class TracerPlugin : NexusEditorPlugin, INexusTraceSink
     {
         public override string Id => "Tracer";
-        public override string DisplayName => "Live Tracer";
+        public override string DisplayName => NexusLang.Get("action_tracer_title");
         public override int Order => 4;
 
         private VisualElement _view;

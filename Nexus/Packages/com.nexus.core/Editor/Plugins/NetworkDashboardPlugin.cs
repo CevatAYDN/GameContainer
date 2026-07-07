@@ -11,7 +11,7 @@ namespace Nexus.Editor
     public class NetworkDashboardPlugin : NexusEditorPlugin
     {
         public override string Id => "NetworkDashboard";
-        public override string DisplayName => "Network Dashboard";
+        public override string DisplayName => NexusLang.Get("tab_networkdashboard");
         public override int Order => 10;
 
         private VisualElement _view;
@@ -22,7 +22,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("NETWORK DASHBOARD");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("tab_network_dashboard").ToUpper());
             _view.Add(toolbar);
 
             var header = new Label("Network Monitoring System")

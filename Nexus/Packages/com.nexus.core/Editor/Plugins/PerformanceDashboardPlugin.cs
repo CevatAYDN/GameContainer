@@ -11,7 +11,7 @@ namespace Nexus.Editor
     public class PerformanceDashboardPlugin : NexusEditorPlugin
     {
         public override string Id => "PerformanceDashboard";
-        public override string DisplayName => "Performance Dashboard";
+        public override string DisplayName => NexusLang.Get("tab_performancedashboard");
         public override int Order => 9;
 
         private VisualElement _view;
@@ -22,7 +22,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("PERFORMANCE DASHBOARD");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("tab_performance_dashboard").ToUpper());
             _view.Add(toolbar);
 
             var header = new Label("Performance Monitoring System")

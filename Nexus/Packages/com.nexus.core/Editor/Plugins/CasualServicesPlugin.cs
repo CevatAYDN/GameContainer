@@ -9,7 +9,7 @@ namespace Nexus.Editor.Plugins
     public class CasualServicesPlugin : NexusEditorPlugin
     {
         public override string Id => "casual_services";
-        public override string DisplayName => "Casual Debugger";
+        public override string DisplayName => NexusLang.Get("action_casual_services_title");
         public override int Order => 25;
 
         private VisualElement _container;

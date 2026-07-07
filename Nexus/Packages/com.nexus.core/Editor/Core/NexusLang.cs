@@ -131,6 +131,16 @@ namespace Nexus.Editor
             s_strings["tab_typeanalyzer"] = "Type Analyzer";
             s_strings["tab_casual_services"] = "Casual Debugger";
             s_strings["tab_help"] = "Help";
+            s_strings["tab_errordashboard"] = "Error Dashboard";
+            s_strings["tab_performancedashboard"] = "Performance Dashboard";
+            s_strings["tab_networkdashboard"] = "Network Dashboard";
+
+            s_strings["action_error_dashboard_title"] = "Error Dashboard";
+            s_strings["action_error_dashboard_desc"] = "Centralized error collection and monitoring";
+            s_strings["action_performance_dashboard_title"] = "Performance Dashboard";
+            s_strings["action_performance_dashboard_desc"] = "Real-time performance metrics and monitoring";
+            s_strings["action_network_dashboard_title"] = "Network Dashboard";
+            s_strings["action_network_dashboard_desc"] = "Network event tracking and latency monitoring";
 
             s_strings["wizard_title"] = "CONTEXT CREATION & UTILITIES WIZARD";
             s_strings["wizard_create_manifest"] = "Create Default Bootstrap Manifest";

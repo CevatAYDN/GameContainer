@@ -12,7 +12,7 @@ namespace Nexus.Editor
     public class TypeAnalyzerPlugin : NexusEditorPlugin
     {
         public override string Id => "TypeAnalyzer";
-        public override string DisplayName => "Type Analyzer";
+        public override string DisplayName => NexusLang.Get("action_typeanalyzer_title");
         public override int Order => 7;
 
         private TextField _searchField;

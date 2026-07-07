@@ -8,7 +8,7 @@ namespace Nexus.Editor
     public class DashboardPlugin : NexusEditorPlugin
     {
         public override string Id => "Dashboard";
-        public override string DisplayName => "Dashboard";
+        public override string DisplayName => NexusLang.Get("tab_dashboard");
         public override int Order => 0;
 
         private VisualElement _view;
@@ -455,12 +455,16 @@ namespace Nexus.Editor
                 ("action_gamemanager_title", "action_gamemanager_desc", "GameManager"),
                 ("action_typeanalyzer_title","action_typeanalyzer_desc","TypeAnalyzer"),
                 ("action_help_title",        "action_help_desc",        "Help"),
+                ("action_error_dashboard_title", "action_error_dashboard_desc", "ErrorDashboard"),
+                ("action_performance_dashboard_title", "action_performance_dashboard_desc", "PerformanceDashboard"),
+                ("action_network_dashboard_title", "action_network_dashboard_desc", "NetworkDashboard"),
             };
 
             var colors = new[] { NexusEditorStyles.BtnBlue, NexusEditorStyles.BtnTeal,
                 NexusEditorStyles.BtnPurple, new Color(0.5f,0.5f,0.6f),
                 new Color(0.8f,0.3f,0.3f), new Color(0.3f,0.7f,0.6f),
-                new Color(0.6f,0.5f,0.5f), new Color(0.5f,0.5f,0.8f) };
+                new Color(0.6f,0.5f,0.5f), new Color(0.5f,0.5f,0.8f),
+                new Color(0.8f,0.4f,0.4f), new Color(0.4f,0.8f,0.4f), new Color(0.4f,0.6f,0.8f) };
 
             var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
             for (int i = 0; i < actions.Length; i++)
