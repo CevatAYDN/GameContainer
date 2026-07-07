@@ -21,6 +21,7 @@ namespace Nexus.Core.FSM
         void RegisterState<TState>(TState state) where TState : class, IGameState;
         Task ChangeStateAsync<TState>(object args = null) where TState : class, IGameState;
         Task ChangeStateAsync(Type stateType, object args = null);
+        Task ChangeStateAsync(Type stateType, CancellationToken ct, object args = null);
     }
 
     [Preserve]
@@ -40,10 +41,15 @@ namespace Nexus.Core.FSM
 
         public Task ChangeStateAsync<TState>(object args = null) where TState : class, IGameState
         {
-            return ChangeStateAsync(typeof(TState), args);
+            return ChangeStateAsync(typeof(TState), CancellationToken.None, args);
         }
 
-        public async Task ChangeStateAsync(Type stateType, object args = null)
+        public Task ChangeStateAsync(Type stateType, object args = null)
+        {
+            return ChangeStateAsync(stateType, CancellationToken.None, args);
+        }
+
+        public async Task ChangeStateAsync(Type stateType, CancellationToken ct, object args = null)
         {
             if (!_states.TryGetValue(stateType, out var nextState))
             {
@@ -55,13 +61,18 @@ namespace Nexus.Core.FSM
 
             _stateCts?.Cancel();
             _stateCts?.Dispose();
-            _stateCts = new CancellationTokenSource();
+            _stateCts = ct != CancellationToken.None 
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct) 
+                : new CancellationTokenSource();
+
+            var token = _stateCts.Token;
+            token.ThrowIfCancellationRequested();
 
             if (_currentState != null)
             {
                 try
                 {
-                    await _currentState.OnExitAsync(_stateCts.Token);
+                    await _currentState.OnExitAsync(token);
                 }
                 catch (Exception ex)
                 {
@@ -73,11 +84,13 @@ namespace Nexus.Core.FSM
 
             try
             {
-                await _currentState.OnEnterAsync(args, _stateCts.Token);
+                await _currentState.OnEnterAsync(args, token);
             }
             catch (Exception ex)
             {
                 NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
+                // Fallback to null state to avoid remaining in a corrupted/failed state
+                _currentState = null;
             }
         }
 

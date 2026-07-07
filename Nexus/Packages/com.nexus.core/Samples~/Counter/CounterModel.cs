@@ -1,16 +1,20 @@
-using System;
+using Nexus.Core;
 
 namespace Nexus.Samples.Counter
 {
-    public class CounterModel : ICounterModel
+    public class CounterModel : ICounterModel, IReactiveModel
     {
-        public int Count { get; private set; }
-        public event Action<int> OnCountChanged;
+        public ObservableProperty<int> Count { get; } = new(0);
+        int ICounterModel.Count => Count.Value;
 
         public void Increment(int amount)
         {
-            Count += amount;
-            OnCountChanged?.Invoke(Count);
+            if (amount <= 0) return;
+            Count.Value += amount;
+        }
+
+        public void OnBind(IContext context)
+        {
         }
     }
 }

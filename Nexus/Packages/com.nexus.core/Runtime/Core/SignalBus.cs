@@ -161,7 +161,7 @@ namespace Nexus.Core
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
         
         private static readonly System.Threading.AsyncLocal<int> s_stackDepth = new();
-        private const int MaxStackDepth = 50;
+        private const int MaxStackDepth = 10;
 
         private int _inFlightAsyncCommands;
         private const int MaxInFlightAsyncCommands = 100;
@@ -475,17 +475,9 @@ namespace Nexus.Core
 
             if (hasAsync || hasAsyncSubscriptions)
             {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                throw new InvalidOperationException(
+                throw new NexusSyncAsyncMismatchException(
                     $"Synchronous Fire() was called for signal '{typeof(T).FullName}', but it has asynchronous handlers or subscriptions registered. " +
                     "To preserve sequential ordering and prevent race conditions, you must invoke this signal using FireAsync() and await its completion, or use FireAsyncAndForget().");
-#else
-                NexusRuntime.Logger?.LogError(
-                    $"[Nexus] Synchronous Fire() was called for signal '{typeof(T).FullName}', but it has asynchronous handlers or subscriptions registered. " +
-                    "This violates sequential ordering guarantees and will run fire-and-forget. Please use FireAsync() or FireAsyncAndForget().");
-                _ = FireInternalAsyncFromSync(signal, isCrossContextSource);
-                return;
-#endif
             }
 
             // === FAST PATH: All handlers are synchronous ===
@@ -1074,6 +1066,12 @@ namespace Nexus.Core
             }
         }
 
+        /// <summary>
+        /// InjectSignal assigns the signal payload to the matching field or property on the command instance.
+        /// This is only used in non-generic ICommand execution.
+        /// Performs reflection once per (commandType, signalType) pair, then caches the compiled setter
+        /// delegate in a thread-safe dictionary to avoid reflection overhead on subsequent dispatches.
+        /// </summary>
         private void InjectSignal(object command, object signal)
         {
             if (signal == null) return;
@@ -1082,53 +1080,55 @@ namespace Nexus.Core
             var signalType = signal.GetType();
             var cacheKey = (commandType, signalType);
 
-            if (s_signalSetterCache.TryGetValue(cacheKey, out var setter))
+            var setter = s_signalSetterCache.GetOrAdd(cacheKey, key =>
             {
-                setter(command, signal);
-                return;
-            }
+                var cmdType = key.commandType;
+                var sigType = key.signalType;
+                Action<object, object> newSetter = null;
+                MemberInfo foundMember = null;
 
-            Action<object, object> newSetter = null;
-            MemberInfo foundMember = null;
-
-            var fields = commandType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var field in fields)
-            {
-                if (field.FieldType == signalType || (field.Name.Equals("_signal", StringComparison.OrdinalIgnoreCase) && field.FieldType.IsInstanceOfType(signal)))
+                // Match fields by exact type OR name convention (e.g. _signal or signal)
+                var fields = cmdType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var field in fields)
                 {
-                    foundMember = field;
-                    break;
-                }
-            }
-
-            if (foundMember == null)
-            {
-                var properties = commandType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var prop in properties)
-                {
-                    if (prop.PropertyType == signalType && prop.CanWrite)
+                    if (field.FieldType == sigType || 
+                        (field.FieldType.IsInstanceOfType(signal) && 
+                         (field.Name.Equals("_signal", StringComparison.OrdinalIgnoreCase) || 
+                          field.Name.Equals("signal", StringComparison.OrdinalIgnoreCase))))
                     {
-                        foundMember = prop;
+                        foundMember = field;
                         break;
                     }
                 }
-            }
 
-            if (foundMember != null)
-            {
-                if (foundMember is FieldInfo f)
-                    newSetter = (target, val) => f.SetValue(target, val);
-                else if (foundMember is PropertyInfo p)
-                    newSetter = (target, val) => p.SetValue(target, val);
-            }
-            else
-            {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Signal injection: no matching field or property found in '{commandType.Name}' for signal type '{signalType.Name}'. Command will execute with default signal values.");
-                newSetter = (target, val) => { };
-            }
+                if (foundMember == null)
+                {
+                    var properties = cmdType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    foreach (var prop in properties)
+                    {
+                        if (prop.PropertyType == sigType && prop.CanWrite)
+                        {
+                            foundMember = prop;
+                            break;
+                        }
+                    }
+                }
 
-            s_signalSetterCache[cacheKey] = newSetter;
-            newSetter(command, signal);
+                if (foundMember != null)
+                {
+                    if (foundMember is FieldInfo f)
+                        newSetter = (target, val) => f.SetValue(target, val);
+                    else if (foundMember is PropertyInfo p)
+                        newSetter = (target, val) => p.SetValue(target, val);
+                }
+                else
+                {
+                    newSetter = (target, val) => { };
+                }
+                return newSetter;
+            });
+
+            setter(command, signal);
         }
 
         private void ProcessCompositeTriggers(Type signalType)

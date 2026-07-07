@@ -65,6 +65,11 @@ namespace Nexus.Editor
             {
                 try { plugin.OnEnable(); } catch (Exception ex) { Debug.LogException(ex); }
             }
+
+            if (_plugins.Count > 0)
+            {
+                _activePlugin ??= _plugins[0];
+            }
         }
 
         private void OnDisable()

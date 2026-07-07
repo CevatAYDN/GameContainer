@@ -87,6 +87,8 @@ namespace Nexus.Core.Extensions
                 return Task.CompletedTask;
             }
 
+            ct.ThrowIfCancellationRequested();
+
             if (!Directory.Exists(SaveDirectory))
                 Directory.CreateDirectory(SaveDirectory);
 

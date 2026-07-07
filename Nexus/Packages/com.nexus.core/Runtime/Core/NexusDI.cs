@@ -125,8 +125,9 @@ namespace Nexus.Core
                     {
                         if (ctor.GetCustomAttribute<InjectAttribute>() != null)
                         {
+                            if (targetCtor != null)
+                                throw new InvalidOperationException($"Multiple constructors marked with [Inject] in {t.FullName}. Only one injected constructor is allowed.");
                             targetCtor = ctor;
-                            break;
                         }
                     }
 
@@ -142,17 +143,9 @@ namespace Nexus.Core
                             }
                         }
 
-                        // Fallback: constructor with most reference-type parameters
                         if (targetCtor == null)
                         {
-                            targetCtor = constructors[0];
-                            for (int i = 1; i < constructors.Length; i++)
-                            {
-                                if (constructors[i].GetParameters().Length > targetCtor.GetParameters().Length)
-                                {
-                                    targetCtor = constructors[i];
-                                }
-                            }
+                            throw new InvalidOperationException($"No suitable constructor found for type {t.FullName}. A type must either have a parameterless constructor or a constructor decorated with [Inject].");
                         }
                     }
                 }
@@ -246,7 +239,10 @@ namespace Nexus.Core
             };
             if (disposeWithContainer)
             {
-                _resolvedSingletons.Add(instance);
+                lock (s_singletonLock)
+                {
+                    _resolvedSingletons.Add(instance);
+                }
             }
         }
 
@@ -319,19 +315,23 @@ namespace Nexus.Core
                             if (binding.Instance != null)
                                 return binding.Instance;
 
-                            s_constructingSingletons.Add(type);
+                            if (!s_constructingSingletons.Add(type))
+                            {
+                                throw new InvalidOperationException($"Circular dependency detected while resolving singleton {type.FullName}.");
+                            }
                             addedToConstructing = true;
-                        }
 
-                        instance = CreateInstance(binding.ConcreteType);
-
-                        lock (s_singletonLock)
-                        {
-                            if (binding.Instance != null)
-                                return binding.Instance;
-
-                            binding.Instance = instance;
-                            _resolvedSingletons.Add(instance);
+                            try
+                            {
+                                instance = CreateInstance(binding.ConcreteType);
+                                binding.Instance = instance;
+                                _resolvedSingletons.Add(instance);
+                            }
+                            finally
+                            {
+                                s_constructingSingletons.Remove(type);
+                                addedToConstructing = false;
+                            }
                         }
 
                         Inject(instance);
@@ -538,7 +538,14 @@ namespace Nexus.Core
             _disposed = true;
 
             var alreadyDisposed = new HashSet<object>();
-            foreach (var instance in _resolvedSingletons)
+            HashSet<object> singletonsCopy;
+            lock (s_singletonLock)
+            {
+                singletonsCopy = new HashSet<object>(_resolvedSingletons);
+                _resolvedSingletons.Clear();
+            }
+
+            foreach (var instance in singletonsCopy)
             {
                 if (instance is IDisposable disposable && alreadyDisposed.Add(instance))
                 {
@@ -552,7 +559,6 @@ namespace Nexus.Core
                     }
                 }
             }
-            _resolvedSingletons.Clear();
             _bindings.Clear();
         }
 
@@ -562,7 +568,14 @@ namespace Nexus.Core
             _disposed = true;
 
             var alreadyDisposed = new HashSet<object>();
-            foreach (var instance in _resolvedSingletons)
+            HashSet<object> singletonsCopy;
+            lock (s_singletonLock)
+            {
+                singletonsCopy = new HashSet<object>(_resolvedSingletons);
+                _resolvedSingletons.Clear();
+            }
+
+            foreach (var instance in singletonsCopy)
             {
                 if (alreadyDisposed.Add(instance))
                 {
@@ -583,7 +596,6 @@ namespace Nexus.Core
                     }
                 }
             }
-            _resolvedSingletons.Clear();
             _bindings.Clear();
         }
 

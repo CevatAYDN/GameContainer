@@ -194,4 +194,9 @@ namespace Nexus.Core
     {
         public UnauthorizedPluginAccessException(string message) : base(message) { }
     }
+
+    public class NexusSyncAsyncMismatchException : Exception
+    {
+        public NexusSyncAsyncMismatchException(string message) : base(message) { }
+    }
 }

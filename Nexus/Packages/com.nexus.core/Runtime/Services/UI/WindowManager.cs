@@ -123,15 +123,78 @@ namespace Nexus.Core.Services
             }
         }
 
+        private void UpdateLayerInteractivity()
+        {
+            UILayer highestActiveLayer = UILayer.Background;
+            bool hasModalOrHigher = false;
+
+            foreach (var kvp in _activeWindows)
+            {
+                if (kvp.Value != null)
+                {
+                    foreach (var layerRoot in _layerRoots)
+                    {
+                        if (kvp.Value.transform.parent == layerRoot.Value)
+                        {
+                            if (layerRoot.Key >= UILayer.Modal)
+                            {
+                                hasModalOrHigher = true;
+                            }
+                            if (layerRoot.Key > highestActiveLayer)
+                            {
+                                highestActiveLayer = layerRoot.Key;
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach (var layerRoot in _layerRoots)
+            {
+                var canvasGroup = layerRoot.Value.GetComponent<CanvasGroup>();
+                if (canvasGroup == null)
+                {
+                    canvasGroup = layerRoot.Value.gameObject.AddComponent<CanvasGroup>();
+                }
+
+                if (hasModalOrHigher && layerRoot.Key < UILayer.Modal)
+                {
+                    canvasGroup.interactable = false;
+                    canvasGroup.blocksRaycasts = false;
+                }
+                else
+                {
+                    canvasGroup.interactable = true;
+                    canvasGroup.blocksRaycasts = true;
+                }
+            }
+        }
+
         public async Task<GameObject> OpenWindowAsync(string windowName, UILayer layer = UILayer.Screen, object args = null)
         {
             if (string.IsNullOrEmpty(windowName)) return null;
 
             await _windowLock.WaitAsync();
-            bool alreadyOpen;
+            bool alreadyOpen = false;
+            GameObject existing = null;
             try
             {
-                alreadyOpen = _activeWindows.TryGetValue(windowName, out var existing) && existing != null;
+                // Clean up any externally destroyed windows
+                var keysToRemove = new List<string>();
+                foreach (var kvp in _activeWindows)
+                {
+                    if (kvp.Value == null)
+                    {
+                        keysToRemove.Add(kvp.Key);
+                    }
+                }
+                foreach (var key in keysToRemove)
+                {
+                    _activeWindows.Remove(key);
+                    _windowHistory.Remove(key);
+                }
+
+                alreadyOpen = _activeWindows.TryGetValue(windowName, out existing) && existing != null;
                 if (alreadyOpen)
                 {
                     existing.transform.SetAsLastSibling();
@@ -144,7 +207,7 @@ namespace Nexus.Core.Services
 
             if (alreadyOpen)
             {
-                return _activeWindows[windowName];
+                return existing;
             }
 
             var request = Resources.LoadAsync<GameObject>($"UI/Windows/{windowName}");
@@ -184,6 +247,7 @@ namespace Nexus.Core.Services
                 {
                     _activeWindows[windowName] = inst;
                     _windowHistory.Add(windowName);
+                    UpdateLayerInteractivity();
                 }
                 finally
                 {
@@ -207,7 +271,33 @@ namespace Nexus.Core.Services
 
         public async Task CloseWindowAsync(string windowName)
         {
-            if (!_activeWindows.TryGetValue(windowName, out var go) || go == null) return;
+            GameObject go = null;
+            await _windowLock.WaitAsync();
+            try
+            {
+                // Clean up externally destroyed windows first
+                var keysToRemove = new List<string>();
+                foreach (var kvp in _activeWindows)
+                {
+                    if (kvp.Value == null)
+                    {
+                        keysToRemove.Add(kvp.Key);
+                    }
+                }
+                foreach (var key in keysToRemove)
+                {
+                    _activeWindows.Remove(key);
+                    _windowHistory.Remove(key);
+                }
+
+                _activeWindows.TryGetValue(windowName, out go);
+            }
+            finally
+            {
+                _windowLock.Release();
+            }
+
+            if (go == null) return;
 
             var lifecycles = go.GetComponents<IUIWindowLifecycle>();
             for (int i = 0; i < lifecycles.Length; i++)
@@ -227,6 +317,7 @@ namespace Nexus.Core.Services
             {
                 _activeWindows.Remove(windowName);
                 _windowHistory.Remove(windowName);
+                UpdateLayerInteractivity();
             }
             finally
             {

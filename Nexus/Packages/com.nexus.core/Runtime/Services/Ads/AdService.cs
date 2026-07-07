@@ -38,6 +38,7 @@ namespace Nexus.Core.Services
         private float _interstitialCooldownSeconds = 30f;
         private float _lastInterstitialTime = -999f;
         private bool _isInitialized;
+        private readonly object _lock = new();
 
         public bool IsInitialized => _isInitialized;
 
@@ -50,38 +51,53 @@ namespace Nexus.Core.Services
 
         public void SetNetworkAdapter(IAdNetworkAdapter adapter)
         {
-            _adapter = adapter;
-            _adapter?.Initialize(() => _isInitialized = true);
+            lock (_lock)
+            {
+                _adapter = adapter;
+                _adapter?.Initialize(() => _isInitialized = true);
+            }
         }
 
         public void SetInterstitialCooldown(float seconds)
         {
-            _interstitialCooldownSeconds = Mathf.Max(0f, seconds);
+            lock (_lock)
+            {
+                _interstitialCooldownSeconds = Mathf.Max(0f, seconds);
+            }
         }
 
         public bool IsInterstitialAvailable(string placement)
         {
-            if (Time.realtimeSinceStartup - _lastInterstitialTime < _interstitialCooldownSeconds)
-                return false;
+            lock (_lock)
+            {
+                if (Time.realtimeSinceStartup - _lastInterstitialTime < _interstitialCooldownSeconds)
+                    return false;
 
-            return _adapter != null ? _adapter.IsInterstitialReady(placement) : true;
+                return _adapter != null ? _adapter.IsInterstitialReady(placement) : true;
+            }
         }
 
         public bool IsRewardedAvailable(string placement)
         {
-            return _adapter != null ? _adapter.IsRewardedReady(placement) : true;
+            lock (_lock)
+            {
+                return _adapter != null ? _adapter.IsRewardedReady(placement) : true;
+            }
         }
 
         public void ShowInterstitial(string placement, Action onComplete = null)
         {
-            if (!IsInterstitialAvailable(placement))
+            lock (_lock)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[AdService] Interstitial not ready or on cooldown for placement: {placement}");
-                onComplete?.Invoke();
-                return;
-            }
+                if (!IsInterstitialAvailable(placement))
+                {
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[AdService] Interstitial not ready or on cooldown for placement: {placement}");
+                    onComplete?.Invoke();
+                    return;
+                }
 
-            _lastInterstitialTime = Time.realtimeSinceStartup;
+                _lastInterstitialTime = Time.realtimeSinceStartup;
+            }
 
             if (_adapter != null)
             {

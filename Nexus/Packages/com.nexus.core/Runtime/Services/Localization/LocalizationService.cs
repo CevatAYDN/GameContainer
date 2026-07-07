@@ -13,7 +13,15 @@ namespace Nexus.Core.Services
 
         public string CurrentLanguage { get; private set; } = "en";
         public event Action<string> OnLanguageChanged;
-        public bool IsRTL => CurrentLanguage == "ar";
+        public bool IsRTL => CurrentLanguage == "ar" || CurrentLanguage == "he" || CurrentLanguage == "fa" || CurrentLanguage == "ur";
+
+        public LocalizationService() { }
+
+        public LocalizationService(IPlayerPrefsService prefs, ILocalizationTableProvider tableProvider = null)
+        {
+            PlayerPrefsService = prefs;
+            TableProvider = tableProvider;
+        }
 
         private readonly Dictionary<string, Dictionary<string, string>> _localizedTable = new Dictionary<string, Dictionary<string, string>>();
         private readonly object _tableLock = new();
@@ -44,8 +52,12 @@ namespace Nexus.Core.Services
 
         public void SetLanguage(string langCode)
         {
-            if (string.IsNullOrEmpty(langCode) || CurrentLanguage == langCode) return;
-            CurrentLanguage = langCode.ToLower();
+            if (string.IsNullOrEmpty(langCode)) return;
+
+            string normalized = langCode.ToLower();
+            if (CurrentLanguage == normalized) return;
+
+            CurrentLanguage = normalized;
             if (PlayerPrefsService != null)
             {
                 PlayerPrefsService.SetString("NT_Language", CurrentLanguage);

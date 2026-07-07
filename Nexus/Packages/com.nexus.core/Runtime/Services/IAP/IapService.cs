@@ -55,20 +55,30 @@ namespace Nexus.Core.Services
         public void SetStoreAdapter(IIapStoreAdapter adapter)
         {
             _adapter = adapter;
-            var productList = new List<ProductDefinition>(_catalog.Values);
-            _adapter?.Initialize(productList, (success) =>
+            List<ProductDefinition> productList;
+            lock (_catalog)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[IapService] Store adapter initialized: {success}");
-            });
+                productList = new List<ProductDefinition>(_catalog.Values);
+            }
+            if (_adapter != null)
+            {
+                _adapter.Initialize(productList, (success) =>
+                {
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[IapService] Store adapter initialized: {success}");
+                });
+            }
         }
 
         public void RegisterProducts(params ProductDefinition[] products)
         {
-            foreach (var p in products)
+            lock (_catalog)
             {
-                if (p != null && !string.IsNullOrEmpty(p.Id))
+                foreach (var p in products)
                 {
-                    _catalog[p.Id] = p;
+                    if (p != null && !string.IsNullOrEmpty(p.Id))
+                    {
+                        _catalog[p.Id] = p;
+                    }
                 }
             }
         }
@@ -81,9 +91,16 @@ namespace Nexus.Core.Services
             }
             else
             {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                 NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[IapService Mock] Purchased product: {productId}");
-                _mockOwnedProducts.Add(productId);
+                lock (_catalog)
+                {
+                    _mockOwnedProducts.Add(productId);
+                }
                 onComplete?.Invoke(true, productId);
+#else
+                throw new InvalidOperationException("[IapService] Cannot purchase product: Store adapter is not initialized in production builds!");
+#endif
             }
         }
 
@@ -95,21 +112,35 @@ namespace Nexus.Core.Services
             }
             else
             {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                 NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log("[IapService Mock] Restored purchases");
                 onComplete?.Invoke(true);
+#else
+                throw new InvalidOperationException("[IapService] Cannot restore purchases: Store adapter is not initialized in production builds!");
+#endif
             }
         }
 
         public bool IsProductOwned(string productId)
         {
             if (_adapter != null) return _adapter.IsOwned(productId);
-            return _mockOwnedProducts.Contains(productId);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            lock (_catalog)
+            {
+                return _mockOwnedProducts.Contains(productId);
+            }
+#else
+            return false;
+#endif
         }
 
         public ProductDefinition GetProduct(string productId)
         {
-            _catalog.TryGetValue(productId, out var p);
-            return p;
+            lock (_catalog)
+            {
+                _catalog.TryGetValue(productId, out var p);
+                return p;
+            }
         }
 
         public void OnDispose() { }

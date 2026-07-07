@@ -48,6 +48,10 @@ namespace Nexus.Editor
         [MenuItem("Nexus/Validate Architecture")]
         public static bool Validate()
         {
+            s_lastResults.Clear();
+            LastErrorCount = 0;
+            LastWarningCount = 0;
+            HasRun = true;
             Debug.Log("[Nexus] Starting Architecture Validation...");
             int errorCount = 0;
             int warningCount = 0;
@@ -83,6 +87,10 @@ namespace Nexus.Editor
                 Debug.LogError($"[Nexus] Validation aborted due to critical error: {ex.Message}\n{ex.StackTrace}");
                 return false;
             }
+
+            LastErrorCount = errorCount;
+            LastWarningCount = warningCount;
+            LastRunPassed = errorCount == 0;
 
             if (errorCount > 0)
             {

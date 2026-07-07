@@ -21,17 +21,66 @@ namespace Nexus.Core.Services
 
         public EncryptedStorageService(string customSalt = "Nexus_Secure_Salt_2026")
         {
-            // Create device-bound unique seed
+            // Device-bound key for seed obfuscation
             string deviceId = SystemInfo.deviceUniqueIdentifier ?? "Default_Device_ID";
             string rawKeySeed = $"{deviceId}_{customSalt}_{Application.identifier}";
 
             using var sha256 = SHA256.Create();
-            byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawKeySeed));
+            byte[] deviceBoundKey = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawKeySeed));
 
-            _encryptionKey = new byte[16]; // AES-128 / 256 key
+            byte[] seedBytes = new byte[32];
+            string storedObfuscatedSeed = PlayerPrefs.GetString("NT_StorageSeed", null);
+
+            if (string.IsNullOrEmpty(storedObfuscatedSeed))
+            {
+                // Generate a cryptographically secure random seed
+                using var rng = RandomNumberGenerator.Create();
+                rng.GetBytes(seedBytes);
+
+                // Obfuscate the seed using the device-bound key
+                byte[] obfuscatedBytes = new byte[32];
+                for (int i = 0; i < 32; i++)
+                {
+                    obfuscatedBytes[i] = (byte)(seedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
+                }
+
+                PlayerPrefs.SetString("NT_StorageSeed", Convert.ToBase64String(obfuscatedBytes));
+                PlayerPrefs.Save();
+            }
+            else
+            {
+                try
+                {
+                    byte[] obfuscatedBytes = Convert.FromBase64String(storedObfuscatedSeed);
+                    for (int i = 0; i < 32; i++)
+                    {
+                        seedBytes[i] = (byte)(obfuscatedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
+                    }
+                }
+                catch
+                {
+                    // Fallback in case of corruption: generate new
+                    using var rng = RandomNumberGenerator.Create();
+                    rng.GetBytes(seedBytes);
+
+                    byte[] obfuscatedBytes = new byte[32];
+                    for (int i = 0; i < 32; i++)
+                    {
+                        obfuscatedBytes[i] = (byte)(seedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
+                    }
+
+                    PlayerPrefs.SetString("NT_StorageSeed", Convert.ToBase64String(obfuscatedBytes));
+                    PlayerPrefs.Save();
+                }
+            }
+
+            // Derive actual encryption & HMAC keys from the secure random seed
+            byte[] finalHash = sha256.ComputeHash(seedBytes);
+
+            _encryptionKey = new byte[16]; // AES-128 key
             _hmacKey = new byte[16];
-            Array.Copy(hash, 0, _encryptionKey, 0, 16);
-            Array.Copy(hash, 16, _hmacKey, 0, 16);
+            Array.Copy(finalHash, 0, _encryptionKey, 0, 16);
+            Array.Copy(finalHash, 16, _hmacKey, 0, 16);
 
             _storageFolderPath = Path.Combine(Application.persistentDataPath, "SecureData");
             if (!Directory.Exists(_storageFolderPath))

@@ -108,6 +108,7 @@ namespace Nexus.Core
         private static int s_globalEventIdCounter = 0;
         private static int s_ringBufferIndex = -1;
         private static int s_totalEventsWritten = 0;
+        private static int s_overflowWarningLogged = 0;
 
         private static readonly AsyncLocal<int> s_currentActiveEventId = new();
         private static readonly AsyncLocal<TraceFrame> s_currentFrame = new();
@@ -131,6 +132,7 @@ namespace Nexus.Core
             s_ringBufferIndex = -1;
             s_globalEventIdCounter = 0;
             s_totalEventsWritten = 0;
+            s_overflowWarningLogged = 0;
 #endif
         }
 
@@ -182,7 +184,11 @@ namespace Nexus.Core
             // read a stale index after the Interlocked.Increment.
             int rawIndex = Interlocked.Increment(ref s_ringBufferIndex);
             int index = ((rawIndex % MaxEvents) + MaxEvents) % MaxEvents;
-            Interlocked.Increment(ref s_totalEventsWritten);
+            int totalWritten = Interlocked.Increment(ref s_totalEventsWritten);
+            if (totalWritten > MaxEvents && Interlocked.CompareExchange(ref s_overflowWarningLogged, 1, 0) == 0)
+            {
+                UnityEngine.Debug.LogWarning($"[NexusTrace] Ring buffer overflow detected. Traced events count ({totalWritten}) exceeded MaxEvents limit ({MaxEvents}). Older events are being overwritten.");
+            }
 
             s_currentFrame.Value = new TraceFrame(parentId, index, s_currentFrame.Value);
             s_currentActiveEventId.Value = eventId;

@@ -54,6 +54,10 @@ namespace Nexus.Tests
             _signalBus.Dispose();
             _poolManager.Clear();
             _container.Dispose();
+            TestCompositeCommand.ExecutionCount = 0;
+            HighPriorityCompositeCommand.RunOrder = 0;
+            HighPriorityCompositeCommand.ObservedOrder = 0;
+            LowPriorityCompositeCommand.ObservedOrder = 0;
         }
 
         [Test]

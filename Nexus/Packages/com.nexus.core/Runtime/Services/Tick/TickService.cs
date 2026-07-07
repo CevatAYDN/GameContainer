@@ -1,10 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
+
+[assembly: InternalsVisibleTo("com.nexus.core.tests")]
 
 namespace Nexus.Core.Services
 {
@@ -150,10 +153,14 @@ namespace Nexus.Core.Services
             }
         }
 
-        private void OnTick(float deltaTime)
+        internal void OnTick(float deltaTime)
         {
             if (IsPaused) return;
-            var snapshot = _tickableSnapshot;
+            ITickable[] snapshot;
+            lock (_lock)
+            {
+                snapshot = _tickableSnapshot;
+            }
             if (snapshot == null) return;
 
             for (int i = 0; i < snapshot.Length; i++)
@@ -169,10 +176,14 @@ namespace Nexus.Core.Services
             }
         }
 
-        private void OnFixedTick(float fixedDeltaTime)
+        internal void OnFixedTick(float fixedDeltaTime)
         {
             if (IsPaused) return;
-            var snapshot = _fixedTickableSnapshot;
+            IFixedTickable[] snapshot;
+            lock (_lock)
+            {
+                snapshot = _fixedTickableSnapshot;
+            }
             if (snapshot == null) return;
 
             for (int i = 0; i < snapshot.Length; i++)
@@ -188,10 +199,14 @@ namespace Nexus.Core.Services
             }
         }
 
-        private void OnLateTick(float deltaTime)
+        internal void OnLateTick(float deltaTime)
         {
             if (IsPaused) return;
-            var snapshot = _lateTickableSnapshot;
+            ILateTickable[] snapshot;
+            lock (_lock)
+            {
+                snapshot = _lateTickableSnapshot;
+            }
             if (snapshot == null) return;
 
             for (int i = 0; i < snapshot.Length; i++)

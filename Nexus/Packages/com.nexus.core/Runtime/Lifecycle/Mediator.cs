@@ -95,5 +95,33 @@ namespace Nexus.Core
             var sub = SignalBus.SubscribeAsync(handler);
             _subscriptions.Add(sub);
         }
+
+        /// <summary>
+        /// Gets whether the mediator is currently bound to a valid, non-destroyed view.
+        /// Helps prevent NullReferenceException when model events fire after/during view teardown.
+        /// </summary>
+        protected bool IsViewValid
+        {
+            get
+            {
+                if (View == null) return false;
+                if (View is UnityEngine.Object obj)
+                {
+                    return obj != null;
+                }
+                return true;
+            }
+        }
+
+        /// <summary>
+        /// Executes the specified action on the view if it is still valid and not destroyed.
+        /// </summary>
+        protected void ExecuteIfViewValid(Action<TView> action)
+        {
+            if (IsViewValid)
+            {
+                action?.Invoke(View);
+            }
+        }
     }
 }

@@ -8,15 +8,15 @@ namespace Nexus.Samples.Counter
 
         protected override void OnBind()
         {
-            Model.OnCountChanged += OnCountChanged;
-            View.UpdateDisplay(Model.Count);
+            Model.Count.OnChanged += OnCountChanged;
+            View.UpdateDisplay(Model.Count.Value);
             View.OnIncrementClicked += OnIncrementClicked;
         }
 
         protected override void OnUnbind()
         {
             if (Model != null)
-                Model.OnCountChanged -= OnCountChanged;
+                Model.Count.OnChanged -= OnCountChanged;
             
             if (View != null)
                 View.OnIncrementClicked -= OnIncrementClicked;
@@ -24,7 +24,8 @@ namespace Nexus.Samples.Counter
 
         private void OnCountChanged(int currentCount)
         {
-            View.UpdateDisplay(currentCount);
+            if (View != null)
+                View.UpdateDisplay(currentCount);
         }
 
         private void OnIncrementClicked()

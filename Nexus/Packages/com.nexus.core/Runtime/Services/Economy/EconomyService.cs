@@ -17,10 +17,17 @@ namespace Nexus.Core.Services
         void SetBalance(string currencyId, long amount);
     }
 
+    public interface INetworkEconomyValidator
+    {
+        Task<bool> ValidateSpendAsync(string currencyId, long amount, string reason);
+        Task ValidateEarnAsync(string currencyId, long amount, string reason);
+    }
+
     [Preserve]
     public class EconomyService : IEconomyService, INexusService, IDisposable
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
+        [Inject] public INetworkEconomyValidator NetworkValidator { get; set; }
 
         private readonly Dictionary<string, ObservableProperty<long>> _balances = new();
 
@@ -33,14 +40,17 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(currencyId)) return null;
 
-            if (!_balances.TryGetValue(currencyId, out var prop))
+            lock (_balances)
             {
-                long savedAmount = PlayerPrefsService != null ? (long)PlayerPrefsService.GetFloat($"NT_Eco_{currencyId}", 0f) : 0L;
-                prop = new ObservableProperty<long>(savedAmount);
-                _balances[currencyId] = prop;
-            }
+                if (!_balances.TryGetValue(currencyId, out var prop))
+                {
+                    long savedAmount = PlayerPrefsService != null ? (long)PlayerPrefsService.GetFloat($"NT_Eco_{currencyId}", 0f) : 0L;
+                    prop = new ObservableProperty<long>(savedAmount);
+                    _balances[currencyId] = prop;
+                }
 
-            return prop;
+                return prop;
+            }
         }
 
         public long GetBalance(string currencyId)
@@ -57,27 +67,48 @@ namespace Nexus.Core.Services
         public bool Spend(string currencyId, long amount, string reason = "")
         {
             if (amount <= 0) return true;
-            var prop = GetObservableBalance(currencyId);
-            if (prop.Value < amount) return false;
 
-            prop.Value -= amount;
-            SaveBalance(currencyId, prop.Value);
-            return true;
+            lock (_balances)
+            {
+                var prop = GetObservableBalance(currencyId);
+                if (prop.Value < amount) return false;
+
+                prop.Value -= amount;
+                SaveBalance(currencyId, prop.Value);
+
+                if (NetworkValidator != null)
+                {
+                    _ = NetworkValidator.ValidateSpendAsync(currencyId, amount, reason);
+                }
+                return true;
+            }
         }
 
         public void Earn(string currencyId, long amount, string reason = "")
         {
             if (amount <= 0) return;
-            var prop = GetObservableBalance(currencyId);
-            prop.Value += amount;
-            SaveBalance(currencyId, prop.Value);
+
+            lock (_balances)
+            {
+                var prop = GetObservableBalance(currencyId);
+                prop.Value += amount;
+                SaveBalance(currencyId, prop.Value);
+
+                if (NetworkValidator != null)
+                {
+                    _ = NetworkValidator.ValidateEarnAsync(currencyId, amount, reason);
+                }
+            }
         }
 
         public void SetBalance(string currencyId, long amount)
         {
-            var prop = GetObservableBalance(currencyId);
-            prop.Value = Math.Max(0L, amount);
-            SaveBalance(currencyId, prop.Value);
+            lock (_balances)
+            {
+                var prop = GetObservableBalance(currencyId);
+                prop.Value = Math.Max(0L, amount);
+                SaveBalance(currencyId, prop.Value);
+            }
         }
 
         private void SaveBalance(string currencyId, long amount)
@@ -89,11 +120,14 @@ namespace Nexus.Core.Services
 
         public void Dispose()
         {
-            foreach (var kvp in _balances)
+            lock (_balances)
             {
-                kvp.Value.ClearOnChanged();
+                foreach (var kvp in _balances)
+                {
+                    kvp.Value.ClearOnChanged();
+                }
+                _balances.Clear();
             }
-            _balances.Clear();
         }
     }
 }

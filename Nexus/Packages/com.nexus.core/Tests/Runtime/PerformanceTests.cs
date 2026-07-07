@@ -65,7 +65,7 @@ namespace Nexus.Tests
             sw.Stop();
 
             Assert.AreEqual(count, _counter.Value);
-            Assert.Less(sw.ElapsedMilliseconds, 500, "1000 dispatches should complete within 500ms");
+            Assert.Less(sw.ElapsedMilliseconds, 50, "1000 dispatches should complete within 50ms");
         }
 
         [Test]
@@ -159,8 +159,8 @@ namespace Nexus.Tests
             
             UnityEngine.Debug.Log($"[Nexus Benchmark] 50,000 dispatches completed in {sw.ElapsedMilliseconds} ms.");
             
-            // Assert that 50k dispatches complete in less than 2 seconds (usually takes < 100ms)
-            Assert.Less(sw.ElapsedMilliseconds, 2000, "50,000 dispatches took too long.");
+            // Assert that 50k dispatches complete in less than 250ms (usually takes < 100ms)
+            Assert.Less(sw.ElapsedMilliseconds, 250, "50,000 dispatches took too long.");
         }
     }
 }

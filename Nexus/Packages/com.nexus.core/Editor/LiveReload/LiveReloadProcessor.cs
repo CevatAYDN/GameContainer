@@ -4,7 +4,10 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Nexus.Core;
+
+[assembly: InternalsVisibleTo("com.nexus.core.editor.tests")]
 
 namespace Nexus.Editor
 {
@@ -40,7 +43,7 @@ namespace Nexus.Editor
             }
         }
 
-        private static void TriggerLiveReload(ModelData modelData)
+        internal static void TriggerLiveReload(ModelData modelData)
         {
             var contexts = new List<IContext>(NexusRuntime.ActiveContexts);
             foreach (var context in contexts)

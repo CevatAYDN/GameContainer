@@ -3,11 +3,12 @@
     "rootNamespace": "Nexus.Tests",
     "references": [
         "UnityEngine.TestRunner",
-        "com.nexus.core"
+        "com.nexus.core",
+        "com.nexus.core.dots"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
-    "allowUnsafeCode": false,
+    "allowUnsafeCode": true,
     "overrideReferences": true,
     "precompiledReferences": [
         "nunit.framework.dll"
@@ -16,6 +17,12 @@
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.collections",
+            "expression": "1.0.0",
+            "define": "UNITY_COLLECTIONS"
+        }
+    ],
     "noEngineReferences": false
 }

@@ -5,13 +5,14 @@
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "com.nexus.core",
-        "com.nexus.core.editor"
+        "com.nexus.core.editor",
+        "com.nexus.core.dots"
     ],
     "includePlatforms": [
         "Editor"
     ],
     "excludePlatforms": [],
-    "allowUnsafeCode": false,
+    "allowUnsafeCode": true,
     "overrideReferences": true,
     "precompiledReferences": [
         "nunit.framework.dll"
@@ -20,6 +21,12 @@
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.collections",
+            "expression": "1.0.0",
+            "define": "UNITY_COLLECTIONS"
+        }
+    ],
     "noEngineReferences": false
 }
