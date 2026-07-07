@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Nexus.Core;
+using Nexus.Core.Services;
 using System.Threading.Tasks;
 
 namespace Nexus.Editor.Tests
@@ -9,7 +10,7 @@ namespace Nexus.Editor.Tests
     {
         private NexusDI _container;
         private CommandPoolManager _poolManager;
-        private SignalBusTests.MockContext _context;
+        private MockContext _context;
         private SignalBus _signalBus;
         private HybridQueue _hybridQueue;
 
@@ -30,7 +31,7 @@ namespace Nexus.Editor.Tests
 
             _container = new NexusDI();
             _poolManager = new CommandPoolManager(_container);
-            _context = new SignalBusTests.MockContext();
+            _context = new MockContext();
             _signalBus = new SignalBus(_container, _poolManager, _context);
             _hybridQueue = new HybridQueue(_signalBus);
 

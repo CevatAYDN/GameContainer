@@ -4,8 +4,14 @@
   "displayName": "Nexus Observable Architecture",
   "description": "Open source observable MVCS architecture for Unity 6. Features: 0 GC allocation, 4 execution modes, causal tracing, build validation, reactive models, service lifecycle, Game Manager editor, and debug HUD.",
   "unity": "6000.0",
-  "documentationUrl": "https://github.com/CevatAYDN/Pixel-Flow-Clone/blob/main/GameContainer/README.md",
-  "changelogUrl": "https://github.com/CevatAYDN/Pixel-Flow-Clone/blob/main/GameContainer/CHANGELOG.md",
+  "documentationUrl": "README.md",
+  "changelogUrl": "CHANGELOG.md",
+  "licenses": [
+    {
+      "type": "MIT",
+      "url": "LICENSE"
+    }
+  ],
   "dependencies": {},
   "keywords": [
     "nexus",
@@ -14,7 +20,12 @@
     "observable",
     "framework",
     "ioc",
-    "unity"
+    "unity",
+    "dependency-injection",
+    "signal-bus",
+    "reactive",
+    "aot",
+    "il2cpp"
   ],
   "author": {
     "name": "Cevat Aydın",

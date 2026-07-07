@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using NUnit.Framework;
 using UnityEngine;
 using Nexus.Core.Services;
+using Vector3 = UnityEngine.Vector3;
 
 namespace Nexus.Editor.Tests
 {
@@ -14,6 +15,7 @@ namespace Nexus.Editor.Tests
         {
             public HapticType LastVibrated { get; private set; } = (HapticType)(-1);
             public int VibrateCount { get; private set; }
+            public bool IsEnabled { get; set; } = true;
 
             public void Vibrate(HapticType type = HapticType.Light)
             {
@@ -42,6 +44,11 @@ namespace Nexus.Editor.Tests
                 LastSfxClip = clip;
                 LastPitchMin = pitchMin;
                 LastPitchMax = pitchMax;
+                PlaySfxCount++;
+            }
+            public void PlaySfxAtPosition(AudioClip clip, Vector3 position, float volumeScale = 1f)
+            {
+                LastSfxClip = clip;
                 PlaySfxCount++;
             }
             public void OnDispose() { }

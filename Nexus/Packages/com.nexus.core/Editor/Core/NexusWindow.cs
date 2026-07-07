@@ -29,6 +29,9 @@ namespace Nexus.Editor
             { "GameManager", new Color(0.3f, 1f, 0.8f) },   // AccentTeal
             { "casual_services", new Color(1f, 0.4f, 0.8f) },// AccentPink
             { "Help", new Color(0.6f, 0.6f, 1f) },         // AccentLavender
+            { "ErrorDashboard", new Color(1f, 0.3f, 0.3f) }, // AccentRed (Error)
+            { "PerformanceDashboard", new Color(0.3f, 1f, 0.6f) }, // AccentGreen (Performance)
+            { "NetworkDashboard", new Color(0.4f, 0.8f, 1f) }, // AccentCyan (Network)
         };
 
         private List<INexusEditorPlugin> _plugins = new();

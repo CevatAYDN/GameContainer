@@ -27,21 +27,40 @@ namespace Nexus.Editor.Tests
 
         private GameObject _prefab;
         private ObjectPoolService _poolService;
+        private GameObject _manualRoot;
 
         [SetUp]
-        public async Task SetUp()
+        public void SetUp()
         {
             _prefab = new GameObject("TestPrefab");
             _prefab.AddComponent<TestPoolableComponent>();
 
+            // Create manual root to avoid DontDestroyOnLoad in EditMode
+            _manualRoot = new GameObject("[Nexus_ObjectPool_Test]");
+            
             _poolService = new ObjectPoolService();
-            await _poolService.InitializeAsync(default);
+            // Skip InitializeAsync to avoid DontDestroyOnLoad
+            // Manually set up the root
+            var poolServiceType = typeof(ObjectPoolService);
+            var rootField = poolServiceType.GetField("_masterRootObject", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var transformField = poolServiceType.GetField("_masterPoolRoot", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            
+            if (rootField != null)
+                rootField.SetValue(_poolService, _manualRoot);
+            if (transformField != null)
+                transformField.SetValue(_poolService, _manualRoot.transform);
         }
 
         [TearDown]
         public void TearDown()
         {
-            _poolService.Dispose();
+            // Manual cleanup without calling Dispose (which uses Destroy)
+            if (_manualRoot != null)
+            {
+                Object.DestroyImmediate(_manualRoot);
+                _manualRoot = null;
+            }
+            
             if (_prefab != null)
             {
                 Object.DestroyImmediate(_prefab);

@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Nexus.Core;
+using Nexus.Core.Services;
 
 namespace Nexus.Tests
 {
@@ -15,6 +16,8 @@ namespace Nexus.Tests
             public int GetInt(string key, int defaultValue = 0) => _data.TryGetValue(key, out var value) && int.TryParse(value, out var parsed) ? parsed : defaultValue;
             public void SetFloat(string key, float value) => _data[key] = value.ToString();
             public float GetFloat(string key, float defaultValue = 0f) => _data.TryGetValue(key, out var value) && float.TryParse(value, out var parsed) ? parsed : defaultValue;
+            public bool GetBool(string key, bool defaultValue = false) => _data.TryGetValue(key, out var value) && bool.TryParse(value, out var parsed) ? parsed : defaultValue;
+            public void SetBool(string key, bool value) => _data[key] = value.ToString();
             public bool HasKey(string key) => _data.ContainsKey(key);
             public void DeleteKey(string key) => _data.Remove(key);
             public void DeleteAll() => _data.Clear();

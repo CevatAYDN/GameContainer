@@ -8,10 +8,26 @@ namespace Nexus.Editor.Tests
     [TestFixture]
     public class AudioAndHapticServiceTests
     {
+        private class TestAudioRootProvider : IAudioRootProvider
+        {
+            private GameObject _root;
+
+            public GameObject GetOrCreateRoot()
+            {
+                if (_root != null) return _root;
+                _root = new GameObject("[Nexus_AudioService_Test]");
+                // Skip DontDestroyOnLoad for EditMode tests
+                return _root;
+            }
+        }
+
         [Test]
         public async Task AudioService_VolumeClampingAndMuteState()
         {
-            using var audio = new AudioService();
+            using var audio = new AudioService
+            {
+                AudioRootProvider = new TestAudioRootProvider()
+            };
             await audio.InitializeAsync(default);
 
             audio.MasterVolume = 0.8f;

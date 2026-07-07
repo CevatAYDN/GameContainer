@@ -22,6 +22,7 @@ namespace Nexus.Core
         private static volatile int s_activeContextCount;
         private static List<IContext> s_activeContextsReadOnlyCache = new();
         private static bool s_activeContextsCacheDirty = true;
+        private static bool s_monitoringInitialized = false;
 
         /// <summary>Returns a thread-safe snapshot of all active contexts.</summary>
         /// <remarks>Locked access via <c>s_lock</c>. Returns a snapshot to prevent race conditions during iteration.</remarks>
@@ -274,6 +275,13 @@ namespace Nexus.Core
             }
             if (added)
             {
+                // Initialize monitoring systems on first context registration
+                if (!s_monitoringInitialized)
+                {
+                    InitializeMonitoring();
+                    s_monitoringInitialized = true;
+                }
+
                 try
                 {
                     OnContextRegistered?.Invoke(context);
@@ -283,6 +291,14 @@ namespace Nexus.Core
                     NexusLog.Error(nameof(NexusRuntime), nameof(RegisterContext), string.Empty, ex);
                 }
             }
+        }
+
+        private static void InitializeMonitoring()
+        {
+            // Enable error collection and performance monitoring by default
+            ErrorCollection.Enabled = true;
+            PerformanceMonitor.Enabled = true;
+            NetworkMonitor.Enabled = true;
         }
 
         /// <summary>Unregisters a context. Thread-safe.</summary>

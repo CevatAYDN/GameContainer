@@ -9,18 +9,45 @@ namespace Nexus.Editor.Tests
     public class WindowManagerTests
     {
         private WindowManager _windowManager;
+        private GameObject _manualCanvas;
 
         [SetUp]
-        public async Task SetUp()
+        public void SetUp()
         {
+            // Create manual canvas to avoid DontDestroyOnLoad in EditMode
+            _manualCanvas = new GameObject("[Nexus_UICanvas]");
+            
+            // Set up basic canvas structure
+            var canvas = _manualCanvas.AddComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+            canvas.sortingOrder = 100;
+
+            // Create layer roots
+            var hud = new GameObject("HUD");
+            hud.transform.SetParent(_manualCanvas.transform);
+            
+            var screen = new GameObject("Screen");
+            screen.transform.SetParent(_manualCanvas.transform);
+            
+            var popup = new GameObject("Popup");
+            popup.transform.SetParent(_manualCanvas.transform);
+            
+            var modal = new GameObject("Modal");
+            modal.transform.SetParent(_manualCanvas.transform);
+
+            // Skip InitializeAsync to avoid DontDestroyOnLoad
             _windowManager = new WindowManager();
-            await _windowManager.InitializeAsync(default);
         }
 
         [TearDown]
         public void TearDown()
         {
-            _windowManager.Dispose();
+            // Manual cleanup without calling Dispose (which uses Destroy)
+            if (_manualCanvas != null)
+            {
+                Object.DestroyImmediate(_manualCanvas);
+                _manualCanvas = null;
+            }
         }
 
         [Test]

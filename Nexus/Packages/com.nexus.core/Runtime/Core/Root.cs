@@ -239,6 +239,9 @@ namespace Nexus.Core
             {
                 Context.HybridQueue.DrainThreadSafe();
             }
+
+            // Update performance metrics
+            PerformanceMonitor.UpdateFrameMetrics();
         }
 
         private void LateUpdate()
@@ -246,6 +249,13 @@ namespace Nexus.Core
             if (Context != null && IsInitialized)
             {
                 Context.HybridQueue.DrainNextFrame();
+            }
+
+            // Update memory and GC metrics every 60 frames (approximately 1 second)
+            if (Time.frameCount % 60 == 0)
+            {
+                PerformanceMonitor.UpdateMemoryMetrics();
+                PerformanceMonitor.UpdateGCMetrics();
             }
         }
 

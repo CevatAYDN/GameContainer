@@ -1,8 +1,12 @@
 using System;
+using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
 using Nexus.Core;
+using UnityEngine;
+using UnityEngine.TestTools;
+
 using UnityEngine.Scripting;
 
 namespace Nexus.Editor.Tests
@@ -310,7 +314,7 @@ namespace Nexus.Editor.Tests
             _container.Bind<AsyncTestCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(AsyncTestCommand), ExecutionMode.Sequential, 0, isAsync: true);
 
-            Assert.Throws<InvalidOperationException>(() =>
+            Assert.Throws<NexusSyncAsyncMismatchException>(() =>
             {
                 _signalBus.Fire(new SimpleSignal(1));
             });

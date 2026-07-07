@@ -123,21 +123,24 @@ namespace Nexus.Editor.Tests
             Assert.IsTrue(instance.Disposed);
         }
 
-        public class SelfReferencingSingleton
+        public class ServiceA
         {
-            public SelfReferencingSingleton(NexusDI di)
-            {
-                di.Resolve<SelfReferencingSingleton>();
-            }
+            public ServiceA(ServiceB serviceB) { }
+        }
+
+        public class ServiceB
+        {
+            public ServiceB(ServiceA serviceA) { }
         }
 
         [Test]
         public void Resolve_CircularDependency_ThrowsException()
         {
             using var di = new NexusDI();
-            di.Bind<SelfReferencingSingleton>(isSingleton: true);
+            di.Bind<ServiceA>(isSingleton: true);
+            di.Bind<ServiceB>(isSingleton: true);
 
-            Assert.Throws<System.InvalidOperationException>(() => di.Resolve<SelfReferencingSingleton>());
+            Assert.Throws<System.InvalidOperationException>(() => di.Resolve<ServiceA>());
         }
 
         public class ResettableCommand : Nexus.Core.IResettable

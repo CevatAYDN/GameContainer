@@ -30,6 +30,8 @@ namespace Nexus.Editor
         internal static readonly Color BtnTeal = new(0.2f, 0.3f, 0.3f);
         internal static readonly Color BtnGray = new(0.25f, 0.25f, 0.28f);
         internal static readonly Color BtnGreen = new(0.2f, 0.4f, 0.2f);
+        internal static readonly Color BtnRed = new(0.5f, 0.2f, 0.2f);
+        internal static readonly Color BtnYellow = new(0.5f, 0.4f, 0.1f);
         internal static readonly Color DarkPanel = new(0.08f, 0.08f, 0.1f);
         internal static readonly Color SidebarBg = new(0.1f, 0.1f, 0.12f);
         internal static readonly Color ToolbarBg = new(0.1f, 0.1f, 0.12f);

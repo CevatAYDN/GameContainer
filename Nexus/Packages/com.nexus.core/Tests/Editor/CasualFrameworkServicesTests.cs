@@ -44,7 +44,27 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(1, list.Count);
         }
 
-        public class MockState : IGameState
+        public class MockStateA : IGameState
+        {
+            public bool IsEntered { get; private set; }
+            public bool IsExited { get; private set; }
+
+            public ValueTask OnEnterAsync(object args, CancellationToken ct)
+            {
+                IsEntered = true;
+                return default;
+            }
+
+            public ValueTask OnExitAsync(CancellationToken ct)
+            {
+                IsExited = true;
+                return default;
+            }
+
+            public void OnTick(float deltaTime) { }
+        }
+
+        public class MockStateB : IGameState
         {
             public bool IsEntered { get; private set; }
             public bool IsExited { get; private set; }
@@ -68,17 +88,17 @@ namespace Nexus.Editor.Tests
         public async Task GameStateMachine_TransitionsBetweenStates()
         {
             using var fsm = new GameStateMachine();
-            var stateA = new MockState();
-            var stateB = new MockState();
+            var stateA = new MockStateA();
+            var stateB = new MockStateB();
 
             fsm.RegisterState(stateA);
             fsm.RegisterState(stateB);
 
-            await fsm.ChangeStateAsync<MockState>();
+            await fsm.ChangeStateAsync<MockStateA>();
             Assert.IsTrue(stateA.IsEntered);
             Assert.AreSame(stateA, fsm.CurrentState);
 
-            await fsm.ChangeStateAsync(stateB.GetType());
+            await fsm.ChangeStateAsync<MockStateB>();
             Assert.IsTrue(stateA.IsExited);
             Assert.IsTrue(stateB.IsEntered);
             Assert.AreSame(stateB, fsm.CurrentState);

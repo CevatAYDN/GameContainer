@@ -574,11 +574,15 @@ namespace Nexus.Core
                 NexusTrace.EndEvent(eventId, TraceStatus.OK);
 #endif
             }
-            catch (Exception)
+            catch (Exception ex)
             {
 #if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.Failed);
 #endif
+                // Collect error information (don't log to console for expected exceptions)
+                bool shouldLog = !(ex is NexusReentrancyException || ex is NexusAsyncOverflowException);
+                ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Signal, 
+                    $"Signal dispatch failed for {typeof(T).FullName}", shouldLog);
                 throw;
             }
             finally
@@ -770,11 +774,15 @@ namespace Nexus.Core
                 NexusTrace.EndEvent(eventId, TraceStatus.OK);
 #endif
             }
-            catch (Exception)
+            catch (Exception ex)
             {
 #if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.Failed);
 #endif
+                // Collect error information (don't log to console for expected exceptions)
+                bool shouldLog = !(ex is NexusReentrancyException || ex is NexusAsyncOverflowException);
+                ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Signal, 
+                    $"Signal dispatch failed for {typeof(T).FullName}", shouldLog);
                 throw;
             }
             finally

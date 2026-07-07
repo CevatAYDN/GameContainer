@@ -13,9 +13,6 @@ namespace Nexus.Core
         public CancellationToken LifetimeToken => CancellationToken.None;
         public string ScopeTag => null;
         public IContext Parent => null;
-        public bool HasInterceptors => false;
-        public System.Collections.Generic.IReadOnlyList<(INexusPlugin plugin, IContext context)> PluginsReadOnlyCopy => Array.Empty<(INexusPlugin, IContext)>();
-        public System.Collections.Generic.IReadOnlyList<ISignalInterceptor> Interceptors => Array.Empty<ISignalInterceptor>();
 
         public void RegisterView(IView view) { }
         public void UnregisterView(IView view) { }

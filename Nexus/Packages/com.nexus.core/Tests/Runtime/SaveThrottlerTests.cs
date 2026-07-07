@@ -1,8 +1,10 @@
 using NUnit.Framework;
 using Nexus.Core;
+using Nexus.Core.Services;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using UnityEngine;
 
 namespace Nexus.Tests
 {
@@ -18,6 +20,8 @@ namespace Nexus.Tests
             public int GetInt(string key, int defaultValue = 0) => defaultValue;
             public void SetFloat(string key, float value) { }
             public float GetFloat(string key, float defaultValue = 0f) => defaultValue;
+            public bool GetBool(string key, bool defaultValue = false) => defaultValue;
+            public void SetBool(string key, bool value) { }
             public bool HasKey(string key) => false;
             public void DeleteKey(string key) { }
             public void DeleteAll() { }
@@ -26,34 +30,38 @@ namespace Nexus.Tests
 
         private class TestTickService : ITickService
         {
-            public event Action<float> OnTick;
-            public event Action<float> OnFixedTick;
-            public event Action<float> OnLateTick;
+            public float TimeScale { get; set; } = 1f;
+            public bool IsPaused { get; set; }
             public void RegisterTickable(ITickable tickable) { }
             public void UnregisterTickable(ITickable tickable) { }
             public void RegisterFixedTickable(IFixedTickable tickable) { }
             public void UnregisterFixedTickable(IFixedTickable tickable) { }
             public void RegisterLateTickable(ILateTickable tickable) { }
             public void UnregisterLateTickable(ILateTickable tickable) { }
-            public void Tick(float deltaTime) => OnTick?.Invoke(deltaTime);
-            public void FixedTick(float deltaTime) => OnFixedTick?.Invoke(deltaTime);
-            public void LateTick(float deltaTime) => OnLateTick?.Invoke(deltaTime);
-            public bool IsPaused => false;
+        }
+
+        private class TestTimeProvider : ITimeProvider
+        {
+            public float Now { get; set; } = 0f;
         }
 
         [Test]
-        public async Task SaveThrottler_FlushesPendingSaveOnTick()
+        public void SaveThrottler_FlushesPendingSaveOnTick()
         {
             var prefs = new TestPlayerPrefsService();
             var tickService = new TestTickService();
-            var throttler = new SaveThrottler(prefs, tickService, TimeSpan.FromMilliseconds(1));
+            var timeProvider = new TestTimeProvider();
+            var throttler = new SaveThrottler(prefs, tickService, TimeSpan.FromMilliseconds(1))
+            {
+                TimeProvider = timeProvider
+            };
 
-            throttler.RequestSave();
-            await Task.Delay(10);
-            tickService.Tick(0.016f);
+            throttler.TryRequestSave(() => prefs.Save());
+            timeProvider.Now = 100f; // Simulate time passing
+            throttler.Tick(0.016f);
 
             Assert.GreaterOrEqual(prefs.SaveCount, 1);
-            throttler.Dispose();
+            throttler.OnDispose();
         }
     }
 }
