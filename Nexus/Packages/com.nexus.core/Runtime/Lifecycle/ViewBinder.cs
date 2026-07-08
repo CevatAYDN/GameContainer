@@ -189,7 +189,9 @@ namespace Nexus.Core
 
             if (pool.Count > 0)
             {
-                return pool.Pop();
+                var mediator = pool.Pop();
+                _container.Inject(mediator);
+                return mediator;
             }
 
             // Bind mediator dynamically as transient if not registered
