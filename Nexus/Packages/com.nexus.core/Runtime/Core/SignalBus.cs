@@ -580,7 +580,8 @@ namespace Nexus.Core
                 NexusTrace.EndEvent(eventId, TraceStatus.Failed);
 #endif
                 // Collect error information (don't log to console for expected exceptions)
-                bool shouldLog = !(ex is NexusReentrancyException || ex is NexusAsyncOverflowException);
+                bool shouldLog = !(ex is NexusReentrancyException || ex is NexusAsyncOverflowException || ex is OperationCanceledException)
+                    && !(ex is InvalidOperationException ioe && ioe.Message.Contains("Execution aborted"));
                 ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Signal, 
                     $"Signal dispatch failed for {typeof(T).FullName}", shouldLog);
                 throw;
@@ -780,7 +781,8 @@ namespace Nexus.Core
                 NexusTrace.EndEvent(eventId, TraceStatus.Failed);
 #endif
                 // Collect error information (don't log to console for expected exceptions)
-                bool shouldLog = !(ex is NexusReentrancyException || ex is NexusAsyncOverflowException);
+                bool shouldLog = !(ex is NexusReentrancyException || ex is NexusAsyncOverflowException || ex is OperationCanceledException)
+                    && !(ex is InvalidOperationException ioe && ioe.Message.Contains("Execution aborted"));
                 ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Signal, 
                     $"Signal dispatch failed for {typeof(T).FullName}", shouldLog);
                 throw;

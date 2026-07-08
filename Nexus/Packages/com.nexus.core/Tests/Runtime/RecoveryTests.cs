@@ -112,16 +112,10 @@ namespace Nexus.Tests
         [Test]
         public void Recovery_Retry_RetriesUpToLimitThenAborts()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex("RetryTest");
-            var warningRegex = new System.Text.RegularExpressions.Regex("Retry limit of 3 reached");
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, warningRegex);
-
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.Retry(3);
+
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, "[Nexus Error] Retry limit reached for command ThrowCommand.");
 
             var ex = Assert.Throws<InvalidOperationException>(() =>
             {
@@ -135,9 +129,6 @@ namespace Nexus.Tests
         [Test]
         public void Recovery_Fallback_ExecutesFallbackCommandAndPassesSignal()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex("FallbackTest");
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
-
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.Fallback<FallbackCommand>();
 
@@ -151,9 +142,6 @@ namespace Nexus.Tests
         [Test]
         public async Task Recovery_FallbackAsync_ExecutesAsyncFallbackCommandAndPassesSignal()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex("FallbackAsyncTest");
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
-
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.FallbackAsync<AsyncFallbackCommand>();
 
@@ -167,9 +155,6 @@ namespace Nexus.Tests
         [Test]
         public void Recovery_Skip_SuppressesExceptionAndPublishesCommandFailedSignal()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex("SkipTest");
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
-
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.Skip();
 
@@ -191,9 +176,6 @@ namespace Nexus.Tests
         [Test]
         public void Recovery_Abort_AbortsImmediatelyAndThrows()
         {
-            var errorRegex = new System.Text.RegularExpressions.Regex("AbortTest");
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, errorRegex);
-
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.Abort();
 
