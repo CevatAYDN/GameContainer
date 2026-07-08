@@ -60,38 +60,48 @@ namespace Nexus.Core.Services
         public static void Error(string source, string operation, string contextId, string message)
         {
             var entry = new NexusLogEntry(source, operation, contextId, message);
-            s_instance?.LogError(entry.Format());
-            Debug.LogError(entry.Format());
+            if (s_instance != null)
+                s_instance.LogError(entry.Format());
+            else
+                Debug.LogError(entry.Format());
         }
 
         public static void Error(string source, string operation, string contextId, Exception ex)
         {
             var msg = ex?.Message ?? "null";
             var entry = new NexusLogEntry(source, operation, contextId, msg);
-            s_instance?.LogError(entry.Format());
-            Debug.LogException(ex);
+            if (s_instance != null)
+                s_instance.LogError(entry.Format());
+            else
+                Debug.LogException(ex);
         }
 
         public static void Error(string source, string operation, string contextId, string message, Exception ex)
         {
             var combined = $"{message} | {ex?.Message}";
             var entry = new NexusLogEntry(source, operation, contextId, combined);
-            s_instance?.LogError(entry.Format());
-            Debug.LogException(ex);
+            if (s_instance != null)
+                s_instance.LogError(entry.Format());
+            else
+                Debug.LogException(ex);
         }
 
         public static void Warn(string source, string operation, string contextId, string message)
         {
             var entry = new NexusLogEntry(source, operation, contextId, message);
-            s_instance?.LogWarning(entry.Format());
-            Debug.LogWarning(entry.Format());
+            if (s_instance != null)
+                s_instance.LogWarning(entry.Format());
+            else
+                Debug.LogWarning(entry.Format());
         }
 
         public static void Info(string source, string operation, string contextId, string message)
         {
             var entry = new NexusLogEntry(source, operation, contextId, message);
-            s_instance?.Log(entry.Format());
-            Debug.Log(entry.Format());
+            if (s_instance != null)
+                s_instance.Log(entry.Format());
+            else
+                Debug.Log(entry.Format());
         }
     }
 
