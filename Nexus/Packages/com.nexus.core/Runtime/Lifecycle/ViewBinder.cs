@@ -43,8 +43,13 @@ namespace Nexus.Core
                 // (e.g. async Addressables prefab instantiation before Root.Start())
                 if (!root.IsInitialized)
                 {
-                    NexusRuntime.Logger?.LogWarning($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is not yet initialized. " +
-                        "View will not bind until Root.Start() completes. Consider loading this prefab after Root initialization.");
+                    NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is not yet initialized. " +
+                        "View binding is deferred and may be missed if the prefab does not re-enable. Load this prefab after Root initialization or add an explicit rebinding step.");
+                }
+                else
+                {
+                    NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is initialized but Context is still null. " +
+                        "This indicates a startup ordering or initialization bug.");
                 }
             }
 
@@ -56,8 +61,8 @@ namespace Nexus.Core
             }
             else if (roots.Length > 1)
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] View '{gameObject.name}' OnEnable: Multiple Root instances found. " +
-                    "Auto-binding is ambiguous; bind manually or keep a single active Root per scene.");
+                NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: Multiple Root instances found. " +
+                    "Auto-binding is ambiguous; keep a single active Root per scene or the view may bind to the wrong context.");
             }
             else if (roots.Length == 0)
             {
@@ -144,6 +149,13 @@ namespace Nexus.Core
         {
             if (view == null) return;
             if (_activeMediators.ContainsKey(view)) return;
+
+            if (_context == null)
+            {
+                var logger = NexusRuntime.Logger;
+                logger?.LogError($"[Nexus] RegisterView failed for '{view.GetType().Name}': context is null.");
+                return;
+            }
 
             var mediatorAttr = view.GetType().GetCustomAttribute<MediatorAttribute>();
             if (mediatorAttr == null)

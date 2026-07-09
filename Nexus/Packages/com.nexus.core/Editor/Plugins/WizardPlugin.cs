@@ -200,7 +200,6 @@ namespace Nexus.Editor
         {
             var manifest = FindBootstrapManifest();
 
-            // Section 1: Manifest Generation
             var manifestGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_manifest"));
             if (manifest == null)
             {
@@ -221,10 +220,8 @@ namespace Nexus.Editor
                 manifestGroup.Add(genBtn);
             }
 
-            // Section 2: Custom Root Creation
             var creationGroup = NexusEditorStyles.CreateActionGroup(_subTabContent, NexusLang.Get("wizard_section_create_root"));
 
-            // Input Fields
             var contextNameField = new TextField(NexusLang.Get("wizard_field_context_name")) { value = _wizardContextName };
             contextNameField.RegisterValueChangedCallback(evt => { _wizardContextName = evt.newValue; ValidateCreateRootForm(); });
             creationGroup.Add(contextNameField);
@@ -233,9 +230,8 @@ namespace Nexus.Editor
             scopeTagField.RegisterValueChangedCallback(evt => { _wizardScopeTag = evt.newValue; ValidateCreateRootForm(); });
             creationGroup.Add(scopeTagField);
 
-            // Path Configuration
-            var pathsGroup = new VisualElement { style = { marginTop = 5, borderTopWidth = 1, borderTopColor = new StyleColor(NexusEditorStyles.BorderColor), paddingTop = 5 } };
-            pathsGroup.Add(new Label(NexusLang.Get("wizard_paths_config")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginBottom = 4 } });
+            var pathsGroup = new VisualElement { style = { marginTop = 4, borderTopWidth = 1, borderTopColor = new StyleColor(NexusEditorStyles.BorderColor), paddingTop = 6 } };
+            pathsGroup.Add(NexusEditorStyles.CreateHint(NexusLang.Get("wizard_paths_config")));
 
             var scriptsPathRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
             var scriptsPathField = new TextField(NexusLang.Get("wizard_field_scripts_folder")) { value = _wizardScriptsPath, style = { flexGrow = 1 } };
@@ -255,7 +251,6 @@ namespace Nexus.Editor
 
             creationGroup.Add(pathsGroup);
 
-            // Parent Root Dropdown
             var rootChoices = GetSceneRootNames();
             _parentRootDropdown = new DropdownField(NexusLang.Get("wizard_field_parent_root"), rootChoices, 0);
             if (rootChoices.Contains(_wizardParentRootName))
@@ -263,7 +258,6 @@ namespace Nexus.Editor
             _parentRootDropdown.RegisterValueChangedCallback(evt => _wizardParentRootName = evt.newValue);
             creationGroup.Add(_parentRootDropdown);
 
-            // Assemblies Multi-select Foldout
             var foldout = new Foldout { text = string.Format(NexusLang.Get("wizard_assembly_scopes"), _wizardSelectedAssemblies.Count), value = false };
             foldout.style.marginTop = 6;
             
@@ -286,7 +280,6 @@ namespace Nexus.Editor
             foldout.Add(assembliesScroll);
             creationGroup.Add(foldout);
 
-            // Lifecycle toggles
             var toggleLifecycle = new Toggle(NexusLang.Get("wizard_toggle_lifecycle")) { value = _wizardGenerateLifecycleScript };
             var toggleBoilerplate = new Toggle(NexusLang.Get("wizard_toggle_boilerplate")) { value = _wizardGenerateSampleArchitecture };
             
@@ -301,7 +294,6 @@ namespace Nexus.Editor
             creationGroup.Add(toggleLifecycle);
             creationGroup.Add(toggleBoilerplate);
 
-            // Factory Modules
             var modulesFoldout = new Foldout { text = NexusLang.Get("wizard_foldout_modules"), value = true, style = { marginTop = 5 } };
             
             var toggleIAP = new Toggle(NexusLang.Get("wizard_toggle_iap")) { value = _wizardModIAP };
@@ -322,7 +314,6 @@ namespace Nexus.Editor
 
             creationGroup.Add(modulesFoldout);
 
-            // Validation & Build Action
             _validationLabel = new Label { style = { color = new StyleColor(NexusEditorStyles.AccentOrange), fontSize = 10, marginTop = 8, whiteSpace = WhiteSpace.Normal } };
             creationGroup.Add(_validationLabel);
 
@@ -343,8 +334,7 @@ namespace Nexus.Editor
             var rootChoices = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
             if (rootChoices.Count == 0)
             {
-                var errorLabel = new Label(NexusLang.Get("wizard_no_roots")) { style = { color = Color.red, fontSize = 10, marginTop = 5 } };
-                genGroup.Add(errorLabel);
+                genGroup.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("wizard_no_roots")));
                 return;
             }
 
@@ -380,8 +370,7 @@ namespace Nexus.Editor
             var rootChoices = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
             if (rootChoices.Count == 0)
             {
-                var errorLabel = new Label(NexusLang.Get("wizard_no_roots")) { style = { color = Color.red, fontSize = 10, marginTop = 5 } };
-                genGroup.Add(errorLabel);
+                genGroup.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("wizard_no_roots")));
                 return;
             }
 
@@ -425,8 +414,7 @@ namespace Nexus.Editor
             var rootChoices = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
             if (rootChoices.Count == 0)
             {
-                var errorLabel = new Label(NexusLang.Get("wizard_no_roots_short")) { style = { color = Color.gray, fontSize = 10, marginTop = 5 } };
-                deleteGroup.Add(errorLabel);
+                deleteGroup.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("wizard_no_roots_short")));
                 return;
             }
 

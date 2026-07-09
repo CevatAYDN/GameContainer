@@ -129,6 +129,11 @@ namespace Nexus.Core
                         }
                     }
                 }
+
+                if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
+                {
+                    TryResolve<ILoggerService>()?.LogWarning("[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
+                }
             }
 
             // Fallback: DI-registered lifecycle (for backward compatibility)

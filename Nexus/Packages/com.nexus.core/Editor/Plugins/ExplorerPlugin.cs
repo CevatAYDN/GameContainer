@@ -226,7 +226,7 @@ namespace Nexus.Editor
             
             if (!Application.isPlaying)
             {
-                container.Add(new Label(NexusLang.Get("explorer_live_models_hint")) { style = { color = NexusEditorStyles.TextSecondary, unityFontStyleAndWeight = FontStyle.Italic } });
+                container.Add(CreateStateLine(NexusLang.Get("explorer_live_models_hint"), NexusEditorStyles.TextSecondary));
                 _tabContent.Add(container);
                 return;
             }
@@ -234,7 +234,7 @@ namespace Nexus.Editor
             var activeContexts = NexusRuntime.ActiveContexts;
             if (activeContexts.Count == 0)
             {
-                container.Add(new Label(NexusLang.Get("explorer_no_contexts")) { style = { color = NexusEditorStyles.TextSecondary } });
+                container.Add(CreateStateLine(NexusLang.Get("explorer_no_contexts"), NexusEditorStyles.TextSecondary));
                 _tabContent.Add(container);
                 return;
             }
@@ -592,65 +592,54 @@ namespace Nexus.Editor
 
             if (!Application.isPlaying)
             {
-                var label = new Label(NexusLang.Get("explorer_testing_hint")) { style = { color = Color.gray, fontSize = 10, whiteSpace = WhiteSpace.Normal } };
-                _testerFormContainer.Add(label);
+                _testerFormContainer.Add(CreateStateLine(NexusLang.Get("explorer_testing_hint"), Color.gray));
                 return;
             }
 
             if (_testerSelectedSignalType == null || _testerSignalInstance == null)
             {
-                var label = new Label(NexusLang.Get("explorer_select_signal")) { style = { color = Color.gray, fontSize = 10 } };
-                _testerFormContainer.Add(label);
+                _testerFormContainer.Add(CreateStateLine(NexusLang.Get("explorer_select_signal"), Color.gray));
                 return;
             }
 
-            // Signal Info Header
-            var sigLabel = new Label(string.Format(NexusLang.Get("explorer_selected_signal"), _testerSelectedSignalType.Name)) { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 11, color = Color.white, marginBottom = 8 } };
-            _testerFormContainer.Add(sigLabel);
+            _testerFormContainer.Add(CreateSectionHeader(string.Format(NexusLang.Get("explorer_selected_signal"), _testerSelectedSignalType.Name)));
 
-            // Dynamic fields list
             foreach (var field in _testerSignalFields)
             {
                 var element = CreateSignalFieldUI(field, field.FieldType, () => field.GetValue(_testerSignalInstance), val => field.SetValue(_testerSignalInstance, val));
                 if (element != null) _testerFormContainer.Add(element);
             }
 
-            // Context target selection (addresses multi-context concerns!)
             var activeContexts = NexusRuntime.ActiveContexts;
             var contextChoices = activeContexts.Select(c => c is Context ctx ? ctx.ScopeTag : "Unknown").ToList();
 
             var topActions = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginBottom = 6 } };
-            topActions.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
-            topActions.Add(NexusEditorStyles.CreateButton("Open Game Manager", () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
-            topActions.Add(NexusEditorStyles.CreateButton("Refresh Targets", RefreshTesterView, NexusEditorStyles.BtnGray));
+            topActions.Add(NexusEditorStyles.CreateButton("Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            topActions.Add(NexusEditorStyles.CreateButton("Game Manager", () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
+            topActions.Add(NexusEditorStyles.CreateButton("Refresh", RefreshTesterView, NexusEditorStyles.BtnGray));
             _testerFormContainer.Add(topActions);
 
             if (contextChoices.Count == 0)
             {
-                var noContextLabel = new Label(NexusLang.Get("explorer_no_context_target")) { style = { color = Color.red, fontSize = 9 } };
-                _testerFormContainer.Add(noContextLabel);
+                _testerFormContainer.Add(CreateStateLine(NexusLang.Get("explorer_no_context_target"), Color.red));
                 return;
             }
 
-            var defaultContext = contextChoices[0];
             _contextTargetDropdown = new DropdownField("Target Context", contextChoices, 0);
             _contextTargetDropdown.tooltip = "Fire the test signal into the selected context";
             _testerFormContainer.Add(_contextTargetDropdown);
 
-            _refreshTargetsButton = NexusEditorStyles.CreateButton("Refresh Contexts", RefreshTesterView, NexusEditorStyles.BtnGray);
+            _refreshTargetsButton = NexusEditorStyles.CreateButton("Refresh Targets", RefreshTesterView, NexusEditorStyles.BtnGray);
             _refreshTargetsButton.style.marginTop = 4;
             _testerFormContainer.Add(_refreshTargetsButton);
 
-            // Fire Button
             _fireButton = NexusEditorStyles.CreateButton(NexusLang.Get("explorer_fire_test"), FireSelectedSignal, NexusEditorStyles.BtnGreen);
             _fireButton.tooltip = "Fire the selected signal into the target context";
             _fireButton.style.marginTop = 10;
             _fireButton.style.height = 30;
             _testerFormContainer.Add(_fireButton);
 
-            // Presets Section
-            var presetsHeader = new Label(NexusLang.Get("explorer_presets")) { style = { marginTop = 15, fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray } };
-            _testerFormContainer.Add(presetsHeader);
+            _testerFormContainer.Add(CreateSectionHeader(NexusLang.Get("explorer_presets")));
 
             var presetRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
             var presetNameField = new TextField { style = { flexGrow = 1, marginRight = 5 } };
@@ -778,6 +767,22 @@ namespace Nexus.Editor
             }
 
             return new Label(string.Format(NexusLang.Get("explorer_unsupported_type"), field.Name, initialValue ?? "null"));
+        }
+
+        private VisualElement CreateSectionHeader(string text)
+        {
+            return new Label(text)
+            {
+                style = { marginTop = 15, fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = Color.gray }
+            };
+        }
+
+        private VisualElement CreateStateLine(string text, Color color)
+        {
+            return new Label(text)
+            {
+                style = { color = color, fontSize = 10, whiteSpace = WhiteSpace.Normal }
+            };
         }
 
         private void FireSelectedSignal()

@@ -12,49 +12,64 @@ namespace Nexus.Editor.Inspector
             serializedObject.Update();
 
             var root = (Root)target;
+            var data = root.ContextData;
+            bool hasContext = root.Context != null;
+            bool hasContextData = data != null;
+            bool hasParent = root.ParentRoot != null;
+            bool hasAutoDiscovery = hasContextData && data.EnableAutoDiscovery;
 
-            // Draw header banner
-            EditorGUILayout.Space(5);
-            var headerStyle = new GUIStyle(EditorStyles.boldLabel)
-            {
-                fontSize = 14,
-                alignment = TextAnchor.MiddleCenter
-            };
-            EditorGUILayout.LabelField("Nexus Root Context", headerStyle);
-            EditorGUILayout.Space(5);
+            EditorGUILayout.HelpBox("Root health", MessageType.None);
+            DrawStatusLine("Context data", hasContextData ? data.name : "Missing", hasContextData ? MessageType.Info : MessageType.Error);
+            DrawStatusLine("Parent root", hasParent ? root.ParentRoot.name : "None", hasParent ? MessageType.Info : MessageType.Warning);
+            DrawStatusLine("Context", hasContext ? "Bound" : "Not bound", hasContext ? MessageType.Info : MessageType.Error);
+            if (hasContextData)
+                DrawStatusLine("Discovery", hasAutoDiscovery ? "Auto discovery on" : "Manual registration expected", hasAutoDiscovery ? MessageType.Info : MessageType.Warning);
 
-            // Status Badge
             if (Application.isPlaying)
             {
-                var badgeStyle = new GUIStyle(GUI.skin.box)
-                {
-                    alignment = TextAnchor.MiddleCenter,
-                    fontStyle = FontStyle.Bold
-                };
-
                 if (root.IsInitialized)
                 {
-                    GUI.backgroundColor = new Color(0.2f, 0.8f, 0.2f);
-                    GUILayout.Box("STATUS: INITIALIZED & ACTIVE", badgeStyle, GUILayout.ExpandWidth(true), GUILayout.Height(25));
+                    EditorGUILayout.HelpBox("Status: Initialized and active", MessageType.Info);
                 }
                 else
                 {
-                    GUI.backgroundColor = new Color(0.9f, 0.5f, 0.1f);
-                    GUILayout.Box("STATUS: INITIALIZING...", badgeStyle, GUILayout.ExpandWidth(true), GUILayout.Height(25));
+                    EditorGUILayout.HelpBox("Status: Starting up", MessageType.Warning);
                 }
-                GUI.backgroundColor = Color.white;
 
-                if (root.Context != null)
+                if (hasContext)
                 {
                     EditorGUILayout.Space(5);
-                    EditorGUILayout.HelpBox($"Active Singletons: {root.Context.Container.ActiveSingletonsCount}\n" +
-                                           $"Registered Commands: {root.Context.SignalBusInternal.CommandHandlers.Count}\n" +
-                                           $"Scope Tag: {root.Context.ScopeTag ?? "Global"}", MessageType.Info);
+                    var lifecycleCount = root.Context.Container.IsRegistered(typeof(IContextLifecycle)) ? 1 : 0;
+                    EditorGUILayout.HelpBox($"Bound services: {root.Context.Container.ActiveSingletonsCount}\n" +
+                                           $"Command handlers: {root.Context.SignalBusInternal.CommandHandlers.Count}\n" +
+                                           $"Scope tag: {root.Context.ScopeTag ?? "Global"}\n" +
+                                           $"Lifecycle: {(lifecycleCount > 0 ? "Registered" : "Not registered")}", MessageType.Info);
+                }
+                else
+                {
+                    EditorGUILayout.Space(5);
+                    EditorGUILayout.HelpBox("Root does not have an active Context yet. Check the assigned ContextData, parent root order, and lifecycle registration.", MessageType.Error);
                 }
             }
             else
             {
-                EditorGUILayout.HelpBox("Root initialized during Awake/Start when Play Mode starts.", MessageType.None);
+                if (!hasContextData)
+                {
+                    EditorGUILayout.HelpBox("Assign a ContextData asset before testing this root.", MessageType.Error);
+                }
+                else if (!hasParent && !hasAutoDiscovery)
+                {
+                    EditorGUILayout.HelpBox("This root will need explicit lifecycle registration or a parent root to resolve cleanly.", MessageType.Warning);
+                }
+                else
+                {
+                    EditorGUILayout.HelpBox("This root initializes when Play Mode starts. Keep the data asset and parent chain valid before testing.", MessageType.Info);
+                }
+            }
+
+            if (!Application.isPlaying && hasContextData)
+            {
+                EditorGUILayout.HelpBox($"Auto discovery: {(data.EnableAutoDiscovery ? "On" : "Off")}\nAssembly scopes: {(data.AssemblyScopes == null || data.AssemblyScopes.Length == 0 ? "Default scan" : string.Join(", ", data.AssemblyScopes))}", MessageType.None);
             }
 
             EditorGUILayout.Space(10);
@@ -67,6 +82,11 @@ namespace Nexus.Editor.Inspector
             }
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        private static void DrawStatusLine(string label, string value, MessageType messageType)
+        {
+            EditorGUILayout.HelpBox($"{label}: {value}", messageType);
         }
     }
 }

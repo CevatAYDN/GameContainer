@@ -113,6 +113,10 @@ namespace Nexus.Editor
                     NexusEditorStyles.CreateInfoCard(_leftPanel, string.Format(NexusLang.Get("hierarchy_roots_detected"), sceneRootCount), NexusEditorStyles.AccentYellow, NexusEditorStyles.CardBgYellow,
                         string.Format(NexusLang.Get("hierarchy_roots_desc"), sceneRootCount));
                 }
+                else
+                {
+                    _leftPanel.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("hierarchy_empty_playmode")));
+                }
                 return;
             }
 
@@ -145,7 +149,9 @@ namespace Nexus.Editor
 
         private VisualElement RenderContextCard(Context ctx, Dictionary<Context, List<Context>> childMap)
         {
-            var card = new VisualElement();
+            bool isInspected = _selectedContext == ctx;
+
+            var card = NexusEditorStyles.CreateCard(isInspected ? NexusEditorStyles.HighlightBg : NexusEditorStyles.RowAlt);
             card.style.borderTopWidth = 1;
             card.style.borderBottomWidth = 1;
             card.style.borderLeftWidth = 1;
@@ -165,9 +171,6 @@ namespace Nexus.Editor
             card.style.paddingBottom = 8;
             card.style.marginTop = 6;
             card.style.marginBottom = 6;
-
-            bool isInspected = _selectedContext == ctx;
-            card.style.backgroundColor = isInspected ? new StyleColor(NexusEditorStyles.HighlightBg) : new StyleColor(NexusEditorStyles.RowAlt);
 
             // Mouse down selection callback
             card.RegisterCallback<MouseDownEvent>(evt =>
@@ -225,9 +228,9 @@ namespace Nexus.Editor
             card.Add(header);
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-            actionRow.Add(new Button(() => Window?.OpenPlugin("GameManager")) { text = "Open Game Manager" });
-            actionRow.Add(new Button(() => Window?.OpenPlugin("Explorer")) { text = "Open Explorer" });
-            actionRow.Add(new Button(() => Window?.OpenPlugin("Tracer")) { text = "Open Tracer" });
+            actionRow.Add(NexusEditorStyles.CreateButton("Open Game Manager", () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
+            actionRow.Add(NexusEditorStyles.CreateButton("Open Explorer", () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+            actionRow.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
             card.Add(actionRow);
 
             // Nested active singletons list

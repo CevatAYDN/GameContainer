@@ -20,6 +20,8 @@ namespace Nexus.Editor
         private Label _commandStat;
         private Label _viewStat;
         private Label _perfStat;
+        private Label _validationSummary;
+        private Label _healthSummary;
         private VisualElement _validationCard;
         private IVisualElementScheduledItem _refreshSchedule;
         private static int s_cachedModelCount = -1, s_cachedServiceCount = -1, s_cachedCommandCount = -1, s_cachedViewCount = -1;
@@ -78,6 +80,7 @@ namespace Nexus.Editor
             BuildOverviewSection(scroll);
             BuildQuickActions(scroll);
             BuildRuntimeSection(scroll);
+            BuildHealthSection(scroll);
             BuildValidationSection(scroll);
             BuildFrameworkInfo(scroll);
 
@@ -111,7 +114,7 @@ namespace Nexus.Editor
             var statusDot = NexusEditorStyles.CreateStatusDot(titleColor, 12);
             statusRow.Add(statusDot);
 
-                var statusLabel = new Label(playing ? "  ● " + NexusLang.Get("system_active") : "  ○ " + NexusLang.Get("system_standby"))
+            var statusLabel = new Label(playing ? "  ● " + NexusLang.Get("system_active") : "  ○ " + NexusLang.Get("system_standby"))
             {
                 style = { fontSize = 16, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(titleColor) }
             };
@@ -153,19 +156,35 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBg);
             card.style.marginTop = 12;
 
-            var titleRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 8 } };
-            var title = new Label("GLOBAL QUICK FIND / COMMAND PALETTE")
-            {
-                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue) }
-            };
-            titleRow.Add(title);
-            card.Add(titleRow);
+            card.Add(CreateSectionTitle("Quick Find", NexusEditorStyles.AccentBlue));
+            card.Add(CreateQuickFindRow());
 
+            _quickFindResultsContainer = new VisualElement { style = { marginTop = 8 } };
+            card.Add(_quickFindResultsContainer);
+
+            parent.Add(card);
+
+            if (!string.IsNullOrEmpty(_quickSearchQuery))
+            {
+                UpdateQuickFindResults();
+            }
+        }
+
+        private VisualElement CreateSectionTitle(string titleText, Color accentColor)
+        {
+            return new Label(titleText)
+            {
+                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(accentColor), marginBottom = 8 }
+            };
+        }
+
+        private VisualElement CreateQuickFindRow()
+        {
             var searchRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
             var searchInput = new TextField
             {
                 value = _quickSearchQuery,
-                tooltip = "Search Signals, Commands, Models, Services, Views... (e.g. CityModel, EnterDistrictCommand)",
+                tooltip = "Search signals, commands, models, services, and views.",
                 style = { flexGrow = 1, height = 24, fontSize = 11 }
             };
 
@@ -195,18 +214,7 @@ namespace Nexus.Editor
                 }
             };
             searchRow.Add(clearBtn);
-
-            card.Add(searchRow);
-
-            _quickFindResultsContainer = new VisualElement { style = { marginTop = 8 } };
-            card.Add(_quickFindResultsContainer);
-
-            parent.Add(card);
-
-            if (!string.IsNullOrEmpty(_quickSearchQuery))
-            {
-                UpdateQuickFindResults();
-            }
+            return searchRow;
         }
 
         private void UpdateQuickFindResults()
@@ -337,11 +345,7 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
             card.style.marginTop = 12;
 
-            var title = new Label(NexusLang.Get("project_overview"))
-            {
-                style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentYellow), marginBottom = 8 }
-            };
-            card.Add(title);
+            card.Add(CreateSectionTitle(NexusLang.Get("project_overview"), NexusEditorStyles.AccentYellow));
 
             if (!s_overviewCacheValid) RefreshOverviewCache();
             int modelCount = s_cachedModelCount, serviceCount = s_cachedServiceCount, commandCount = s_cachedCommandCount, viewCount = s_cachedViewCount;
@@ -372,11 +376,7 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
             card.style.marginTop = 8;
 
-            var title = new Label(NexusLang.Get("runtime_metrics"))
-            {
-                style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentGreen), marginBottom = 8 }
-            };
-            card.Add(title);
+            card.Add(CreateSectionTitle(NexusLang.Get("runtime_metrics"), NexusEditorStyles.AccentGreen));
 
             var statRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
             _perfStat = CreateStatBox(statRow, $"{NexusRuntime.Metrics.SignalsPerSecond:F1}/s", NexusLang.Get("perf_signals"), NexusEditorStyles.AccentBlue);
@@ -446,31 +446,26 @@ namespace Nexus.Editor
         {
             var groupCard = NexusEditorStyles.CreateActionGroup(parent, NexusLang.Get("quick_actions"));
 
-            var actions = new (string titleKey, string descKey, string pluginId)[] {
-                ("action_wizard_title",      "action_wizard_desc",      "Wizard"),
-                ("action_hierarchy_title",   "action_hierarchy_desc",   "Hierarchy"),
-                ("action_explorer_title",    "action_explorer_desc",    "Explorer"),
-                ("action_tracer_title",      "action_tracer_desc",      "Tracer"),
-                ("action_graph_title",       "action_graph_desc",       "Graph"),
-                ("action_gamemanager_title", "action_gamemanager_desc", "GameManager"),
-                ("action_typeanalyzer_title","action_typeanalyzer_desc","TypeAnalyzer"),
-                ("action_help_title",        "action_help_desc",        "Help"),
-                ("action_error_dashboard_title", "action_error_dashboard_desc", "ErrorDashboard"),
-                ("action_performance_dashboard_title", "action_performance_dashboard_desc", "PerformanceDashboard"),
-                ("action_network_dashboard_title", "action_network_dashboard_desc", "NetworkDashboard"),
+            var actions = new[]
+            {
+                ("action_wizard_title", "action_wizard_desc", "Wizard", NexusEditorStyles.BtnBlue),
+                ("action_hierarchy_title", "action_hierarchy_desc", "Hierarchy", NexusEditorStyles.BtnTeal),
+                ("action_explorer_title", "action_explorer_desc", "Explorer", NexusEditorStyles.BtnPurple),
+                ("action_tracer_title", "action_tracer_desc", "Tracer", new Color(0.5f, 0.5f, 0.6f)),
+                ("action_graph_title", "action_graph_desc", "Graph", new Color(0.8f, 0.3f, 0.3f)),
+                ("action_gamemanager_title", "action_gamemanager_desc", "GameManager", new Color(0.3f, 0.7f, 0.6f)),
+                ("action_typeanalyzer_title", "action_typeanalyzer_desc", "TypeAnalyzer", new Color(0.6f, 0.5f, 0.5f)),
+                ("action_help_title", "action_help_desc", "Help", new Color(0.5f, 0.5f, 0.8f)),
+                ("action_error_dashboard_title", "action_error_dashboard_desc", "ErrorDashboard", new Color(0.8f, 0.4f, 0.4f)),
+                ("action_performance_dashboard_title", "action_performance_dashboard_desc", "PerformanceDashboard", new Color(0.4f, 0.8f, 0.4f)),
+                ("action_network_dashboard_title", "action_network_dashboard_desc", "NetworkDashboard", new Color(0.4f, 0.6f, 0.8f))
             };
-
-            var colors = new[] { NexusEditorStyles.BtnBlue, NexusEditorStyles.BtnTeal,
-                NexusEditorStyles.BtnPurple, new Color(0.5f,0.5f,0.6f),
-                new Color(0.8f,0.3f,0.3f), new Color(0.3f,0.7f,0.6f),
-                new Color(0.6f,0.5f,0.5f), new Color(0.5f,0.5f,0.8f),
-                new Color(0.8f,0.4f,0.4f), new Color(0.4f,0.8f,0.4f), new Color(0.4f,0.6f,0.8f) };
 
             var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
             for (int i = 0; i < actions.Length; i++)
             {
                 var a = actions[i];
-                AddActionCard(buttonRow, NexusLang.Get(a.titleKey), NexusLang.Get(a.descKey), colors[i], () => Window.SwitchToPlugin(a.pluginId));
+                AddActionCard(buttonRow, NexusLang.Get(a.Item1), NexusLang.Get(a.Item2), a.Item4, () => Window.SwitchToPlugin(a.Item3));
             }
 
             groupCard.Add(buttonRow);
@@ -570,6 +565,56 @@ namespace Nexus.Editor
             parent.Add(card);
         }
 
+        private void BuildHealthSection(VisualElement parent)
+        {
+            var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
+            card.style.marginTop = 8;
+
+            var titleRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 8 } };
+            titleRow.Add(new Label("Nexus Health")
+            {
+                style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentGreen) }
+            });
+            card.Add(titleRow);
+
+            var roots = NexusEditorDataProvider.GetSceneRoots();
+            int rootCount = roots?.Length ?? 0;
+            int contextCount = NexusEditorDataProvider.GetActiveContextCount();
+            int handlerCount = NexusEditorDataProvider.GetHandlerCount();
+
+            string readiness = Application.isPlaying
+                ? "Play Mode"
+                : "Edit Mode";
+
+            string healthText;
+            if (!Application.isPlaying && rootCount == 0)
+            {
+                healthText = "No active Root in scene. Add a Nexus Root before entering Play Mode.";
+            }
+            else if (Application.isPlaying && contextCount == 0)
+            {
+                healthText = "No active Context detected during Play Mode. Check startup wiring and scene bindings.";
+            }
+            else
+            {
+                healthText = $"{contextCount} context(s), {handlerCount} handler(s), {rootCount} root(s) visible.";
+            }
+
+            _healthSummary = new Label($"{readiness}: {healthText}")
+            {
+                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), whiteSpace = WhiteSpace.Normal, marginBottom = 4 }
+            };
+            card.Add(_healthSummary);
+
+            var note = new Label("Use this panel to catch missing Roots, empty Contexts, and validation issues before handoff.")
+            {
+                style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), whiteSpace = WhiteSpace.Normal }
+            };
+            card.Add(note);
+
+            parent.Add(card);
+        }
+
         private void RefreshValidationCard(VisualElement card)
         {
             if (card == null) return;
@@ -580,10 +625,7 @@ namespace Nexus.Editor
         private void PopulateValidationCard(VisualElement card)
         {
             var titleRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 8 } };
-            titleRow.Add(new Label(NexusLang.Get("build_validation"))
-            {
-                style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentOrange) }
-            });
+            titleRow.Add(CreateSectionTitle(NexusLang.Get("build_validation"), NexusEditorStyles.AccentOrange));
 
             if (BuildValidation.HasRun)
             {
@@ -593,6 +635,17 @@ namespace Nexus.Editor
                 titleRow.Add(statusPill);
             }
             card.Add(titleRow);
+
+            _validationSummary = new Label(BuildValidation.LastRunSummary)
+            {
+                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 4 }
+            };
+            card.Add(_validationSummary);
+
+            card.Add(new Label("Validation catches context, binding, hierarchy, and command issues before runtime.")
+            {
+                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.DimText), whiteSpace = WhiteSpace.Normal, marginBottom = 4 }
+            });
 
             if (BuildValidation.HasRun)
             {
@@ -639,7 +692,7 @@ namespace Nexus.Editor
 
         private void BuildFrameworkInfo(VisualElement parent)
         {
-            var infoCard = NexusEditorStyles.CreateInfoCard(parent, NexusLang.Get("framework"), NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
+            NexusEditorStyles.CreateInfoCard(parent, NexusLang.Get("framework"), NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
                 NexusLang.Get("framework_desc"));
         }
 

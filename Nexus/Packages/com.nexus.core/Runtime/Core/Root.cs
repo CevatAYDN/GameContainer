@@ -148,7 +148,8 @@ namespace Nexus.Core
 
                     if (!parentRoot.IsInitialized)
                     {
-                        NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogWarning($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Proceeding independently.");
+                        NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogError($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Continuing would leave dependent views and services in an undefined state.");
+                        throw new TimeoutException($"Parent root '{parentRoot.name}' did not initialize in time.");
                     }
                 }
 
@@ -188,7 +189,8 @@ namespace Nexus.Core
 
                     if (sibling != null && !sibling.IsInitialized)
                     {
-                        NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogWarning($"[Nexus] Root '{gameObject.name}' timed out waiting for sibling root '{sibling.gameObject.name}' to initialize. Proceeding independently.");
+                        NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogError($"[Nexus] Root '{gameObject.name}' timed out waiting for sibling root '{sibling.gameObject.name}' to initialize. Continuing would make sibling ordering nondeterministic.");
+                        throw new TimeoutException($"Sibling root '{sibling.gameObject.name}' did not initialize in time.");
                     }
                 }
 

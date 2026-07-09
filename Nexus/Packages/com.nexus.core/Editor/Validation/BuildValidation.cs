@@ -22,6 +22,9 @@ namespace Nexus.Editor
         public static int LastWarningCount { get; private set; }
         public static bool LastRunPassed { get; private set; }
         public static bool HasRun { get; private set; }
+        public static string LastRunSummary => HasRun
+            ? $"{LastErrorCount} errors, {LastWarningCount} warnings"
+            : "Not run yet";
 
         public static void RunSilent()
         {
@@ -34,7 +37,14 @@ namespace Nexus.Editor
             InfoLogger = _ => { };
             WarningLogger = msg => { s_lastResults.Add(new Entry { Message = msg, IsError = false }); LastWarningCount++; };
             ErrorLogger = msg => { s_lastResults.Add(new Entry { Message = msg, IsError = true }); LastErrorCount++; };
-            try { LastRunPassed = Validate(); } catch { LastRunPassed = false; }
+            try { LastRunPassed = Validate(); }
+            catch (Exception ex)
+            {
+                s_lastResults.Add(new Entry { Rule = "ValidationException", Message = ex.Message, IsError = true });
+                LastRunPassed = false;
+                LastErrorCount++;
+                throw;
+            }
             finally { InfoLogger = prevInfo; WarningLogger = prevWarn; ErrorLogger = prevErr; HasRun = true; }
         }
 
@@ -100,6 +110,14 @@ namespace Nexus.Editor
 
             Debug.Log($"[Nexus] Validation PASSED with {warningCount} Warnings.");
             return true;
+        }
+
+        public static void ValidateOrThrow()
+        {
+            if (!Validate())
+            {
+                throw new InvalidOperationException($"Nexus validation failed with {LastErrorCount} errors and {LastWarningCount} warnings.");
+            }
         }
 
         private static void ValidateHandlers(ref int errorCount, ref int warningCount)
@@ -994,7 +1012,7 @@ namespace Nexus.Editor
 
             if (disableValidation)
             {
-                UnityEngine.Debug.Log("[Nexus] Architecture Validation bypassed via NEXUS_DISABLE_VALIDATION environment variable.");
+                UnityEngine.Debug.LogWarning("[Nexus] Architecture Validation bypassed via NEXUS_DISABLE_VALIDATION environment variable.");
                 return;
             }
 
