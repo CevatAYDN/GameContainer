@@ -29,9 +29,19 @@ namespace Nexus.Core.Services
     public interface IAudioService
     {
         float MasterVolume { get; set; }
+        /// <summary>User-controlled BGM preference (slider value). Persisted to PlayerPrefs.
+        /// <para>FIX P0.3: do NOT set this directly from gameplay FSMs — it would overwrite
+        /// the player's chosen preference whenever the player enters or leaves a level.
+        /// Use <see cref="BgmStateMultiplier"/> instead for transient per-state ducking.</para></summary>
         float BgmVolume { get; set; }
         float SfxVolume { get; set; }
         bool IsMuted { get; set; }
+
+        /// <summary>FIX P0.3 — Transient state-driven BGM volume multiplier (0..1).
+        /// Returning to the main menu resets this to 1.0 so the saved user preference is
+        /// preserved across level transitions. The effective BGM volume is
+        /// <c>MasterVolume × BgmVolume × BgmStateMultiplier</c> when not muted.</summary>
+        float BgmStateMultiplier { get; set; }
 
         void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0.5f);
         void StopBgm(float fadeDuration = 0.5f);
@@ -58,6 +68,10 @@ namespace Nexus.Core.Services
         private float _masterVolume = 1f;
         private float _bgmVolume = 1f;
         private float _sfxVolume = 1f;
+        // FIX P0.3: not persisted on purpose. This is the per-state ducking scalar; it resets
+        // to 1.0 whenever a new state calls into the audio service, so a level-load cannot
+        // silently overwrite the player's saved BgmVolume slider value.
+        private float _bgmStateMultiplier = 1f;
         private bool _isMuted;
 
         public float MasterVolume
@@ -78,6 +92,20 @@ namespace Nexus.Core.Services
             {
                 _bgmVolume = Mathf.Clamp01(value);
                 PlayerPrefsService?.SetFloat(KeyBgmVol, _bgmVolume);
+                UpdateVolumes();
+            }
+        }
+
+        /// <inheritdoc/>
+        public float BgmStateMultiplier
+        {
+            get => _bgmStateMultiplier;
+            set
+            {
+                // FIX P0.3: deliberately NOT persisted — gameplay states push a transient
+                // scalar (Menu: 0.70, Playing: 0.40 / Boss 0.80, Pause: 0.20 per GDD §12)
+                // without poisoning the user-saved slider value.
+                _bgmStateMultiplier = Mathf.Clamp01(value);
                 UpdateVolumes();
             }
         }
@@ -135,7 +163,12 @@ namespace Nexus.Core.Services
 
         private void UpdateVolumes()
         {
-            float effectiveBgm = _isMuted ? 0f : _masterVolume * _bgmVolume;
+            // FIX P0.3: Player preference × State multiplier. Old code wrote the state
+            // multiplier (e.g. 0.40 from PlayingState) to PlayerPrefs every level entry,
+            // overwriting the user's chosen slider value permanently.
+            float effectiveBgm = _isMuted
+                ? 0f
+                : _masterVolume * _bgmVolume * _bgmStateMultiplier;
             if (_bgmSourceActive != null) _bgmSourceActive.volume = effectiveBgm;
             if (_bgmSourceFade != null) _bgmSourceFade.volume = effectiveBgm;
         }
@@ -147,7 +180,10 @@ namespace Nexus.Core.Services
 
             _bgmSourceActive.clip = clip;
             _bgmSourceActive.loop = loop;
-            _bgmSourceActive.volume = _isMuted ? 0f : _masterVolume * _bgmVolume;
+            // FIX P0.3: same effective formula (master × user pref × state mult).
+            _bgmSourceActive.volume = _isMuted
+                ? 0f
+                : _masterVolume * _bgmVolume * _bgmStateMultiplier;
             _bgmSourceActive.Play();
         }
 

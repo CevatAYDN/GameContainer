@@ -88,20 +88,42 @@ namespace Nexus.Core.Services
             if (_adapter != null)
             {
                 _adapter.Purchase(productId, onComplete);
+                return;
             }
-            else
+
+            // No adapter bound — fall back gracefully instead of throwing.
+            // FIX P0.2: previously this threw InvalidOperationException in release builds,
+            // crashing the app when the player tapped "Remove Ads" before the platform
+            // adapter had finished initialising (cold start, missing network entitlement, etc.).
+            var logger = NexusRuntime.CurrentContext?.Resolve<ILoggerService>();
+            if (logger != null)
             {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[IapService Mock] Purchased product: {productId}");
-                lock (_catalog)
-                {
-                    _mockOwnedProducts.Add(productId);
-                }
-                onComplete?.Invoke(true, productId);
-#else
-                throw new InvalidOperationException("[IapService] Cannot purchase product: Store adapter is not initialized in production builds!");
-#endif
+                logger.LogException(new InvalidOperationException(
+                    $"[IapService] PurchaseProduct('{productId}') called without an IStoreAdapter bound. " +
+                    "The Real Store Adapter is owned by the platform bootstrapper; if this is a release build, " +
+                    "verify that GameplayLifecycle registers the adapter before any UI can trigger a purchase."));
             }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // Developer/Editor: simulate a successful purchase so QA flows remain testable.
+            lock (_catalog)
+            {
+                _mockOwnedProducts.Add(productId);
+            }
+            onComplete?.Invoke(true, productId);
+#else
+            // FIX P0.2 (release): never throw. Surface a localised, actionable failure
+            // through the existing callback contract so the caller can display a
+            // "Store temporarily unavailable" toast and queue the purchase intent for retry.
+            try
+            {
+                onComplete?.Invoke(false, "store_unavailable");
+            }
+            catch (Exception ex)
+            {
+                logger?.LogException(ex);
+            }
+#endif
         }
 
         public void RestorePurchases(Action<bool> onComplete)
@@ -109,16 +131,29 @@ namespace Nexus.Core.Services
             if (_adapter != null)
             {
                 _adapter.Restore(onComplete);
+                return;
             }
-            else
+
+            // FIX P0.2 (mirror): same graceful failure for restore flow.
+            var logger = NexusRuntime.CurrentContext?.Resolve<ILoggerService>();
+            if (logger != null)
             {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log("[IapService Mock] Restored purchases");
-                onComplete?.Invoke(true);
-#else
-                throw new InvalidOperationException("[IapService] Cannot restore purchases: Store adapter is not initialized in production builds!");
-#endif
+                logger.LogException(new InvalidOperationException(
+                    "[IapService] RestorePurchases called without an IStoreAdapter bound."));
             }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            onComplete?.Invoke(true);
+#else
+            try
+            {
+                onComplete?.Invoke(false);
+            }
+            catch (Exception ex)
+            {
+                logger?.LogException(ex);
+            }
+#endif
         }
 
         public bool IsProductOwned(string productId)
