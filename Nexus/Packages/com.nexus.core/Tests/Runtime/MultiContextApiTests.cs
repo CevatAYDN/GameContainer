@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Nexus.Core;
+using UnityEngine;
 
 namespace Nexus.Tests
 {
@@ -9,22 +10,38 @@ namespace Nexus.Tests
         [Test]
         public void GetContext_ReturnsMatchingScopeContext()
         {
-            using var gameplay = new Context(null, new ContextData { ScopeTag = "Gameplay" });
-            using var ui = new Context(null, new ContextData { ScopeTag = "UI" });
+            var gameplayData = ScriptableObject.CreateInstance<ContextData>();
+            gameplayData.ScopeTag = "Gameplay";
+            using var gameplay = new Context(null, gameplayData);
+
+            var uiData = ScriptableObject.CreateInstance<ContextData>();
+            uiData.ScopeTag = "UI";
+            using var ui = new Context(null, uiData);
 
             Assert.AreSame(gameplay, NexusRuntime.GetContext("Gameplay"));
             Assert.AreSame(ui, NexusRuntime.GetContext("UI"));
+
+            Object.DestroyImmediate(gameplayData);
+            Object.DestroyImmediate(uiData);
         }
 
         [Test]
         public void GetContexts_ReturnsAllMatchingScopes()
         {
-            using var a = new Context(null, new ContextData { ScopeTag = "Shared" });
-            using var b = new Context(null, new ContextData { ScopeTag = "Shared" });
+            var aData = ScriptableObject.CreateInstance<ContextData>();
+            aData.ScopeTag = "Shared";
+            using var a = new Context(null, aData);
+
+            var bData = ScriptableObject.CreateInstance<ContextData>();
+            bData.ScopeTag = "Shared";
+            using var b = new Context(null, bData);
 
             var contexts = NexusRuntime.GetContexts("Shared");
 
             Assert.GreaterOrEqual(contexts.Count, 2);
+
+            Object.DestroyImmediate(aData);
+            Object.DestroyImmediate(bData);
         }
     }
 }

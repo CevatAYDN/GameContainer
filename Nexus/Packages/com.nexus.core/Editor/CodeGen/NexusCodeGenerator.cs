@@ -61,7 +61,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf(".Editor", StringComparison.OrdinalIgnoreCase) >= 0 || name == "com.nexus.core")
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf(".Editor", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
                 try

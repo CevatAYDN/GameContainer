@@ -15,13 +15,13 @@ namespace Nexus.Tests
             public IContext BoundContext { get; private set; }
             public bool IsBound { get; private set; }
 
-            public void Bind(IContext context)
+            public virtual void Bind(IContext context)
             {
                 BoundContext = context;
                 IsBound = true;
             }
 
-            public void Unbind()
+            public virtual void Unbind()
             {
                 BoundContext = null;
                 IsBound = false;
@@ -37,8 +37,6 @@ namespace Nexus.Tests
 
             public void Bind(object view, ISignalBus signalBus)
             {
-                Events?.GetType();
-                Events?.Method;
                 BoundView = view;
                 SignalBus = signalBus;
                 IsBound = true;
@@ -61,13 +59,13 @@ namespace Nexus.Tests
         {
             public readonly System.Collections.Generic.List<string> Events = new System.Collections.Generic.List<string>();
 
-            public new void Bind(IContext context)
+            public override void Bind(IContext context)
             {
                 Events.Add("view-bind");
                 base.Bind(context);
             }
 
-            public new void Unbind()
+            public override void Unbind()
             {
                 Events.Add("view-unbind");
                 base.Unbind();
@@ -170,14 +168,18 @@ namespace Nexus.Tests
             var binder = _context.Resolve<ViewBinder>();
             binder.RegisterView(view);
 
-            var activeMediatorsField = typeof(ViewBinder).GetField("_activeMediators", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var activeMediators = activeMediatorsField?.GetValue(binder) as System.Collections.IDictionary;
-            var mediator = activeMediators?[view] as MockMediator;
-
-            Assert.IsNotNull(mediator);
             Assert.AreEqual(1, view.Events.Count);
             Assert.AreEqual("view-bind", view.Events[0]);
             Assert.IsTrue(view.IsBound);
+
+            var activeMediatorsField = typeof(ViewBinder).GetField("_activeMediators", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var activeMediators = activeMediatorsField?.GetValue(binder) as System.Collections.IDictionary;
+            Assert.IsNotNull(activeMediators);
+            Assert.IsTrue(activeMediators.Contains(view));
+
+            var mediator = activeMediators[view] as MockMediator;
+            Assert.IsNotNull(mediator);
+            Assert.AreSame(view, mediator.BoundView);
             Assert.IsTrue(mediator.IsBound);
 
             binder.UnregisterView(view);

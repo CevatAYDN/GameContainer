@@ -28,6 +28,7 @@ namespace Nexus.Editor.Tests
         {
             public float MasterVolume { get; set; }
             public float BgmVolume { get; set; }
+            public float BgmStateMultiplier { get; set; }
             public float SfxVolume { get; set; }
             public bool IsMuted { get; set; }
 
