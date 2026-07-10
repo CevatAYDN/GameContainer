@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -13,11 +14,17 @@ namespace Nexus.Core.Services
     /// Protects game saves against APK modification, XML editing, and save file sharing.
     /// </summary>
     [Preserve]
-    public class EncryptedStorageService : IPlayerPrefsService
+    public class EncryptedStorageService : IPlayerPrefsService, IDisposable
     {
+        public bool AutoSave { get; set; } = false;
+
         private readonly byte[] _encryptionKey;
         private readonly byte[] _hmacKey;
         private readonly string _storageFolderPath;
+
+        private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
+        private readonly HashSet<string> _dirtyKeys = new(StringComparer.Ordinal);
+        private readonly object _lock = new();
 
         public EncryptedStorageService(string customSalt = "Nexus_Secure_Salt_2026")
         {
@@ -87,6 +94,29 @@ namespace Nexus.Core.Services
             {
                 Directory.CreateDirectory(_storageFolderPath);
             }
+
+            Application.focusChanged += OnFocusChanged;
+            Application.quitting += OnQuitting;
+        }
+
+        private void OnFocusChanged(bool hasFocus)
+        {
+            if (!hasFocus)
+            {
+                Save();
+            }
+        }
+
+        private void OnQuitting()
+        {
+            Save();
+        }
+
+        public void Dispose()
+        {
+            Application.focusChanged -= OnFocusChanged;
+            Application.quitting -= OnQuitting;
+            Save();
         }
 
         public int GetInt(string key, int defaultValue = 0)
@@ -122,52 +152,105 @@ namespace Nexus.Core.Services
             SetString(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
         }
 
+        public long GetLong(string key, long defaultValue = 0L)
+        {
+            string valStr = GetString(key, null);
+            return valStr != null && long.TryParse(valStr, out long res) ? res : defaultValue;
+        }
+
+        public void SetLong(string key, long value)
+        {
+            SetString(key, value.ToString());
+        }
+
         public string GetString(string key, string defaultValue = "")
         {
-            string filePath = GetFilePath(key);
-            if (!File.Exists(filePath)) return defaultValue;
+            if (string.IsNullOrEmpty(key)) return defaultValue;
 
-            try
+            lock (_lock)
             {
-                byte[] rawData = File.ReadAllBytes(filePath);
-                if (rawData.Length < 32) return defaultValue; // Min IV (16) + HMAC (16)
-
-                // Verify HMAC signature to detect tampering
-                byte[] iv = new byte[16];
-                byte[] hmac = new byte[16];
-                byte[] cipherText = new byte[rawData.Length - 32];
-
-                Buffer.BlockCopy(rawData, 0, iv, 0, 16);
-                Buffer.BlockCopy(rawData, 16, hmac, 0, 16);
-                Buffer.BlockCopy(rawData, 32, cipherText, 0, cipherText.Length);
-
-                byte[] computedHmac = ComputeHmac(cipherText, iv);
-                if (!CompareHashes(hmac, computedHmac))
+                if (_cache.TryGetValue(key, out string cachedVal))
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
+                    return cachedVal ?? defaultValue;
+                }
+
+                string filePath = GetFilePath(key);
+                if (!File.Exists(filePath))
+                {
+                    _cache[key] = null; // Cache negative result
                     return defaultValue;
                 }
 
-                // Decrypt payload
-                using var aes = Aes.Create();
-                aes.Key = _encryptionKey;
-                aes.IV = iv;
-                using var decryptor = aes.CreateDecryptor();
-                byte[] plainBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
-                return Encoding.UTF8.GetString(plainBytes);
-            }
-            catch (Exception ex)
-            {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
-                return defaultValue;
+                try
+                {
+                    byte[] rawData = File.ReadAllBytes(filePath);
+                    if (rawData.Length < 32)
+                    {
+                        _cache[key] = null;
+                        return defaultValue;
+                    }
+
+                    // Verify HMAC signature to detect tampering
+                    byte[] iv = new byte[16];
+                    byte[] hmac = new byte[16];
+                    byte[] cipherText = new byte[rawData.Length - 32];
+
+                    Buffer.BlockCopy(rawData, 0, iv, 0, 16);
+                    Buffer.BlockCopy(rawData, 16, hmac, 0, 16);
+                    Buffer.BlockCopy(rawData, 32, cipherText, 0, cipherText.Length);
+
+                    byte[] computedHmac = ComputeHmac(cipherText, iv);
+                    if (!CompareHashes(hmac, computedHmac))
+                    {
+                        NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
+                        _cache[key] = null;
+                        return defaultValue;
+                    }
+
+                    // Decrypt payload
+                    using var aes = Aes.Create();
+                    aes.Key = _encryptionKey;
+                    aes.IV = iv;
+                    using var decryptor = aes.CreateDecryptor();
+                    byte[] plainBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
+                    string val = Encoding.UTF8.GetString(plainBytes);
+                    _cache[key] = val;
+                    return val;
+                }
+                catch (Exception ex)
+                {
+                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
+                    _cache[key] = null;
+                    return defaultValue;
+                }
             }
         }
 
         public void SetString(string key, string value)
         {
             if (string.IsNullOrEmpty(key)) return;
-            string filePath = GetFilePath(key);
 
+            lock (_lock)
+            {
+                _cache.TryGetValue(key, out string oldVal);
+                if (oldVal == value) return; // No change
+
+                _cache[key] = value;
+
+                if (AutoSave)
+                {
+                    SaveKeyToDisk(key, value);
+                }
+                else
+                {
+                    _dirtyKeys.Add(key);
+                }
+            }
+        }
+
+        private void SaveKeyToDisk(string key, string value)
+        {
+            string filePath = GetFilePath(key);
             try
             {
                 byte[] plainBytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
@@ -196,15 +279,60 @@ namespace Nexus.Core.Services
             }
         }
 
-        public bool HasKey(string key) => File.Exists(GetFilePath(key));
+        public bool HasKey(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return false;
+
+            lock (_lock)
+            {
+                if (_cache.TryGetValue(key, out string cachedVal))
+                {
+                    return cachedVal != null;
+                }
+                return File.Exists(GetFilePath(key));
+            }
+        }
 
         public void DeleteKey(string key)
         {
-            string path = GetFilePath(key);
-            if (File.Exists(path)) File.Delete(path);
+            if (string.IsNullOrEmpty(key)) return;
+
+            lock (_lock)
+            {
+                _cache[key] = null;
+                _dirtyKeys.Remove(key);
+
+                string path = GetFilePath(key);
+                if (File.Exists(path))
+                {
+                    try
+                    {
+                        File.Delete(path);
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
+                    }
+                }
+            }
         }
 
-        public void Save() { }
+        public void Save()
+        {
+            lock (_lock)
+            {
+                if (_dirtyKeys.Count == 0) return;
+
+                foreach (var key in _dirtyKeys)
+                {
+                    if (_cache.TryGetValue(key, out string val) && val != null)
+                    {
+                        SaveKeyToDisk(key, val);
+                    }
+                }
+                _dirtyKeys.Clear();
+            }
+        }
 
         private string GetFilePath(string key)
         {

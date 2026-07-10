@@ -20,6 +20,8 @@ namespace Nexus.Tests
             public int GetInt(string key, int defaultValue = 0) => defaultValue;
             public void SetFloat(string key, float value) { }
             public float GetFloat(string key, float defaultValue = 0f) => defaultValue;
+            public void SetLong(string key, long value) { }
+            public long GetLong(string key, long defaultValue = 0L) => defaultValue;
             public bool GetBool(string key, bool defaultValue = false) => defaultValue;
             public void SetBool(string key, bool value) { }
             public bool HasKey(string key) => false;

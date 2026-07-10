@@ -12,6 +12,7 @@ namespace Nexus.Editor.Tests
         public void EncryptedStorageService_EncryptsAndDecryptsValues()
         {
             var storage = new EncryptedStorageService("Test_Salt_99");
+            storage.AutoSave = true;
 
             storage.SetInt("PlayerCoins", 9999);
             storage.SetString("PlayerName", "Hero");
@@ -22,12 +23,14 @@ namespace Nexus.Editor.Tests
 
             storage.DeleteKey("PlayerCoins");
             Assert.AreEqual(0, storage.GetInt("PlayerCoins"));
+            storage.Dispose();
         }
 
         [Test]
         public void EncryptedStorageService_DataTypesSupported()
         {
             var storage = new EncryptedStorageService("Test_Salt_DataTypes");
+            storage.AutoSave = true;
 
             storage.SetFloat("Volume", 0.75f);
             storage.SetBool("IsVip", true);
@@ -37,37 +40,49 @@ namespace Nexus.Editor.Tests
 
             storage.DeleteKey("Volume");
             storage.DeleteKey("IsVip");
+            storage.Dispose();
         }
 
         [Test]
         public void EncryptedStorageService_TamperDetectionRejectsCorruptedFile()
         {
             var storage = new EncryptedStorageService("Test_Salt_Tamper");
+            storage.AutoSave = true; // Make sure it saves to disk immediately
+
+            // Clear old runs
+            storage.DeleteKey("SecretScore");
+
             storage.SetInt("SecretScore", 5000);
 
             // Corrupt file bytes directly on disk to simulate hacker editing
-            string folder = Path.Combine(UnityEngine.Application.persistentDataPath, "SecureData");
-            string[] files = Directory.GetFiles(folder, "*.dat");
-            Assert.IsTrue(files.Length > 0);
+            var getFilePathMethod = typeof(EncryptedStorageService).GetMethod("GetFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            string fileToTamper = getFilePathMethod.Invoke(storage, new object[] { "SecretScore" }) as string;
+            Assert.IsTrue(File.Exists(fileToTamper));
 
-            string fileToTamper = files[0];
             byte[] corruptedBytes = File.ReadAllBytes(fileToTamper);
             corruptedBytes[corruptedBytes.Length - 1] ^= 0xFF; // Flip bits
             File.WriteAllBytes(fileToTamper, corruptedBytes);
 
-            // Should detect HMAC mismatch and fall back to default value without crashing
-            int result = storage.GetInt("SecretScore", 0);
+            // Create a new instance to read it back from the tampered disk file, bypassing the cache
+            var newStorage = new EncryptedStorageService("Test_Salt_Tamper");
+            int result = newStorage.GetInt("SecretScore", 0);
             Assert.AreEqual(0, result);
 
-            storage.DeleteKey("SecretScore");
+            newStorage.DeleteKey("SecretScore");
+            newStorage.Dispose();
+            storage.Dispose();
         }
 
         [Test]
         public void EncryptedStorageService_DeviceBindingRejectsForeignSaveFile()
         {
             var deviceAStorage = new EncryptedStorageService("Device_A_Salt");
-            var deviceBStorage = new EncryptedStorageService("Device_B_Salt");
+            deviceAStorage.AutoSave = true;
 
+            var deviceBStorage = new EncryptedStorageService("Device_B_Salt");
+            deviceBStorage.AutoSave = true;
+
+            deviceAStorage.DeleteKey("DeviceToken");
             deviceAStorage.SetString("DeviceToken", "Token12345");
 
             // Device B attempts to read Device A's file
@@ -75,6 +90,8 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual("INVALID", result);
 
             deviceAStorage.DeleteKey("DeviceToken");
+            deviceAStorage.Dispose();
+            deviceBStorage.Dispose();
         }
 
         [Test]
@@ -103,6 +120,42 @@ namespace Nexus.Editor.Tests
 
             Assert.AreEqual(200, (int)secureInt);
             Assert.AreEqual(0, callCount);
+        }
+
+        [Test]
+        public void EncryptedStorageService_LongAndCachingBehavior()
+        {
+            var salt = "Test_Salt_LongAndCaching";
+            
+            // Clean up any old test run files
+            var storageTemp = new EncryptedStorageService(salt);
+            storageTemp.DeleteKey("CachedLongKey");
+            storageTemp.Save();
+            storageTemp.Dispose();
+
+            var storage = new EncryptedStorageService(salt);
+            storage.AutoSave = false;
+
+            long bigVal = 987654321012345L;
+            storage.SetLong("CachedLongKey", bigVal);
+
+            // Verify in-memory retrieval
+            Assert.AreEqual(bigVal, storage.GetLong("CachedLongKey"));
+
+            // Verify that the file doesn't exist on disk yet because AutoSave is false
+            var getFilePathMethod = typeof(EncryptedStorageService).GetMethod("GetFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var filePath = getFilePathMethod.Invoke(storage, new object[] { "CachedLongKey" }) as string;
+            
+            Assert.IsFalse(File.Exists(filePath), "File should not exist on disk before Save() is called");
+
+            // Save and verify file exists
+            storage.Save();
+            Assert.IsTrue(File.Exists(filePath), "File should exist on disk after Save() is called");
+
+            // Clean up
+            storage.DeleteKey("CachedLongKey");
+            Assert.IsFalse(File.Exists(filePath), "File should be deleted from disk");
+            storage.Dispose();
         }
     }
 }

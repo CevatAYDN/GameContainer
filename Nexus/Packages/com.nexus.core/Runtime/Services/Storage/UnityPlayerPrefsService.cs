@@ -55,6 +55,22 @@ namespace Nexus.Core.Services
             PlayerPrefs.Save();
         }
 
+        public long GetLong(string key, long defaultValue = 0L)
+        {
+            string stringValue = PlayerPrefs.GetString(key, null);
+            if (stringValue != null && long.TryParse(stringValue, out long val))
+            {
+                return val;
+            }
+            return defaultValue;
+        }
+
+        public void SetLong(string key, long value)
+        {
+            PlayerPrefs.SetString(key, value.ToString());
+            PlayerPrefs.Save();
+        }
+
         public bool HasKey(string key)
         {
             return PlayerPrefs.HasKey(key);

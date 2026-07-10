@@ -44,7 +44,7 @@ namespace Nexus.Core.Services
             {
                 if (!_balances.TryGetValue(currencyId, out var prop))
                 {
-                    long savedAmount = PlayerPrefsService != null ? (long)PlayerPrefsService.GetFloat($"NT_Eco_{currencyId}", 0f) : 0L;
+                    long savedAmount = PlayerPrefsService != null ? PlayerPrefsService.GetLong($"NT_Eco_{currencyId}", 0L) : 0L;
                     prop = new ObservableProperty<long>(savedAmount);
                     _balances[currencyId] = prop;
                 }
@@ -113,7 +113,7 @@ namespace Nexus.Core.Services
 
         private void SaveBalance(string currencyId, long amount)
         {
-            PlayerPrefsService?.SetFloat($"NT_Eco_{currencyId}", (float)amount);
+            PlayerPrefsService?.SetLong($"NT_Eco_{currencyId}", amount);
         }
 
         public void OnDispose() => Dispose();
