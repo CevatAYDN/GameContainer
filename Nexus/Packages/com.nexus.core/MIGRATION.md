@@ -4,9 +4,42 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ## Table of Contents
 
+- [Version 0.3.0 → 0.3.1](#version-030--031)
 - [Version 0.2.0 → 0.3.0](#version-020--030)
 - [Version 0.1.0 → 0.2.0](#version-010--020)
 - [General Migration Tips](#general-migration-tips)
+
+---
+
+## Version 0.3.0 → 0.3.1
+
+### Breaking Changes
+
+#### 1. IPlayerPrefsService - Added GetLong/SetLong
+
+Any custom implementation of `IPlayerPrefsService` (e.g. test mocks, alternative databases) must implement `GetLong(string key, long defaultValue = 0L)` and `SetLong(string key, long value)`.
+
+**Example implementation for a mock dictionary:**
+```csharp
+public void SetLong(string key, long value) => _data[key] = value.ToString();
+public long GetLong(string key, long defaultValue = 0L) => 
+    _data.TryGetValue(key, out var value) && long.TryParse(value, out var parsed) 
+        ? parsed 
+        : defaultValue;
+```
+
+#### 2. EncryptedStorageService - Caching & Deferred Saves
+
+`EncryptedStorageService` now features an in-memory cache and has `AutoSave` set to `false` by default. Under this setup, disk writes are deferred and batched until:
+* `Save()` is explicitly called.
+* The application loses focus.
+* The application quits.
+
+If you have custom tests that rely on immediate disk modification (e.g. manually editing file bytes on disk and checking if they fail HMAC checks), you must set:
+```csharp
+storage.AutoSave = true;
+```
+or instantiate a new service instance to bypass the memory cache.
 
 ---
 

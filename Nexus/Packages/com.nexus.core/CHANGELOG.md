@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-07-10
+
+### Added
+
+- **IUIAssetProvider Interface**: Decoupled UI window asset loading from `WindowManager` to allow swapping default Unity `Resources` system with **Unity Addressables** or **AssetBundles** in game projects.
+- **GetLong and SetLong Methods**: Added native `long` data type support to `IPlayerPrefsService` interface and implementations to prevent floating-point precision loss in high-value balances.
+- **In-Memory Caching and Focus/Quit Hooks for EncryptedStorage**: Added an in-memory cache to `EncryptedStorageService` to prevent synchronous I/O freezes on every write. Changed default `AutoSave` behavior to only write to disk on `Save()` or application focus loss/quit.
+- **WindowManager Integration Tests**: Added `WindowManagerAssetProviderTests` to verify custom UI asset providers resolve correctly from the DI container.
+
+### Changed
+
+- **Economy Balance System**: Updated `EconomyService` load/save operations to use new `GetLong` and `SetLong` methods to prevent precision loss for currency amounts exceeding `16,777,216`.
+
+### Fixed
+
+- **Encrypted Storage Unit Tests**: Fixed `EncryptedStorageService_TamperDetectionRejectsCorruptedFile` and `EncryptedStorageService_DeviceBindingRejectsForeignSaveFile` tests to use `AutoSave = true` (or create a fresh instance) to correctly verify disk manipulation bypassing memory cache.
+
 ## [0.3.0] - 2026-07-07
 
 ### Added

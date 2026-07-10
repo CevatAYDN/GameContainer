@@ -60,6 +60,31 @@ namespace Nexus.Editor.Plugins
             var spendBtn = new Button(OnSpendCurrency) { text = "Spend Currency" };
             ecoSection.Add(addBtn);
             ecoSection.Add(spendBtn);
+
+            var root = FindActiveRoot();
+            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IPlayerPrefsService)))
+            {
+                var prefs = root.Context.Resolve<IPlayerPrefsService>();
+                string storageType = prefs.GetType().Name;
+                string saveInfo = $"Active Storage: {storageType}";
+                if (prefs is EncryptedStorageService secureStorage)
+                {
+                    saveInfo += $" (AutoSave: {secureStorage.AutoSave})";
+                }
+                var storageLabel = new Label(saveInfo);
+                storageLabel.style.fontSize = 10;
+                storageLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+                storageLabel.style.marginBottom = 4;
+                storageLabel.style.marginTop = 4;
+                ecoSection.Add(storageLabel);
+
+                var flushBtn = new Button(() =>
+                {
+                    prefs.Save();
+                    Debug.Log("[Nexus Editor] Storage changes flushed to disk.");
+                }) { text = "Save/Flush Storage to Disk" };
+                ecoSection.Add(flushBtn);
+            }
             _container.Add(ecoSection);
 
             // Progression Section
@@ -78,6 +103,19 @@ namespace Nexus.Editor.Plugins
             var closeTopBtn = new Button(OnCloseTopWindow) { text = "Close Top Window" };
             uiSection.Add(openWinBtn);
             uiSection.Add(closeTopBtn);
+
+            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IWindowManager)))
+            {
+                var winMgr = root.Context.Resolve<IWindowManager>();
+                if (winMgr is WindowManager concreteWinMgr && concreteWinMgr.AssetProvider != null)
+                {
+                    var providerLabel = new Label($"UI Asset Provider: {concreteWinMgr.AssetProvider.GetType().Name}");
+                    providerLabel.style.fontSize = 10;
+                    providerLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+                    providerLabel.style.marginTop = 4;
+                    uiSection.Add(providerLabel);
+                }
+            }
             _container.Add(uiSection);
 
             // Haptics & Feedback Section

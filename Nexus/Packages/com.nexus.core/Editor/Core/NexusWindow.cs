@@ -262,7 +262,7 @@ namespace Nexus.Editor
             langContainer.Add(trBtn);
             _sidebar.Add(langContainer);
 
-            var versionLabel = new Label("v0.3.0");
+            var versionLabel = new Label("v0.3.1");
             versionLabel.style.fontSize = 9;
             versionLabel.style.color = new StyleColor(NexusEditorStyles.DimText);
             versionLabel.style.alignSelf = Align.Center;

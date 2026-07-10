@@ -1,6 +1,6 @@
 {
   "name": "com.nexus.core",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "displayName": "Nexus Observable Architecture",
   "description": "Open source observable MVCS architecture for Unity 6. Features: 0 GC allocation, 4 execution modes, causal tracing, build validation, reactive models, service lifecycle, Game Manager editor, and debug HUD.",
   "unity": "6000.0",
