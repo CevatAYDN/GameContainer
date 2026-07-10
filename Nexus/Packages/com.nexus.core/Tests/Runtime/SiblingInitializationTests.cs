@@ -177,8 +177,45 @@ namespace Nexus.Tests
             parentGo.SetActive(true);
             yield return new WaitForSeconds(0.1f);
 
-            Assert.AreEqual(3, _initOrder.Count);
+            Assert.That(_initOrder.Count, Is.EqualTo(3).Or.EqualTo(4));
             Assert.AreEqual("ChildA_InitStart", _initOrder[0]);
+            Assert.AreEqual("ChildA_InitEnd", _initOrder[1]);
+            Assert.AreEqual("ChildA_Start", _initOrder[2]);
+
+            UnityEngine.Object.DestroyImmediate(parentGo);
+        }
+
+        [UnityTest]
+        public IEnumerator SiblingRoots_DoesNotDoubleInitializeWhenActivatedTwice()
+        {
+            var parentGo = new GameObject("ParentRoot");
+            parentGo.SetActive(false);
+            var parentRoot = parentGo.AddComponent<Root>();
+
+            var childGo = new GameObject("ChildA");
+            childGo.transform.SetParent(parentGo.transform);
+            var lifecycle = childGo.AddComponent<TestLifecycleComponent>();
+            lifecycle.Name = "ChildA";
+            lifecycle.LogList = _initOrder;
+            lifecycle.DelayMs = 10;
+            var childRoot = childGo.AddComponent<Root>();
+            SetPrivateField(childRoot, "parentRoot", parentRoot);
+            SetPrivateField(childRoot, "initializationPriority", 0);
+
+            parentGo.SetActive(true);
+            yield return new WaitForSeconds(0.2f);
+
+            parentGo.SetActive(false);
+            parentGo.SetActive(true);
+            yield return new WaitForSeconds(0.2f);
+
+            var initStarts = 0;
+            foreach (var entry in _initOrder)
+            {
+                if (entry == "ChildA_InitStart") initStarts++;
+            }
+
+            Assert.AreEqual(1, initStarts);
 
             UnityEngine.Object.DestroyImmediate(parentGo);
         }

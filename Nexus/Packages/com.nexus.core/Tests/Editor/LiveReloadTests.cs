@@ -60,5 +60,17 @@ namespace Nexus.Editor.Tests
             // 7. Cleanup
             context.Dispose();
         }
+
+        [Test]
+        public void LiveReload_NoException_WhenNoMatchingModelIsRegistered()
+        {
+            var modelData = ScriptableObject.CreateInstance<DummyModelData>();
+
+            var method = typeof(LiveReloadProcessor).GetMethod("TriggerLiveReload", BindingFlags.NonPublic | BindingFlags.Static);
+
+            Assert.DoesNotThrow(() => method?.Invoke(null, new object[] { modelData }));
+
+            Object.DestroyImmediate(modelData);
+        }
     }
 }
