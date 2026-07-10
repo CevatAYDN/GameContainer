@@ -132,5 +132,37 @@ namespace Nexus.Editor.Tests
             // Expecting warning for StateLeakCommand because it has private string _mutableState but does not implement IResettable
             Assert.GreaterOrEqual(warningCount, 1, $"Expected at least 1 warning for command state leak, got {warningCount}.");
         }
+
+        [Test]
+        public void Validate_RunSilent_PublishesAReadableSummary()
+        {
+            BuildValidation.IncludeTestAssemblies = true;
+
+            var previousInfo = BuildValidation.InfoLogger;
+            var previousWarning = BuildValidation.WarningLogger;
+            var previousError = BuildValidation.ErrorLogger;
+
+            try
+            {
+                BuildValidation.InfoLogger = _ => { };
+                BuildValidation.WarningLogger = _ => { };
+                BuildValidation.ErrorLogger = _ => { };
+
+                BuildValidation.RunSilent();
+
+                Assert.IsTrue(BuildValidation.HasRun, "Validation should mark HasRun after RunSilent.");
+                Assert.IsNotNull(BuildValidation.LastRunSummary, "Validation summary should always be available after a run.");
+                Assert.IsNotEmpty(BuildValidation.LastRunSummary, "Validation summary should not be empty after a run.");
+                Assert.That(BuildValidation.LastRunSummary, Does.Contain("errors").IgnoreCase);
+                Assert.That(BuildValidation.LastRunSummary, Does.Contain("warnings").IgnoreCase);
+            }
+            finally
+            {
+                BuildValidation.InfoLogger = previousInfo;
+                BuildValidation.WarningLogger = previousWarning;
+                BuildValidation.ErrorLogger = previousError;
+                BuildValidation.IncludeTestAssemblies = false;
+            }
+        }
     }
 }

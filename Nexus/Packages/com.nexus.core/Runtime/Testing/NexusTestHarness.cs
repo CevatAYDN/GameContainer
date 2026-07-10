@@ -12,18 +12,14 @@ namespace Nexus.Core
 
         public static NexusTestContext CreateContext(string scopeTag)
         {
-            var contextData = UnityEngine.ScriptableObject.CreateInstance<ContextData>();
-            contextData.ScopeTag = scopeTag;
-            contextData.AssemblyScopes = new string[0];
+            var contextData = CreateContextData(scopeTag);
             var context = new Context(parent: null, contextData: contextData);
             return new NexusTestContext(context);
         }
 
         public static NexusTestContext CreateChildContext(NexusTestContext parent, string scopeTag = null)
         {
-            var contextData = UnityEngine.ScriptableObject.CreateInstance<ContextData>();
-            contextData.ScopeTag = scopeTag ?? "ChildContext";
-            contextData.AssemblyScopes = new string[0];
+            var contextData = CreateContextData(scopeTag ?? "ChildContext");
             var context = new Context(parent: parent.Context, contextData: contextData);
             return new NexusTestContext(context);
         }
@@ -45,6 +41,14 @@ namespace Nexus.Core
         public static void CleanupAll()
         {
             NexusRuntime.Reset();
+        }
+
+        private static ContextData CreateContextData(string scopeTag)
+        {
+            var contextData = UnityEngine.ScriptableObject.CreateInstance<ContextData>();
+            contextData.ScopeTag = scopeTag;
+            contextData.AssemblyScopes = System.Array.Empty<string>();
+            return contextData;
         }
     }
 }

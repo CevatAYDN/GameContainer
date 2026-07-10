@@ -203,7 +203,7 @@ namespace Nexus.Editor
                 UpdateQuickFindResults();
             })
             {
-                text = "Clear",
+                text = NexusLang.Get("clear"),
                 style =
                 {
                     marginLeft = 6,
@@ -272,10 +272,10 @@ namespace Nexus.Editor
                                 {
                                     flexDirection = FlexDirection.Row,
                                     alignItems = Align.Center,
-                                    paddingLeft = 8,
-                                    paddingRight = 8,
-                                    paddingTop = 4,
-                                    paddingBottom = 4,
+                                    paddingLeft = 6,
+                                    paddingRight = 6,
+                                    paddingTop = 3,
+                                    paddingBottom = 3,
                                     marginBottom = 2,
                                     backgroundColor = new StyleColor(NexusEditorStyles.RowBase),
                                     borderTopLeftRadius = 3,
@@ -291,7 +291,7 @@ namespace Nexus.Editor
 
                             var nameLabel = new Label(type.Name)
                             {
-                                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = Color.white, flexGrow = 1 }
+                                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = Color.white, flexGrow = 1, unityTextAlign = TextAnchor.MiddleLeft }
                             };
                             resultRow.Add(nameLabel);
 
@@ -302,8 +302,8 @@ namespace Nexus.Editor
                                 UnityEditor.EditorGUIUtility.systemCopyBuffer = targetType.FullName;
                             })
                             {
-                                text = "📋 Copy",
-                                style = { fontSize = 8, marginRight = 4, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white }
+                                text = "Copy",
+                                style = { fontSize = 8, marginRight = 4, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white, paddingLeft = 6, paddingRight = 6 }
                             };
                             resultRow.Add(copyBtn);
 
@@ -318,8 +318,8 @@ namespace Nexus.Editor
                                 }
                             })
                             {
-                                text = "🔍 Open",
-                                style = { fontSize = 8, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue), color = Color.white }
+                                text = NexusLang.Get("open"),
+                                style = { fontSize = 8, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue), color = Color.white, paddingLeft = 6, paddingRight = 6 }
                             };
                             resultRow.Add(openBtn);
 
@@ -333,7 +333,7 @@ namespace Nexus.Editor
 
             if (matchCount == 0)
             {
-                _quickFindResultsContainer.Add(new Label($"No types found matching '{_quickSearchQuery}'")
+                _quickFindResultsContainer.Add(new Label($"No matches for '{_quickSearchQuery}'")
                 {
                     style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 4 }
                 });
@@ -410,7 +410,7 @@ namespace Nexus.Editor
                         {
                             var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginBottom = 3, alignItems = Align.Center } };
                             row.Add(new Label(obj.GetType().Name)
-                                { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextPrimary), width = 140 } });
+                                { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextPrimary), width = 132, unityTextAlign = TextAnchor.MiddleLeft } });
 
                             var t = obj.GetType();
                             int props = 0;
@@ -422,9 +422,9 @@ namespace Nexus.Editor
                                 {
                                     var val = prop.GetValue(obj);
                                     var valStr = val?.ToString() ?? "null";
-                                    if (valStr.Length > 20) valStr = valStr.Substring(0, 17) + "...";
+                                    if (valStr.Length > 16) valStr = valStr.Substring(0, 13) + "...";
                                     row.Add(new Label($"{prop.Name}={valStr}")
-                                        { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), marginLeft = 6 } });
+                                        { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), marginLeft = 5 } });
                                     props++;
                                 }
                                 catch { }
@@ -461,14 +461,22 @@ namespace Nexus.Editor
                 ("action_network_dashboard_title", "action_network_dashboard_desc", "NetworkDashboard", new Color(0.4f, 0.6f, 0.8f))
             };
 
-            var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
+            var buttonGrid = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    flexWrap = Wrap.Wrap,
+                    justifyContent = Justify.FlexStart,
+                }
+            };
             for (int i = 0; i < actions.Length; i++)
             {
                 var a = actions[i];
-                AddActionCard(buttonRow, NexusLang.Get(a.Item1), NexusLang.Get(a.Item2), a.Item4, () => Window.SwitchToPlugin(a.Item3));
+                AddActionCard(buttonGrid, NexusLang.Get(a.Item1), NexusLang.Get(a.Item2), a.Item4, () => Window.SwitchToPlugin(a.Item3));
             }
 
-            groupCard.Add(buttonRow);
+            groupCard.Add(buttonGrid);
         }
 
         private Label CreateStatBox(VisualElement parent, string value, string label, Color accentColor)
@@ -531,7 +539,33 @@ namespace Nexus.Editor
 
         private void AddActionCard(VisualElement parent, string title, string description, Color btnColor, System.Action onClick)
         {
-            var card = new VisualElement();
+            var card = new VisualElement
+            {
+                style =
+                {
+                    width = 220,
+                    minHeight = 96,
+                    paddingLeft = 10,
+                    paddingRight = 10,
+                    paddingTop = 10,
+                    paddingBottom = 10,
+                    marginRight = 0,
+                    marginBottom = 0,
+                    backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
+                    borderTopLeftRadius = 4,
+                    borderTopRightRadius = 4,
+                    borderBottomLeftRadius = 4,
+                    borderBottomRightRadius = 4,
+                    borderTopWidth = 1,
+                    borderBottomWidth = 1,
+                    borderLeftWidth = 1,
+                    borderRightWidth = 1,
+                    borderTopColor = new StyleColor(NexusEditorStyles.BorderColor),
+                    borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor),
+                    borderLeftColor = new StyleColor(NexusEditorStyles.BorderColor),
+                    borderRightColor = new StyleColor(NexusEditorStyles.BorderColor)
+                }
+            };
             card.AddToClassList(NexusEditorStyles.ClassDashboardActionCard);
 
             var titleLabel = new Label(title)
@@ -642,7 +676,7 @@ namespace Nexus.Editor
             };
             card.Add(_validationSummary);
 
-            card.Add(new Label("Validation catches context, binding, hierarchy, and command issues before runtime.")
+            card.Add(new Label("Validation checks context, binding, hierarchy, and command issues before runtime.")
             {
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.DimText), whiteSpace = WhiteSpace.Normal, marginBottom = 4 }
             });

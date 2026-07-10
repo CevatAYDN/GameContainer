@@ -25,6 +25,23 @@ namespace Nexus.Core
             Context = context;
         }
 
+        /// <summary>Disposes the wrapped context and clears test-local subscriptions.</summary>
+        public void Dispose()
+        {
+            for (int i = _subscriptions.Count - 1; i >= 0; i--)
+            {
+                try
+                {
+                    _subscriptions[i]?.Dispose();
+                }
+                catch { }
+            }
+
+            _subscriptions.Clear();
+            _dispatchedSignals.Clear();
+            Context?.Dispose();
+        }
+
         /// <summary>
         /// Registers a type for test. Signal structs are subscribed for dispatch tracking.
         /// Commands are bound transient and wired to their signal handlers. Other classes are bound as singletons.
@@ -351,19 +368,6 @@ namespace Nexus.Core
                 var lifecycle = Context.Container.Resolve<IContextLifecycle>();
                 await lifecycle.OnStartAsync(ct);
             }
-        }
-
-        /// <summary>Disposes all subscriptions, tracked signals, and the underlying context.</summary>
-        public void Dispose()
-        {
-            foreach (var sub in _subscriptions)
-            {
-                sub.Dispose();
-            }
-            _subscriptions.Clear();
-            _dispatchedSignals.Clear();
-
-            Context.Dispose();
         }
 
         private static bool ImplementsGenericInterface(Type type, Type genericInterface)

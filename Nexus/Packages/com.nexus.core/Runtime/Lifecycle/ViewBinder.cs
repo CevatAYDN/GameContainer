@@ -8,8 +8,9 @@ using UnityEngine.Scripting;
 namespace Nexus.Core
 {
     /// <summary>
-    /// Abstract base class for Nexus views. Views are MonoBehaviour components that
-    /// automatically register with the nearest <see cref="Root"/> context and bind their mediator.
+    /// Abstract base class for Nexus views.
+    /// Views register with the nearest <see cref="Root"/> context when enabled,
+    /// then receive <see cref="Bind"/> before their mediator is attached.
     /// </summary>
     [Preserve]
     public abstract class View : MonoBehaviour, IView
@@ -26,7 +27,7 @@ namespace Nexus.Core
 
         /// <summary>
         /// Automatically registers this view with the nearest parent Root's context.
-        /// Falls back to FindObjectsByType if no parent Root is found (single-root scenes).
+        /// Falls back to FindObjectsByType only when the scene has one unambiguous Root.
         /// </summary>
         protected virtual void OnEnable()
         {
@@ -39,8 +40,8 @@ namespace Nexus.Core
                     root.Context.RegisterView(this);
                     return;
                 }
-                // Root exists but Context is null — likely not initialized yet
-                // (e.g. async Addressables prefab instantiation before Root.Start())
+                // Root exists but Context is null — likely not initialized yet.
+                // This can happen if a view appears before Root.Start() finishes.
                 if (!root.IsInitialized)
                 {
                     NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is not yet initialized. " +
@@ -141,8 +142,8 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Registers a view, binds it to the context, and creates/assigns its mediator.
-        /// If the view has a <see cref="MediatorAttribute"/>, the corresponding mediator is resolved from the pool or created.
+        /// Registers a view, binds it to the context, then creates and attaches its mediator.
+        /// Binding always happens before mediator setup so the view has a valid context first.
         /// </summary>
         /// <param name="view">The view to register.</param>
         public void RegisterView(IView view)
@@ -173,7 +174,7 @@ namespace Nexus.Core
 
             _activeMediators[view] = mediator;
             
-            // Bind view and signalBus to mediator
+            // Mediator attaches after the view is already bound to the context.
             mediator.Bind(view, _context.SignalBus);
         }
 

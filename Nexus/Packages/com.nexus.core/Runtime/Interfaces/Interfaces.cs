@@ -67,6 +67,10 @@ namespace Nexus.Core
 
     public interface IContextBuilder
     {
+        /// <summary>
+        /// Bind models, services, and commands inside a lifecycle's OnConfigure phase.
+        /// Bindings made here are available before initialization begins.
+        /// </summary>
         void BindModel<TInterface, TImplementation>() where TImplementation : class, TInterface;
         void BindModel<TImplementation>() where TImplementation : class;
         void BindModelInstance<TInterface>(TInterface instance) where TInterface : class;
@@ -94,6 +98,7 @@ namespace Nexus.Core
         void BindService<TImplementation>() 
             where TImplementation : class, INexusService;
         
+        /// <summary>Low-level bind for registering any implementation during OnConfigure.</summary>
         void Bind<TInterface, TImplementation>() where TImplementation : class, TInterface;
         void Bind<T>() where T : class;
         void BindInstance<T>(T instance) where T : class;
@@ -110,8 +115,19 @@ namespace Nexus.Core
 
     public interface IContextLifecycle
     {
+        /// <summary>
+        /// Called first. Use this to bind models, commands, and services.
+        /// </summary>
         void OnConfigure(IContextBuilder builder);
+        /// <summary>
+        /// Called after configuration and reactive-model initialization.
+        /// Use this for async setup work that depends on bindings being ready.
+        /// </summary>
         ValueTask OnInitializeAsync(CancellationToken ct);
+        /// <summary>
+        /// Called after OnInitializeAsync for final startup work.
+        /// Use this for signal subscriptions, view hookup, and runtime kickoff.
+        /// </summary>
         ValueTask OnStartAsync(CancellationToken ct);
         void OnDispose();
     }
@@ -133,15 +149,19 @@ namespace Nexus.Core
     public interface ISignalBus
     {
         /// <summary>
-        /// Enumerates all signal→handler registrations (from fluent API + attributes).
-        /// Key is signal Type; value is the list of registered command handlers.
-        /// Empty if the context has not been configured yet.
+        /// Enumerates all signal→handler registrations discovered through configuration
+        /// and attribute scanning. Key is the signal type; value is the registered handlers.
+        /// Empty until the owning context has been configured.
         /// </summary>
         IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers { get; }
 
+        /// <summary>Dispatches immediately on the current thread.</summary>
         void Fire<T>(T signal) where T : struct;
+        /// <summary>Dispatches asynchronously and waits for the handler chain.</summary>
         ValueTask FireAsync<T>(T signal) where T : struct;
+        /// <summary>Dispatches from any thread by marshaling to the signal bus queue.</summary>
         void FireThreadSafe<T>(T signal) where T : struct;
+        /// <summary>Defers dispatch until the next frame.</summary>
         void FireNextFrame<T>(T signal) where T : struct;
 
         /// <summary>
