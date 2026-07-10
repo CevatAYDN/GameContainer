@@ -79,6 +79,8 @@
     <Compile Include="Runtime\Services\Analytics\AnalyticsService.cs" />
     <Compile Include="Runtime\Services\IAP\IapService.cs" />
     <Compile Include="Runtime\Services\UI\WindowManager.cs" />
+    <Compile Include="Runtime\Services\UI\IUIAssetProvider.cs" />
+    <Compile Include="Runtime\Services\UI\ResourcesUIAssetProvider.cs" />
     <Compile Include="Runtime\Services\Logging\LoggerService.cs" />
     <Compile Include="Runtime\Services\Logging\ILoggerService.cs" />
     <Compile Include="Runtime\Services\Storage\SaveThrottler.cs" />

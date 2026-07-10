@@ -43,6 +43,8 @@ namespace Nexus.Core.Services
     [Preserve]
     public class WindowManager : IWindowManager, INexusService, IDisposable
     {
+        [Inject] public IUIAssetProvider AssetProvider { get; set; }
+
         private readonly Dictionary<string, GameObject> _activeWindows = new();
         private readonly Dictionary<UILayer, Transform> _layerRoots = new();
         private readonly List<string> _windowHistory = new();
@@ -53,6 +55,10 @@ namespace Nexus.Core.Services
 
         public ValueTask InitializeAsync(CancellationToken ct)
         {
+            if (AssetProvider == null)
+            {
+                AssetProvider = new ResourcesUIAssetProvider();
+            }
             SetupCanvasAndLayers();
             return default;
         }
@@ -210,22 +216,13 @@ namespace Nexus.Core.Services
                 return existing;
             }
 
-            var request = Resources.LoadAsync<GameObject>($"UI/Windows/{windowName}");
-            while (!request.isDone)
+            var targetParent = _layerRoots.TryGetValue(layer, out var layerRoot) ? layerRoot : _canvasRoot;
+            var inst = await AssetProvider.InstantiateWindowAsync(windowName, targetParent);
+            if (inst == null)
             {
-                await Task.Yield();
-            }
-
-            var prefab = request.asset as GameObject;
-            if (prefab == null)
-            {
-                NexusRuntime.Logger?.LogError($"[WindowManager] Window prefab not found at path: UI/Windows/{windowName}");
+                NexusRuntime.Logger?.LogError($"[WindowManager] Failed to instantiate window: {windowName}");
                 return null;
             }
-
-            var targetParent = _layerRoots.TryGetValue(layer, out var layerRoot) ? layerRoot : _canvasRoot;
-            var inst = UnityEngine.Object.Instantiate(prefab, targetParent);
-            inst.name = windowName;
 
             try
             {
@@ -324,7 +321,7 @@ namespace Nexus.Core.Services
                 _windowLock.Release();
             }
 
-            UnityEngine.Object.Destroy(go);
+            AssetProvider.ReleaseWindow(go);
         }
 
         public void CloseWindow(string windowName)
