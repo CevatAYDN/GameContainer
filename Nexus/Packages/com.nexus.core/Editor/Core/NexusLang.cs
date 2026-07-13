@@ -80,7 +80,7 @@ namespace Nexus.Editor
             s_strings["quick_actions"] = "ALL TOOLS";
             s_strings["open"] = "Open";
             s_strings["framework"] = "FRAMEWORK";
-            s_strings["framework_desc"] = "Nexus Observable Architecture v0.3.0\n" +
+            s_strings["framework_desc"] = "Nexus Observable Architecture v0.3.1\n" +
                 "Unity 6 • UI Toolkit • MIT License\n\n" +
                 "Built on a 0-GC, JIT-free generic observable framework with:\n" +
                 "• Causal Tracing — zero-allocation causality tracking\n" +
@@ -317,7 +317,7 @@ namespace Nexus.Editor
             s_strings["typeanalyzer_no_dependents"] = "No other types are injecting this type.";
 
             s_strings["help_title"] = "NEXUS HELP & DOCUMENTATION";
-            s_strings["help_version"] = "com.nexus.core v0.3.0";
+            s_strings["help_version"] = "com.nexus.core v0.3.1";
             s_strings["help_platform"] = "Unity 6 (6000.x) | C# 9+ | .NET Standard 2.1 | UI Toolkit";
             s_strings["help_whats_new"] = "New in v0.3.0: Auto-AOT generation, Thread-safe DI locking,\nHybrid Queue interleaving fix, Turkish locale, 0-GC encapsulation.\nRequires Unity 6000.5 or higher.";
             s_strings["help_import_sample"] = "Import Counter Sample";

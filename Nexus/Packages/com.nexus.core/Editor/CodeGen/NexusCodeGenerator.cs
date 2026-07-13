@@ -391,9 +391,15 @@ namespace Nexus.Editor
             string destBinderFile = Path.Combine(binderFolder, "NexusGeneratedBinder.g.cs");
             string newBinderContent = sb.ToString();
 
-            if (string.IsNullOrEmpty(newBinderContent) || injectTypes.Count == 0)
+            if (string.IsNullOrEmpty(newBinderContent))
             {
-                throw new InvalidOperationException("[Nexus CodeGen] Code generation aborted: discovery output is empty or no inject types found.");
+                throw new InvalidOperationException("[Nexus CodeGen] Code generation aborted: generated binder content is empty.");
+            }
+
+            // Write an empty binder even with no inject types, so stale generated injectors are cleared.
+            if (injectTypes.Count == 0)
+            {
+                Debug.LogWarning("[Nexus] AOT Binder generation: no injectable types discovered. An empty binder was written to clear any previously generated injectors.");
             }
 
             if (File.Exists(destBinderFile))

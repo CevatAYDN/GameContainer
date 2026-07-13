@@ -162,5 +162,51 @@ namespace Nexus.Tests
             // Assert that 50k dispatches complete within a realistic test budget.
             Assert.Less(sw.ElapsedMilliseconds, 800, "50,000 dispatches took too long.");
         }
+
+        [Test]
+        public void Benchmark_SignalFire_HotPathNs()
+        {
+            const int warmup = 2000;
+            const int iterations = 20000;
+
+            // Warm up JIT + pre-warm command pool so we measure steady-state latency.
+            for (int i = 0; i < warmup; i++)
+                _signalBus.Fire(new PerfSignal(i));
+
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < iterations; i++)
+                _signalBus.Fire(new PerfSignal(i));
+            sw.Stop();
+
+            double nsPerDispatch = (sw.ElapsedTicks * 1_000_000_000.0 / Stopwatch.Frequency) / iterations;
+            UnityEngine.Debug.Log($"[Nexus Benchmark] SignalBus.Fire hot-path: {nsPerDispatch:F2} ns/dispatch over {iterations} dispatches (total {sw.ElapsedMilliseconds} ms)");
+
+            // Regression guard for the published hot-path latency (P2-C). Editor/Mono measured ~9500ns;
+            // IL2CPP/Release is faster, so 25us leaves ample headroom for CI variance.
+            Assert.Less(nsPerDispatch, 25000, "Hot-path dispatch should stay well under 25us.");
+        }
+
+        [Test]
+        public void Benchmark_SignalFire_WithSubscriberNs()
+        {
+            const int warmup = 2000;
+            const int iterations = 20000;
+            int received = 0;
+            _signalBus.Subscribe<PerfSignal>(_ => received++);
+
+            for (int i = 0; i < warmup; i++)
+                _signalBus.Fire(new PerfSignal(i));
+
+            var sw = Stopwatch.StartNew();
+            for (int i = 0; i < iterations; i++)
+                _signalBus.Fire(new PerfSignal(i));
+            sw.Stop();
+
+            double nsPerDispatch = (sw.ElapsedTicks * 1_000_000_000.0 / Stopwatch.Frequency) / iterations;
+            UnityEngine.Debug.Log($"[Nexus Benchmark] SignalBus.Fire with 1 subscriber: {nsPerDispatch:F2} ns/dispatch over {iterations} dispatches (total {sw.ElapsedMilliseconds} ms)");
+
+            Assert.AreEqual(iterations + warmup, received);
+            Assert.Less(nsPerDispatch, 30000, "Dispatch with a subscriber should stay well under 30us.");
+        }
     }
 }

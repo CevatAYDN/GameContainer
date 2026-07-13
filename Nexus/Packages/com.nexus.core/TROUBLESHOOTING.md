@@ -938,4 +938,4 @@ Add NEXUS_DEBUG to Scripting Define Symbols
 ---
 
 **Last Updated:** 2026-07-07
-**Nexus Core Version:** 0.3.0
+**Nexus Core Version:** 0.3.1

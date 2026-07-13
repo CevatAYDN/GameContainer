@@ -1010,6 +1010,21 @@ namespace Nexus.Editor
             string warnEnv = System.Environment.GetEnvironmentVariable("NEXUS_VALIDATION_WARN_ONLY");
             bool warnOnly = !string.IsNullOrEmpty(warnEnv) && (warnEnv == "1" || warnEnv.Equals("true", StringComparison.OrdinalIgnoreCase));
 
+            // Regenerate the AOT binder so a stale injector never ships in the build.
+            string autogenEnv = System.Environment.GetEnvironmentVariable("NEXUS_DISABLE_AUTOGEN");
+            bool disableAutogen = !string.IsNullOrEmpty(autogenEnv) && (autogenEnv == "1" || autogenEnv.Equals("true", StringComparison.OrdinalIgnoreCase));
+            if (!disableAutogen)
+            {
+                try
+                {
+                    NexusCodeGenerator.GenerateBinder();
+                }
+                catch (Exception ex)
+                {
+                    throw new UnityEditor.Build.BuildFailedException($"[Nexus] AOT Binder generation failed during the pre-build step: {ex.Message}");
+                }
+            }
+
             if (disableValidation)
             {
                 UnityEngine.Debug.LogWarning("[Nexus] Architecture Validation bypassed via NEXUS_DISABLE_VALIDATION environment variable.");

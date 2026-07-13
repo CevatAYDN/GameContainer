@@ -2,7 +2,7 @@
 
 [![Unity](https://img.shields.io/badge/Unity-6000.0-blue.svg)](https://unity.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.3.0-orange.svg)](package.json)
+[![Version](https://img.shields.io/badge/Version-0.3.1-orange.svg)](package.json)
 
 **Nexus Core** is a modern, high-performance MVCS (Model-View-Controller-Service) architecture framework for Unity 6. It provides observable models, dependency injection, signal-based communication, and comprehensive service lifecycle management with zero-GC allocation in steady-state operations.
 
@@ -10,7 +10,7 @@
 
 - **0-GC Allocation**: Steady-state allocation-free signal dispatch and property updates
 - **AOT/IL2CPP Ready**: Code generation bypasses reflection for console and WebGL builds
-- **4 Execution Modes**: Sequential, Concurrent, ThreadSafe, and NextFrame signal dispatch
+- **4 Execution Modes**: Sequential, Concurrent, Exclusive, and Composite signal dispatch
 - **Causal Tracing**: Production-ready signal flow tracing and debugging
 - **Build Validation**: CI/CD-friendly assembly validation and compile-time checks
 - **Reactive Models**: `ObservableProperty<T>` with automatic change notifications
@@ -194,8 +194,8 @@ Commands can execute in different modes:
 
 - **Sequential**: Commands execute one-by-one in priority order (default)
 - **Concurrent**: Commands execute in parallel (for independent operations)
-- **ThreadSafe**: Thread-safe queue for cross-thread signal dispatch
-- **NextFrame**: Deferred execution until the next frame
+- **Exclusive**: Guarantees a single handler runs at a time
+- **Composite**: Fires only after all required signals are received (fan-in)
 
 ```csharp
 builder.BindCommand<CounterSignal, IncrementCommand>(
@@ -287,14 +287,17 @@ Access via `Window > Nexus > Dashboard`:
 
 ### Code Generation
 
-Enable AOT binder generation:
+The AOT binder (injectors + `link.xml`) is regenerated **automatically before every build** via the `NexusBuildPreProcessor` hook, so a stale binder never ships in an IL2CPP build. You can also trigger it manually or on script reload:
 
-1. Open `Nexus > Auto-Generate AOT on Script Reload`
-2. Or manually trigger `Nexus > Generate AOT Binder`
+1. Build-time: runs automatically in `OnPreprocessBuild` (no action needed).
+2. On script reload: toggle `Nexus > Auto-Generate AOT on Script Reload`.
+3. Manual: `Nexus > Generate AOT Binder` (also available as the `⚡ CodeGen` button in the Nexus window).
 
-Generated files:
-- `Assets/NexusGenerated/NexusGeneratedBinder.g.cs` - Injectors
-- `Assets/NexusGenerated/link.xml` - IL2CPP preservation
+Opt out of build-time generation with the `NEXUS_DISABLE_AUTOGEN=1` environment variable (mirrors `NEXUS_DISABLE_VALIDATION`).
+
+Generated files (paths are configurable in `Nexus > Editor Settings`; defaults shown):
+- `Assets/Scripts/Nexus/NexusGeneratedBinder.g.cs` - Injectors
+- `Assets/Scripts/Nexus/link.xml` - IL2CPP preservation
 
 ### Build Validation
 
@@ -316,15 +319,17 @@ Automatic validation catches common issues:
 
 ### Benchmarks
 
-- **Signal Fire**: ~50ns (cold), ~10ns (hot path)
-- **Property Change**: ~30ns per subscriber
-- **DI Resolve**: ~100ns (cached), ~500ns (first resolve)
+Measured in `Nexus.Tests` (editor/Mono, PlayMode, v0.3.1, after JIT warmup). IL2CPP/Release builds are significantly faster.
+
+- **Signal Fire**: ~9.5µs hot path / ~11.8µs with 1 subscriber (measured; a >25µs / >30µs regression trips the P2-C benchmark tests)
+- **Property Change**: ~30ns per subscriber *(not yet measured)*
+- **DI Resolve**: ~100ns (cached), ~500ns (first resolve) *(not yet measured)*
 
 ## 🔒 AOT/IL2CPP Support
 
 Nexus Core is fully AOT-compatible:
 
-1. Enable code generation in Editor settings
+1. The AOT binder regenerates automatically before each build (see Code Generation).
 2. Build for target platform (iOS, Android, WebGL, etc.)
 3. Generated `link.xml` prevents code stripping
 
@@ -369,6 +374,19 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Issues**: [GitHub Issues](https://github.com/CevatAYDN/Pixel-Flow-Clone/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/CevatAYDN/Pixel-Flow-Clone/discussions)
 - **Documentation**: [Wiki](https://github.com/CevatAYDN/Pixel-Flow-Clone/wiki)
+
+## 🔄 Continuous Integration
+
+Every push and pull request to `main` runs [GitHub Actions CI](../../../.github/workflows/ci.yml):
+
+- **EditMode tests** — including `BuildWiringTests`, which regenerates the AOT binder (`NexusGeneratedBinder.g.cs` + `link.xml`) before asserting the build wiring is correct.
+- **PlayMode tests** — the full runtime suite (signal dispatch, commands, models, services).
+- **Architecture Validation** — runs as part of the test/build pipeline.
+- **Doc/code consistency guard** — fails the build if the README still references stale execution-mode names or if its version badge drifts from `package.json`.
+
+The AOT binder regenerates automatically before each Unity build (see *Code Generation* above), so a stale binder never ships in an IL2CPP build. CI runs on Unity `6000.5.0f1` (Unity 6).
+
+---
 
 ## 🙏 Acknowledgments
 
