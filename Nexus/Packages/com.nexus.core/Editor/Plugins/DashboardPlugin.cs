@@ -97,6 +97,20 @@ namespace Nexus.Editor
             base.OnDisable();
         }
 
+        public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
+            => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
+            {
+                ("⚡ CodeGen",      () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue),
+                ("➕ Create Root",  () => {
+                    var go = new GameObject("NexusRoot");
+                    go.AddComponent<Root>();
+                    UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Create Nexus Root");
+                    UnityEditor.Selection.activeObject = go;
+                }, NexusEditorStyles.BtnTeal),
+                ("🔍 Inspector",   () => Window?.SwitchToPlugin("ContextInspector"), NexusEditorStyles.BtnPurple),
+                ("📊 GameManager", () => Window?.SwitchToPlugin("GameManager"),       NexusEditorStyles.BtnGray),
+            };
+
         private void BuildStatusSection(VisualElement parent)
         {
             bool playing = Application.isPlaying;

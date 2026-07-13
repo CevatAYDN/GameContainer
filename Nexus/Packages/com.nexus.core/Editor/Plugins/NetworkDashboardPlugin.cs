@@ -8,97 +8,474 @@ using Nexus.Core;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Network Dashboard — live connection status, latency gauge, event log with filtering,
+    /// and packet statistics for Nexus NetworkSignalBus.
+    /// </summary>
     public class NetworkDashboardPlugin : NexusEditorPlugin
     {
         public override string Id => "NetworkDashboard";
         public override string DisplayName => NexusLang.Get("tab_networkdashboard");
         public override int Order => 10;
 
+        // ── State ─────────────────────────────────────────────────
+        private readonly List<NetworkMonitor.NetworkEvent> _filteredEvents = new();
+        private string _typeFilter = "All";
+        private string _searchFilter = "";
+        private bool _autoScroll = true;
+
+        // ── Latency ring buffer ───────────────────────────────────
+        private const int LatencyBufSize = 60;
+        private readonly float[] _latencyBuf = new float[LatencyBufSize];
+        private int _latencyHead, _latencyCount;
+
+        // ── UI refs ───────────────────────────────────────────────
         private VisualElement _view;
-        private ScrollView _scrollView;
+        private Label _statusLabel;
+        private Label _latencyLabel;
+        private VisualElement _latencyGaugeFill;
+        private VisualElement _latencySparkline;
+        private Label _sentLabel, _rcvdLabel, _errLabel;
+        private ScrollView _eventLog;
+        private VisualElement _eventTable;
         private IVisualElementScheduledItem _refreshSchedule;
 
+        // ── Counters ──────────────────────────────────────────────
+        private int _totalSent, _totalRcvd, _totalErr;
+
+        // ─────────────────────────────────────────────────────────
         public override VisualElement CreateView()
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("tab_network_dashboard").ToUpper());
+            var toolbar = NexusEditorStyles.CreateToolbar("🌐 NETWORK MONITOR");
             _view.Add(toolbar);
 
-            var header = new Label("Network Monitoring System")
-            {
-                style = { fontSize = 14, unityFontStyleAndWeight = FontStyle.Bold, color = Color.white, paddingTop = 10, paddingLeft = 10 }
-            };
-            _view.Add(header);
+            var scroll = new ScrollView { style = { flexGrow = 1 } };
+            scroll.style.paddingLeft = 16;
+            scroll.style.paddingRight = 16;
+            scroll.style.paddingTop = 16;
 
-            var status = NetworkMonitor.CurrentStatus;
-            var statusInfo = new Label($"Status: {(status.IsConnected ? "Connected" : "Disconnected")}, Latency: {status.LatencyMs:F1}ms")
-            {
-                style = { fontSize = 12, color = NexusEditorStyles.TextSecondary, paddingLeft = 10, paddingBottom = 10 }
-            };
-            _view.Add(statusInfo);
+            BuildConnectionCard(scroll);
+            BuildLatencyCard(scroll);
+            BuildStatsCard(scroll);
+            BuildFilterBar(scroll);
+            BuildEventLog(scroll);
 
-            _scrollView = new ScrollView { style = { flexGrow = 1, paddingLeft = 10, paddingRight = 10, paddingTop = 10 } };
-            _view.Add(_scrollView);
+            _view.Add(scroll);
 
-            var clearBtn = new Button(() => { NetworkMonitor.ClearHistory(); RefreshUI(); })
-            {
-                text = "Clear History",
-                style = { marginLeft = 10, marginTop = 10, marginBottom = 10 }
-            };
-            _view.Add(clearBtn);
+            SubscribeEvents();
+            _refreshSchedule = _view.schedule.Execute(RefreshStatus).Every(500);
+            RefreshStatus();
+            RebuildEventTable();
 
-            // Subscribe to network events
-            NetworkMonitor.OnNetworkEvent += OnNetworkEvent;
-            NetworkMonitor.OnConnectionStatusChanged += OnConnectionStatusChanged;
-
-            // Auto-refresh every 500ms
-            _refreshSchedule = _view.schedule.Execute(RefreshUI).Every(500);
-
-            RefreshUI();
             return _view;
         }
 
         public override void OnDisable()
         {
             _refreshSchedule?.Pause();
-            NetworkMonitor.OnNetworkEvent -= OnNetworkEvent;
-            NetworkMonitor.OnConnectionStatusChanged -= OnConnectionStatusChanged;
+            UnsubscribeEvents();
             base.OnDisable();
         }
 
-        private void RefreshUI()
+        public override void OnUpdate()
         {
-            _scrollView.Clear();
+            RefreshStatus();
+        }
 
-            var events = NetworkMonitor.GetRecentEvents(20);
-
-            foreach (var evt in events)
+        public override IReadOnlyList<(string Label, Action Action, Color Color)> GetContextActions()
+            => new List<(string, Action, Color)>
             {
-                var eventRow = new Label($"[{evt.EventType}] {evt.SignalName} - {evt.Timestamp:HH:mm:ss}")
+                ("🗑 Clear Log",  ClearLog,     NexusEditorStyles.BtnGray),
+                ("💾 Export Log", ExportLog,    NexusEditorStyles.BtnBlue),
+            };
+
+        // ── Build helpers ─────────────────────────────────────────
+
+        private void BuildConnectionCard(VisualElement parent)
+        {
+            var card = BuildCard(parent, "🔗 Connection Status");
+
+            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
+
+            _statusLabel = new Label("● DISCONNECTED")
+            {
+                style =
                 {
-                    style = { fontSize = 10, color = Color.white, marginBottom = 4 }
-                };
-                _scrollView.Add(eventRow);
+                    fontSize = 14,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    color = new StyleColor(NexusEditorStyles.AccentRed),
+                    marginRight = 16
+                }
+            };
+            row.Add(_statusLabel);
+            card.Add(row);
+        }
+
+        private void BuildLatencyCard(VisualElement parent)
+        {
+            var card = BuildCard(parent, "📡 Latency");
+
+            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
+
+            _latencyLabel = new Label("— ms")
+            {
+                style =
+                {
+                    fontSize = 20,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    color = new StyleColor(NexusEditorStyles.AccentBlue),
+                    marginRight = 16,
+                    minWidth = 80
+                }
+            };
+            row.Add(_latencyLabel);
+
+            var gaugeContainer = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Column,
+                    marginRight = 16
+                }
+            };
+            var gaugeLabel = new Label("0 — 500 ms") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), marginBottom = 2 } };
+            gaugeContainer.Add(gaugeLabel);
+            var gaugeBg = new VisualElement
+            {
+                style =
+                {
+                    width = 120, height = 8,
+                    backgroundColor = new StyleColor(NexusEditorStyles.DarkPanel),
+                    borderTopLeftRadius = 4, borderTopRightRadius = 4,
+                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4,
+                    overflow = Overflow.Hidden
+                }
+            };
+            _latencyGaugeFill = new VisualElement
+            {
+                style =
+                {
+                    width = new Length(0, LengthUnit.Percent),
+                    height = 8,
+                    backgroundColor = new StyleColor(NexusEditorStyles.AccentGreen),
+                    borderTopLeftRadius = 4, borderBottomLeftRadius = 4
+                }
+            };
+            gaugeBg.Add(_latencyGaugeFill);
+            gaugeContainer.Add(gaugeBg);
+            row.Add(gaugeContainer);
+
+            _latencySparkline = NexusEditorStyles.CreateSparkline(null, 500f, NexusEditorStyles.AccentBlue, 120f, 32f);
+            row.Add(_latencySparkline);
+
+            card.Add(row);
+        }
+
+        private void BuildStatsCard(VisualElement parent)
+        {
+            var card = BuildCard(parent, "📊 Statistics");
+
+            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
+
+            _sentLabel = AddStatPill(row, "Sent",     "0", NexusEditorStyles.AccentGreen);
+            _rcvdLabel = AddStatPill(row, "Received", "0", NexusEditorStyles.AccentBlue);
+            _errLabel  = AddStatPill(row, "Errors",   "0", NexusEditorStyles.AccentRed);
+
+            card.Add(row);
+        }
+
+        private Label AddStatPill(VisualElement parent, string label, string value, Color color)
+        {
+            var box = new VisualElement
+            {
+                style =
+                {
+                    backgroundColor = new StyleColor(NexusEditorStyles.DarkPanel),
+                    paddingTop = 8, paddingBottom = 8, paddingLeft = 8, paddingRight = 8,
+                    marginRight = 8,
+                    marginBottom = 8,
+                    borderTopLeftRadius = 6, borderTopRightRadius = 6,
+                    borderBottomLeftRadius = 6, borderBottomRightRadius = 6,
+                    minWidth = 80
+                }
+            };
+            var valueLabel = new Label(value)
+            {
+                style =
+                {
+                    fontSize = 18,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    color = new StyleColor(color)
+                }
+            };
+            var keyLabel = new Label(label)
+            {
+                style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary) }
+            };
+            box.Add(valueLabel);
+            box.Add(keyLabel);
+            parent.Add(box);
+            return valueLabel;
+        }
+
+        private void BuildFilterBar(VisualElement parent)
+        {
+            var bar = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    marginBottom = 8,
+                    flexWrap = Wrap.Wrap
+                }
+            };
+
+            var typeLabel = new Label("Type:") { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 4 } };
+            bar.Add(typeLabel);
+
+            foreach (var t in new[] { "All", "Signal", "Rpc", "State", "Error" })
+            {
+                var t1 = t;
+                var btn = new Button(() =>
+                {
+                    _typeFilter = t1;
+                    ApplyFilters();
+                }) { text = t };
+                StyleFilterBtn(btn, t == _typeFilter);
+                bar.Add(btn);
             }
 
-            if (events.Length == 0)
+            bar.Add(new Label("  Search:") { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginLeft = 8, marginRight = 4 } });
+            var searchField = new TextField { value = _searchFilter, style = { width = 100, height = 18 } };
+            searchField.RegisterValueChangedCallback(evt => { _searchFilter = evt.newValue; ApplyFilters(); });
+            bar.Add(searchField);
+
+            var autoScrollToggle = new Toggle("Auto Scroll") { value = _autoScroll };
+            autoScrollToggle.style.fontSize = 9;
+            autoScrollToggle.RegisterValueChangedCallback(evt => _autoScroll = evt.newValue);
+            bar.Add(autoScrollToggle);
+
+            parent.Add(bar);
+        }
+
+        private void BuildEventLog(VisualElement parent)
+        {
+            var card = BuildCard(parent, "📜 Event Log (last 200)");
+            _eventLog = new ScrollView { style = { maxHeight = 280 } };
+            _eventTable = new VisualElement();
+            _eventLog.Add(_eventTable);
+            card.Add(_eventLog);
+        }
+
+        // ── Refresh ───────────────────────────────────────────────
+
+        private void RefreshStatus()
+        {
+            var status = NetworkMonitor.CurrentStatus;
+            bool connected = status.IsConnected;
+            float latencyMs = status.LatencyMs;
+
+            _statusLabel.text = connected ? "● CONNECTED" : "● DISCONNECTED";
+            _statusLabel.style.color = new StyleColor(connected
+                ? NexusEditorStyles.AccentGreen
+                : NexusEditorStyles.AccentRed);
+
+            _latencyLabel.text = connected ? $"{latencyMs:F1} ms" : "— ms";
+
+            // Gauge: 0-500ms range
+            float ratio = Mathf.Clamp01(latencyMs / 500f);
+            _latencyGaugeFill.style.width = new Length(ratio * 100f, LengthUnit.Percent);
+            Color gaugeColor = latencyMs < 50  ? NexusEditorStyles.AccentGreen
+                             : latencyMs < 150 ? NexusEditorStyles.AccentYellow
+                                               : NexusEditorStyles.AccentRed;
+            _latencyGaugeFill.style.backgroundColor = new StyleColor(gaugeColor);
+
+            // Latency sparkline
+            PushLatency(latencyMs);
+            NexusEditorStyles.UpdateSparkline(_latencySparkline,
+                GetLatencyArray(), 500f, NexusEditorStyles.AccentBlue, 120f, 32f);
+
+            // Stats
+            _sentLabel.text = _totalSent.ToString();
+            _rcvdLabel.text = _totalRcvd.ToString();
+            _errLabel.text  = _totalErr.ToString();
+        }
+
+        private void ApplyFilters()
+        {
+            var all = NetworkMonitor.GetRecentEvents(200);
+            _filteredEvents.Clear();
+            foreach (var evt in all)
             {
-                _scrollView.Add(new Label("No network events recorded")
+                if (_typeFilter != "All" &&
+                    !evt.EventType.ToString().Equals(_typeFilter, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (!string.IsNullOrEmpty(_searchFilter) &&
+                    evt.SignalName?.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                _filteredEvents.Add(evt);
+            }
+            RebuildEventTable();
+        }
+
+        private void RebuildEventTable()
+        {
+            _eventTable.Clear();
+
+            var events = _filteredEvents.Count > 0
+                ? _filteredEvents
+                : NetworkMonitor.GetRecentEvents(200).ToList();
+
+            if (events.Count == 0)
+            {
+                _eventTable.Add(new Label("No network events recorded")
                 {
-                    style = { color = NexusEditorStyles.TextSecondary, marginTop = 20 }
+                    style = { color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 12, unityTextAlign = TextAnchor.MiddleCenter }
                 });
+                return;
             }
+
+            var table = NexusEditorStyles.CreateDataTable(
+                new[] {
+                    ("Type", 0.2f),
+                    ("Signal", 0.4f),
+                    ("Direction", 0.2f),
+                    ("Time", 0.2f)
+                },
+                events.TakeLast(200).Select(e => new[]
+                {
+                    e.EventType.ToString(),
+                    e.SignalName ?? "",
+                    e.EventType == "Sent" ? "→ Out" : "← In",
+                    e.Timestamp.ToString("HH:mm:ss.fff")
+                })
+            );
+            _eventTable.Add(table);
+
+            if (_autoScroll)
+                _eventLog.ScrollTo(_eventTable.ElementAt(_eventTable.childCount - 1));
+        }
+
+        // ── Event subscription ────────────────────────────────────
+
+        private void SubscribeEvents()
+        {
+            NetworkMonitor.OnNetworkEvent           += OnNetworkEvent;
+            NetworkMonitor.OnConnectionStatusChanged += OnConnectionChanged;
+        }
+
+        private void UnsubscribeEvents()
+        {
+            NetworkMonitor.OnNetworkEvent           -= OnNetworkEvent;
+            NetworkMonitor.OnConnectionStatusChanged -= OnConnectionChanged;
         }
 
         private void OnNetworkEvent(NetworkMonitor.NetworkEvent evt)
         {
-            RefreshUI();
+            if (evt.EventType == "Sent") _totalSent++;
+            else _totalRcvd++;
+            if (evt.EventType == "Failed") _totalErr++;
+
+            // Only rebuild if filter matches
+            bool passes = (_typeFilter == "All" || evt.EventType.ToString().Equals(_typeFilter, StringComparison.OrdinalIgnoreCase)) &&
+                          (string.IsNullOrEmpty(_searchFilter) || (evt.SignalName?.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) >= 0));
+            if (passes)
+            {
+                _filteredEvents.Add(evt);
+                if (_filteredEvents.Count > 200) _filteredEvents.RemoveAt(0);
+                RebuildEventTable();
+            }
         }
 
-        private void OnConnectionStatusChanged(NetworkMonitor.ConnectionStatus status)
+        private void OnConnectionChanged(NetworkMonitor.ConnectionStatus status)
         {
-            RefreshUI();
+            RefreshStatus();
+        }
+
+        // ── Actions ───────────────────────────────────────────────
+
+        private void ClearLog()
+        {
+            _filteredEvents.Clear();
+            _totalSent = _totalRcvd = _totalErr = 0;
+            NetworkMonitor.ClearHistory();
+            RebuildEventTable();
+        }
+
+        private void ExportLog()
+        {
+            var events = NetworkMonitor.GetRecentEvents(1000);
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine("Timestamp,Type,Signal,Direction");
+            foreach (var e in events)
+                sb.AppendLine($"{e.Timestamp:yyyy-MM-dd HH:mm:ss.fff},{e.EventType},{e.SignalName},{(e.EventType == "Sent" ? "Out" : "In")}");
+
+            string path = System.IO.Path.Combine(
+                UnityEngine.Application.dataPath, "..",
+                $"nexus_network_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
+            System.IO.File.WriteAllText(path, sb.ToString());
+            Debug.Log($"[Nexus] Network log exported: {path}");
+        }
+
+        // ── Helpers ───────────────────────────────────────────────
+
+        private static VisualElement BuildCard(VisualElement parent, string title)
+        {
+            var card = new VisualElement
+            {
+                style =
+                {
+                    backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
+                    borderTopLeftRadius = 6, borderTopRightRadius = 6,
+                    borderBottomLeftRadius = 6, borderBottomRightRadius = 6,
+                    paddingTop = 12, paddingBottom = 12, paddingLeft = 12, paddingRight = 12,
+                    marginBottom = 12
+                }
+            };
+            card.Add(new Label(title)
+            {
+                style =
+                {
+                    fontSize = 11,
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    color = new StyleColor(NexusEditorStyles.AccentBlue),
+                    marginBottom = 8
+                }
+            });
+            parent.Add(card);
+            return card;
+        }
+
+        private static void StyleFilterBtn(Button btn, bool active)
+        {
+            btn.style.fontSize = 9;
+            btn.style.paddingLeft = btn.style.paddingRight = 8;
+            btn.style.paddingTop = btn.style.paddingBottom = 2;
+            btn.style.marginRight = 4;
+            btn.style.borderTopLeftRadius = btn.style.borderTopRightRadius =
+            btn.style.borderBottomLeftRadius = btn.style.borderBottomRightRadius = 3;
+            btn.style.backgroundColor = new StyleColor(active ? NexusEditorStyles.HighlightBg : Color.clear);
+            btn.style.color = new StyleColor(active ? NexusEditorStyles.AccentBlue : NexusEditorStyles.TextSecondary);
+        }
+
+        private void PushLatency(float value)
+        {
+            _latencyBuf[_latencyHead % LatencyBufSize] = value;
+            _latencyHead++;
+            _latencyCount = Mathf.Min(_latencyCount + 1, LatencyBufSize);
+        }
+
+        private float[] GetLatencyArray()
+        {
+            if (_latencyCount == 0) return Array.Empty<float>();
+            var result = new float[_latencyCount];
+            int start = (_latencyHead - _latencyCount + LatencyBufSize) % LatencyBufSize;
+            for (int i = 0; i < _latencyCount; i++)
+                result[i] = _latencyBuf[(start + i) % LatencyBufSize];
+            return result;
         }
     }
 }

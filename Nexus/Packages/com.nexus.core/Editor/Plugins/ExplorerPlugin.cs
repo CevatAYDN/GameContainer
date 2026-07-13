@@ -103,6 +103,14 @@ namespace Nexus.Editor
             return _view;
         }
 
+        public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
+            => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
+            {
+                ("⚡ CodeGen",        () => NexusCodeGenerator.GenerateBinder(),         NexusEditorStyles.BtnBlue),
+                ("🔍 Inspector",      () => Window?.SwitchToPlugin("ContextInspector"),  NexusEditorStyles.BtnPurple),
+                ("🔄 Rescan",         () => { ScanExplorerAndPopulate(); RenderTab(); }, NexusEditorStyles.BtnGray),
+            };
+
         private Button CreateTabButton(string label, ExplorerTab tab)
         {
             var btn = new Button(() =>

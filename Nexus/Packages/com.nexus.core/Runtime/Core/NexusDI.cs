@@ -554,16 +554,24 @@ namespace Nexus.Core
 
             foreach (var instance in singletonsCopy)
             {
-                if (instance is IDisposable disposable && alreadyDisposed.Add(instance))
+                if (!alreadyDisposed.Add(instance)) continue;
+                try
                 {
-                    try
+                    if (instance is IDisposable disposable)
                     {
                         disposable.Dispose();
                     }
-                    catch (Exception ex)
+                    else if (instance is IAsyncDisposable asyncDisposable)
                     {
-                        NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
+                        // IAsyncDisposable-only singletons: block on main thread.
+                        // Context.Dispose() is always called from Unity's main thread
+                        // (OnDestroy / Application.quitting), so blocking is safe here.
+                        asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
                     }
+                }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
                 }
             }
             _bindings.Clear();

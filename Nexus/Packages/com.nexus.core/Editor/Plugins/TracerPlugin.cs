@@ -194,6 +194,14 @@ namespace Nexus.Editor
             _depthsCache.Clear();
         }
 
+        public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
+            => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
+            {
+                ("🧹 Clear Buffer", () => { _allEvents.Clear(); RefreshTracerLogs(); }, NexusEditorStyles.AccentRed),
+                ("⏸ Pause",         () => _isPaused = !_isPaused,                     NexusEditorStyles.BtnGray),
+                ("🔍 Inspector",    () => Window?.SwitchToPlugin("ContextInspector"),  NexusEditorStyles.BtnPurple),
+            };
+
         public void Write(in TraceEvent traceEvent)
         {
             // Enqueue event from background thread

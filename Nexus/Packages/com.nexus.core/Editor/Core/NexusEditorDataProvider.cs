@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using Nexus.Core;
@@ -147,6 +148,80 @@ namespace Nexus.Editor
         }
 
         internal static bool IsPlaying => Application.isPlaying;
+
+        // ── Live Service / Model Data (Play Mode only) ──────────
+        /// <summary>Returns all service types registered in a context's builder.</summary>
+        internal static IReadOnlyList<Type> GetLiveServiceTypes(IContext context)
+        {
+            if (context is not Context ctx) return System.Array.Empty<Type>();
+            try
+            {
+                // Access builder via reflection if builder is internal
+                var builderField = typeof(Context).GetField("_builder",
+                    BindingFlags.NonPublic | BindingFlags.Instance);
+                var builder = builderField?.GetValue(ctx) as ContextBuilder;
+                var serviceTypesProp = typeof(ContextBuilder).GetProperty("ServiceTypes",
+                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
+                var serviceTypes = serviceTypesProp?.GetValue(builder) as IReadOnlyList<Type>;
+                return serviceTypes ?? (IReadOnlyList<Type>)System.Array.Empty<Type>();
+            }
+            catch { return System.Array.Empty<Type>(); }
+        }
+
+        /// <summary>Attempts to safely resolve a service instance from a context.</summary>
+        internal static object TryGetServiceInstance(IContext context, Type serviceType)
+        {
+            try
+            {
+                if (context is Context ctx && ctx.Container.IsRegistered(serviceType))
+                    return ctx.Container.Resolve(serviceType);
+            }
+            catch { }
+            return null;
+        }
+
+        /// <summary>Returns all binding types registered in the context's DI container.</summary>
+        internal static Dictionary<Type, Type> GetAllBindings(IContext context)
+        {
+            var result = new Dictionary<Type, Type>();
+            if (context is not Context ctx || ctx.Container == null) return result;
+            try
+            {
+                var bindingsField = typeof(NexusDI).GetField("_bindings",
+                    BindingFlags.NonPublic | BindingFlags.Instance);
+                if (bindingsField?.GetValue(ctx.Container) is ConcurrentDictionary<Type, object> bindings)
+                {
+                    foreach (var kvp in bindings)
+                    {
+                        // Binding is internal class; get ConcreteType via reflection
+                        var concreteTypeProp = kvp.Value.GetType()
+                            .GetProperty("ConcreteType", BindingFlags.Public | BindingFlags.Instance);
+                        var concreteType = concreteTypeProp?.GetValue(kvp.Value) as Type ?? kvp.Key;
+                        result[kvp.Key] = concreteType;
+                    }
+                }
+            }
+            catch { }
+            return result;
+        }
+
+        /// <summary>Returns all resolved singleton instances in a context's DI container.</summary>
+        internal static List<object> GetResolvedSingletons(IContext context)
+        {
+            var result = new List<object>();
+            if (context is not Context ctx || ctx.Container == null) return result;
+            try
+            {
+                var singletonsField = typeof(NexusDI).GetField("_resolvedSingletons",
+                    BindingFlags.NonPublic | BindingFlags.Instance);
+                if (singletonsField?.GetValue(ctx.Container) is HashSet<object> singletons)
+                {
+                    result.AddRange(singletons);
+                }
+            }
+            catch { }
+            return result;
+        }
     }
 
     internal struct HandlerMapping

@@ -86,6 +86,17 @@ namespace Nexus.Editor
             _bindingTrackers.Clear();
         }
 
+        public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
+            => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
+            {
+                ("🎯 Select Root", () => {
+                    var roots = NexusEditorDataProvider.GetSceneRoots();
+                    if (roots != null && roots.Length > 0) UnityEditor.Selection.activeGameObject = roots[0].gameObject;
+                }, NexusEditorStyles.BtnGreen),
+                ("🔍 Context Inspector", () => Window?.SwitchToPlugin("ContextInspector"), NexusEditorStyles.BtnPurple),
+                ("🧹 Clear Caches", () => { NexusRuntime.Reset(); Window?.SwitchToPlugin(Id); }, NexusEditorStyles.AccentRed),
+            };
+
         private void OnContextsChanged(IContext ctx)
         {
             RebuildContextTree();

@@ -387,5 +387,239 @@ namespace Nexus.Editor
             row.style.backgroundColor = new StyleColor(bgColor);
             // clickable styling is applied via hover in USS
         }
+
+        // ─── Sparkline (mini bar chart) ───────────────────────────
+        /// <summary>
+        /// Creates a simple horizontal bar-chart sparkline from a float[] history.
+        /// Width is fixed; bar heights are normalized to the provided max value.
+        /// </summary>
+        internal static VisualElement CreateSparkline(float[] values, float maxValue,
+            Color barColor, float width = 120f, float height = 32f)
+        {
+            var container = new VisualElement
+            {
+                style =
+                {
+                    width = width, height = height,
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.FlexEnd,
+                    backgroundColor = new StyleColor(DarkPanel),
+                    borderTopLeftRadius = 3, borderTopRightRadius = 3,
+                    borderBottomLeftRadius = 3, borderBottomRightRadius = 3,
+                    paddingLeft = 2, paddingRight = 2, paddingTop = 2, paddingBottom = 2,
+                    overflow = Overflow.Hidden
+                }
+            };
+
+            if (values == null || values.Length == 0) return container;
+
+            // Show last N bars that fit in width
+            float barW = Mathf.Max(2f, width / Mathf.Min(values.Length, 60));
+            int startIdx = Mathf.Max(0, values.Length - Mathf.FloorToInt(width / barW));
+            float effectiveMax = maxValue > 0 ? maxValue : 1f;
+
+            for (int i = startIdx; i < values.Length; i++)
+            {
+                float ratio = Mathf.Clamp01(values[i] / effectiveMax);
+                float barH = Mathf.Max(1f, ratio * (height - 4f));
+                var bar = new VisualElement
+                {
+                    style =
+                    {
+                        width = barW - 1,
+                        height = barH,
+                        backgroundColor = new StyleColor(barColor),
+                        marginRight = 1,
+                        borderTopLeftRadius = 1, borderTopRightRadius = 1
+                    }
+                };
+                container.Add(bar);
+            }
+            return container;
+        }
+
+        /// <summary>Updates an existing sparkline element in-place (removes children and redraws).</summary>
+        internal static void UpdateSparkline(VisualElement sparkline, float[] values,
+            float maxValue, Color barColor, float width = 120f, float height = 32f)
+        {
+            sparkline.Clear();
+            if (values == null || values.Length == 0) return;
+
+            float barW = Mathf.Max(2f, width / Mathf.Min(values.Length, 60));
+            int startIdx = Mathf.Max(0, values.Length - Mathf.FloorToInt(width / barW));
+            float effectiveMax = maxValue > 0 ? maxValue : 1f;
+
+            for (int i = startIdx; i < values.Length; i++)
+            {
+                float ratio = Mathf.Clamp01(values[i] / effectiveMax);
+                float barH = Mathf.Max(1f, ratio * (height - 4f));
+                var bar = new VisualElement
+                {
+                    style =
+                    {
+                        width = barW - 1,
+                        height = barH,
+                        backgroundColor = new StyleColor(barColor),
+                        marginRight = 1,
+                        borderTopLeftRadius = 1, borderTopRightRadius = 1
+                    }
+                };
+                sparkline.Add(bar);
+            }
+        }
+
+        // ─── Gauge (value indicator bar) ─────────────────────────
+        /// <summary>Creates a horizontal fill-bar gauge showing a value 0..max.</summary>
+        internal static VisualElement CreateGauge(float value, float max,
+            Color fillColor, float width = 100f, float height = 6f)
+        {
+            var bg = new VisualElement
+            {
+                style =
+                {
+                    width = width, height = height,
+                    backgroundColor = new StyleColor(DarkPanel),
+                    borderTopLeftRadius = 3, borderTopRightRadius = 3,
+                    borderBottomLeftRadius = 3, borderBottomRightRadius = 3,
+                    overflow = Overflow.Hidden
+                }
+            };
+            float ratio = max > 0 ? Mathf.Clamp01(value / max) : 0f;
+            var fill = new VisualElement
+            {
+                style =
+                {
+                    width = new Length(ratio * 100f, LengthUnit.Percent),
+                    height = height,
+                    backgroundColor = new StyleColor(fillColor),
+                    borderTopLeftRadius = 3, borderBottomLeftRadius = 3
+                }
+            };
+            bg.Add(fill);
+            return bg;
+        }
+
+        // ─── Stat Row (key: value pair) ───────────────────────────
+        /// <summary>Creates a single-line key/value label row for stat displays.</summary>
+        internal static VisualElement CreateStatRow(string key, string value,
+            Color valueColor = default, float fontSize = 10f)
+        {
+            if (valueColor == default) valueColor = TextPrimary;
+            var row = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    justifyContent = Justify.SpaceBetween,
+                    paddingLeft = 8, paddingRight = 8,
+                    paddingTop = 3, paddingBottom = 3,
+                    borderBottomWidth = 1,
+                    borderBottomColor = new StyleColor(BorderColor)
+                }
+            };
+            row.Add(new Label(key)
+            {
+                style = { fontSize = fontSize, color = new StyleColor(TextSecondary) }
+            });
+            row.Add(new Label(value)
+            {
+                style = { fontSize = fontSize, color = new StyleColor(valueColor), unityFontStyleAndWeight = FontStyle.Bold }
+            });
+            return row;
+        }
+
+        // ─── Live Badge ───────────────────────────────────────────
+        /// <summary>Creates an animated "● LIVE" badge label.</summary>
+        internal static Label CreateLiveBadge()
+        {
+            var label = new Label("● LIVE")
+            {
+                style =
+                {
+                    fontSize = 9,
+                    color = new StyleColor(AccentGreen),
+                    unityFontStyleAndWeight = FontStyle.Bold,
+                    paddingLeft = 6, paddingRight = 6,
+                    paddingTop = 2, paddingBottom = 2,
+                    backgroundColor = new StyleColor(new Color(0.1f, 0.3f, 0.1f)),
+                    borderTopLeftRadius = 3, borderTopRightRadius = 3,
+                    borderBottomLeftRadius = 3, borderBottomRightRadius = 3
+                }
+            };
+            return label;
+        }
+
+        // ─── Data Table ───────────────────────────────────────────
+        /// <summary>
+        /// Creates a simple scrollable table with a header row and data rows.
+        /// columns: (header, width fraction 0-1)
+        /// rows: string[] per row matching column count
+        /// </summary>
+        internal static VisualElement CreateDataTable(
+            (string Header, float WidthFraction)[] columns,
+            System.Collections.Generic.IEnumerable<string[]> rows,
+            float tableWidth = 400f)
+        {
+            var container = new VisualElement { style = { flexDirection = FlexDirection.Column } };
+
+            // Header
+            var header = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    backgroundColor = new StyleColor(TableHeaderBg),
+                    paddingLeft = 4, paddingRight = 4, paddingTop = 4, paddingBottom = 4,
+                    borderBottomWidth = 1, borderBottomColor = new StyleColor(BorderColor)
+                }
+            };
+            foreach (var col in columns)
+            {
+                header.Add(new Label(col.Header)
+                {
+                    style =
+                    {
+                        width = new Length(col.WidthFraction * 100f, LengthUnit.Percent),
+                        fontSize = 9,
+                        unityFontStyleAndWeight = FontStyle.Bold,
+                        color = new StyleColor(TextSecondary)
+                    }
+                });
+            }
+            container.Add(header);
+
+            // Data rows
+            bool alt = false;
+            foreach (var row in rows)
+            {
+                var dataRow = new VisualElement
+                {
+                    style =
+                    {
+                        flexDirection = FlexDirection.Row,
+                        backgroundColor = new StyleColor(alt ? RowAlt : RowBase),
+                        paddingLeft = 4, paddingRight = 4, paddingTop = 3, paddingBottom = 3
+                    }
+                };
+                for (int c = 0; c < columns.Length && c < row.Length; c++)
+                {
+                    dataRow.Add(new Label(row[c] ?? "")
+                    {
+                        style =
+                        {
+                            width = new Length(columns[c].WidthFraction * 100f, LengthUnit.Percent),
+                            fontSize = 9,
+                            color = new StyleColor(TextPrimary),
+                            overflow = Overflow.Hidden,
+                            whiteSpace = WhiteSpace.NoWrap
+                        }
+                    });
+                }
+                container.Add(dataRow);
+                alt = !alt;
+            }
+
+            return container;
+        }
     }
 }

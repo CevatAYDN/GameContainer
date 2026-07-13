@@ -274,6 +274,9 @@
     {"key": "help_card_attributes", "value": "Öznitelikler"},
     {"key": "help_card_attributes_content", "value": "[SignalHandler(typeof(T))] — otomatik komut kaydı\n[CompositeSignalHandler(T1, T2)] — fan-in tetikleyici\n[CrossContext(ScopeTag?)] — context'ler arası sinyal\n[Inject] — DI enjeksiyon noktası\n[Mediator(typeof(T))] — view-mediator bağlantısı\n[LiveReload] — Play Mode varlık senkronizasyonu\n[CommandTimeout(ms)] — asenkron komut zaman aşımı"},
     {"key": "help_card_recovery", "value": "Hata Kurtarma"},
-    {"key": "help_card_recovery_content", "value": "IRecoveryStrategy.OnCommandFailed(ctx) → RecoveryDecision\nRecoveryDecision.Skip() — atla ve devam et\nRecoveryDecision.Retry(max:3) — N defaya kadar tekrar dene\nRecoveryDecision.Abort() — zinciri durdur\nRecoveryDecision.Fallback<T>() — alternatif komut çalıştır"}
+    {"key": "help_card_recovery_content", "value": "IRecoveryStrategy.OnCommandFailed(ctx) → RecoveryDecision\nRecoveryDecision.Skip() — atla ve devam et\nRecoveryDecision.Retry(max:3) — N defaya kadar tekrar dene\nRecoveryDecision.Abort() — zinciri durdur\nRecoveryDecision.Fallback<T>() — alternatif komut çalıştır"},
+    {"key": "tab_contextinspector", "value": "Context İnspektörü"},
+    {"key": "tab_performancedashboard", "value": "Performans"},
+    {"key": "tab_networkdashboard", "value": "Ağ"}
   ]
 }

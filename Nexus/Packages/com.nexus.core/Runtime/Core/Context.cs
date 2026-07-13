@@ -483,8 +483,6 @@ namespace Nexus.Core
                 }
             }
 
-            _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>();
-
             // Dispose all registered services in reverse order
             if (_builder != null)
             {
@@ -526,8 +524,6 @@ namespace Nexus.Core
                     TryResolve<ILoggerService>()?.LogException(ex);
                 }
             }
-
-            _pluginsReadOnlyCopy = new List<(INexusPlugin plugin, PluginContext context)>();
 
             NexusRuntime.UnregisterContext(this);
             

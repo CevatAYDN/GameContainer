@@ -32,6 +32,7 @@ namespace Nexus.Editor
             { "ErrorDashboard", new Color(1f, 0.3f, 0.3f) }, // AccentRed (Error)
             { "PerformanceDashboard", new Color(0.3f, 1f, 0.6f) }, // AccentGreen (Performance)
             { "NetworkDashboard", new Color(0.4f, 0.8f, 1f) }, // AccentCyan (Network)
+            { "ContextInspector", new Color(0.6f, 1f, 0.9f) }, // AccentMint (Inspector)
         };
 
         private List<INexusEditorPlugin> _plugins = new();
@@ -491,49 +492,14 @@ namespace Nexus.Editor
             };
             row.Add(tagLabel);
 
-            switch (_activePlugin.Id)
+            // Delegate action buttons to the plugin itself
+            var actions = _activePlugin.GetContextActions();
+            if (actions != null)
             {
-                case "Dashboard":
-                    AddContextActionButton(row, "⚡ CodeGen", () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue);
-                    AddContextActionButton(row, "➕ Create Root", () => {
-                        var go = new GameObject("NexusRoot");
-                        go.AddComponent<Root>();
-                        Undo.RegisterCreatedObjectUndo(go, "Create Nexus Root");
-                        Selection.activeObject = go;
-                    }, NexusEditorStyles.BtnTeal);
-                    AddContextActionButton(row, "🌐 Explorer", () => SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple);
-                    AddContextActionButton(row, "📊 GameManager", () => SwitchToPlugin("GameManager"), NexusEditorStyles.BtnGray);
-                    break;
-
-                case "Wizard":
-                    AddContextActionButton(row, "⚡ Run CodeGen", () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue);
-                    AddContextActionButton(row, "➕ Create Model", () => SwitchToPlugin("Wizard"), NexusEditorStyles.AccentYellow);
-                    break;
-
-                case "Hierarchy":
-                    AddContextActionButton(row, "🎯 Select Active Root", () => {
-                        var roots = NexusEditorDataProvider.GetSceneRoots();
-                        if (roots != null && roots.Length > 0) Selection.activeGameObject = roots[0].gameObject;
-                    }, NexusEditorStyles.BtnGreen);
-                    AddContextActionButton(row, "🧹 Clear Caches", () => {
-                        NexusRuntime.Reset();
-                        RefreshActivePlugin();
-                    }, NexusEditorStyles.AccentRed);
-                    break;
-
-                case "Explorer":
-                    AddContextActionButton(row, "⚡ CodeGen", () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue);
-                    AddContextActionButton(row, "🔍 Scan Types", () => SwitchToPlugin("TypeAnalyzer"), NexusEditorStyles.BtnPurple);
-                    break;
-
-                case "Tracer":
-                    AddContextActionButton(row, "🧹 Clear Buffer", () => RefreshActivePlugin(), NexusEditorStyles.AccentRed);
-                    break;
-
-                case "CasualServices":
-                case "casual_services":
-                    AddContextActionButton(row, "📳 Test Haptic", () => SwitchToPlugin("casual_services"), new Color(0.8f, 0.3f, 0.6f));
-                    break;
+                foreach (var (label, action, color) in actions)
+                {
+                    AddContextActionButton(row, label, action, color);
+                }
             }
 
             var spacer = new VisualElement { style = { flexGrow = 1 } };
@@ -582,6 +548,9 @@ namespace Nexus.Editor
             {
                 _hierarchyPlugin?.UpdateVisibleTrackers();
             }
+
+            // Forward to active plugin for lightweight polling updates
+            try { _activePlugin?.OnUpdate(); } catch { }
 
             UpdateStatusBarText();
         }
