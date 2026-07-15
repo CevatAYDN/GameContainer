@@ -545,7 +545,21 @@ namespace Nexus.Core
                     }
                 }
 
-                // Process subscriptions (sync-only path — no async subs here)
+                // ═══ EXECUTION ORDER GUARANTEE ═══
+                // Commands execute FIRST (they mutate model state),
+                // then subscriptions execute AFTER (they observe final state).
+                // This ensures mediators/views always read post-command state.
+
+                // Phase 1: Process commands (mutate state)
+                if (_commandHandlers.TryGetValue(type, out var handlers))
+                {
+                    foreach (var handler in handlers)
+                    {
+                        ExecuteCommand(handler, signal);
+                    }
+                }
+
+                // Phase 2: Process subscriptions (observe final state)
                 if (_subscriptions.TryGetValue(type, out var node))
                 {
                     var current = node;
@@ -556,15 +570,6 @@ namespace Nexus.Core
                             syncSub(signal);
                         }
                         current = current.Next;
-                    }
-                }
-
-                // Process commands (all sync in this path)
-                if (_commandHandlers.TryGetValue(type, out var handlers))
-                {
-                    foreach (var handler in handlers)
-                    {
-                        ExecuteCommand(handler, signal);
                     }
                 }
 
@@ -705,29 +710,11 @@ namespace Nexus.Core
                     }
                 }
 
-                // Subscriptions
-                if (_subscriptions.TryGetValue(type, out var node))
-                {
-                    var current = node;
-                    while (current != null)
-                    {
-                        if (current.IsActive)
-                        {
-                            var handler = current.Handler;
-                            if (handler is Action<T> syncSub)
-                            {
-                                syncSub(signal);
-                            }
-                            else if (handler is Func<T, CancellationToken, ValueTask> asyncSub)
-                            {
-                                await asyncSub(signal, _context.LifetimeToken);
-                            }
-                        }
-                        current = current.Next;
-                    }
-                }
+                // ═══ EXECUTION ORDER GUARANTEE (Async Path) ═══
+                // Commands execute FIRST (they mutate model state),
+                // then subscriptions execute AFTER (they observe final state).
 
-                // Process commands
+                // Phase 1: Process commands (mutate state)
                 if (_commandHandlers.TryGetValue(type, out var handlers))
                 {
                     if (handlers.Count > 0 && handlers[0].Mode == ExecutionMode.Concurrent)
@@ -766,6 +753,28 @@ namespace Nexus.Core
                                 ExecuteCommand(handler, signal);
                             }
                         }
+                    }
+                }
+
+                // Phase 2: Process subscriptions (observe final state)
+                if (_subscriptions.TryGetValue(type, out var node))
+                {
+                    var current = node;
+                    while (current != null)
+                    {
+                        if (current.IsActive)
+                        {
+                            var handler = current.Handler;
+                            if (handler is Action<T> syncSub)
+                            {
+                                syncSub(signal);
+                            }
+                            else if (handler is Func<T, CancellationToken, ValueTask> asyncSub)
+                            {
+                                await asyncSub(signal, _context.LifetimeToken);
+                            }
+                        }
+                        current = current.Next;
                     }
                 }
 

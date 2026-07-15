@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.2] - 2026-07-15
+
+### Fixed
+
+- **SignalBus Execution Order (BREAKING FIX)**: Corrected `FireInternal` and `FireInternalAsync` so that **commands execute BEFORE subscriptions**. Previously subscriptions ran first, causing mediators to read stale (pre-command) model state. The new guaranteed order is: Interceptors → Cross-Context → Commands → Subscriptions. This is the architecturally correct MVCS pattern where commands mutate state and subscriptions observe the result.
+
+### Changed
+
+- **Async Path Consistency**: `FireInternalAsync` now mirrors the same execution order guarantee as the sync path — commands first, subscriptions after.
+
+---
+
 ## [0.3.1] - 2026-07-10
 
 ### Added

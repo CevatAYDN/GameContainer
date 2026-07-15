@@ -2,7 +2,7 @@
 
 [![Unity](https://img.shields.io/badge/Unity-6000.0-blue.svg)](https://unity.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.3.1-orange.svg)](package.json)
+[![Version](https://img.shields.io/badge/Version-0.3.2-orange.svg)](package.json)
 
 **Nexus Core** is a modern, high-performance MVCS (Model-View-Controller-Service) architecture framework for Unity 6. It provides observable models, dependency injection, signal-based communication, and comprehensive service lifecycle management with zero-GC allocation in steady-state operations.
 
@@ -186,6 +186,37 @@ var subscription = signalBus.Subscribe<CounterSignal>(signal =>
 
 // Unsubscribe when done
 subscription.Dispose();
+```
+
+### Execution Order Guarantee
+
+When a signal is fired, Nexus guarantees the following execution order:
+
+```
+Signal Fired
+  │
+  ├─ 1. Plugin Interceptors (may cancel dispatch)
+  ├─ 2. Cross-Context Broadcast
+  ├─ 3. Commands (mutate model state — execute in priority order)
+  └─ 4. Subscriptions (observe final state — read post-command model)
+```
+
+**This means**: Mediator subscription handlers always observe the **final** model state after all commands have executed. You never need workaround signals like "XCompletedSignal" — simply subscribe to the original signal and read the model directly.
+
+```csharp
+// Command modifies state FIRST
+public class IncrementCommand : ICommand<CounterSignal>
+{
+    [Inject] private CounterModel _model;
+    public void Execute(CounterSignal signal) => _model.Count.Value += signal.Value;
+}
+
+// Subscription observes state AFTER command
+signalBus.Subscribe<CounterSignal>(signal =>
+{
+    // _model.Count.Value is already updated here
+    Debug.Log($"New count: {model.Count.Value}");
+});
 ```
 
 ### Execution Modes

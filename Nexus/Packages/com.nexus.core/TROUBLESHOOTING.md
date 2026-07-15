@@ -5,6 +5,7 @@ This guide helps you diagnose and resolve common issues with Nexus Core.
 ## Table of Contents
 
 - [Common Issues](#common-issues)
+- [Signal Execution Order](#signal-execution-order)
 - [Build & Compilation Issues](#build--compilation-issues)
 - [Runtime Issues](#runtime-issues)
 - [Performance Issues](#performance-issues)
@@ -12,6 +13,40 @@ This guide helps you diagnose and resolve common issues with Nexus Core.
 - [AOT/IL2CPP Issues](#aotil2cpp-issues)
 - [Testing Issues](#testing-issues)
 - [Getting Help](#getting-help)
+
+---
+
+## Signal Execution Order
+
+### Execution Order Guarantee (v0.3.2+)
+
+When `signalBus.Fire(signal)` is called, the dispatch order is:
+
+1. **Plugin Interceptors** (may cancel dispatch)
+2. **Cross-Context Broadcast** (if `[CrossContext]` attribute present)
+3. **Commands** (mutate model state, execute in priority order)
+4. **Subscriptions** (observe final state)
+
+This means **mediator/view subscription handlers always read post-command state**.
+
+### Common Pattern
+
+```csharp
+// ✅ CORRECT: Subscribe to original signal; model is already updated
+signalBus.Subscribe<UndoSignal>(_ =>
+{
+    // model.MovesCount.Value is already decremented by UndoCommand
+    RebuildBoard();
+});
+
+// ❌ WRONG: Creating a separate "CompletedSignal" is unnecessary
+// Do NOT create signals like "UndoCompletedSignal" — the command has
+// already finished before your subscription handler runs.
+```
+
+### Reentrancy Protection
+
+Nexus limits signal stack depth to **10**. If a subscription handler fires another signal, which in turn fires another, Nexus throws `NexusReentrancyException` after 10 nested levels.
 
 ---
 

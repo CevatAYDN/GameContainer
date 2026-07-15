@@ -176,3 +176,32 @@ Bağlam: Unity `6000.5.0f1`, açık proje `GameContainer/Nexus`, editör hazır 
 - **P1-C (Counter her yapıtaşını kullanıyor) → TAMAMLANDI.** `Samples~/Counter` genişletildi: 4 komut modu (Sequential/Concurrent/Exclusive/Composite), async komut + `[CommandTimeout]`, View/Mediator (`[Mediator]`), Causal Tracing sink (`INexusTraceSink` + `NexusTrace.AddSink`), custom servis enjeksiyonu (`ICounterTelemetryService` / `INexusService`) + built-in `IPlayerPrefsService` (`UnityPlayerPrefsService`), ve hata kurtarma (`IRecoveryStrategy`). Geçici `Assets/__CounterSampleVerify` kopyasıyla Unity MCP derlemesi **0 hata**; sonrasında geçici klasör silinip AOT binder temiz yeniden üretildi (Samples referansı kalmadı). `Samples~` klasörü Unity tarafından otomatik derlenmez; örnek tüketiciye Package Manager "Samples" ile kopyalanır.
 
 **Durum:** Tüm kritik ve orta seviye maddeler kapatıldı. **P0-B KABUL EDİLDİ** (Unity 6 kısıt olarak belgelendi); **P0-A belgelendi** (`STABILITY.md` pre-1.0 politikası); **P1-C TAMAMLANDI ✅**; **P1-B UYGULANDI ✅** (build öncesi otomatik binder üretimi + guard + boş-binder temizliği); **P1-A, P2-C KAPATILDI**; **P2-A, P2-B belgelendi** (`CANONICAL-PATTERNS.md` canonical yollar); **P2-D belgelendi** (`ADOPTION.md` fork-sahiplenme). Ayrıca `.github/workflows/ci.yml` eklendi (GameCI EditMode+PlayMode testleri + doc/code tutarlılık guard'ı). EditMode 74/74 + PlayMode 56/57 (1 ignored) yeşil, Architecture Validation 0 Warning. Kalan tek "açık" tasarım kararı tam 1.0 stabilizasyonudur (ayrı sürüm).
+
+---
+
+## 🔴 P0-C — SignalBus Execution Order Bug → DÜZELTİLDİ ✅ (2026-07-15)
+
+### Sorun
+`SignalBus.FireInternal()` ve `FireInternalAsync()` içinde **subscriptions (mediator handler'lar) commands'tan ÖNCE** çalışıyordu. Bu, MVCS mimarisinin temel ilkesini ihlal ediyordu:
+- Command: State değiştirir (Model)
+- Subscription: Sonucu gözlemler (View/Mediator)
+
+Ters sıralama yüzünden mediator'lar **eski (pre-command) model state** ile çalışıyordu. Örnek: Undo signal fire edildiğinde BoardMediator board'u eski haliyle rebuild ediyordu (halka 4. direkte kalıyordu), UndoCommand modeli düzeltmesine rağmen.
+
+### Çözüm
+`SignalBus.cs` `FireInternal` ve `FireInternalAsync` metodlarında execution order düzeltildi:
+
+```
+ÖNCE (YANLIŞ):                    SONRA (DOĞRU):
+1. Interceptors                    1. Interceptors
+2. Cross-Context                   2. Cross-Context
+3. Subscriptions ← ESKİ STATE     3. Commands ← STATE DEĞİŞTİR
+4. Commands                        4. Subscriptions ← YENİ STATE OKU
+```
+
+### Etki
+- Tüm oyunlarda artık mediator subscribe handler'ları **her zaman güncel model state** okur
+- "XCompletedSignal" gibi workaround pattern'lara gerek kalmaz
+- Nexus ile geliştirilen her oyun bu execution order garantisinden otomatik yararlanır
+- CHANGELOG v0.3.2 olarak kayıt altına alındı
+
