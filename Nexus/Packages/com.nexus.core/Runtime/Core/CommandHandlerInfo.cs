@@ -12,26 +12,38 @@ namespace Nexus.Core
         /// <summary>The <see cref="Type"/> of the command class.</summary>
         public Type CommandType { get; }
 
-        /// <summary>The execution mode (Sequential, Concurrent, Exclusive, or CompositeTrigger).</summary>
+        /// <summary>The execution mode (Sequential, Concurrent, Exclusive, or Composite).</summary>
         public ExecutionMode Mode { get; }
 
-        /// <summary>Execution priority; lower values run first.</summary>
+        /// <summary>Execution priority; higher values run first.</summary>
         public int Priority { get; }
 
-        /// <summary>True if the command implements <see cref="IAsyncCommand"/>.</summary>
+        /// <summary>True if the command implements <see cref="IAsyncCommand"/> or <see cref="IAsyncCommand{TSignal}"/>.</summary>
         public bool IsAsync { get; }
+
+        /// <summary>
+        /// Execution timeout in milliseconds for async commands, sourced from
+        /// <see cref="CommandTimeoutAttribute"/>. Zero means no timeout.
+        /// </summary>
+        public int TimeoutMs { get; }
+
+        /// <summary>Cached trace label ("  └ CommandName") so hot-path tracing does not allocate.</summary>
+        internal string TraceLabel { get; }
 
         /// <summary>Creates a new <see cref="CommandHandlerInfo"/> instance.</summary>
         /// <param name="commandType">The <see cref="Type"/> of the command.</param>
         /// <param name="mode">The execution mode for this handler.</param>
-        /// <param name="priority">Execution priority (lower runs first).</param>
+        /// <param name="priority">Execution priority (higher runs first).</param>
         /// <param name="isAsync">Whether the command is asynchronous (<see cref="IAsyncCommand"/>).</param>
-        public CommandHandlerInfo(Type commandType, ExecutionMode mode, int priority, bool isAsync)
+        /// <param name="timeoutMs">Execution timeout in milliseconds (0 = no timeout).</param>
+        public CommandHandlerInfo(Type commandType, ExecutionMode mode, int priority, bool isAsync, int timeoutMs = 0)
         {
             CommandType = commandType;
             Mode = mode;
             Priority = priority;
             IsAsync = isAsync;
+            TimeoutMs = timeoutMs;
+            TraceLabel = "  └ " + commandType.Name;
         }
     }
 }

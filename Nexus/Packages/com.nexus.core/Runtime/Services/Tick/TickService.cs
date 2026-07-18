@@ -1,13 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
-
-[assembly: InternalsVisibleTo("com.nexus.core.tests")]
 
 namespace Nexus.Core.Services
 {
@@ -171,7 +168,7 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
+                    NexusRuntime.Logger?.LogException(ex);
                 }
             }
         }
@@ -194,7 +191,7 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
+                    NexusRuntime.Logger?.LogException(ex);
                 }
             }
         }
@@ -217,7 +214,7 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
+                    NexusRuntime.Logger?.LogException(ex);
                 }
             }
         }

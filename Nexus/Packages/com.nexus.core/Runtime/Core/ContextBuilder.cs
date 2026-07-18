@@ -84,11 +84,18 @@ namespace Nexus.Core
         /// </summary>
         /// <typeparam name="TSignal">The signal struct type that triggers the command.</typeparam>
         /// <typeparam name="TCommand">The command class (must implement <see cref="ICommand"/>).</typeparam>
-        /// <param name="mode">Execution mode (Sequential, Concurrent, Exclusive, CompositeTrigger).</param>
-        /// <param name="priority">Execution priority; lower values run first.</param>
+        /// <param name="mode">Execution mode (Sequential, Concurrent, or Exclusive). Composite triggers must be registered via [CompositeSignalHandler] instead.</param>
+        /// <param name="priority">Execution priority; higher values run first.</param>
         public void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class where TSignal : struct
         {
+            // P2-17 fix: Composite registration has its own path (CompositeSignalHandler);
+            // passing it here would silently register a normal sequential-like handler.
+            if (mode == ExecutionMode.Composite)
+            {
+                throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindCommand. Use the [CompositeSignalHandler] attribute (or SignalBus.RegisterCompositeCommand) to register composite triggers.", nameof(mode));
+            }
+
             // Validate that the command implements either ICommand or ICommand<TSignal>
             bool isGeneric = typeof(ICommand<TSignal>).IsAssignableFrom(typeof(TCommand));
             bool isNormal = typeof(ICommand).IsAssignableFrom(typeof(TCommand));
@@ -107,11 +114,17 @@ namespace Nexus.Core
         /// </summary>
         /// <typeparam name="TSignal">The signal struct type that triggers the command.</typeparam>
         /// <typeparam name="TCommand">The command class.</typeparam>
-        /// <param name="mode">Execution mode (Sequential, Concurrent, Exclusive, CompositeTrigger).</param>
-        /// <param name="priority">Execution priority; lower values run first.</param>
+        /// <param name="mode">Execution mode (Sequential, Concurrent, or Exclusive). Composite triggers must be registered via [CompositeSignalHandler] instead.</param>
+        /// <param name="priority">Execution priority; higher values run first.</param>
         public void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class where TSignal : struct
         {
+            // P2-17 fix: Composite registration has its own path (CompositeSignalHandler).
+            if (mode == ExecutionMode.Composite)
+            {
+                throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindAsyncCommand. Use the [CompositeSignalHandler] attribute (or SignalBus.RegisterCompositeCommand) to register composite triggers.", nameof(mode));
+            }
+
             // Validate that the command implements either IAsyncCommand or IAsyncCommand<TSignal>
             bool isGeneric = typeof(IAsyncCommand<TSignal>).IsAssignableFrom(typeof(TCommand));
             bool isNormal = typeof(IAsyncCommand).IsAssignableFrom(typeof(TCommand));

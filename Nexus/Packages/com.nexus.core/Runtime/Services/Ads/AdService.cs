@@ -91,7 +91,7 @@ namespace Nexus.Core.Services
             {
                 if (!IsInterstitialAvailable(placement))
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[AdService] Interstitial not ready or on cooldown for placement: {placement}");
+                    NexusRuntime.Logger?.LogWarning($"[AdService] Interstitial not ready or on cooldown for placement: {placement}");
                     onComplete?.Invoke();
                     return;
                 }
@@ -105,7 +105,7 @@ namespace Nexus.Core.Services
             }
             else
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[AdService Mock] Showing Interstitial for: {placement}");
+                NexusRuntime.Logger?.Log($"[AdService Mock] Showing Interstitial for: {placement}");
                 onComplete?.Invoke();
             }
         }
@@ -118,7 +118,7 @@ namespace Nexus.Core.Services
             }
             else
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[AdService Mock] Showing Rewarded for: {placement}");
+                NexusRuntime.Logger?.Log($"[AdService Mock] Showing Rewarded for: {placement}");
                 onComplete?.Invoke(true);
             }
         }

@@ -2,7 +2,7 @@
 
 > **Gap P2-D.** Nexus is authored and maintained primarily by a single developer.
 > For multi-game studio use, **fork and own the package** rather than consuming the
-> upstream `Pixel-Flow-Clone` / `GameContainer` repo directly.
+> upstream `GameContainer` repo (`gitlab.com/beehivegame/GameContainer`) directly.
 
 ## Why fork
 

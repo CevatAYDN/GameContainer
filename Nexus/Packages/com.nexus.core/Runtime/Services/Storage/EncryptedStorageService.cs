@@ -20,7 +20,11 @@ namespace Nexus.Core.Services
 
         private readonly byte[] _encryptionKey;
         private readonly byte[] _hmacKey;
+        // Legacy AES-128 keys, retained ONLY for one-time save-data migration (P0-6).
+        private readonly byte[] _legacyEncryptionKey;
+        private readonly byte[] _legacyHmacKey;
         private readonly string _storageFolderPath;
+        private readonly Dictionary<string, string> _filePathCache = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
         private readonly HashSet<string> _dirtyKeys = new(StringComparer.Ordinal);
@@ -84,10 +88,21 @@ namespace Nexus.Core.Services
             // Derive actual encryption & HMAC keys from the secure random seed
             byte[] finalHash = sha256.ComputeHash(seedBytes);
 
-            _encryptionKey = new byte[16]; // AES-128 key
-            _hmacKey = new byte[16];
-            Array.Copy(finalHash, 0, _encryptionKey, 0, 16);
-            Array.Copy(finalHash, 16, _hmacKey, 0, 16);
+            // P0-6 fix: use the full 32-byte hash as a genuine AES-256 key and derive an
+            // independent HMAC key from the seed plus an "hmac" salt.
+            _encryptionKey = finalHash; // 32 bytes = AES-256
+            byte[] hmacSalt = Encoding.UTF8.GetBytes("hmac");
+            byte[] hmacSeed = new byte[seedBytes.Length + hmacSalt.Length];
+            Buffer.BlockCopy(seedBytes, 0, hmacSeed, 0, seedBytes.Length);
+            Buffer.BlockCopy(hmacSalt, 0, hmacSeed, seedBytes.Length, hmacSalt.Length);
+            _hmacKey = sha256.ComputeHash(hmacSeed);
+
+            // Legacy AES-128 key split kept for reading pre-migration save files;
+            // successfully decrypted legacy payloads are re-encrypted with AES-256.
+            _legacyEncryptionKey = new byte[16];
+            _legacyHmacKey = new byte[16];
+            Array.Copy(finalHash, 0, _legacyEncryptionKey, 0, 16);
+            Array.Copy(finalHash, 16, _legacyHmacKey, 0, 16);
 
             _storageFolderPath = Path.Combine(Application.persistentDataPath, "SecureData");
             if (!Directory.Exists(_storageFolderPath))
@@ -103,7 +118,19 @@ namespace Nexus.Core.Services
         {
             if (!hasFocus)
             {
-                Save();
+                // P2-14 fix: never block the main thread with bulk file IO on focus loss.
+                // Save() is fully guarded by _lock, so it is safe to run on a worker thread.
+                System.Threading.Tasks.Task.Run(() =>
+                {
+                    try
+                    {
+                        Save();
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Background save on focus loss failed: {ex.Message}");
+                    }
+                });
             }
         }
 
@@ -202,7 +229,16 @@ namespace Nexus.Core.Services
                     byte[] computedHmac = ComputeHmac(cipherText, iv);
                     if (!CompareHashes(hmac, computedHmac))
                     {
-                        NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
+                        // P0-6 migration: attempt legacy AES-128 format; if valid,
+                        // re-encrypt with the new AES-256 keys and continue.
+                        if (TryLegacyDecrypt(iv, hmac, cipherText, out string legacyVal))
+                        {
+                            _cache[key] = legacyVal;
+                            SaveKeyToDisk(key, legacyVal);
+                            return legacyVal;
+                        }
+
+                        NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
                         _cache[key] = null;
                         return defaultValue;
                     }
@@ -219,7 +255,7 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
+                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
                     _cache[key] = null;
                     return defaultValue;
                 }
@@ -275,7 +311,34 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Save write failed for key '{key}': {ex.Message}");
+                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save write failed for key '{key}': {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// P0-6 migration helper: verifies and decrypts a payload written by the old
+        /// AES-128 format (16-byte key split of the seed hash). Returns false if the
+        /// payload does not match the legacy format.
+        /// </summary>
+        private bool TryLegacyDecrypt(byte[] iv, byte[] hmac, byte[] cipherText, out string value)
+        {
+            value = null;
+            try
+            {
+                byte[] legacyHmac = ComputeHmacWithKey(cipherText, iv, _legacyHmacKey);
+                if (!CompareHashes(hmac, legacyHmac)) return false;
+
+                using var aes = Aes.Create();
+                aes.Key = _legacyEncryptionKey;
+                aes.IV = iv;
+                using var decryptor = aes.CreateDecryptor();
+                byte[] plainBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
+                value = Encoding.UTF8.GetString(plainBytes);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -311,7 +374,7 @@ namespace Nexus.Core.Services
                     }
                     catch (Exception ex)
                     {
-                        NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
+                        NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
                     }
                 }
             }
@@ -336,15 +399,25 @@ namespace Nexus.Core.Services
 
         private string GetFilePath(string key)
         {
+            // P2-14 fix: cache computed file paths — avoids MD5.Create() allocation churn per call.
+            if (_filePathCache.TryGetValue(key, out string cached)) return cached;
+
             using var md5 = MD5.Create();
             byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes(key));
             string hashedFileName = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant() + ".dat";
-            return Path.Combine(_storageFolderPath, hashedFileName);
+            string path = Path.Combine(_storageFolderPath, hashedFileName);
+            _filePathCache[key] = path;
+            return path;
         }
 
         private byte[] ComputeHmac(byte[] data, byte[] iv)
         {
-            using var hmac = new HMACSHA256(_hmacKey);
+            return ComputeHmacWithKey(data, iv, _hmacKey);
+        }
+
+        private static byte[] ComputeHmacWithKey(byte[] data, byte[] iv, byte[] key)
+        {
+            using var hmac = new HMACSHA256(key);
             hmac.TransformBlock(iv, 0, iv.Length, null, 0);
             hmac.TransformFinalBlock(data, 0, data.Length);
             byte[] fullHash = hmac.Hash;

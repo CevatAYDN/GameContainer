@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -120,13 +121,20 @@ namespace Nexus.Core
         private readonly List<CompositeTriggerState> _allCompositeTriggers = new();
         private readonly object _handlerReadLock = new();
 
+        // P0-3 fix: snapshots are cached behind a dirty flag so repeated property access
+        // does not allocate a new Dictionary each time.
+        private Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersSnapshot;
+        private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _registeredHandlersSnapshot;
+        private bool _handlersSnapshotDirty = true;
+
         public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers
         {
             get
             {
                 lock (_handlerReadLock)
                 {
-                    return new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers);
+                    RebuildHandlerSnapshotsIfDirty();
+                    return _commandHandlersSnapshot;
                 }
             }
         }
@@ -141,14 +149,34 @@ namespace Nexus.Core
             {
                 lock (_handlerReadLock)
                 {
-                    var dict = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>(_commandHandlers.Count);
-                    foreach (var kvp in _commandHandlers)
-                    {
-                        dict[kvp.Key] = kvp.Value;
-                    }
-                    return dict;
+                    RebuildHandlerSnapshotsIfDirty();
+                    return _registeredHandlersSnapshot;
                 }
             }
+        }
+
+        // Must be called while holding _handlerReadLock.
+        private void RebuildHandlerSnapshotsIfDirty()
+        {
+            if (!_handlersSnapshotDirty && _commandHandlersSnapshot != null) return;
+            _handlersSnapshotDirty = false;
+
+            _commandHandlersSnapshot = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers);
+            var dict = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>(_commandHandlers.Count);
+            foreach (var kvp in _commandHandlers)
+            {
+                dict[kvp.Key] = kvp.Value;
+            }
+            _registeredHandlersSnapshot = dict;
+        }
+
+        /// <summary>
+        /// P0-3 fix: cached per-signal-type trace label so the trace ring buffer
+        /// stays allocation-free on the hot path.
+        /// </summary>
+        private static class SignalTraceLabel<T> where T : struct
+        {
+            public static readonly string Fire = "▶ " + typeof(T).Name;
         }
 
         private readonly Dictionary<Type, SubscriptionNode> _subscriptions = new();
@@ -159,6 +187,12 @@ namespace Nexus.Core
         // Precomputed cache: does this signal type have at least one async handler?
         // Used by FireInternal to decide whether to delegate to the async path.
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
+
+        // P1-2 fix: volatile read-only snapshots (Context._pluginsReadOnlyCopy pattern).
+        // Rebuilt under the corresponding lock on mutation; read lock-free on the hot path.
+        private volatile Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersReadCopy = new();
+        private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
+        private volatile Dictionary<Type, SubscriptionNode> _subscriptionsReadCopy = new();
         
         private static readonly System.Threading.AsyncLocal<int> s_stackDepth = new();
         private const int MaxStackDepth = 10;
@@ -198,7 +232,7 @@ namespace Nexus.Core
             _context = context;
         }
 
-        private static bool ImplementsGenericInterface(Type type, Type genericInterface)
+        internal static bool ImplementsGenericInterface(Type type, Type genericInterface)
         {
             foreach (var iface in type.GetInterfaces())
             {
@@ -229,57 +263,71 @@ namespace Nexus.Core
                 throw new InvalidOperationException($"Command type {commandType.Name} implements IAsyncCommand but is being registered as sync. It must be registered as async (isAsync: true).");
             }
 
-            if (!_commandHandlers.TryGetValue(signalType, out var list))
-            {
-                list = new List<CommandHandlerInfo>();
-                _commandHandlers[signalType] = list;
-            }
+            // P0-5 fix: honor [CommandTimeout] at registration time.
+            var timeoutAttr = commandType.GetCustomAttribute<CommandTimeoutAttribute>();
+            int timeoutMs = timeoutAttr != null ? timeoutAttr.Milliseconds : 0;
 
-            // Verify Mixed-Mode restriction
-            if (list.Count > 0 && list[0].Mode != mode)
+            // P1-2 fix: all handler-table mutations happen under _handlerReadLock,
+            // and lock-free readers get rebuilt volatile snapshots.
+            lock (_handlerReadLock)
             {
-                throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {list[0].Mode}, cannot add handler with mode {mode}.");
-            }
-
-            // Verify Exclusive mode restriction
-            if (mode == ExecutionMode.Exclusive && list.Count > 0)
-            {
-                throw new InvalidOperationException($"Exclusive execution mode violation: Signal {signalType.Name} already has a handler registered.");
-            }
-
-            // Verify priority uniqueness for Sequential/Exclusive
-            if (mode != ExecutionMode.Concurrent)
-            {
-                foreach (var handler in list)
+                if (!_commandHandlers.TryGetValue(signalType, out var list))
                 {
-                    if (handler.Priority == priority)
+                    list = new List<CommandHandlerInfo>();
+                    _commandHandlers[signalType] = list;
+                }
+
+                // Verify Mixed-Mode restriction
+                if (list.Count > 0 && list[0].Mode != mode)
+                {
+                    throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {list[0].Mode}, cannot add handler with mode {mode}.");
+                }
+
+                // Verify Exclusive mode restriction
+                if (mode == ExecutionMode.Exclusive && list.Count > 0)
+                {
+                    throw new InvalidOperationException($"Exclusive execution mode violation: Signal {signalType.Name} already has a handler registered.");
+                }
+
+                // Verify priority uniqueness for Sequential/Exclusive
+                if (mode != ExecutionMode.Concurrent)
+                {
+                    foreach (var handler in list)
                     {
-                        // Priority tie break fallback check or Build/Validation error
-                        throw new InvalidOperationException($"Duplicate priority {priority} for signal {signalType.Name}.");
+                        if (handler.Priority == priority)
+                        {
+                            // Priority tie break fallback check or Build/Validation error
+                            throw new InvalidOperationException($"Duplicate priority {priority} for signal {signalType.Name}.");
+                        }
                     }
                 }
+
+                list.Add(new CommandHandlerInfo(commandType, mode, priority, isAsync, timeoutMs));
+                _handlersSnapshotDirty = true;
+
+                // Update async handler cache — if any handler is async, mark the signal type
+                if (isAsync)
+                {
+                    _hasAsyncHandler[signalType] = true;
+                }
+                else if (!_hasAsyncHandler.ContainsKey(signalType))
+                {
+                    _hasAsyncHandler[signalType] = false;
+                }
+
+                // Sort by priority descending (higher priority runs first)
+                if (mode != ExecutionMode.Concurrent)
+                {
+                    list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
+                }
+
+                // Rebuild lock-free read snapshots (volatile publish)
+                _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers);
+                _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>(_hasAsyncHandler);
             }
 
-            list.Add(new CommandHandlerInfo(commandType, mode, priority, isAsync));
-            
             // Bind command type in DI so CommandPoolManager can resolve it
             _container.Bind(commandType, isSingleton: false);
-
-            // Update async handler cache — if any handler is async, mark the signal type
-            if (isAsync)
-            {
-                _hasAsyncHandler[signalType] = true;
-            }
-            else if (!_hasAsyncHandler.ContainsKey(signalType))
-            {
-                _hasAsyncHandler[signalType] = false;
-            }
-
-            // Sort by priority descending
-            if (mode != ExecutionMode.Concurrent)
-            {
-                list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
-            }
         }
 
         public void RegisterCompositeCommand(Type[] signalTypes, Type commandType, bool oneShot, int priority, bool isAsync)
@@ -289,20 +337,35 @@ namespace Nexus.Core
             if (signalTypes.Length > 64 || signalTypes.Length == 0)
                 throw new ArgumentException($"Composite command requires between 1 and 64 signal types. Received {signalTypes.Length}.", nameof(signalTypes));
 
-            var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority);
-            _allCompositeTriggers.Add(state);
-
-            foreach (var sigType in signalTypes)
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // P1-14 fix: composite triggers cannot inject signal payloads — warn early
+            // if the user implemented a generic command interface expecting one.
+            if (ImplementsGenericInterface(commandType, typeof(ICommand<>)) || ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>)))
             {
-                if (!_compositeTriggersBySignal.TryGetValue(sigType, out var list))
-                {
-                    list = new List<CompositeTriggerState>();
-                    _compositeTriggersBySignal[sigType] = list;
-                }
-                list.Add(state);
-                list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' implements a generic command interface, but composite triggers do not support signal payload injection. Implement non-generic ICommand/IAsyncCommand instead.");
             }
-            
+#endif
+
+            var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority);
+
+            // P1-2 fix: mutate composite tables under _compositeLock (same lock the
+            // dispatch path uses) so registration cannot race ProcessCompositeTriggers.
+            lock (_compositeLock)
+            {
+                _allCompositeTriggers.Add(state);
+
+                foreach (var sigType in signalTypes)
+                {
+                    if (!_compositeTriggersBySignal.TryGetValue(sigType, out var list))
+                    {
+                        list = new List<CompositeTriggerState>();
+                        _compositeTriggersBySignal[sigType] = list;
+                    }
+                    list.Add(state);
+                    list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
+                }
+            }
+
             _container.Bind(commandType, isSingleton: false);
         }
 
@@ -375,6 +438,7 @@ namespace Nexus.Core
                 var node = SubscriptionNodePool.Rent(handler, sub, isAsync: false);
                 node.Next = head;
                 _subscriptions[type] = node;
+                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
             }
             return sub;
         }
@@ -391,6 +455,7 @@ namespace Nexus.Core
                 var node = SubscriptionNodePool.Rent(handler, sub, isAsync: true);
                 node.Next = head;
                 _subscriptions[type] = node;
+                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
             }
             return sub;
         }
@@ -415,6 +480,9 @@ namespace Nexus.Core
             }
         }
 
+        // P0-3 fix: reusable key buffer so SweepDeadNodes does not allocate per sweep.
+        private readonly List<Type> _sweepKeysCache = new();
+
         private void SweepDeadNodes()
         {
             lock (_subLock)
@@ -422,7 +490,12 @@ namespace Nexus.Core
                 if (!_pendingCleanups) return;
                 _pendingCleanups = false;
 
-                var keys = new List<Type>(_subscriptions.Keys);
+                var keys = _sweepKeysCache;
+                keys.Clear();
+                foreach (var key in _subscriptions.Keys)
+                {
+                    keys.Add(key);
+                }
                 foreach (var type in keys)
                 {
                     if (_subscriptions.TryGetValue(type, out var current))
@@ -456,6 +529,8 @@ namespace Nexus.Core
                         }
                     }
                 }
+
+                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
             }
         }
 
@@ -464,13 +539,14 @@ namespace Nexus.Core
             var type = typeof(T);
 
             NexusRuntime.Metrics.RecordSignalDispatched();
-            NexusRuntime.Metrics.RecordTrace($"▶ {typeof(T).Name}");
+            NexusRuntime.Metrics.RecordTrace(SignalTraceLabel<T>.Fire);
 
             // Plan §1.4.1 — If this signal has ANY async handlers registered,
             // delegate to the async path to preserve Sequential ordering guarantees.
             // The async path properly awaits each handler in priority order.
             // Sync-only signals take the fast path below with zero async overhead.
-            bool hasAsync = _hasAsyncHandler.TryGetValue(type, out var asyncFlag) && asyncFlag;
+            // P1-2 fix: reads go through volatile snapshots (no unsynchronized Dictionary access).
+            bool hasAsync = _hasAsyncHandlerReadCopy.TryGetValue(type, out var asyncFlag) && asyncFlag;
             bool hasAsyncSubscriptions = HasAsyncSubscriptions(type);
 
             if (hasAsync || hasAsyncSubscriptions)
@@ -482,7 +558,7 @@ namespace Nexus.Core
 
             // === FAST PATH: All handlers are synchronous ===
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (!_subscriptions.ContainsKey(type) && !_commandHandlers.ContainsKey(type))
+            if (!_subscriptionsReadCopy.ContainsKey(type) && !_commandHandlersReadCopy.ContainsKey(type))
             {
                 NexusRuntime.Logger?.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
             }
@@ -490,7 +566,10 @@ namespace Nexus.Core
             s_stackDepth.Value++;
             if (s_stackDepth.Value > MaxStackDepth)
             {
-                s_stackDepth.Value = 0;
+                // P0-7 fix: never reset the counter to 0 (outer frames still decrement in
+                // their finally blocks, which would drift the counter negative). This branch
+                // runs before this frame's try/finally, so undo only this frame's increment.
+                s_stackDepth.Value--;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
 #else
@@ -551,7 +630,7 @@ namespace Nexus.Core
                 // This ensures mediators/views always read post-command state.
 
                 // Phase 1: Process commands (mutate state)
-                if (_commandHandlers.TryGetValue(type, out var handlers))
+                if (_commandHandlersReadCopy.TryGetValue(type, out var handlers))
                 {
                     foreach (var handler in handlers)
                     {
@@ -560,7 +639,7 @@ namespace Nexus.Core
                 }
 
                 // Phase 2: Process subscriptions (observe final state)
-                if (_subscriptions.TryGetValue(type, out var node))
+                if (_subscriptionsReadCopy.TryGetValue(type, out var node))
                 {
                     var current = node;
                     while (current != null)
@@ -605,20 +684,23 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Bridge method: sync Fire() with async handlers. Uses async void (Unity-compatible)
-        /// to properly await all handlers in order. Exceptions are caught and logged
-        /// via the standard recovery pipeline.
+        /// P0-4 fix: async-safe dispatch for recovery signals. If the failed-command
+        /// signal has async handlers/subscriptions, route it through the async path
+        /// (fire-and-forget with error capture) instead of throwing
+        /// <see cref="NexusSyncAsyncMismatchException"/> during error handling.
         /// </summary>
-        private async ValueTask FireInternalAsyncFromSync<T>(T signal, bool isCrossContextSource) where T : struct
+        private void FireFailedSignalSafe(CommandFailedSignal failedSignal)
         {
-            try
+            bool hasAsync = (_hasAsyncHandlerReadCopy.TryGetValue(typeof(CommandFailedSignal), out var flag) && flag)
+                || HasAsyncSubscriptions(typeof(CommandFailedSignal));
+            if (hasAsync)
             {
-                await FireInternalAsync(signal, isCrossContextSource);
+                SafeAsyncRunner.Run(() => FireInternalAsync(failedSignal, isCrossContextSource: false),
+                    "CommandFailedSignal async dispatch failed");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            else
             {
-                OnUnhandledException?.Invoke(ex, $"Async bridge failed for signal '{typeof(T).FullName}'");
-                NexusRuntime.Logger?.LogError($"[Nexus] Async bridge failed for signal '{typeof(T).FullName}': {ex.Message}\n{ex.StackTrace}");
+                Fire(failedSignal);
             }
         }
 
@@ -627,7 +709,7 @@ namespace Nexus.Core
         /// </summary>
         private bool HasAsyncSubscriptions(Type signalType)
         {
-            if (!_subscriptions.TryGetValue(signalType, out var node))
+            if (!_subscriptionsReadCopy.TryGetValue(signalType, out var node))
                 return false;
 
             var current = node;
@@ -654,7 +736,10 @@ namespace Nexus.Core
             var commandCt = ct;
             if (s_stackDepth.Value > MaxStackDepth)
             {
-                s_stackDepth.Value = 0;
+                // P0-7 fix: never reset the counter to 0 (outer frames still decrement in
+                // their finally blocks, which would drift the counter negative). This branch
+                // runs before this frame's try/finally, so undo only this frame's increment.
+                s_stackDepth.Value--;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
 #else
@@ -715,7 +800,7 @@ namespace Nexus.Core
                 // then subscriptions execute AFTER (they observe final state).
 
                 // Phase 1: Process commands (mutate state)
-                if (_commandHandlers.TryGetValue(type, out var handlers))
+                if (_commandHandlersReadCopy.TryGetValue(type, out var handlers))
                 {
                     if (handlers.Count > 0 && handlers[0].Mode == ExecutionMode.Concurrent)
                     {
@@ -757,7 +842,7 @@ namespace Nexus.Core
                 }
 
                 // Phase 2: Process subscriptions (observe final state)
-                if (_subscriptions.TryGetValue(type, out var node))
+                if (_subscriptionsReadCopy.TryGetValue(type, out var node))
                 {
                     var current = node;
                     while (current != null)
@@ -814,7 +899,7 @@ namespace Nexus.Core
             bool shouldRun = true;
 
             NexusRuntime.Metrics.RecordCommandExecuted();
-            NexusRuntime.Metrics.RecordTrace($"  └ {handler.CommandType.Name}");
+            NexusRuntime.Metrics.RecordTrace(handler.TraceLabel);
 
             while (shouldRun)
             {
@@ -830,7 +915,15 @@ namespace Nexus.Core
                     
                     if (command is ICommand<TSignal> genericSyncCmd)
                     {
-                        ExecuteWithDecorators(genericSyncCmd, () => genericSyncCmd.Execute(signal));
+                        // P0-3 fix: bypass closure allocation when no decorators are registered.
+                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                        {
+                            ExecuteWithDecorators(genericSyncCmd, () => genericSyncCmd.Execute(signal));
+                        }
+                        else
+                        {
+                            genericSyncCmd.Execute(signal);
+                        }
                     }
                     else
                     {
@@ -960,7 +1053,18 @@ namespace Nexus.Core
  
                     if (command is IAsyncCommand<TSignal> genericAsyncCmd)
                     {
-                        await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, ct));
+                        // P0-5 fix: apply [CommandTimeout] via a linked, self-cancelling token.
+                        if (handler.TimeoutMs > 0)
+                        {
+                            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                            timeoutCts.CancelAfter(handler.TimeoutMs);
+                            var timeoutToken = timeoutCts.Token;
+                            await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, timeoutToken));
+                        }
+                        else
+                        {
+                            await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, ct));
+                        }
                     }
                     else if (command is ICommand<TSignal> genericSyncCmd)
                     {
@@ -1042,7 +1146,18 @@ namespace Nexus.Core
 
                     if (command is IAsyncCommand asyncCmd)
                     {
-                        await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                        // P0-5 fix: apply [CommandTimeout] via a linked, self-cancelling token.
+                        if (handler.TimeoutMs > 0)
+                        {
+                            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                            timeoutCts.CancelAfter(handler.TimeoutMs);
+                            var timeoutToken = timeoutCts.Token;
+                            await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(timeoutToken));
+                        }
+                        else
+                        {
+                            await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                        }
                     }
                     else if (command is ICommand syncCmd)
                     {
@@ -1152,11 +1267,15 @@ namespace Nexus.Core
 
         private void ProcessCompositeTriggers(Type signalType)
         {
-            if (!_compositeTriggersBySignal.TryGetValue(signalType, out var triggers))
-                return;
+            // P1-14 fix: collect due triggers under _compositeLock, then execute them
+            // OUTSIDE the lock so user command code never runs while holding it.
+            List<CompositeTriggerState> dueTriggers = null;
 
             lock (_compositeLock)
             {
+                if (!_compositeTriggersBySignal.TryGetValue(signalType, out var triggers))
+                    return;
+
                 foreach (var trigger in triggers)
                 {
                     if (trigger.IsCompleted) continue;
@@ -1165,10 +1284,11 @@ namespace Nexus.Core
                     if (index >= 0)
                     {
                         trigger.CurrentMask |= (1UL << index);
-                        
+
                         if (trigger.CurrentMask == trigger.TargetMask)
                         {
-                            ExecuteCompositeCommand(trigger);
+                            dueTriggers ??= new List<CompositeTriggerState>();
+                            dueTriggers.Add(trigger);
 
                             if (trigger.OneShot)
                             {
@@ -1180,6 +1300,14 @@ namespace Nexus.Core
                             }
                         }
                     }
+                }
+            }
+
+            if (dueTriggers != null)
+            {
+                for (int i = 0; i < dueTriggers.Count; i++)
+                {
+                    ExecuteCompositeCommand(dueTriggers[i]);
                 }
             }
         }
@@ -1197,9 +1325,16 @@ namespace Nexus.Core
 #endif
                 try
                 {
+                    // P1-14 fix: re-inject on retry so the command state is refreshed,
+                    // and run through the decorator pipeline like normal commands.
+                    if (retryCount > 0)
+                    {
+                        _container.Inject(command);
+                    }
+
                     if (command is ICommand syncCmd)
                     {
-                        syncCmd.Execute();
+                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
                     }
                     else if (command is IAsyncCommand asyncCmd)
                     {
@@ -1208,7 +1343,7 @@ namespace Nexus.Core
                         inFlightIncremented = true;
                         try
                         {
-                            await asyncCmd.ExecuteAsync(ct);
+                            await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
                         }
                         finally
                         {
@@ -1277,7 +1412,8 @@ namespace Nexus.Core
 
                     if (command is ICommand syncCmd)
                     {
-                        syncCmd.Execute();
+                        // P1-14 fix: composite commands run through the decorator pipeline.
+                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
                     }
                     else if (command is IAsyncCommand asyncCmd)
                     {
@@ -1349,12 +1485,34 @@ namespace Nexus.Core
             FireInternal(signal, isCrossContextSource: true);
         }
 
+        /// <summary>
+        /// P0-4 fix: async-aware dispatch used by queued/replayed signal paths
+        /// (<see cref="HybridQueue"/> drains, network replay). If the signal has async
+        /// handlers or subscriptions, it is routed through the async path fire-and-forget
+        /// (with error capture) instead of throwing <see cref="NexusSyncAsyncMismatchException"/>.
+        /// </summary>
+        internal void FireQueued<T>(T signal) where T : struct
+        {
+            bool hasAsync = (_hasAsyncHandlerReadCopy.TryGetValue(typeof(T), out var flag) && flag)
+                || HasAsyncSubscriptions(typeof(T));
+            if (hasAsync)
+            {
+                SafeAsyncRunner.Run(() => FireInternalAsync(signal, isCrossContextSource: false),
+                    $"Queued async dispatch failed for signal '{typeof(T).FullName}'");
+            }
+            else
+            {
+                FireInternal(signal, isCrossContextSource: false);
+            }
+        }
+
         private RecoveryAction HandleCommandErrorWithDecision(Exception ex, Type commandType, object signal, ref int retryCount)
         {
             if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
                 (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
             {
-                throw ex;
+                // P1-3 fix: preserve the original stack trace when rethrowing.
+                ExceptionDispatchInfo.Capture(ex).Throw();
             }
 
             var failedSignal = new CommandFailedSignal(ex, commandType, signal);
@@ -1377,7 +1535,7 @@ namespace Nexus.Core
                     
                     if (decision.Action == RecoveryAction.Skip)
                     {
-                        Fire(failedSignal);
+                        FireFailedSignalSafe(failedSignal);
                         return RecoveryAction.Skip;
                     }
                     if (decision.Action == RecoveryAction.Abort)
@@ -1408,7 +1566,7 @@ namespace Nexus.Core
                 }
             }
 
-            Fire(failedSignal);
+            FireFailedSignalSafe(failedSignal);
             return RecoveryAction.Skip;
         }
 
@@ -1417,7 +1575,8 @@ namespace Nexus.Core
             if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
                 (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
             {
-                throw ex;
+                // P1-3 fix: preserve the original stack trace when rethrowing.
+                ExceptionDispatchInfo.Capture(ex).Throw();
             }
 
             var failedSignal = new CommandFailedSignal(ex, commandType, signal);
@@ -1440,7 +1599,9 @@ namespace Nexus.Core
                     
                     if (decision.Action == RecoveryAction.Skip)
                     {
-                        Fire(failedSignal);
+                        // P0-4 fix: async-safe dispatch — awaits the full handler chain
+                        // and captures errors instead of throwing a sync/async mismatch.
+                        await FireAsyncAndForget(failedSignal);
                         return RecoveryAction.Skip;
                     }
                     if (decision.Action == RecoveryAction.Abort)
@@ -1451,7 +1612,9 @@ namespace Nexus.Core
                     {
                         if (decision.FallbackCommandType != null)
                         {
-                            var isAsync = typeof(IAsyncCommand).IsAssignableFrom(decision.FallbackCommandType);
+                            // E-4/P0-1-aligned: recognize generic-only async fallback commands too.
+                            var isAsync = typeof(IAsyncCommand).IsAssignableFrom(decision.FallbackCommandType)
+                                || ImplementsGenericInterface(decision.FallbackCommandType, typeof(IAsyncCommand<>));
                             if (isAsync)
                             {
                                 await ExecuteCommandAsync(new CommandHandlerInfo(decision.FallbackCommandType, ExecutionMode.Sequential, 0, true), signal, ct);
@@ -1479,7 +1642,8 @@ namespace Nexus.Core
                 }
             }
 
-            Fire(failedSignal);
+            // P0-4 fix: async-safe dispatch of the failure signal.
+            await FireAsyncAndForget(failedSignal);
             return RecoveryAction.Skip;
         }
 
@@ -1548,6 +1712,7 @@ namespace Nexus.Core
                     }
                 }
                 _subscriptions.Clear();
+                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>();
             }
 
             if (_inFlightAsyncCommands > 0)
@@ -1555,9 +1720,20 @@ namespace Nexus.Core
                 NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_inFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
             }
 
-            _commandHandlers.Clear();
-            _compositeTriggersBySignal.Clear();
-            _allCompositeTriggers.Clear();
+            lock (_handlerReadLock)
+            {
+                _commandHandlers.Clear();
+                _hasAsyncHandler.Clear();
+                _handlersSnapshotDirty = true;
+                _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>();
+                _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>();
+            }
+
+            lock (_compositeLock)
+            {
+                _compositeTriggersBySignal.Clear();
+                _allCompositeTriggers.Clear();
+            }
         }
 
         internal static void ClearStaticCaches()

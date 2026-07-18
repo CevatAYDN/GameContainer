@@ -1,9 +1,0 @@
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\bin\Debug\com.nexus.core.deps.json
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\bin\Debug\com.nexus.core.dll
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\bin\Debug\com.nexus.core.pdb
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\obj\com.nexus.core\com.nexus.core.csproj.AssemblyReference.cache
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\obj\com.nexus.core\com.nexus.core.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\obj\com.nexus.core\com.nexus.core.csproj.CoreCompileInputs.cache
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\obj\com.nexus.core\com.nexus.core.sourcelink.json
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\obj\com.nexus.core\com.nexus.core.dll
-C:\Users\wwwla\Documents\Github\Pixel-Flow-Clone\GameContainer\Nexus\Packages\com.nexus.core\.Temp\obj\com.nexus.core\com.nexus.core.pdb

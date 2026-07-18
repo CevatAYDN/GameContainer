@@ -57,7 +57,7 @@ namespace Nexus.Core.Services
             }
             catch (System.Exception ex)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[HapticService] Failed to initialize Android Vibrator: {ex.Message}");
+                NexusRuntime.Logger?.LogWarning($"[HapticService] Failed to initialize Android Vibrator: {ex.Message}");
             }
         }
 #endif

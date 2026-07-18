@@ -137,11 +137,21 @@ namespace Nexus.Core
             var context = new Context(null, data);
             context.Configure();
 
-            if (context.Container.IsRegistered(typeof(IContextLifecycle)))
+            // P1-8 fix: pure contexts run the SAME lifecycle sequence as Root-based
+            // contexts — reactive models and services are initialized before the
+            // lifecycle Init/Start phases, and ALL configured lifecycles are iterated.
+            var ct = context.LifetimeToken;
+            await context.InitializeReactiveModelsAsync(ct);
+            await context.InitializeServicesAsync(ct);
+
+            var lifecycles = context.ConfiguredLifecycles;
+            for (int i = 0; i < lifecycles.Count; i++)
             {
-                var lifecycle = context.Container.Resolve<IContextLifecycle>();
-                await lifecycle.OnInitializeAsync(context.LifetimeToken);
-                await lifecycle.OnStartAsync(context.LifetimeToken);
+                await lifecycles[i].OnInitializeAsync(ct);
+            }
+            for (int i = 0; i < lifecycles.Count; i++)
+            {
+                await lifecycles[i].OnStartAsync(ct);
             }
 
             return context;
@@ -172,6 +182,7 @@ namespace Nexus.Core
             Context.ClearAssemblyScanCache();
             Context.ClearDefaultScanAssembliesCache();
             SignalBus.ClearStaticCaches();
+            QueuedSignalPoolRegistry.ClearAll();
             Root.ClearRegistry();
             CommandPoolStatics.ClearStateLeakWarnings();
             NexusLog.Reset();
@@ -179,8 +190,12 @@ namespace Nexus.Core
 
         public static class Metrics
         {
-            public static long TotalSignalsDispatched;
-            public static long TotalCommandsExecuted;
+            private static long s_totalSignalsDispatched;
+            private static long s_totalCommandsExecuted;
+
+            public static long TotalSignalsDispatched => System.Threading.Interlocked.Read(ref s_totalSignalsDispatched);
+            public static long TotalCommandsExecuted => System.Threading.Interlocked.Read(ref s_totalCommandsExecuted);
+
             public static int ActiveContextCount => s_activeContextCount;
 
             // Rate fields are written by the runtime (game thread, via SignalBus)
@@ -201,12 +216,12 @@ namespace Nexus.Core
 
             internal static void RecordSignalDispatched()
             {
-                System.Threading.Interlocked.Increment(ref TotalSignalsDispatched);
+                System.Threading.Interlocked.Increment(ref s_totalSignalsDispatched);
             }
 
             internal static void RecordCommandExecuted()
             {
-                System.Threading.Interlocked.Increment(ref TotalCommandsExecuted);
+                System.Threading.Interlocked.Increment(ref s_totalCommandsExecuted);
             }
 
             // Production tracing ring buffer — always active, no NEXUS_DEBUG needed.
@@ -218,8 +233,8 @@ namespace Nexus.Core
 
             internal static void RecordTrace(string entry)
             {
-                int idx = System.Threading.Interlocked.Increment(ref s_traceIndex) % TraceBufferSize;
-                if (idx < 0) idx = 0;
+                int rawIndex = System.Threading.Interlocked.Increment(ref s_traceIndex);
+                int idx = ((rawIndex % TraceBufferSize) + TraceBufferSize) % TraceBufferSize;
                 s_traceBuffer[idx] = entry;
                 if (s_traceCount < TraceBufferSize)
                     System.Threading.Interlocked.Increment(ref s_traceCount);
@@ -230,7 +245,7 @@ namespace Nexus.Core
                 count = s_traceCount;
                 if (count == 0) return System.Array.Empty<string>();
                 var result = new string[count];
-                int start = (s_traceIndex - count + 1 + TraceBufferSize) % TraceBufferSize;
+                int start = ((s_traceIndex - count + 1) % TraceBufferSize + TraceBufferSize) % TraceBufferSize;
                 for (int i = 0; i < count; i++)
                     result[i] = s_traceBuffer[(start + i) % TraceBufferSize] ?? "";
                 return result;
@@ -246,8 +261,8 @@ namespace Nexus.Core
                     float delta = now - _lastSampleTime;
                     if (delta > 0.5f)
                     {
-                        long currSignals = System.Threading.Interlocked.Read(ref TotalSignalsDispatched);
-                        long currCommands = System.Threading.Interlocked.Read(ref TotalCommandsExecuted);
+                        long currSignals = System.Threading.Interlocked.Read(ref s_totalSignalsDispatched);
+                        long currCommands = System.Threading.Interlocked.Read(ref s_totalCommandsExecuted);
                         s_signalsPerSecond = (currSignals - _prevSignals) / delta;
                         s_commandsPerSecond = (currCommands - _prevCommands) / delta;
                         System.Threading.Interlocked.Exchange(ref _prevSignals, currSignals);
@@ -312,6 +327,7 @@ namespace Nexus.Core
                 {
                     s_activeContexts.Remove(context);
                     s_activeContextCount = s_activeContexts.Count;
+                    s_activeContextsCacheDirty = true;
                     removed = true;
                 }
             }

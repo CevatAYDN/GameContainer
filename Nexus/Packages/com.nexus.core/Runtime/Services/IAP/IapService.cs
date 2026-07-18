@@ -64,7 +64,7 @@ namespace Nexus.Core.Services
             {
                 _adapter.Initialize(productList, (success) =>
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[IapService] Store adapter initialized: {success}");
+                    NexusRuntime.Logger?.Log($"[IapService] Store adapter initialized: {success}");
                 });
             }
         }
@@ -95,7 +95,7 @@ namespace Nexus.Core.Services
             // FIX P0.2: previously this threw InvalidOperationException in release builds,
             // crashing the app when the player tapped "Remove Ads" before the platform
             // adapter had finished initialising (cold start, missing network entitlement, etc.).
-            var logger = NexusRuntime.CurrentContext?.Resolve<ILoggerService>();
+            var logger = NexusRuntime.Logger;
             if (logger != null)
             {
                 logger.LogException(new InvalidOperationException(
@@ -135,7 +135,7 @@ namespace Nexus.Core.Services
             }
 
             // FIX P0.2 (mirror): same graceful failure for restore flow.
-            var logger = NexusRuntime.CurrentContext?.Resolve<ILoggerService>();
+            var logger = NexusRuntime.Logger;
             if (logger != null)
             {
                 logger.LogException(new InvalidOperationException(

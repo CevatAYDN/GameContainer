@@ -22,6 +22,13 @@ namespace Nexus.Core
         private ContextBuilder _builder;
         private volatile bool _disposed;
 
+        // P1-9 fix: retain ALL configured lifecycles so Dispose can call OnDispose
+        // on every one of them (DI stores only the last-bound IContextLifecycle).
+        private IContextLifecycle[] _configuredLifecycles = Array.Empty<IContextLifecycle>();
+
+        /// <summary>All lifecycles registered during <see cref="Configure"/>.</summary>
+        internal IReadOnlyList<IContextLifecycle> ConfiguredLifecycles => _configuredLifecycles;
+
         public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
 
         public bool HasInterceptors => System.Threading.Volatile.Read(ref _interceptorsCount) > 0;
@@ -143,6 +150,9 @@ namespace Nexus.Core
                 allLifecycles.Add(lifecycle);
             }
 
+            // Retain the full lifecycle list for Dispose (P1-9) and pure-context init (P1-8)
+            _configuredLifecycles = allLifecycles.ToArray();
+
             // Call OnConfigure for all registered lifecycles
             foreach (var lifecycle in allLifecycles)
             {
@@ -249,25 +259,30 @@ namespace Nexus.Core
                     var data = cachedData[i];
                     var type = data.Type;
 
+                    // P0-1/E-6 fix: also recognize generic-only ICommand<T>/IAsyncCommand<T> implementations
+                    // (previously silently skipped) and log an error for non-command handler types.
+                    bool isSyncCommand = typeof(ICommand).IsAssignableFrom(type)
+                        || Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>));
+                    bool isAsyncCommand = typeof(IAsyncCommand).IsAssignableFrom(type)
+                        || Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
+
                     for (int j = 0; j < data.Handlers.Count; j++)
                     {
                         var attr = data.Handlers[j];
-                        if (typeof(ICommand).IsAssignableFrom(type))
+                        if (isSyncCommand || isAsyncCommand)
                         {
                             Container.Bind(type, isSingleton: false);
-                            SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: false);
+                            SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: isAsyncCommand && !isSyncCommand);
                         }
-                        else if (typeof(IAsyncCommand).IsAssignableFrom(type))
+                        else
                         {
-                            Container.Bind(type, isSingleton: false);
-                            SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: true);
+                            TryResolve<ILoggerService>()?.LogError($"[Nexus] Type '{type.FullName}' has [SignalHandler] but implements no command interface (ICommand, ICommand<T>, IAsyncCommand, or IAsyncCommand<T>). The handler was NOT registered.");
                         }
                     }
 
                     if (data.CompositeHandler != null)
                     {
-                        bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(type);
-                        SignalBusInternal.RegisterCompositeCommand(data.CompositeHandler.SignalTypes, type, data.CompositeHandler.OneShot, data.CompositeHandler.Priority, isAsync);
+                        SignalBusInternal.RegisterCompositeCommand(data.CompositeHandler.SignalTypes, type, data.CompositeHandler.OneShot, data.CompositeHandler.Priority, isAsyncCommand && !isSyncCommand);
                     }
                 }
             }
@@ -470,12 +485,29 @@ namespace Nexus.Core
             _disposed = true;
             _cts.Cancel();
 
-            if (Container.IsRegistered(typeof(IContextLifecycle)))
+            // P1-9 fix: call OnDispose on EVERY configured lifecycle (DI only retains
+            // the last-bound one, so previously all others were silently skipped).
+            if (_configuredLifecycles.Length > 0)
             {
+                for (int i = _configuredLifecycles.Length - 1; i >= 0; i--)
+                {
+                    try
+                    {
+                        _configuredLifecycles[i].OnDispose();
+                    }
+                    catch (Exception ex)
+                    {
+                        TryResolve<ILoggerService>()?.LogException(ex);
+                    }
+                }
+            }
+            else if (Container.IsRegistered(typeof(IContextLifecycle)))
+            {
+                // Backward-compat fallback: DI-registered lifecycle without Configure()
                 try
                 {
-                    var lifecycle = Container.Resolve<IContextLifecycle>();
-                    lifecycle.OnDispose();
+                    var lifecycle = Container.TryResolve<IContextLifecycle>();
+                    lifecycle?.OnDispose();
                 }
                 catch (Exception ex)
                 {
@@ -483,7 +515,9 @@ namespace Nexus.Core
                 }
             }
 
-            // Dispose all registered services in reverse order
+            // Dispose all registered services in reverse order.
+            // P1-10 fix: only dispose services that were actually instantiated — never
+            // lazily construct a service (with ctor side effects) just to dispose it.
             if (_builder != null)
             {
                 var serviceTypes = _builder.ServiceTypes;
@@ -491,8 +525,10 @@ namespace Nexus.Core
                 {
                     try
                     {
-                        var service = Container.Resolve(serviceTypes[i]) as INexusService;
-                        service?.OnDispose();
+                        if (Container.TryGetExistingInstance(serviceTypes[i], out var existing) && existing is INexusService service)
+                        {
+                            service.OnDispose();
+                        }
                     }
                     catch (Exception ex)
                     {

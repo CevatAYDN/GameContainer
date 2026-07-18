@@ -24,7 +24,7 @@ namespace Nexus.Core
     {
         /// <summary>The signal type this command handles.</summary>
         public Type SignalType { get; }
-        /// <summary>Execution priority; lower values run first.</summary>
+        /// <summary>Execution priority; higher values run first.</summary>
         public int Priority { get; set; }
         /// <summary>Execution mode for this handler.</summary>
         public ExecutionMode Mode { get; set; } = ExecutionMode.Sequential;
@@ -46,7 +46,7 @@ namespace Nexus.Core
         public Type[] SignalTypes { get; }
         /// <summary>If true, the composite trigger fires only once and is then removed.</summary>
         public bool OneShot { get; set; } = false;
-        /// <summary>Execution priority; lower values run first.</summary>
+        /// <summary>Execution priority; higher values run first.</summary>
         public int Priority { get; set; } = 0;
 
         /// <summary>Marks a command as a composite trigger requiring multiple signals.</summary>

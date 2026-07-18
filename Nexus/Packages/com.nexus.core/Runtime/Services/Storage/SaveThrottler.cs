@@ -108,7 +108,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[SaveThrottler] Save execution failed: {ex.Message}");
+                NexusRuntime.Logger?.LogWarning($"[SaveThrottler] Save execution failed: {ex.Message}");
             }
         }
     }

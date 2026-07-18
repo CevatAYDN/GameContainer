@@ -25,7 +25,7 @@
 
 1. Open Unity Package Manager (Window > Package Manager)
 2. Click the `+` button and select "Add package from git URL"
-3. Enter: `https://github.com/CevatAYDN/Pixel-Flow-Clone.git?path=/Packages/com.nexus.core`
+3. Enter: `https://gitlab.com/beehivegame/GameContainer.git?path=Nexus/Packages/com.nexus.core`
 
 ### Via Packages/manifest.json
 
@@ -34,7 +34,7 @@ Add to your `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.nexus.core": "https://github.com/CevatAYDN/Pixel-Flow-Clone.git?path=/Packages/com.nexus.core#0.3.0"
+    "com.nexus.core": "https://gitlab.com/beehivegame/GameContainer.git?path=Nexus/Packages/com.nexus.core#0.3.2"
   }
 }
 ```
@@ -383,7 +383,7 @@ context.SignalBus.Fire(new PlayerPositionSignal { ... });
 
 - [Migration Guide](MIGRATION.md) - Version upgrade guide
 - [Troubleshooting Guide](TROUBLESHOOTING.md) - Common issues and solutions
-- [API Reference](https://github.com/CevatAYDN/Pixel-Flow-Clone/blob/main/GameContainer/README.md) - Full API documentation
+- [API Reference](https://gitlab.com/beehivegame/GameContainer/blob/main/README.md) - Full API documentation
 - [Samples](Samples~/Counter/README.md) - Example implementations
 
 ## 🤝 Contributing
@@ -394,7 +394,7 @@ Contributions are welcome! Please follow these guidelines:
 2. Create a feature branch
 3. Add tests for new functionality
 4. Ensure all tests pass
-5. Submit a pull request
+5. Submit a merge request
 
 ## 📄 License
 
@@ -402,9 +402,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/CevatAYDN/Pixel-Flow-Clone/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/CevatAYDN/Pixel-Flow-Clone/discussions)
-- **Documentation**: [Wiki](https://github.com/CevatAYDN/Pixel-Flow-Clone/wiki)
+- **Issues**: [GitLab Issues](https://gitlab.com/beehivegame/GameContainer/-/issues)
+- **Merge Requests**: [GitLab Merge Requests](https://gitlab.com/beehivegame/GameContainer/-/merge_requests)
 
 ## 🔄 Continuous Integration
 

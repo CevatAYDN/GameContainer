@@ -83,7 +83,7 @@ namespace Nexus.Core.Extensions
         {
             if (_model == null)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning("[Nexus] No save model registered. Skipping save.");
+                NexusRuntime.Logger?.LogWarning("[Nexus] No save model registered. Skipping save.");
                 return Task.CompletedTask;
             }
 
@@ -114,7 +114,7 @@ namespace Nexus.Core.Extensions
         {
             if (_model == null)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning("[Nexus] No save model registered. Skipping load.");
+                NexusRuntime.Logger?.LogWarning("[Nexus] No save model registered. Skipping load.");
                 return Task.FromResult(false);
             }
 

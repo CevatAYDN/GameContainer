@@ -53,7 +53,7 @@ namespace Nexus.Core.FSM
         {
             if (!_states.TryGetValue(stateType, out var nextState))
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogError($"[GameStateMachine] State {stateType.Name} is not registered!");
+                NexusRuntime.Logger?.LogError($"[GameStateMachine] State {stateType.Name} is not registered!");
                 return;
             }
 
@@ -76,7 +76,7 @@ namespace Nexus.Core.FSM
                 }
                 catch (Exception ex)
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
+                    NexusRuntime.Logger?.LogException(ex);
                 }
             }
 
@@ -88,7 +88,7 @@ namespace Nexus.Core.FSM
             }
             catch (Exception ex)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex);
+                NexusRuntime.Logger?.LogException(ex);
                 // Fallback to null state to avoid remaining in a corrupted/failed state
                 _currentState = null;
             }

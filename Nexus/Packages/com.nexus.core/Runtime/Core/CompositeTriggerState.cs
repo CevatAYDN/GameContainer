@@ -17,7 +17,7 @@ namespace Nexus.Core
         /// <summary>If true, the trigger fires only once and is then removed.</summary>
         public bool OneShot { get; }
 
-        /// <summary>Execution priority; lower values run first.</summary>
+        /// <summary>Execution priority; higher values run first.</summary>
         public int Priority { get; }
 
         /// <summary>Bitmask of signals received so far.</summary>
@@ -33,7 +33,7 @@ namespace Nexus.Core
         /// <param name="commandType">The composite trigger command type.</param>
         /// <param name="requiredSignals">The signal types required for completion.</param>
         /// <param name="oneShot">If true, fires once and is removed.</param>
-        /// <param name="priority">Execution priority (lower runs first).</param>
+        /// <param name="priority">Execution priority (higher runs first).</param>
         public CompositeTriggerState(Type commandType, Type[] requiredSignals, bool oneShot, int priority)
         {
             CommandType = commandType;

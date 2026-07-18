@@ -135,7 +135,7 @@ namespace Nexus.Core.Services
             for (int i = 0; i < poolables.Length; i++)
             {
                 try { poolables[i].OnDespawned(); }
-                catch (Exception ex) { NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogException(ex); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
             instance.SetActive(false);

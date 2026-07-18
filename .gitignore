@@ -19,8 +19,15 @@
 *.slnx
 *.sln
 
-# But keep the UPM package meta files and actual source csproj
-!Nexus/Packages/com.nexus.core/*.csproj
+# Ignore package-specific IDE/compilation artifacts
+Nexus/Packages/com.nexus.core/Editor/bin/
+Nexus/Packages/com.nexus.core/Editor/bin.meta
+Nexus/Packages/com.nexus.core/Editor/obj/
+Nexus/Packages/com.nexus.core/Editor/obj.meta
+Nexus/Packages/com.nexus.core/.Temp/
+Nexus/Packages/com.nexus.core/.Temp.meta
+Nexus/Packages/com.nexus.core/*.csproj
+Nexus/Packages/com.nexus.core/*.csproj.meta
 
 # Unity generated meta files are tracked (needed for Unity packages)
 # but these generated folders should not have meta commits:

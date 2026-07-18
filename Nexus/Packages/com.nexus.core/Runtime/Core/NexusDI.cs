@@ -184,12 +184,15 @@ namespace Nexus.Core
         [ThreadStatic]
         private static HashSet<Type> s_resolutionStack;
 
-        // Global (cross-thread) set to detect circular singleton construction.
+        // Cross-thread set to detect circular singleton construction.
         // ThreadStatic would not work because two threads could each see their own
         // empty set and both proceed to construct the same singleton.
-        // Protected by s_singletonLock; C# lock is reentrant so recursive Resolve() is safe.
-        private static readonly HashSet<Type> s_constructingSingletons = new();
-        private static readonly object s_singletonLock = new();
+        // P1-5 fix: these are PER-CONTAINER instance fields (previously static/global),
+        // so parallel containers no longer serialize each other's singleton construction
+        // or trigger false circular-dependency detection for the same Type.
+        // Protected by _singletonLock; C# lock is reentrant so recursive Resolve() is safe.
+        private readonly HashSet<Type> _constructingSingletons = new();
+        private readonly object _singletonLock = new();
 
         private class Binding
         {
@@ -246,7 +249,7 @@ namespace Nexus.Core
             };
             if (disposeWithContainer)
             {
-                lock (s_singletonLock)
+                lock (_singletonLock)
                 {
                     _resolvedSingletons.Add(instance);
                 }
@@ -317,12 +320,12 @@ namespace Nexus.Core
                     if (binding.IsSingleton)
                     {
                         object instance = null;
-                        lock (s_singletonLock)
+                        lock (_singletonLock)
                         {
                             if (binding.Instance != null)
                                 return binding.Instance;
 
-                            if (!s_constructingSingletons.Add(type))
+                            if (!_constructingSingletons.Add(type))
                             {
                                 throw new InvalidOperationException($"Circular dependency detected while resolving singleton {type.FullName}.");
                             }
@@ -336,7 +339,7 @@ namespace Nexus.Core
                             }
                             finally
                             {
-                                s_constructingSingletons.Remove(type);
+                                _constructingSingletons.Remove(type);
                                 addedToConstructing = false;
                             }
                         }
@@ -354,7 +357,7 @@ namespace Nexus.Core
                     s_resolutionStack.Remove(type);
                     if (addedToConstructing)
                     {
-                        s_constructingSingletons.Remove(type);
+                        _constructingSingletons.Remove(type);
                     }
                 }
             }
@@ -376,13 +379,36 @@ namespace Nexus.Core
             return _parent != null && _parent.IsRegistered(type);
         }
 
+        /// <summary>
+        /// P1-10 fix: returns an already-constructed singleton instance without
+        /// triggering lazy construction. Used during context teardown so services
+        /// that were never resolved are not instantiated just to be disposed.
+        /// </summary>
+        internal bool TryGetExistingInstance(Type type, out object instance)
+        {
+            instance = null;
+            if (type == null) return false;
+
+            if (_bindings.TryGetValue(type, out var binding) && binding.Instance != null)
+            {
+                instance = binding.Instance;
+                return true;
+            }
+
+            return _parent != null && _parent.TryGetExistingInstance(type, out instance);
+        }
+
         public void Inject(object instance)
         {
             if (instance == null) return;
 
             if (ExternalAdapter != null)
             {
+                // P2-13 fix: when an external DI adapter is installed, it owns injection
+                // for the instance. Returning here prevents double/conflicting injection
+                // by Nexus's own reflection-based injector.
                 ExternalAdapter.Inject(instance);
+                return;
             }
 
             var type = instance.GetType();
@@ -404,6 +430,13 @@ namespace Nexus.Core
                 {
                     f.Field.SetValue(instance, resolvedValue);
                 }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                else
+                {
+                    // P1-4 fix: surface silently-missing [Inject] dependencies in dev builds.
+                    NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{f.Type.FullName}' for field '{type.FullName}.{f.Field.Name}' is not registered; the field was left null.");
+                }
+#endif
             }
 
             // Inject properties
@@ -415,6 +448,13 @@ namespace Nexus.Core
                 {
                     p.Property.SetValue(instance, resolvedValue);
                 }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                else
+                {
+                    // P1-4 fix: surface silently-missing [Inject] dependencies in dev builds.
+                    NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{p.Type.FullName}' for property '{type.FullName}.{p.Property.Name}' is not registered; the property was left null.");
+                }
+#endif
             }
 
             // Inject methods (e.g. Construct)
@@ -425,6 +465,13 @@ namespace Nexus.Core
                 for (int j = 0; j < m.ParameterTypes.Length; j++)
                 {
                     args[j] = TryResolve(m.ParameterTypes[j]);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    if (args[j] == null)
+                    {
+                        // P1-4 fix: surface silently-missing [Inject] dependencies in dev builds.
+                        NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{m.ParameterTypes[j].FullName}' for method '{type.FullName}.{m.Method.Name}' is not registered; null was passed.");
+                    }
+#endif
                 }
                 m.Method.Invoke(instance, args);
             }
@@ -459,7 +506,12 @@ namespace Nexus.Core
 
         public IEnumerable<object> GetActiveSingletons()
         {
-            return _resolvedSingletons;
+            // P1-5 fix: return a snapshot instead of the live set to avoid
+            // collection-modified exceptions during enumeration.
+            lock (_singletonLock)
+            {
+                return new List<object>(_resolvedSingletons);
+            }
         }
 
         public Dictionary<Type, object> GetRegisteredSingletons()
@@ -546,7 +598,7 @@ namespace Nexus.Core
 
             var alreadyDisposed = new HashSet<object>();
             HashSet<object> singletonsCopy;
-            lock (s_singletonLock)
+            lock (_singletonLock)
             {
                 singletonsCopy = new HashSet<object>(_resolvedSingletons);
                 _resolvedSingletons.Clear();
@@ -563,10 +615,13 @@ namespace Nexus.Core
                     }
                     else if (instance is IAsyncDisposable asyncDisposable)
                     {
-                        // IAsyncDisposable-only singletons: block on main thread.
-                        // Context.Dispose() is always called from Unity's main thread
-                        // (OnDestroy / Application.quitting), so blocking is safe here.
-                        asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                        // P1-6 fix: never block the main thread on DisposeAsync — if the
+                        // user's DisposeAsync resumes on the Unity SynchronizationContext,
+                        // GetAwaiter().GetResult() would deadlock. Run fire-and-forget with
+                        // error capture instead; prefer DisposeAsync() for deterministic
+                        // async teardown.
+                        SafeAsyncRunner.Run(() => asyncDisposable.DisposeAsync(),
+                            $"Async disposal of singleton '{instance.GetType().FullName}' failed");
                     }
                 }
                 catch (Exception ex)
@@ -584,7 +639,7 @@ namespace Nexus.Core
 
             var alreadyDisposed = new HashSet<object>();
             HashSet<object> singletonsCopy;
-            lock (s_singletonLock)
+            lock (_singletonLock)
             {
                 singletonsCopy = new HashSet<object>(_resolvedSingletons);
                 _resolvedSingletons.Clear();
@@ -619,10 +674,8 @@ namespace Nexus.Core
             s_customInjectors.Clear();
             s_injectMetadataCache.Clear();
             s_clearMetadataCache.Clear();
-            lock (s_singletonLock)
-            {
-                s_constructingSingletons.Clear();
-            }
+            // Note: singleton-construction tracking is per-container (P1-5 fix),
+            // so there is no global construction state left to clear here.
         }
     }
 }

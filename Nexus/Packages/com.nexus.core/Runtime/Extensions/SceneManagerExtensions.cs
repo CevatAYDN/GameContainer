@@ -68,7 +68,7 @@ namespace Nexus.Core.Extensions
                 var op = SceneManager.LoadSceneAsync(sceneName, mode);
                 if (op == null)
                 {
-                    NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogError($"[Nexus] Scene '{sceneName}' not found in build settings.");
+                    NexusRuntime.Logger?.LogError($"[Nexus] Scene '{sceneName}' not found in build settings.");
                     return;
                 }
 
@@ -96,7 +96,7 @@ namespace Nexus.Core.Extensions
             var op = SceneManager.UnloadSceneAsync(sceneName);
             if (op == null)
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[Nexus] Scene '{sceneName}' is not loaded or cannot be unloaded.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Scene '{sceneName}' is not loaded or cannot be unloaded.");
                 return;
             }
 
@@ -118,7 +118,7 @@ namespace Nexus.Core.Extensions
             }
             else
             {
-                NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.LogWarning($"[Nexus] Cannot set active scene '{sceneName}': not loaded or invalid.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Cannot set active scene '{sceneName}': not loaded or invalid.");
             }
         }
     }

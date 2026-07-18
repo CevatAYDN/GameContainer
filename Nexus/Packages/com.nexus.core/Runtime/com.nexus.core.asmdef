@@ -13,9 +13,9 @@
     "defineConstraints": [],
     "versionDefines": [
         {
-            "name": "com.unity.modules.unitywebrequest",
+            "name": "com.unity.collections",
             "expression": "1.0.0",
-            "define": "NEXUS_DEBUG"
+            "define": "UNITY_COLLECTIONS"
         }
     ],
     "noEngineReferences": false

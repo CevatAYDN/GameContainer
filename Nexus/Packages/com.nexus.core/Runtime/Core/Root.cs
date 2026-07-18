@@ -44,6 +44,29 @@ namespace Nexus.Core
         // Reusable list for sibling wait collection to avoid per-Start allocation.
         private readonly List<Root> _siblingsToWait = new();
 
+        // Pending views registered before Context is initialized
+        private readonly List<IView> _pendingViews = new();
+
+        public void RegisterPendingView(IView view)
+        {
+            if (Context != null)
+            {
+                Context.RegisterView(view);
+            }
+            else
+            {
+                if (!_pendingViews.Contains(view))
+                {
+                    _pendingViews.Add(view);
+                }
+            }
+        }
+
+        public void UnregisterPendingView(IView view)
+        {
+            _pendingViews.Remove(view);
+        }
+
         // Registry to avoid FindObjectsByType in every Start()
         private static readonly List<Root> s_allRoots = new();
         private static readonly object s_rootLock = new();
@@ -67,11 +90,13 @@ namespace Nexus.Core
 
         internal static void ClearRegistry()
         {
-            lock (s_allRoots)
+            // P0-8 fix: use the same lock object (s_rootLock) as OnEnable/OnDisable/EnsureRegistry,
+            // and set the dirty flag inside the lock.
+            lock (s_rootLock)
             {
                 s_allRoots.Clear();
+                s_registryDirty = true;
             }
-            s_registryDirty = true;
         }
 
         private static void EnsureRegistry()
@@ -91,7 +116,7 @@ namespace Nexus.Core
 #if UNITY_EDITOR
             if (parentRoot == this)
             {
-                NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogWarning($"[Nexus] Auto-fixed circular reference on Root '{gameObject.name}': parentRoot was set to itself. Resetting parentRoot to null.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Auto-fixed circular reference on Root '{gameObject.name}': parentRoot was set to itself. Resetting parentRoot to null.");
                 parentRoot = null;
             }
 #endif
@@ -124,6 +149,13 @@ namespace Nexus.Core
             }
 
             Context.Configure(_lifecycles);
+
+            // Flush pending views
+            for (int i = 0; i < _pendingViews.Count; i++)
+            {
+                Context.RegisterView(_pendingViews[i]);
+            }
+            _pendingViews.Clear();
         }
 
         private async void Start()
@@ -148,7 +180,7 @@ namespace Nexus.Core
 
                     if (!parentRoot.IsInitialized)
                     {
-                        NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogError($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Continuing would leave dependent views and services in an undefined state.");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Continuing would leave dependent views and services in an undefined state.");
                         throw new TimeoutException($"Parent root '{parentRoot.name}' did not initialize in time.");
                     }
                 }
@@ -189,7 +221,7 @@ namespace Nexus.Core
 
                     if (sibling != null && !sibling.IsInitialized)
                     {
-                        NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogError($"[Nexus] Root '{gameObject.name}' timed out waiting for sibling root '{sibling.gameObject.name}' to initialize. Continuing would make sibling ordering nondeterministic.");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Root '{gameObject.name}' timed out waiting for sibling root '{sibling.gameObject.name}' to initialize. Continuing would make sibling ordering nondeterministic.");
                         throw new TimeoutException($"Sibling root '{sibling.gameObject.name}' did not initialize in time.");
                     }
                 }
@@ -225,7 +257,7 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                NexusRuntime.CurrentContext?.Resolve<Nexus.Core.Services.ILoggerService>()?.LogError($"[Nexus] Root initialization failed: {ex.Message}\n{ex.StackTrace}");
+                NexusRuntime.Logger?.LogError($"[Nexus] Root initialization failed: {ex.Message}\n{ex.StackTrace}");
                 if (Context != null)
                 {
                     Context.Dispose();
@@ -235,6 +267,10 @@ namespace Nexus.Core
             }
         }
 
+        // P1-17 fix: frame gates so N active Roots update global metrics only once per frame.
+        private static int s_lastFrameMetricsFrame = -1;
+        private static int s_lastMemoryMetricsFrame = -1;
+
         private void Update()
         {
             if (Context != null && IsInitialized)
@@ -242,8 +278,12 @@ namespace Nexus.Core
                 Context.HybridQueue.DrainThreadSafe();
             }
 
-            // Update performance metrics
-            PerformanceMonitor.UpdateFrameMetrics();
+            // Update performance metrics once per frame regardless of Root count
+            if (s_lastFrameMetricsFrame != Time.frameCount)
+            {
+                s_lastFrameMetricsFrame = Time.frameCount;
+                PerformanceMonitor.UpdateFrameMetrics();
+            }
         }
 
         private void LateUpdate()
@@ -253,9 +293,11 @@ namespace Nexus.Core
                 Context.HybridQueue.DrainNextFrame();
             }
 
-            // Update memory and GC metrics every 60 frames (approximately 1 second)
-            if (Time.frameCount % 60 == 0)
+            // Update memory and GC metrics every 60 frames (approximately 1 second),
+            // once per frame regardless of Root count
+            if (Time.frameCount % 60 == 0 && s_lastMemoryMetricsFrame != Time.frameCount)
             {
+                s_lastMemoryMetricsFrame = Time.frameCount;
                 PerformanceMonitor.UpdateMemoryMetrics();
                 PerformanceMonitor.UpdateGCMetrics();
             }

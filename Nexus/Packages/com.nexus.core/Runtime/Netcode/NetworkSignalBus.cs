@@ -94,7 +94,16 @@ namespace Nexus.Netcode
             {
                 if (_signals[i].Tick == tick)
                 {
-                    localSignalBus.Fire(_signals[i].Signal);
+                    // P0-4 fix: async-aware dispatch — replayed signals with async
+                    // handlers no longer throw NexusSyncAsyncMismatchException.
+                    if (localSignalBus is SignalBus concreteBus)
+                    {
+                        concreteBus.FireQueued(_signals[i].Signal);
+                    }
+                    else
+                    {
+                        localSignalBus.Fire(_signals[i].Signal);
+                    }
                 }
             }
         }
@@ -135,11 +144,6 @@ namespace Nexus.Netcode
     /// </summary>
     public class NetworkSignalBus
     {
-        /// <summary>
-        /// Code-generated dispatcher delegate to bypass reflection during rollback simulations.
-        /// </summary>
-        public static Action<ISignalBus, object> CustomDispatcher;
-
         private readonly ISignalBus _localSignalBus;
         private readonly Dictionary<Type, INetworkSignalHistory> _histories = new();
         private readonly List<INetworkModelSnapshotHandler> _modelHandlers = new();

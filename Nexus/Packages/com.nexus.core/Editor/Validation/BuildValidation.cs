@@ -208,23 +208,17 @@ namespace Nexus.Editor
                     }
                 }
 
-                // Generic command interface check (for performance and AOT compatibility)
+                // Generic command interface check (for performance and AOT compatibility).
+                // E-4 fix: check BOTH generic interfaces directly so commands that only implement
+                // IAsyncCommand<T> (without non-generic IAsyncCommand) are classified correctly.
                 foreach (var handler in handlers)
                 {
-                    bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(handler.CommandType);
-                    bool implementsGeneric = false;
-                    if (isAsync)
-                    {
-                        var genericAsyncType = typeof(IAsyncCommand<>).MakeGenericType(signalType);
-                        implementsGeneric = genericAsyncType.IsAssignableFrom(handler.CommandType);
-                    }
-                    else
-                    {
-                        var genericType = typeof(ICommand<>).MakeGenericType(signalType);
-                        implementsGeneric = genericType.IsAssignableFrom(handler.CommandType);
-                    }
+                    bool isSync = typeof(ICommand).IsAssignableFrom(handler.CommandType)
+                        || SignalBus.ImplementsGenericInterface(handler.CommandType, typeof(ICommand<>));
+                    bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(handler.CommandType)
+                        || SignalBus.ImplementsGenericInterface(handler.CommandType, typeof(IAsyncCommand<>));
 
-                    if (!implementsGeneric)
+                    if (!isSync && !isAsync)
                     {
                         Debug.LogError($"[Nexus Error] Generic Command Violation: Command {handler.CommandType.FullName} handles signal {signalType.Name} but does not implement ICommand<{signalType.Name}> or IAsyncCommand<{signalType.Name}>. Implement generic interfaces to eliminate reflection fallback and IL2CPP boxing.");
                         errorCount++;
@@ -610,7 +604,10 @@ namespace Nexus.Editor
                     foreach (var type in assembly.GetTypes())
                     {
                         if (!type.IsClass || type.IsAbstract) continue;
-                        bool isCommand = typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type);
+                        bool isCommand = typeof(ICommand).IsAssignableFrom(type)
+                            || typeof(IAsyncCommand).IsAssignableFrom(type)
+                            || SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>))
+                            || SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
                         if (!isCommand) continue;
 
                         bool implementsResettable = typeof(IResettable).IsAssignableFrom(type);

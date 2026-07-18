@@ -80,7 +80,7 @@ Nexus is a standalone **Unity Package Manager (UPM)** package. To integrate it i
 ```json
 {
   "dependencies": {
-    "com.nexus.core": "https://github.com/CevatAYDN/Pixel-Flow-Clone.git?path=GameContainer/Nexus/Packages/com.nexus.core",
+    "com.nexus.core": "https://gitlab.com/beehivegame/GameContainer.git?path=Nexus/Packages/com.nexus.core",
     ...
   }
 }
@@ -371,7 +371,7 @@ Nexus, bağımsız bir **Unity Package Manager (UPM)** paketidir. Projenize ente
 ```json
 {
   "dependencies": {
-    "com.nexus.core": "https://github.com/CevatAYDN/Pixel-Flow-Clone.git?path=GameContainer/Nexus/Packages/com.nexus.core",
+    "com.nexus.core": "https://gitlab.com/beehivegame/GameContainer.git?path=Nexus/Packages/com.nexus.core",
     ...
   }
 }

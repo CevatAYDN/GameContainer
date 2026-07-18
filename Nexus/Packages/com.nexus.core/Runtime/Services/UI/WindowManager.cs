@@ -49,6 +49,7 @@ namespace Nexus.Core.Services
         private readonly Dictionary<UILayer, Transform> _layerRoots = new();
         private readonly List<string> _windowHistory = new();
         private readonly SemaphoreSlim _windowLock = new(1, 1);
+        private readonly HashSet<string> _pendingOpenWindows = new();
 
         private Transform _canvasRoot;
         private GameObject _canvasObject;
@@ -75,29 +76,12 @@ namespace Nexus.Core.Services
                 canvas.renderMode = RenderMode.ScreenSpaceOverlay;
                 canvas.sortingOrder = 100;
 
-                var canvasScalerType = Type.GetType("UnityEngine.UI.CanvasScaler, UnityEngine.UI") ?? Type.GetType("UnityEngine.UI.CanvasScaler, UnityEngine.UIModule");
-                if (canvasScalerType != null)
-                {
-                    var scaler = _canvasObject.AddComponent(canvasScalerType);
-                    var scaleModeProp = canvasScalerType.GetProperty("uiScaleMode");
-                    var refResProp = canvasScalerType.GetProperty("referenceResolution");
-                    var matchProp = canvasScalerType.GetProperty("matchWidthOrHeight");
+                var scaler = _canvasObject.AddComponent<UnityEngine.UI.CanvasScaler>();
+                scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
+                scaler.referenceResolution = new Vector2(1080, 1920);
+                scaler.matchWidthOrHeight = 0.5f;
 
-                    var scaleModeType = Type.GetType("UnityEngine.UI.CanvasScaler+ScaleMode, UnityEngine.UI") ?? Type.GetType("UnityEngine.UI.CanvasScaler+ScaleMode, UnityEngine.UIModule");
-                    if (scaleModeType != null && scaleModeProp != null)
-                    {
-                        var scaleWithScreen = Enum.Parse(scaleModeType, "ScaleWithScreenSize");
-                        scaleModeProp.SetValue(scaler, scaleWithScreen);
-                    }
-                    refResProp?.SetValue(scaler, new Vector2(1080, 1920));
-                    matchProp?.SetValue(scaler, 0.5f);
-                }
-
-                var raycasterType = Type.GetType("UnityEngine.UI.GraphicRaycaster, UnityEngine.UI") ?? Type.GetType("UnityEngine.UI.GraphicRaycaster, UnityEngine.UIModule");
-                if (raycasterType != null)
-                {
-                    _canvasObject.AddComponent(raycasterType);
-                }
+                _canvasObject.AddComponent<UnityEngine.UI.GraphicRaycaster>();
             }
 
             _canvasRoot = _canvasObject.transform;
@@ -119,11 +103,7 @@ namespace Nexus.Core.Services
                     canvasComponent.overrideSorting = true;
                     canvasComponent.sortingOrder = (int)layer;
 
-                    var raycasterType = Type.GetType("UnityEngine.UI.GraphicRaycaster, UnityEngine.UI") ?? Type.GetType("UnityEngine.UI.GraphicRaycaster, UnityEngine.UIModule");
-                    if (raycasterType != null)
-                    {
-                        layerGo.AddComponent(raycasterType);
-                    }
+                    layerGo.AddComponent<UnityEngine.UI.GraphicRaycaster>();
                 }
                 _layerRoots[layer] = layerGo.transform;
             }
@@ -180,9 +160,10 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(windowName)) return null;
 
-            await _windowLock.WaitAsync();
             bool alreadyOpen = false;
             GameObject existing = null;
+
+            await _windowLock.WaitAsync();
             try
             {
                 // Clean up any externally destroyed windows
@@ -200,10 +181,19 @@ namespace Nexus.Core.Services
                     _windowHistory.Remove(key);
                 }
 
-                alreadyOpen = _activeWindows.TryGetValue(windowName, out existing) && existing != null;
-                if (alreadyOpen)
+                if (_activeWindows.TryGetValue(windowName, out existing) && existing != null)
                 {
                     existing.transform.SetAsLastSibling();
+                    return existing;
+                }
+
+                if (_pendingOpenWindows.Contains(windowName))
+                {
+                    alreadyOpen = true;
+                }
+                else
+                {
+                    _pendingOpenWindows.Add(windowName);
                 }
             }
             finally
@@ -213,19 +203,49 @@ namespace Nexus.Core.Services
 
             if (alreadyOpen)
             {
-                return existing;
+                // Wait for the window to finish opening
+                while (true)
+                {
+                    await Task.Delay(10);
+                    await _windowLock.WaitAsync();
+                    try
+                    {
+                        if (_activeWindows.TryGetValue(windowName, out existing))
+                        {
+                            return existing;
+                        }
+                        if (!_pendingOpenWindows.Contains(windowName))
+                        {
+                            return null; // failed to open
+                        }
+                    }
+                    finally
+                    {
+                        _windowLock.Release();
+                    }
+                }
             }
 
             var targetParent = _layerRoots.TryGetValue(layer, out var layerRoot) ? layerRoot : _canvasRoot;
-            var inst = await AssetProvider.InstantiateWindowAsync(windowName, targetParent);
-            if (inst == null)
-            {
-                NexusRuntime.Logger?.LogError($"[WindowManager] Failed to instantiate window: {windowName}");
-                return null;
-            }
-
+            GameObject inst = null;
             try
             {
+                inst = await AssetProvider.InstantiateWindowAsync(windowName, targetParent);
+                if (inst == null)
+                {
+                    NexusRuntime.Logger?.LogError($"[WindowManager] Failed to instantiate window: {windowName}");
+                    await _windowLock.WaitAsync();
+                    try
+                    {
+                        _pendingOpenWindows.Remove(windowName);
+                    }
+                    finally
+                    {
+                        _windowLock.Release();
+                    }
+                    return null;
+                }
+
                 var lifecycles = inst.GetComponents<IUIWindowLifecycle>();
                 for (int i = 0; i < lifecycles.Length; i++)
                 {
@@ -244,6 +264,7 @@ namespace Nexus.Core.Services
                 {
                     _activeWindows[windowName] = inst;
                     _windowHistory.Add(windowName);
+                    _pendingOpenWindows.Remove(windowName);
                     UpdateLayerInteractivity();
                 }
                 finally
@@ -256,7 +277,19 @@ namespace Nexus.Core.Services
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogError($"[WindowManager] Failed to open window '{windowName}': {ex.Message}");
-                UnityEngine.Object.Destroy(inst);
+                if (inst != null)
+                {
+                    UnityEngine.Object.Destroy(inst);
+                }
+                await _windowLock.WaitAsync();
+                try
+                {
+                    _pendingOpenWindows.Remove(windowName);
+                }
+                finally
+                {
+                    _windowLock.Release();
+                }
                 return null;
             }
         }
@@ -367,12 +400,33 @@ namespace Nexus.Core.Services
             _ = CloseAllAsync();
         }
 
-        public bool IsWindowOpen(string windowName) => _activeWindows.ContainsKey(windowName);
+        public bool IsWindowOpen(string windowName)
+        {
+            if (string.IsNullOrEmpty(windowName)) return false;
+            _windowLock.Wait();
+            try
+            {
+                return _activeWindows.ContainsKey(windowName);
+            }
+            finally
+            {
+                _windowLock.Release();
+            }
+        }
 
         public GameObject GetWindow(string windowName)
         {
-            _activeWindows.TryGetValue(windowName, out var go);
-            return go;
+            if (string.IsNullOrEmpty(windowName)) return null;
+            _windowLock.Wait();
+            try
+            {
+                _activeWindows.TryGetValue(windowName, out var go);
+                return go;
+            }
+            finally
+            {
+                _windowLock.Release();
+            }
         }
 
         public void OnDispose() => Dispose();

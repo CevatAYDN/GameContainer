@@ -17,11 +17,49 @@ namespace Nexus.Core
     }
 
     /// <summary>
+    /// P1-15 fix: central registry of per-type queued-signal pools so
+    /// <see cref="NexusRuntime.Reset"/> can clear them all (previously the static
+    /// pools were only reset on domain reload).
+    /// </summary>
+    internal static class QueuedSignalPoolRegistry
+    {
+        private static readonly List<Action> s_clearActions = new();
+        private static readonly object s_lock = new();
+
+        public static void Register(Action clearAction)
+        {
+            lock (s_lock)
+            {
+                s_clearActions.Add(clearAction);
+            }
+        }
+
+        public static void ClearAll()
+        {
+            lock (s_lock)
+            {
+                for (int i = 0; i < s_clearActions.Count; i++)
+                {
+                    s_clearActions[i]();
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// Thread-safe object pool for reusing QueuedSignalWrapper instances to achieve 0 GC allocation.
     /// </summary>
     public static class QueuedSignalPool<T> where T : struct
     {
         private static readonly ConcurrentQueue<QueuedSignalWrapper<T>> s_pool = new();
+
+        // P1-15 fix: bound the pool and register clearing with NexusRuntime.Reset.
+        private const int MaxPoolSize = 256;
+
+        static QueuedSignalPool()
+        {
+            QueuedSignalPoolRegistry.Register(Clear);
+        }
 
         /// <summary>Rents a pooled wrapper initialized with the given signal.</summary>
         public static QueuedSignalWrapper<T> Rent(T signal)
@@ -38,7 +76,16 @@ namespace Nexus.Core
         public static void Return(QueuedSignalWrapper<T> wrapper)
         {
             wrapper.Signal = default;
-            s_pool.Enqueue(wrapper);
+            if (s_pool.Count < MaxPoolSize)
+            {
+                s_pool.Enqueue(wrapper);
+            }
+        }
+
+        /// <summary>Empties the pool. Called via <see cref="QueuedSignalPoolRegistry"/> on runtime reset.</summary>
+        public static void Clear()
+        {
+            while (s_pool.TryDequeue(out _)) { }
         }
     }
 
@@ -50,10 +97,14 @@ namespace Nexus.Core
         /// <summary>The wrapped signal payload.</summary>
         public T Signal;
 
-        /// <summary>Fires the wrapped signal into the signal bus.</summary>
+        /// <summary>
+        /// Fires the wrapped signal into the signal bus.
+        /// P0-4 fix: routes through the async-aware queued dispatch so signals with
+        /// async handlers do not throw <see cref="NexusSyncAsyncMismatchException"/> on drain.
+        /// </summary>
         public void Fire(SignalBus bus)
         {
-            bus.Fire(Signal);
+            bus.FireQueued(Signal);
         }
 
         /// <summary>Releases the wrapper back to the pool.</summary>
@@ -104,33 +155,40 @@ namespace Nexus.Core
         /// <summary>
         /// Drains all thread-safe queued signals into the signal bus in chronological order.
         /// Called from <c>Root.Update()</c>. Zero-allocation.
+        /// P1-15 fix: the drain is capped at the queue's size at drain start, so a handler
+        /// that re-enqueues during the drain cannot livelock the frame; those signals run
+        /// next frame. P0-4 fix: per-item exceptions are logged and the drain continues.
         /// </summary>
         public void DrainThreadSafe()
         {
-            while (_threadSafeQueue.TryDequeue(out var queuedSignal))
-            {
-                try
-                {
-                    queuedSignal.Fire(_signalBus);
-                }
-                finally
-                {
-                    queuedSignal.Release();
-                }
-            }
+            Drain(_threadSafeQueue);
         }
 
         /// <summary>
         /// Drains all next-frame queued signals into the signal bus in chronological order.
         /// Called from <c>Root.LateUpdate()</c>. Zero-allocation.
+        /// P1-15 fix: signals enqueued during the drain are deferred to the next frame
+        /// (count snapshot), restoring "next frame" semantics.
         /// </summary>
         public void DrainNextFrame()
         {
-            while (_nextFrameQueue.TryDequeue(out var queuedSignal))
+            Drain(_nextFrameQueue);
+        }
+
+        private void Drain(ConcurrentQueue<IQueuedSignal> queue)
+        {
+            int max = queue.Count;
+            for (int i = 0; i < max; i++)
             {
+                if (!queue.TryDequeue(out var queuedSignal)) break;
                 try
                 {
                     queuedSignal.Fire(_signalBus);
+                }
+                catch (Exception ex)
+                {
+                    // One failing signal must not abort the rest of the drain.
+                    NexusRuntime.Logger?.LogError($"[Nexus] Queued signal dispatch failed during drain: {ex.Message}\n{ex.StackTrace}");
                 }
                 finally
                 {

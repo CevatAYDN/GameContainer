@@ -4,5 +4,24 @@
     Plan §6.2: Nexus uses reflection-heavy patterns (DI injection, attribute scanning,
     generic dispatch) which IL2CPP would strip without explicit preservation rules.
   -->
-  <assembly fullname="com.nexus.core" preserve="all"/>
+  <assembly fullname="com.nexus.core">
+    <!-- Attributes scanned at runtime -->
+    <type fullname="Nexus.Core.SignalHandlerAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.CompositeSignalHandlerAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.InjectAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.MediatorAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.CommandTimeoutAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.CrossContextAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.ContextDependsOnAttribute" preserve="all"/>
+    
+    <!-- Core types instantiated or inspected via reflection -->
+    <type fullname="Nexus.Core.Context" preserve="all"/>
+    <type fullname="Nexus.Core.SignalBus" preserve="all"/>
+    <type fullname="Nexus.Core.NexusDI" preserve="all"/>
+    <type fullname="Nexus.Core.Root" preserve="all"/>
+    <type fullname="Nexus.Core.View" preserve="all"/>
+    <type fullname="Nexus.Core.ViewBinder" preserve="all"/>
+    <type fullname="Nexus.Core.CommandHandlerInfo" preserve="all"/>
+    <type fullname="Nexus.Core.CompositeTriggerState" preserve="all"/>
+  </assembly>
 </linker>

@@ -113,7 +113,7 @@ namespace Nexus.Core
 
         public RecoveryDecision OnCommandFailed(CommandFailureContext failure)
         {
-            var logger = NexusRuntime.CurrentContext?.Resolve<ILoggerService>();
+            var logger = NexusRuntime.Logger;
             if (failure.RetryCount < _maxRetries)
             {
                 logger?.LogWarning($"[Nexus] Command {failure.CommandType.Name} failed (attempt {failure.RetryCount + 1}/{_maxRetries}). Retrying...\n{failure.Exception.Message}");

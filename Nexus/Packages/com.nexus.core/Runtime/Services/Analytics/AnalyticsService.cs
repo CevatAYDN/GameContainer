@@ -20,7 +20,7 @@ namespace Nexus.Core.Services
 
         public void LogEvent(string eventName)
         {
-            NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[NexusAnalytics] Event: {eventName}");
+            NexusRuntime.Logger?.Log($"[NexusAnalytics] Event: {eventName}");
         }
 
         public void LogEvent(string eventName, Dictionary<string, object> parameters)
@@ -31,12 +31,12 @@ namespace Nexus.Core.Services
                 foreach (var kvp in parameters)
                     pList.Add($"{kvp.Key}: {kvp.Value}");
             }
-            NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[NexusAnalytics] Event: {eventName} | Params: {string.Join(", ", pList)}");
+            NexusRuntime.Logger?.Log($"[NexusAnalytics] Event: {eventName} | Params: {string.Join(", ", pList)}");
         }
 
         public void SetUserProperty(string key, string value)
         {
-            NexusRuntime.CurrentContext?.Resolve<ILoggerService>()?.Log($"[NexusAnalytics] UserProperty: {key} = {value}");
+            NexusRuntime.Logger?.Log($"[NexusAnalytics] UserProperty: {key} = {value}");
         }
     }
 }

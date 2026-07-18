@@ -25,6 +25,8 @@ namespace Nexus.Core
             // View has not been registered yet and Mediator has not been connected.
         }
 
+        private Root _pendingRoot;
+
         /// <summary>
         /// Automatically registers this view with the nearest parent Root's context.
         /// Falls back to FindObjectsByType only when the scene has one unambiguous Root.
@@ -38,27 +40,29 @@ namespace Nexus.Core
                 if (root.Context != null)
                 {
                     root.Context.RegisterView(this);
-                    return;
-                }
-                // Root exists but Context is null — likely not initialized yet.
-                // This can happen if a view appears before Root.Start() finishes.
-                if (!root.IsInitialized)
-                {
-                    NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is not yet initialized. " +
-                        "View binding is deferred and may be missed if the prefab does not re-enable. Load this prefab after Root initialization or add an explicit rebinding step.");
                 }
                 else
                 {
-                    NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: parent Root '{root.gameObject.name}' is initialized but Context is still null. " +
-                        "This indicates a startup ordering or initialization bug.");
+                    _pendingRoot = root;
+                    root.RegisterPendingView(this);
                 }
+                return;
             }
 
             // Fallback only when the scene has a single unambiguous active root.
             var roots = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
-            if (roots.Length == 1 && roots[0].Context != null)
+            if (roots.Length == 1)
             {
-                roots[0].Context.RegisterView(this);
+                var singleRoot = roots[0];
+                if (singleRoot.Context != null)
+                {
+                    singleRoot.Context.RegisterView(this);
+                }
+                else
+                {
+                    _pendingRoot = singleRoot;
+                    singleRoot.RegisterPendingView(this);
+                }
             }
             else if (roots.Length > 1)
             {
@@ -80,6 +84,11 @@ namespace Nexus.Core
         {
             try
             {
+                if (_pendingRoot != null)
+                {
+                    _pendingRoot.UnregisterPendingView(this);
+                    _pendingRoot = null;
+                }
                 if (Context != null)
                 {
                     Context.UnregisterView(this);
@@ -98,6 +107,7 @@ namespace Nexus.Core
             if (_isBound) return;
             _isBound = true;
             Context = context;
+            _pendingRoot = null;
             OnBind(context);
         }
 
