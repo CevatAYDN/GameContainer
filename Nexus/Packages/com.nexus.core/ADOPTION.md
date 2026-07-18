@@ -2,7 +2,7 @@
 
 > **Gap P2-D.** Nexus is authored and maintained primarily by a single developer.
 > For multi-game studio use, **fork and own the package** rather than consuming the
-> upstream `GameContainer` repo (`gitlab.com/beehivegame/GameContainer`) directly.
+> upstream `GameContainer` repo (`github.com/CevatAYDN/GameContainer`) directly.
 
 ## Why fork
 
