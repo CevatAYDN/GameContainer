@@ -123,8 +123,9 @@ namespace Nexus.Core
 
         // P0-3 fix: snapshots are cached behind a dirty flag so repeated property access
         // does not allocate a new Dictionary each time.
-        private Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersSnapshot;
-        private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _registeredHandlersSnapshot;
+        private Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersSnapshot = new();
+        private Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersReadCopy = new();
+        private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _registeredHandlersSnapshot = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>();
         private bool _handlersSnapshotDirty = true;
 
         public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers
@@ -180,6 +181,7 @@ namespace Nexus.Core
         }
 
         private readonly Dictionary<Type, SubscriptionNode> _subscriptions = new();
+        private volatile Dictionary<Type, SubscriptionNode> _subscriptionsReadCopy = new();
         private readonly object _subLock = new();
         private readonly object _compositeLock = new();
         private bool _pendingCleanups;
@@ -187,13 +189,8 @@ namespace Nexus.Core
         // Precomputed cache: does this signal type have at least one async handler?
         // Used by FireInternal to decide whether to delegate to the async path.
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
-
-        // P1-2 fix: volatile read-only snapshots (Context._pluginsReadOnlyCopy pattern).
-        // Rebuilt under the corresponding lock on mutation; read lock-free on the hot path.
-        private volatile Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersReadCopy = new();
         private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
-        private volatile Dictionary<Type, SubscriptionNode> _subscriptionsReadCopy = new();
-        
+
         private static readonly System.Threading.AsyncLocal<int> s_stackDepth = new();
         private const int MaxStackDepth = 10;
 
@@ -700,7 +697,7 @@ namespace Nexus.Core
             }
             else
             {
-                Fire(failedSignal);
+                _ = FireAsyncAndForget(failedSignal);
             }
         }
 
@@ -982,7 +979,14 @@ namespace Nexus.Core
 
                     if (command is ICommand syncCmd)
                     {
-                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                        {
+                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        }
+                        else
+                        {
+                            syncCmd.Execute();
+                        }
                     }
                     shouldRun = false; // completed successfully
 #if NEXUS_DEBUG
@@ -1147,21 +1151,44 @@ namespace Nexus.Core
                     if (command is IAsyncCommand asyncCmd)
                     {
                         // P0-5 fix: apply [CommandTimeout] via a linked, self-cancelling token.
-                        if (handler.TimeoutMs > 0)
+                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
                         {
-                            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                            timeoutCts.CancelAfter(handler.TimeoutMs);
-                            var timeoutToken = timeoutCts.Token;
-                            await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(timeoutToken));
+                            if (handler.TimeoutMs > 0)
+                            {
+                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                timeoutCts.CancelAfter(handler.TimeoutMs);
+                                var timeoutToken = timeoutCts.Token;
+                                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(timeoutToken));
+                            }
+                            else
+                            {
+                                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                            }
                         }
                         else
                         {
-                            await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                            if (handler.TimeoutMs > 0)
+                            {
+                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                timeoutCts.CancelAfter(handler.TimeoutMs);
+                                await asyncCmd.ExecuteAsync(timeoutCts.Token);
+                            }
+                            else
+                            {
+                                await asyncCmd.ExecuteAsync(ct);
+                            }
                         }
                     }
                     else if (command is ICommand syncCmd)
                     {
-                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                        {
+                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        }
+                        else
+                        {
+                            syncCmd.Execute();
+                        }
                     }
                     shouldRun = false; // success
 #if NEXUS_DEBUG
@@ -1343,7 +1370,14 @@ namespace Nexus.Core
                         inFlightIncremented = true;
                         try
                         {
-                            await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                            if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                            {
+                                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                            }
+                            else
+                            {
+                                await asyncCmd.ExecuteAsync(ct);
+                            }
                         }
                         finally
                         {
@@ -1413,7 +1447,14 @@ namespace Nexus.Core
                     if (command is ICommand syncCmd)
                     {
                         // P1-14 fix: composite commands run through the decorator pipeline.
-                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                        {
+                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                        }
+                        else
+                        {
+                            syncCmd.Execute();
+                        }
                     }
                     else if (command is IAsyncCommand asyncCmd)
                     {

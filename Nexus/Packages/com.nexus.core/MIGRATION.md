@@ -11,7 +11,7 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ---
 
-## Version 0.3.0 → 0.3.1
+## Version 0.4.0 → 0.3.2
 
 ### Breaking Changes
 

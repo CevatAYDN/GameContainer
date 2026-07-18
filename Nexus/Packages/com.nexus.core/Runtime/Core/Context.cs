@@ -261,28 +261,29 @@ namespace Nexus.Core
 
                     // P0-1/E-6 fix: also recognize generic-only ICommand<T>/IAsyncCommand<T> implementations
                     // (previously silently skipped) and log an error for non-command handler types.
-                    bool isSyncCommand = typeof(ICommand).IsAssignableFrom(type)
-                        || Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>));
-                    bool isAsyncCommand = typeof(IAsyncCommand).IsAssignableFrom(type)
-                        || Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
+                    bool isSync = typeof(ICommand).IsAssignableFrom(type)
+                        || global::Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>));
+                    bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(type)
+                        || global::Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
 
-                    for (int j = 0; j < data.Handlers.Count; j++)
+                    if (isSync || isAsync)
                     {
-                        var attr = data.Handlers[j];
-                        if (isSyncCommand || isAsyncCommand)
+                        Container.Bind(type, isSingleton: false);
+
+                        for (int j = 0; j < data.Handlers.Count; j++)
                         {
-                            Container.Bind(type, isSingleton: false);
-                            SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: isAsyncCommand && !isSyncCommand);
+                            var attr = data.Handlers[j];
+                            SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: isAsync && !isSync);
                         }
-                        else
+
+                        if (data.CompositeHandler != null)
                         {
-                            TryResolve<ILoggerService>()?.LogError($"[Nexus] Type '{type.FullName}' has [SignalHandler] but implements no command interface (ICommand, ICommand<T>, IAsyncCommand, or IAsyncCommand<T>). The handler was NOT registered.");
+                            SignalBusInternal.RegisterCompositeCommand(data.CompositeHandler.SignalTypes, type, data.CompositeHandler.OneShot, data.CompositeHandler.Priority, isAsync && !isSync);
                         }
                     }
-
-                    if (data.CompositeHandler != null)
+                    else
                     {
-                        SignalBusInternal.RegisterCompositeCommand(data.CompositeHandler.SignalTypes, type, data.CompositeHandler.OneShot, data.CompositeHandler.Priority, isAsyncCommand && !isSyncCommand);
+                        TryResolve<ILoggerService>()?.LogError($"[Nexus] [SignalHandler] type '{type.FullName}' does not implement ICommand/IAsyncCommand.");
                     }
                 }
             }

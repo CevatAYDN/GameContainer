@@ -18,7 +18,7 @@ This guide helps you diagnose and resolve common issues with Nexus Core.
 
 ## Signal Execution Order
 
-### Execution Order Guarantee (v0.3.2+)
+### Execution Order Guarantee (v0.4.0+)
 
 When `signalBus.Fire(signal)` is called, the dispatch order is:
 
