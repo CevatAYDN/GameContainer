@@ -923,13 +923,13 @@ If you can't resolve your issue:
 
 ### 2. Search GitHub Issues
 
-- [GitHub Issues](https://github.com/CevatAYDN/Pixel-Flow-Clone/issues)
+- [GitLab Issues](https://gitlab.com/beehivegame/GameContainer/issues)
 - Search for your error message
 - Check if issue is already reported
 
 ### 3. Ask in Discussions
 
-- [GitHub Discussions](https://github.com/CevatAYDN/Pixel-Flow-Clone/discussions)
+- [GitLab Discussions](https://gitlab.com/beehivegame/GameContainer/discussions)
 - Describe your issue clearly
 - Provide code examples
 - Include error messages

@@ -4,6 +4,7 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ## Table of Contents
 
+- [Version 0.3.2 → 0.4.0](#version-032--040)
 - [Version 0.3.0 → 0.3.1](#version-030--031)
 - [Version 0.2.0 → 0.3.0](#version-020--030)
 - [Version 0.1.0 → 0.2.0](#version-010--020)
@@ -11,7 +12,41 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ---
 
-## Version 0.4.0 → 0.3.2
+## Version 0.3.2 → 0.4.0
+
+### Breaking Changes
+
+#### 1. NEXUS_DEBUG Now Opt-In
+
+The `NEXUS_DEBUG` scripting define is no longer auto-enabled via the `com.unity.modules.unitywebrequest` version define entry. It is now a genuine opt-in define used only for development builds.
+
+If you rely on the editor Tracer dashboard or causal tracing, enable it manually in `Project Settings → Player → Scripting Define Symbols` (or via `TracerPlugin → Enable` button).
+
+If `NEXUS_DEBUG` is off, the Tracer dashboard falls back to the production Metrics ring buffer and displays an info card with instructions.
+
+#### 2. AES-256 Key Derivation (with automatic legacy migration)
+
+`EncryptedStorageService` now uses the full 32-byte SHA-256 hash as the AES-256 encryption key and derives an independent HMAC key from a salted hash. Legacy AES-128 payloads are migrated automatically on first decrypt and re-encrypted with the new keys.
+
+No action is required for existing save data. If a payload cannot be decrypted with the new keys, the service attempts the legacy path; on success, it rewrites the payload.
+
+#### 3. Priority Semantics Clarified (higher values run first)
+
+Documentation and attributes now state the actual runtime behavior: commands with higher priority values run before lower-priority handlers. No sorting change was made; only docs were corrected.
+
+#### 4. BindCommand Rejects ExecutionMode.Composite
+
+Composite triggers have a dedicated registration path. Passing `ExecutionMode.Composite` to `BindCommand`/`BindAsyncCommand` now throws `ArgumentException`. Use `[CompositeSignalHandler]` (or `SignalBus.RegisterCompositeCommand`) instead.
+
+#### 5. Generic-only ICommand<TSignal> / IAsyncCommand<TSignal> Discovery
+
+Attribute-based scanning now recognizes command classes that only implement the generic `ICommand<T>` / `IAsyncCommand<T>` interfaces. Previously these were silently skipped during `[SignalHandler]` discovery and build validation.
+
+If you have a `[SignalHandler]` type that implements neither interface, the context now logs an error at startup so the misconfiguration is visible.
+
+---
+
+## Version 0.3.0 → 0.3.1
 
 ### Breaking Changes
 
@@ -423,8 +458,8 @@ After successful migration:
 If you encounter issues during migration:
 
 1. **Check the Troubleshooting Guide** - [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-2. **Review GitHub Issues** - [GitHub Issues](https://github.com/CevatAYDN/Pixel-Flow-Clone/issues)
-3. **Ask in Discussions** - [GitHub Discussions](https://github.com/CevatAYDN/Pixel-Flow-Clone/discussions)
+2. **Review GitLab Issues** - [GitLab Issues](https://gitlab.com/beehivegame/GameContainer/issues)
+3. **Ask in Discussions** - [GitLab Discussions](https://gitlab.com/beehivegame/GameContainer/discussions)
 4. **Check Sample Projects** - [Samples~/Counter](Samples~/Counter/README.md)
 
 ---

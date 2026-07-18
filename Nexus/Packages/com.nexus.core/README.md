@@ -25,7 +25,7 @@
 
 1. Open Unity Package Manager (Window > Package Manager)
 2. Click the `+` button and select "Add package from git URL"
-3. Enter: `https://github.com/CevatAYDN/GameContainer.git?path=Nexus/Packages/com.nexus.core`
+3. Enter: `https://gitlab.com/beehivegame/GameContainer.git?path=Nexus/Packages/com.nexus.core`
 
 ### Via Packages/manifest.json
 
@@ -34,7 +34,7 @@ Add to your `Packages/manifest.json`:
 ```json
 {
   "dependencies": {
-    "com.nexus.core": "https://github.com/CevatAYDN/GameContainer.git?path=Nexus/Packages/com.nexus.core#0.3.2"
+    "com.nexus.core": "https://gitlab.com/beehivegame/GameContainer.git?path=Nexus/Packages/com.nexus.core#0.4.0"
   }
 }
 ```
@@ -383,7 +383,7 @@ context.SignalBus.Fire(new PlayerPositionSignal { ... });
 
 - [Migration Guide](MIGRATION.md) - Version upgrade guide
 - [Troubleshooting Guide](TROUBLESHOOTING.md) - Common issues and solutions
-- [API Reference](https://github.com/CevatAYDN/GameContainer/blob/main/README.md) - Full API documentation
+- [API Reference](https://gitlab.com/beehivegame/GameContainer/blob/main/README.md) - Full API documentation
 - [Samples](Samples~/Counter/README.md) - Example implementations
 
 ## 🤝 Contributing
@@ -402,9 +402,9 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 📞 Support
 
-- **Issues**: [GitHub Issues](https://github.com/CevatAYDN/GameContainer/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/CevatAYDN/GameContainer/discussions)
-- **Documentation**: [Wiki](https://github.com/CevatAYDN/GameContainer/wiki)
+- **Issues**: [GitLab Issues](https://gitlab.com/beehivegame/GameContainer/issues)
+- **Discussions**: [GitLab Discussions](https://gitlab.com/beehivegame/GameContainer/discussions)
+- **Documentation**: [Wiki](https://gitlab.com/beehivegame/GameContainer/wiki)
 
 ## 🔄 Continuous Integration
 
