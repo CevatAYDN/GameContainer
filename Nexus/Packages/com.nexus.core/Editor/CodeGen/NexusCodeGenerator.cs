@@ -254,6 +254,45 @@ namespace Nexus.Editor
                 }
 
                 initSb.AppendLine("            });");
+
+                // Generate AOT Clearers (0 GC Allocation optimization for pooling reuse)
+                var clearFields = fields.Where(f => f.GetCustomAttribute<InjectAttribute>() != null && !f.FieldType.IsValueType).ToList();
+                var clearProps = properties.Where(p => p.GetCustomAttribute<InjectAttribute>() != null && !p.PropertyType.IsValueType && p.GetSetMethod(true) != null).ToList();
+
+                if (clearFields.Count > 0 || clearProps.Count > 0)
+                {
+                    initSb.AppendLine($"            NexusDI.RegisterClearer<{fullName}>(instance =>");
+                    initSb.AppendLine("            {");
+
+                    foreach (var f in clearFields)
+                    {
+                        if (f.IsPublic)
+                        {
+                            initSb.AppendLine($"                instance.{f.Name} = null;");
+                        }
+                        else
+                        {
+                            string cacheFieldName = $"s_f_{typeSafeName}_{f.Name}";
+                            initSb.AppendLine($"                {cacheFieldName}.SetValue(instance, null);");
+                        }
+                    }
+
+                    foreach (var p in clearProps)
+                    {
+                        var setMethod = p.GetSetMethod(true);
+                        if (setMethod.IsPublic)
+                        {
+                            initSb.AppendLine($"                instance.{p.Name} = null;");
+                        }
+                        else
+                        {
+                            string cachePropName = $"s_p_{typeSafeName}_{p.Name}";
+                            initSb.AppendLine($"                {cachePropName}.SetValue(instance, null);");
+                        }
+                    }
+
+                    initSb.AppendLine("            });");
+                }
             }
 
             // Generate PreserveMembers (Issue 4)

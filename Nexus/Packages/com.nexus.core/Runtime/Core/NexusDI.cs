@@ -26,6 +26,7 @@ namespace Nexus.Core
         private volatile bool _disposed;
 
         private static readonly ConcurrentDictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
+        private static readonly ConcurrentDictionary<Type, Action<object>> s_customClearers = new();
 
         /// <summary>
         /// Registers a compile-time generated injector action for a class to bypass runtime reflection in AOT.
@@ -33,6 +34,14 @@ namespace Nexus.Core
         public static void RegisterInjector<T>(Action<T, NexusDI> injector) where T : class
         {
             s_customInjectors[typeof(T)] = (instance, di) => injector((T)instance, di);
+        }
+
+        /// <summary>
+        /// Registers a compile-time generated clearer action for a class to bypass runtime reflection in AOT.
+        /// </summary>
+        public static void RegisterClearer<T>(Action<T> clearer) where T : class
+        {
+            s_customClearers[typeof(T)] = instance => clearer((T)instance);
         }
 
         private class InjectableField
@@ -551,6 +560,12 @@ namespace Nexus.Core
             }
             var type = instance.GetType();
 
+            if (s_customClearers.TryGetValue(type, out var clearer))
+            {
+                clearer(instance);
+                return;
+            }
+
             var meta = s_clearMetadataCache.GetOrAdd(type, t =>
             {
                 var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -672,6 +687,7 @@ namespace Nexus.Core
         public static void ClearCaches()
         {
             s_customInjectors.Clear();
+            s_customClearers.Clear();
             s_injectMetadataCache.Clear();
             s_clearMetadataCache.Clear();
             // Note: singleton-construction tracking is per-container (P1-5 fix),
