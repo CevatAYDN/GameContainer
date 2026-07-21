@@ -1,7 +1,5 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Scripting;
@@ -231,6 +229,7 @@ namespace Nexus.Core
                 
                 // Initialize services (INexusService.InitializeAsync)
                 await Context.InitializeServicesAsync(Context.LifetimeToken);
+                Context.Container.ReInjectAll();
 
                 // Run all registered lifecycles. We iterate the cached _lifecycles array
                 // instead of resolving from DI because NexusDI stores only one binding per type.
@@ -238,6 +237,8 @@ namespace Nexus.Core
                 {
                     await _lifecycles[i].OnInitializeAsync(Context.LifetimeToken);
                 }
+                Context.Container.ReInjectAll();
+                await Context.InitializeLazyServicesAsync(Context.LifetimeToken);
                 for (int i = 0; i < _lifecycles.Length; i++)
                 {
                     await _lifecycles[i].OnStartAsync(Context.LifetimeToken);

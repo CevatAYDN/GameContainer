@@ -40,7 +40,12 @@ namespace Nexus.Core.Services
             byte[] deviceBoundKey = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawKeySeed));
 
             byte[] seedBytes = new byte[32];
-            string storedObfuscatedSeed = PlayerPrefs.GetString("NT_StorageSeed", null);
+            string seedKey = "NT_StorageSeed";
+            if (customSalt != "Nexus_Secure_Salt_2026")
+            {
+                seedKey = $"NT_StorageSeed_{customSalt}";
+            }
+            string storedObfuscatedSeed = PlayerPrefs.GetString(seedKey, null);
 
             if (string.IsNullOrEmpty(storedObfuscatedSeed))
             {
@@ -55,7 +60,7 @@ namespace Nexus.Core.Services
                     obfuscatedBytes[i] = (byte)(seedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
                 }
 
-                PlayerPrefs.SetString("NT_StorageSeed", Convert.ToBase64String(obfuscatedBytes));
+                PlayerPrefs.SetString(seedKey, Convert.ToBase64String(obfuscatedBytes));
                 PlayerPrefs.Save();
             }
             else
@@ -80,7 +85,7 @@ namespace Nexus.Core.Services
                         obfuscatedBytes[i] = (byte)(seedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
                     }
 
-                    PlayerPrefs.SetString("NT_StorageSeed", Convert.ToBase64String(obfuscatedBytes));
+                    PlayerPrefs.SetString(seedKey, Convert.ToBase64String(obfuscatedBytes));
                     PlayerPrefs.Save();
                 }
             }

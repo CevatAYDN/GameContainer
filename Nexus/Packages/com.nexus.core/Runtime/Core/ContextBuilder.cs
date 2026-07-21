@@ -64,6 +64,11 @@ namespace Nexus.Core
             _container.BindInstance(instance);
         }
 
+        public void EnableStrictInjection()
+        {
+            _container.StrictInjection = true;
+        }
+
         public void BindService<TInterface, TImplementation>()
             where TImplementation : class, TInterface, INexusService
         {
@@ -76,6 +81,21 @@ namespace Nexus.Core
         {
             _container.Bind<TImplementation>(isSingleton: true);
             _serviceTypes.Add(typeof(TImplementation));
+        }
+
+        public void BindLazyService<TInterface, TImplementation>()
+            where TImplementation : class, TInterface, INexusService
+        {
+            _container.Bind<TInterface, TImplementation>(isSingleton: true);
+            // Intentionally NOT adding to _serviceTypes — prevents eager construction
+            // during InitializeServicesAsync(). Construction happens on first Resolve().
+        }
+
+        public void BindLazyService<TImplementation>()
+            where TImplementation : class, INexusService
+        {
+            _container.Bind<TImplementation>(isSingleton: true);
+            // Intentionally NOT adding to _serviceTypes
         }
 
         /// <summary>
@@ -145,6 +165,84 @@ namespace Nexus.Core
         public void Fire<T>(T signal) where T : struct
         {
             _signalBus.Fire(signal);
+        }
+
+        /// <summary>
+        /// Validates that all registered types' [Inject] dependencies have matching bindings.
+        /// Returns a list of validation issues (empty = all dependencies are satisfiable).
+        /// </summary>
+        public List<DiValidationIssue> Validate()
+        {
+            var issues = new List<DiValidationIssue>();
+            var allRegisteredTypes = _container.GetAllRegisteredTypes();
+
+            foreach (var type in allRegisteredTypes)
+            {
+                NexusDI.InjectableMetadata meta;
+                try { meta = NexusDI.GetOrCreateInjectMetadata(type); }
+                catch { continue; }
+
+                // Check constructor parameters
+                if (meta.ConstructorParameterTypes != null)
+                {
+                    foreach (var paramType in meta.ConstructorParameterTypes)
+                    {
+                        if (!allRegisteredTypes.Contains(paramType))
+                        {
+                            issues.Add(new DiValidationIssue(
+                                type, paramType,
+                                DiValidationIssueType.MissingConstructorDependency,
+                                $"Constructor of '{type.Name}' requires '{paramType.Name}' which is not registered."
+                            ));
+                        }
+                    }
+                }
+
+                // Check [Inject] fields
+                foreach (var field in meta.Fields)
+                {
+                    if (!field.IsOptional && !allRegisteredTypes.Contains(field.Type))
+                    {
+                        issues.Add(new DiValidationIssue(
+                            type, field.Type,
+                            DiValidationIssueType.MissingFieldDependency,
+                            $"[Inject] field '{type.Name}.{field.Field.Name}' requires '{field.Type.Name}' which is not registered."
+                        ));
+                    }
+                }
+
+                // Check [Inject] properties
+                foreach (var prop in meta.Properties)
+                {
+                    if (!prop.IsOptional && !allRegisteredTypes.Contains(prop.Type))
+                    {
+                        issues.Add(new DiValidationIssue(
+                            type, prop.Type,
+                            DiValidationIssueType.MissingPropertyDependency,
+                            $"[Inject] property '{type.Name}.{prop.Property.Name}' requires '{prop.Type.Name}' which is not registered."
+                        ));
+                    }
+                }
+
+                // Check [Inject] method parameters
+                foreach (var method in meta.Methods)
+                {
+                    for (int i = 0; i < method.ParameterTypes.Length; i++)
+                    {
+                        if (!method.OptionalParameterMask[i] && !allRegisteredTypes.Contains(method.ParameterTypes[i]))
+                        {
+                            var paramName = method.Method.GetParameters()[i].Name;
+                            issues.Add(new DiValidationIssue(
+                                type, method.ParameterTypes[i],
+                                DiValidationIssueType.MissingMethodDependency,
+                                $"[Inject] method '{type.Name}.{method.Method.Name}' parameter '{paramName}' requires '{method.ParameterTypes[i].Name}' which is not registered."
+                            ));
+                        }
+                    }
+                }
+            }
+
+            return issues;
         }
 
         internal IReadOnlyList<Type> ReactiveModelTypes => _reactiveModelTypes;

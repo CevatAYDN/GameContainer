@@ -98,6 +98,16 @@ namespace Nexus.Core
     }
 
     /// <summary>
+    /// Marks an [Inject] field, property, or method parameter as optional.
+    /// When strict injection mode is enabled, optional members are silently skipped if the dependency is not registered (no exception thrown).
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property | AttributeTargets.Parameter, AllowMultiple = false, Inherited = true)]
+    [Preserve]
+    public sealed class OptionalInjectAttribute : Attribute
+    {
+    }
+
+    /// <summary>
     /// Associates a <see cref="View"/>-derived class with its <see cref="Mediator{TView}"/> type.
     /// When a View with this attribute is bound, the mediator is automatically created and wired.
     /// </summary>

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
@@ -95,13 +94,28 @@ namespace Nexus.Core
             where TImplementation : class, TInterface, INexusService;
 
         /// <summary>Binds a self-referencing service as a singleton.</summary>
-        void BindService<TImplementation>() 
+        void BindService<TImplementation>()
+            where TImplementation : class, INexusService;
+
+        /// <summary>
+        /// Binds a lazy service interface to its implementation. Unlike BindService, the service
+        /// is NOT eagerly constructed during InitializeServicesAsync — it is resolved on first access
+        /// via LazyInjection&lt;T&gt; or direct Resolve&lt;T&gt; call. Implements INexusService for lifecycle
+        /// management; InitializeAsync is called during the lazy-service initialization window.
+        /// </summary>
+        void BindLazyService<TInterface, TImplementation>()
+            where TImplementation : class, TInterface, INexusService;
+
+        /// <summary>Binds a self-referencing lazy service as a singleton.</summary>
+        void BindLazyService<TImplementation>()
             where TImplementation : class, INexusService;
         
         /// <summary>Low-level bind for registering any implementation during OnConfigure.</summary>
         void Bind<TInterface, TImplementation>() where TImplementation : class, TInterface;
         void Bind<T>() where T : class;
         void BindInstance<T>(T instance) where T : class;
+
+        void EnableStrictInjection();
         
         void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class where TSignal : struct;

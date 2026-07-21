@@ -89,8 +89,19 @@ namespace Nexus.Core.FSM
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogException(ex);
-                // Fallback to null state to avoid remaining in a corrupted/failed state
-                _currentState = null;
+                // Attempt to transition to ErrorState for safe recovery
+                var errorStateType = System.Type.GetType("RingFlow.Gameplay.ErrorState, RingFlow.Gameplay");
+                if (errorStateType != null && _states.TryGetValue(errorStateType, out var errorState))
+                {
+                    _currentState = errorState;
+                    // Pass exception information to ErrorState
+                    await _currentState.OnEnterAsync(ex, token);
+                }
+                else
+                {
+                    // Fallback to null state if ErrorState is not registered
+                    _currentState = null;
+                }
             }
         }
 

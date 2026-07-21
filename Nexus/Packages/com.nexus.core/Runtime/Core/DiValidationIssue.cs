@@ -1,0 +1,30 @@
+using System;
+
+namespace Nexus.Core
+{
+    public enum DiValidationIssueType
+    {
+        MissingConstructorDependency,
+        MissingFieldDependency,
+        MissingPropertyDependency,
+        MissingMethodDependency,
+        CircularDependency,
+        UnregisteredViewMediator,
+    }
+
+    public class DiValidationIssue
+    {
+        public Type SourceType { get; }
+        public Type MissingType { get; }
+        public DiValidationIssueType IssueType { get; }
+        public string Message { get; }
+
+        public DiValidationIssue(Type sourceType, Type missingType, DiValidationIssueType issueType, string message)
+        {
+            SourceType = sourceType;
+            MissingType = missingType;
+            IssueType = issueType;
+            Message = message;
+        }
+    }
+}

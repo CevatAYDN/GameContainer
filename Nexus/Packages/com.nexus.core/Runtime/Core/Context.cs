@@ -98,7 +98,13 @@ namespace Nexus.Core
 
             _viewBinder = new ViewBinder(this, Container);
             Container.BindInstance(_viewBinder);
-            
+
+            // Apply ContextData strict injection setting
+            if (_contextData != null && _contextData.EnableStrictInjection)
+            {
+                Container.StrictInjection = true;
+            }
+
             NexusRuntime.RegisterContext(this);
         }
 
@@ -161,6 +167,23 @@ namespace Nexus.Core
 
             // Scan and register attributes
             ScanAssembliesAndRegister(_builder);
+
+#if UNITY_EDITOR
+            // Runtime DI validation in editor — catches missing bindings immediately in Play Mode
+            var issues = _builder.Validate();
+            if (issues.Count > 0)
+            {
+                var logger = TryResolve<ILoggerService>();
+                foreach (var issue in issues)
+                {
+                    var message = $"[Nexus] DI Validation: {issue.Message}";
+                    if (logger != null)
+                        logger.LogError(message);
+                    else
+                        UnityEngine.Debug.LogError(message);
+                }
+            }
+#endif
         }
 
         internal async ValueTask InitializeReactiveModelsAsync(CancellationToken ct)
@@ -173,6 +196,20 @@ namespace Nexus.Core
         {
             if (_builder != null)
                 await _builder.InitializeServicesAsync(ct);
+        }
+
+        /// <summary>
+        /// Drains the lazy-service initialization queue. Services constructed on first access
+        /// via <see cref="LazyInjection{T}"/> are enqueued by <see cref="NexusDI.NotifyLazyServiceResolved"/>
+        /// and initialized here in the order they were resolved.
+        /// </summary>
+        internal async ValueTask InitializeLazyServicesAsync(CancellationToken ct)
+        {
+            while (Container._lazyServicesPendingInit.TryDequeue(out var service))
+            {
+                if (ct.IsCancellationRequested) break;
+                await service.InitializeAsync(ct);
+            }
         }
 
         private Type FindLifecycleTypeByConvention()

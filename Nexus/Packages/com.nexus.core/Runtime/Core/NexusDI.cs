@@ -2,6 +2,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
 
@@ -20,6 +21,11 @@ namespace Nexus.Core
     {
         public IDependencyAdapter ExternalAdapter { get; set; }
         public int ActiveSingletonsCount => _resolvedSingletons.Count;
+        /// <summary>
+        /// When true, Inject() throws <see cref="InvalidOperationException"/> on any unresolvable [Inject] dependency
+        /// instead of logging an error and leaving the field/property null. Members marked with [OptionalInject] are exempt.
+        /// </summary>
+        public bool StrictInjection { get; set; }
         private readonly NexusDI _parent;
         private readonly ConcurrentDictionary<Type, Binding> _bindings = new();
         private readonly HashSet<object> _resolvedSingletons = new();
@@ -27,6 +33,32 @@ namespace Nexus.Core
 
         private static readonly ConcurrentDictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
         private static readonly ConcurrentDictionary<Type, Action<object>> s_customClearers = new();
+
+        /// <summary>
+        /// Tracks [Inject] dependencies that failed to resolve for each instance.
+        /// Weak keys mean destroyed Unity objects are automatically cleaned up on GC.
+        /// Thread-safe by default via ConditionalWeakTable.
+        /// </summary>
+        private readonly ConditionalWeakTable<object, PendingInjection> _pendingInjections = new();
+
+        /// <summary>
+        /// Queue of lazily-resolved INexusService instances awaiting InitializeAsync.
+        /// Populated by LazyInjection&lt;T&gt;.Value on first access. Drained during
+        /// the lazy-service initialization window in the Root lifecycle.
+        /// Thread-safe via ConcurrentQueue.
+        /// </summary>
+        internal readonly ConcurrentQueue<INexusService> _lazyServicesPendingInit = new();
+
+        /// <summary>
+        /// Records which [Inject] members failed to resolve for a given instance,
+        /// so they can be retried later via ReInject().
+        /// </summary>
+        private class PendingInjection
+        {
+            public readonly List<InjectableField> Fields = new();
+            public readonly List<InjectableProperty> Properties = new();
+            public readonly List<(InjectableMethod Method, int[] ParamIndices)> Methods = new();
+        }
 
         /// <summary>
         /// Registers a compile-time generated injector action for a class to bypass runtime reflection in AOT.
@@ -44,22 +76,25 @@ namespace Nexus.Core
             s_customClearers[typeof(T)] = instance => clearer((T)instance);
         }
 
-        private class InjectableField
+        internal class InjectableField
         {
             public FieldInfo Field { get; set; }
             public Type Type { get; set; }
+            public bool IsOptional { get; set; }
         }
-        private class InjectableProperty
+        internal class InjectableProperty
         {
             public PropertyInfo Property { get; set; }
             public Type Type { get; set; }
+            public bool IsOptional { get; set; }
         }
-        private class InjectableMethod
+        internal class InjectableMethod
         {
             public MethodInfo Method { get; set; }
             public Type[] ParameterTypes { get; set; }
+            public bool[] OptionalParameterMask { get; set; }
         }
-        private class InjectableMetadata
+        internal class InjectableMetadata
         {
             public InjectableField[] Fields { get; set; }
             public InjectableProperty[] Properties { get; set; }
@@ -76,7 +111,7 @@ namespace Nexus.Core
         private static readonly ConcurrentDictionary<Type, InjectableMetadata> s_injectMetadataCache = new();
         private static readonly ConcurrentDictionary<Type, ClearableMetadata> s_clearMetadataCache = new();
 
-        private static InjectableMetadata GetOrCreateInjectMetadata(Type type)
+        internal static InjectableMetadata GetOrCreateInjectMetadata(Type type)
         {
             return s_injectMetadataCache.GetOrAdd(type, t =>
             {
@@ -89,7 +124,12 @@ namespace Nexus.Core
                     {
                         if (field.FieldType.IsValueType)
                             throw new InvalidOperationException($"Cannot inject value type field {t.FullName}.{field.Name}. Nexus DI only supports reference-type dependencies.");
-                        fieldList.Add(new InjectableField { Field = field, Type = field.FieldType });
+                        fieldList.Add(new InjectableField
+                        {
+                            Field = field,
+                            Type = field.FieldType,
+                            IsOptional = field.GetCustomAttribute<OptionalInjectAttribute>() != null
+                        });
                     }
                 }
 
@@ -102,7 +142,12 @@ namespace Nexus.Core
                     {
                         if (prop.PropertyType.IsValueType)
                             throw new InvalidOperationException($"Cannot inject value type property {t.FullName}.{prop.Name}. Nexus DI only supports reference-type dependencies.");
-                        propList.Add(new InjectableProperty { Property = prop, Type = prop.PropertyType });
+                        propList.Add(new InjectableProperty
+                        {
+                            Property = prop,
+                            Type = prop.PropertyType,
+                            IsOptional = prop.GetCustomAttribute<OptionalInjectAttribute>() != null
+                        });
                     }
                 }
 
@@ -115,13 +160,15 @@ namespace Nexus.Core
                     {
                         var parameters = method.GetParameters();
                         var paramTypes = new Type[parameters.Length];
+                        var optionalMask = new bool[parameters.Length];
                         for (int i = 0; i < parameters.Length; i++)
                         {
                             if (parameters[i].ParameterType.IsValueType)
                                 throw new InvalidOperationException($"Cannot inject value type parameter {t.FullName}.{method.Name}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
                             paramTypes[i] = parameters[i].ParameterType;
+                            optionalMask[i] = parameters[i].GetCustomAttribute<OptionalInjectAttribute>() != null;
                         }
-                        methodList.Add(new InjectableMethod { Method = method, ParameterTypes = paramTypes });
+                        methodList.Add(new InjectableMethod { Method = method, ParameterTypes = paramTypes, OptionalParameterMask = optionalMask });
                     }
                 }
 
@@ -389,6 +436,29 @@ namespace Nexus.Core
         }
 
         /// <summary>
+        /// Returns all registered types from this container and its parent chain.
+        /// Includes types from _bindings keys as well as auto-registered framework types
+        /// (NexusDI, IContext, ISignalBus, etc.) that are injected implicitly.
+        /// </summary>
+        internal HashSet<Type> GetAllRegisteredTypes()
+        {
+            var types = new HashSet<Type>(_bindings.Keys);
+
+            // Include auto-registered framework types that are always resolvable
+            types.Add(typeof(NexusDI));
+            types.Add(typeof(IContext));
+            types.Add(typeof(ISignalBus));
+
+            // Walk parent chain
+            if (_parent != null)
+            {
+                types.UnionWith(_parent.GetAllRegisteredTypes());
+            }
+
+            return types;
+        }
+
+        /// <summary>
         /// P1-10 fix: returns an already-constructed singleton instance without
         /// triggering lazy construction. Used during context teardown so services
         /// that were never resolved are not instantiated just to be disposed.
@@ -434,18 +504,37 @@ namespace Nexus.Core
             for (int i = 0; i < meta.Fields.Length; i++)
             {
                 var f = meta.Fields[i];
+
+                // Handle LazyInjection<T> fields — construct a lazy wrapper instead of eagerly resolving
+                if (f.Type.IsGenericType && f.Type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
+                {
+                    var lazyInstance = Activator.CreateInstance(f.Type, this);
+                    f.Field.SetValue(instance, lazyInstance);
+                    continue;
+                }
+
                 var resolvedValue = TryResolve(f.Type);
                 if (resolvedValue != null)
                 {
                     f.Field.SetValue(instance, resolvedValue);
                 }
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                else if (f.IsOptional)
+                {
+                    // Silently skip — member is marked [OptionalInject]
+                }
+                else if (StrictInjection)
+                {
+                    throw new InvalidOperationException(
+                        $"Strict injection failed: [Inject] field '{type.FullName}.{f.Field.Name}' of type '{f.Type.FullName}' is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                }
                 else
                 {
+                    RecordPendingField(instance, f);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                     // P1-4 fix: surface silently-missing [Inject] dependencies in dev builds.
                     NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{f.Type.FullName}' for field '{type.FullName}.{f.Field.Name}' is not registered; the field was left null.");
-                }
 #endif
+                }
             }
 
             // Inject properties
@@ -457,13 +546,23 @@ namespace Nexus.Core
                 {
                     p.Property.SetValue(instance, resolvedValue);
                 }
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                else if (p.IsOptional)
+                {
+                    // Silently skip — member is marked [OptionalInject]
+                }
+                else if (StrictInjection)
+                {
+                    throw new InvalidOperationException(
+                        $"Strict injection failed: [Inject] property '{type.FullName}.{p.Property.Name}' of type '{p.Type.FullName}' is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                }
                 else
                 {
+                    RecordPendingProperty(instance, p);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
                     // P1-4 fix: surface silently-missing [Inject] dependencies in dev builds.
                     NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{p.Type.FullName}' for property '{type.FullName}.{p.Property.Name}' is not registered; the property was left null.");
-                }
 #endif
+                }
             }
 
             // Inject methods (e.g. Construct)
@@ -474,17 +573,200 @@ namespace Nexus.Core
                 for (int j = 0; j < m.ParameterTypes.Length; j++)
                 {
                     args[j] = TryResolve(m.ParameterTypes[j]);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
                     if (args[j] == null)
                     {
-                        // P1-4 fix: surface silently-missing [Inject] dependencies in dev builds.
-                        NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{m.ParameterTypes[j].FullName}' for method '{type.FullName}.{m.Method.Name}' is not registered; null was passed.");
-                    }
+                        if (m.OptionalParameterMask[j])
+                        {
+                            // Silently skip — parameter is marked [OptionalInject]
+                        }
+                        else if (StrictInjection)
+                        {
+                            throw new InvalidOperationException(
+                                $"Strict injection failed: [Inject] method '{type.FullName}.{m.Method.Name}' parameter {j} of type '{m.ParameterTypes[j].FullName}' is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                        }
+                        else
+                        {
+                            RecordPendingMethodParam(instance, m, j);
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            // P1-4 fix: surface silently-missing [Inject] dependencies in dev builds.
+                            NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{m.ParameterTypes[j].FullName}' for method '{type.FullName}.{m.Method.Name}' is not registered; null was passed.");
 #endif
+                        }
+                    }
                 }
                 m.Method.Invoke(instance, args);
             }
         }
+
+        /// <summary>
+        /// Called by LazyInjection&lt;T&gt;.Value when a lazy-wrapped service is resolved for the first time.
+        /// If the service implements <see cref="INexusService"/>, it is enqueued for deferred initialization
+        /// during the next lazy-service initialization window in the Root lifecycle.
+        /// </summary>
+        internal void NotifyLazyServiceResolved(Type type, object instance)
+        {
+            if (instance is INexusService service)
+            {
+                _lazyServicesPendingInit.Enqueue(service);
+            }
+        }
+
+        #region Pending Injection Tracking
+
+        private void RecordPendingField(object instance, InjectableField field)
+        {
+            var pending = _pendingInjections.GetOrCreateValue(instance);
+            pending.Fields.Add(field);
+        }
+
+        private void RecordPendingProperty(object instance, InjectableProperty property)
+        {
+            var pending = _pendingInjections.GetOrCreateValue(instance);
+            pending.Properties.Add(property);
+        }
+
+        private void RecordPendingMethodParam(object instance, InjectableMethod method, int paramIndex)
+        {
+            var pending = _pendingInjections.GetOrCreateValue(instance);
+            for (int i = 0; i < pending.Methods.Count; i++)
+            {
+                if (pending.Methods[i].Method == method)
+                {
+                    // Extend param indices
+                    var existing = pending.Methods[i];
+                    var indices = existing.ParamIndices;
+                    if (Array.IndexOf(indices, paramIndex) < 0)
+                    {
+                        var newIndices = new int[indices.Length + 1];
+                        Array.Copy(indices, newIndices, indices.Length);
+                        newIndices[newIndices.Length - 1] = paramIndex;
+                        pending.Methods[i] = (method, newIndices);
+                    }
+                    return;
+                }
+            }
+            pending.Methods.Add((method, new[] { paramIndex }));
+        }
+
+        /// <summary>
+        /// Re-attempts all previously-failed [Inject] dependencies on the given instance.
+        /// Returns true if all pending injections for this instance succeeded.
+        /// </summary>
+        public bool ReInject(object instance)
+        {
+            if (instance == null || !_pendingInjections.TryGetValue(instance, out var pending))
+                return true;
+
+            bool allSucceeded = true;
+            var type = instance.GetType();
+
+            // Retry fields
+            for (int i = pending.Fields.Count - 1; i >= 0; i--)
+            {
+                var f = pending.Fields[i];
+                var resolvedValue = TryResolve(f.Type);
+                if (resolvedValue != null)
+                {
+                    f.Field.SetValue(instance, resolvedValue);
+                    pending.Fields.RemoveAt(i);
+                }
+                else
+                {
+                    allSucceeded = false;
+                }
+            }
+
+            // Retry properties
+            for (int i = pending.Properties.Count - 1; i >= 0; i--)
+            {
+                var p = pending.Properties[i];
+                var resolvedValue = TryResolve(p.Type);
+                if (resolvedValue != null)
+                {
+                    p.Property.SetValue(instance, resolvedValue);
+                    pending.Properties.RemoveAt(i);
+                }
+                else
+                {
+                    allSucceeded = false;
+                }
+            }
+
+            // Retry method parameters
+            for (int i = pending.Methods.Count - 1; i >= 0; i--)
+            {
+                var (method, paramIndices) = pending.Methods[i];
+                var args = new object[method.ParameterTypes.Length];
+                bool methodSucceeded = true;
+
+                for (int j = 0; j < method.ParameterTypes.Length; j++)
+                {
+                    args[j] = TryResolve(method.ParameterTypes[j]);
+                    if (args[j] == null)
+                    {
+                        // Check if this parameter was tracked as pending
+                        bool isTracked = Array.IndexOf(paramIndices, j) >= 0;
+                        if (isTracked)
+                        {
+                            methodSucceeded = false;
+                        }
+                        // Untracked params were optional or already resolved — leave as null
+                    }
+                }
+
+                if (methodSucceeded)
+                {
+                    method.Method.Invoke(instance, args);
+                    pending.Methods.RemoveAt(i);
+                }
+                else
+                {
+                    allSucceeded = false;
+                }
+            }
+
+            // If all resolved, remove the pending record entirely
+            if (allSucceeded)
+            {
+                _pendingInjections.Remove(instance);
+            }
+
+            return allSucceeded;
+        }
+
+        /// <summary>
+        /// Retries ALL pending injections across all tracked instances.
+        /// Returns the count of instances that became fully resolved this call.
+        /// </summary>
+        public int ReInjectAll()
+        {
+            // Snapshots keys since the table may be modified during iteration
+            var snapshot = new List<KeyValuePair<object, PendingInjection>>();
+            foreach (var kvp in _pendingInjections)
+            {
+                snapshot.Add(kvp);
+            }
+
+            int resolved = 0;
+            foreach (var kvp in snapshot)
+            {
+                if (ReInject(kvp.Key))
+                {
+                    resolved++;
+                }
+            }
+            return resolved;
+        }
+
+        /// <summary>
+        /// Removes the pending injection record for an instance (e.g., when a view is destroyed).
+        /// </summary>
+        public void ClearPendingInjection(object instance)
+        {
+            _pendingInjections.Remove(instance);
+        }
+
+        #endregion
 
         private object CreateInstance(Type type)
         {
@@ -500,6 +782,11 @@ namespace Nexus.Core
             for (int i = 0; i < paramTypes.Length; i++)
             {
                 args[i] = TryResolve(paramTypes[i]);
+                if (args[i] == null && StrictInjection)
+                {
+                    throw new InvalidOperationException(
+                        $"Strict injection failed: constructor parameter {i} of type '{paramTypes[i].FullName}' on '{type.FullName}' is not registered.");
+                }
             }
 
             try

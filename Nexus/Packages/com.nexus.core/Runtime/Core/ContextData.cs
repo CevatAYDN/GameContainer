@@ -27,6 +27,9 @@ namespace Nexus.Core
         public bool EnableAnalytics;
         public bool EnableDebugSignals;
 
+        [Tooltip("When enabled, Inject() throws InvalidOperationException on unresolved [Inject] dependencies instead of logging and leaving null. Use [OptionalInject] to exempt specific members.")]
+        public bool EnableStrictInjection;
+
         [Header("Performance")]
         public int CommandPoolInitialSize = 4;
         public int CommandPoolMaxSize = 64;

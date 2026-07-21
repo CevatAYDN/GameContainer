@@ -91,6 +91,9 @@ namespace Nexus.Editor
 
                 // 6. Validate Composite Trigger reachability (Plan §9.6)
                 ValidateCompositeTriggerReachability(ref errorCount, ref warningCount);
+
+                // 7. Validate DI binding completeness across assemblies
+                ValidateDiBindings(ref errorCount, ref warningCount);
             }
             catch (Exception ex)
             {
@@ -937,7 +940,98 @@ namespace Nexus.Editor
             return false;
         }
 
-        private static readonly System.Text.RegularExpressions.Regex s_fireGenericRegex = 
+        private static void ValidateDiBindings(ref int errorCount, ref int warningCount)
+        {
+            // Build a set of all available types from non-system loaded assemblies.
+            // This catches missing assembly references and type resolution failures
+            // for types with [Inject] dependencies.
+            var availableTypeNames = new HashSet<string>(StringComparer.Ordinal);
+            var scannedTypes = new List<Type>();
+
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    continue;
+                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (type.FullName != null)
+                        {
+                            availableTypeNames.Add(type.FullName);
+                            if (!type.IsAbstract && !type.IsInterface && !type.IsEnum && !type.IsValueType)
+                                scannedTypes.Add(type);
+                        }
+                    }
+                }
+                catch (ReflectionTypeLoadException) { }
+            }
+
+            // Always-resolvable types auto-provided by NexusDI
+            availableTypeNames.Add(typeof(NexusDI).FullName);
+            availableTypeNames.Add(typeof(IContext).FullName);
+            availableTypeNames.Add(typeof(ISignalBus).FullName);
+
+            foreach (var type in scannedTypes)
+            {
+                NexusDI.InjectableMetadata meta;
+                try { meta = NexusDI.GetOrCreateInjectMetadata(type); }
+                catch { continue; }
+
+                // Constructor parameter validation
+                if (meta.ConstructorParameterTypes is { Length: > 0 })
+                {
+                    foreach (var paramType in meta.ConstructorParameterTypes)
+                    {
+                        if (paramType.FullName != null && !availableTypeNames.Contains(paramType.FullName))
+                        {
+                            Debug.LogWarning($"[Nexus Warning] DI: '{type.FullName}' constructor depends on '{paramType.FullName}', which is not available in any scanned assembly. Verify the assembly reference.");
+                            warningCount++;
+                        }
+                    }
+                }
+
+                // [Inject] field validation
+                foreach (var field in meta.Fields)
+                {
+                    if (!field.IsOptional && field.Type.FullName != null && !availableTypeNames.Contains(field.Type.FullName))
+                    {
+                        Debug.LogWarning($"[Nexus Warning] DI: [Inject] field '{type.FullName}.{field.Field.Name}' requires '{field.Type.FullName}', which is not available in any scanned assembly.");
+                        warningCount++;
+                    }
+                }
+
+                // [Inject] property validation
+                foreach (var prop in meta.Properties)
+                {
+                    if (!prop.IsOptional && prop.Type.FullName != null && !availableTypeNames.Contains(prop.Type.FullName))
+                    {
+                        Debug.LogWarning($"[Nexus Warning] DI: [Inject] property '{type.FullName}.{prop.Property.Name}' requires '{prop.Type.FullName}', which is not available in any scanned assembly.");
+                        warningCount++;
+                    }
+                }
+
+                // [Inject] method parameter validation
+                foreach (var method in meta.Methods)
+                {
+                    for (int i = 0; i < method.ParameterTypes.Length; i++)
+                    {
+                        if (!method.OptionalParameterMask[i] && method.ParameterTypes[i].FullName != null && !availableTypeNames.Contains(method.ParameterTypes[i].FullName))
+                        {
+                            var paramName = method.Method.GetParameters()[i].Name;
+                            Debug.LogWarning($"[Nexus Warning] DI: [Inject] method '{type.FullName}.{method.Method.Name}' parameter '{paramName}' requires '{method.ParameterTypes[i].FullName}', which is not available in any scanned assembly.");
+                            warningCount++;
+                        }
+                    }
+                }
+            }
+        }
+
+        private static readonly System.Text.RegularExpressions.Regex s_fireGenericRegex =
             new(@"\.Fire[A-Za-z]*\s*<\s*([A-Za-z0-9_\.]+)\s*>", System.Text.RegularExpressions.RegexOptions.Compiled);
             
         private static readonly System.Text.RegularExpressions.Regex s_fireNewRegex = 
