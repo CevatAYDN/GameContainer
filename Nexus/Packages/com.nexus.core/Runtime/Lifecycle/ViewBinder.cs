@@ -173,13 +173,16 @@ namespace Nexus.Core
             {
                 var logger = _context?.TryResolve<ILoggerService>();
                 logger?.Log($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
-                view.Bind(_context);
                 _container.Inject(view);
+                view.Bind(_context);
                 return;
             }
 
-            view.Bind(_context);
+            // Inject BEFORE Bind so that [Inject] properties (e.g. TickService)
+            // are available when OnBind() runs. TickableView.OnBind() needs TickService
+            // to register for tick callbacks — if injected after Bind, it's null.
             _container.Inject(view);
+            view.Bind(_context);
 
             var mediatorType = mediatorAttr.MediatorType;
             var mediator = GetMediator(mediatorType);
