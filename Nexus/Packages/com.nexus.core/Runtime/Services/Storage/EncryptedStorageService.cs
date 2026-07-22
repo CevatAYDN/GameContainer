@@ -32,6 +32,11 @@ namespace Nexus.Core.Services
 
         public EncryptedStorageService(string customSalt = "Nexus_Secure_Salt_2026")
         {
+            if (string.IsNullOrEmpty(customSalt))
+            {
+                customSalt = "Nexus_Secure_Salt_2026";
+            }
+
             // Device-bound key for seed obfuscation
             string deviceId = SystemInfo.deviceUniqueIdentifier ?? "Default_Device_ID";
             string rawKeySeed = $"{deviceId}_{customSalt}_{Application.identifier}";
@@ -109,7 +114,15 @@ namespace Nexus.Core.Services
             Array.Copy(finalHash, 0, _legacyEncryptionKey, 0, 16);
             Array.Copy(finalHash, 16, _legacyHmacKey, 0, 16);
 
-            _storageFolderPath = Path.Combine(Application.persistentDataPath, "SecureData");
+            if (customSalt == "Nexus_Secure_Salt_2026")
+            {
+                _storageFolderPath = Path.Combine(Application.persistentDataPath, "SecureData");
+            }
+            else
+            {
+                _storageFolderPath = Path.Combine(Application.persistentDataPath, $"SecureData_{customSalt}");
+            }
+
             if (!Directory.Exists(_storageFolderPath))
             {
                 Directory.CreateDirectory(_storageFolderPath);

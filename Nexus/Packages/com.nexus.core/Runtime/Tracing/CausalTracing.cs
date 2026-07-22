@@ -171,6 +171,12 @@ namespace Nexus.Core
         public static int BeginEvent(TraceEventType type, string typeName, ExecutionMode mode = ExecutionMode.Sequential)
         {
 #if NEXUS_DEBUG
+            // High-frequency trace bypass optimization
+            if (typeName == "TimerTickSignal" || typeName == "TimerCommand")
+            {
+                return 0;
+            }
+
             int parentId = s_currentActiveEventId.Value;
             if (parentId == 0 && s_currentFrame.Value == null)
             {
@@ -221,6 +227,8 @@ namespace Nexus.Core
         public static void EndEvent(int eventId, TraceStatus status = TraceStatus.OK)
         {
 #if NEXUS_DEBUG
+            if (eventId <= 0) return;
+
             var frame = s_currentFrame.Value;
             if (frame == null)
             {
