@@ -27,12 +27,17 @@ namespace Nexus.Editor
         private static HashSet<string> s_cachedSignals;
         private static HashSet<(string cmd, string sig, string mode)> s_cachedCommands;
         private static HashSet<string> s_cachedModels;
+        private static HashSet<string> s_cachedViews;
+        private static HashSet<string> s_cachedServices;
         private static bool s_staticScanValid;
+
+        private static readonly Dictionary<Type, MethodInfo> s_fireMethodCache = new();
 
         [UnityEditor.Callbacks.DidReloadScripts]
         private static void OnScriptsReloaded()
         {
             s_staticScanValid = false;
+            s_fireMethodCache.Clear();
         }
 
         // ─── UI ────────────────────────────────────────────────
@@ -44,6 +49,12 @@ namespace Nexus.Editor
         private VisualElement _breadcrumb;
         private TextField _quickFindField;
         private string _searchQuery = string.Empty;
+
+        // Live Section cached elements (G-3)
+        private VisualElement _sigFill;
+        private VisualElement _cmdFill;
+        private Label _sigRateLabel;
+        private Label _cmdRateLabel;
 
         // ─── Cached data (refreshed on demand) ─────────────────
         private class Snapshot
@@ -57,6 +68,8 @@ namespace Nexus.Editor
             public List<string> ContextTags = new();
             public List<string> ModelNames = new();
             public List<string> SignalNames = new();
+            public List<string> ViewNames = new();
+            public List<string> ServiceNames = new();
             public List<(string cmd, string sig, string mode)> CommandEntries = new();
             public int RootCount;
         }
@@ -111,10 +124,6 @@ namespace Nexus.Editor
             quickBar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gm_refresh_all"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
             _root.Add(quickBar);
 
-            // Scheduled refresh while in Play Mode
-            _refreshSchedule = _root.schedule.Execute(OnScheduledRefresh).Every(250);
-
-            // Ensure play-mode subscription is active (survives tab switch cycles)
             if (!_subscribedToPlayMode)
             {
                 EditorApplication.playModeStateChanged += OnPlayModeChange;
@@ -127,19 +136,27 @@ namespace Nexus.Editor
         }
 
         private bool _subscribedToPlayMode;
-        private IVisualElementScheduledItem _refreshSchedule;
 
         public override void OnEnable()
         {
             base.OnEnable();
-            // Registration handled in CreateView to survive tab switches
+            if (!_subscribedToPlayMode)
+            {
+                EditorApplication.playModeStateChanged += OnPlayModeChange;
+                _subscribedToPlayMode = true;
+            }
         }
 
         public override void OnDisable()
         {
-            _refreshSchedule?.Pause();
             base.OnDisable();
             UnsubscribePlayMode();
+        }
+
+        public override void OnUpdate()
+        {
+            base.OnUpdate();
+            OnScheduledRefresh();
         }
 
         private void UnsubscribePlayMode()
@@ -218,9 +235,6 @@ namespace Nexus.Editor
                 btn.style.alignItems = Align.Center;
                 btn.style.flexDirection = FlexDirection.Row;
 
-                // Colored dot — do NOT use btn.text = label; add explicit Label child
-                // so dot and text share the same flex layout (Button + text property
-                // uses a separate rendering path from child elements, causing misalignment).
                 var dot = NexusEditorStyles.CreateStatusDot(color, 6);
                 btn.Add(dot);
 
@@ -252,7 +266,6 @@ namespace Nexus.Editor
                     ? new StyleColor(NexusEditorStyles.HighlightBg)
                     : new StyleColor(Color.clear);
 
-                // Find the explicit Label child (we no longer use btn.text = label)
                 var txtLabel = kvp.Value.Q<Label>();
                 if (txtLabel != null)
                 {
@@ -273,7 +286,16 @@ namespace Nexus.Editor
                 _lastRefreshTime = now;
                 RefreshSnapshot();
                 if (_content != null && _content.childCount > 0)
-                    RenderActiveSection();
+                {
+                    if (_activeSection == Section.Live && _sigFill != null)
+                    {
+                        UpdateLiveMetricsChartOnly();
+                    }
+                    else
+                    {
+                        RenderActiveSection();
+                    }
+                }
             }
         }
 
@@ -299,6 +321,8 @@ namespace Nexus.Editor
                 s_cachedSignals = new HashSet<string>();
                 s_cachedCommands = new HashSet<(string cmd, string sig, string mode)>();
                 s_cachedModels = new HashSet<string>();
+                s_cachedViews = new HashSet<string>();
+                s_cachedServices = new HashSet<string>();
 
                 foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
                 {
@@ -328,10 +352,34 @@ namespace Nexus.Editor
 
                                 if (typeof(IReactiveModel).IsAssignableFrom(type))
                                     s_cachedModels.Add(type.Name);
+
+                                if (typeof(View).IsAssignableFrom(type))
+                                {
+                                    var mediatorAttr = type.GetCustomAttribute<MediatorAttribute>();
+                                    string mediatorName = mediatorAttr?.MediatorType?.Name ?? "—";
+                                    s_cachedViews.Add($"{type.Name} → {mediatorName}");
+                                }
+
+                                if (typeof(INexusService).IsAssignableFrom(type))
+                                {
+                                    var ifaces = type.GetInterfaces().Where(i => i != typeof(INexusService) && typeof(INexusService).IsAssignableFrom(i));
+                                    string ifaceName = ifaces.FirstOrDefault()?.Name ?? "—";
+                                    s_cachedServices.Add($"{type.Name}  :  {ifaceName}");
+                                }
                             }
                         }
                     }
-                    catch { }
+                    catch (ReflectionTypeLoadException ex)
+                    {
+                        foreach (var le in ex.LoaderExceptions)
+                        {
+                            if (le != null) Debug.LogWarning($"[Nexus GameManager] Type load warning in {name}: {le.Message}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[Nexus GameManager] Assembly scan warning for {name}: {ex.Message}");
+                    }
                 }
                 s_staticScanValid = true;
             }
@@ -340,7 +388,6 @@ namespace Nexus.Editor
             var scannedCommands = new HashSet<(string cmd, string sig, string mode)>(s_cachedCommands);
             var scannedModels = new HashSet<string>(s_cachedModels);
 
-            // Also collect commands from live runtime SignalBus (fluent API registrations)
             if (contexts != null)
             {
                 foreach (var ctx in contexts)
@@ -366,42 +413,10 @@ namespace Nexus.Editor
             s.CommandEntries = scannedCommands.OrderBy(x => x.cmd).ToList();
             s.ModelCount = scannedModels.Count;
             s.ModelNames = scannedModels.OrderBy(x => x).ToList();
-
-            // Views are harder to count statically — approximating
-            var viewTypes = new HashSet<string>();
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
-            {
-                var an = assembly.GetName().Name;
-                if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")) continue;
-                try
-                {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (type.IsClass && !type.IsAbstract && typeof(View).IsAssignableFrom(type))
-                            viewTypes.Add(type.Name);
-                    }
-                }
-                catch { }
-            }
-            s.ViewCount = viewTypes.Count;
-
-            // Services: check for registered INexusService types
-            var serviceTypes = new HashSet<string>();
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
-            {
-                var an = assembly.GetName().Name;
-                if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")) continue;
-                try
-                {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (type.IsClass && !type.IsAbstract && typeof(INexusService).IsAssignableFrom(type))
-                            serviceTypes.Add(type.Name);
-                    }
-                }
-                catch { }
-            }
-            s.ServiceCount = serviceTypes.Count;
+            s.ViewCount = s_cachedViews.Count;
+            s.ViewNames = s_cachedViews.OrderBy(x => x).ToList();
+            s.ServiceCount = s_cachedServices.Count;
+            s.ServiceNames = s_cachedServices.OrderBy(x => x).ToList();
 
             _snapshot = s;
         }
@@ -411,6 +426,8 @@ namespace Nexus.Editor
         {
             if (_content == null) return;
             _content.Clear();
+            _sigFill = null;
+            _cmdFill = null;
 
             switch (_activeSection)
             {
@@ -463,49 +480,22 @@ namespace Nexus.Editor
             AddStatCard(grid, NexusLang.Get("gamemanager_stat_services"), s.ServiceCount.ToString(), NexusEditorStyles.AccentGreen, NexusLang.Get("gamemanager_desc_services"));
             AddStatCard(grid, NexusLang.Get("gamemanager_stat_roots"), s.RootCount.ToString(), NexusEditorStyles.DimText, NexusLang.Get("gamemanager_desc_roots"));
 
-            var gridActions = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginLeft = 15, marginTop = 8 } };
-            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_hierarchy"), () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
-            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
-            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
-            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_typeanalyzer"), () => Window?.OpenPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue));
-            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("common_refresh"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
-            _content.Add(gridActions);
-
             _content.Add(grid);
 
-            // Quick actions
+            // Quick actions (G-6: Consolidated single actions row)
             var actionsLabel = NexusEditorStyles.CreateSectionTitle(NexusLang.Get("gamemanager_quick_actions"));
             actionsLabel.style.marginLeft = 15;
             actionsLabel.style.marginTop = 15;
             _content.Add(actionsLabel);
 
             var actionsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15, marginTop = 5, flexWrap = Wrap.Wrap } };
-            var openWizard = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_wizard"), () => Window?.OpenPlugin("Wizard"), NexusEditorStyles.BtnBlue);
-            actionsRow.Add(openWizard);
-
-            var openTracer = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal);
-            openTracer.style.marginLeft = 5;
-            actionsRow.Add(openTracer);
-
-            var openGraph = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_graph"), () => Window?.OpenPlugin("Graph"), NexusEditorStyles.BtnPurple);
-            openGraph.style.marginLeft = 5;
-            actionsRow.Add(openGraph);
-
-            var openHierarchy = NexusEditorStyles.CreateButton(NexusLang.Get("tab_hierarchy"), () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen);
-            openHierarchy.style.marginLeft = 5;
-            actionsRow.Add(openHierarchy);
-
-            var openExplorer = NexusEditorStyles.CreateButton(NexusLang.Get("tab_explorer"), () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple);
-            openExplorer.style.marginLeft = 5;
-            actionsRow.Add(openExplorer);
-
-            var openTypeAnalyzer = NexusEditorStyles.CreateButton(NexusLang.Get("tab_typeanalyzer"), () => Window?.OpenPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue);
-            openTypeAnalyzer.style.marginLeft = 5;
-            actionsRow.Add(openTypeAnalyzer);
-
-            var refreshBtn = NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_refresh"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray);
-            refreshBtn.style.marginLeft = 5;
-            actionsRow.Add(refreshBtn);
+            actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_wizard"), () => Window?.SwitchToPlugin("Wizard"), NexusEditorStyles.BtnBlue));
+            actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_tracer"), () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_graph"), () => Window?.SwitchToPlugin("Graph"), NexusEditorStyles.BtnPurple));
+            actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_hierarchy"), () => Window?.SwitchToPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
+            actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_explorer"), () => Window?.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+            actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_typeanalyzer"), () => Window?.SwitchToPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue));
+            actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_refresh"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
 
             _content.Add(actionsRow);
         }
@@ -519,35 +509,15 @@ namespace Nexus.Editor
                     width = 140,
                     height = 80,
                     backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
-                    borderTopLeftRadius = 6,
-                    borderTopRightRadius = 6,
-                    borderBottomLeftRadius = 6,
-                    borderBottomRightRadius = 6,
-                    marginLeft = 5,
-                    marginRight = 5,
-                    marginTop = 5,
-                    marginBottom = 5,
-                    paddingLeft = 10,
-                    paddingRight = 10,
-                    paddingTop = 8,
-                    paddingBottom = 8,
-                    borderLeftWidth = 3,
-                    borderLeftColor = new StyleColor(accent),
+                    borderTopLeftRadius = 6, borderTopRightRadius = 6,
+                    borderBottomLeftRadius = 6, borderBottomRightRadius = 6,
+                    marginLeft = 5, marginRight = 5, marginTop = 5, marginBottom = 5,
+                    paddingLeft = 10, paddingRight = 10, paddingTop = 8, paddingBottom = 8,
+                    borderLeftWidth = 3, borderLeftColor = new StyleColor(accent),
                 }
             };
 
-            card.RegisterCallback<MouseDownEvent>(evt =>
-            {
-                if (evt.clickCount != 2) return;
-                if (label.Contains("Context"))
-                {
-                    Window?.OpenPlugin("Hierarchy");
-                }
-                else if (label.Contains("Model") || label.Contains("Service") || label.Contains("Command") || label.Contains("View"))
-                {
-                    Window?.OpenPlugin("GameManager");
-                }
-            });
+            MakeDoubleClickToOpen(card, label.Contains("Context") ? "Hierarchy" : "GameManager");
 
             var valLabel = new Label(value)
             {
@@ -573,6 +543,15 @@ namespace Nexus.Editor
             parent.Add(card);
         }
 
+        private void MakeDoubleClickToOpen(VisualElement el, string pluginId)
+        {
+            el.RegisterCallback<MouseDownEvent>(evt =>
+            {
+                if (evt.clickCount == 2)
+                    Window?.SwitchToPlugin(pluginId);
+            });
+        }
+
         // ─── Contexts ──────────────────────────────────────────
         private void RenderContexts()
         {
@@ -593,39 +572,24 @@ namespace Nexus.Editor
                     style =
                     {
                         backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
-                        marginLeft = 15,
-                        marginRight = 15,
-                        marginTop = 5,
-                        marginBottom = 5,
-                        paddingLeft = 10,
-                        paddingRight = 10,
-                        paddingTop = 8,
-                        paddingBottom = 8,
-                        borderTopLeftRadius = 4,
-                        borderTopRightRadius = 4,
-                        borderBottomLeftRadius = 4,
-                        borderBottomRightRadius = 4,
+                        marginLeft = 15, marginRight = 15, marginTop = 5, marginBottom = 5,
+                        paddingLeft = 10, paddingRight = 10, paddingTop = 8, paddingBottom = 8,
+                        borderTopLeftRadius = 4, borderTopRightRadius = 4,
+                        borderBottomLeftRadius = 4, borderBottomRightRadius = 4,
                     }
                 };
 
-                card.RegisterCallback<MouseDownEvent>(evt =>
-                {
-                    if (evt.clickCount == 2)
-                    {
-                        Window?.OpenPlugin("Hierarchy");
-                    }
-                });
+                MakeDoubleClickToOpen(card, "Hierarchy");
 
                 var rowActionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_hierarchy"), () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
-                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
-                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_hierarchy"), () => Window?.SwitchToPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
+                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal));
                 card.Add(rowActionRow);
 
                 var header = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
                 header.Add(NexusEditorStyles.CreateStatusDot(NexusEditorStyles.AccentGreen));
 
-                // Determine display name: ScopeTag > ContextData name > "(unnamed)"
                 string displayName = ctx.ScopeTag;
                 if (string.IsNullOrEmpty(displayName) && ctx is Context c && c.ContextData != null)
                     displayName = c.ContextData.name.Replace("ContextData", "");
@@ -639,7 +603,6 @@ namespace Nexus.Editor
                 header.Add(NexusEditorStyles.CreatePill(ctx.Parent != null ? NexusLang.Get("gamemanager_pill_child") : NexusLang.Get("gamemanager_pill_root"), NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
                 card.Add(header);
 
-                // Show context metadata
                 var meta = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4, flexWrap = Wrap.Wrap } };
                 if (!string.IsNullOrEmpty(ctx.ScopeTag))
                     meta.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gamemanager_pill_tag"), ctx.ScopeTag), NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
@@ -648,7 +611,6 @@ namespace Nexus.Editor
                 if (ctx.Parent != null)
                     meta.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gamemanager_pill_parent"), ctx.Parent.ScopeTag ?? NexusLang.Get("gamemanager_unnamed")), NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
 
-                // Show registered command count if available
                 if (ctx.SignalBus != null && ctx.SignalBus.RegisteredHandlers != null)
                 {
                     int cmdCount = 0;
@@ -660,7 +622,6 @@ namespace Nexus.Editor
 
                 card.Add(meta);
 
-                // Show DI bindings from this context
                 if (ctx is Context concreteCtx)
                 {
                     var bindings = concreteCtx.Container.GetRegisteredSingletons();
@@ -704,11 +665,7 @@ namespace Nexus.Editor
                 var lbl = new Label(name) { style = { fontSize = 11, color = new StyleColor(NexusEditorStyles.TextPrimary) } };
                 row.Add(lbl);
                 row.Add(NexusEditorStyles.CreatePill("IReactiveModel", NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
-                row.RegisterCallback<MouseDownEvent>(evt =>
-                {
-                    if (evt.clickCount == 2)
-                        Window?.OpenPlugin("Hierarchy");
-                });
+                MakeDoubleClickToOpen(row, "Hierarchy");
                 _content.Add(row);
             }
         }
@@ -732,7 +689,6 @@ namespace Nexus.Editor
                 var lbl = new Label(sig) { style = { fontSize = 11, color = new StyleColor(NexusEditorStyles.SignalBlue) } };
                 row.Add(lbl);
 
-                // Count command handlers for this signal
                 int handlerCount = s.CommandEntries.Count(e => e.sig == sig || e.sig.Contains(sig));
                 if (handlerCount > 0)
                 {
@@ -743,12 +699,7 @@ namespace Nexus.Editor
                     row.Add(NexusEditorStyles.CreatePill(NexusLang.Get("gm_pill_unhandled"), new Color(0.3f, 0.15f, 0.15f), new Color(1f, 0.4f, 0.4f)));
                 }
 
-                row.RegisterCallback<MouseDownEvent>(evt =>
-                {
-                    if (evt.clickCount == 2)
-                        Window?.OpenPlugin("Explorer");
-                });
-
+                MakeDoubleClickToOpen(row, "Explorer");
                 _content.Add(row);
             }
         }
@@ -765,22 +716,15 @@ namespace Nexus.Editor
                 return;
             }
 
-            // Table header
             var header = new VisualElement
             {
                 style =
                 {
                     flexDirection = FlexDirection.Row,
-                    marginLeft = 15,
-                    marginRight = 15,
-                    paddingLeft = 8,
-                    paddingRight = 8,
-                    paddingTop = 4,
-                    paddingBottom = 4,
+                    marginLeft = 15, marginRight = 15,
+                    paddingLeft = 8, paddingRight = 8, paddingTop = 4, paddingBottom = 4,
                     backgroundColor = new StyleColor(NexusEditorStyles.TableHeaderBg),
-                    borderTopLeftRadius = 4,
-                    borderTopRightRadius = 4,
-                    marginTop = 5
+                    borderTopLeftRadius = 4, borderTopRightRadius = 4, marginTop = 5
                 }
             };
             header.Add(new Label(NexusLang.Get("gamemanager_command_col")) { style = { width = 180, fontSize = 9, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
@@ -796,12 +740,8 @@ namespace Nexus.Editor
                     style =
                     {
                         flexDirection = FlexDirection.Row,
-                        marginLeft = 15,
-                        marginRight = 15,
-                        paddingLeft = 8,
-                        paddingRight = 8,
-                        paddingTop = 4,
-                        paddingBottom = 4,
+                        marginLeft = 15, marginRight = 15,
+                        paddingLeft = 8, paddingRight = 8, paddingTop = 4, paddingBottom = 4,
                         backgroundColor = new StyleColor(i % 2 == 0 ? NexusEditorStyles.RowBase : NexusEditorStyles.RowAlt)
                     }
                 };
@@ -827,33 +767,13 @@ namespace Nexus.Editor
             var s = _snapshot;
             AddSectionHeader(string.Format(NexusLang.Get("gm_views_header"), s.ViewCount), NexusEditorStyles.AccentBlue);
 
-            var viewTypes = new HashSet<string>();
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
-            {
-                var an = assembly.GetName().Name;
-                if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")) continue;
-                try
-                {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (type.IsClass && !type.IsAbstract && typeof(View).IsAssignableFrom(type))
-                        {
-                            var mediatorAttr = type.GetCustomAttribute<MediatorAttribute>();
-                            string mediatorName = mediatorAttr?.MediatorType?.Name ?? "—";
-                            viewTypes.Add($"{type.Name} → {mediatorName}");
-                        }
-                    }
-                }
-                catch { }
-            }
-
-            if (viewTypes.Count == 0)
+            if (s.ViewNames.Count == 0)
             {
                 _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_views")));
                 return;
             }
 
-            foreach (var entry in viewTypes.OrderBy(x => x))
+            foreach (var entry in s.ViewNames)
             {
                 var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginLeft = 15, marginTop = 3 } };
                 row.Add(NexusEditorStyles.CreateStatusDot(NexusEditorStyles.AccentBlue, 6));
@@ -868,34 +788,14 @@ namespace Nexus.Editor
             var s = _snapshot;
             AddSectionHeader(string.Format(NexusLang.Get("gm_services_header"), s.ServiceCount), NexusEditorStyles.AccentGreen);
 
-            var serviceTypes = new HashSet<string>();
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
-            {
-                var an = assembly.GetName().Name;
-                if (an.StartsWith("System") || an.StartsWith("Unity") || an.StartsWith("mscorlib")) continue;
-                try
-                {
-                    foreach (var type in assembly.GetTypes())
-                    {
-                        if (type.IsClass && !type.IsAbstract && typeof(INexusService).IsAssignableFrom(type))
-                        {
-                            var ifaces = type.GetInterfaces().Where(i => i != typeof(INexusService) && typeof(INexusService).IsAssignableFrom(i));
-                            string ifaceName = ifaces.FirstOrDefault()?.Name ?? "—";
-                            serviceTypes.Add($"{type.Name}  :  {ifaceName}");
-                        }
-                    }
-                }
-                catch { }
-            }
-
-            if (serviceTypes.Count == 0)
+            if (s.ServiceNames.Count == 0)
             {
                 _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_services")));
                 _content.Add(NexusEditorStyles.CreateHint(NexusLang.Get("gm_tip_services")));
                 return;
             }
 
-            foreach (var entry in serviceTypes.OrderBy(x => x))
+            foreach (var entry in s.ServiceNames)
             {
                 var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginLeft = 15, marginTop = 3 } };
                 row.Add(NexusEditorStyles.CreateStatusDot(NexusEditorStyles.AccentGreen, 6));
@@ -903,11 +803,7 @@ namespace Nexus.Editor
                 row.Add(new Label(parts[0]) { style = { fontSize = 11, color = new StyleColor(NexusEditorStyles.TextPrimary), width = 200 } });
                 if (parts.Length > 1)
                     row.Add(new Label(parts[1]) { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
-                row.RegisterCallback<MouseDownEvent>(evt =>
-                {
-                    if (evt.clickCount == 2)
-                        Window?.OpenPlugin("Hierarchy");
-                });
+                MakeDoubleClickToOpen(row, "Hierarchy");
                 _content.Add(row);
             }
         }
@@ -938,13 +834,12 @@ namespace Nexus.Editor
 
             NexusRuntime.Metrics.UpdateRates();
 
-            // Performance Metrics Panel
             var perfCard = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
             perfCard.style.marginBottom = 10;
             perfCard.style.marginLeft = 10;
             perfCard.style.marginRight = 10;
 
-                var perfTitle = new Label(NexusLang.Get("gamemanager_performance"))
+            var perfTitle = new Label(NexusLang.Get("gamemanager_performance"))
             {
                 style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentYellow), marginBottom = 8 }
             };
@@ -964,7 +859,7 @@ namespace Nexus.Editor
 
             _content.Add(perfCard);
 
-            // Real-time bar chart
+            // Real-time bar chart (G-3: reusable elements)
             float sigRate = NexusRuntime.Metrics.SignalsPerSecond;
             float cmdRate = NexusRuntime.Metrics.CommandsPerSecond;
             float maxRate = Mathf.Max(sigRate, cmdRate, 1f);
@@ -974,7 +869,7 @@ namespace Nexus.Editor
             chartCard.style.marginLeft = 10;
             chartCard.style.marginRight = 10;
 
-                var chartTitle = new Label(NexusLang.Get("gamemanager_rate_graph"))
+            var chartTitle = new Label(NexusLang.Get("gamemanager_rate_graph"))
             {
                 style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 6 }
             };
@@ -984,20 +879,22 @@ namespace Nexus.Editor
             var sigBarRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 4 } };
             sigBarRow.Add(new Label(NexusLang.Get("gm_sig_per_sec")) { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), width = 45 } });
             var sigBg = new VisualElement { style = { flexGrow = 1, height = 14, backgroundColor = new StyleColor(NexusEditorStyles.RowAlt), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
-            var sigFill = new VisualElement { style = { width = new Length(Mathf.Clamp(sigRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent), height = 14, backgroundColor = new StyleColor(NexusEditorStyles.AccentBlue), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
-            sigBg.Add(sigFill);
+            _sigFill = new VisualElement { style = { width = new Length(Mathf.Clamp(sigRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent), height = 14, backgroundColor = new StyleColor(NexusEditorStyles.AccentBlue), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
+            sigBg.Add(_sigFill);
             sigBarRow.Add(sigBg);
-            sigBarRow.Add(new Label($"{sigRate:F1}") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), width = 40, unityFontStyleAndWeight = FontStyle.Bold } });
+            _sigRateLabel = new Label($"{sigRate:F1}") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), width = 40, unityFontStyleAndWeight = FontStyle.Bold } };
+            sigBarRow.Add(_sigRateLabel);
             chartCard.Add(sigBarRow);
 
             // Commands/s bar
             var cmdBarRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
             cmdBarRow.Add(new Label(NexusLang.Get("gm_cmd_per_sec")) { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), width = 45 } });
             var cmdBg = new VisualElement { style = { flexGrow = 1, height = 14, backgroundColor = new StyleColor(NexusEditorStyles.RowAlt), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
-            var cmdFill = new VisualElement { style = { width = new Length(Mathf.Clamp(cmdRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent), height = 14, backgroundColor = new StyleColor(NexusEditorStyles.AccentGreen), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
-            cmdBg.Add(cmdFill);
+            _cmdFill = new VisualElement { style = { width = new Length(Mathf.Clamp(cmdRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent), height = 14, backgroundColor = new StyleColor(NexusEditorStyles.AccentGreen), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
+            cmdBg.Add(_cmdFill);
             cmdBarRow.Add(cmdBg);
-            cmdBarRow.Add(new Label($"{cmdRate:F1}") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentGreen), width = 40, unityFontStyleAndWeight = FontStyle.Bold } });
+            _cmdRateLabel = new Label($"{cmdRate:F1}") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentGreen), width = 40, unityFontStyleAndWeight = FontStyle.Bold } };
+            cmdBarRow.Add(_cmdRateLabel);
             chartCard.Add(cmdBarRow);
 
             _content.Add(chartCard);
@@ -1023,6 +920,24 @@ namespace Nexus.Editor
             }
         }
 
+        private void UpdateLiveMetricsChartOnly()
+        {
+            if (!Application.isPlaying) return;
+            NexusRuntime.Metrics.UpdateRates();
+            float sigRate = NexusRuntime.Metrics.SignalsPerSecond;
+            float cmdRate = NexusRuntime.Metrics.CommandsPerSecond;
+            float maxRate = Mathf.Max(sigRate, cmdRate, 1f);
+
+            if (_sigFill != null)
+                _sigFill.style.width = new Length(Mathf.Clamp(sigRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent);
+            if (_cmdFill != null)
+                _cmdFill.style.width = new Length(Mathf.Clamp(cmdRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent);
+            if (_sigRateLabel != null)
+                _sigRateLabel.text = $"{sigRate:F1}";
+            if (_cmdRateLabel != null)
+                _cmdRateLabel.text = $"{cmdRate:F1}";
+        }
+
         private VisualElement CreateMetricBox(string label, string value, Color accent)
         {
             var box = new VisualElement
@@ -1043,7 +958,6 @@ namespace Nexus.Editor
 
         // ─── Signal Test Panel ─────────────────────────────────
         private string _testResult = "";
-        // -1 = fire into all contexts that handle the signal; >=0 = a specific context index.
         private int _signalTestContextIndex = -1;
 
         private void RenderSignalTest()
@@ -1064,7 +978,6 @@ namespace Nexus.Editor
                 return;
             }
 
-            // Collect registered signal types from runtime SignalBus
             var signalTypes = new Dictionary<string, Type>();
             foreach (var ctx in contexts)
             {
@@ -1082,7 +995,6 @@ namespace Nexus.Editor
                 return;
             }
 
-            // Quick-fire buttons for each signal type
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBg);
             card.style.marginLeft = 10;
             card.style.marginRight = 10;
@@ -1094,7 +1006,6 @@ namespace Nexus.Editor
                 style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextPrimary), marginBottom = 8 }
             });
 
-            // Target-context selector — fixes firing only into contexts[0].
             var ctxChoices = new List<string> { NexusLang.Get("gm_all_matching") };
             foreach (var c in contexts) ctxChoices.Add(c.ScopeTag ?? NexusLang.Get("fsm_fallback_context"));
             int dropdownIndex = _signalTestContextIndex < 0 ? 0 : Mathf.Min(_signalTestContextIndex + 1, ctxChoices.Count - 1);
@@ -1142,7 +1053,6 @@ namespace Nexus.Editor
                     }
                 };
 
-                // Tooltip: show command count and mode (from any context that handles it)
                 int handlerCount = 0;
                 string mode = "Sequential";
                 foreach (var c in contexts)
@@ -1167,8 +1077,6 @@ namespace Nexus.Editor
             _content.Add(hint);
         }
 
-        // Fires a test signal into the user-selected target context, or into every
-        // context that actually registers a handler for the signal ("All (matching)").
         private void FireTestSignal(string signalName, Type signalType, IReadOnlyList<IContext> contexts)
         {
             var targets = new List<IContext>();
@@ -1183,7 +1091,7 @@ namespace Nexus.Editor
                 }
                 else if (i == _signalTestContextIndex)
                 {
-                    targets.Add(ctx); // explicit user choice, even if no handler
+                    targets.Add(ctx);
                 }
             }
 
@@ -1201,10 +1109,20 @@ namespace Nexus.Editor
                 {
                     if (ctx.SignalBus == null) continue;
                     var instance = Activator.CreateInstance(signalType);
-                    var fireMethod = ctx.SignalBus.GetType().GetMethod("Fire");
+
+                    if (!s_fireMethodCache.TryGetValue(signalType, out var fireMethod))
+                    {
+                        var rawMethod = ctx.SignalBus.GetType().GetMethod("Fire");
+                        if (rawMethod != null)
+                        {
+                            fireMethod = rawMethod.MakeGenericMethod(signalType);
+                            s_fireMethodCache[signalType] = fireMethod;
+                        }
+                    }
+
                     if (fireMethod != null)
                     {
-                        fireMethod.MakeGenericMethod(signalType).Invoke(ctx.SignalBus, new[] { instance });
+                        fireMethod.Invoke(ctx.SignalBus, new[] { instance });
                         fired++;
                         Debug.Log($"[Nexus Test] Fired '{signalName}' via context '{ctx.ScopeTag}'.");
                     }

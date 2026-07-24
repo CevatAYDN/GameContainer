@@ -121,6 +121,56 @@ namespace Nexus.Editor
             return btn;
         }
 
+        /// <summary>
+        /// Creates a standardized stat tile card displaying a metric value, label, accent color, and optional description.
+        /// Unifies stat card rendering across Dashboard, GameManager, and diagnostic plugins.
+        /// </summary>
+        /// <param name="label">The title or metric description.</param>
+        /// <param name="value">The formatted metric value string.</param>
+        /// <param name="accent">The accent border and text color.</param>
+        /// <param name="description">Optional detailed description text.</param>
+        /// <returns>A configured VisualElement stat tile.</returns>
+        internal static VisualElement CreateStatTile(string label, string value, Color accent, string description = null)
+        {
+            var card = new VisualElement
+            {
+                style =
+                {
+                    width = 140,
+                    minHeight = 72,
+                    backgroundColor = new StyleColor(CardBg),
+                    borderTopLeftRadius = CardRadius, borderTopRightRadius = CardRadius,
+                    borderBottomLeftRadius = CardRadius, borderBottomRightRadius = CardRadius,
+                    marginLeft = 4, marginRight = 4, marginTop = 4, marginBottom = 4,
+                    paddingLeft = 8, paddingRight = 8, paddingTop = 6, paddingBottom = 6,
+                    borderLeftWidth = 3, borderLeftColor = new StyleColor(accent)
+                }
+            };
+
+            var valLabel = new Label(value)
+            {
+                style = { fontSize = 20, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(accent) }
+            };
+            card.Add(valLabel);
+
+            var nameLabel = new Label(label)
+            {
+                style = { fontSize = 9, color = new StyleColor(TextSecondary), unityFontStyleAndWeight = FontStyle.Bold, marginTop = 2 }
+            };
+            card.Add(nameLabel);
+
+            if (!string.IsNullOrEmpty(description))
+            {
+                var descLabel = new Label(description)
+                {
+                    style = { fontSize = 8, color = new StyleColor(DimText), marginTop = 2, whiteSpace = WhiteSpace.Normal }
+                };
+                card.Add(descLabel);
+            }
+
+            return card;
+        }
+
         // ─── Builder Methods ───
         internal static VisualElement CreateCard(Color bgColor)
         {

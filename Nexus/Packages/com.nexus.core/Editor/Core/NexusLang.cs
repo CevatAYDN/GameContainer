@@ -7,7 +7,7 @@ namespace Nexus.Editor
     internal static class NexusLang
     {
         private static Dictionary<string, string> s_strings;
-        private static readonly string[] s_supportedLocales = { "en", "tr", "ja", "zh", "ko" };
+        private static readonly string[] s_supportedLocales = { "en", "tr" };
         private static string s_currentLocale = "en";
 
         public static string CurrentLocale => s_currentLocale;
@@ -51,6 +51,12 @@ namespace Nexus.Editor
             }
         }
 
+        /// <summary>
+        /// Retrieves the localized string for the specified key in the active language (English or Turkish).
+        /// Falls back to the key string if the key is not found in the dictionary.
+        /// </summary>
+        /// <param name="key">The localization key identifier.</param>
+        /// <returns>The localized text string.</returns>
         public static string Get(string key)
         {
             if (s_strings != null && s_strings.TryGetValue(key, out var val))

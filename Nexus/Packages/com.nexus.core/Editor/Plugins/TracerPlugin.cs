@@ -15,7 +15,7 @@ namespace Nexus.Editor
         public override int Order => 4;
 
         private VisualElement _view;
-        private ScrollView _tracerScrollView;
+        private ListView _listView;
         private Toggle _pauseToggle;
         private VisualElement _detailPanel;
         private Label _detailContent;
@@ -33,15 +33,16 @@ namespace Nexus.Editor
 
         private int _selectedEventId = -1;
 
+        private static int s_nextTraceId = 0;
+        private static int NextTraceId() => System.Threading.Interlocked.Increment(ref s_nextTraceId);
+
         // Thread-safe buffer for incoming trace events
         private readonly ConcurrentQueue<TraceEvent> _incomingEvents = new();
         private readonly List<TraceEvent> _allEvents = new();
-        private readonly List<TraceEventElement> _renderedItems = new();
+        private readonly List<TraceEvent> _filteredSnapshot = new();
         private readonly Dictionary<int, List<TraceEvent>> _childrenCache = new();
         private readonly Dictionary<int, TraceEvent> _parentCache = new();
         private readonly Dictionary<int, int> _depthsCache = new();
-
-        private IVisualElementScheduledItem _updateSchedule;
 
         public override VisualElement CreateView()
         {
@@ -114,7 +115,6 @@ namespace Nexus.Editor
                 _isPaused = evt.newValue;
                 if (!_isPaused)
                 {
-                    // Dequeue all buffered events during pause
                     ProcessIncomingQueue();
                 }
                 RefreshTracerLogs();
@@ -136,10 +136,25 @@ namespace Nexus.Editor
             // Split view for logs and details
             var splitPane = new VisualElement { style = { flexDirection = FlexDirection.Row, flexGrow = 1 } };
 
-            _tracerScrollView = new ScrollView { style = { width = new Length(60, LengthUnit.Percent), paddingLeft = 10, paddingRight = 10, paddingTop = 10 } };
-            _tracerScrollView.style.borderRightWidth = 1;
-            _tracerScrollView.style.borderRightColor = new StyleColor(NexusEditorStyles.BorderColor);
-            splitPane.Add(_tracerScrollView);
+            _listView = new ListView
+            {
+                fixedItemHeight = 28,
+                selectionType = SelectionType.Single,
+                style = { width = new Length(60, LengthUnit.Percent), paddingLeft = 6, paddingRight = 6, paddingTop = 6 }
+            };
+            _listView.style.borderRightWidth = 1;
+            _listView.style.borderRightColor = new StyleColor(NexusEditorStyles.BorderColor);
+            _listView.makeItem = () => new TraceEventElement();
+            _listView.bindItem = (el, i) =>
+            {
+                if (i >= 0 && i < _filteredSnapshot.Count)
+                {
+                    var ev = _filteredSnapshot[i];
+                    int depth = _depthsCache.TryGetValue(ev.Id, out int d) ? d : 0;
+                    ((TraceEventElement)el).Bind(ev, depth, ev.Id == _selectedEventId, OnTraceEventClicked);
+                }
+            };
+            splitPane.Add(_listView);
 
             _detailPanel = new VisualElement { style = { width = new Length(40, LengthUnit.Percent), backgroundColor = new StyleColor(NexusEditorStyles.DarkPanel), paddingLeft = 12, paddingRight = 12, paddingTop = 12, display = DisplayStyle.None } };
             _detailContent = new Label { style = { color = new StyleColor(NexusEditorStyles.TextPrimary), fontSize = 10, whiteSpace = WhiteSpace.Normal } };
@@ -156,7 +171,6 @@ namespace Nexus.Editor
             }
 
             // Production trace fallback: load from Metrics ring buffer
-            // This works even without NEXUS_DEBUG
             if (_allEvents.Count == 0)
             {
                 var traces = NexusRuntime.Metrics.GetRecentTraces(out int traceCount);
@@ -164,7 +178,7 @@ namespace Nexus.Editor
                 {
                     if (!string.IsNullOrEmpty(traces[i]))
                     {
-                        _allEvents.Add(new TraceEvent(i, -1, TraceEventType.Signal,
+                        _allEvents.Add(new TraceEvent(NextTraceId(), -1, TraceEventType.Signal,
                             UnityEngine.Time.realtimeSinceStartupAsDouble, traces[i],
                             TraceStatus.OK, ExecutionMode.Sequential));
                     }
@@ -177,18 +191,23 @@ namespace Nexus.Editor
             // Register trace sink
             NexusTrace.AddSink(this);
 
-            // Start main-thread queue processor schedule
-            _updateSchedule = _view.schedule.Execute(OnMainThreadUpdate).Every(100);
-
             return _view;
+        }
+
+        public override void OnUpdate()
+        {
+            base.OnUpdate();
+            OnMainThreadUpdate();
         }
 
         public override void OnDisable()
         {
             NexusTrace.RemoveSink(this);
-            _updateSchedule?.Pause();
+            _hasLiveEvents = false;
+            _productionTraceFrameCounter = 0;
+            while (_incomingEvents.TryDequeue(out _)) {}
             _allEvents.Clear();
-            _renderedItems.Clear();
+            _filteredSnapshot.Clear();
             _childrenCache.Clear();
             _parentCache.Clear();
             _depthsCache.Clear();
@@ -205,13 +224,10 @@ namespace Nexus.Editor
 
         public void Write(in TraceEvent traceEvent)
         {
-            // Enqueue event from background thread
             _incomingEvents.Enqueue(traceEvent);
         }
 
         private int _productionTraceFrameCounter;
-        // True once live NEXUS_DEBUG sink events have been received. While true, the production
-        // ring-buffer fallback is suppressed so live causal events are not diluted by flat traces.
         private bool _hasLiveEvents;
 
         private void OnMainThreadUpdate()
@@ -220,8 +236,6 @@ namespace Nexus.Editor
             {
                 bool hasNewEvents = ProcessIncomingQueue();
 
-                // Reload production traces every ~500ms (5 frames at 100ms interval),
-                // but only when no live sink events are driving the view.
                 if (!_hasLiveEvents)
                 {
                     _productionTraceFrameCounter++;
@@ -239,9 +253,6 @@ namespace Nexus.Editor
             }
         }
 
-        // Rebuilds the production-trace view from the current ring-buffer snapshot.
-        // GetRecentTraces returns the whole snapshot each call, so we replace rather than append
-        // to avoid accumulating duplicates. Returns true when the event list changed.
         private bool ReloadProductionTraces()
         {
             var traces = NexusRuntime.Metrics.GetRecentTraces(out int traceCount);
@@ -252,7 +263,7 @@ namespace Nexus.Editor
                 if (!string.IsNullOrEmpty(traces[i]))
                 {
                     rebuilt.Add(new TraceEvent(
-                        rebuilt.Count, -1, TraceEventType.Signal,
+                        NextTraceId(), -1, TraceEventType.Signal,
                         UnityEngine.Time.realtimeSinceStartupAsDouble, traces[i],
                         TraceStatus.OK, ExecutionMode.Sequential));
                 }
@@ -277,7 +288,6 @@ namespace Nexus.Editor
 
             if (addedAny)
             {
-                // Live sink events take over; suppress the flat production fallback.
                 _hasLiveEvents = true;
             }
 
@@ -297,7 +307,6 @@ namespace Nexus.Editor
         {
             _childrenCache.Clear();
             _parentCache.Clear();
-            // Build an id -> event lookup first, then wire up parent relationships
             var eventById = new Dictionary<int, TraceEvent>();
             foreach (var ev in _allEvents)
                 eventById[ev.Id] = ev;
@@ -320,29 +329,24 @@ namespace Nexus.Editor
 
         private void RefreshTracerLogs()
         {
-            if (_tracerScrollView == null) return;
-            _tracerScrollView.Clear();
-            _renderedItems.Clear();
+            if (_listView == null) return;
 
             if (!Application.isPlaying)
             {
-                _tracerScrollView.Add(new Label(NexusLang.Get("tracer_offline")) { style = { color = Color.gray, alignSelf = Align.Center, marginTop = 20 } });
                 _detailPanel.style.display = DisplayStyle.None;
+                _filteredSnapshot.Clear();
+                _listView.itemsSource = _filteredSnapshot;
+                _listView.Rebuild();
                 return;
             }
 
             var filtered = GetFilteredEvents();
             int filteredCount = filtered.Count;
-
-            if (filteredCount == 0)
-            {
-                return;
-            }
-
             const int maxDisplayCount = 200;
             int startIndex = Math.Max(0, filteredCount - maxDisplayCount);
 
             _depthsCache.Clear();
+            _filteredSnapshot.Clear();
 
             for (int i = 0; i < filteredCount; i++)
             {
@@ -356,11 +360,12 @@ namespace Nexus.Editor
 
                 if (i >= startIndex)
                 {
-                    var item = CreateTraceElement(ev, depth);
-                    _tracerScrollView.Add(item);
-                    _renderedItems.Add(item);
+                    _filteredSnapshot.Add(ev);
                 }
             }
+
+            _listView.itemsSource = _filteredSnapshot;
+            _listView.Rebuild();
         }
 
         private List<TraceEvent> GetFilteredEvents()
@@ -433,13 +438,17 @@ namespace Nexus.Editor
         {
             NexusTrace.Reset();
             _allEvents.Clear();
-            _renderedItems.Clear();
             _childrenCache.Clear();
             _parentCache.Clear();
             _depthsCache.Clear();
+            _filteredSnapshot.Clear();
             _selectedEventId = -1;
             
-            if (_tracerScrollView != null) _tracerScrollView.Clear();
+            if (_listView != null)
+            {
+                _listView.itemsSource = _filteredSnapshot;
+                _listView.Rebuild();
+            }
             if (_detailPanel != null) _detailPanel.style.display = DisplayStyle.None;
         }
 
@@ -486,15 +495,11 @@ namespace Nexus.Editor
             return sb.ToString();
         }
 
-        private TraceEventElement CreateTraceElement(TraceEvent ev, int depth)
-        {
-            var element = new TraceEventElement(ev, depth, _selectedEventId == ev.Id, OnTraceEventClicked);
-            return element;
-        }
-
         private class TraceEventElement : VisualElement
         {
-            public TraceEventElement(TraceEvent ev, int depth, bool isSelected, Action<TraceEvent> onClick)
+            private EventCallback<MouseDownEvent> _currentCallback;
+
+            public TraceEventElement()
             {
                 style.flexDirection = FlexDirection.Row;
                 style.alignItems = Align.Center;
@@ -506,12 +511,22 @@ namespace Nexus.Editor
                 style.borderTopRightRadius = 4;
                 style.borderBottomLeftRadius = 4;
                 style.borderBottomRightRadius = 4;
+            }
+
+            public void Bind(TraceEvent ev, int depth, bool isSelected, Action<TraceEvent> onClick)
+            {
+                Clear();
+                if (_currentCallback != null)
+                {
+                    UnregisterCallback<MouseDownEvent>(_currentCallback);
+                }
+
+                _currentCallback = evt => onClick(ev);
+                RegisterCallback<MouseDownEvent>(_currentCallback);
+
                 style.paddingLeft = 6 + (depth * 15);
 
-                RegisterCallback<MouseDownEvent>(evt => onClick(ev));
-
                 Color dotColor;
-
                 switch (ev.Status)
                 {
                     case TraceStatus.Failed:

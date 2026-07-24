@@ -1,7 +1,12 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using UnityEditor;
+using UnityEditor.Callbacks;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Nexus.Core;
-using System;
 
 namespace Nexus.Editor
 {
@@ -12,6 +17,8 @@ namespace Nexus.Editor
         public override int Order => 0;
 
         private VisualElement _view;
+        private Label _statusLabel;
+        private Label _statusHint;
         private Label _contextStat;
         private Label _handlerStat;
         private Label _rootStat;
@@ -23,47 +30,96 @@ namespace Nexus.Editor
         private Label _validationSummary;
         private Label _healthSummary;
         private VisualElement _validationCard;
-        private IVisualElementScheduledItem _refreshSchedule;
+        private VisualElement _runtimeCardContainer;
+
         private static int s_cachedModelCount = -1, s_cachedServiceCount = -1, s_cachedCommandCount = -1, s_cachedViewCount = -1;
         private static bool s_overviewCacheValid = false;
 
-        [UnityEditor.Callbacks.DidReloadScripts]
+        private static List<(Type type, string category, Color color)> s_typedCatalog;
+        private static bool s_catalogValid = false;
+
+        private bool _subscribedPlayMode;
+        private IVisualElementScheduledItem _quickFindDebounce;
+
+        [DidReloadScripts]
         private static void OnScriptsReloaded()
         {
             s_overviewCacheValid = false;
+            s_catalogValid = false;
         }
 
         private static void RefreshOverviewCache()
         {
             int mc = 0, sc = 0, cc = 0, vc = 0;
+            var catalog = new List<(Type type, string category, Color color)>();
+
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
                 if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
+
                 try
                 {
                     foreach (var type in assembly.GetTypes())
                     {
                         if (!type.IsClass || type.IsAbstract) continue;
-                        if (typeof(IReactiveModel).IsAssignableFrom(type)) mc++;
-                        if (typeof(INexusService).IsAssignableFrom(type)) sc++;
-                        if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type)) cc++;
-                        if (typeof(View).IsAssignableFrom(type)) vc++;
+
+                        string category = "CLASS";
+                        Color color = NexusEditorStyles.TextSecondary;
+
+                        if (typeof(IReactiveModel).IsAssignableFrom(type))
+                        {
+                            mc++;
+                            category = "MODEL";
+                            color = NexusEditorStyles.AccentYellow;
+                        }
+                        else if (typeof(INexusService).IsAssignableFrom(type))
+                        {
+                            sc++;
+                            category = "SERVICE";
+                            color = NexusEditorStyles.AccentGreen;
+                        }
+                        else if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type))
+                        {
+                            cc++;
+                            category = "COMMAND";
+                            color = NexusEditorStyles.AccentOrange;
+                        }
+                        else if (typeof(View).IsAssignableFrom(type))
+                        {
+                            vc++;
+                            category = "VIEW";
+                            color = NexusEditorStyles.AccentBlue;
+                        }
+
+                        catalog.Add((type, category, color));
                     }
                 }
-                catch { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    foreach (var le in ex.LoaderExceptions)
+                    {
+                        if (le != null) Debug.LogWarning($"[Nexus Dashboard] Type load warning in {name}: {le.Message}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus Dashboard] Assembly scan warning for {name}: {ex.Message}");
+                }
             }
+
             s_cachedModelCount = mc;
             s_cachedServiceCount = sc;
             s_cachedCommandCount = cc;
             s_cachedViewCount = vc;
+            s_typedCatalog = catalog;
             s_overviewCacheValid = true;
+            s_catalogValid = true;
         }
 
         public override VisualElement CreateView()
         {
-            _refreshSchedule?.Pause();
             _view = new VisualElement { style = { flexGrow = 1 } };
 
             var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("dashboard").ToUpper());
@@ -79,33 +135,72 @@ namespace Nexus.Editor
             BuildQuickFindSection(scroll);
             BuildOverviewSection(scroll);
             BuildQuickActions(scroll);
-            BuildRuntimeSection(scroll);
+
+            _runtimeCardContainer = new VisualElement();
+            scroll.Add(_runtimeCardContainer);
+            BuildRuntimeSection(_runtimeCardContainer);
+
             BuildHealthSection(scroll);
             BuildValidationSection(scroll);
             BuildFrameworkInfo(scroll);
 
             _view.Add(scroll);
 
-            _refreshSchedule = _view.schedule.Execute(RefreshStats).Every(1000);
+            if (!_subscribedPlayMode)
+            {
+                EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+                _subscribedPlayMode = true;
+            }
 
             return _view;
         }
 
+        public override void OnEnable()
+        {
+            base.OnEnable();
+            if (!_subscribedPlayMode)
+            {
+                EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+                _subscribedPlayMode = true;
+            }
+        }
+
         public override void OnDisable()
         {
-            _refreshSchedule?.Pause();
+            _quickFindDebounce?.Pause();
+            if (_subscribedPlayMode)
+            {
+                EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+                _subscribedPlayMode = false;
+            }
             base.OnDisable();
         }
 
-        public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
-            => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
+        public override void OnUpdate()
+        {
+            base.OnUpdate();
+            RefreshStats();
+        }
+
+        private void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            RefreshStats();
+            if (_runtimeCardContainer != null)
+            {
+                _runtimeCardContainer.Clear();
+                BuildRuntimeSection(_runtimeCardContainer);
+            }
+        }
+
+        public override IReadOnlyList<(string Label, Action Action, Color Color)> GetContextActions()
+            => new List<(string, Action, Color)>
             {
                 (NexusLang.Get("dash_action_codegen"),      () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue),
                 (NexusLang.Get("dash_action_create_root"),  () => {
                     var go = new GameObject("NexusRoot");
                     go.AddComponent<Root>();
-                    UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Create Nexus Root");
-                    UnityEditor.Selection.activeObject = go;
+                    Undo.RegisterCreatedObjectUndo(go, "Create Nexus Root");
+                    Selection.activeObject = go;
                 }, NexusEditorStyles.BtnTeal),
                 (NexusLang.Get("dash_action_inspector"),   () => Window?.SwitchToPlugin("ContextInspector"), NexusEditorStyles.BtnPurple),
                 (NexusLang.Get("dash_action_gamemanager"), () => Window?.SwitchToPlugin("GameManager"),       NexusEditorStyles.BtnGray),
@@ -128,11 +223,11 @@ namespace Nexus.Editor
             var statusDot = NexusEditorStyles.CreateStatusDot(titleColor, 12);
             statusRow.Add(statusDot);
 
-            var statusLabel = new Label(playing ? NexusLang.Get("system_active") : NexusLang.Get("system_standby"))
+            _statusLabel = new Label(playing ? NexusLang.Get("system_active") : NexusLang.Get("system_standby"))
             {
                 style = { fontSize = 16, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(titleColor) }
             };
-            statusRow.Add(statusLabel);
+            statusRow.Add(_statusLabel);
             statusCard.Add(statusRow);
 
             var statRow1 = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 8 } };
@@ -147,19 +242,19 @@ namespace Nexus.Editor
             actionRow.Add(CreateMetricJumpButton(NexusLang.Get("roots"), NexusLang.Get("dash_tip_roots"), NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
             statusCard.Add(actionRow);
 
-            var hintText = "";
-            if (!playing && rootCount == 0)
-                hintText = NexusLang.Get("no_roots");
-            else if (!playing)
-                hintText = NexusLang.Get("ready");
-            else
-                hintText = string.Format(NexusLang.Get("live_hint"), contextCount);
-
-            var hint = NexusEditorStyles.CreateHint(hintText);
-            hint.style.marginTop = 8;
-            statusCard.Add(hint);
+            string hintText = GetStatusHintText(playing, rootCount, contextCount);
+            _statusHint = NexusEditorStyles.CreateHint(hintText);
+            _statusHint.style.marginTop = 8;
+            statusCard.Add(_statusHint);
 
             parent.Add(statusCard);
+        }
+
+        private string GetStatusHintText(bool playing, int rootCount, int contextCount)
+        {
+            if (!playing && rootCount == 0) return NexusLang.Get("no_roots");
+            if (!playing) return NexusLang.Get("ready");
+            return string.Format(NexusLang.Get("live_hint"), contextCount);
         }
 
         private string _quickSearchQuery = "";
@@ -205,7 +300,7 @@ namespace Nexus.Editor
             searchInput.RegisterValueChangedCallback(evt =>
             {
                 _quickSearchQuery = evt.newValue;
-                UpdateQuickFindResults();
+                ScheduleQuickFindUpdate();
             });
 
             searchRow.Add(searchInput);
@@ -231,6 +326,15 @@ namespace Nexus.Editor
             return searchRow;
         }
 
+        private void ScheduleQuickFindUpdate()
+        {
+            _quickFindDebounce?.Pause();
+            if (_view != null)
+            {
+                _quickFindDebounce = _view.schedule.Execute(UpdateQuickFindResults).StartingIn(200);
+            }
+        }
+
         private void UpdateQuickFindResults()
         {
             if (_quickFindResultsContainer == null) return;
@@ -239,110 +343,74 @@ namespace Nexus.Editor
             if (string.IsNullOrWhiteSpace(_quickSearchQuery)) return;
 
             string query = _quickSearchQuery.Trim().ToLowerInvariant();
-            int matchCount = 0;
 
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            if (!s_catalogValid || s_typedCatalog == null)
             {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0)
-                    continue;
+                RefreshOverviewCache();
+            }
 
-                try
+            int matchCount = 0;
+            foreach (var (type, category, color) in s_typedCatalog)
+            {
+                if (matchCount >= 10) break;
+
+                if (type.Name.ToLowerInvariant().Contains(query))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    var resultRow = new VisualElement
                     {
-                        if (!type.IsClass || type.IsAbstract) continue;
-                        if (matchCount >= 10) break;
-
-                        if (type.Name.ToLowerInvariant().Contains(query))
+                        style =
                         {
-                            string category = "CLASS";
-                            Color color = NexusEditorStyles.TextSecondary;
-
-                            if (typeof(IReactiveModel).IsAssignableFrom(type))
-                            {
-                                category = "MODEL";
-                                color = NexusEditorStyles.AccentYellow;
-                            }
-                            else if (typeof(INexusService).IsAssignableFrom(type))
-                            {
-                                category = "SERVICE";
-                                color = NexusEditorStyles.AccentGreen;
-                            }
-                            else if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type))
-                            {
-                                category = "COMMAND";
-                                color = NexusEditorStyles.AccentOrange;
-                            }
-                            else if (typeof(View).IsAssignableFrom(type))
-                            {
-                                category = "VIEW";
-                                color = NexusEditorStyles.AccentBlue;
-                            }
-
-                            var resultRow = new VisualElement
-                            {
-                                style =
-                                {
-                                    flexDirection = FlexDirection.Row,
-                                    alignItems = Align.Center,
-                                    paddingLeft = 6,
-                                    paddingRight = 6,
-                                    paddingTop = 3,
-                                    paddingBottom = 3,
-                                    marginBottom = 2,
-                                    backgroundColor = new StyleColor(NexusEditorStyles.RowBase),
-                                    borderTopLeftRadius = 3,
-                                    borderTopRightRadius = 3,
-                                    borderBottomLeftRadius = 3,
-                                    borderBottomRightRadius = 3
-                                }
-                            };
-
-                            var catPill = NexusEditorStyles.CreatePill(category, new Color(color.r, color.g, color.b, 0.2f), color);
-                            catPill.style.marginRight = 8;
-                            resultRow.Add(catPill);
-
-                            var nameLabel = new Label(type.Name)
-                            {
-                                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = Color.white, flexGrow = 1, unityTextAlign = TextAnchor.MiddleLeft }
-                            };
-                            resultRow.Add(nameLabel);
-
-                            var targetType = type;
-
-                            var copyBtn = new Button(() =>
-                            {
-                                UnityEditor.EditorGUIUtility.systemCopyBuffer = targetType.FullName;
-                            })
-                            {
-                                text = NexusLang.Get("dash_qf_copy"),
-                                style = { fontSize = 8, marginRight = 4, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white, paddingLeft = 6, paddingRight = 6 }
-                            };
-                            resultRow.Add(copyBtn);
-
-                            var openBtn = new Button(() =>
-                            {
-                                var guids = UnityEditor.AssetDatabase.FindAssets($"{targetType.Name} t:Script");
-                                if (guids.Length > 0)
-                                {
-                                    var path = UnityEditor.AssetDatabase.GUIDToAssetPath(guids[0]);
-                                    var obj = UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
-                                    if (obj != null) UnityEditor.AssetDatabase.OpenAsset(obj);
-                                }
-                            })
-                            {
-                                text = NexusLang.Get("open"),
-                                style = { fontSize = 8, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue), color = Color.white, paddingLeft = 6, paddingRight = 6 }
-                            };
-                            resultRow.Add(openBtn);
-
-                            _quickFindResultsContainer.Add(resultRow);
-                            matchCount++;
+                            flexDirection = FlexDirection.Row,
+                            alignItems = Align.Center,
+                            paddingLeft = 6, paddingRight = 6, paddingTop = 3, paddingBottom = 3,
+                            marginBottom = 2,
+                            backgroundColor = new StyleColor(NexusEditorStyles.RowBase),
+                            borderTopLeftRadius = 3, borderTopRightRadius = 3,
+                            borderBottomLeftRadius = 3, borderBottomRightRadius = 3
                         }
-                    }
+                    };
+
+                    var catPill = NexusEditorStyles.CreatePill(category, new Color(color.r, color.g, color.b, 0.2f), color);
+                    catPill.style.marginRight = 8;
+                    resultRow.Add(catPill);
+
+                    var nameLabel = new Label(type.Name)
+                    {
+                        style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = Color.white, flexGrow = 1, unityTextAlign = TextAnchor.MiddleLeft }
+                    };
+                    resultRow.Add(nameLabel);
+
+                    var targetType = type;
+
+                    var copyBtn = new Button(() =>
+                    {
+                        EditorGUIUtility.systemCopyBuffer = targetType.FullName;
+                    })
+                    {
+                        text = NexusLang.Get("dash_qf_copy"),
+                        style = { fontSize = 8, marginRight = 4, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white, paddingLeft = 6, paddingRight = 6 }
+                    };
+                    resultRow.Add(copyBtn);
+
+                    var openBtn = new Button(() =>
+                    {
+                        var guids = AssetDatabase.FindAssets($"{targetType.Name} t:Script");
+                        if (guids.Length > 0)
+                        {
+                            var path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                            var obj = AssetDatabase.LoadAssetAtPath<UnityEngine.Object>(path);
+                            if (obj != null) AssetDatabase.OpenAsset(obj);
+                        }
+                    })
+                    {
+                        text = NexusLang.Get("open"),
+                        style = { fontSize = 8, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue), color = Color.white, paddingLeft = 6, paddingRight = 6 }
+                    };
+                    resultRow.Add(openBtn);
+
+                    _quickFindResultsContainer.Add(resultRow);
+                    matchCount++;
                 }
-                catch { }
             }
 
             if (matchCount == 0)
@@ -428,7 +496,7 @@ namespace Nexus.Editor
 
                             var t = obj.GetType();
                             int props = 0;
-                            foreach (var prop in t.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance))
+                            foreach (var prop in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
                             {
                                 if (props >= 3) break;
                                 if (!prop.CanRead || prop.GetIndexParameters().Length > 0) continue;
@@ -501,10 +569,7 @@ namespace Nexus.Editor
                 {
                     flexGrow = 1,
                     alignItems = Align.Center,
-                    paddingLeft = 4,
-                    paddingRight = 4,
-                    paddingTop = 2,
-                    paddingBottom = 2,
+                    paddingLeft = 4, paddingRight = 4, paddingTop = 2, paddingBottom = 2,
                 }
             };
 
@@ -524,7 +589,7 @@ namespace Nexus.Editor
             return valLabel;
         }
 
-        private Button CreateMetricJumpButton(string label, string tooltip, Color accentColor, System.Action onClick)
+        private Button CreateMetricJumpButton(string label, string tooltip, Color accentColor, Action onClick)
         {
             var button = new Button(() => onClick())
             {
@@ -532,18 +597,12 @@ namespace Nexus.Editor
                 tooltip = tooltip,
                 style =
                 {
-                    marginRight = 6,
-                    marginTop = 4,
-                    paddingLeft = 8,
-                    paddingRight = 8,
-                    paddingTop = 4,
-                    paddingBottom = 4,
+                    marginRight = 6, marginTop = 4,
+                    paddingLeft = 8, paddingRight = 8, paddingTop = 4, paddingBottom = 4,
                     backgroundColor = new StyleColor(new Color(accentColor.r, accentColor.g, accentColor.b, 0.18f)),
                     color = Color.white,
-                    borderTopLeftRadius = 4,
-                    borderTopRightRadius = 4,
-                    borderBottomLeftRadius = 4,
-                    borderBottomRightRadius = 4,
+                    borderTopLeftRadius = 4, borderTopRightRadius = 4,
+                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4,
                     unityFontStyleAndWeight = FontStyle.Bold,
                     fontSize = 9,
                 }
@@ -551,29 +610,19 @@ namespace Nexus.Editor
             return button;
         }
 
-        private void AddActionCard(VisualElement parent, string title, string description, Color btnColor, System.Action onClick)
+        private void AddActionCard(VisualElement parent, string title, string description, Color btnColor, Action onClick)
         {
             var card = new VisualElement
             {
                 style =
                 {
-                    width = 220,
-                    minHeight = 96,
-                    paddingLeft = 10,
-                    paddingRight = 10,
-                    paddingTop = 10,
-                    paddingBottom = 10,
-                    marginRight = 0,
-                    marginBottom = 0,
+                    width = 220, minHeight = 96,
+                    paddingLeft = 10, paddingRight = 10, paddingTop = 10, paddingBottom = 10,
+                    marginRight = 0, marginBottom = 0,
                     backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
-                    borderTopLeftRadius = 4,
-                    borderTopRightRadius = 4,
-                    borderBottomLeftRadius = 4,
-                    borderBottomRightRadius = 4,
-                    borderTopWidth = 1,
-                    borderBottomWidth = 1,
-                    borderLeftWidth = 1,
-                    borderRightWidth = 1,
+                    borderTopLeftRadius = 4, borderTopRightRadius = 4,
+                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4,
+                    borderTopWidth = 1, borderBottomWidth = 1, borderLeftWidth = 1, borderRightWidth = 1,
                     borderTopColor = new StyleColor(NexusEditorStyles.BorderColor),
                     borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor),
                     borderLeftColor = new StyleColor(NexusEditorStyles.BorderColor),
@@ -600,7 +649,6 @@ namespace Nexus.Editor
             btn.style.alignSelf = Align.FlexStart;
             card.Add(btn);
 
-            card.RegisterCallback<MouseDownEvent>(evt => onClick());
             parent.Add(card);
         }
 
@@ -640,8 +688,6 @@ namespace Nexus.Editor
             parent.Add(card);
         }
 
-        // Computes the live health summary line. Shared by the initial build and the scheduled
-        // refresh so the panel stays current instead of showing the value captured at view time.
         private string BuildHealthText()
         {
             var roots = NexusEditorDataProvider.GetSceneRoots();
@@ -753,6 +799,7 @@ namespace Nexus.Editor
         {
             if (_contextStat == null) return;
 
+            bool playing = Application.isPlaying;
             int contextCount = NexusEditorDataProvider.GetActiveContextCount();
             int handlerCount = NexusEditorDataProvider.GetHandlerCount();
             var roots = NexusEditorDataProvider.GetSceneRoots();
@@ -761,6 +808,18 @@ namespace Nexus.Editor
             _contextStat.text = contextCount.ToString();
             _handlerStat.text = handlerCount.ToString();
             _rootStat.text = rootCount.ToString();
+
+            if (_statusLabel != null)
+            {
+                var titleColor = playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.AccentBlue;
+                _statusLabel.text = playing ? NexusLang.Get("system_active") : NexusLang.Get("system_standby");
+                _statusLabel.style.color = new StyleColor(titleColor);
+            }
+
+            if (_statusHint != null)
+            {
+                _statusHint.text = GetStatusHintText(playing, rootCount, contextCount);
+            }
 
             if (_healthSummary != null)
             {

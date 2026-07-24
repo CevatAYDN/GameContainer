@@ -1,155 +1,48 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to the Nexus Core package will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.4.0] - 2026-07-18
+## [Unreleased]
 
 ### Fixed
-
-- Generic-only `[SignalHandler]` commands are now discovered correctly during attribute scanning and build validation.
-- `NEXUS_DEBUG` is now an opt-in scripting define again; `UNITY_COLLECTIONS` is defined when the Collections package is present.
-- Hot-path `SignalBus` allocation was reduced by removing unconditional trace and decorator closures where possible.
-- `[CommandTimeout]` is now wired into async command execution.
-- `Context` now uses the correct generic-aware signal handler discovery path.
-- AES-encrypted storage now uses AES-256 keys with legacy AES-128 migration fallback.
-- Stack trace preservation and async-safe recovery dispatch have been improved in `SignalBus`.
-- Root registry locking and frame-metrics throttling have been corrected.
-- Build validation, docs, and metadata references were updated to match the codebase.
-
-### Changed
-
-- Execution priority documentation now matches implementation: higher priority values run first.
-- Composite command registration must use the composite path instead of `BindCommand`.
-- Documentation and troubleshooting guidance were updated to reflect the current runtime behavior.
-
-## [0.3.2] - 2026-07-15
-
-### Fixed
-
-- **SignalBus Execution Order (BREAKING FIX)**: Corrected `FireInternal` and `FireInternalAsync` so that **commands execute BEFORE subscriptions**. Previously subscriptions ran first, causing mediators to read stale (pre-command) model state. The new guaranteed order is: Interceptors → Cross-Context → Commands → Subscriptions. This is the architecturally correct MVCS pattern where commands mutate state and subscriptions observe the result.
+- `NexusRuntime.Reset()` deadlock fix using snapshot-then-dispose pattern to dispose contexts outside locks during Play Mode transitions.
+- Pure context lifecycle duplication — `CreatePureContextAsync` now routes through `Context.InitializeLifecycleAsync`.
+- `SignalBus.BroadcastCrossContext` global registry access now abstracts cleanly via `IContextResolver`.
+- Plugin discovery failures (`ReflectionTypeLoadException`) now render diagnostic details directly in the `NexusWindow` UI.
+- `TracerPlugin` live trace state leaks — `_hasLiveEvents` and queues now reset cleanly in `OnDisable`.
+- `DashboardPlugin` action card double-click bug — removed duplicate `MouseDownEvent` callback.
+- `DashboardPlugin.QuickFind` keystroke lag — implemented static `s_typedCatalog` scanning cache with 200ms input debounce.
+- `GameManagerPlugin.FireTestSignal` reflection overhead — added `s_fireMethodCache` for `MethodInfo` caching.
+- `TracerPlugin` CS0411 generic callback type inference compile error fixed by specifying `EventCallback<MouseDownEvent>` explicitly.
 
 ### Changed
-
-- **Async Path Consistency**: `FireInternalAsync` now mirrors the same execution order guarantee as the sync path — commands first, subscriptions after.
-
----
-
-## [0.3.1] - 2026-07-10
+- Refactored 5 critical editor plugins (`Dashboard`, `Tracer`, `GameManager`, `Wizard`, `ContextInspector`) to override `OnUpdate` instead of creating custom UI timers (`_view.schedule` / `_root.schedule`).
+- Standardized `OnDisable` state cleanup across all editor plugins.
+- Replaced empty `catch {}` reflection blocks with `ReflectionTypeLoadException` warning logs.
+- Consolidated duplicate stat card implementations into `NexusEditorStyles.CreateStatTile`.
+- `TracerPlugin` log list converted from `ScrollView` rebuild to virtualized `ListView` with `makeItem`/`bindItem` pooling.
+- Fixed `TracerPlugin` `ListView.fixedItemHeight` to `28f` for safe label padding.
 
 ### Added
+- `IContextResolver` interface for safe cross-context signal dispatch.
+- `NexusEditorStyles.CreateStatTile` helper method for unified metric card rendering.
+- `PluginRefactorValidationTests` under `Tests/Editor/` validating plugin lifecycles, virtualized item heights, and scheduler rules.
+- `Editor/Locales/en.json` and `tr.json` localization catalogs.
 
-- **IUIAssetProvider Interface**: Decoupled UI window asset loading from `WindowManager` to allow swapping default Unity `Resources` system with **Unity Addressables** or **AssetBundles** in game projects.
-- **GetLong and SetLong Methods**: Added native `long` data type support to `IPlayerPrefsService` interface and implementations to prevent floating-point precision loss in high-value balances.
-- **In-Memory Caching and Focus/Quit Hooks for EncryptedStorage**: Added an in-memory cache to `EncryptedStorageService` to prevent synchronous I/O freezes on every write. Changed default `AutoSave` behavior to only write to disk on `Save()` or application focus loss/quit.
-- **WindowManager Integration Tests**: Added `WindowManagerAssetProviderTests` to verify custom UI asset providers resolve correctly from the DI container.
+### Removed
+- Unused language support for `ja`, `zh`, and `ko` from `NexusLang.cs` to focus exclusively on English (`en`) and Turkish (`tr`).
+- Dead code `_renderedItems` collection in `TracerPlugin.cs`.
+- Custom `_view.schedule` and `_root.schedule` timer calls in all editor plugins.
 
-### Changed
+### Deprecated
+- `_view.schedule` / `_root.schedule` pattern in editor plugins — plugins must override `INexusEditorPlugin.OnUpdate()` instead.
 
-- **Economy Balance System**: Updated `EconomyService` load/save operations to use new `GetLong` and `SetLong` methods to prevent precision loss for currency amounts exceeding `16,777,216`.
-
-### Fixed
-
-- **Encrypted Storage Unit Tests**: Fixed `EncryptedStorageService_TamperDetectionRejectsCorruptedFile` and `EncryptedStorageService_DeviceBindingRejectsForeignSaveFile` tests to use `AutoSave = true` (or create a fresh instance) to correctly verify disk manipulation bypassing memory cache.
-
-## [0.3.0] - 2026-07-07
-
-### Added
-
-- **Enhanced Service Infrastructure**: Expanded service suite with 11 production-ready services including Audio, Localization, Feedback, Storage, Tick, Analytics, Ads, IAP, Economy, Progression, and Object Pool services
-- **GameSaveManager Extension**: JSON-based save/load system with ISaveDataProvider interface for model state serialization
-- **SaveThrottler Service**: Throttled save operations with ITickService integration and configurable time windows
-- **Localization Service**: Multi-language support with RTL (Right-to-Left) text reversal for Arabic, Hebrew, Farsi, and other RTL languages
-- **Feedback Service**: Unified haptic and audio feedback system with preset-based feedback (LightClick, MediumImpact, HeavyImpact, etc.)
-- **Enhanced Editor Plugin System**: 11 modular editor plugins including Dashboard, Explorer, Tracer, GameManager, Graph, Hierarchy, TypeAnalyzer, and more
-- **NexusWindow Architecture**: Centralized editor window with plugin-based architecture for extensibility
-- **Live Reload Processor**: Runtime hot-reload support for faster iteration during development
-- **Build Validation System**: CI/CD-friendly validation with assembly scanning and compile-time error detection
-- **Type Dependency Analyzer**: Visual tool for analyzing type dependencies and injection graphs
-- **DOTS Bridge**: Integration layer for Unity ECS (Data-Oriented Technology Stack)
-- **GameStateMachine**: Finite state machine implementation for game state management
-- **CompositeTriggerState**: Support for composite trigger states in signal handling
-- **Enhanced Testing Infrastructure**: Comprehensive test harness with NexusTestContext, MockContext, and runtime test utilities
-- **SecureObservableProperty**: Encrypted observable property variant for sensitive data
-- **NetworkSignalBus**: Enhanced netcode support with INetworkSignal interface for multiplayer scenarios
-- **HybridQueue**: Thread-safe and next-frame queue implementations for cross-thread signal dispatch
-- **Recovery System**: IRecoveryStrategy interface for graceful error handling and fallback mechanisms
-- **SceneManagerExtensions**: Unity SceneManager utilities for scene lifecycle management
-- **DebugHUD**: Runtime debugging heads-up display for development
-- **VersionedScriptableObject**: Version-aware ScriptableObject base class for data migration
-
-### Changed
-
-- **Breaking — Service Interface Updates**: Several service interfaces updated with additional methods (IPlayerPrefsService now includes GetBool/SetBool, IAudioService now includes PlaySfxAtPosition)
-- **Breaking — IReactiveModel Signature**: OnBind method signature changed from `void OnBind(IContext)` to `ValueTask OnBind(CancellationToken)` for async initialization support
-- **Improved MockContext**: Centralized mock context implementation in Runtime/Testing/ namespace for test reusability
-- **Enhanced SignalBus**: Added FireAsyncWithTimeout and FireAsyncAndForget methods for better async control
-- **Optimized Subscription Management**: Improved subscription node pooling and cleanup
-- **Context Lifecycle**: Enhanced IContextLifecycle with better cancellation token support
-- **NexusRuntime Metrics**: Added production tracing ring buffer and per-second rate tracking
-- **DI Container Improvements**: Better circular dependency detection and singleton tracking
-
-### Fixed
-
-- **Test Compilation Errors**: Fixed missing using directives and interface implementations in test fixtures
-- **Mock Service Implementations**: Corrected mock implementations to match updated service interfaces
-- **SaveThrottler Test**: Fixed async/await warning and updated test to use correct API
-- **GameSaveManager Test**: Updated to use ISaveDataProvider instead of IReactiveModel
-- **QueueTests MockContext**: Fixed MockContext reference to use centralized implementation
-- **FeedbackService Mocks**: Added missing IsEnabled property and PlaySfxAtPosition method to mock services
-
-### Documentation
-
-- **Added LICENSE**: MIT License for open-source distribution
-- **Added README.md**: Comprehensive documentation with quick start guide, architecture overview, and examples
-- **Added Migration Guide**: Version upgrade and migration instructions
-- **Added Troubleshooting Guide**: Common issues and solutions documentation
-- **Enhanced CHANGELOG**: Detailed changelog following Keep a Changelog format
-
-### Migration Guide (v0.2.0 → v0.3.0)
-
-1. **Update IReactiveModel implementations**: Change `void OnBind(IContext)` to `ValueTask OnBind(CancellationToken ct)`
-2. **Update service mock implementations**: Add new methods to mock services (GetBool/SetBool for IPlayerPrefsService, PlaySfxAtPosition for IAudioService, IsEnabled for IHapticService)
-3. **Review service interface changes**: Check all service implementations for new method signatures
-4. **Update test fixtures**: Use centralized MockContext from Nexus.Core.Testing namespace
-5. **Regenerate AOT binder**: Run `Nexus > Generate AOT Binder` after updating to get new service injectors
-6. **Review async signal handling**: Use FireAsyncWithTimeout for timeout-sensitive operations
-
-## [0.2.0] - 2026-06-28
+## [0.3.2] - 2026-06-15
 
 ### Added
-
-- **0-GC Concurrent ArrayPool Integration**: Concurrent command execution now uses `ArrayPool<ValueTask>` to batch async dispatches without heap allocations.
-- **AOT/IL2CPP link.xml Auto-Generation**: `NexusCodeGenerator` now emits a `link.xml` covering all injected types to prevent code stripping on WebGL/console platforms.
-- **Static Field/Property Caching in Generated Binder**: Code-generated injectors cache private `FieldInfo`/`PropertyInfo`/`MethodInfo` lookups in static readonly fields for zero-allocation AOT injection.
-- **Circular Dependency Detection**: `NexusDI.Resolve` now tracks `_constructingSingletons` and throws `InvalidOperationException` if a singleton resolves itself during construction.
-- **IDisposable Singleton Tracking**: `BindInstance` supports `disposeWithContainer` flag and tracks all bound singletons for deterministic disposal.
-- **IResettable Integration**: `ClearInjectedReferences` now calls `Reset()` on pooled objects implementing `IResettable`.
-- **Thread-Local Stack Depth Tracking**: Reentrancy guard uses `AsyncLocal<int>` to correctly track depth across async dispatches.
-- **Configurable CodeGen Output Paths**: `NexusEditorSettings` exposes `BinderOutputPath` and `LinkXmlOutputPath` for generated assets.
-- **Auto-Generated .gitignore for Generated Assets**: Code generator writes `.gitignore` entries for generated binder and link.xml files.
-
-### Changed
-
-- **Breaking — `SignalBus.Fire` async handler protection**: Calling synchronous `Fire()` on a signal with async handlers now throws `InvalidOperationException` in `UNITY_EDITOR` and `DEVELOPMENT_BUILD`, and logs an error before safe-fallback in release builds. Use `FireAsync()` or `FireAsyncAndForget()` instead.
-- **Breaking — `ICommand` / `IAsyncCommand` mutual exclusivity**: A command class implementing both interfaces will now throw `InvalidOperationException` during registration.
-- **Breaking — `FireAsyncAndForget` return type**: Changed from `async void` to `async ValueTask` for better exception observability. Existing fire-and-forget call sites continue to work.
-- **Async composite commands use `SafeAsyncRunner`**: `ExecuteCompositeCommandAsync` no longer uses `async void`; exceptions are routed through the central `SafeAsyncRunner` pipeline.
-- **`SignalBus.Dispose` lock safety**: Subscription cleanup now acquires `_subLock` to prevent race conditions with concurrent unsubscribe operations.
-- **`Context.Dispose` lock safety**: Plugin snapshot iteration during dispose is performed under a copied list to avoid lock-ordering issues.
-- **`ProcessCompositeTriggers` concurrency**: Composite trigger bitmask updates are now guarded by `_compositeLock`.
-
-### Fixed
-
-- **Stale generated binder cleanup**: Default-path stale binder is deleted when output path changes.
-- **Value-type injection compile-time validation**: Code generator throws explicit errors for `[Inject]` fields/properties/parameters of value types.
-- **Release-build null-ref in async bridge**: Safe-fallback path in `FireInternalAsyncFromSync` now handles null contexts gracefully.
-
-### Migration Guide (v0.1.0 → v0.2.0)
-
-1. **Update `Fire()` calls for async-handled signals**: If a signal has `SubscribeAsync` or `IAsyncCommand` handlers, replace `Fire()` with `FireAsync()` (await) or `FireAsyncAndForget()`.
-2. **Remove duplicate interface implementations**: Ensure command classes implement only `ICommand` *or* `IAsyncCommand`, never both.
-3. **Review generated files**: If you customized the binder path, update `NexusEditorSettings` and remove stale files from the old default path.
-4. **AOT builds**: Validate that the generated `link.xml` is included in your build; no manual preservation attributes are required for injected members anymore.
+- Causal tracing sink (`INexusTraceSink`) for background signal logging.
+- `BuildValidation` silent rules engine for CI pipeline verification.
+- `ObservableProperty<T>` for zero-GC reactive model updates.
