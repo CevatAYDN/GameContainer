@@ -1,8 +1,9 @@
-> **For AI Agents:** This document is the source of truth for the Nexus Core architecture, module organization, and developer workflows. Before making changes:
-> 1. Read [ARCHITECTURE.md](docs/ARCHITECTURE.md), [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md), and [CONTRIBUTING.md](docs/CONTRIBUTING.md)
-> 2. Check the [Anti-Patterns](#anti-patterns-do-not-do) section below
-> 3. Run tests: Unity EditMode Test Runner (`PluginRefactorValidationTests`, `InfrastructureValidationTests`)
-> 4. Validate build: `BuildValidation.RunSilent()`
+> **For AI Agents:** This document is the source of truth for the Nexus Core architecture, module organization, and developer workflows. Before generating game code or framework modifications:
+> 1. Read [AI_GAME_DEVELOPER_GUIDE.md](docs/AI_GAME_DEVELOPER_GUIDE.md) and [GAME_PATTERNS.md](docs/GAME_PATTERNS.md) for game creation rules
+> 2. Read [ARCHITECTURE.md](docs/ARCHITECTURE.md), [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md), and [CONTRIBUTING.md](docs/CONTRIBUTING.md) for framework core details
+> 3. Check the [Anti-Patterns](#anti-patterns-do-not-do) section below
+> 4. Run tests: Unity EditMode Test Runner (`PluginRefactorValidationTests`, `InfrastructureValidationTests`)
+> 5. Validate build: `BuildValidation.RunSilent()`
 >
 > **Out of scope:** Third-party package implementations, custom game gameplay code.
 

@@ -78,5 +78,41 @@ namespace Nexus.Tests.Editor
             plugin.OnUpdate();
             plugin.OnDisable();
         }
+
+        [Test]
+        public void ErrorDashboardPlugin_Lifecycle_ExecutesCleanlyOnUpdate()
+        {
+            var plugin = new ErrorDashboardPlugin();
+            var view = plugin.CreateView();
+            Assert.IsNotNull(view, "ErrorDashboardPlugin view must render.");
+
+            plugin.OnEnable();
+            plugin.OnUpdate();
+            plugin.OnDisable();
+        }
+
+        [Test]
+        public void PerformanceDashboardPlugin_Lifecycle_ExecutesCleanlyOnUpdate()
+        {
+            var plugin = new PerformanceDashboardPlugin();
+            var view = plugin.CreateView();
+            Assert.IsNotNull(view, "PerformanceDashboardPlugin view must render.");
+
+            plugin.OnEnable();
+            plugin.OnUpdate();
+            plugin.OnDisable();
+        }
+
+        [Test]
+        public void NetworkDashboardPlugin_InstantiatesCleanly()
+        {
+            var plugin = new NetworkDashboardPlugin();
+            var view = plugin.CreateView();
+            Assert.IsNotNull(view, "NetworkDashboardPlugin view must render.");
+
+            plugin.OnEnable();
+            plugin.OnUpdate();
+            plugin.OnDisable();
+        }
     }
 }

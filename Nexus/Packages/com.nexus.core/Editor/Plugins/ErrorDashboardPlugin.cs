@@ -27,7 +27,6 @@ namespace Nexus.Editor
         private VisualElement _filterBar;
         private ScrollView _scrollView;
         private Label _statusBar;
-        private IVisualElementScheduledItem _refreshSchedule;
 
         private ErrorCollection.ErrorSeverity? _minSeverity;
         private ErrorCollection.ErrorCategory? _categoryFilter;
@@ -64,7 +63,6 @@ namespace Nexus.Editor
             _view.Add(_statusBar);
 
             ErrorCollection.OnErrorAdded += OnErrorAdded;
-            _refreshSchedule = _view.schedule.Execute(RefreshIfDirty).Every(500);
 
             _dirty = true;
             RefreshUI();
@@ -73,9 +71,14 @@ namespace Nexus.Editor
 
         public override void OnDisable()
         {
-            _refreshSchedule?.Pause();
             ErrorCollection.OnErrorAdded -= OnErrorAdded;
             base.OnDisable();
+        }
+
+        public override void OnUpdate()
+        {
+            base.OnUpdate();
+            RefreshIfDirty();
         }
 
         // ─── Filter Bar ───

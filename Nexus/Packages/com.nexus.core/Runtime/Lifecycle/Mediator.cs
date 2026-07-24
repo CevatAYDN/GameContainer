@@ -26,7 +26,7 @@ namespace Nexus.Core
         /// <summary>The bound view instance. Set after <see cref="Bind"/> is called.</summary>
         protected TView View { get; private set; }
         /// <summary>The signal bus for subscribing to signals.</summary>
-        protected ISignalBus SignalBus { get; private set; }
+        [Inject] public ISignalBus SignalBus { get; set; }
         
         private readonly List<ISignalSubscription> _subscriptions = new();
 

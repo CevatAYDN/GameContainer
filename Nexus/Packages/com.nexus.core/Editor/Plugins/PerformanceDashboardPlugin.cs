@@ -81,23 +81,21 @@ namespace Nexus.Editor
             SubscribeToNexusEvents();
             if (Application.isPlaying) StartRecording();
 
-            _refreshSchedule = _view.schedule.Execute(OnSampleTick).Every(500);
-
             return _view;
         }
 
         public override void OnDisable()
         {
-            _refreshSchedule?.Pause();
             UnsubscribeFromNexusEvents();
             base.OnDisable();
         }
 
         public override void OnUpdate()
         {
-            // Called every ~200 ms by NexusWindow scheduler
+            base.OnUpdate();
             if (_recording && Application.isPlaying)
             {
+                OnSampleTick();
                 RefreshAlarmLabels();
             }
         }

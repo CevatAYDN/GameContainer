@@ -39,11 +39,11 @@ namespace Nexus.Editor
         {
             ("cat_overview",     new[] { "Dashboard", "GameManager" }),
             ("cat_architecture", new[] { "Hierarchy", "Explorer", "Graph", "TypeAnalyzer", "ContextInspector", "FSM" }),
-            ("cat_diagnostics",  new[] { "Tracer", "ErrorDashboard", "PerformanceDashboard" }),
+            ("cat_diagnostics",  new[] { "Tracer", "ErrorDashboard", "PerformanceDashboard", "NetworkDashboard" }),
             ("cat_tools",        new[] { "Wizard", "casual_services", "Help" }),
         };
 
-        private static readonly HashSet<string> HiddenPluginIds = new() { "NetworkDashboard" };
+        private static readonly HashSet<string> HiddenPluginIds = new();
 
         private List<INexusEditorPlugin> _plugins = new();
         private INexusEditorPlugin _activePlugin;
@@ -190,7 +190,10 @@ namespace Nexus.Editor
                 AddCategoryHeader(NexusLang.Get(categoryKey));
                 foreach (var plugin in members)
                 {
-                    AddTabButton(NexusLang.Get($"tab_{plugin.Id.ToLower()}"), plugin.Id);
+                    string key = $"tab_{plugin.Id.ToLower()}";
+                    string label = NexusLang.Get(key);
+                    if (label == key) label = plugin.DisplayName;
+                    AddTabButton(label, plugin.Id);
                     rendered.Add(plugin.Id);
                 }
             }
@@ -202,7 +205,10 @@ namespace Nexus.Editor
                 AddCategoryHeader(NexusLang.Get("cat_other"));
                 foreach (var plugin in uncategorized)
                 {
-                    AddTabButton(NexusLang.Get($"tab_{plugin.Id.ToLower()}"), plugin.Id);
+                    string key = $"tab_{plugin.Id.ToLower()}";
+                    string label = NexusLang.Get(key);
+                    if (label == key) label = plugin.DisplayName;
+                    AddTabButton(label, plugin.Id);
                 }
             }
 

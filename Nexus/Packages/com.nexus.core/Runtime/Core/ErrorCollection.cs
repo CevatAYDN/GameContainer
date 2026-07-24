@@ -199,6 +199,34 @@ namespace Nexus.Core
             OnErrorCountChanged?.Invoke(0, s_maxErrors);
         }
 
+#if UNITY_EDITOR
+        [UnityEditor.InitializeOnLoadMethod]
+#endif
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void InitializeLogHook()
+        {
+            Application.logMessageReceivedThreaded -= OnUnityLogReceived;
+            Application.logMessageReceivedThreaded += OnUnityLogReceived;
+        }
+
+        private static void OnUnityLogReceived(string condition, string stackTrace, LogType type)
+        {
+            if (!s_enabled) return;
+
+            ErrorSeverity severity = type switch
+            {
+                LogType.Log => ErrorSeverity.Info,
+                LogType.Warning => ErrorSeverity.Warning,
+                LogType.Error => ErrorSeverity.Error,
+                LogType.Assert => ErrorSeverity.Error,
+                LogType.Exception => ErrorSeverity.Critical,
+                _ => ErrorSeverity.Info
+            };
+
+            // Avoid loop: logToConsole MUST be false when capturing from Unity Log
+            Collect(severity, ErrorCategory.Unity, condition, stackTrace, "Unity Log", null, logToConsole: false);
+        }
+
         public static void ClearBefore(DateTime timestamp)
         {
             var toRemove = s_errors.Where(e => e.Timestamp < timestamp).ToList();
