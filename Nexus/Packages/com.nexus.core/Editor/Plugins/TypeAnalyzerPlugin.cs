@@ -76,7 +76,7 @@ namespace Nexus.Editor
                 }
             };
 
-            _searchField = new TextField("Type Name") { value = _searchedTypeName, style = { flexGrow = 1, color = Color.white } };
+            _searchField = new TextField(NexusLang.Get("ta_type_name")) { value = _searchedTypeName, style = { flexGrow = 1, color = Color.white } };
             filterBar.Add(_searchField);
 
             var analyzeButton = NexusEditorStyles.CreateButton(NexusLang.Get("typeanalyzer_analyze"), AnalyzeType, NexusEditorStyles.BtnGray);

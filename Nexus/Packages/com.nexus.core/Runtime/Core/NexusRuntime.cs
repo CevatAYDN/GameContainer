@@ -11,10 +11,21 @@ namespace Nexus.Core
     /// Central registry for all active Nexus contexts.
     /// Provides thread-safe registration, unregistration, enumeration, and domain-reload-safe reset.
     /// </summary>
+    public interface IContextResolver
+    {
+        IReadOnlyList<IContext> GetActiveContexts();
+    }
+
     public static class NexusRuntime
     {
         public static event System.Action<IContext> OnContextRegistered;
         public static event System.Action<IContext> OnContextUnregistered;
+        public static IContextResolver DefaultContextResolver { get; } = new DefaultResolver();
+
+        private sealed class DefaultResolver : IContextResolver
+        {
+            public IReadOnlyList<IContext> GetActiveContexts() => ActiveContexts;
+        }
 
         private static readonly List<IContext> s_activeContexts = new();
         private static readonly HashSet<IContext> s_contextSet = new();
@@ -140,19 +151,7 @@ namespace Nexus.Core
             // P1-8 fix: pure contexts run the SAME lifecycle sequence as Root-based
             // contexts — reactive models and services are initialized before the
             // lifecycle Init/Start phases, and ALL configured lifecycles are iterated.
-            var ct = context.LifetimeToken;
-            await context.InitializeReactiveModelsAsync(ct);
-            await context.InitializeServicesAsync(ct);
-
-            var lifecycles = context.ConfiguredLifecycles;
-            for (int i = 0; i < lifecycles.Count; i++)
-            {
-                await lifecycles[i].OnInitializeAsync(ct);
-            }
-            for (int i = 0; i < lifecycles.Count; i++)
-            {
-                await lifecycles[i].OnStartAsync(ct);
-            }
+            await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, context.LifetimeToken);
 
             return context;
         }
@@ -160,22 +159,27 @@ namespace Nexus.Core
         /// <summary>Disposes all active contexts and clears the registry. Called automatically on domain reload.</summary>
         public static void Reset()
         {
+            IContext[] snapshot;
             lock (s_lock)
             {
-                for (int i = s_activeContexts.Count - 1; i >= 0; i--)
-                {
-                    try
-                    {
-                        s_activeContexts[i].Dispose();
-                    }
-                    catch (System.Exception ex)
-                    {
-                        NexusLog.Error(nameof(NexusRuntime), nameof(Reset), string.Empty, ex);
-                    }
-                }
+                snapshot = s_activeContexts.ToArray();
                 s_activeContexts.Clear();
                 s_contextSet.Clear();
-                s_activeContextsCacheDirty = true;
+                s_activeContextsReadOnlyCache = new List<IContext>();
+                s_activeContextsCacheDirty = false;
+                s_activeContextCount = 0;
+            }
+
+            for (int i = snapshot.Length - 1; i >= 0; i--)
+            {
+                try
+                {
+                    snapshot[i].Dispose();
+                }
+                catch (System.Exception ex)
+                {
+                    NexusLog.Error(nameof(NexusRuntime), nameof(Reset), string.Empty, ex);
+                }
             }
 
             NexusDI.ClearCaches();
@@ -327,7 +331,8 @@ namespace Nexus.Core
                 {
                     s_activeContexts.Remove(context);
                     s_activeContextCount = s_activeContexts.Count;
-                    s_activeContextsCacheDirty = true;
+                    s_activeContextsReadOnlyCache = new List<IContext>(s_activeContexts);
+                    s_activeContextsCacheDirty = false;
                     removed = true;
                 }
             }

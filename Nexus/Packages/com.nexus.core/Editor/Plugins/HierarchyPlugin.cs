@@ -92,12 +92,12 @@ namespace Nexus.Editor
         public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
             => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
             {
-                ("🎯 Select Root", () => {
+                (NexusLang.Get("hier_action_select_root"), () => {
                     var roots = NexusEditorDataProvider.GetSceneRoots();
                     if (roots != null && roots.Length > 0) UnityEditor.Selection.activeGameObject = roots[0].gameObject;
                 }, NexusEditorStyles.BtnGreen),
-                ("🔍 Context Inspector", () => Window?.SwitchToPlugin("ContextInspector"), NexusEditorStyles.BtnPurple),
-                ("🧹 Clear Caches", () => { NexusRuntime.Reset(); Window?.SwitchToPlugin(Id); }, NexusEditorStyles.AccentRed),
+                (NexusLang.Get("hier_action_inspector"), () => Window?.SwitchToPlugin("ContextInspector"), NexusEditorStyles.BtnPurple),
+                (NexusLang.Get("hier_action_clear_caches"), () => { NexusRuntime.Reset(); Window?.SwitchToPlugin(Id); }, NexusEditorStyles.AccentRed),
             };
 
         private void OnContextsChanged(IContext ctx)
@@ -256,7 +256,7 @@ namespace Nexus.Editor
             {
                 if (instance == null || instance is NexusDI || instance is IContext || instance is ISignalBus) continue;
                 var type = instance.GetType();
-                var item = new Label($"• {type.Name}") { style = { fontSize = 9, color = Color.white } };
+                var item = new Label(NexusLang.Get("hier_bullet") + type.Name) { style = { fontSize = 9, color = Color.white } };
                 singletonsList.Add(item);
                 singletonCount++;
             }
@@ -326,7 +326,7 @@ namespace Nexus.Editor
                 }
             };
 
-            var scopeLabel = new Label($"CONTEXT: {_selectedContext.ScopeTag ?? "Default"}")
+            var scopeLabel = new Label(string.Format(NexusLang.Get("hier_context_label"), _selectedContext.ScopeTag ?? NexusLang.Get("hier_default_tag")))
             {
                 style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentGreen), flexGrow = 1 }
             };
@@ -334,14 +334,14 @@ namespace Nexus.Editor
 
             var gcBtn = new Button(() => { System.GC.Collect(); RebuildInspector(); })
             {
-                text = "🗑️ Force GC",
+                text = NexusLang.Get("hier_force_gc"),
                 style = { fontSize = 8, marginRight = 4, height = 20, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white }
             };
             contextBar.Add(gcBtn);
 
             var resetBtn = new Button(() => { NexusRuntime.Reset(); RebuildContextTree(); RebuildInspector(); })
             {
-                text = "🧹 Reset Contexts",
+                text = NexusLang.Get("hier_reset_contexts"),
                 style = { fontSize = 8, height = 20, backgroundColor = new StyleColor(NexusEditorStyles.AccentRed), color = Color.white }
             };
             contextBar.Add(resetBtn);
@@ -566,7 +566,7 @@ namespace Nexus.Editor
             else
             {
                 // Fallback for custom objects / classes
-                var label = new Label($"{member.Name}: {initialValue ?? "null"}") { style = { color = Color.white, fontSize = 10 } };
+                var label = new Label($"{member.Name}: {initialValue ?? NexusLang.Get("hier_null_value")}") { style = { color = Color.white, fontSize = 10 } };
                 return label;
             }
 

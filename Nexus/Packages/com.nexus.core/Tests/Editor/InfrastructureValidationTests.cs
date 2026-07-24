@@ -38,5 +38,21 @@ namespace Nexus.Tests.Editor
             Assert.IsTrue(File.Exists(binderPath),
                 $"AOT binder was not generated at expected path: {binderPath}");
         }
+
+        [Test]
+        public void NexusWindow_SmokeTest_OpensAndBuildsUI()
+        {
+            var window = UnityEditor.EditorWindow.GetWindow<NexusWindow>(true, "Nexus Test Window", false);
+            try
+            {
+                window.Show();
+                window.Repaint();
+                Assert.IsNotNull(window.rootVisualElement, "NexusWindow should build a root visual tree.");
+            }
+            finally
+            {
+                window.Close();
+            }
+        }
     }
 }

@@ -57,7 +57,7 @@ namespace Nexus.Editor
             _view.Add(refreshBtn);
 
             // Adjustable node budget — replaces the former hard 50-node cap.
-            var limitField = new IntegerField("Max Nodes") { value = _maxNodes };
+            var limitField = new IntegerField(NexusLang.Get("graph_max_nodes")) { value = _maxNodes };
             limitField.style.position = Position.Absolute;
             limitField.style.top = 58;
             limitField.style.right = 92;
@@ -324,7 +324,7 @@ namespace Nexus.Editor
             node.mainContainer.style.backgroundColor = new StyleColor(new Color(0.2f, 0.4f, 0.2f, 0.8f));
 
             var outputPort = node.InstantiatePort(Orientation.Horizontal, Direction.Output, Port.Capacity.Multi, typeof(bool));
-            outputPort.portName = "▶";
+            outputPort.portName = NexusLang.Get("graph_port_output");
             node.outputContainer.Add(outputPort);
             node.RefreshPorts();
 
@@ -338,7 +338,7 @@ namespace Nexus.Editor
             node.mainContainer.style.backgroundColor = new StyleColor(new Color(0.2f, 0.3f, 0.5f, 0.8f));
 
             var inputPort = node.InstantiatePort(Orientation.Horizontal, Direction.Input, Port.Capacity.Multi, typeof(bool));
-            inputPort.portName = "◀";
+            inputPort.portName = NexusLang.Get("graph_port_input");
             node.inputContainer.Add(inputPort);
             node.RefreshPorts();
 

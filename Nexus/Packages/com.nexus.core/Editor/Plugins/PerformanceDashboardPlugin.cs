@@ -240,7 +240,7 @@ namespace Nexus.Editor
             };
             group.Add(hdr);
 
-            valueLabel = new Label("—")
+            valueLabel = new Label(NexusLang.Get("pd_value_placeholder"))
             {
                 style =
                 {
@@ -325,8 +325,8 @@ namespace Nexus.Editor
         {
             // Labels
             _fpsLabel.text  = $"{fps:F1}";
-            _memLabel.text  = $"{monoMb:F1} MB";
-            _gcLabel.text   = $"gen0 +{_gcGen0Buffer.Last():F0}";
+            _memLabel.text  = $"{monoMb:F1}{NexusLang.Get("pd_unit_mb")}";
+            _gcLabel.text   = string.Format(NexusLang.Get("pd_gc_gen0"), _gcGen0Buffer.Last());
             _sigLabel.text  = $"{sigRate:F1}/s";
             _cmdLabel.text  = $"{cmdRate:F1}/s";
 

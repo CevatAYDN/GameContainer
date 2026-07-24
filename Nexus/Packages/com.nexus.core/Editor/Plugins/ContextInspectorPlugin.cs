@@ -189,7 +189,7 @@ namespace Nexus.Editor
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 8, minWidth = 60 }
             });
 
-            _contextDropdown = new DropdownField { choices = new List<string> { "(none)" }, value = "(none)" };
+            _contextDropdown = new DropdownField { choices = new List<string> { NexusLang.Get("ci_dropdown_none") }, value = NexusLang.Get("ci_dropdown_none") };
             _contextDropdown.style.flexGrow = 1;
             _contextDropdown.RegisterValueChangedCallback(evt =>
             {
@@ -251,7 +251,7 @@ namespace Nexus.Editor
 
         private static string FormatContextLabel(IContext ctx)
         {
-            if (ctx == null) return "(null)";
+            if (ctx == null) return NexusLang.Get("ci_null_label");
             return ctx.ScopeTag ?? ctx.GetType().Name;
         }
 

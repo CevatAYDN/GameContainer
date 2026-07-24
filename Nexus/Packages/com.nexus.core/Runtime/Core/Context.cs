@@ -198,6 +198,32 @@ namespace Nexus.Core
                 await _builder.InitializeServicesAsync(ct);
         }
 
+        internal async ValueTask InitializeLifecycleAsync(IReadOnlyList<IContextLifecycle> lifecycles, CancellationToken ct)
+        {
+            await InitializeReactiveModelsAsync(ct);
+            await InitializeServicesAsync(ct);
+            Container.ReInjectAll();
+
+            if (lifecycles != null)
+            {
+                for (int i = 0; i < lifecycles.Count; i++)
+                {
+                    await lifecycles[i].OnInitializeAsync(ct);
+                }
+            }
+
+            Container.ReInjectAll();
+            await InitializeLazyServicesAsync(ct);
+
+            if (lifecycles != null)
+            {
+                for (int i = 0; i < lifecycles.Count; i++)
+                {
+                    await lifecycles[i].OnStartAsync(ct);
+                }
+            }
+        }
+
         /// <summary>
         /// Drains the lazy-service initialization queue. Services constructed on first access
         /// via <see cref="LazyInjection{T}"/> are enqueued by <see cref="NexusDI.NotifyLazyServiceResolved"/>

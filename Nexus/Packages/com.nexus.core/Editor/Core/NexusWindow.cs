@@ -19,25 +19,22 @@ namespace Nexus.Editor
         // Distinct colors for each plugin's sidebar icon (used as colored circles).
         private static readonly Dictionary<string, Color> PluginIconColors = new()
         {
-            { "Dashboard", new Color(0.3f, 0.8f, 1f) },     // AccentBlue
-            { "Wizard", new Color(1f, 0.85f, 0.3f) },       // AccentYellow
-            { "Hierarchy", new Color(0.4f, 1f, 0.4f) },     // AccentGreen
-            { "Explorer", new Color(0.8f, 0.6f, 0.9f) },    // AccentPurple
-            { "Tracer", new Color(1f, 0.7f, 0.2f) },        // AccentOrange
-            { "Graph", new Color(0.9f, 0.4f, 0.4f) },       // AccentRed
-            { "TypeAnalyzer", new Color(0.6f, 0.6f, 0.6f) },// TextSecondary
-            { "GameManager", new Color(0.3f, 1f, 0.8f) },   // AccentTeal
-            { "casual_services", new Color(1f, 0.4f, 0.8f) },// AccentPink
-            { "Help", new Color(0.6f, 0.6f, 1f) },         // AccentLavender
-            { "ErrorDashboard", new Color(1f, 0.3f, 0.3f) }, // AccentRed (Error)
-            { "PerformanceDashboard", new Color(0.3f, 1f, 0.6f) }, // AccentGreen (Performance)
-            { "NetworkDashboard", new Color(0.4f, 0.8f, 1f) }, // AccentCyan (Network)
-            { "ContextInspector", new Color(0.6f, 1f, 0.9f) }, // AccentMint (Inspector)
+            { "Dashboard", new Color(0.3f, 0.8f, 1f) },
+            { "Wizard", new Color(1f, 0.85f, 0.3f) },
+            { "Hierarchy", new Color(0.4f, 1f, 0.4f) },
+            { "Explorer", new Color(0.8f, 0.6f, 0.9f) },
+            { "Tracer", new Color(1f, 0.7f, 0.2f) },
+            { "Graph", new Color(0.9f, 0.4f, 0.4f) },
+            { "TypeAnalyzer", new Color(0.6f, 0.6f, 0.6f) },
+            { "GameManager", new Color(0.3f, 1f, 0.8f) },
+            { "casual_services", new Color(1f, 0.4f, 0.8f) },
+            { "Help", new Color(0.6f, 0.6f, 1f) },
+            { "ErrorDashboard", new Color(1f, 0.3f, 0.3f) },
+            { "PerformanceDashboard", new Color(0.3f, 1f, 0.6f) },
+            { "NetworkDashboard", new Color(0.4f, 0.8f, 1f) },
+            { "ContextInspector", new Color(0.6f, 1f, 0.9f) },
         };
 
-        // Sidebar grouping: ordered categories -> member plugin ids. Purely visual; keyboard
-        // shortcuts and discovery order are unaffected. Plugins absent from _plugins are skipped,
-        // and any discovered plugin missing here falls under the "cat_other" safety-net header.
         private static readonly List<(string CategoryKey, string[] PluginIds)> SidebarCategories = new()
         {
             ("cat_overview",     new[] { "Dashboard", "GameManager" }),
@@ -46,17 +43,12 @@ namespace Nexus.Editor
             ("cat_tools",        new[] { "Wizard", "casual_services", "Help" }),
         };
 
-        // Plugins hidden from the dashboard. NetworkDashboard reads NetworkMonitor, which has no
-        // runtime writers in this single-player project (NetworkSignalBus is never wired to a
-        // transport), so the tab could only ever show an empty/disconnected state. Hidden here
-        // instead of deleted so it can be re-enabled if networking is added later.
         private static readonly HashSet<string> HiddenPluginIds = new() { "NetworkDashboard" };
 
         private List<INexusEditorPlugin> _plugins = new();
         private INexusEditorPlugin _activePlugin;
         private bool _discoveryFailed;
         private string _discoveryError;
-
         private VisualElement _sidebar;
         private VisualElement _contextActionBar;
         private VisualElement _contentArea;
@@ -159,7 +151,7 @@ namespace Nexus.Editor
             _sidebar.style.paddingRight = 8;
 
             // Brand Header
-            var brandLabel = new Label("NEXUS");
+            var brandLabel = new Label(NexusLang.Get("brand_title"));
             brandLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
             brandLabel.style.fontSize = 22;
             brandLabel.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
@@ -216,7 +208,7 @@ namespace Nexus.Editor
 
             if (_discoveryFailed)
             {
-                _sidebar.Add(new Label($"Plugin discovery failed: {_discoveryError}")
+                _sidebar.Add(new Label(string.Format(NexusLang.Get("sidebar_discovery_failed"), _discoveryError))
                 {
                     style =
                     {
@@ -229,7 +221,7 @@ namespace Nexus.Editor
             }
             else if (!_plugins.Any())
             {
-                _sidebar.Add(new Label("No Nexus plugins found")
+                _sidebar.Add(new Label(NexusLang.Get("sidebar_no_plugins"))
                 {
                     style =
                     {
@@ -318,6 +310,13 @@ namespace Nexus.Editor
             rightPanel.style.flexGrow = 1;
             rightPanel.style.flexDirection = FlexDirection.Column;
 
+            if (_discoveryFailed)
+            {
+                var discoveryBox = new HelpBox($"Plugin discovery partially failed:\n{_discoveryError}", HelpBoxMessageType.Warning);
+                discoveryBox.name = "discovery-diagnostics";
+                rightPanel.Add(discoveryBox);
+            }
+
             _contextActionBar = new VisualElement();
             rightPanel.Add(_contextActionBar);
 
@@ -387,7 +386,20 @@ namespace Nexus.Editor
                     catch (ReflectionTypeLoadException ex)
                     {
                         _discoveryFailed = true;
-                        _discoveryError = ex.Message;
+                        var failedTypes = ex.LoaderExceptions
+                            .Where(e => e != null)
+                            .Select(e => e.Message)
+                            .Distinct()
+                            .ToList();
+
+                        _discoveryError = failedTypes.Count > 0
+                            ? string.Join("\n", failedTypes)
+                            : ex.Message;
+
+                        foreach (var msg in failedTypes)
+                        {
+                            Debug.LogWarning($"[Nexus] Plugin discovery type load failed: {msg}");
+                        }
                     }
                 }
 
@@ -510,7 +522,7 @@ namespace Nexus.Editor
             catch (Exception ex)
             {
                 Debug.LogException(ex);
-                _contentArea.Add(new Label($"Error loading plugin view: {ex.Message}") { style = { color = Color.red } });
+                _contentArea.Add(new Label(string.Format(NexusLang.Get("error_plugin_view"), ex.Message)) { style = { color = Color.red } });
             }
         }
 
@@ -535,7 +547,7 @@ namespace Nexus.Editor
                 }
             };
 
-            var tagLabel = new Label($"ACTIONS ({_activePlugin.DisplayName.ToUpper()})")
+            var tagLabel = new Label(string.Format(NexusLang.Get("actions_label"), _activePlugin.DisplayName.ToUpper()))
             {
                 style =
                 {
@@ -562,7 +574,7 @@ namespace Nexus.Editor
 
             bool playing = Application.isPlaying;
             var statusPill = NexusEditorStyles.CreatePill(
-                playing ? "PLAY MODE ACTIVE" : "EDIT MODE",
+                playing ? NexusLang.Get("status_play_mode_active") : NexusLang.Get("status_edit_mode"),
                 playing ? new Color(0.1f, 0.4f, 0.2f) : new Color(0.3f, 0.3f, 0.3f),
                 playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary
             );
@@ -662,19 +674,15 @@ namespace Nexus.Editor
             int rootCount = roots?.Length ?? 0;
 
             _statusBar.text = playing
-                ? $"Nexus ● ACTIVE  |  {contextCount} context(s) active  |  {handlerCount} static handler(s) registered"
-                : $"Nexus ○ STANDBY  |  {rootCount} Root(s) in scene  |  Enter Play Mode to activate";
+                ? string.Format(NexusLang.Get("statusbar_play"), contextCount, handlerCount)
+                : string.Format(NexusLang.Get("statusbar_standby"), rootCount);
         }
 
         private void SetLocale(string locale)
         {
             EditorPrefs.SetString("Nexus_Locale", locale);
             NexusLang.LoadLocale(locale);
-            foreach (var kvp in _tabLabels)
-            {
-                kvp.Value.text = NexusLang.Get($"tab_{kvp.Key.ToLower()}");
-            }
-            RefreshActivePlugin();
+            CreateGUI();
         }
     }
 }

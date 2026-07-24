@@ -115,6 +115,7 @@ namespace Nexus.Core
         private readonly NexusDI _container;
         private readonly CommandPoolManager _poolManager;
         private readonly IContext _context;
+        private readonly IContextResolver _contextResolver;
 
         private readonly Dictionary<Type, List<CommandHandlerInfo>> _commandHandlers = new();
         private readonly Dictionary<Type, List<CompositeTriggerState>> _compositeTriggersBySignal = new();
@@ -223,10 +224,16 @@ namespace Nexus.Core
 #endif
 
         public SignalBus(NexusDI container, CommandPoolManager poolManager, IContext context)
+            : this(container, poolManager, context, null)
+        {
+        }
+
+        public SignalBus(NexusDI container, CommandPoolManager poolManager, IContext context, IContextResolver contextResolver)
         {
             _container = container;
             _poolManager = poolManager;
             _context = context;
+            _contextResolver = contextResolver ?? NexusRuntime.DefaultContextResolver;
         }
 
         internal static bool ImplementsGenericInterface(Type type, Type genericInterface)
@@ -1549,8 +1556,7 @@ namespace Nexus.Core
 
         private void BroadcastCrossContext<T>(T signal, string scopeTag) where T : struct
         {
-            // Find other contexts through NexusRuntime
-            var contexts = NexusRuntime.ActiveContexts;
+            var contexts = _contextResolver.GetActiveContexts();
             for (int i = 0; i < contexts.Count; i++)
             {
                 var targetCtx = contexts[i];

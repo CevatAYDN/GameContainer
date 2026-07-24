@@ -48,7 +48,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("🌐 NETWORK MONITOR");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("nd_title"));
             _view.Add(toolbar);
 
             var scroll = new ScrollView { style = { flexGrow = 1 } };
@@ -85,19 +85,19 @@ namespace Nexus.Editor
         public override IReadOnlyList<(string Label, Action Action, Color Color)> GetContextActions()
             => new List<(string, Action, Color)>
             {
-                ("🗑 Clear Log",  ClearLog,     NexusEditorStyles.BtnGray),
-                ("💾 Export Log", ExportLog,    NexusEditorStyles.BtnBlue),
+                (NexusLang.Get("nd_action_clear"),  ClearLog,     NexusEditorStyles.BtnGray),
+                (NexusLang.Get("nd_action_export"), ExportLog,    NexusEditorStyles.BtnBlue),
             };
 
         // ── Build helpers ─────────────────────────────────────────
 
         private void BuildConnectionCard(VisualElement parent)
         {
-            var card = BuildCard(parent, "🔗 Connection Status");
+            var card = BuildCard(parent, NexusLang.Get("nd_section_connection"));
 
             var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
 
-            _statusLabel = new Label("● DISCONNECTED")
+            _statusLabel = new Label(NexusLang.Get("nd_disconnected"))
             {
                 style =
                 {
@@ -113,11 +113,11 @@ namespace Nexus.Editor
 
         private void BuildLatencyCard(VisualElement parent)
         {
-            var card = BuildCard(parent, "📡 Latency");
+            var card = BuildCard(parent, NexusLang.Get("nd_section_latency"));
 
             var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
 
-            _latencyLabel = new Label("— ms")
+            _latencyLabel = new Label(NexusLang.Get("nd_latency_default"))
             {
                 style =
                 {
@@ -138,7 +138,7 @@ namespace Nexus.Editor
                     marginRight = 16
                 }
             };
-            var gaugeLabel = new Label("0 — 500 ms") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), marginBottom = 2 } };
+            var gaugeLabel = new Label(NexusLang.Get("nd_latency_range")) { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), marginBottom = 2 } };
             gaugeContainer.Add(gaugeLabel);
             var gaugeBg = new VisualElement
             {
@@ -173,13 +173,13 @@ namespace Nexus.Editor
 
         private void BuildStatsCard(VisualElement parent)
         {
-            var card = BuildCard(parent, "📊 Statistics");
+            var card = BuildCard(parent, NexusLang.Get("nd_section_stats"));
 
             var row = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
 
-            _sentLabel = AddStatPill(row, "Sent",     "0", NexusEditorStyles.AccentGreen);
-            _rcvdLabel = AddStatPill(row, "Received", "0", NexusEditorStyles.AccentBlue);
-            _errLabel  = AddStatPill(row, "Errors",   "0", NexusEditorStyles.AccentRed);
+            _sentLabel = AddStatPill(row, NexusLang.Get("nd_stat_sent"),     "0", NexusEditorStyles.AccentGreen);
+            _rcvdLabel = AddStatPill(row, NexusLang.Get("nd_stat_received"), "0", NexusEditorStyles.AccentBlue);
+            _errLabel  = AddStatPill(row, NexusLang.Get("nd_stat_errors"),   "0", NexusEditorStyles.AccentRed);
 
             card.Add(row);
         }
@@ -231,10 +231,10 @@ namespace Nexus.Editor
                 }
             };
 
-            var typeLabel = new Label("Type:") { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 4 } };
+            var typeLabel = new Label(NexusLang.Get("nd_filter_type")) { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 4 } };
             bar.Add(typeLabel);
 
-            foreach (var t in new[] { "All", "Sent", "Received", "Failed", "Timeout" })
+            foreach (var t in new[] { NexusLang.Get("nd_filter_all"), NexusLang.Get("nd_filter_sent"), NexusLang.Get("nd_filter_received"), NexusLang.Get("nd_filter_failed"), NexusLang.Get("nd_filter_timeout") })
             {
                 var t1 = t;
                 var btn = new Button(() =>
@@ -246,12 +246,12 @@ namespace Nexus.Editor
                 bar.Add(btn);
             }
 
-            bar.Add(new Label("  Search:") { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginLeft = 8, marginRight = 4 } });
+            bar.Add(new Label(NexusLang.Get("nd_filter_search")) { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginLeft = 8, marginRight = 4 } });
             var searchField = new TextField { value = _searchFilter, style = { width = 100, height = 18 } };
             searchField.RegisterValueChangedCallback(evt => { _searchFilter = evt.newValue; ApplyFilters(); });
             bar.Add(searchField);
 
-            var autoScrollToggle = new Toggle("Auto Scroll") { value = _autoScroll };
+            var autoScrollToggle = new Toggle(NexusLang.Get("nd_autoscroll")) { value = _autoScroll };
             autoScrollToggle.style.fontSize = 9;
             autoScrollToggle.RegisterValueChangedCallback(evt => _autoScroll = evt.newValue);
             bar.Add(autoScrollToggle);
@@ -261,7 +261,7 @@ namespace Nexus.Editor
 
         private void BuildEventLog(VisualElement parent)
         {
-            var card = BuildCard(parent, "📜 Event Log (last 200)");
+            var card = BuildCard(parent, NexusLang.Get("nd_section_events"));
             _eventLog = new ScrollView { style = { maxHeight = 280 } };
             _eventTable = new VisualElement();
             _eventLog.Add(_eventTable);
@@ -276,12 +276,12 @@ namespace Nexus.Editor
             bool connected = status.IsConnected;
             float latencyMs = status.LatencyMs;
 
-            _statusLabel.text = connected ? "● CONNECTED" : "● DISCONNECTED";
+            _statusLabel.text = connected ? NexusLang.Get("nd_connected") : NexusLang.Get("nd_disconnected");
             _statusLabel.style.color = new StyleColor(connected
                 ? NexusEditorStyles.AccentGreen
                 : NexusEditorStyles.AccentRed);
 
-            _latencyLabel.text = connected ? $"{latencyMs:F1} ms" : "— ms";
+            _latencyLabel.text = connected ? $"{latencyMs:F1} ms" : NexusLang.Get("nd_latency_default");
 
             // Gauge: 0-500ms range
             float ratio = Mathf.Clamp01(latencyMs / 500f);
@@ -329,7 +329,7 @@ namespace Nexus.Editor
 
             if (events.Count == 0)
             {
-                _eventTable.Add(new Label("No network events recorded")
+                _eventTable.Add(new Label(NexusLang.Get("nd_no_events"))
                 {
                     style = { color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 12, unityTextAlign = TextAnchor.MiddleCenter }
                 });
@@ -338,18 +338,18 @@ namespace Nexus.Editor
 
             var table = NexusEditorStyles.CreateDataTable(
                 new[] {
-                    ("Type", 0.2f),
-                    ("Signal", 0.4f),
-                    ("Direction", 0.2f),
-                    ("Time", 0.2f)
+                    (NexusLang.Get("nd_col_type"), 0.2f),
+                    (NexusLang.Get("nd_col_signal"), 0.4f),
+                    (NexusLang.Get("nd_col_direction"), 0.2f),
+                    (NexusLang.Get("nd_col_time"), 0.2f)
                 },
                 events.TakeLast(200).Select(e => new[]
                 {
                     e.EventType.ToString(),
                     e.SignalName ?? "",
-                    e.EventType == "Sent" ? "→ Out"
-                        : e.EventType == "Received" ? "← In"
-                        : "⚠ Err",
+                    e.EventType == "Sent" ? NexusLang.Get("nd_dir_out")
+                        : e.EventType == "Received" ? NexusLang.Get("nd_dir_in")
+                        : NexusLang.Get("nd_dir_err"),
                     e.Timestamp.ToString("HH:mm:ss.fff")
                 })
             );

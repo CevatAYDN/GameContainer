@@ -147,7 +147,7 @@ namespace Nexus.Editor
                 catch { /* resolution may throw during teardown; ignore */ }
 
                 if (machine == null || !seen.Add(machine)) continue;
-                result.Add((ctx.ScopeTag ?? "context", machine));
+                result.Add((ctx.ScopeTag ?? NexusLang.Get("fsm_fallback_context"), machine));
             }
             return result;
         }
@@ -158,7 +158,7 @@ namespace Nexus.Editor
             foreach (var (_, machine) in machines)
             {
                 live.Add(machine);
-                var current = machine.CurrentState?.GetType().Name ?? "(none)";
+                var current = machine.CurrentState?.GetType().Name ?? NexusLang.Get("fsm_no_state");
                 if (!_lastState.TryGetValue(machine, out var last) || last != current)
                 {
                     _lastState[machine] = current;

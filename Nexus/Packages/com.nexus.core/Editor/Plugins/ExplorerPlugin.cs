@@ -107,9 +107,9 @@ namespace Nexus.Editor
         public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
             => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
             {
-                ("⚡ CodeGen",        () => NexusCodeGenerator.GenerateBinder(),         NexusEditorStyles.BtnBlue),
-                ("🔍 Inspector",      () => Window?.SwitchToPlugin("ContextInspector"),  NexusEditorStyles.BtnPurple),
-                ("🔄 Rescan",         () => { ScanExplorerAndPopulate(); RenderTab(); }, NexusEditorStyles.BtnGray),
+                (NexusLang.Get("exp_action_codegen"),        () => NexusCodeGenerator.GenerateBinder(),         NexusEditorStyles.BtnBlue),
+                (NexusLang.Get("exp_action_inspector"),      () => Window?.SwitchToPlugin("ContextInspector"),  NexusEditorStyles.BtnPurple),
+                (NexusLang.Get("exp_action_rescan"),         () => { ScanExplorerAndPopulate(); RenderTab(); }, NexusEditorStyles.BtnGray),
             };
 
         private Button CreateTabButton(string label, ExplorerTab tab)
@@ -184,7 +184,7 @@ namespace Nexus.Editor
             });
             filtersToolbar.Add(_searchField);
 
-            _assemblyDropdown = new DropdownField("Assembly", new List<string> { "All Assemblies" }, 0) { style = { width = 160, marginRight = 10 } };
+            _assemblyDropdown = new DropdownField("Assembly", new List<string> { NexusLang.Get("exp_all_assemblies") }, 0) { style = { width = 160, marginRight = 10 } };
             _assemblyDropdown.RegisterValueChangedCallback(evt =>
             {
                 _selectedAssembly = evt.newValue;
@@ -192,7 +192,7 @@ namespace Nexus.Editor
             });
             filtersToolbar.Add(_assemblyDropdown);
 
-            var scanBtn = new Button(ForceScanExplorer) { text = "Refresh Cache" };
+            var scanBtn = new Button(ForceScanExplorer) { text = NexusLang.Get("exp_refresh_cache") };
             scanBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.BtnGray);
             scanBtn.style.color = Color.white;
             scanBtn.style.fontSize = 10;
@@ -525,7 +525,7 @@ namespace Nexus.Editor
 
                 if (map.IsAsync)
                 {
-                    var badge = NexusEditorStyles.CreatePill("ASYNC", NexusEditorStyles.CardBgYellow, NexusEditorStyles.AccentYellow);
+                    var badge = NexusEditorStyles.CreatePill(NexusLang.Get("exp_badge_async"), NexusEditorStyles.CardBgYellow, NexusEditorStyles.AccentYellow);
                     badge.style.marginLeft = 4;
                     handlerContainer.Add(badge);
                 }
@@ -539,8 +539,8 @@ namespace Nexus.Editor
 
                 var copyBtn = new Button(() => { EditorGUIUtility.systemCopyBuffer = sigName; })
                 {
-                    text = "📋",
-                    tooltip = "Copy Signal Name",
+                    text = NexusLang.Get("exp_btn_copy"),
+                    tooltip = NexusLang.Get("exp_tooltip_copy"),
                     style = { fontSize = 8, width = 18, height = 16, marginRight = 2, paddingLeft = 0, paddingRight = 0, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white }
                 };
                 modeContainer.Add(copyBtn);
@@ -557,8 +557,8 @@ namespace Nexus.Editor
                     }
                 })
                 {
-                    text = "🔍",
-                    tooltip = "Open Script in IDE",
+                    text = NexusLang.Get("exp_btn_open"),
+                    tooltip = NexusLang.Get("exp_tooltip_open"),
                     style = { fontSize = 8, width = 18, height = 16, paddingLeft = 0, paddingRight = 0, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue), color = Color.white }
                 };
                 modeContainer.Add(openBtn);
@@ -636,8 +636,8 @@ namespace Nexus.Editor
                 return;
             }
 
-            _contextTargetDropdown = new DropdownField("Target Context", contextChoices, 0);
-            _contextTargetDropdown.tooltip = "Fire the test signal into the selected context";
+            _contextTargetDropdown = new DropdownField(NexusLang.Get("exp_target_context_label"), contextChoices, 0);
+            _contextTargetDropdown.tooltip = NexusLang.Get("exp_tooltip_ctx_dropdown");
             _testerFormContainer.Add(_contextTargetDropdown);
 
             _refreshTargetsButton = NexusEditorStyles.CreateButton(NexusLang.Get("ex_refresh_targets"), RefreshTesterView, NexusEditorStyles.BtnGray);
@@ -645,7 +645,7 @@ namespace Nexus.Editor
             _testerFormContainer.Add(_refreshTargetsButton);
 
             _fireButton = NexusEditorStyles.CreateButton(NexusLang.Get("explorer_fire_test"), FireSelectedSignal, NexusEditorStyles.BtnGreen);
-            _fireButton.tooltip = "Fire the selected signal into the target context";
+            _fireButton.tooltip = NexusLang.Get("exp_tooltip_fire_btn");
             _fireButton.style.marginTop = 10;
             _fireButton.style.height = 30;
             _testerFormContainer.Add(_fireButton);
@@ -654,21 +654,21 @@ namespace Nexus.Editor
 
             var presetRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
             var presetNameField = new TextField { style = { flexGrow = 1, marginRight = 5 } };
-            presetNameField.SetValueWithoutNotify("Default");
+            presetNameField.SetValueWithoutNotify(NexusLang.Get("exp_preset_default"));
             presetRow.Add(presetNameField);
 
-            var savePresetBtn = new Button(() => SavePreset(presetNameField.value)) { text = "Save" };
+            var savePresetBtn = new Button(() => SavePreset(presetNameField.value)) { text = NexusLang.Get("exp_btn_save") };
             presetRow.Add(savePresetBtn);
 
             _testerFormContainer.Add(presetRow);
 
             var loadPresetRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
             var presetNames = GetSavedPresetNames();
-            if (presetNames.Count == 0) presetNames.Add("No Presets");
+            if (presetNames.Count == 0) presetNames.Add(NexusLang.Get("exp_no_presets"));
             var loadDropdown = new DropdownField(presetNames, 0) { style = { flexGrow = 1, marginRight = 5 } };
             loadPresetRow.Add(loadDropdown);
 
-            var loadBtn = new Button(() => LoadPreset(loadDropdown.value)) { text = "Load" };
+            var loadBtn = new Button(() => LoadPreset(loadDropdown.value)) { text = NexusLang.Get("exp_btn_load") };
             if (presetNames[0] == "No Presets") loadBtn.SetEnabled(false);
             loadPresetRow.Add(loadBtn);
 

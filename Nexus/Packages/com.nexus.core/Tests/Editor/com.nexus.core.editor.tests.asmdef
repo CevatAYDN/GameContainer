@@ -1,6 +1,6 @@
 {
     "name": "com.nexus.core.editor.tests",
-    "rootNamespace": "Nexus.Editor.Tests",
+    "rootNamespace": "Nexus.Editor.Tests.Editor",
     "references": [
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",

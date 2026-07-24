@@ -98,8 +98,8 @@ namespace Nexus.Editor
             var quickBar = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginLeft = 12, marginRight = 12, marginTop = 8 } };
             _quickFindField = new TextField { value = string.Empty, isDelayed = false };
             _quickFindField.style.flexGrow = 1;
-            _quickFindField.label = "Quick Find";
-            _quickFindField.tooltip = "Type a section name such as contexts, signals, models, services, live";
+            _quickFindField.label = NexusLang.Get("gm_quick_find");
+            _quickFindField.tooltip = NexusLang.Get("gm_quick_find_tooltip");
             _quickFindField.RegisterValueChangedCallback(evt =>
             {
                 _searchQuery = evt.newValue?.Trim() ?? string.Empty;
@@ -577,7 +577,7 @@ namespace Nexus.Editor
         private void RenderContexts()
         {
             var s = _snapshot;
-            AddSectionHeader($"CONTEXTS ({s.ContextCount} active)", NexusEditorStyles.AccentGreen);
+            AddSectionHeader(string.Format(NexusLang.Get("gm_contexts_header"), s.ContextCount), NexusEditorStyles.AccentGreen);
 
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts == null || contexts.Count == 0)
@@ -681,7 +681,7 @@ namespace Nexus.Editor
                 _content.Add(card);
             }
 
-            _content.Add(NexusEditorStyles.CreateHint("\nScene Roots: " + s.RootCount + " Root GameObject(s) in scene."));
+            _content.Add(NexusEditorStyles.CreateHint(string.Format(NexusLang.Get("gm_roots_hint"), s.RootCount)));
         }
 
         // ─── Models ────────────────────────────────────────────
@@ -757,7 +757,7 @@ namespace Nexus.Editor
         private void RenderCommands()
         {
             var s = _snapshot;
-            AddSectionHeader($"COMMANDS ({s.CommandCount} bound)", NexusEditorStyles.AccentOrange);
+            AddSectionHeader(string.Format(NexusLang.Get("gm_commands_header"), s.CommandCount), NexusEditorStyles.AccentOrange);
 
             if (s.CommandEntries.Count == 0)
             {
@@ -825,7 +825,7 @@ namespace Nexus.Editor
         private void RenderViews()
         {
             var s = _snapshot;
-            AddSectionHeader($"VIEWS ({s.ViewCount} defined)", NexusEditorStyles.AccentBlue);
+            AddSectionHeader(string.Format(NexusLang.Get("gm_views_header"), s.ViewCount), NexusEditorStyles.AccentBlue);
 
             var viewTypes = new HashSet<string>();
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
@@ -866,7 +866,7 @@ namespace Nexus.Editor
         private void RenderServices()
         {
             var s = _snapshot;
-            AddSectionHeader($"SERVICES ({s.ServiceCount} registered)", NexusEditorStyles.AccentGreen);
+            AddSectionHeader(string.Format(NexusLang.Get("gm_services_header"), s.ServiceCount), NexusEditorStyles.AccentGreen);
 
             var serviceTypes = new HashSet<string>();
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
@@ -928,7 +928,7 @@ namespace Nexus.Editor
         private void RenderLive()
         {
             bool playing = Application.isPlaying;
-            AddSectionHeader(NexusLang.Get("gamemanager_live_title") + (playing ? "" : " (Play Mode only)"), new Color(1f, 0.5f, 0.8f));
+            AddSectionHeader(NexusLang.Get("gamemanager_live_title") + (playing ? "" : NexusLang.Get("gm_playmode_only")), new Color(1f, 0.5f, 0.8f));
 
             if (!playing)
             {
@@ -958,8 +958,8 @@ namespace Nexus.Editor
             perfCard.Add(perfRow);
 
             var sysRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 6 } };
-            sysRow.Add(CreateMetricBox("GC Alloc", $"{System.GC.GetTotalMemory(false) / 1024 / 1024:N1} MB", NexusEditorStyles.TextSecondary));
-            sysRow.Add(CreateMetricBox("Contexts", $"{NexusRuntime.Metrics.ActiveContextCount}", NexusEditorStyles.TextSecondary));
+            sysRow.Add(CreateMetricBox(NexusLang.Get("gm_gc_alloc"), $"{System.GC.GetTotalMemory(false) / 1024 / 1024:N1} MB", NexusEditorStyles.TextSecondary));
+            sysRow.Add(CreateMetricBox(NexusLang.Get("gm_contexts_metric"), $"{NexusRuntime.Metrics.ActiveContextCount}", NexusEditorStyles.TextSecondary));
             perfCard.Add(sysRow);
 
             _content.Add(perfCard);
@@ -982,7 +982,7 @@ namespace Nexus.Editor
 
             // Signals/s bar
             var sigBarRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 4 } };
-            sigBarRow.Add(new Label("Sig/s") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), width = 45 } });
+            sigBarRow.Add(new Label(NexusLang.Get("gm_sig_per_sec")) { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), width = 45 } });
             var sigBg = new VisualElement { style = { flexGrow = 1, height = 14, backgroundColor = new StyleColor(NexusEditorStyles.RowAlt), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
             var sigFill = new VisualElement { style = { width = new Length(Mathf.Clamp(sigRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent), height = 14, backgroundColor = new StyleColor(NexusEditorStyles.AccentBlue), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
             sigBg.Add(sigFill);
@@ -992,7 +992,7 @@ namespace Nexus.Editor
 
             // Commands/s bar
             var cmdBarRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
-            cmdBarRow.Add(new Label("Cmd/s") { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), width = 45 } });
+            cmdBarRow.Add(new Label(NexusLang.Get("gm_cmd_per_sec")) { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary), width = 45 } });
             var cmdBg = new VisualElement { style = { flexGrow = 1, height = 14, backgroundColor = new StyleColor(NexusEditorStyles.RowAlt), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
             var cmdFill = new VisualElement { style = { width = new Length(Mathf.Clamp(cmdRate / maxRate * 100f, 1f, 100f), LengthUnit.Percent), height = 14, backgroundColor = new StyleColor(NexusEditorStyles.AccentGreen), borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3 } };
             cmdBg.Add(cmdFill);
@@ -1049,7 +1049,7 @@ namespace Nexus.Editor
         private void RenderSignalTest()
         {
             bool playing = Application.isPlaying;
-            AddSectionHeader("SIGNAL TEST PANEL" + (playing ? "" : " (Play Mode only)"), new Color(1f, 0.4f, 0.4f));
+            AddSectionHeader(NexusLang.Get("gm_signal_test_panel") + (playing ? "" : NexusLang.Get("gm_playmode_only")), new Color(1f, 0.4f, 0.4f));
 
             if (!playing)
             {
@@ -1095,8 +1095,8 @@ namespace Nexus.Editor
             });
 
             // Target-context selector — fixes firing only into contexts[0].
-            var ctxChoices = new List<string> { "All (matching)" };
-            foreach (var c in contexts) ctxChoices.Add(c.ScopeTag ?? "context");
+            var ctxChoices = new List<string> { NexusLang.Get("gm_all_matching") };
+            foreach (var c in contexts) ctxChoices.Add(c.ScopeTag ?? NexusLang.Get("fsm_fallback_context"));
             int dropdownIndex = _signalTestContextIndex < 0 ? 0 : Mathf.Min(_signalTestContextIndex + 1, ctxChoices.Count - 1);
             var ctxDropdown = new DropdownField("Target Context", ctxChoices, dropdownIndex);
             ctxDropdown.RegisterValueChangedCallback(evt =>
@@ -1189,7 +1189,7 @@ namespace Nexus.Editor
 
             if (targets.Count == 0)
             {
-                _testResult = $"✘ {signalName}: no active context handles this signal.";
+                _testResult = string.Format(NexusLang.Get("gm_result_error"), signalName);
                 Debug.LogWarning($"[Nexus Test] No target context for '{signalName}'.");
                 return;
             }
@@ -1216,7 +1216,7 @@ namespace Nexus.Editor
                     return;
                 }
             }
-            _testResult = $"✔ Fired {signalName} into {fired} context(s) @ {System.DateTime.Now:HH:mm:ss}";
+            _testResult = string.Format(NexusLang.Get("gm_result_success"), signalName, fired, System.DateTime.Now);
         }
     }
 }

@@ -100,15 +100,15 @@ namespace Nexus.Editor
         public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
             => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
             {
-                ("⚡ CodeGen",      () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue),
-                ("➕ Create Root",  () => {
+                (NexusLang.Get("dash_action_codegen"),      () => NexusCodeGenerator.GenerateBinder(), NexusEditorStyles.BtnBlue),
+                (NexusLang.Get("dash_action_create_root"),  () => {
                     var go = new GameObject("NexusRoot");
                     go.AddComponent<Root>();
                     UnityEditor.Undo.RegisterCreatedObjectUndo(go, "Create Nexus Root");
                     UnityEditor.Selection.activeObject = go;
                 }, NexusEditorStyles.BtnTeal),
-                ("🔍 Inspector",   () => Window?.SwitchToPlugin("ContextInspector"), NexusEditorStyles.BtnPurple),
-                ("📊 GameManager", () => Window?.SwitchToPlugin("GameManager"),       NexusEditorStyles.BtnGray),
+                (NexusLang.Get("dash_action_inspector"),   () => Window?.SwitchToPlugin("ContextInspector"), NexusEditorStyles.BtnPurple),
+                (NexusLang.Get("dash_action_gamemanager"), () => Window?.SwitchToPlugin("GameManager"),       NexusEditorStyles.BtnGray),
             };
 
         private void BuildStatusSection(VisualElement parent)
@@ -128,7 +128,7 @@ namespace Nexus.Editor
             var statusDot = NexusEditorStyles.CreateStatusDot(titleColor, 12);
             statusRow.Add(statusDot);
 
-            var statusLabel = new Label(playing ? "  ● " + NexusLang.Get("system_active") : "  ○ " + NexusLang.Get("system_standby"))
+            var statusLabel = new Label(playing ? NexusLang.Get("system_active") : NexusLang.Get("system_standby"))
             {
                 style = { fontSize = 16, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(titleColor) }
             };
@@ -142,9 +142,9 @@ namespace Nexus.Editor
             statusCard.Add(statRow1);
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("contexts"), "Open the Contexts view", NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("Hierarchy")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("handlers"), "Open signal handlers in Explorer", NexusEditorStyles.AccentPurple, () => Window?.SwitchToPlugin("Explorer")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("roots"), "Focus scene roots in Game Manager", NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("contexts"), NexusLang.Get("dash_tip_contexts"), NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("Hierarchy")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("handlers"), NexusLang.Get("dash_tip_handlers"), NexusEditorStyles.AccentPurple, () => Window?.SwitchToPlugin("Explorer")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("roots"), NexusLang.Get("dash_tip_roots"), NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
             statusCard.Add(actionRow);
 
             var hintText = "";
@@ -198,7 +198,7 @@ namespace Nexus.Editor
             var searchInput = new TextField
             {
                 value = _quickSearchQuery,
-                tooltip = "Search signals, commands, models, services, and views.",
+                tooltip = NexusLang.Get("dash_quickfind_tooltip"),
                 style = { flexGrow = 1, height = 24, fontSize = 11 }
             };
 
@@ -316,7 +316,7 @@ namespace Nexus.Editor
                                 UnityEditor.EditorGUIUtility.systemCopyBuffer = targetType.FullName;
                             })
                             {
-                                text = "Copy",
+                                text = NexusLang.Get("dash_qf_copy"),
                                 style = { fontSize = 8, marginRight = 4, height = 18, backgroundColor = new StyleColor(NexusEditorStyles.BtnGray), color = Color.white, paddingLeft = 6, paddingRight = 6 }
                             };
                             resultRow.Add(copyBtn);
@@ -347,7 +347,7 @@ namespace Nexus.Editor
 
             if (matchCount == 0)
             {
-                _quickFindResultsContainer.Add(new Label($"No matches for '{_quickSearchQuery}'")
+                _quickFindResultsContainer.Add(new Label(string.Format(NexusLang.Get("dash_qf_no_matches"), _quickSearchQuery))
                 {
                     style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 4 }
                 });
@@ -372,10 +372,10 @@ namespace Nexus.Editor
             card.Add(statRow);
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("models"), "Open the Models section", NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("services"), "Open the Services section", NexusEditorStyles.AccentGreen, () => Window?.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("commands"), "Open the Commands section", NexusEditorStyles.AccentOrange, () => Window?.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("views"), "Open the Views section", NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("models"), NexusLang.Get("dash_tip_models"), NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("services"), NexusLang.Get("dash_tip_services"), NexusEditorStyles.AccentGreen, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("commands"), NexusLang.Get("dash_tip_commands"), NexusEditorStyles.AccentOrange, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("views"), NexusLang.Get("dash_tip_views"), NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("GameManager")));
             card.Add(actionRow);
 
             parent.Add(card);

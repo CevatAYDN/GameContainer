@@ -23,6 +23,13 @@ namespace Nexus.Editor
             InvalidateRootCache();
         }
 
+        [InitializeOnLoadMethod]
+        private static void RegisterHierarchyEvents()
+        {
+            EditorApplication.hierarchyChanged -= InvalidateRootCache;
+            EditorApplication.hierarchyChanged += InvalidateRootCache;
+        }
+
         private static void EnsureCached()
         {
             if (s_cacheValid && s_cachedMappings != null)

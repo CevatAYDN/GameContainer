@@ -103,7 +103,7 @@ namespace Nexus.Editor
 
             filterBar.Add(new Label("  ") { style = { width = 5 } });
 
-            var clearBtn = new Button(ClearTraces) { text = "Clear" };
+            var clearBtn = new Button(ClearTraces) { text = NexusLang.Get("tracer_clear") };
             clearBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.BtnGray);
             clearBtn.style.color = Color.white;
             filterBar.Add(clearBtn);
@@ -122,9 +122,9 @@ namespace Nexus.Editor
             filterBar.Add(_pauseToggle);
 
             filterBar.Add(new Label(NexusLang.Get("tracer_type_filter")) { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
-            filterBar.Add(MakeFilterButton("SIG", () => { _filterSignal = !_filterSignal; RefreshTracerLogs(); }, () => _filterSignal));
-            filterBar.Add(MakeFilterButton("CMD", () => { _filterCommand = !_filterCommand; RefreshTracerLogs(); }, () => _filterCommand));
-            filterBar.Add(MakeFilterButton("MOD", () => { _filterModelChange = !_filterModelChange; RefreshTracerLogs(); }, () => _filterModelChange));
+            filterBar.Add(MakeFilterButton(NexusLang.Get("tracer_sig"), () => { _filterSignal = !_filterSignal; RefreshTracerLogs(); }, () => _filterSignal));
+            filterBar.Add(MakeFilterButton(NexusLang.Get("tracer_cmd"), () => { _filterCommand = !_filterCommand; RefreshTracerLogs(); }, () => _filterCommand));
+            filterBar.Add(MakeFilterButton(NexusLang.Get("tracer_mod"), () => { _filterModelChange = !_filterModelChange; RefreshTracerLogs(); }, () => _filterModelChange));
 
             filterBar.Add(new Label(NexusLang.Get("tracer_status_filter")) { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
             filterBar.Add(MakeFilterButton("OK", () => { _filterOk = !_filterOk; RefreshTracerLogs(); }, () => _filterOk, NexusEditorStyles.AccentGreen));
@@ -198,9 +198,9 @@ namespace Nexus.Editor
         public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
             => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
             {
-                ("🧹 Clear Buffer", () => { _allEvents.Clear(); RefreshTracerLogs(); }, NexusEditorStyles.AccentRed),
-                ("⏸ Pause",         () => _isPaused = !_isPaused,                     NexusEditorStyles.BtnGray),
-                ("🔍 Inspector",    () => Window?.SwitchToPlugin("ContextInspector"),  NexusEditorStyles.BtnPurple),
+                (NexusLang.Get("tr_ctx_clear_buffer"), () => { _allEvents.Clear(); RefreshTracerLogs(); }, NexusEditorStyles.AccentRed),
+                (NexusLang.Get("tr_ctx_pause"),         () => _isPaused = !_isPaused,                     NexusEditorStyles.BtnGray),
+                (NexusLang.Get("tr_ctx_inspector"),    () => Window?.SwitchToPlugin("ContextInspector"),  NexusEditorStyles.BtnPurple),
             };
 
         public void Write(in TraceEvent traceEvent)
@@ -462,13 +462,13 @@ namespace Nexus.Editor
         private string BuildEventDetail(TraceEvent ev)
         {
             var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"<b>Event #{ev.Id}</b>");
-            sb.AppendLine($"Type: {ev.Type}");
-            sb.AppendLine($"Name: {ev.TypeName}");
-            sb.AppendLine($"Status: {ev.Status}");
-            sb.AppendLine($"Mode: {ev.Mode}");
-            sb.AppendLine($"Time: {ev.Timestamp:F3}s");
-            sb.AppendLine($"Parent ID: {(ev.ParentId == -1 ? "None (root)" : ev.ParentId.ToString())}");
+            sb.AppendLine(string.Format(NexusLang.Get("tr_detail_event_id"), ev.Id));
+            sb.AppendLine(string.Format(NexusLang.Get("tr_detail_type"), ev.Type));
+            sb.AppendLine(string.Format(NexusLang.Get("tr_detail_name"), ev.TypeName));
+            sb.AppendLine(string.Format(NexusLang.Get("tr_detail_status"), ev.Status));
+            sb.AppendLine(string.Format(NexusLang.Get("tr_detail_mode"), ev.Mode));
+            sb.AppendLine($"{NexusLang.Get("tr_detail_time_label")}{ev.Timestamp:F3}{NexusLang.Get("tracer_time_suffix")}");
+            sb.AppendLine($"{NexusLang.Get("tr_detail_parent_id_label")}{(ev.ParentId == -1 ? NexusLang.Get("tr_detail_none_root") : ev.ParentId.ToString())}");
 
             if (ev.ParentId != -1 && _parentCache.TryGetValue(ev.Id, out var parent))
             {
@@ -477,10 +477,10 @@ namespace Nexus.Editor
 
             if (_childrenCache.TryGetValue(ev.Id, out var children) && children.Count > 0)
             {
-                sb.AppendLine($"\n<b>Children ({children.Count}):</b>");
+                sb.AppendLine(string.Format(NexusLang.Get("tr_detail_children"), children.Count));
                 foreach (var child in children)
                 {
-                    sb.AppendLine($"  #{child.Id} [{child.Type}] {child.TypeName} — {child.Status}");
+                    sb.AppendLine(string.Format(NexusLang.Get("tr_detail_child_row"), child.Id, child.Type, child.TypeName, child.Status));
                 }
             }
             return sb.ToString();
@@ -538,7 +538,7 @@ namespace Nexus.Editor
 
                 if (depth > 0)
                 {
-                    var branchLabel = new Label("└─ ") { style = { color = new StyleColor(NexusEditorStyles.DimText), marginRight = 2 } };
+                    var branchLabel = new Label(NexusLang.Get("tr_tree_prefix")) { style = { color = new StyleColor(NexusEditorStyles.DimText), marginRight = 2 } };
                     Add(branchLabel);
                 }
 

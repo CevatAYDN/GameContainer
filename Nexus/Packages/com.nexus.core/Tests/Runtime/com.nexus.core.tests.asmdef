@@ -1,6 +1,6 @@
 {
     "name": "com.nexus.core.tests",
-    "rootNamespace": "Nexus.Tests",
+    "rootNamespace": "Nexus.Tests.Runtime",
     "references": [
         "UnityEngine.TestRunner",
         "com.nexus.core",

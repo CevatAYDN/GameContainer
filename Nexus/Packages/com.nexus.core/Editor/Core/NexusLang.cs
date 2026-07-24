@@ -145,6 +145,135 @@ namespace Nexus.Editor
             s_strings["cat_tools"] = "Tools";
             s_strings["cat_other"] = "Other";
 
+            // NexusWindow — sidebar, status bar, discovery, actions
+            s_strings["window_title"] = "Nexus Dashboard";
+            s_strings["brand_title"] = "NEXUS";
+            s_strings["brand_subtitle"] = "Architecture Suite";
+            s_strings["sidebar_discovery_failed"] = "Plugin discovery failed: {0}";
+            s_strings["sidebar_no_plugins"] = "No Nexus plugins found";
+            s_strings["discovery_diagnostics"] = "Plugin discovery partially failed:\n{0}";
+            s_strings["error_plugin_view"] = "Error loading plugin view: {0}";
+            s_strings["actions_label"] = "ACTIONS ({0})";
+            s_strings["status_play_mode_active"] = "PLAY MODE ACTIVE";
+            s_strings["status_edit_mode"] = "EDIT MODE";
+            s_strings["statusbar_play"] = "Nexus ● ACTIVE  |  {0} context(s) active  |  {1} static handler(s) registered";
+            s_strings["statusbar_standby"] = "Nexus ○ STANDBY  |  {0} Root(s) in scene  |  Enter Play Mode to activate";
+
+            // Dashboard plugin
+            s_strings["dash_action_codegen"] = "⚡ CodeGen";
+            s_strings["dash_action_create_root"] = "➕ Create Root";
+            s_strings["dash_action_inspector"] = "🔍 Inspector";
+            s_strings["dash_action_gamemanager"] = "📊 GameManager";
+            s_strings["dash_quickfind_tooltip"] = "Search signals, commands, models, services, and views.";
+            s_strings["dash_qf_copy"] = "Copy";
+            s_strings["dash_qf_no_matches"] = "No matches for '{0}'";
+
+            // Performance Dashboard plugin
+            s_strings["pd_value_placeholder"] = "—";
+            s_strings["pd_unit_mb"] = " MB";
+            s_strings["pd_gc_gen0"] = "gen0 +{0:F0}";
+
+            // Network Dashboard plugin
+            s_strings["nd_title"] = "🌐 NETWORK MONITOR";
+            s_strings["nd_action_clear"] = "🗑 Clear Log";
+            s_strings["nd_action_export"] = "💾 Export Log";
+            s_strings["nd_section_connection"] = "🔗 Connection Status";
+            s_strings["nd_disconnected"] = "● DISCONNECTED";
+            s_strings["nd_connected"] = "● CONNECTED";
+            s_strings["nd_section_latency"] = "📡 Latency";
+            s_strings["nd_latency_default"] = "— ms";
+            s_strings["nd_latency_range"] = "0 — 500 ms";
+            s_strings["nd_section_stats"] = "📊 Statistics";
+            s_strings["nd_stat_sent"] = "Sent";
+            s_strings["nd_stat_received"] = "Received";
+            s_strings["nd_stat_errors"] = "Errors";
+            s_strings["nd_filter_type"] = "Type:";
+            s_strings["nd_filter_all"] = "All";
+            s_strings["nd_filter_sent"] = "Sent";
+            s_strings["nd_filter_received"] = "Received";
+            s_strings["nd_filter_failed"] = "Failed";
+            s_strings["nd_filter_timeout"] = "Timeout";
+            s_strings["nd_filter_search"] = "  Search:";
+            s_strings["nd_autoscroll"] = "Auto Scroll";
+            s_strings["nd_section_events"] = "📜 Event Log (last 200)";
+            s_strings["nd_no_events"] = "No network events recorded";
+            s_strings["nd_col_type"] = "Type";
+            s_strings["nd_col_signal"] = "Signal";
+            s_strings["nd_col_direction"] = "Direction";
+            s_strings["nd_col_time"] = "Time";
+            s_strings["nd_dir_out"] = "→ Out";
+            s_strings["nd_dir_in"] = "← In";
+            s_strings["nd_dir_err"] = "⚠ Err";
+
+            // Hierarchy plugin
+            s_strings["hier_action_select_root"] = "🎯 Select Root";
+            s_strings["hier_action_inspector"] = "🔍 Context Inspector";
+            s_strings["hier_action_clear_caches"] = "🧹 Clear Caches";
+            s_strings["hier_context_label"] = "CONTEXT: {0}";
+            s_strings["hier_default_tag"] = "Default";
+            s_strings["hier_force_gc"] = "🗑️ Force GC";
+            s_strings["hier_reset_contexts"] = "🧹 Reset Contexts";
+
+            // Explorer plugin
+            s_strings["exp_action_codegen"] = "⚡ CodeGen";
+            s_strings["exp_action_inspector"] = "🔍 Inspector";
+            s_strings["exp_action_rescan"] = "🔄 Rescan";
+            s_strings["exp_all_assemblies"] = "All Assemblies";
+            s_strings["exp_refresh_cache"] = "Refresh Cache";
+            s_strings["exp_badge_async"] = "ASYNC";
+            s_strings["exp_btn_copy"] = "📋";
+            s_strings["exp_tooltip_copy"] = "Copy Signal Name";
+            s_strings["exp_btn_open"] = "🔍";
+            s_strings["exp_tooltip_open"] = "Open Script in IDE";
+            s_strings["exp_preset_default"] = "Default";
+            s_strings["exp_btn_save"] = "Save";
+            s_strings["exp_no_presets"] = "No Presets";
+            s_strings["exp_btn_load"] = "Load";
+
+            // Graph plugin
+            s_strings["graph_max_nodes"] = "Max Nodes";
+            s_strings["graph_port_output"] = "▶";
+            s_strings["graph_port_input"] = "◀";
+
+            // Tracer plugin
+            s_strings["tracer_clear"] = "Clear";
+            s_strings["tracer_sig"] = "SIG";
+            s_strings["tracer_cmd"] = "CMD";
+            s_strings["tracer_mod"] = "MOD";
+            s_strings["tracer_ok"] = "OK";
+            s_strings["tracer_fail"] = "FAIL";
+            s_strings["tracer_cancel"] = "CANCEL";
+            s_strings["tracer_time_suffix"] = "s";
+
+            // GameManager plugin
+            s_strings["gm_quick_find"] = "Quick Find";
+            s_strings["gm_quick_find_tooltip"] = "Type a section name such as contexts, signals, models, services, live";
+            s_strings["gm_contexts_header"] = "CONTEXTS ({0} active)";
+            s_strings["gm_roots_hint"] = "\nScene Roots: {0} Root GameObject(s) in scene.";
+            s_strings["gm_models_header"] = "MODELS ({0} registered)";
+            s_strings["gm_signals_header"] = "SIGNALS ({0} defined)";
+            s_strings["gm_commands_header"] = "COMMANDS ({0} bound)";
+            s_strings["gm_views_header"] = "VIEWS ({0} defined)";
+            s_strings["gm_services_header"] = "SERVICES ({0} registered)";
+            s_strings["gm_playmode_only"] = " (Play Mode only)";
+            s_strings["gm_gc_alloc"] = "GC Alloc";
+            s_strings["gm_contexts_metric"] = "Contexts";
+            s_strings["gm_sig_per_sec"] = "Sig/s";
+            s_strings["gm_cmd_per_sec"] = "Cmd/s";
+            s_strings["gm_signal_test_panel"] = "SIGNAL TEST PANEL";
+            s_strings["gm_all_matching"] = "All (matching)";
+            s_strings["gm_result_error"] = "✘ {0}: no active context handles this signal.";
+            s_strings["gm_result_success"] = "✔ Fired {0} into {1} context(s) @ {2:HH:mm:ss}";
+
+            // FSM plugin
+            s_strings["fsm_fallback_context"] = "context";
+            s_strings["fsm_no_state"] = "(none)";
+
+            // CasualServices plugin
+            s_strings["cs_default_currency"] = "Coins";
+            s_strings["cs_default_window"] = "ShopScreen";
+            s_strings["cs_destroyed_suffix"] = " (destroyed)";
+
             // Context Inspector plugin
             s_strings["ci_title"] = "🔍 CONTEXT INSPECTOR";
             s_strings["ci_playmode_warning"] = "⚠ Enter Play Mode to inspect live contexts";
@@ -364,6 +493,48 @@ namespace Nexus.Editor
             s_strings["db_nexus_health"] = "Nexus Health";
             s_strings["db_health_note"] = "Use this panel to catch missing Roots, empty Contexts, and validation issues before handoff.";
             s_strings["db_validation_note"] = "Validation checks context, binding, hierarchy, and command issues before runtime.";
+            s_strings["dash_tip_contexts"] = "Open the Contexts view";
+            s_strings["dash_tip_handlers"] = "Open signal handlers in Explorer";
+            s_strings["dash_tip_roots"] = "Focus scene roots in Game Manager";
+            s_strings["dash_tip_models"] = "Open the Models section";
+            s_strings["dash_tip_services"] = "Open the Services section";
+            s_strings["dash_tip_commands"] = "Open the Commands section";
+            s_strings["dash_tip_views"] = "Open the Views section";
+
+            // Tracer detail panel
+            s_strings["tr_ctx_clear_buffer"] = "🧹 Clear Buffer";
+            s_strings["tr_ctx_pause"] = "⏸ Pause";
+            s_strings["tr_ctx_inspector"] = "🔍 Inspector";
+            s_strings["tr_detail_event_id"] = "Event #{0}";
+            s_strings["tr_detail_type"] = "Type: {0}";
+            s_strings["tr_detail_name"] = "Name: {0}";
+            s_strings["tr_detail_status"] = "Status: {0}";
+            s_strings["tr_detail_mode"] = "Mode: {0}";
+            s_strings["tr_detail_time_label"] = "Time: ";
+            s_strings["tr_detail_parent_id_label"] = "Parent ID: ";
+            s_strings["tr_detail_none_root"] = "None (root)";
+            s_strings["tr_detail_parent_event"] = "\n<b>Parent Event:</b> #{0} [{1}] {2}";
+            s_strings["tr_detail_children"] = "\n<b>Children ({0}):</b>";
+            s_strings["tr_detail_child_row"] = "  #{0} [{1}] {2} — {3}";
+            s_strings["tr_tree_prefix"] = "└─ ";
+
+            // ContextInspector
+            s_strings["ci_dropdown_none"] = "(none)";
+            s_strings["ci_null_label"] = "(null)";
+
+            // Explorer kalan
+            s_strings["exp_unnamed_context"] = "Unnamed Context";
+            s_strings["exp_all_assemblies_fallback"] = "All Assemblies";
+            s_strings["exp_target_context_label"] = "Target Context";
+            s_strings["exp_tooltip_ctx_dropdown"] = "Fire the test signal into the selected context";
+            s_strings["exp_tooltip_fire_btn"] = "Fire the selected signal into the target context";
+
+            // Hierarchy kalan
+            s_strings["hier_bullet"] = "• ";
+            s_strings["hier_null_value"] = "null";
+
+            // TypeAnalyzer
+            s_strings["ta_type_name"] = "Type Name";
             s_strings["db_play_mode"] = "Play Mode";
             s_strings["db_edit_mode"] = "Edit Mode";
             s_strings["db_health_no_root"] = "No active Root in scene. Add a Nexus Root before entering Play Mode.";

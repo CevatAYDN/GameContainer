@@ -224,25 +224,7 @@ namespace Nexus.Core
                     }
                 }
 
-                // Initialize reactive models (IReactiveModel.OnBind) after configuration
-                await Context.InitializeReactiveModelsAsync(Context.LifetimeToken);
-                
-                // Initialize services (INexusService.InitializeAsync)
-                await Context.InitializeServicesAsync(Context.LifetimeToken);
-                Context.Container.ReInjectAll();
-
-                // Run all registered lifecycles. We iterate the cached _lifecycles array
-                // instead of resolving from DI because NexusDI stores only one binding per type.
-                for (int i = 0; i < _lifecycles.Length; i++)
-                {
-                    await _lifecycles[i].OnInitializeAsync(Context.LifetimeToken);
-                }
-                Context.Container.ReInjectAll();
-                await Context.InitializeLazyServicesAsync(Context.LifetimeToken);
-                for (int i = 0; i < _lifecycles.Length; i++)
-                {
-                    await _lifecycles[i].OnStartAsync(Context.LifetimeToken);
-                }
+                await Context.InitializeLifecycleAsync(_lifecycles, Context.LifetimeToken);
 
                 IsInitialized = true;
             }

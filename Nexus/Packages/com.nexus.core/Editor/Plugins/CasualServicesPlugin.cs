@@ -61,7 +61,7 @@ namespace Nexus.Editor.Plugins
 
             // Economy Section
             var ecoSection = CreateSectionBox(NexusLang.Get("cs_sec_economy"));
-            _currencyNameField = new TextField(NexusLang.Get("cs_currency_id")) { value = "Coins" };
+            _currencyNameField = new TextField(NexusLang.Get("cs_currency_id")) { value = NexusLang.Get("cs_default_currency") };
             _currencyAmountField = new LongField(NexusLang.Get("cs_amount")) { value = 100 };
             ecoSection.Add(_currencyNameField);
             ecoSection.Add(_currencyAmountField);
@@ -192,7 +192,7 @@ namespace Nexus.Editor.Plugins
             for (int i = 0; i < windows.Count; i++)
             {
                 var w = windows[i];
-                var row = new Label($"  {i + 1}. {w.Name}   [{w.Layer}]{(w.IsAlive ? "" : " (destroyed)")}");
+                var row = new Label($"  {i + 1}. {w.Name}   [{w.Layer}]{(w.IsAlive ? "" : NexusLang.Get("cs_destroyed_suffix"))}");
                 row.style.fontSize = 10;
                 row.style.color = new StyleColor(w.IsAlive ? new Color(0.85f, 0.85f, 0.85f) : new Color(0.8f, 0.4f, 0.4f));
                 _openWindowsList.Add(row);
