@@ -13,6 +13,7 @@ namespace Nexus.Editor.Plugins
         public override int Order => 25;
 
         private VisualElement _container;
+        private ScrollView _content;
         private Label _statusLabel;
         private Slider _timeScaleSlider;
         private TextField _currencyNameField;
@@ -25,6 +26,7 @@ namespace Nexus.Editor.Plugins
         public override VisualElement CreateView()
         {
             _container = new VisualElement();
+            _container.style.flexGrow = 1;
             _container.style.paddingLeft = 10;
             _container.style.paddingRight = 10;
             _container.style.paddingTop = 10;
@@ -39,9 +41,14 @@ namespace Nexus.Editor.Plugins
             {
                 _statusLabel = new Label("Enter Play Mode to debug Economy, Progression, UI, Audio, Haptics, and TimeScale live.");
                 _statusLabel.style.color = new Color(0.9f, 0.6f, 0.2f);
+                _statusLabel.style.whiteSpace = WhiteSpace.Normal;
                 _container.Add(_statusLabel);
                 return _container;
             }
+
+            // Scrollable content host so sections are never clipped in a short window.
+            _content = new ScrollView { style = { flexGrow = 1 } };
+            _container.Add(_content);
 
             // TimeScale Section
             var timeSection = CreateSectionBox("TimeScale & Loop Controls");
@@ -50,7 +57,7 @@ namespace Nexus.Editor.Plugins
             timeSection.Add(_timeScaleSlider);
             var pauseBtn = new Button(() => Time.timeScale = Time.timeScale == 0f ? 1f : 0f) { text = "Toggle Pause" };
             timeSection.Add(pauseBtn);
-            _container.Add(timeSection);
+            _content.Add(timeSection);
 
             // Economy Section
             var ecoSection = CreateSectionBox("Economy Debugger");
@@ -87,7 +94,7 @@ namespace Nexus.Editor.Plugins
                 }) { text = "Save/Flush Storage to Disk" };
                 ecoSection.Add(flushBtn);
             }
-            _container.Add(ecoSection);
+            _content.Add(ecoSection);
 
             // Progression Section
             var progSection = CreateSectionBox("Progression Debugger");
@@ -95,7 +102,7 @@ namespace Nexus.Editor.Plugins
             progSection.Add(_levelField);
             var setLevelBtn = new Button(OnSetLevel) { text = "Set Level" };
             progSection.Add(setLevelBtn);
-            _container.Add(progSection);
+            _content.Add(progSection);
 
             // UI Window Stack Section
             var uiSection = CreateSectionBox("UI Window Navigation");
@@ -129,7 +136,7 @@ namespace Nexus.Editor.Plugins
             uiSection.Add(_openWindowsList);
             RefreshOpenWindows();
 
-            _container.Add(uiSection);
+            _content.Add(uiSection);
 
             // Haptics & Feedback Section
             var feedbackSection = CreateSectionBox("Haptics & Feedback Tester");
@@ -139,7 +146,7 @@ namespace Nexus.Editor.Plugins
             feedbackSection.Add(lightHapticBtn);
             feedbackSection.Add(heavyHapticBtn);
             feedbackSection.Add(successFeedbackBtn);
-            _container.Add(feedbackSection);
+            _content.Add(feedbackSection);
 
             _refreshSchedule = _container.schedule.Execute(RefreshOpenWindows).Every(500);
 

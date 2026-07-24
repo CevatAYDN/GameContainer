@@ -113,6 +113,7 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
+            base.OnDisable();
         }
 
         private void OnHierarchyChanged()

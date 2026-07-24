@@ -142,9 +142,9 @@ namespace Nexus.Editor
             statusCard.Add(statRow1);
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("contexts"), "Open the Contexts view", NexusEditorStyles.AccentBlue, () => Window.SwitchToPlugin("Hierarchy")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("handlers"), "Open signal handlers in Explorer", NexusEditorStyles.AccentPurple, () => Window.SwitchToPlugin("Explorer")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("roots"), "Focus scene roots in Game Manager", NexusEditorStyles.AccentYellow, () => Window.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("contexts"), "Open the Contexts view", NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("Hierarchy")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("handlers"), "Open signal handlers in Explorer", NexusEditorStyles.AccentPurple, () => Window?.SwitchToPlugin("Explorer")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("roots"), "Focus scene roots in Game Manager", NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
             statusCard.Add(actionRow);
 
             var hintText = "";
@@ -372,10 +372,10 @@ namespace Nexus.Editor
             card.Add(statRow);
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("models"), "Open the Models section", NexusEditorStyles.AccentYellow, () => Window.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("services"), "Open the Services section", NexusEditorStyles.AccentGreen, () => Window.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("commands"), "Open the Commands section", NexusEditorStyles.AccentOrange, () => Window.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("views"), "Open the Views section", NexusEditorStyles.AccentBlue, () => Window.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("models"), "Open the Models section", NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("services"), "Open the Services section", NexusEditorStyles.AccentGreen, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("commands"), "Open the Commands section", NexusEditorStyles.AccentOrange, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("views"), "Open the Views section", NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("GameManager")));
             card.Add(actionRow);
 
             parent.Add(card);
@@ -487,7 +487,7 @@ namespace Nexus.Editor
             for (int i = 0; i < actions.Length; i++)
             {
                 var a = actions[i];
-                AddActionCard(buttonGrid, NexusLang.Get(a.Item1), NexusLang.Get(a.Item2), a.Item4, () => Window.SwitchToPlugin(a.Item3));
+                AddActionCard(buttonGrid, NexusLang.Get(a.Item1), NexusLang.Get(a.Item2), a.Item4, () => Window?.SwitchToPlugin(a.Item3));
             }
 
             groupCard.Add(buttonGrid);
@@ -625,14 +625,31 @@ namespace Nexus.Editor
             });
             card.Add(titleRow);
 
+            _healthSummary = new Label(BuildHealthText())
+            {
+                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), whiteSpace = WhiteSpace.Normal, marginBottom = 4 }
+            };
+            card.Add(_healthSummary);
+
+            var note = new Label("Use this panel to catch missing Roots, empty Contexts, and validation issues before handoff.")
+            {
+                style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), whiteSpace = WhiteSpace.Normal }
+            };
+            card.Add(note);
+
+            parent.Add(card);
+        }
+
+        // Computes the live health summary line. Shared by the initial build and the scheduled
+        // refresh so the panel stays current instead of showing the value captured at view time.
+        private string BuildHealthText()
+        {
             var roots = NexusEditorDataProvider.GetSceneRoots();
             int rootCount = roots?.Length ?? 0;
             int contextCount = NexusEditorDataProvider.GetActiveContextCount();
             int handlerCount = NexusEditorDataProvider.GetHandlerCount();
 
-            string readiness = Application.isPlaying
-                ? "Play Mode"
-                : "Edit Mode";
+            string readiness = Application.isPlaying ? "Play Mode" : "Edit Mode";
 
             string healthText;
             if (!Application.isPlaying && rootCount == 0)
@@ -648,19 +665,7 @@ namespace Nexus.Editor
                 healthText = $"{contextCount} context(s), {handlerCount} handler(s), {rootCount} root(s) visible.";
             }
 
-            _healthSummary = new Label($"{readiness}: {healthText}")
-            {
-                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), whiteSpace = WhiteSpace.Normal, marginBottom = 4 }
-            };
-            card.Add(_healthSummary);
-
-            var note = new Label("Use this panel to catch missing Roots, empty Contexts, and validation issues before handoff.")
-            {
-                style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), whiteSpace = WhiteSpace.Normal }
-            };
-            card.Add(note);
-
-            parent.Add(card);
+            return $"{readiness}: {healthText}";
         }
 
         private void RefreshValidationCard(VisualElement card)
@@ -756,6 +761,11 @@ namespace Nexus.Editor
             _contextStat.text = contextCount.ToString();
             _handlerStat.text = handlerCount.ToString();
             _rootStat.text = rootCount.ToString();
+
+            if (_healthSummary != null)
+            {
+                _healthSummary.text = BuildHealthText();
+            }
 
             if (_perfStat != null && Application.isPlaying)
             {

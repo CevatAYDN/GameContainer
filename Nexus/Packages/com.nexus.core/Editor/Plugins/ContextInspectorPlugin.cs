@@ -138,6 +138,7 @@ namespace Nexus.Editor
             _refreshSchedule?.Pause();
             NexusRuntime.OnContextRegistered   -= OnContextsChanged;
             NexusRuntime.OnContextUnregistered -= OnContextsChanged;
+            base.OnDisable();
         }
 
         public override void OnUpdate()

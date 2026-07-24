@@ -86,6 +86,7 @@ namespace Nexus.Editor
             NexusRuntime.OnContextRegistered -= OnContextsChanged;
             NexusRuntime.OnContextUnregistered -= OnContextsChanged;
             _bindingTrackers.Clear();
+            base.OnDisable();
         }
 
         public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()

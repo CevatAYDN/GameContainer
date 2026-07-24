@@ -326,6 +326,7 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            base.OnDisable();
         }
 
         private void OnPlayModeStateChanged(PlayModeStateChange obj)

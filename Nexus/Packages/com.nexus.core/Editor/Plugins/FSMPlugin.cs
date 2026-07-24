@@ -16,7 +16,7 @@ namespace Nexus.Editor
     public class FSMPlugin : NexusEditorPlugin
     {
         public override string Id => "FSM";
-        public override string DisplayName => "State Machine";
+        public override string DisplayName => NexusLang.Get("action_fsm_title");
         public override int Order => 13;
 
         private const int MaxHistory = 24;

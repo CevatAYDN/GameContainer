@@ -24,6 +24,7 @@ namespace Nexus.Editor
 
         private VisualElement _view;
         private VisualElement _summaryRow;
+        private VisualElement _filterBar;
         private ScrollView _scrollView;
         private Label _statusBar;
         private IVisualElementScheduledItem _refreshSchedule;
@@ -50,7 +51,8 @@ namespace Nexus.Editor
             };
             _view.Add(_summaryRow);
 
-            _view.Add(BuildFilterBar());
+            _filterBar = BuildFilterBar();
+            _view.Add(_filterBar);
 
             _scrollView = new ScrollView
             {
@@ -301,11 +303,13 @@ namespace Nexus.Editor
         private void RebuildFilterBarActiveState()
         {
             // Rebuild filter bar so severity buttons reflect the active selection color.
-            if (_view == null) return;
-            var oldBar = _view.Children().ElementAtOrDefault(2);
+            if (_view == null || _filterBar == null) return;
+            int index = _view.IndexOf(_filterBar);
+            if (index < 0) return;
             var newBar = BuildFilterBar();
-            if (oldBar != null) _view.Insert(_view.IndexOf(oldBar), newBar);
-            oldBar?.RemoveFromHierarchy();
+            _view.Insert(index, newBar);
+            _filterBar.RemoveFromHierarchy();
+            _filterBar = newBar;
         }
 
         private void ExportCsv()

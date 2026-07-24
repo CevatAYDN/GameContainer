@@ -192,6 +192,7 @@ namespace Nexus.Editor
             _childrenCache.Clear();
             _parentCache.Clear();
             _depthsCache.Clear();
+            base.OnDisable();
         }
 
         public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
@@ -209,6 +210,9 @@ namespace Nexus.Editor
         }
 
         private int _productionTraceFrameCounter;
+        // True once live NEXUS_DEBUG sink events have been received. While true, the production
+        // ring-buffer fallback is suppressed so live causal events are not diluted by flat traces.
+        private bool _hasLiveEvents;
 
         private void OnMainThreadUpdate()
         {
@@ -216,13 +220,16 @@ namespace Nexus.Editor
             {
                 bool hasNewEvents = ProcessIncomingQueue();
 
-                // Reload production traces every ~500ms (5 frames at 100ms interval)
-                _productionTraceFrameCounter++;
-                if (_productionTraceFrameCounter >= 5)
+                // Reload production traces every ~500ms (5 frames at 100ms interval),
+                // but only when no live sink events are driving the view.
+                if (!_hasLiveEvents)
                 {
-                    _productionTraceFrameCounter = 0;
-                    ReloadProductionTraces();
-                    hasNewEvents = true;
+                    _productionTraceFrameCounter++;
+                    if (_productionTraceFrameCounter >= 5)
+                    {
+                        _productionTraceFrameCounter = 0;
+                        if (ReloadProductionTraces()) hasNewEvents = true;
+                    }
                 }
 
                 if (hasNewEvents)
@@ -232,21 +239,31 @@ namespace Nexus.Editor
             }
         }
 
-        private void ReloadProductionTraces()
+        // Rebuilds the production-trace view from the current ring-buffer snapshot.
+        // GetRecentTraces returns the whole snapshot each call, so we replace rather than append
+        // to avoid accumulating duplicates. Returns true when the event list changed.
+        private bool ReloadProductionTraces()
         {
-            if (_allEvents.Count >= 200) return;
             var traces = NexusRuntime.Metrics.GetRecentTraces(out int traceCount);
-            for (int i = 0; i < traceCount && _allEvents.Count < 200; i++)
+
+            var rebuilt = new List<TraceEvent>(Math.Min(traceCount, 200));
+            for (int i = 0; i < traceCount && rebuilt.Count < 200; i++)
             {
                 if (!string.IsNullOrEmpty(traces[i]))
                 {
-                    _allEvents.Add(new TraceEvent(
-                        _allEvents.Count, -1, TraceEventType.Signal,
+                    rebuilt.Add(new TraceEvent(
+                        rebuilt.Count, -1, TraceEventType.Signal,
                         UnityEngine.Time.realtimeSinceStartupAsDouble, traces[i],
                         TraceStatus.OK, ExecutionMode.Sequential));
                 }
             }
+
+            if (rebuilt.Count == _allEvents.Count) return false;
+
+            _allEvents.Clear();
+            _allEvents.AddRange(rebuilt);
             if (_allEvents.Count > 0) BuildChildrenCache();
+            return true;
         }
 
         private bool ProcessIncomingQueue()
@@ -256,6 +273,12 @@ namespace Nexus.Editor
             {
                 _allEvents.Add(ev);
                 addedAny = true;
+            }
+
+            if (addedAny)
+            {
+                // Live sink events take over; suppress the flat production fallback.
+                _hasLiveEvents = true;
             }
 
             if (_allEvents.Count > 5000)
@@ -465,7 +488,7 @@ namespace Nexus.Editor
 
         private TraceEventElement CreateTraceElement(TraceEvent ev, int depth)
         {
-            var element = new TraceEventElement(ev, depth, _isPaused && _selectedEventId == ev.Id, OnTraceEventClicked);
+            var element = new TraceEventElement(ev, depth, _selectedEventId == ev.Id, OnTraceEventClicked);
             return element;
         }
 

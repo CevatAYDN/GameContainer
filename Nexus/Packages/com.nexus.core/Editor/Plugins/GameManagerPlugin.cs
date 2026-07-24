@@ -1068,7 +1068,7 @@ namespace Nexus.Editor
             var signalTypes = new Dictionary<string, Type>();
             foreach (var ctx in contexts)
             {
-                if (ctx.SignalBus.RegisteredHandlers == null) continue;
+                if (ctx.SignalBus?.RegisteredHandlers == null) continue;
                 foreach (var kvp in ctx.SignalBus.RegisteredHandlers)
                 {
                     if (!signalTypes.ContainsKey(kvp.Key.Name))
@@ -1199,6 +1199,7 @@ namespace Nexus.Editor
             {
                 try
                 {
+                    if (ctx.SignalBus == null) continue;
                     var instance = Activator.CreateInstance(signalType);
                     var fireMethod = ctx.SignalBus.GetType().GetMethod("Fire");
                     if (fireMethod != null)

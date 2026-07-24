@@ -35,6 +35,17 @@ namespace Nexus.Editor
             { "ContextInspector", new Color(0.6f, 1f, 0.9f) }, // AccentMint (Inspector)
         };
 
+        // Sidebar grouping: ordered categories -> member plugin ids. Purely visual; keyboard
+        // shortcuts and discovery order are unaffected. Plugins absent from _plugins are skipped,
+        // and any discovered plugin missing here falls under the "cat_other" safety-net header.
+        private static readonly List<(string CategoryKey, string[] PluginIds)> SidebarCategories = new()
+        {
+            ("cat_overview",     new[] { "Dashboard", "GameManager" }),
+            ("cat_architecture", new[] { "Hierarchy", "Explorer", "Graph", "TypeAnalyzer", "ContextInspector", "FSM" }),
+            ("cat_diagnostics",  new[] { "Tracer", "ErrorDashboard", "PerformanceDashboard", "NetworkDashboard" }),
+            ("cat_tools",        new[] { "Wizard", "casual_services", "Help" }),
+        };
+
         private List<INexusEditorPlugin> _plugins = new();
         private INexusEditorPlugin _activePlugin;
         private bool _discoveryFailed;
@@ -168,10 +179,33 @@ namespace Nexus.Editor
             sep.style.marginRight = 4;
             _sidebar.Add(sep);
 
-            // Dynamic Tab Buttons with icons
-            foreach (var plugin in _plugins)
+            // Dynamic Tab Buttons grouped into categories
+            var rendered = new HashSet<string>();
+            foreach (var (categoryKey, pluginIds) in SidebarCategories)
             {
-                AddTabButton(NexusLang.Get($"tab_{plugin.Id.ToLower()}"), plugin.Id);
+                var members = pluginIds
+                    .Select(id => _plugins.FirstOrDefault(p => p.Id == id))
+                    .Where(p => p != null)
+                    .ToList();
+                if (members.Count == 0) continue;
+
+                AddCategoryHeader(NexusLang.Get(categoryKey));
+                foreach (var plugin in members)
+                {
+                    AddTabButton(NexusLang.Get($"tab_{plugin.Id.ToLower()}"), plugin.Id);
+                    rendered.Add(plugin.Id);
+                }
+            }
+
+            // Safety net: any discovered plugin not assigned to a category
+            var uncategorized = _plugins.Where(p => !rendered.Contains(p.Id)).ToList();
+            if (uncategorized.Count > 0)
+            {
+                AddCategoryHeader(NexusLang.Get("cat_other"));
+                foreach (var plugin in uncategorized)
+                {
+                    AddTabButton(NexusLang.Get($"tab_{plugin.Id.ToLower()}"), plugin.Id);
+                }
             }
 
             if (_discoveryFailed)
@@ -358,6 +392,19 @@ namespace Nexus.Editor
                 _discoveryError = ex.Message;
                 _plugins.Clear();
             }
+        }
+
+        private void AddCategoryHeader(string label)
+        {
+            var header = new Label(label.ToUpper());
+            header.style.fontSize = 9;
+            header.style.color = new StyleColor(NexusEditorStyles.DimText);
+            header.style.unityFontStyleAndWeight = FontStyle.Bold;
+            header.style.letterSpacing = 1;
+            header.style.marginTop = 12;
+            header.style.marginBottom = 2;
+            header.style.marginLeft = 6;
+            _sidebar.Add(header);
         }
 
         private void AddTabButton(string label, string pluginId)

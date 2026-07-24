@@ -83,6 +83,7 @@ namespace Nexus.Editor
             _signalNodes.Clear();
             _handlerNodes.Clear();
             while (_highlightQueue.TryDequeue(out _)) { }
+            base.OnDisable();
         }
 
         private void BuildGraph()
@@ -161,18 +162,18 @@ namespace Nexus.Editor
 
         private void DrawGraph(Dictionary<Type, List<Type>> mappings)
         {
-            // Count total signals + commands
-            int signalCount = mappings.Count;
-            int cmdCount = 0;
-            foreach (var kvp in mappings) cmdCount += kvp.Value.Count;
-            int totalNodes = signalCount + cmdCount;
-
             if (mappings == null || mappings.Count == 0)
             {
                 _statusLabel.text = NexusLang.Get("graph_no_mappings");
                 _statusLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
                 return;
             }
+
+            // Count total signals + commands
+            int signalCount = mappings.Count;
+            int cmdCount = 0;
+            foreach (var kvp in mappings) cmdCount += kvp.Value.Count;
+            int totalNodes = signalCount + cmdCount;
 
             if (totalNodes > _maxNodes)
             {

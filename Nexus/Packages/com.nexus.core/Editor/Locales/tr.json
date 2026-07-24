@@ -51,6 +51,9 @@
     {"key": "action_typeanalyzer_desc", "value": "Tip bağlantılarını ve [Inject] bağımlılıklarını analiz et"},
     {"key": "action_casual_services_title", "value": "Casual Hata Ayıklayıcı"},
     {"key": "action_casual_services_desc", "value": "Ekonomi, Seviye, UI, Ses ve Titreşim için Play-Mode canlı kontrol panosu"},
+     {"key": "action_fsm_title", "value": "Durum Makinesi"},
+     {"key": "action_fsm_desc", "value": "IGameStateMachine durumu, geçişleri ve geçmişi için canlı görünüm"},
+     {"key": "action_help_title", "value": "Yardım ve Belgeler"},
     {"key": "tab_dashboard", "value": "Kontrol Paneli"},
     {"key": "tab_wizard", "value": "Sihirbaz"},
     {"key": "tab_hierarchy", "value": "Hiyerarşi"},
@@ -62,8 +65,8 @@
     {"key": "tab_casual_services", "value": "Casual Hata Ayıklayıcı"},
     {"key": "tab_help", "value": "Yardım"},
     {"key": "tab_errordashboard", "value": "Hata Paneli"},
-    {"key": "tab_performancedashboard", "value": "Performans Paneli"},
-    {"key": "tab_networkdashboard", "value": "Ağ Paneli"},
+    {"key": "tab_performancedashboard", "value": "Performans"},
+    {"key": "tab_networkdashboard", "value": "Ağ"},
     {"key": "action_error_dashboard_title", "value": "Hata Paneli"},
     {"key": "action_error_dashboard_desc", "value": "Merkezi hata toplama ve izleme sistemi"},
     {"key": "action_performance_dashboard_title", "value": "Performans Paneli"},
@@ -276,7 +279,11 @@
     {"key": "help_card_recovery", "value": "Hata Kurtarma"},
     {"key": "help_card_recovery_content", "value": "IRecoveryStrategy.OnCommandFailed(ctx) → RecoveryDecision\nRecoveryDecision.Skip() — atla ve devam et\nRecoveryDecision.Retry(max:3) — N defaya kadar tekrar dene\nRecoveryDecision.Abort() — zinciri durdur\nRecoveryDecision.Fallback<T>() — alternatif komut çalıştır"},
     {"key": "tab_contextinspector", "value": "Context İnspektörü"},
-    {"key": "tab_performancedashboard", "value": "Performans"},
-    {"key": "tab_networkdashboard", "value": "Ağ"}
+    {"key": "tab_fsm", "value": "Durum Makinesi"},
+    {"key": "cat_overview", "value": "Genel Bakış"},
+    {"key": "cat_architecture", "value": "Mimari"},
+    {"key": "cat_diagnostics", "value": "Teşhis"},
+    {"key": "cat_tools", "value": "Araçlar"},
+    {"key": "cat_other", "value": "Diğer"}
   ]
 }

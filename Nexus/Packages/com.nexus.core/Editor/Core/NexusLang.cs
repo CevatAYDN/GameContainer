@@ -121,6 +121,8 @@ namespace Nexus.Editor
             s_strings["action_help_desc"] = "Quick start guides, API reference, samples";
             s_strings["action_casual_services_title"] = "Casual Debugger";
             s_strings["action_casual_services_desc"] = "Play-mode live control for Economy, Level, UI, Audio & Haptics";
+            s_strings["action_fsm_title"] = "State Machine";
+            s_strings["action_fsm_desc"] = "Live view of IGameStateMachine state, transitions & history";
             s_strings["tab_dashboard"] = "Dashboard";
             s_strings["tab_wizard"] = "Wizard";
             s_strings["tab_hierarchy"] = "Hierarchy";
@@ -135,6 +137,13 @@ namespace Nexus.Editor
             s_strings["tab_performancedashboard"] = "Performance";
             s_strings["tab_networkdashboard"] = "Network";
             s_strings["tab_contextinspector"] = "Context Inspector";
+            s_strings["tab_fsm"] = "State Machine";
+
+            s_strings["cat_overview"] = "Overview";
+            s_strings["cat_architecture"] = "Architecture";
+            s_strings["cat_diagnostics"] = "Diagnostics";
+            s_strings["cat_tools"] = "Tools";
+            s_strings["cat_other"] = "Other";
 
             s_strings["action_error_dashboard_title"] = "Error Dashboard";
             s_strings["action_error_dashboard_desc"] = "Centralized error collection and monitoring";
