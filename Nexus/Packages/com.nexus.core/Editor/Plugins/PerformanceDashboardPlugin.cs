@@ -60,7 +60,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("⚡ PERFORMANCE MONITOR");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("pd_toolbar"));
             _view.Add(toolbar);
 
             var scroll = new ScrollView { style = { flexGrow = 1 } };
@@ -105,10 +105,10 @@ namespace Nexus.Editor
         public override IReadOnlyList<(string Label, Action Action, Color Color)> GetContextActions()
             => new List<(string, Action, Color)>
             {
-                ("▶ Start Recording", StartRecording, NexusEditorStyles.BtnGreen),
-                ("⏹ Stop",           StopRecording,  NexusEditorStyles.BtnRed),
-                ("🗑 Clear",          ClearAll,        NexusEditorStyles.BtnGray),
-                ("💾 Export CSV",     ExportCsv,       NexusEditorStyles.BtnBlue),
+                (NexusLang.Get("pd_start_recording"), StartRecording, NexusEditorStyles.BtnGreen),
+                (NexusLang.Get("pd_stop"),           StopRecording,  NexusEditorStyles.BtnRed),
+                (NexusLang.Get("pd_clear"),          ClearAll,        NexusEditorStyles.BtnGray),
+                (NexusLang.Get("pd_export_csv"),     ExportCsv,       NexusEditorStyles.BtnBlue),
             };
 
         // ── Build helpers ─────────────────────────────────────────
@@ -131,10 +131,10 @@ namespace Nexus.Editor
             liveBadge.style.marginRight = 8;
             bar.Add(liveBadge);
 
-            var intervalLabel = new Label("Sample: 0.5 s") { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 8 } };
+            var intervalLabel = new Label(NexusLang.Get("pd_sample")) { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 8 } };
             bar.Add(intervalLabel);
 
-            var alarmsToggle = new Toggle("Alarms") { value = _alarmsEnabled };
+            var alarmsToggle = new Toggle(NexusLang.Get("pd_alarms")) { value = _alarmsEnabled };
             alarmsToggle.style.fontSize = 9;
             alarmsToggle.RegisterValueChangedCallback(evt => _alarmsEnabled = evt.newValue);
             bar.Add(alarmsToggle);
@@ -144,11 +144,11 @@ namespace Nexus.Editor
 
         private void BuildFrameSection(VisualElement parent)
         {
-            var card = BuildCard(parent, "📊 Frame Metrics");
+            var card = BuildCard(parent, NexusLang.Get("pd_sec_frame"));
 
             var row = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
 
-            var fpsGroup = BuildMetricGroup("FPS", out _fpsLabel, out _fpsSparkline, 120f, 120f, NexusEditorStyles.AccentGreen);
+            var fpsGroup = BuildMetricGroup(NexusLang.Get("pd_fps"), out _fpsLabel, out _fpsSparkline, 120f, 120f, NexusEditorStyles.AccentGreen);
             fpsGroup.style.marginRight = 16;
             row.Add(fpsGroup);
 
@@ -161,15 +161,15 @@ namespace Nexus.Editor
 
         private void BuildMemorySection(VisualElement parent)
         {
-            var card = BuildCard(parent, "🧠 Memory");
+            var card = BuildCard(parent, NexusLang.Get("pd_sec_memory"));
 
             var row = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
 
-            var memGroup = BuildMetricGroup("Mono Heap (MB)", out _memLabel, out _memSparkline, 120f, 512f, NexusEditorStyles.AccentBlue);
+            var memGroup = BuildMetricGroup(NexusLang.Get("pd_mono_heap"), out _memLabel, out _memSparkline, 120f, 512f, NexusEditorStyles.AccentBlue);
             memGroup.style.marginRight = 16;
             row.Add(memGroup);
 
-            var gcGroup = BuildMetricGroup("GC Gen0", out _gcLabel, out _gcSparkline, 120f, 100f, NexusEditorStyles.AccentYellow);
+            var gcGroup = BuildMetricGroup(NexusLang.Get("pd_gc_gen0"), out _gcLabel, out _gcSparkline, 120f, 100f, NexusEditorStyles.AccentYellow);
             row.Add(gcGroup);
 
             card.Add(row);
@@ -180,20 +180,20 @@ namespace Nexus.Editor
 
         private void BuildNexusSection(VisualElement parent)
         {
-            var card = BuildCard(parent, "⚡ Nexus Throughput");
+            var card = BuildCard(parent, NexusLang.Get("pd_sec_throughput"));
 
             var row = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap } };
 
-            var sigGroup = BuildMetricGroup("Signals/s", out _sigLabel, out _sigSparkline, 120f, 500f, NexusEditorStyles.AccentPurple);
+            var sigGroup = BuildMetricGroup(NexusLang.Get("pd_signals_per_s"), out _sigLabel, out _sigSparkline, 120f, 500f, NexusEditorStyles.AccentPurple);
             sigGroup.style.marginRight = 16;
             row.Add(sigGroup);
 
-            var cmdGroup = BuildMetricGroup("Commands/s", out _cmdLabel, out _cmdSparkline, 120f, 200f, NexusEditorStyles.AccentOrange);
+            var cmdGroup = BuildMetricGroup(NexusLang.Get("pd_commands_per_s"), out _cmdLabel, out _cmdSparkline, 120f, 200f, NexusEditorStyles.AccentOrange);
             row.Add(cmdGroup);
 
             card.Add(row);
 
-            var note = new Label("Metrics collected via Nexus runtime event hooks.")
+            var note = new Label(NexusLang.Get("pd_metrics_note"))
             {
                 style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 6 }
             };
@@ -202,15 +202,15 @@ namespace Nexus.Editor
 
         private void BuildAlarmSection(VisualElement parent)
         {
-            var card = BuildCard(parent, "🔔 Alarm Thresholds");
+            var card = BuildCard(parent, NexusLang.Get("pd_sec_alarms"));
 
-            card.Add(NexusEditorStyles.CreateStatRow("FPS Alarm (<)", $"{_fpsAlarm:F0}", NexusEditorStyles.AccentOrange));
-            card.Add(NexusEditorStyles.CreateStatRow("Memory Alarm (MB >)", $"{_memAlarmMb:F0}", NexusEditorStyles.AccentOrange));
+            card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_fps_alarm"), $"{_fpsAlarm:F0}", NexusEditorStyles.AccentOrange));
+            card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_mem_alarm"), $"{_memAlarmMb:F0}", NexusEditorStyles.AccentOrange));
         }
 
         private void BuildStatsSummary(VisualElement parent)
         {
-            var card = BuildCard(parent, "📋 Summary (Last Sample)");
+            var card = BuildCard(parent, NexusLang.Get("pd_sec_summary"));
             _statsContainer = card;
         }
 
@@ -353,14 +353,14 @@ namespace Nexus.Editor
 
             float lastFps = _fpsBuffer.Last();
             bool fpsAlarm = lastFps < _fpsAlarm && _alarmsEnabled && Application.isPlaying;
-            _fpsAlarmLabel.text = fpsAlarm ? $"⚠ FPS BELOW THRESHOLD ({lastFps:F1} < {_fpsAlarm:F0})" : "";
+            _fpsAlarmLabel.text = fpsAlarm ? string.Format(NexusLang.Get("pd_fps_below"), lastFps.ToString("F1"), _fpsAlarm.ToString("F0")) : "";
             _fpsAlarmLabel.style.display = fpsAlarm ? DisplayStyle.Flex : DisplayStyle.None;
 
             if (_memBuffer.Count > 0)
             {
                 float lastMem = _memBuffer.Last();
                 bool memAlarm = lastMem > _memAlarmMb && _alarmsEnabled && Application.isPlaying;
-                _memAlarmLabel.text = memAlarm ? $"⚠ MEMORY ABOVE THRESHOLD ({lastMem:F1} MB > {_memAlarmMb:F0} MB)" : "";
+                _memAlarmLabel.text = memAlarm ? string.Format(NexusLang.Get("pd_mem_above"), lastMem.ToString("F1"), _memAlarmMb.ToString("F0")) : "";
                 _memAlarmLabel.style.display = memAlarm ? DisplayStyle.Flex : DisplayStyle.None;
             }
         }
@@ -375,14 +375,14 @@ namespace Nexus.Editor
             var fpsArr = _fpsBuffer.ToArray();
             if (fpsArr.Length > 0)
             {
-                _statsContainer.Add(NexusEditorStyles.CreateStatRow("FPS (current)", $"{fps:F1}", ColorForFps(fps)));
-                _statsContainer.Add(NexusEditorStyles.CreateStatRow("FPS (avg 60s)", $"{fpsArr.Average():F1}", NexusEditorStyles.TextPrimary));
-                _statsContainer.Add(NexusEditorStyles.CreateStatRow("FPS (min 60s)",  $"{fpsArr.Min():F1}", NexusEditorStyles.AccentOrange));
+                _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_fps_current"), $"{fps:F1}", ColorForFps(fps)));
+                _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_fps_avg"), $"{fpsArr.Average():F1}", NexusEditorStyles.TextPrimary));
+                _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_fps_min"),  $"{fpsArr.Min():F1}", NexusEditorStyles.AccentOrange));
             }
-            _statsContainer.Add(NexusEditorStyles.CreateStatRow("Mono Heap", $"{monoMb:F2} MB", NexusEditorStyles.AccentBlue));
-            _statsContainer.Add(NexusEditorStyles.CreateStatRow("Signals/s (current)", $"{sigRate:F1}", NexusEditorStyles.AccentPurple));
-            _statsContainer.Add(NexusEditorStyles.CreateStatRow("Commands/s (current)", $"{cmdRate:F1}", NexusEditorStyles.AccentOrange));
-            _statsContainer.Add(NexusEditorStyles.CreateStatRow("GC Gen0 (delta)", $"{_gcGen0Buffer.Last():F0}", NexusEditorStyles.AccentYellow));
+            _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_mono_heap_short"), $"{monoMb:F2} MB", NexusEditorStyles.AccentBlue));
+            _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_signals_current"), $"{sigRate:F1}", NexusEditorStyles.AccentPurple));
+            _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_commands_current"), $"{cmdRate:F1}", NexusEditorStyles.AccentOrange));
+            _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_gc_delta"), $"{_gcGen0Buffer.Last():F0}", NexusEditorStyles.AccentYellow));
         }
 
         private Color ColorForFps(float fps) =>

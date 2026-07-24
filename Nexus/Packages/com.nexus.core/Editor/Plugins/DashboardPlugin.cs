@@ -170,7 +170,7 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBg);
             card.style.marginTop = 12;
 
-            card.Add(CreateSectionTitle("Quick Find", NexusEditorStyles.AccentBlue));
+            card.Add(CreateSectionTitle(NexusLang.Get("db_quick_find"), NexusEditorStyles.AccentBlue));
             card.Add(CreateQuickFindRow());
 
             _quickFindResultsContainer = new VisualElement { style = { marginTop = 8 } };
@@ -619,7 +619,7 @@ namespace Nexus.Editor
             card.style.marginTop = 8;
 
             var titleRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 8 } };
-            titleRow.Add(new Label("Nexus Health")
+            titleRow.Add(new Label(NexusLang.Get("db_nexus_health"))
             {
                 style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentGreen) }
             });
@@ -631,7 +631,7 @@ namespace Nexus.Editor
             };
             card.Add(_healthSummary);
 
-            var note = new Label("Use this panel to catch missing Roots, empty Contexts, and validation issues before handoff.")
+            var note = new Label(NexusLang.Get("db_health_note"))
             {
                 style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), whiteSpace = WhiteSpace.Normal }
             };
@@ -649,23 +649,23 @@ namespace Nexus.Editor
             int contextCount = NexusEditorDataProvider.GetActiveContextCount();
             int handlerCount = NexusEditorDataProvider.GetHandlerCount();
 
-            string readiness = Application.isPlaying ? "Play Mode" : "Edit Mode";
+            string readiness = Application.isPlaying ? NexusLang.Get("db_play_mode") : NexusLang.Get("db_edit_mode");
 
             string healthText;
             if (!Application.isPlaying && rootCount == 0)
             {
-                healthText = "No active Root in scene. Add a Nexus Root before entering Play Mode.";
+                healthText = NexusLang.Get("db_health_no_root");
             }
             else if (Application.isPlaying && contextCount == 0)
             {
-                healthText = "No active Context detected during Play Mode. Check startup wiring and scene bindings.";
+                healthText = NexusLang.Get("db_health_no_context");
             }
             else
             {
-                healthText = $"{contextCount} context(s), {handlerCount} handler(s), {rootCount} root(s) visible.";
+                healthText = string.Format(NexusLang.Get("db_health_counts"), contextCount, handlerCount, rootCount);
             }
 
-            return $"{readiness}: {healthText}";
+            return string.Format(NexusLang.Get("db_health_line"), readiness, healthText);
         }
 
         private void RefreshValidationCard(VisualElement card)
@@ -695,7 +695,7 @@ namespace Nexus.Editor
             };
             card.Add(_validationSummary);
 
-            card.Add(new Label("Validation checks context, binding, hierarchy, and command issues before runtime.")
+            card.Add(new Label(NexusLang.Get("db_validation_note"))
             {
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.DimText), whiteSpace = WhiteSpace.Normal, marginBottom = 4 }
             });

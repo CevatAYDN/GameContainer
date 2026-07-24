@@ -108,7 +108,7 @@ namespace Nexus.Editor
             clearBtn.style.color = Color.white;
             filterBar.Add(clearBtn);
 
-            _pauseToggle = new Toggle("Pause") { value = _isPaused, style = { marginLeft = 10, color = Color.white } };
+            _pauseToggle = new Toggle(NexusLang.Get("tr_pause")) { value = _isPaused, style = { marginLeft = 10, color = Color.white } };
             _pauseToggle.RegisterValueChangedCallback(evt =>
             {
                 _isPaused = evt.newValue;

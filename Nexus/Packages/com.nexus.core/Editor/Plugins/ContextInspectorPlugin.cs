@@ -47,11 +47,11 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            var toolbar = NexusEditorStyles.CreateToolbar("🔍 CONTEXT INSPECTOR");
+            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("ci_title"));
             _view.Add(toolbar);
 
             // Play mode warning banner
-            _playModeWarning = new Label("⚠ Enter Play Mode to inspect live contexts")
+            _playModeWarning = new Label(NexusLang.Get("ci_playmode_warning"))
             {
                 style =
                 {
@@ -163,8 +163,8 @@ namespace Nexus.Editor
         public override IReadOnlyList<(string Label, Action Action, Color Color)> GetContextActions()
             => new List<(string, Action, Color)>
             {
-                ("🔄 Refresh",     () => { RefreshContextDropdown(); RenderContent(); }, NexusEditorStyles.BtnGray),
-                ("📋 Copy Report", CopyContextReport, NexusEditorStyles.BtnBlue),
+                (NexusLang.Get("ci_action_refresh"),     () => { RefreshContextDropdown(); RenderContent(); }, NexusEditorStyles.BtnGray),
+                (NexusLang.Get("ci_action_copy_report"), CopyContextReport, NexusEditorStyles.BtnBlue),
             };
 
         // ── Context selector ──────────────────────────────────────
@@ -184,7 +184,7 @@ namespace Nexus.Editor
                 }
             };
 
-            bar.Add(new Label("Context:")
+            bar.Add(new Label(NexusLang.Get("ci_context_label"))
             {
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 8, minWidth = 60 }
             });
@@ -214,7 +214,7 @@ namespace Nexus.Editor
         private void RefreshContextDropdown()
         {
             var contexts = NexusRuntime.ActiveContexts;
-            var choices = new List<string> { "(none — edit mode)" };
+            var choices = new List<string> { NexusLang.Get("ci_none_editmode") };
 
             if (contexts != null)
                 foreach (var ctx in contexts)
@@ -261,13 +261,13 @@ namespace Nexus.Editor
         {
             var labels = new Dictionary<InspectorTab, string>
             {
-                { InspectorTab.Overview,   "Overview" },
-                { InspectorTab.Bindings,   "Bindings" },
-                { InspectorTab.Singletons, "Singletons" },
-                { InspectorTab.Services,   "Services" },
-                { InspectorTab.Signals,    "Signals" },
-                { InspectorTab.Extensions, "🔌 Extensions" },
-                { InspectorTab.FireSignal, "🔥 Fire Signal" },
+                { InspectorTab.Overview,   NexusLang.Get("ci_tab_overview") },
+                { InspectorTab.Bindings,   NexusLang.Get("ci_tab_bindings") },
+                { InspectorTab.Singletons, NexusLang.Get("ci_tab_singletons") },
+                { InspectorTab.Services,   NexusLang.Get("ci_tab_services") },
+                { InspectorTab.Signals,    NexusLang.Get("ci_tab_signals") },
+                { InspectorTab.Extensions, NexusLang.Get("ci_tab_extensions") },
+                { InspectorTab.FireSignal, NexusLang.Get("ci_tab_firesignal") },
             };
 
             var btn = new Button(() =>
@@ -309,7 +309,7 @@ namespace Nexus.Editor
 
             if (!Application.isPlaying)
             {
-                _content.Add(new Label("Start Play Mode to inspect live contexts.")
+                _content.Add(new Label(NexusLang.Get("ci_playmode_prompt"))
                 {
                     style = { color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 20, unityTextAlign = TextAnchor.MiddleCenter }
                 });
@@ -318,7 +318,7 @@ namespace Nexus.Editor
 
             if (_selectedContext == null)
             {
-                _content.Add(new Label("Select a context from the dropdown above.")
+                _content.Add(new Label(NexusLang.Get("ci_select_context"))
                 {
                     style = { color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 20, unityTextAlign = TextAnchor.MiddleCenter }
                 });
@@ -341,7 +341,7 @@ namespace Nexus.Editor
 
         private void RenderOverview()
         {
-            AddSectionTitle("📋 Context Overview");
+            AddSectionTitle(NexusLang.Get("ci_overview_title"));
 
             var ctx = _selectedContext;
             var concrete   = _selectedContext as Context;
@@ -350,21 +350,21 @@ namespace Nexus.Editor
             var handlers   = ctx.SignalBus?.RegisteredHandlers;
             var plugins    = concrete?.PluginsReadOnlyCopy;
 
-            _content.Add(NexusEditorStyles.CreateStatRow("Tag",          ctx.ScopeTag ?? "(no tag)", NexusEditorStyles.AccentBlue));
-            _content.Add(NexusEditorStyles.CreateStatRow("Type",         ctx.GetType().Name, NexusEditorStyles.TextPrimary));
-            _content.Add(NexusEditorStyles.CreateStatRow("Parent",       ctx.Parent != null ? (ctx.Parent.ScopeTag ?? ctx.Parent.GetType().Name) : "none"));
-            _content.Add(NexusEditorStyles.CreateStatRow("DI Bindings",  $"{bindings.Count}", NexusEditorStyles.AccentGreen));
-            _content.Add(NexusEditorStyles.CreateStatRow("Singletons",   $"{singletons.Count}", NexusEditorStyles.AccentBlue));
-            _content.Add(NexusEditorStyles.CreateStatRow("Signals",      $"{handlers?.Count ?? 0}", NexusEditorStyles.AccentPurple));
-            _content.Add(NexusEditorStyles.CreateStatRow("Plugins",      $"{plugins?.Count ?? 0}", NexusEditorStyles.AccentOrange));
-            _content.Add(NexusEditorStyles.CreateStatRow("Has Interceptors", (concrete?.HasInterceptors ?? false).ToString(), NexusEditorStyles.TextSecondary));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_tag"),          ctx.ScopeTag ?? NexusLang.Get("ci_no_tag"), NexusEditorStyles.AccentBlue));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_type"),         ctx.GetType().Name, NexusEditorStyles.TextPrimary));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_parent"),       ctx.Parent != null ? (ctx.Parent.ScopeTag ?? ctx.Parent.GetType().Name) : NexusLang.Get("ci_none")));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_di_bindings"),  $"{bindings.Count}", NexusEditorStyles.AccentGreen));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_singletons"),   $"{singletons.Count}", NexusEditorStyles.AccentBlue));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_signals"),      $"{handlers?.Count ?? 0}", NexusEditorStyles.AccentPurple));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_plugins"),      $"{plugins?.Count ?? 0}", NexusEditorStyles.AccentOrange));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_has_interceptors"), (concrete?.HasInterceptors ?? false).ToString(), NexusEditorStyles.TextSecondary));
 
             // Child contexts
             var allContexts = NexusRuntime.ActiveContexts;
             var children = allContexts?.Where(c => c.Parent == ctx).ToList();
             if (children?.Count > 0)
             {
-                _content.Add(NexusEditorStyles.CreateStatRow("Child Contexts", $"{children.Count}", NexusEditorStyles.AccentGreen));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_child_contexts"), $"{children.Count}", NexusEditorStyles.AccentGreen));
                 foreach (var child in children)
                 {
                     _content.Add(NexusEditorStyles.CreateStatRow("  ↳", child.ScopeTag ?? child.GetType().Name, NexusEditorStyles.TextSecondary));
@@ -375,10 +375,10 @@ namespace Nexus.Editor
             if (plugins?.Count > 0)
             {
                 _content.Add(MakeSpacer(8));
-                AddSectionTitle("🔌 Runtime Plugins");
+                AddSectionTitle(NexusLang.Get("ci_runtime_plugins"));
                 foreach (var (plugin, _) in plugins)
                 {
-                    _content.Add(NexusEditorStyles.CreateStatRow("  Plugin", plugin.GetType().Name, NexusEditorStyles.AccentOrange));
+                    _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_plugin"), plugin.GetType().Name, NexusEditorStyles.AccentOrange));
                 }
             }
 
@@ -387,17 +387,17 @@ namespace Nexus.Editor
             if (queue != null)
             {
                 _content.Add(MakeSpacer(8));
-                AddSectionTitle("📨 Signal Queues");
+                AddSectionTitle(NexusLang.Get("ci_signal_queues"));
                 int tsDepth = queue.ThreadSafeQueueDepth;
                 int nfDepth = queue.NextFrameQueueDepth;
                 long enq = queue.TotalEnqueued;
                 long drn = queue.TotalDrained;
                 long pending = enq - drn;
-                _content.Add(NexusEditorStyles.CreateStatRow("Thread-Safe Depth", $"{tsDepth}", tsDepth > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
-                _content.Add(NexusEditorStyles.CreateStatRow("Next-Frame Depth",  $"{nfDepth}", nfDepth > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
-                _content.Add(NexusEditorStyles.CreateStatRow("Total Enqueued",    $"{enq}", NexusEditorStyles.AccentBlue));
-                _content.Add(NexusEditorStyles.CreateStatRow("Total Drained",     $"{drn}", NexusEditorStyles.AccentGreen));
-                _content.Add(NexusEditorStyles.CreateStatRow("Pending (in-flight)", $"{pending}", pending > 0 ? NexusEditorStyles.AccentOrange : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_ts_depth"), $"{tsDepth}", tsDepth > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_nf_depth"),  $"{nfDepth}", nfDepth > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_total_enqueued"),    $"{enq}", NexusEditorStyles.AccentBlue));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_total_drained"),     $"{drn}", NexusEditorStyles.AccentGreen));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_pending"), $"{pending}", pending > 0 ? NexusEditorStyles.AccentOrange : NexusEditorStyles.TextSecondary));
             }
 
             // Command pools (CommandPoolManager) — live utilization + reuse ratio (G-4).
@@ -405,7 +405,7 @@ namespace Nexus.Editor
             if (poolStats != null && poolStats.Count > 0)
             {
                 _content.Add(MakeSpacer(8));
-                AddSectionTitle("♻️ Command Pools");
+                AddSectionTitle(NexusLang.Get("ci_command_pools"));
 
                 int available = 0;
                 long totalGets = 0, totalCreated = 0, totalReturns = 0, totalDiscarded = 0;
@@ -420,13 +420,13 @@ namespace Nexus.Editor
                 }
                 float reuseRatio = totalGets > 0 ? (float)(totalGets - totalCreated) / totalGets : 0f;
 
-                _content.Add(NexusEditorStyles.CreateStatRow("Pooled Types",     $"{poolStats.Count}", NexusEditorStyles.AccentBlue));
-                _content.Add(NexusEditorStyles.CreateStatRow("Available Now",    $"{available}", available > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
-                _content.Add(NexusEditorStyles.CreateStatRow("Total Gets",       $"{totalGets}", NexusEditorStyles.TextPrimary));
-                _content.Add(NexusEditorStyles.CreateStatRow("Total Created",    $"{totalCreated}", NexusEditorStyles.AccentOrange));
-                _content.Add(NexusEditorStyles.CreateStatRow("Total Returns",    $"{totalReturns}", NexusEditorStyles.AccentGreen));
-                _content.Add(NexusEditorStyles.CreateStatRow("Total Discarded",  $"{totalDiscarded}", totalDiscarded > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
-                _content.Add(NexusEditorStyles.CreateStatRow("Reuse Ratio",      $"{reuseRatio:P0}", reuseRatio >= 0.5f ? NexusEditorStyles.AccentGreen : NexusEditorStyles.AccentOrange));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_pooled_types"),     $"{poolStats.Count}", NexusEditorStyles.AccentBlue));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_available_now"),    $"{available}", available > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_total_gets"),       $"{totalGets}", NexusEditorStyles.TextPrimary));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_total_created"),    $"{totalCreated}", NexusEditorStyles.AccentOrange));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_total_returns"),    $"{totalReturns}", NexusEditorStyles.AccentGreen));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_total_discarded"),  $"{totalDiscarded}", totalDiscarded > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_reuse_ratio"),      $"{reuseRatio:P0}", reuseRatio >= 0.5f ? NexusEditorStyles.AccentGreen : NexusEditorStyles.AccentOrange));
 
                 // Per-type breakdown (compact).
                 for (int i = 0; i < poolStats.Count; i++)
@@ -442,15 +442,14 @@ namespace Nexus.Editor
 
         private void RenderExtensions()
         {
-            AddSectionTitle("🔌 Extension Pipeline");
+            AddSectionTitle(NexusLang.Get("ci_ext_pipeline"));
 
             var concrete = _selectedContext as Context;
             var plugins = concrete?.PluginsReadOnlyCopy;
 
             if (concrete == null || plugins == null || plugins.Count == 0)
             {
-                AddEmpty("No runtime plugins registered on this context.\n" +
-                    "Signal interceptors and command decorators appear here once a plugin registers them.");
+                AddEmpty(NexusLang.Get("ci_ext_empty"));
                 return;
             }
 
@@ -465,11 +464,11 @@ namespace Nexus.Editor
                 totalSinks        += pctx.TraceSinks?.Count ?? 0;
             }
 
-            _content.Add(NexusEditorStyles.CreateStatRow("Plugins",             $"{plugins.Count}", NexusEditorStyles.AccentOrange));
-            _content.Add(NexusEditorStyles.CreateStatRow("Signal Interceptors", $"{totalInterceptors}", totalInterceptors > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
-            _content.Add(NexusEditorStyles.CreateStatRow("Command Decorators",  $"{totalDecorators}", totalDecorators > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
-            _content.Add(NexusEditorStyles.CreateStatRow("Model Serializers",   $"{totalSerializers}", NexusEditorStyles.TextSecondary));
-            _content.Add(NexusEditorStyles.CreateStatRow("Trace Sinks",         $"{totalSinks}", NexusEditorStyles.TextSecondary));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_stat_plugins"),             $"{plugins.Count}", NexusEditorStyles.AccentOrange));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_signal_interceptors"), $"{totalInterceptors}", totalInterceptors > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_command_decorators"),  $"{totalDecorators}", totalDecorators > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_model_serializers"),   $"{totalSerializers}", NexusEditorStyles.TextSecondary));
+            _content.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("ci_trace_sinks"),         $"{totalSinks}", NexusEditorStyles.TextSecondary));
 
             _content.Add(MakeSpacer(10));
 
@@ -512,15 +511,15 @@ namespace Nexus.Editor
 
             if (pctx == null)
             {
-                card.Add(new Label("(no plugin context)") { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
+                card.Add(new Label(NexusLang.Get("ci_no_plugin_context")) { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
                 return card;
             }
 
             // Decorators are numbered because their list order IS the execution order.
-            AddPipelineList(card, "Signal Interceptors", pctx.Interceptors, NexusEditorStyles.AccentGreen, ordered: false);
-            AddPipelineList(card, "Command Decorators (execution order)", pctx.Decorators, NexusEditorStyles.AccentPurple, ordered: true);
-            AddPipelineList(card, "Model Serializers", pctx.Serializers, NexusEditorStyles.AccentBlue, ordered: false);
-            AddPipelineList(card, "Trace Sinks", pctx.TraceSinks, NexusEditorStyles.TextSecondary, ordered: false);
+            AddPipelineList(card, NexusLang.Get("ci_signal_interceptors"), pctx.Interceptors, NexusEditorStyles.AccentGreen, ordered: false);
+            AddPipelineList(card, NexusLang.Get("ci_command_decorators_order"), pctx.Decorators, NexusEditorStyles.AccentPurple, ordered: true);
+            AddPipelineList(card, NexusLang.Get("ci_model_serializers"), pctx.Serializers, NexusEditorStyles.AccentBlue, ordered: false);
+            AddPipelineList(card, NexusLang.Get("ci_trace_sinks"), pctx.TraceSinks, NexusEditorStyles.TextSecondary, ordered: false);
 
             return card;
         }
@@ -549,12 +548,12 @@ namespace Nexus.Editor
 
         private void RenderBindings()
         {
-            AddSectionTitle("🔗 DI Bindings");
+            AddSectionTitle(NexusLang.Get("ci_di_bindings_title"));
 
             var bindings = NexusEditorDataProvider.GetAllBindings(_selectedContext);
             if (bindings.Count == 0)
             {
-                AddEmpty("No bindings found. (Play Mode required)");
+                AddEmpty(NexusLang.Get("ci_no_bindings"));
                 return;
             }
 
@@ -566,12 +565,12 @@ namespace Nexus.Editor
                 .ToList();
 
             var table = NexusEditorStyles.CreateDataTable(
-                new[] { ("Interface / Key", 0.5f), ("Concrete Type", 0.5f) },
+                new[] { (NexusLang.Get("ci_col_interface_key"), 0.5f), (NexusLang.Get("ci_col_concrete_type"), 0.5f) },
                 filtered.Select(kv => new[] { kv.Key.Name, kv.Value.Name })
             );
             _content.Add(table);
 
-            _content.Add(new Label($"Total: {bindings.Count} binding(s)")
+            _content.Add(new Label(string.Format(NexusLang.Get("ci_total_bindings"), bindings.Count))
             {
                 style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 6 }
             });
@@ -581,12 +580,12 @@ namespace Nexus.Editor
 
         private void RenderSingletons()
         {
-            AddSectionTitle("📦 Resolved Singletons");
+            AddSectionTitle(NexusLang.Get("ci_resolved_singletons_title"));
 
             var singletons = NexusEditorDataProvider.GetResolvedSingletons(_selectedContext);
             if (singletons.Count == 0)
             {
-                AddEmpty("No singletons resolved yet.");
+                AddEmpty(NexusLang.Get("ci_no_singletons"));
                 return;
             }
 
@@ -637,7 +636,7 @@ namespace Nexus.Editor
                     .ToList();
                 if (interfaces.Count > 0)
                 {
-                    card.Add(new Label("  implements: " + string.Join(", ", interfaces))
+                    card.Add(new Label(string.Format(NexusLang.Get("ci_implements"), string.Join(", ", interfaces)))
                     {
                         style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary) }
                     });
@@ -662,7 +661,7 @@ namespace Nexus.Editor
                 _content.Add(card);
             }
 
-            _content.Add(new Label($"Total: {singletons.Count} singleton(s)")
+            _content.Add(new Label(string.Format(NexusLang.Get("ci_total_singletons"), singletons.Count))
             {
                 style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 4 }
             });
@@ -672,12 +671,12 @@ namespace Nexus.Editor
 
         private void RenderServices()
         {
-            AddSectionTitle("⚙️ Registered Services");
+            AddSectionTitle(NexusLang.Get("ci_registered_services_title"));
 
             var serviceTypes = NexusEditorDataProvider.GetLiveServiceTypes(_selectedContext);
             if (serviceTypes.Count == 0)
             {
-                AddEmpty("No services registered in this context.");
+                AddEmpty(NexusLang.Get("ci_no_services"));
                 return;
             }
 
@@ -688,15 +687,15 @@ namespace Nexus.Editor
                 .Select(t =>
                 {
                     var inst = NexusEditorDataProvider.TryGetServiceInstance(_selectedContext, t);
-                    return new[] { t.Name, inst?.GetType().Name ?? "not resolved", inst != null ? "✓" : "—" };
+                    return new[] { t.Name, inst?.GetType().Name ?? NexusLang.Get("ci_not_resolved"), inst != null ? "✓" : "—" };
                 });
 
             _content.Add(NexusEditorStyles.CreateDataTable(
-                new[] { ("Service Type", 0.45f), ("Concrete", 0.4f), ("Resolved", 0.15f) },
+                new[] { (NexusLang.Get("ci_col_service_type"), 0.45f), (NexusLang.Get("ci_col_concrete"), 0.4f), (NexusLang.Get("ci_col_resolved"), 0.15f) },
                 rows
             ));
 
-            _content.Add(new Label($"Total: {serviceTypes.Count} service(s)")
+            _content.Add(new Label(string.Format(NexusLang.Get("ci_total_services"), serviceTypes.Count))
             {
                 style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 6 }
             });
@@ -706,12 +705,12 @@ namespace Nexus.Editor
 
         private void RenderSignals()
         {
-            AddSectionTitle("⚡ Registered Signal Handlers");
+            AddSectionTitle(NexusLang.Get("ci_signal_handlers_title"));
 
             var handlers = _selectedContext.SignalBus?.RegisteredHandlers;
             if (handlers == null || handlers.Count == 0)
             {
-                AddEmpty("No signal handlers registered in this context.");
+                AddEmpty(NexusLang.Get("ci_no_signal_handlers"));
                 return;
             }
 
@@ -727,11 +726,11 @@ namespace Nexus.Editor
                 }));
 
             _content.Add(NexusEditorStyles.CreateDataTable(
-                new[] { ("Signal", 0.4f), ("Command Handler", 0.4f), ("Mode", 0.2f) },
+                new[] { (NexusLang.Get("ci_col_signal"), 0.4f), (NexusLang.Get("ci_col_command_handler"), 0.4f), (NexusLang.Get("ci_col_mode"), 0.2f) },
                 rows
             ));
 
-            _content.Add(new Label($"Total signals: {handlers.Count}")
+            _content.Add(new Label(string.Format(NexusLang.Get("ci_total_signals_count"), handlers.Count))
             {
                 style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 6 }
             });
@@ -741,11 +740,11 @@ namespace Nexus.Editor
 
         private void RenderFireSignal()
         {
-            AddSectionTitle("🔥 Fire Test Signal");
+            AddSectionTitle(NexusLang.Get("ci_fire_test_signal_title"));
 
             if (_selectedContext == null)
             {
-                AddEmpty("Select a context first.");
+                AddEmpty(NexusLang.Get("ci_select_context_first"));
                 return;
             }
 
@@ -753,12 +752,12 @@ namespace Nexus.Editor
             var allSignalTypes = GetAvailableSignalTypes();
             if (allSignalTypes.Count == 0)
             {
-                AddEmpty("No signal types found in loaded assemblies.");
+                AddEmpty(NexusLang.Get("ci_no_signal_types"));
                 return;
             }
 
             var typeNames = allSignalTypes.Select(t => t.FullName ?? t.Name).ToList();
-            var dropdown = new DropdownField("Signal Type", typeNames, 0);
+            var dropdown = new DropdownField(NexusLang.Get("ci_signal_type"), typeNames, 0);
             dropdown.style.marginBottom = 8;
             dropdown.RegisterValueChangedCallback(evt =>
             {
@@ -786,7 +785,7 @@ namespace Nexus.Editor
 
             if (_fireSignalType == null)
             {
-                _signalFormContainer.Add(new Label("(select a signal type)"));
+                _signalFormContainer.Add(new Label(NexusLang.Get("ci_select_signal_type")));
                 _content.Add(_signalFormContainer);
                 return;
             }
@@ -797,7 +796,7 @@ namespace Nexus.Editor
             }
             catch
             {
-                _signalFormContainer.Add(new Label("Cannot instantiate signal (no default constructor).")
+                _signalFormContainer.Add(new Label(NexusLang.Get("ci_cannot_instantiate"))
                 {
                     style = { color = new StyleColor(NexusEditorStyles.AccentRed) }
                 });
@@ -809,14 +808,14 @@ namespace Nexus.Editor
 
             if (_fireSignalFields.Length == 0)
             {
-                _signalFormContainer.Add(new Label("(no public fields — signal is parameter-less)")
+                _signalFormContainer.Add(new Label(NexusLang.Get("ci_no_public_fields"))
                 {
                     style = { color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 8, fontSize = 9 }
                 });
             }
             else
             {
-                _signalFormContainer.Add(new Label("Fill in signal fields:")
+                _signalFormContainer.Add(new Label(NexusLang.Get("ci_fill_fields"))
                 {
                     style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 4 }
                 });
@@ -859,7 +858,7 @@ namespace Nexus.Editor
                     }
                     else
                     {
-                        row.Add(new Label($"({field.FieldType.Name} — not editable)")
+                        row.Add(new Label(string.Format(NexusLang.Get("ci_not_editable"), field.FieldType.Name))
                         {
                             style = { color = new StyleColor(NexusEditorStyles.DimText), fontSize = 9 }
                         });
@@ -885,7 +884,7 @@ namespace Nexus.Editor
             {
                 if (_selectedContext?.SignalBus == null || _fireSignalInstance == null)
                 {
-                    resultLabel.text = "❌ No context or signal selected.";
+                    resultLabel.text = NexusLang.Get("ci_err_no_context_signal");
                     resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentRed);
                     return;
                 }
@@ -900,24 +899,24 @@ namespace Nexus.Editor
                     {
                         var generic = fireMethod.MakeGenericMethod(_fireSignalType);
                         generic.Invoke(_selectedContext.SignalBus, new[] { _fireSignalInstance });
-                        resultLabel.text = $"✅ Fired {_fireSignalType.Name} at {DateTime.Now:HH:mm:ss.fff}";
+                        resultLabel.text = string.Format(NexusLang.Get("ci_fired_ok"), _fireSignalType.Name, DateTime.Now.ToString("HH:mm:ss.fff"));
                         resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentGreen);
                     }
                     else
                     {
-                        resultLabel.text = "❌ Fire<T> method not found on SignalBus.";
+                        resultLabel.text = NexusLang.Get("ci_err_fire_notfound");
                         resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentRed);
                     }
                 }
                 catch (Exception ex)
                 {
-                    resultLabel.text = $"❌ Error: {ex.InnerException?.Message ?? ex.Message}";
+                    resultLabel.text = string.Format(NexusLang.Get("ci_err_generic"), ex.InnerException?.Message ?? ex.Message);
                     resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentRed);
                     Debug.LogException(ex);
                 }
             })
             {
-                text = $"🔥 Fire {_fireSignalType?.Name ?? "Signal"}",
+                text = string.Format(NexusLang.Get("ci_fire_btn"), _fireSignalType?.Name ?? "Signal"),
                 style =
                 {
                     backgroundColor = new StyleColor(NexusEditorStyles.BtnRed),

@@ -42,9 +42,15 @@ namespace Nexus.Editor
         {
             ("cat_overview",     new[] { "Dashboard", "GameManager" }),
             ("cat_architecture", new[] { "Hierarchy", "Explorer", "Graph", "TypeAnalyzer", "ContextInspector", "FSM" }),
-            ("cat_diagnostics",  new[] { "Tracer", "ErrorDashboard", "PerformanceDashboard", "NetworkDashboard" }),
+            ("cat_diagnostics",  new[] { "Tracer", "ErrorDashboard", "PerformanceDashboard" }),
             ("cat_tools",        new[] { "Wizard", "casual_services", "Help" }),
         };
+
+        // Plugins hidden from the dashboard. NetworkDashboard reads NetworkMonitor, which has no
+        // runtime writers in this single-player project (NetworkSignalBus is never wired to a
+        // transport), so the tab could only ever show an empty/disconnected state. Hidden here
+        // instead of deleted so it can be re-enabled if networking is added later.
+        private static readonly HashSet<string> HiddenPluginIds = new() { "NetworkDashboard" };
 
         private List<INexusEditorPlugin> _plugins = new();
         private INexusEditorPlugin _activePlugin;
@@ -366,6 +372,8 @@ namespace Nexus.Editor
                             if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
                             {
                                 var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
+                                if (HiddenPluginIds.Contains(plugin.Id))
+                                    continue;
                                 plugin.Initialize(this);
                                 foundPlugins.Add(plugin);
 

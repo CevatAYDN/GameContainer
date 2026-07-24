@@ -112,7 +112,7 @@ namespace Nexus.Editor
             _searchedTypeName = _searchField?.value ?? _searchedTypeName;
             if (string.IsNullOrEmpty(_searchedTypeName))
             {
-                    var label = NexusEditorStyles.CreateEmptyState("Please enter a type name to analyze.");
+                    var label = NexusEditorStyles.CreateEmptyState(NexusLang.Get("ta_enter_type"));
                 _scrollView.Add(label);
                 return;
             }

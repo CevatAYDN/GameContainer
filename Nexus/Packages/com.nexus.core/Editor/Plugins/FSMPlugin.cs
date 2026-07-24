@@ -33,7 +33,7 @@ namespace Nexus.Editor
         public override VisualElement CreateView()
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
-            _view.Add(NexusEditorStyles.CreateToolbar("STATE MACHINE"));
+            _view.Add(NexusEditorStyles.CreateToolbar(NexusLang.Get("fsm_toolbar")));
 
             _content = new ScrollView { style = { flexGrow = 1, paddingLeft = 10, paddingRight = 10, paddingTop = 8 } };
             _view.Add(_content);
@@ -63,16 +63,16 @@ namespace Nexus.Editor
             {
                 _content.Add(NexusEditorStyles.CreateEmptyState(
                     Application.isPlaying
-                        ? "No IGameStateMachine resolved from active contexts."
-                        : "Enter Play Mode to inspect live state machines."));
-                if (_statusBar != null) _statusBar.text = "Machines: 0";
+                        ? NexusLang.Get("fsm_empty_playing")
+                        : NexusLang.Get("fsm_empty_editmode")));
+                if (_statusBar != null) _statusBar.text = string.Format(NexusLang.Get("fsm_status"), 0);
                 return;
             }
 
             foreach (var (ctxLabel, machine) in machines)
                 _content.Add(BuildMachineCard(ctxLabel, machine));
 
-            if (_statusBar != null) _statusBar.text = $"Machines: {machines.Count}";
+            if (_statusBar != null) _statusBar.text = string.Format(NexusLang.Get("fsm_status"), machines.Count);
         }
 
         private VisualElement BuildMachineCard(string ctxLabel, IGameStateMachine machine)
@@ -90,19 +90,19 @@ namespace Nexus.Editor
             if (Application.isPlaying) header.Add(NexusEditorStyles.CreateLiveBadge());
             card.Add(header);
 
-            var currentName = machine.CurrentState?.GetType().Name ?? "(none)";
+            var currentName = machine.CurrentState?.GetType().Name ?? NexusLang.Get("fsm_none");
             var currentColor = machine.CurrentState != null ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary;
-            card.Add(NexusEditorStyles.CreateStatRow("Current State", currentName, currentColor));
+            card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("fsm_current_state"), currentName, currentColor));
 
             var concrete = machine as GameStateMachine;
             if (concrete != null)
             {
-                var errorName = concrete.ErrorStateType?.Name ?? "(not set)";
+                var errorName = concrete.ErrorStateType?.Name ?? NexusLang.Get("fsm_not_set");
                 var errorColor = concrete.ErrorStateType != null ? NexusEditorStyles.AccentOrange : NexusEditorStyles.TextSecondary;
-                card.Add(NexusEditorStyles.CreateStatRow("Error State", errorName, errorColor));
+                card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("fsm_error_state"), errorName, errorColor));
 
                 var registered = concrete.RegisteredStateTypes;
-                card.Add(NexusEditorStyles.CreateStatRow("Registered States", registered.Count.ToString(), NexusEditorStyles.AccentPurpleText));
+                card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("fsm_registered_states"), registered.Count.ToString(), NexusEditorStyles.AccentPurpleText));
 
                 var statesWrap = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 4, marginBottom = 4 } };
                 foreach (var t in registered)
@@ -117,13 +117,13 @@ namespace Nexus.Editor
             }
             else
             {
-                card.Add(NexusEditorStyles.CreateHint("Custom IGameStateMachine implementation — only CurrentState is introspectable."));
+                card.Add(NexusEditorStyles.CreateHint(NexusLang.Get("fsm_custom_impl")));
             }
 
             // Editor-observed transition history.
             if (_history.TryGetValue(machine, out var hist) && hist.Count > 0)
             {
-                card.Add(NexusEditorStyles.CreateSectionTitle("Transition Log (observed)"));
+                card.Add(NexusEditorStyles.CreateSectionTitle(NexusLang.Get("fsm_transition_log")));
                 var logBox = new VisualElement { style = { paddingLeft = 4 } };
                 foreach (var line in Enumerable.Reverse(hist))
                     logBox.Add(new Label(line) { style = { fontSize = 9, color = NexusEditorStyles.TextSecondary } });

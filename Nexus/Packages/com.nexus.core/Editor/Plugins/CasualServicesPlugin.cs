@@ -31,7 +31,7 @@ namespace Nexus.Editor.Plugins
             _container.style.paddingRight = 10;
             _container.style.paddingTop = 10;
 
-            var title = new Label("Nexus Casual Services Debugger");
+            var title = new Label(NexusLang.Get("cs_title"));
             title.style.fontSize = 16;
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             title.style.marginBottom = 10;
@@ -39,7 +39,7 @@ namespace Nexus.Editor.Plugins
 
             if (!Application.isPlaying)
             {
-                _statusLabel = new Label("Enter Play Mode to debug Economy, Progression, UI, Audio, Haptics, and TimeScale live.");
+                _statusLabel = new Label(NexusLang.Get("cs_editmode_prompt"));
                 _statusLabel.style.color = new Color(0.9f, 0.6f, 0.2f);
                 _statusLabel.style.whiteSpace = WhiteSpace.Normal;
                 _container.Add(_statusLabel);
@@ -51,22 +51,22 @@ namespace Nexus.Editor.Plugins
             _container.Add(_content);
 
             // TimeScale Section
-            var timeSection = CreateSectionBox("TimeScale & Loop Controls");
-            _timeScaleSlider = new Slider("Time Scale", 0f, 5f) { value = Time.timeScale };
+            var timeSection = CreateSectionBox(NexusLang.Get("cs_sec_timescale"));
+            _timeScaleSlider = new Slider(NexusLang.Get("cs_time_scale"), 0f, 5f) { value = Time.timeScale };
             _timeScaleSlider.RegisterValueChangedCallback(evt => Time.timeScale = evt.newValue);
             timeSection.Add(_timeScaleSlider);
-            var pauseBtn = new Button(() => Time.timeScale = Time.timeScale == 0f ? 1f : 0f) { text = "Toggle Pause" };
+            var pauseBtn = new Button(() => Time.timeScale = Time.timeScale == 0f ? 1f : 0f) { text = NexusLang.Get("cs_toggle_pause") };
             timeSection.Add(pauseBtn);
             _content.Add(timeSection);
 
             // Economy Section
-            var ecoSection = CreateSectionBox("Economy Debugger");
-            _currencyNameField = new TextField("Currency ID") { value = "Coins" };
-            _currencyAmountField = new LongField("Amount") { value = 100 };
+            var ecoSection = CreateSectionBox(NexusLang.Get("cs_sec_economy"));
+            _currencyNameField = new TextField(NexusLang.Get("cs_currency_id")) { value = "Coins" };
+            _currencyAmountField = new LongField(NexusLang.Get("cs_amount")) { value = 100 };
             ecoSection.Add(_currencyNameField);
             ecoSection.Add(_currencyAmountField);
-            var addBtn = new Button(OnAddCurrency) { text = "Earn Currency" };
-            var spendBtn = new Button(OnSpendCurrency) { text = "Spend Currency" };
+            var addBtn = new Button(OnAddCurrency) { text = NexusLang.Get("cs_earn_currency") };
+            var spendBtn = new Button(OnSpendCurrency) { text = NexusLang.Get("cs_spend_currency") };
             ecoSection.Add(addBtn);
             ecoSection.Add(spendBtn);
 
@@ -75,10 +75,10 @@ namespace Nexus.Editor.Plugins
             {
                 var prefs = root.Context.Resolve<IPlayerPrefsService>();
                 string storageType = prefs.GetType().Name;
-                string saveInfo = $"Active Storage: {storageType}";
+                string saveInfo = string.Format(NexusLang.Get("cs_active_storage"), storageType);
                 if (prefs is EncryptedStorageService secureStorage)
                 {
-                    saveInfo += $" (AutoSave: {secureStorage.AutoSave})";
+                    saveInfo += string.Format(NexusLang.Get("cs_autosave"), secureStorage.AutoSave);
                 }
                 var storageLabel = new Label(saveInfo);
                 storageLabel.style.fontSize = 10;
@@ -91,25 +91,25 @@ namespace Nexus.Editor.Plugins
                 {
                     prefs.Save();
                     Debug.Log("[Nexus Editor] Storage changes flushed to disk.");
-                }) { text = "Save/Flush Storage to Disk" };
+                }) { text = NexusLang.Get("cs_save_flush") };
                 ecoSection.Add(flushBtn);
             }
             _content.Add(ecoSection);
 
             // Progression Section
-            var progSection = CreateSectionBox("Progression Debugger");
-            _levelField = new IntegerField("Jump To Level") { value = 1 };
+            var progSection = CreateSectionBox(NexusLang.Get("cs_sec_progression"));
+            _levelField = new IntegerField(NexusLang.Get("cs_jump_to_level")) { value = 1 };
             progSection.Add(_levelField);
-            var setLevelBtn = new Button(OnSetLevel) { text = "Set Level" };
+            var setLevelBtn = new Button(OnSetLevel) { text = NexusLang.Get("cs_set_level") };
             progSection.Add(setLevelBtn);
             _content.Add(progSection);
 
             // UI Window Stack Section
-            var uiSection = CreateSectionBox("UI Window Navigation");
-            _windowNameField = new TextField("Window Name") { value = "ShopScreen" };
+            var uiSection = CreateSectionBox(NexusLang.Get("cs_sec_ui"));
+            _windowNameField = new TextField(NexusLang.Get("cs_window_name")) { value = "ShopScreen" };
             uiSection.Add(_windowNameField);
-            var openWinBtn = new Button(OnOpenWindow) { text = "Open Window" };
-            var closeTopBtn = new Button(OnCloseTopWindow) { text = "Close Top Window" };
+            var openWinBtn = new Button(OnOpenWindow) { text = NexusLang.Get("cs_open_window") };
+            var closeTopBtn = new Button(OnCloseTopWindow) { text = NexusLang.Get("cs_close_top") };
             uiSection.Add(openWinBtn);
             uiSection.Add(closeTopBtn);
 
@@ -118,7 +118,7 @@ namespace Nexus.Editor.Plugins
                 var winMgr = root.Context.Resolve<IWindowManager>();
                 if (winMgr is WindowManager concreteWinMgr && concreteWinMgr.AssetProvider != null)
                 {
-                    var providerLabel = new Label($"UI Asset Provider: {concreteWinMgr.AssetProvider.GetType().Name}");
+                    var providerLabel = new Label(string.Format(NexusLang.Get("cs_asset_provider"), concreteWinMgr.AssetProvider.GetType().Name));
                     providerLabel.style.fontSize = 10;
                     providerLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
                     providerLabel.style.marginTop = 4;
@@ -127,7 +127,7 @@ namespace Nexus.Editor.Plugins
             }
 
             // Live open-window stack (G-3): refreshed on a 500 ms schedule.
-            var winStackTitle = new Label("Open Window Stack (live)");
+            var winStackTitle = new Label(NexusLang.Get("cs_open_stack"));
             winStackTitle.style.fontSize = 11;
             winStackTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
             winStackTitle.style.marginTop = 6;
@@ -139,10 +139,10 @@ namespace Nexus.Editor.Plugins
             _content.Add(uiSection);
 
             // Haptics & Feedback Section
-            var feedbackSection = CreateSectionBox("Haptics & Feedback Tester");
-            var lightHapticBtn = new Button(() => OnTestHaptic(HapticType.Light)) { text = "Trigger Light Haptic" };
-            var heavyHapticBtn = new Button(() => OnTestHaptic(HapticType.Heavy)) { text = "Trigger Heavy Haptic" };
-            var successFeedbackBtn = new Button(OnTestSuccessFeedback) { text = "Play Success Feedback" };
+            var feedbackSection = CreateSectionBox(NexusLang.Get("cs_sec_haptics"));
+            var lightHapticBtn = new Button(() => OnTestHaptic(HapticType.Light)) { text = NexusLang.Get("cs_light_haptic") };
+            var heavyHapticBtn = new Button(() => OnTestHaptic(HapticType.Heavy)) { text = NexusLang.Get("cs_heavy_haptic") };
+            var successFeedbackBtn = new Button(OnTestSuccessFeedback) { text = NexusLang.Get("cs_success_feedback") };
             feedbackSection.Add(lightHapticBtn);
             feedbackSection.Add(heavyHapticBtn);
             feedbackSection.Add(successFeedbackBtn);
@@ -167,17 +167,17 @@ namespace Nexus.Editor.Plugins
             var root = FindActiveRoot();
             if (root?.Context == null || !root.Context.Container.IsRegistered(typeof(IWindowManager)))
             {
-                _openWindowsList.Add(MakeDimLabel("  (no WindowManager registered)"));
+                _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_no_windowmanager")));
                 return;
             }
             if (root.Context.Resolve<IWindowManager>() is not WindowManager winMgr)
             {
-                _openWindowsList.Add(MakeDimLabel("  (custom IWindowManager — no introspection)"));
+                _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_custom_windowmanager")));
                 return;
             }
 
             var windows = winMgr.GetOpenWindowsSnapshot();
-            var header = new Label($"Open: {windows.Count}    Pending: {winMgr.PendingWindowCount}");
+            var header = new Label(string.Format(NexusLang.Get("cs_stack_header"), windows.Count, winMgr.PendingWindowCount));
             header.style.fontSize = 10;
             header.style.unityFontStyleAndWeight = FontStyle.Bold;
             header.style.color = new StyleColor(new Color(0.7f, 0.9f, 1f));
@@ -185,7 +185,7 @@ namespace Nexus.Editor.Plugins
 
             if (windows.Count == 0)
             {
-                _openWindowsList.Add(MakeDimLabel("  (stack empty)"));
+                _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_stack_empty")));
                 return;
             }
 

@@ -38,7 +38,7 @@ namespace Nexus.Editor
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
 
-            _view.Add(NexusEditorStyles.CreateToolbar(NexusLang.Get("tab_error_dashboard").ToUpper()));
+            _view.Add(NexusEditorStyles.CreateToolbar(NexusLang.Get("tab_errordashboard").ToUpper()));
 
             _summaryRow = new VisualElement
             {
@@ -92,21 +92,21 @@ namespace Nexus.Editor
                 }
             };
 
-            bar.Add(new Label("Severity:")
+            bar.Add(new Label(NexusLang.Get("ed_severity"))
             {
                 style = { color = NexusEditorStyles.TextSecondary, fontSize = 10, marginRight = 4 }
             });
-            bar.Add(SeverityFilterButton("All", null));
-            bar.Add(SeverityFilterButton("Info+", ErrorCollection.ErrorSeverity.Info));
-            bar.Add(SeverityFilterButton("Warn+", ErrorCollection.ErrorSeverity.Warning));
-            bar.Add(SeverityFilterButton("Error+", ErrorCollection.ErrorSeverity.Error));
-            bar.Add(SeverityFilterButton("Critical", ErrorCollection.ErrorSeverity.Critical));
+            bar.Add(SeverityFilterButton(NexusLang.Get("ed_sev_all"), null));
+            bar.Add(SeverityFilterButton(NexusLang.Get("ed_sev_info"), ErrorCollection.ErrorSeverity.Info));
+            bar.Add(SeverityFilterButton(NexusLang.Get("ed_sev_warn"), ErrorCollection.ErrorSeverity.Warning));
+            bar.Add(SeverityFilterButton(NexusLang.Get("ed_sev_error"), ErrorCollection.ErrorSeverity.Error));
+            bar.Add(SeverityFilterButton(NexusLang.Get("ed_sev_critical"), ErrorCollection.ErrorSeverity.Critical));
 
-            var categoryEnum = new EnumField("Category", ErrorCollection.ErrorCategory.General)
+            var categoryEnum = new EnumField(NexusLang.Get("ed_category"), ErrorCollection.ErrorCategory.General)
             {
                 style = { marginLeft = 12, minWidth = 150 }
             };
-            var catToggle = new Toggle("Filter Category") { style = { marginLeft = 6 } };
+            var catToggle = new Toggle(NexusLang.Get("ed_filter_category")) { style = { marginLeft = 6 } };
             categoryEnum.RegisterValueChangedCallback(evt =>
             {
                 if (catToggle.value)
@@ -126,7 +126,7 @@ namespace Nexus.Editor
             bar.Add(categoryEnum);
 
             var search = new TextField { style = { marginLeft = 12, minWidth = 160 } };
-            search.textEdition.placeholder = "Search message...";
+            search.textEdition.placeholder = NexusLang.Get("ed_search_placeholder");
             search.RegisterValueChangedCallback(evt =>
             {
                 _searchText = evt.newValue ?? string.Empty;
@@ -137,12 +137,12 @@ namespace Nexus.Editor
             var spacer = new VisualElement { style = { flexGrow = 1 } };
             bar.Add(spacer);
 
-            var captureToggle = new Toggle("Capture") { value = ErrorCollection.Enabled, style = { marginRight = 8 } };
+            var captureToggle = new Toggle(NexusLang.Get("ed_capture")) { value = ErrorCollection.Enabled, style = { marginRight = 8 } };
             captureToggle.RegisterValueChangedCallback(evt => ErrorCollection.Enabled = evt.newValue);
             bar.Add(captureToggle);
 
-            bar.Add(NexusEditorStyles.CreateButton("Export CSV", ExportCsv, NexusEditorStyles.BtnBlue));
-            bar.Add(NexusEditorStyles.CreateButton("Clear", () => { ErrorCollection.Clear(); _dirty = true; RefreshUI(); }, NexusEditorStyles.BtnRed));
+            bar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ed_export_csv"), ExportCsv, NexusEditorStyles.BtnBlue));
+            bar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ed_clear"), () => { ErrorCollection.Clear(); _dirty = true; RefreshUI(); }, NexusEditorStyles.BtnRed));
 
             return bar;
         }
@@ -178,11 +178,11 @@ namespace Nexus.Editor
             _summaryRow.Clear();
             var counts = ErrorCollection.GetSeverityCounts();
 
-            _summaryRow.Add(SummaryPill("TOTAL", ErrorCollection.TotalErrorCount, NexusEditorStyles.CardBg, Color.white));
-            _summaryRow.Add(SummaryPill("INFO", GetCount(counts, ErrorCollection.ErrorSeverity.Info), NexusEditorStyles.CardBgBlue, NexusEditorStyles.AccentBlue));
-            _summaryRow.Add(SummaryPill("WARN", GetCount(counts, ErrorCollection.ErrorSeverity.Warning), NexusEditorStyles.CardBgYellow, NexusEditorStyles.AccentYellow));
-            _summaryRow.Add(SummaryPill("ERROR", GetCount(counts, ErrorCollection.ErrorSeverity.Error), NexusEditorStyles.CardBgRed, NexusEditorStyles.AccentRed));
-            _summaryRow.Add(SummaryPill("CRITICAL", GetCount(counts, ErrorCollection.ErrorSeverity.Critical), NexusEditorStyles.CardBgRed, NexusEditorStyles.AccentOrange));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_total"), ErrorCollection.TotalErrorCount, NexusEditorStyles.CardBg, Color.white));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_info"), GetCount(counts, ErrorCollection.ErrorSeverity.Info), NexusEditorStyles.CardBgBlue, NexusEditorStyles.AccentBlue));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_warn"), GetCount(counts, ErrorCollection.ErrorSeverity.Warning), NexusEditorStyles.CardBgYellow, NexusEditorStyles.AccentYellow));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_error"), GetCount(counts, ErrorCollection.ErrorSeverity.Error), NexusEditorStyles.CardBgRed, NexusEditorStyles.AccentRed));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_critical"), GetCount(counts, ErrorCollection.ErrorSeverity.Critical), NexusEditorStyles.CardBgRed, NexusEditorStyles.AccentOrange));
         }
 
         private static int GetCount(Dictionary<ErrorCollection.ErrorSeverity, int> counts, ErrorCollection.ErrorSeverity s)
@@ -227,10 +227,10 @@ namespace Nexus.Editor
                 _scrollView.Add(BuildErrorRow(error));
 
             if (errors.Length == 0)
-                _scrollView.Add(NexusEditorStyles.CreateEmptyState("No errors match the current filters."));
+                _scrollView.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("ed_empty")));
 
             if (_statusBar != null)
-                _statusBar.text = $"Showing {errors.Length} of {ErrorCollection.TotalErrorCount} (limit {DefaultLimit})   |   Capture: {(ErrorCollection.Enabled ? "ON" : "OFF")}";
+                _statusBar.text = string.Format(NexusLang.Get("ed_status"), errors.Length, ErrorCollection.TotalErrorCount, DefaultLimit, ErrorCollection.Enabled ? NexusLang.Get("ed_on") : NexusLang.Get("ed_off"));
         }
 
         private VisualElement BuildErrorRow(ErrorCollection.ErrorEntry error)
@@ -274,7 +274,7 @@ namespace Nexus.Editor
             foldout.Add(meta);
 
             if (!string.IsNullOrEmpty(error.Context))
-                foldout.Add(new Label($"Context: {error.Context}") { style = { color = NexusEditorStyles.TextSecondary, fontSize = 10, whiteSpace = WhiteSpace.Normal } });
+                foldout.Add(new Label(string.Format(NexusLang.Get("ed_context_prefix"), error.Context)) { style = { color = NexusEditorStyles.TextSecondary, fontSize = 10, whiteSpace = WhiteSpace.Normal } });
 
             if (!string.IsNullOrEmpty(error.StackTrace))
             {

@@ -625,9 +625,9 @@ namespace Nexus.Editor
             var contextChoices = activeContexts.Select(c => c is Context ctx ? ctx.ScopeTag : "Unknown").ToList();
 
             var topActions = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginBottom = 6 } };
-            topActions.Add(NexusEditorStyles.CreateButton("Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
-            topActions.Add(NexusEditorStyles.CreateButton("Game Manager", () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
-            topActions.Add(NexusEditorStyles.CreateButton("Refresh", RefreshTesterView, NexusEditorStyles.BtnGray));
+            topActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            topActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_gamemanager"), () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
+            topActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("common_refresh"), RefreshTesterView, NexusEditorStyles.BtnGray));
             _testerFormContainer.Add(topActions);
 
             if (contextChoices.Count == 0)
@@ -640,7 +640,7 @@ namespace Nexus.Editor
             _contextTargetDropdown.tooltip = "Fire the test signal into the selected context";
             _testerFormContainer.Add(_contextTargetDropdown);
 
-            _refreshTargetsButton = NexusEditorStyles.CreateButton("Refresh Targets", RefreshTesterView, NexusEditorStyles.BtnGray);
+            _refreshTargetsButton = NexusEditorStyles.CreateButton(NexusLang.Get("ex_refresh_targets"), RefreshTesterView, NexusEditorStyles.BtnGray);
             _refreshTargetsButton.style.marginTop = 4;
             _testerFormContainer.Add(_refreshTargetsButton);
 

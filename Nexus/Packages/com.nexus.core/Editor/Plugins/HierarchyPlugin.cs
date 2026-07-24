@@ -242,9 +242,9 @@ namespace Nexus.Editor
             card.Add(header);
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-            actionRow.Add(NexusEditorStyles.CreateButton("Open Game Manager", () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
-            actionRow.Add(NexusEditorStyles.CreateButton("Open Explorer", () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
-            actionRow.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_gamemanager"), () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
+            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
             card.Add(actionRow);
 
             // Nested active singletons list

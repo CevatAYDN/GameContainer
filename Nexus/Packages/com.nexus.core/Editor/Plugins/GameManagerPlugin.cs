@@ -107,8 +107,8 @@ namespace Nexus.Editor
                     return;
             });
             quickBar.Add(_quickFindField);
-            quickBar.Add(NexusEditorStyles.CreateButton("Go", ExecuteQuickFind, NexusEditorStyles.BtnBlue));
-            quickBar.Add(NexusEditorStyles.CreateButton("Refresh All", () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
+            quickBar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gm_go"), ExecuteQuickFind, NexusEditorStyles.BtnBlue));
+            quickBar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gm_refresh_all"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
             _root.Add(quickBar);
 
             // Scheduled refresh while in Play Mode
@@ -464,11 +464,11 @@ namespace Nexus.Editor
             AddStatCard(grid, NexusLang.Get("gamemanager_stat_roots"), s.RootCount.ToString(), NexusEditorStyles.DimText, NexusLang.Get("gamemanager_desc_roots"));
 
             var gridActions = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginLeft = 15, marginTop = 8 } };
-            gridActions.Add(NexusEditorStyles.CreateButton("Open Hierarchy", () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
-            gridActions.Add(NexusEditorStyles.CreateButton("Open Explorer", () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
-            gridActions.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
-            gridActions.Add(NexusEditorStyles.CreateButton("Open Type Analyzer", () => Window?.OpenPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue));
-            gridActions.Add(NexusEditorStyles.CreateButton("Refresh", () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
+            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_hierarchy"), () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
+            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_typeanalyzer"), () => Window?.OpenPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue));
+            gridActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("common_refresh"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
             _content.Add(gridActions);
 
             _content.Add(grid);
@@ -491,15 +491,15 @@ namespace Nexus.Editor
             openGraph.style.marginLeft = 5;
             actionsRow.Add(openGraph);
 
-            var openHierarchy = NexusEditorStyles.CreateButton("Hierarchy", () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen);
+            var openHierarchy = NexusEditorStyles.CreateButton(NexusLang.Get("tab_hierarchy"), () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen);
             openHierarchy.style.marginLeft = 5;
             actionsRow.Add(openHierarchy);
 
-            var openExplorer = NexusEditorStyles.CreateButton("Explorer", () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple);
+            var openExplorer = NexusEditorStyles.CreateButton(NexusLang.Get("tab_explorer"), () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple);
             openExplorer.style.marginLeft = 5;
             actionsRow.Add(openExplorer);
 
-            var openTypeAnalyzer = NexusEditorStyles.CreateButton("Type Analyzer", () => Window?.OpenPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue);
+            var openTypeAnalyzer = NexusEditorStyles.CreateButton(NexusLang.Get("tab_typeanalyzer"), () => Window?.OpenPlugin("TypeAnalyzer"), NexusEditorStyles.BtnBlue);
             openTypeAnalyzer.style.marginLeft = 5;
             actionsRow.Add(openTypeAnalyzer);
 
@@ -582,7 +582,7 @@ namespace Nexus.Editor
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts == null || contexts.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No active contexts. Enter Play Mode to activate."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_contexts")));
                 return;
             }
 
@@ -617,9 +617,9 @@ namespace Nexus.Editor
                 });
 
                 var rowActionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-                rowActionRow.Add(NexusEditorStyles.CreateButton("Open Hierarchy", () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
-                rowActionRow.Add(NexusEditorStyles.CreateButton("Open Explorer", () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
-                rowActionRow.Add(NexusEditorStyles.CreateButton("Open Tracer", () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_hierarchy"), () => Window?.OpenPlugin("Hierarchy"), NexusEditorStyles.BtnGreen));
+                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+                rowActionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
                 card.Add(rowActionRow);
 
                 var header = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
@@ -692,8 +692,8 @@ namespace Nexus.Editor
 
             if (s.ModelNames.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No IReactiveModel implementations found."));
-                _content.Add(NexusEditorStyles.CreateHint("Tip: Implement IReactiveModel on your models to enable live inspection here."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_reactive_models")));
+                _content.Add(NexusEditorStyles.CreateHint(NexusLang.Get("gm_tip_reactive")));
                 return;
             }
 
@@ -721,7 +721,7 @@ namespace Nexus.Editor
 
             if (s.SignalNames.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No signal structs found."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_signals")));
                 return;
             }
 
@@ -740,7 +740,7 @@ namespace Nexus.Editor
                 }
                 else
                 {
-                    row.Add(NexusEditorStyles.CreatePill("unhandled", new Color(0.3f, 0.15f, 0.15f), new Color(1f, 0.4f, 0.4f)));
+                    row.Add(NexusEditorStyles.CreatePill(NexusLang.Get("gm_pill_unhandled"), new Color(0.3f, 0.15f, 0.15f), new Color(1f, 0.4f, 0.4f)));
                 }
 
                 row.RegisterCallback<MouseDownEvent>(evt =>
@@ -761,7 +761,7 @@ namespace Nexus.Editor
 
             if (s.CommandEntries.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No command bindings found."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_commands")));
                 return;
             }
 
@@ -849,7 +849,7 @@ namespace Nexus.Editor
 
             if (viewTypes.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No View subclasses found."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_views")));
                 return;
             }
 
@@ -890,8 +890,8 @@ namespace Nexus.Editor
 
             if (serviceTypes.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No INexusService implementations found."));
-                _content.Add(NexusEditorStyles.CreateHint("Tip: Use builder.BindService<TInterface, TImpl>() to register services in your lifecycle."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_services")));
+                _content.Add(NexusEditorStyles.CreateHint(NexusLang.Get("gm_tip_services")));
                 return;
             }
 
@@ -1005,7 +1005,7 @@ namespace Nexus.Editor
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts == null || contexts.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No active contexts."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_active_contexts")));
                 return;
             }
 
@@ -1017,7 +1017,7 @@ namespace Nexus.Editor
                 };
                 _content.Add(ctxLabel);
 
-                var hint = NexusEditorStyles.CreateHint("Live model inspection resolves IReactiveModel instances. Open the Live Tracer for real-time signal monitoring.");
+                var hint = NexusEditorStyles.CreateHint(NexusLang.Get("gm_hint_live_model"));
                 hint.style.marginLeft = 15;
                 _content.Add(hint);
             }
@@ -1053,14 +1053,14 @@ namespace Nexus.Editor
 
             if (!playing)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("Enter Play Mode to fire test signals."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_enter_playmode_fire")));
                 return;
             }
 
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts == null || contexts.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState("No active contexts to fire signals into."));
+                _content.Add(NexusEditorStyles.CreateEmptyState(NexusLang.Get("gm_no_contexts_fire")));
                 return;
             }
 
@@ -1162,7 +1162,7 @@ namespace Nexus.Editor
             card.Add(buttonRow);
             _content.Add(card);
 
-            var hint = NexusEditorStyles.CreateHint("Select a target context (or 'All (matching)') above, then click any signal to fire it. Use the Explorer tab for signals with custom payloads.");
+            var hint = NexusEditorStyles.CreateHint(NexusLang.Get("gm_hint_fire"));
             hint.style.marginLeft = 10;
             _content.Add(hint);
         }
