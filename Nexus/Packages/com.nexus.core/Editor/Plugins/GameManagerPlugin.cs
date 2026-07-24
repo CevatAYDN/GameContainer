@@ -617,7 +617,7 @@ namespace Nexus.Editor
                     foreach (var kvp in ctx.SignalBus.RegisteredHandlers)
                         cmdCount += kvp.Value.Count;
                     if (cmdCount > 0)
-                        meta.Add(NexusEditorStyles.CreatePill($"{cmdCount} commands", NexusEditorStyles.BtnGray, NexusEditorStyles.AccentOrange));
+                        meta.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gm_count_commands"), cmdCount), NexusEditorStyles.BtnGray, NexusEditorStyles.AccentOrange));
                 }
 
                 card.Add(meta);
@@ -633,9 +633,9 @@ namespace Nexus.Editor
                         else otherCount++;
                     }
                     var stats = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
-                    stats.Add(NexusEditorStyles.CreatePill($"{modelCount} models", NexusEditorStyles.BtnGray, NexusEditorStyles.AccentBlue));
-                    stats.Add(NexusEditorStyles.CreatePill($"{serviceCount} services", NexusEditorStyles.BtnGray, NexusEditorStyles.AccentGreen));
-                    stats.Add(NexusEditorStyles.CreatePill($"{otherCount} others", NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
+                    stats.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gm_count_models"), modelCount), NexusEditorStyles.BtnGray, NexusEditorStyles.AccentBlue));
+                    stats.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gm_count_services"), serviceCount), NexusEditorStyles.BtnGray, NexusEditorStyles.AccentGreen));
+                    stats.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gm_count_others"), otherCount), NexusEditorStyles.BtnGray, NexusEditorStyles.TextSecondary));
                     card.Add(stats);
                 }
 
@@ -692,7 +692,7 @@ namespace Nexus.Editor
                 int handlerCount = s.CommandEntries.Count(e => e.sig == sig || e.sig.Contains(sig));
                 if (handlerCount > 0)
                 {
-                    row.Add(NexusEditorStyles.CreatePill($"{handlerCount} handler(s)", NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
+                    row.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gm_count_handlers"), handlerCount), NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
                 }
                 else
                 {

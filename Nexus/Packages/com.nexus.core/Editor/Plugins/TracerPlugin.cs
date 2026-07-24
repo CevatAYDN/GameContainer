@@ -127,9 +127,9 @@ namespace Nexus.Editor
             filterBar.Add(MakeFilterButton(NexusLang.Get("tracer_mod"), () => { _filterModelChange = !_filterModelChange; RefreshTracerLogs(); }, () => _filterModelChange));
 
             filterBar.Add(new Label(NexusLang.Get("tracer_status_filter")) { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
-            filterBar.Add(MakeFilterButton("OK", () => { _filterOk = !_filterOk; RefreshTracerLogs(); }, () => _filterOk, NexusEditorStyles.AccentGreen));
-            filterBar.Add(MakeFilterButton("FAIL", () => { _filterFailed = !_filterFailed; RefreshTracerLogs(); }, () => _filterFailed, NexusEditorStyles.AccentRed));
-            filterBar.Add(MakeFilterButton("CANCEL", () => { _filterCancelled = !_filterCancelled; RefreshTracerLogs(); }, () => _filterCancelled, NexusEditorStyles.AccentYellow));
+            filterBar.Add(MakeFilterButton(NexusLang.Get("tracer_status_ok"), () => { _filterOk = !_filterOk; RefreshTracerLogs(); }, () => _filterOk, NexusEditorStyles.AccentGreen));
+            filterBar.Add(MakeFilterButton(NexusLang.Get("tracer_status_fail"), () => { _filterFailed = !_filterFailed; RefreshTracerLogs(); }, () => _filterFailed, NexusEditorStyles.AccentRed));
+            filterBar.Add(MakeFilterButton(NexusLang.Get("tracer_status_cancel"), () => { _filterCancelled = !_filterCancelled; RefreshTracerLogs(); }, () => _filterCancelled, NexusEditorStyles.AccentYellow));
 
             _view.Add(filterBar);
 

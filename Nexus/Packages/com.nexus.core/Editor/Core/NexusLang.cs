@@ -69,6 +69,14 @@ namespace Nexus.Editor
             s_strings["dashboard"] = "Dashboard";
             s_strings["system_active"] = "SYSTEM ACTIVE";
             s_strings["system_standby"] = "SYSTEM STANDBY";
+            s_strings["gm_count_commands"] = "{0} commands";
+            s_strings["gm_count_models"] = "{0} models";
+            s_strings["gm_count_services"] = "{0} services";
+            s_strings["gm_count_others"] = "{0} others";
+            s_strings["gm_count_handlers"] = "{0} handler(s)";
+            s_strings["tracer_status_ok"] = "OK";
+            s_strings["tracer_status_fail"] = "FAIL";
+            s_strings["tracer_status_cancel"] = "CANCEL";
             s_strings["contexts"] = "Contexts";
             s_strings["handlers"] = "Handlers";
             s_strings["roots"] = "Roots";
