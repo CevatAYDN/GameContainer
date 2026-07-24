@@ -13,7 +13,7 @@ namespace Nexus.Editor
     {
         public override string Id => "TypeAnalyzer";
         public override string DisplayName => NexusLang.Get("action_typeanalyzer_title");
-        public override int Order => 7;
+        public override int Order => 8;
 
         private TextField _searchField;
         private ScrollView _scrollView;
@@ -142,7 +142,7 @@ namespace Nexus.Editor
 
                     foreach (var t in types)
                     {
-                        if (t != null && (t.Name.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase) || t.FullName.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase)))
+                        if (t != null && (t.Name.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase) || (t.FullName != null && t.FullName.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase))))
                         {
                             targetType = t;
                             break;

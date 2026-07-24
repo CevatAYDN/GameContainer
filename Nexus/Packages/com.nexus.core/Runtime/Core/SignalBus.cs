@@ -335,11 +335,12 @@ namespace Nexus.Core
                 throw new ArgumentException($"Composite command requires between 1 and 64 signal types. Received {signalTypes.Length}.", nameof(signalTypes));
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            // P1-14 fix: composite triggers cannot inject signal payloads — warn early
-            // if the user implemented a generic command interface expecting one.
+            // Composite commands cannot use the single-signal generic command interfaces
+            // (ICommand<T>/IAsyncCommand<T>) since a composite spans multiple signal types.
+            // Guide the user toward ICompositeCommand/IAsyncCompositeCommand for payload access.
             if (ImplementsGenericInterface(commandType, typeof(ICommand<>)) || ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>)))
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' implements a generic command interface, but composite triggers do not support signal payload injection. Implement non-generic ICommand/IAsyncCommand instead.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' implements a single-signal generic command interface (ICommand<T>/IAsyncCommand<T>), which is not supported for composites. Implement ICompositeCommand / IAsyncCompositeCommand to receive all trigger payloads, or non-generic ICommand / IAsyncCommand if no payload is needed.");
             }
 #endif
 
@@ -650,7 +651,7 @@ namespace Nexus.Core
                 }
 
                 // Process composite triggers
-                ProcessCompositeTriggers(type);
+                ProcessCompositeTriggers(signal);
 #if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.OK);
 #endif
@@ -861,7 +862,7 @@ namespace Nexus.Core
                 }
 
                 // Process composite triggers
-                ProcessCompositeTriggers(type);
+                ProcessCompositeTriggers(signal);
 #if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.OK);
 #endif
@@ -1292,11 +1293,15 @@ namespace Nexus.Core
             setter(command, signal);
         }
 
-        private void ProcessCompositeTriggers(Type signalType)
+        private void ProcessCompositeTriggers<T>(T signal) where T : struct
         {
             // P1-14 fix: collect due triggers under _compositeLock, then execute them
             // OUTSIDE the lock so user command code never runs while holding it.
-            List<CompositeTriggerState> dueTriggers = null;
+            var signalType = typeof(T);
+            List<(CompositeTriggerState trigger, CompositeContext context)> dueTriggers = null;
+            // Composite payload support: box the signal at most once, and only when it actually
+            // feeds a registered composite trigger. Non-composite signals never allocate here.
+            object boxedSignal = null;
 
             lock (_compositeLock)
             {
@@ -1310,12 +1315,17 @@ namespace Nexus.Core
                     int index = Array.IndexOf(trigger.RequiredSignals, signalType);
                     if (index >= 0)
                     {
+                        boxedSignal ??= signal;
+                        trigger.CapturePayload(index, boxedSignal);
                         trigger.CurrentMask |= (1UL << index);
 
                         if (trigger.CurrentMask == trigger.TargetMask)
                         {
-                            dueTriggers ??= new List<CompositeTriggerState>();
-                            dueTriggers.Add(trigger);
+                            // Snapshot payloads INSIDE the lock so a concurrent fire that resets a
+                            // repeatable trigger cannot corrupt the context handed to the command.
+                            var context = new CompositeContext(trigger.RequiredSignals, trigger.SnapshotPayloads());
+                            dueTriggers ??= new List<(CompositeTriggerState, CompositeContext)>();
+                            dueTriggers.Add((trigger, context));
 
                             if (trigger.OneShot)
                             {
@@ -1324,6 +1334,7 @@ namespace Nexus.Core
                             else
                             {
                                 trigger.CurrentMask = 0;
+                                trigger.ClearPayloads();
                             }
                         }
                     }
@@ -1334,12 +1345,12 @@ namespace Nexus.Core
             {
                 for (int i = 0; i < dueTriggers.Count; i++)
                 {
-                    ExecuteCompositeCommand(dueTriggers[i]);
+                    ExecuteCompositeCommand(dueTriggers[i].trigger, dueTriggers[i].context);
                 }
             }
         }
 
-        private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command)
+        private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command, CompositeContext context)
         {
             int retryCount = 0;
             bool shouldRun = true;
@@ -1359,9 +1370,38 @@ namespace Nexus.Core
                         _container.Inject(command);
                     }
 
-                    if (command is ICommand syncCmd)
+                    if (command is ICompositeCommand syncCompCmd)
+                    {
+                        ExecuteWithDecorators(syncCompCmd, () => syncCompCmd.Execute(context));
+                    }
+                    else if (command is ICommand syncCmd)
                     {
                         ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
+                    }
+                    else if (command is IAsyncCompositeCommand asyncCompCmd)
+                    {
+                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                        Interlocked.Increment(ref _inFlightAsyncCommands);
+                        inFlightIncremented = true;
+                        try
+                        {
+                            if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                            {
+                                await ExecuteWithDecoratorsAsync(asyncCompCmd, async () => await asyncCompCmd.ExecuteAsync(context, ct));
+                            }
+                            else
+                            {
+                                await asyncCompCmd.ExecuteAsync(context, ct);
+                            }
+                        }
+                        finally
+                        {
+                            if (inFlightIncremented)
+                            {
+                                Interlocked.Decrement(ref _inFlightAsyncCommands);
+                                inFlightIncremented = false;
+                            }
+                        }
                     }
                     else if (command is IAsyncCommand asyncCmd)
                     {
@@ -1422,13 +1462,13 @@ namespace Nexus.Core
             }
         }
 
-        private void ExecuteCompositeCommandAsync(CompositeTriggerState trigger, object command)
+        private void ExecuteCompositeCommandAsync(CompositeTriggerState trigger, object command, CompositeContext context)
         {
-            SafeAsyncRunner.Run(() => ExecuteCompositeCommandAsyncCore(trigger, command), 
+            SafeAsyncRunner.Run(() => ExecuteCompositeCommandAsyncCore(trigger, command, context), 
                 $"Composite command '{trigger.CommandType.FullName}' failed.");
         }
 
-        private void ExecuteCompositeCommand(CompositeTriggerState trigger)
+        private void ExecuteCompositeCommand(CompositeTriggerState trigger, CompositeContext context)
         {
             int retryCount = 0;
             bool shouldRun = true;
@@ -1443,11 +1483,24 @@ namespace Nexus.Core
                 {
                     command = _poolManager.GetCommand(trigger.CommandType);
                     _container.Inject(command);
+                    bool hasDecorators = _context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0;
 
-                    if (command is ICommand syncCmd)
+                    if (command is ICompositeCommand compCmd)
+                    {
+                        // Composite payload support: pass the captured signal context to the command.
+                        if (hasDecorators)
+                        {
+                            ExecuteWithDecorators(compCmd, () => compCmd.Execute(context));
+                        }
+                        else
+                        {
+                            compCmd.Execute(context);
+                        }
+                    }
+                    else if (command is ICommand syncCmd)
                     {
                         // P1-14 fix: composite commands run through the decorator pipeline.
-                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                        if (hasDecorators)
                         {
                             ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
                         }
@@ -1456,11 +1509,11 @@ namespace Nexus.Core
                             syncCmd.Execute();
                         }
                     }
-                    else if (command is IAsyncCommand asyncCmd)
+                    else if (command is IAsyncCompositeCommand || command is IAsyncCommand)
                     {
                         var cmdForAsync = command;
                         command = null; // Prevent finally from returning it; async method owns it now
-                        ExecuteCompositeCommandAsync(trigger, cmdForAsync);
+                        ExecuteCompositeCommandAsync(trigger, cmdForAsync, context);
                         shouldRun = false;
                         return;
                     }

@@ -431,6 +431,67 @@ namespace Nexus.Core.Services
 
         public void OnDispose() => Dispose();
 
+        // ── Editor introspection (G-3) ────────────────────────────
+
+        /// <summary>Immutable description of one open window for editor visibility.</summary>
+        public readonly struct WindowInfo
+        {
+            public readonly string Name;
+            public readonly UILayer Layer;
+            public readonly int HistoryOrder;
+            public readonly bool IsAlive;
+            public WindowInfo(string name, UILayer layer, int historyOrder, bool isAlive)
+            {
+                Name = name; Layer = layer; HistoryOrder = historyOrder; IsAlive = isAlive;
+            }
+        }
+
+        /// <summary>
+        /// Thread-safe snapshot of currently open windows with their UI layer and open order.
+        /// Read-only: never mutates manager state. Intended for editor tooling.
+        /// </summary>
+        public IReadOnlyList<WindowInfo> GetOpenWindowsSnapshot()
+        {
+            var result = new List<WindowInfo>();
+            _windowLock.Wait();
+            try
+            {
+                foreach (var kvp in _activeWindows)
+                {
+                    int order = _windowHistory.LastIndexOf(kvp.Key);
+                    result.Add(new WindowInfo(kvp.Key, ResolveLayer(kvp.Value), order, kvp.Value != null));
+                }
+            }
+            finally
+            {
+                _windowLock.Release();
+            }
+            result.Sort((a, b) => a.HistoryOrder.CompareTo(b.HistoryOrder));
+            return result;
+        }
+
+        /// <summary>Number of windows currently mid-open (awaiting instantiation).</summary>
+        public int PendingWindowCount
+        {
+            get
+            {
+                _windowLock.Wait();
+                try { return _pendingOpenWindows.Count; }
+                finally { _windowLock.Release(); }
+            }
+        }
+
+        private UILayer ResolveLayer(GameObject go)
+        {
+            if (go == null) return UILayer.Screen;
+            var parent = go.transform.parent;
+            foreach (var kvp in _layerRoots)
+            {
+                if (kvp.Value == parent) return kvp.Key;
+            }
+            return UILayer.Screen;
+        }
+
         public void Dispose()
         {
             // Destroy all active windows directly; lifecycle events are skipped during teardown

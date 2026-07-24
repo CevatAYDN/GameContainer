@@ -13,7 +13,7 @@ namespace Nexus.Editor
     {
         public override string Id => "Help";
         public override string DisplayName => NexusLang.Get("action_help_title");
-        public override int Order => 10;
+        public override int Order => 12;
 
         private VisualElement _view;
         private ScrollView _scrollView;

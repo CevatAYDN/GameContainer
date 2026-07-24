@@ -263,7 +263,7 @@ namespace Nexus.Editor
             langContainer.Add(trBtn);
             _sidebar.Add(langContainer);
 
-            var versionLabel = new Label("v0.3.1");
+            var versionLabel = new Label("v0.4.0");
             versionLabel.style.fontSize = 9;
             versionLabel.style.color = new StyleColor(NexusEditorStyles.DimText);
             versionLabel.style.alignSelf = Align.Center;
@@ -587,7 +587,6 @@ namespace Nexus.Editor
                 case KeyCode.Alpha7: index = 6; break;
                 case KeyCode.Alpha8: index = 7; break;
                 case KeyCode.Alpha9: index = 8; break;
-                case KeyCode.F5: RefreshActivePlugin(); _statusBar.text += " ⚡"; return;
             }
 
             if (index >= 0 && index < _plugins.Count)

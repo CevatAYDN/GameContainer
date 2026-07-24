@@ -96,6 +96,7 @@ namespace Nexus.Editor
 
             ScanExplorerAndPopulate();
 
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             
             RenderTab();
@@ -276,6 +277,7 @@ namespace Nexus.Editor
                         {
                             Type interfaceType = entry.Key as Type;
                             object bindingObj = entry.Value;
+                            if (bindingObj == null) continue;
                             
                             var instanceProp = bindingObj.GetType().GetProperty("Instance", BindingFlags.Public | BindingFlags.Instance);
                             if (instanceProp != null)

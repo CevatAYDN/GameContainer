@@ -11,6 +11,33 @@ namespace Nexus.Tests
         public readonly struct SignalB { }
         public readonly struct SignalC { }
 
+        public readonly struct ScoreSignal
+        {
+            public readonly int Score;
+            public ScoreSignal(int score) { Score = score; }
+        }
+
+        public readonly struct ComboSignal
+        {
+            public readonly int Combo;
+            public ComboSignal(int combo) { Combo = combo; }
+        }
+
+        public class PayloadCompositeCommand : ICompositeCommand
+        {
+            public static int ExecutionCount;
+            public static bool HadScore;
+            public static int CapturedScore;
+            public static int CapturedCombo;
+            public void Execute(CompositeContext signals)
+            {
+                ExecutionCount++;
+                HadScore = signals.TryGet<ScoreSignal>(out var score);
+                CapturedScore = score.Score;
+                CapturedCombo = signals.Get<ComboSignal>().Combo;
+            }
+        }
+
         public class TestCompositeCommand : ICommand
         {
             public static int ExecutionCount;
@@ -42,6 +69,10 @@ namespace Nexus.Tests
             HighPriorityCompositeCommand.RunOrder = 0;
             HighPriorityCompositeCommand.ObservedOrder = 0;
             LowPriorityCompositeCommand.ObservedOrder = 0;
+            PayloadCompositeCommand.ExecutionCount = 0;
+            PayloadCompositeCommand.HadScore = false;
+            PayloadCompositeCommand.CapturedScore = 0;
+            PayloadCompositeCommand.CapturedCombo = 0;
             _container = new NexusDI();
             _poolManager = new CommandPoolManager(_container);
             _context = new MockContext();
@@ -150,6 +181,51 @@ namespace Nexus.Tests
 
             Assert.AreEqual(1, HighPriorityCompositeCommand.ObservedOrder);
             Assert.AreEqual(2, LowPriorityCompositeCommand.ObservedOrder);
+        }
+
+        [Test]
+        public void CompositeCommand_ReceivesSignalPayloads()
+        {
+            _signalBus.RegisterCompositeCommand(
+                new[] { typeof(ScoreSignal), typeof(ComboSignal) },
+                typeof(PayloadCompositeCommand),
+                oneShot: true,
+                priority: 0,
+                isAsync: false
+            );
+
+            _signalBus.Fire(new ScoreSignal(42));
+            _signalBus.Fire(new ComboSignal(7));
+
+            Assert.AreEqual(1, PayloadCompositeCommand.ExecutionCount);
+            Assert.IsTrue(PayloadCompositeCommand.HadScore, "ScoreSignal payload should be present in the composite context.");
+            Assert.AreEqual(42, PayloadCompositeCommand.CapturedScore);
+            Assert.AreEqual(7, PayloadCompositeCommand.CapturedCombo);
+        }
+
+        [Test]
+        public void ReTriggerable_CapturesMostRecentPayloadPerCycle()
+        {
+            _signalBus.RegisterCompositeCommand(
+                new[] { typeof(ScoreSignal), typeof(ComboSignal) },
+                typeof(PayloadCompositeCommand),
+                oneShot: false,
+                priority: 0,
+                isAsync: false
+            );
+
+            // First cycle.
+            _signalBus.Fire(new ScoreSignal(1));
+            _signalBus.Fire(new ComboSignal(1));
+            Assert.AreEqual(1, PayloadCompositeCommand.ExecutionCount);
+            Assert.AreEqual(1, PayloadCompositeCommand.CapturedScore);
+
+            // Second cycle — payloads must reflect the latest fire, not stale values.
+            _signalBus.Fire(new ScoreSignal(99));
+            _signalBus.Fire(new ComboSignal(50));
+            Assert.AreEqual(2, PayloadCompositeCommand.ExecutionCount);
+            Assert.AreEqual(99, PayloadCompositeCommand.CapturedScore);
+            Assert.AreEqual(50, PayloadCompositeCommand.CapturedCombo);
         }
     }
 }

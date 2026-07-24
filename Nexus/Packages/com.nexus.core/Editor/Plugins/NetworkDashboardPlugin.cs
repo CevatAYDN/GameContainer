@@ -16,7 +16,7 @@ namespace Nexus.Editor
     {
         public override string Id => "NetworkDashboard";
         public override string DisplayName => NexusLang.Get("tab_networkdashboard");
-        public override int Order => 10;
+        public override int Order => 11;
 
         // ── State ─────────────────────────────────────────────────
         private readonly List<NetworkMonitor.NetworkEvent> _filteredEvents = new();
@@ -67,7 +67,7 @@ namespace Nexus.Editor
             SubscribeEvents();
             _refreshSchedule = _view.schedule.Execute(RefreshStatus).Every(500);
             RefreshStatus();
-            RebuildEventTable();
+            ApplyFilters();
 
             return _view;
         }
@@ -79,10 +79,8 @@ namespace Nexus.Editor
             base.OnDisable();
         }
 
-        public override void OnUpdate()
-        {
-            RefreshStatus();
-        }
+        // Latency is sampled once per 500ms tick by _refreshSchedule; overriding OnUpdate
+        // here (fires every 200ms) would double-sample and distort the sparkline window.
 
         public override IReadOnlyList<(string Label, Action Action, Color Color)> GetContextActions()
             => new List<(string, Action, Color)>
@@ -236,7 +234,7 @@ namespace Nexus.Editor
             var typeLabel = new Label("Type:") { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 4 } };
             bar.Add(typeLabel);
 
-            foreach (var t in new[] { "All", "Signal", "Rpc", "State", "Error" })
+            foreach (var t in new[] { "All", "Sent", "Received", "Failed", "Timeout" })
             {
                 var t1 = t;
                 var btn = new Button(() =>
@@ -325,9 +323,9 @@ namespace Nexus.Editor
         {
             _eventTable.Clear();
 
-            var events = _filteredEvents.Count > 0
-                ? _filteredEvents
-                : NetworkMonitor.GetRecentEvents(200).ToList();
+            // Drive the table purely from the filtered set so active filters are honored
+            // (an empty result must render as "no events", never silently fall back to all).
+            var events = _filteredEvents;
 
             if (events.Count == 0)
             {
@@ -349,7 +347,9 @@ namespace Nexus.Editor
                 {
                     e.EventType.ToString(),
                     e.SignalName ?? "",
-                    e.EventType == "Sent" ? "→ Out" : "← In",
+                    e.EventType == "Sent" ? "→ Out"
+                        : e.EventType == "Received" ? "← In"
+                        : "⚠ Err",
                     e.Timestamp.ToString("HH:mm:ss.fff")
                 })
             );
@@ -376,8 +376,8 @@ namespace Nexus.Editor
         private void OnNetworkEvent(NetworkMonitor.NetworkEvent evt)
         {
             if (evt.EventType == "Sent") _totalSent++;
-            else _totalRcvd++;
-            if (evt.EventType == "Failed") _totalErr++;
+            else if (evt.EventType == "Received") _totalRcvd++;
+            if (evt.EventType == "Failed" || evt.EventType == "Timeout") _totalErr++;
 
             // Only rebuild if filter matches
             bool passes = (_typeFilter == "All" || evt.EventType.ToString().Equals(_typeFilter, StringComparison.OrdinalIgnoreCase)) &&

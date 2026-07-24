@@ -302,8 +302,12 @@ namespace Nexus.Core
                         || global::Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>));
                     bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(type)
                         || global::Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
+                    // Composite payload support: pure composite commands implement only
+                    // ICompositeCommand/IAsyncCompositeCommand and must still be discovered.
+                    bool isCompositeSync = typeof(ICompositeCommand).IsAssignableFrom(type);
+                    bool isCompositeAsync = typeof(IAsyncCompositeCommand).IsAssignableFrom(type);
 
-                    if (isSync || isAsync)
+                    if (isSync || isAsync || isCompositeSync || isCompositeAsync)
                     {
                         Container.Bind(type, isSingleton: false);
 
@@ -315,7 +319,8 @@ namespace Nexus.Core
 
                         if (data.CompositeHandler != null)
                         {
-                            SignalBusInternal.RegisterCompositeCommand(data.CompositeHandler.SignalTypes, type, data.CompositeHandler.OneShot, data.CompositeHandler.Priority, isAsync && !isSync);
+                            bool compositeIsAsync = (isCompositeAsync && !isCompositeSync) || (isAsync && !isSync);
+                            SignalBusInternal.RegisterCompositeCommand(data.CompositeHandler.SignalTypes, type, data.CompositeHandler.OneShot, data.CompositeHandler.Priority, compositeIsAsync);
                         }
                     }
                     else

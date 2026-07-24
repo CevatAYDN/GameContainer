@@ -29,6 +29,27 @@ namespace Nexus.Core
         /// <summary>True once all required signals have been received.</summary>
         public bool IsCompleted { get; set; }
 
+        /// <summary>
+        /// Most recent boxed payload captured per required signal (indexed identically to
+        /// <see cref="RequiredSignals"/>). Populated lazily only when a matching signal is fired,
+        /// so signals without composite triggers never allocate.
+        /// </summary>
+        private readonly object[] _capturedPayloads;
+
+        /// <summary>Stores the most recent payload for the required signal at the given index.</summary>
+        public void CapturePayload(int index, object payload) => _capturedPayloads[index] = payload;
+
+        /// <summary>Builds an immutable snapshot of currently captured payloads for command dispatch.</summary>
+        public object[] SnapshotPayloads()
+        {
+            var copy = new object[_capturedPayloads.Length];
+            Array.Copy(_capturedPayloads, copy, _capturedPayloads.Length);
+            return copy;
+        }
+
+        /// <summary>Clears captured payloads (called on reset for repeatable triggers).</summary>
+        public void ClearPayloads() => Array.Clear(_capturedPayloads, 0, _capturedPayloads.Length);
+
         /// <summary>Creates a new <see cref="CompositeTriggerState"/> instance.</summary>
         /// <param name="commandType">The composite trigger command type.</param>
         /// <param name="requiredSignals">The signal types required for completion.</param>
@@ -48,6 +69,7 @@ namespace Nexus.Core
                 : (1UL << requiredSignals.Length) - 1;
             CurrentMask = 0;
             IsCompleted = false;
+            _capturedPayloads = new object[requiredSignals.Length];
         }
     }
 }

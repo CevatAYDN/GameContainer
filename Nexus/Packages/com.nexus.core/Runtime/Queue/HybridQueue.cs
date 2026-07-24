@@ -127,6 +127,20 @@ namespace Nexus.Core
         private readonly ConcurrentQueue<IQueuedSignal> _threadSafeQueue = new();
         private readonly ConcurrentQueue<IQueuedSignal> _nextFrameQueue = new();
 
+        // Editor introspection (G-2): live queue depth + cumulative throughput.
+        // Counters use Interlocked for cross-thread correctness; reads are lock-free.
+        private long _totalEnqueued;
+        private long _totalDrained;
+
+        /// <summary>Current number of signals waiting in the thread-safe queue.</summary>
+        public int ThreadSafeQueueDepth => _threadSafeQueue.Count;
+        /// <summary>Current number of signals waiting in the next-frame queue.</summary>
+        public int NextFrameQueueDepth => _nextFrameQueue.Count;
+        /// <summary>Total signals enqueued across both queues since creation.</summary>
+        public long TotalEnqueued => System.Threading.Interlocked.Read(ref _totalEnqueued);
+        /// <summary>Total signals drained (dispatched) since creation.</summary>
+        public long TotalDrained => System.Threading.Interlocked.Read(ref _totalDrained);
+
         /// <summary>Creates a new <see cref="HybridQueue"/> backed by the given signal bus.</summary>
         /// <param name="signalBus">The signal bus to drain signals into.</param>
         public HybridQueue(SignalBus signalBus)
@@ -141,6 +155,7 @@ namespace Nexus.Core
         {
             var wrapper = QueuedSignalPool<T>.Rent(signal);
             _threadSafeQueue.Enqueue(wrapper);
+            System.Threading.Interlocked.Increment(ref _totalEnqueued);
         }
 
         /// <summary>Enqueues a signal to be fired at the start of the next frame (LateUpdate drain).</summary>
@@ -150,6 +165,7 @@ namespace Nexus.Core
         {
             var wrapper = QueuedSignalPool<T>.Rent(signal);
             _nextFrameQueue.Enqueue(wrapper);
+            System.Threading.Interlocked.Increment(ref _totalEnqueued);
         }
 
         /// <summary>
@@ -193,6 +209,7 @@ namespace Nexus.Core
                 finally
                 {
                     queuedSignal.Release();
+                    System.Threading.Interlocked.Increment(ref _totalDrained);
                 }
             }
         }

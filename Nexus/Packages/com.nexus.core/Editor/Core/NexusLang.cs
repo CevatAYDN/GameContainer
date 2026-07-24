@@ -80,7 +80,7 @@ namespace Nexus.Editor
             s_strings["quick_actions"] = "ALL TOOLS";
             s_strings["open"] = "Open";
             s_strings["framework"] = "FRAMEWORK";
-            s_strings["framework_desc"] = "Nexus Observable Architecture v0.3.1\n" +
+            s_strings["framework_desc"] = "Nexus Observable Architecture v0.4.0\n" +
                 "Unity 6 • UI Toolkit • MIT License\n\n" +
                 "Built on a 0-GC, JIT-free generic observable framework with:\n" +
                 "• Causal Tracing — zero-allocation causality tracking\n" +
@@ -88,7 +88,7 @@ namespace Nexus.Editor
                 "• Build Validation — catches priority conflicts before compile\n" +
                 "• Auto-Discovery — Lifecycle, Commands, Views and Mediators\n" +
                 "• Command Pooling — automatic pooling for 0-GC steady-state\n\n" +
-                "Editor Suite: 9 plugins, Code Generator, Live Tracer, Graph Viewer, Type Analyzer";
+                "Editor Suite: 15 plugins, Code Generator, Live Tracer, Graph Viewer, Type Analyzer";
             s_strings["signals"] = "Signals";
             s_strings["total_sigs"] = "Total Sigs";
             s_strings["gc_memory"] = "GC Memory";
@@ -318,9 +318,9 @@ namespace Nexus.Editor
             s_strings["typeanalyzer_no_dependents"] = "No other types are injecting this type.";
 
             s_strings["help_title"] = "NEXUS HELP & DOCUMENTATION";
-            s_strings["help_version"] = "com.nexus.core v0.3.1";
+            s_strings["help_version"] = "com.nexus.core v0.4.0";
             s_strings["help_platform"] = "Unity 6 (6000.x) | C# 9+ | .NET Standard 2.1 | UI Toolkit";
-            s_strings["help_whats_new"] = "New in v0.3.0: Auto-AOT generation, Thread-safe DI locking,\nHybrid Queue interleaving fix, Turkish locale, 0-GC encapsulation.\nRequires Unity 6000.5 or higher.";
+            s_strings["help_whats_new"] = "New in v0.4.0: Composite trigger payloads (CompositeContext), live command-pool\nutilization stats, execution-order guarantees, and expanded editor live panels.\nRequires Unity 6000.5 or higher.";
             s_strings["help_import_sample"] = "Import Counter Sample";
             s_strings["help_quickstart"] = "QUICK START";
             s_strings["help_coreapi"] = "CORE API";

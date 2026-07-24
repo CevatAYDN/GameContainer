@@ -345,6 +345,7 @@ namespace Nexus.Editor
             {
                 foreach (var ctx in contexts)
                 {
+                    if (ctx.SignalBus == null) continue;
                     var handlers = ctx.SignalBus.RegisteredHandlers;
                     if (handlers == null) continue;
                     foreach (var kvp in handlers)
@@ -648,7 +649,7 @@ namespace Nexus.Editor
                     meta.Add(NexusEditorStyles.CreatePill(string.Format(NexusLang.Get("gamemanager_pill_parent"), ctx.Parent.ScopeTag ?? NexusLang.Get("gamemanager_unnamed")), NexusEditorStyles.BtnGray, NexusEditorStyles.DimText));
 
                 // Show registered command count if available
-                if (ctx.SignalBus.RegisteredHandlers != null)
+                if (ctx.SignalBus != null && ctx.SignalBus.RegisteredHandlers != null)
                 {
                     int cmdCount = 0;
                     foreach (var kvp in ctx.SignalBus.RegisteredHandlers)
@@ -1042,6 +1043,8 @@ namespace Nexus.Editor
 
         // ─── Signal Test Panel ─────────────────────────────────
         private string _testResult = "";
+        // -1 = fire into all contexts that handle the signal; >=0 = a specific context index.
+        private int _signalTestContextIndex = -1;
 
         private void RenderSignalTest()
         {
@@ -1091,6 +1094,20 @@ namespace Nexus.Editor
                 style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextPrimary), marginBottom = 8 }
             });
 
+            // Target-context selector — fixes firing only into contexts[0].
+            var ctxChoices = new List<string> { "All (matching)" };
+            foreach (var c in contexts) ctxChoices.Add(c.ScopeTag ?? "context");
+            int dropdownIndex = _signalTestContextIndex < 0 ? 0 : Mathf.Min(_signalTestContextIndex + 1, ctxChoices.Count - 1);
+            var ctxDropdown = new DropdownField("Target Context", ctxChoices, dropdownIndex);
+            ctxDropdown.RegisterValueChangedCallback(evt =>
+            {
+                int idx = ctxChoices.IndexOf(evt.newValue);
+                _signalTestContextIndex = idx <= 0 ? -1 : idx - 1;
+                RenderActiveSection();
+            });
+            ctxDropdown.style.marginBottom = 8;
+            card.Add(ctxDropdown);
+
             if (!string.IsNullOrEmpty(_testResult))
             {
                 var resultLabel = new Label(_testResult)
@@ -1108,24 +1125,7 @@ namespace Nexus.Editor
 
                 var fireBtn = new Button(() =>
                 {
-                    try
-                    {
-                        var ctx = contexts[0]; // Fire into first active context
-                        var instance = Activator.CreateInstance(signalType);
-                        var fireMethod = ctx.SignalBus.GetType().GetMethod("Fire");
-                        if (fireMethod != null)
-                        {
-                            var genericMethod = fireMethod.MakeGenericMethod(signalType);
-                            genericMethod.Invoke(ctx.SignalBus, new[] { instance });
-                            _testResult = $"✔ Fired {signalName} @ {System.DateTime.Now:HH:mm:ss}";
-                            Debug.Log($"[Nexus Test] Successfully fired signal '{signalName}' via context '{ctx.ScopeTag}'.");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _testResult = $"✘ {signalName}: {ex.InnerException?.Message ?? ex.Message}";
-                        Debug.LogError($"[Nexus Test] Failed to fire '{signalName}': {ex.Message}");
-                    }
+                    FireTestSignal(signalName, signalType, contexts);
                     RenderActiveSection();
                 })
                 {
@@ -1142,13 +1142,18 @@ namespace Nexus.Editor
                     }
                 };
 
-                // Tooltip: show command count and mode
+                // Tooltip: show command count and mode (from any context that handles it)
                 int handlerCount = 0;
                 string mode = "Sequential";
-                if (contexts[0].SignalBus.RegisteredHandlers.TryGetValue(signalType, out var handlers) && handlers.Count > 0)
+                foreach (var c in contexts)
                 {
-                    handlerCount = handlers.Count;
-                    mode = handlers[0].Mode.ToString();
+                    if (c.SignalBus?.RegisteredHandlers != null &&
+                        c.SignalBus.RegisteredHandlers.TryGetValue(signalType, out var hs) && hs.Count > 0)
+                    {
+                        handlerCount = hs.Count;
+                        mode = hs[0].Mode.ToString();
+                        break;
+                    }
                 }
                 fireBtn.tooltip = $"{signalType.FullName}\n{handlerCount} handler(s), {mode} mode";
                 buttonRow.Add(fireBtn);
@@ -1157,9 +1162,60 @@ namespace Nexus.Editor
             card.Add(buttonRow);
             _content.Add(card);
 
-            var hint = NexusEditorStyles.CreateHint("Click any signal above to fire it into the first active context. Use the Explorer tab for signals with custom payloads.");
+            var hint = NexusEditorStyles.CreateHint("Select a target context (or 'All (matching)') above, then click any signal to fire it. Use the Explorer tab for signals with custom payloads.");
             hint.style.marginLeft = 10;
             _content.Add(hint);
+        }
+
+        // Fires a test signal into the user-selected target context, or into every
+        // context that actually registers a handler for the signal ("All (matching)").
+        private void FireTestSignal(string signalName, Type signalType, IReadOnlyList<IContext> contexts)
+        {
+            var targets = new List<IContext>();
+            for (int i = 0; i < contexts.Count; i++)
+            {
+                var ctx = contexts[i];
+                bool hasHandler = ctx.SignalBus?.RegisteredHandlers != null &&
+                                  ctx.SignalBus.RegisteredHandlers.ContainsKey(signalType);
+                if (_signalTestContextIndex < 0)
+                {
+                    if (hasHandler) targets.Add(ctx);
+                }
+                else if (i == _signalTestContextIndex)
+                {
+                    targets.Add(ctx); // explicit user choice, even if no handler
+                }
+            }
+
+            if (targets.Count == 0)
+            {
+                _testResult = $"✘ {signalName}: no active context handles this signal.";
+                Debug.LogWarning($"[Nexus Test] No target context for '{signalName}'.");
+                return;
+            }
+
+            int fired = 0;
+            foreach (var ctx in targets)
+            {
+                try
+                {
+                    var instance = Activator.CreateInstance(signalType);
+                    var fireMethod = ctx.SignalBus.GetType().GetMethod("Fire");
+                    if (fireMethod != null)
+                    {
+                        fireMethod.MakeGenericMethod(signalType).Invoke(ctx.SignalBus, new[] { instance });
+                        fired++;
+                        Debug.Log($"[Nexus Test] Fired '{signalName}' via context '{ctx.ScopeTag}'.");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _testResult = $"✘ {signalName} @ {ctx.ScopeTag}: {ex.InnerException?.Message ?? ex.Message}";
+                    Debug.LogError($"[Nexus Test] Failed to fire '{signalName}' in '{ctx.ScopeTag}': {ex.Message}");
+                    return;
+                }
+            }
+            _testResult = $"✔ Fired {signalName} into {fired} context(s) @ {System.DateTime.Now:HH:mm:ss}";
         }
     }
 }

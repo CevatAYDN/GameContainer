@@ -65,7 +65,10 @@ namespace Nexus.Core
                 // Bind class in container
                 bool isCommand = typeof(ICommand).IsAssignableFrom(type) || ImplementsGenericInterface(type, typeof(ICommand<>));
                 bool isAsyncCommand = typeof(IAsyncCommand).IsAssignableFrom(type) || ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
-                if (isCommand || isAsyncCommand)
+                // Composite payload support: pure composite commands implement only
+                // ICompositeCommand/IAsyncCompositeCommand and must still be discovered.
+                bool isCompositeCommand = typeof(ICompositeCommand).IsAssignableFrom(type) || typeof(IAsyncCompositeCommand).IsAssignableFrom(type);
+                if (isCommand || isAsyncCommand || isCompositeCommand)
                 {
                     Context.Container.Bind(type, isSingleton: false);
 

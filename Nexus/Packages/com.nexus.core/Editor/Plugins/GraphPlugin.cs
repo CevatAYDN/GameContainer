@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Linq;
 using UnityEditor;
 using UnityEditor.Experimental.GraphView;
@@ -15,7 +16,7 @@ namespace Nexus.Editor
         public override string DisplayName => NexusLang.Get("action_graph_title");
         public override int Order => 5;
 
-        private const int MaxNodes = 50;
+        private int _maxNodes = 50;
 
         private VisualElement _view;
         private SignalGraphView _graphView;
@@ -24,6 +25,11 @@ namespace Nexus.Editor
         private Dictionary<string, Node> _signalNodes = new();
         private Dictionary<string, Node> _handlerNodes = new();
         private int _totalEdgeCount;
+
+        // Trace sink Write() may be called from any thread; marshal highlights to the
+        // main (UI) thread via a lock-free queue drained on the view schedule.
+        private readonly ConcurrentQueue<(bool isSignal, string typeName)> _highlightQueue = new();
+        private IVisualElementScheduledItem _drainSchedule;
 
         public override VisualElement CreateView()
         {
@@ -50,17 +56,33 @@ namespace Nexus.Editor
             refreshBtn.style.right = 10;
             _view.Add(refreshBtn);
 
+            // Adjustable node budget — replaces the former hard 50-node cap.
+            var limitField = new IntegerField("Max Nodes") { value = _maxNodes };
+            limitField.style.position = Position.Absolute;
+            limitField.style.top = 58;
+            limitField.style.right = 92;
+            limitField.style.width = 130;
+            limitField.RegisterValueChangedCallback(evt =>
+            {
+                _maxNodes = Mathf.Clamp(evt.newValue, 10, 2000);
+                BuildGraph();
+            });
+            _view.Add(limitField);
+
             BuildGraph();
             NexusTrace.AddSink(this);
+            _drainSchedule = _view.schedule.Execute(DrainHighlights).Every(100);
 
             return _view;
         }
 
         public override void OnDisable()
         {
+            _drainSchedule?.Pause();
             NexusTrace.RemoveSink(this);
             _signalNodes.Clear();
             _handlerNodes.Clear();
+            while (_highlightQueue.TryDequeue(out _)) { }
         }
 
         private void BuildGraph()
@@ -89,6 +111,7 @@ namespace Nexus.Editor
             var mappings = new Dictionary<Type, List<Type>>();
             foreach (var ctx in contexts)
             {
+                if (ctx.SignalBus == null) continue;
                 var handlers = ctx.SignalBus.RegisteredHandlers;
                 if (handlers == null || handlers.Count == 0) continue;
                 foreach (var kvp in handlers)
@@ -151,28 +174,30 @@ namespace Nexus.Editor
                 return;
             }
 
-            if (totalNodes > MaxNodes)
+            if (totalNodes > _maxNodes)
             {
-                _graphView.ClearGraph();
                 var warnLabel = new Label(
-                    string.Format(NexusLang.Get("graph_overflow_desc"), totalNodes, MaxNodes))
+                    string.Format(NexusLang.Get("graph_overflow_desc"), totalNodes, _maxNodes))
                 {
-                    style = { color = new StyleColor(NexusEditorStyles.AccentOrange), fontSize = 12,
-                        alignSelf = Align.Center, marginTop = 20, whiteSpace = WhiteSpace.Normal }
+                    style = { color = new StyleColor(NexusEditorStyles.AccentOrange), fontSize = 11,
+                        alignSelf = Align.Center, marginTop = 8, whiteSpace = WhiteSpace.Normal }
                 };
                 _graphView.Add(warnLabel);
-                _statusLabel.text = string.Format(NexusLang.Get("graph_overflow"), totalNodes, MaxNodes);
-                _statusLabel.style.color = new StyleColor(NexusEditorStyles.AccentOrange);
-                return;
+                // Fall through and render a partial graph up to the node budget.
             }
-
-            _statusLabel.text = string.Format(NexusLang.Get("graph_stats"), signalCount, cmdCount, totalNodes, _totalEdgeCount);
-            _statusLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
+            else
+            {
+                _statusLabel.text = string.Format(NexusLang.Get("graph_stats"), signalCount, cmdCount, totalNodes, _totalEdgeCount);
+                _statusLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
+            }
 
             int yOffset = 0;
             int edgeCount = 0;
+            int nodesCreated = 0;
+            bool truncated = false;
             foreach (var kvp in mappings)
             {
+                if (nodesCreated >= _maxNodes) { truncated = true; break; }
                 var signalType = kvp.Key;
                 var handlerTypes = kvp.Value;
 
@@ -181,7 +206,7 @@ namespace Nexus.Editor
 
                 // Try to get mode from runtime registrations
                 var contexts = NexusRuntime.ActiveContexts;
-                if (contexts != null && contexts.Count > 0)
+                if (contexts != null && contexts.Count > 0 && contexts[0].SignalBus != null)
                 {
                     var handlers = contexts[0].SignalBus.RegisteredHandlers;
                     if (handlers != null && handlers.TryGetValue(signalType, out var infos) && infos.Count > 0)
@@ -195,14 +220,17 @@ namespace Nexus.Editor
                 signalNode.tooltip = $"{signalType.FullName}\nHandlers: {handlerCount}\nMode: {mode}";
                 _graphView.AddElement(signalNode);
                 _signalNodes[signalType.Name] = signalNode;
+                nodesCreated++;
 
                 int handlerYOffset = yOffset;
                 foreach (var handlerType in handlerTypes)
                 {
+                    if (nodesCreated >= _maxNodes) { truncated = true; break; }
                     var handlerNode = _graphView.CreateHandlerNode(handlerType.Name, new Vector2(400, handlerYOffset));
                     handlerNode.tooltip = $"{handlerType.FullName}";
                     _graphView.AddElement(handlerNode);
                     _handlerNodes[handlerType.Name] = handlerNode;
+                    nodesCreated++;
 
                     var edge = _graphView.ConnectNodes(
                         signalNode.outputContainer.Q<Port>(),
@@ -219,20 +247,40 @@ namespace Nexus.Editor
                 yOffset = Math.Max(yOffset + 150, handlerYOffset + 50);
             }
             _totalEdgeCount = edgeCount;
-            _statusLabel.text = string.Format(NexusLang.Get("graph_stats"), signalCount, cmdCount, totalNodes, edgeCount);
+            if (truncated)
+            {
+                _statusLabel.text = string.Format(NexusLang.Get("graph_overflow"), totalNodes, _maxNodes);
+                _statusLabel.style.color = new StyleColor(NexusEditorStyles.AccentOrange);
+            }
+            else
+            {
+                _statusLabel.text = string.Format(NexusLang.Get("graph_stats"), signalCount, cmdCount, totalNodes, edgeCount);
+            }
         }
 
         public void Write(in TraceEvent traceEvent)
         {
+            // Called from arbitrary threads under NexusTrace's lock — do no UI work here.
             if (traceEvent.Type == TraceEventType.Signal)
-            {
-                if (_signalNodes.TryGetValue(traceEvent.TypeName, out var node))
-                    HighlightNode(node, new Color(0.2f, 0.8f, 0.2f, 0.8f));
-            }
+                _highlightQueue.Enqueue((true, traceEvent.TypeName));
             else if (traceEvent.Type == TraceEventType.Command)
+                _highlightQueue.Enqueue((false, traceEvent.TypeName));
+        }
+
+        private void DrainHighlights()
+        {
+            while (_highlightQueue.TryDequeue(out var item))
             {
-                if (_handlerNodes.TryGetValue(traceEvent.TypeName, out var node))
-                    HighlightNode(node, new Color(0.2f, 0.8f, 0.8f, 0.8f));
+                if (item.isSignal)
+                {
+                    if (_signalNodes.TryGetValue(item.typeName, out var node))
+                        HighlightNode(node, new Color(0.2f, 0.8f, 0.2f, 0.8f));
+                }
+                else
+                {
+                    if (_handlerNodes.TryGetValue(item.typeName, out var node))
+                        HighlightNode(node, new Color(0.2f, 0.8f, 0.8f, 0.8f));
+                }
             }
         }
 

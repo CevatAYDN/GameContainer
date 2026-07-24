@@ -23,7 +23,7 @@ namespace Nexus.Editor
         // ── State ─────────────────────────────────────────────────
         private IContext _selectedContext;
         private string _searchFilter = "";
-        private enum InspectorTab { Overview, Bindings, Singletons, Services, Signals, FireSignal }
+        private enum InspectorTab { Overview, Bindings, Singletons, Services, Signals, Extensions, FireSignal }
         private InspectorTab _activeTab = InspectorTab.Overview;
         private readonly Dictionary<InspectorTab, Button> _tabButtons = new();
 
@@ -119,12 +119,15 @@ namespace Nexus.Editor
             _view.Add(_contentScroll);
 
             // Subscribe to context events
+            NexusRuntime.OnContextRegistered   -= OnContextsChanged;
+            NexusRuntime.OnContextUnregistered -= OnContextsChanged;
             NexusRuntime.OnContextRegistered   += OnContextsChanged;
             NexusRuntime.OnContextUnregistered += OnContextsChanged;
 
             RefreshContextDropdown();
             RenderContent();
 
+            _refreshSchedule?.Pause();
             _refreshSchedule = _view.schedule.Execute(OnScheduled).Every(500);
 
             return _view;
@@ -140,6 +143,7 @@ namespace Nexus.Editor
         public override void OnUpdate()
         {
             // Update play mode warning visibility
+            if (_playModeWarning == null) return;
             _playModeWarning.style.display = Application.isPlaying
                 ? DisplayStyle.None : DisplayStyle.Flex;
 
@@ -261,6 +265,7 @@ namespace Nexus.Editor
                 { InspectorTab.Singletons, "Singletons" },
                 { InspectorTab.Services,   "Services" },
                 { InspectorTab.Signals,    "Signals" },
+                { InspectorTab.Extensions, "🔌 Extensions" },
                 { InspectorTab.FireSignal, "🔥 Fire Signal" },
             };
 
@@ -326,6 +331,7 @@ namespace Nexus.Editor
                 case InspectorTab.Singletons:  RenderSingletons(); break;
                 case InspectorTab.Services:    RenderServices();   break;
                 case InspectorTab.Signals:     RenderSignals();    break;
+                case InspectorTab.Extensions:  RenderExtensions(); break;
                 case InspectorTab.FireSignal:  RenderFireSignal(); break;
             }
         }
@@ -373,6 +379,168 @@ namespace Nexus.Editor
                 {
                     _content.Add(NexusEditorStyles.CreateStatRow("  Plugin", plugin.GetType().Name, NexusEditorStyles.AccentOrange));
                 }
+            }
+
+            // Signal queues (HybridQueue) — live depth + cumulative throughput.
+            var queue = concrete?.HybridQueue;
+            if (queue != null)
+            {
+                _content.Add(MakeSpacer(8));
+                AddSectionTitle("📨 Signal Queues");
+                int tsDepth = queue.ThreadSafeQueueDepth;
+                int nfDepth = queue.NextFrameQueueDepth;
+                long enq = queue.TotalEnqueued;
+                long drn = queue.TotalDrained;
+                long pending = enq - drn;
+                _content.Add(NexusEditorStyles.CreateStatRow("Thread-Safe Depth", $"{tsDepth}", tsDepth > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow("Next-Frame Depth",  $"{nfDepth}", nfDepth > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow("Total Enqueued",    $"{enq}", NexusEditorStyles.AccentBlue));
+                _content.Add(NexusEditorStyles.CreateStatRow("Total Drained",     $"{drn}", NexusEditorStyles.AccentGreen));
+                _content.Add(NexusEditorStyles.CreateStatRow("Pending (in-flight)", $"{pending}", pending > 0 ? NexusEditorStyles.AccentOrange : NexusEditorStyles.TextSecondary));
+            }
+
+            // Command pools (CommandPoolManager) — live utilization + reuse ratio (G-4).
+            var poolStats = concrete?.PoolManager?.GetPoolStatsSnapshot();
+            if (poolStats != null && poolStats.Count > 0)
+            {
+                _content.Add(MakeSpacer(8));
+                AddSectionTitle("♻️ Command Pools");
+
+                int available = 0;
+                long totalGets = 0, totalCreated = 0, totalReturns = 0, totalDiscarded = 0;
+                for (int i = 0; i < poolStats.Count; i++)
+                {
+                    var s = poolStats[i];
+                    available     += s.Available;
+                    totalGets     += s.TotalGets;
+                    totalCreated  += s.TotalCreated;
+                    totalReturns  += s.TotalReturns;
+                    totalDiscarded += s.TotalDiscarded;
+                }
+                float reuseRatio = totalGets > 0 ? (float)(totalGets - totalCreated) / totalGets : 0f;
+
+                _content.Add(NexusEditorStyles.CreateStatRow("Pooled Types",     $"{poolStats.Count}", NexusEditorStyles.AccentBlue));
+                _content.Add(NexusEditorStyles.CreateStatRow("Available Now",    $"{available}", available > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow("Total Gets",       $"{totalGets}", NexusEditorStyles.TextPrimary));
+                _content.Add(NexusEditorStyles.CreateStatRow("Total Created",    $"{totalCreated}", NexusEditorStyles.AccentOrange));
+                _content.Add(NexusEditorStyles.CreateStatRow("Total Returns",    $"{totalReturns}", NexusEditorStyles.AccentGreen));
+                _content.Add(NexusEditorStyles.CreateStatRow("Total Discarded",  $"{totalDiscarded}", totalDiscarded > 0 ? NexusEditorStyles.AccentYellow : NexusEditorStyles.TextSecondary));
+                _content.Add(NexusEditorStyles.CreateStatRow("Reuse Ratio",      $"{reuseRatio:P0}", reuseRatio >= 0.5f ? NexusEditorStyles.AccentGreen : NexusEditorStyles.AccentOrange));
+
+                // Per-type breakdown (compact).
+                for (int i = 0; i < poolStats.Count; i++)
+                {
+                    var s = poolStats[i];
+                    string typeName = s.CommandType != null ? s.CommandType.Name : "(unknown)";
+                    _content.Add(NexusEditorStyles.CreateStatRow($"  {typeName}", $"{s.Available}/{s.MaxSize}  ·  reuse {s.ReuseRatio:P0}", NexusEditorStyles.TextSecondary));
+                }
+            }
+        }
+
+        // ── Extensions tab (interceptor / decorator pipeline) ─────
+
+        private void RenderExtensions()
+        {
+            AddSectionTitle("🔌 Extension Pipeline");
+
+            var concrete = _selectedContext as Context;
+            var plugins = concrete?.PluginsReadOnlyCopy;
+
+            if (concrete == null || plugins == null || plugins.Count == 0)
+            {
+                AddEmpty("No runtime plugins registered on this context.\n" +
+                    "Signal interceptors and command decorators appear here once a plugin registers them.");
+                return;
+            }
+
+            // Aggregate pipeline summary across all plugins on this context.
+            int totalInterceptors = 0, totalDecorators = 0, totalSerializers = 0, totalSinks = 0;
+            foreach (var (_, pctx) in plugins)
+            {
+                if (pctx == null) continue;
+                totalInterceptors += pctx.Interceptors?.Count ?? 0;
+                totalDecorators   += pctx.Decorators?.Count ?? 0;
+                totalSerializers  += pctx.Serializers?.Count ?? 0;
+                totalSinks        += pctx.TraceSinks?.Count ?? 0;
+            }
+
+            _content.Add(NexusEditorStyles.CreateStatRow("Plugins",             $"{plugins.Count}", NexusEditorStyles.AccentOrange));
+            _content.Add(NexusEditorStyles.CreateStatRow("Signal Interceptors", $"{totalInterceptors}", totalInterceptors > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
+            _content.Add(NexusEditorStyles.CreateStatRow("Command Decorators",  $"{totalDecorators}", totalDecorators > 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary));
+            _content.Add(NexusEditorStyles.CreateStatRow("Model Serializers",   $"{totalSerializers}", NexusEditorStyles.TextSecondary));
+            _content.Add(NexusEditorStyles.CreateStatRow("Trace Sinks",         $"{totalSinks}", NexusEditorStyles.TextSecondary));
+
+            _content.Add(MakeSpacer(10));
+
+            foreach (var (plugin, pctx) in plugins)
+            {
+                if (plugin == null) continue;
+                _content.Add(BuildPluginCard(plugin, pctx));
+                _content.Add(MakeSpacer(8));
+            }
+        }
+
+        private VisualElement BuildPluginCard(INexusPlugin plugin, PluginContext pctx)
+        {
+            var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBg);
+
+            // Header: plugin name + version + declared capability pills.
+            var header = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, flexWrap = Wrap.Wrap, marginBottom = 6 } };
+            var manifest = plugin.Manifest;
+            header.Add(new Label(manifest?.Name ?? plugin.GetType().Name)
+            {
+                style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentOrange) }
+            });
+            if (!string.IsNullOrEmpty(manifest?.Version))
+                header.Add(NexusEditorStyles.CreatePill($"v{manifest.Version}", NexusEditorStyles.CardBgAlt, NexusEditorStyles.TextSecondary));
+            if (manifest != null)
+            {
+                foreach (PluginCapabilities cap in Enum.GetValues(typeof(PluginCapabilities)))
+                {
+                    if (cap == PluginCapabilities.None) continue;
+                    if ((manifest.Capabilities & cap) != 0)
+                        header.Add(NexusEditorStyles.CreatePill(cap.ToString(), NexusEditorStyles.CardBgBlue, NexusEditorStyles.AccentBlueText));
+                }
+            }
+            card.Add(header);
+
+            card.Add(new Label($"Type: {plugin.GetType().FullName}")
+            {
+                style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.DimText), marginBottom = 4, whiteSpace = WhiteSpace.Normal }
+            });
+
+            if (pctx == null)
+            {
+                card.Add(new Label("(no plugin context)") { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
+                return card;
+            }
+
+            // Decorators are numbered because their list order IS the execution order.
+            AddPipelineList(card, "Signal Interceptors", pctx.Interceptors, NexusEditorStyles.AccentGreen, ordered: false);
+            AddPipelineList(card, "Command Decorators (execution order)", pctx.Decorators, NexusEditorStyles.AccentPurple, ordered: true);
+            AddPipelineList(card, "Model Serializers", pctx.Serializers, NexusEditorStyles.AccentBlue, ordered: false);
+            AddPipelineList(card, "Trace Sinks", pctx.TraceSinks, NexusEditorStyles.TextSecondary, ordered: false);
+
+            return card;
+        }
+
+        private void AddPipelineList<T>(VisualElement card, string label, IReadOnlyList<T> items, Color accent, bool ordered)
+        {
+            int count = items?.Count ?? 0;
+            if (count == 0) return;
+
+            card.Add(new Label($"{label} ({count})")
+            {
+                style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(accent), marginTop = 4, marginBottom = 2 }
+            });
+
+            for (int i = 0; i < count; i++)
+            {
+                var prefix = ordered ? $"  {i + 1}. " : "  • ";
+                card.Add(new Label($"{prefix}{items[i].GetType().Name}")
+                {
+                    style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextPrimary), whiteSpace = WhiteSpace.Normal, paddingLeft = 4 }
+                });
             }
         }
 
@@ -817,7 +985,7 @@ namespace Nexus.Editor
 
         private void OnScheduled()
         {
-            if (Application.isPlaying && _activeTab == InspectorTab.Singletons)
+            if (Application.isPlaying && (_activeTab == InspectorTab.Singletons || _activeTab == InspectorTab.Extensions || _activeTab == InspectorTab.Overview))
                 RenderContent();
         }
 

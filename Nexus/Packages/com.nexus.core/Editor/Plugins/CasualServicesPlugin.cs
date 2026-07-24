@@ -19,6 +19,8 @@ namespace Nexus.Editor.Plugins
         private LongField _currencyAmountField;
         private IntegerField _levelField;
         private TextField _windowNameField;
+        private VisualElement _openWindowsList;
+        private IVisualElementScheduledItem _refreshSchedule;
 
         public override VisualElement CreateView()
         {
@@ -116,6 +118,17 @@ namespace Nexus.Editor.Plugins
                     uiSection.Add(providerLabel);
                 }
             }
+
+            // Live open-window stack (G-3): refreshed on a 500 ms schedule.
+            var winStackTitle = new Label("Open Window Stack (live)");
+            winStackTitle.style.fontSize = 11;
+            winStackTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
+            winStackTitle.style.marginTop = 6;
+            uiSection.Add(winStackTitle);
+            _openWindowsList = new VisualElement();
+            uiSection.Add(_openWindowsList);
+            RefreshOpenWindows();
+
             _container.Add(uiSection);
 
             // Haptics & Feedback Section
@@ -128,7 +141,63 @@ namespace Nexus.Editor.Plugins
             feedbackSection.Add(successFeedbackBtn);
             _container.Add(feedbackSection);
 
+            _refreshSchedule = _container.schedule.Execute(RefreshOpenWindows).Every(500);
+
             return _container;
+        }
+
+        public override void OnDisable()
+        {
+            _refreshSchedule?.Pause();
+            base.OnDisable();
+        }
+
+        private void RefreshOpenWindows()
+        {
+            if (_openWindowsList == null || !Application.isPlaying) return;
+            _openWindowsList.Clear();
+
+            var root = FindActiveRoot();
+            if (root?.Context == null || !root.Context.Container.IsRegistered(typeof(IWindowManager)))
+            {
+                _openWindowsList.Add(MakeDimLabel("  (no WindowManager registered)"));
+                return;
+            }
+            if (root.Context.Resolve<IWindowManager>() is not WindowManager winMgr)
+            {
+                _openWindowsList.Add(MakeDimLabel("  (custom IWindowManager — no introspection)"));
+                return;
+            }
+
+            var windows = winMgr.GetOpenWindowsSnapshot();
+            var header = new Label($"Open: {windows.Count}    Pending: {winMgr.PendingWindowCount}");
+            header.style.fontSize = 10;
+            header.style.unityFontStyleAndWeight = FontStyle.Bold;
+            header.style.color = new StyleColor(new Color(0.7f, 0.9f, 1f));
+            _openWindowsList.Add(header);
+
+            if (windows.Count == 0)
+            {
+                _openWindowsList.Add(MakeDimLabel("  (stack empty)"));
+                return;
+            }
+
+            for (int i = 0; i < windows.Count; i++)
+            {
+                var w = windows[i];
+                var row = new Label($"  {i + 1}. {w.Name}   [{w.Layer}]{(w.IsAlive ? "" : " (destroyed)")}");
+                row.style.fontSize = 10;
+                row.style.color = new StyleColor(w.IsAlive ? new Color(0.85f, 0.85f, 0.85f) : new Color(0.8f, 0.4f, 0.4f));
+                _openWindowsList.Add(row);
+            }
+        }
+
+        private static Label MakeDimLabel(string text)
+        {
+            var l = new Label(text);
+            l.style.fontSize = 10;
+            l.style.color = new StyleColor(new Color(0.6f, 0.6f, 0.6f));
+            return l;
         }
 
         private static Box CreateSectionBox(string titleText)

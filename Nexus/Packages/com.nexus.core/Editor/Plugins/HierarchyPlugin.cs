@@ -70,6 +70,8 @@ namespace Nexus.Editor
             _view.Add(splitView);
 
             // Bind to runtime context events
+            NexusRuntime.OnContextRegistered -= OnContextsChanged;
+            NexusRuntime.OnContextUnregistered -= OnContextsChanged;
             NexusRuntime.OnContextRegistered += OnContextsChanged;
             NexusRuntime.OnContextUnregistered += OnContextsChanged;
 

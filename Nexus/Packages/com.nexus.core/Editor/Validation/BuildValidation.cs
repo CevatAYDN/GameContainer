@@ -609,6 +609,8 @@ namespace Nexus.Editor
                         if (!type.IsClass || type.IsAbstract) continue;
                         bool isCommand = typeof(ICommand).IsAssignableFrom(type)
                             || typeof(IAsyncCommand).IsAssignableFrom(type)
+                            || typeof(ICompositeCommand).IsAssignableFrom(type)
+                            || typeof(IAsyncCompositeCommand).IsAssignableFrom(type)
                             || SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>))
                             || SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
                         if (!isCommand) continue;

@@ -8,6 +8,33 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core
 {
+    /// <summary>Read-only live utilization snapshot of a single <see cref="CommandPool"/>.</summary>
+    public readonly struct CommandPoolStats
+    {
+        public readonly Type CommandType;
+        public readonly int Available;
+        public readonly int MaxSize;
+        public readonly long TotalGets;
+        public readonly long TotalCreated;
+        public readonly long TotalReturns;
+        public readonly long TotalDiscarded;
+
+        public CommandPoolStats(Type commandType, int available, int maxSize,
+            long totalGets, long totalCreated, long totalReturns, long totalDiscarded)
+        {
+            CommandType = commandType;
+            Available = available;
+            MaxSize = maxSize;
+            TotalGets = totalGets;
+            TotalCreated = totalCreated;
+            TotalReturns = totalReturns;
+            TotalDiscarded = totalDiscarded;
+        }
+
+        /// <summary>Fraction of Get() calls served from the pool rather than freshly created (0..1).</summary>
+        public float ReuseRatio => TotalGets > 0 ? (float)(TotalGets - TotalCreated) / TotalGets : 0f;
+    }
+
     /// <summary>
     /// Object pool for command instances. Reuses command objects to reduce GC pressure.
     /// Calls <see cref="IResettable.Reset"/> on pooled commands that implement it before returning them to the pool.
@@ -22,6 +49,12 @@ namespace Nexus.Core
         private readonly object _poolLock = new();
         private readonly int _maxSize;
         private static readonly HashSet<Type> s_stateLeakWarningIssued = new();
+
+        // Editor introspection (G-4): cumulative utilization counters.
+        private long _totalGets;
+        private long _totalCreated;
+        private long _totalReturns;
+        private long _totalDiscarded;
 
         /// <summary>Creates a new command pool for the specified command type.</summary>
         /// <param name="commandType">The <see cref="Type"/> of the command to pool.</param>
@@ -67,6 +100,7 @@ namespace Nexus.Core
         /// <summary>Retrieves a command instance from the pool, or creates a new one if the pool is empty.</summary>
         public object Get()
         {
+            System.Threading.Interlocked.Increment(ref _totalGets);
             lock (_poolLock)
             {
                 if (_pool.Count > 0)
@@ -74,6 +108,7 @@ namespace Nexus.Core
                     return _pool.Pop();
                 }
             }
+            System.Threading.Interlocked.Increment(ref _totalCreated);
             return _factory();
         }
 
@@ -90,8 +125,11 @@ namespace Nexus.Core
                 if (_pool.Count < _maxSize)
                 {
                     _pool.Push(command);
+                    System.Threading.Interlocked.Increment(ref _totalReturns);
+                    return;
                 }
             }
+            System.Threading.Interlocked.Increment(ref _totalDiscarded);
         }
 
         private void Cleanup(object command)
@@ -114,6 +152,22 @@ namespace Nexus.Core
             {
                 s_stateLeakWarningIssued.Clear();
             }
+        }
+
+        /// <summary>Editor introspection: current utilization snapshot of this pool.</summary>
+        public CommandPoolStats GetStats()
+        {
+            int available;
+            lock (_poolLock)
+            {
+                available = _pool.Count;
+            }
+            return new CommandPoolStats(
+                _commandType, available, _maxSize,
+                System.Threading.Interlocked.Read(ref _totalGets),
+                System.Threading.Interlocked.Read(ref _totalCreated),
+                System.Threading.Interlocked.Read(ref _totalReturns),
+                System.Threading.Interlocked.Read(ref _totalDiscarded));
         }
     }
 
@@ -161,6 +215,17 @@ namespace Nexus.Core
                 kvp.Value.Clear();
             }
             _pools.Clear();
+        }
+
+        /// <summary>Editor introspection: per-type utilization snapshot of all live command pools.</summary>
+        public IReadOnlyList<CommandPoolStats> GetPoolStatsSnapshot()
+        {
+            var result = new List<CommandPoolStats>(_pools.Count);
+            foreach (var kvp in _pools)
+            {
+                result.Add(kvp.Value.GetStats());
+            }
+            return result;
         }
     }
 
