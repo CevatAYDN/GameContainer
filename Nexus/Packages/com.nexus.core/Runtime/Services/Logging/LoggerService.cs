@@ -137,13 +137,11 @@ namespace Nexus.Core.Services
 
         public void LogError(string message)
         {
-            if (!IsEnabled) return;
             Debug.LogError(message);
         }
 
         public void LogException(Exception exception)
         {
-            if (!IsEnabled) return;
             Debug.LogException(exception);
         }
     }
