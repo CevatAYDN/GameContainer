@@ -75,10 +75,17 @@ namespace Nexus.Core
         private readonly List<ICommandDecorator> _decorators = new();
         private readonly List<IModelSerializer> _serializers = new();
         private readonly List<INexusTraceSink> _traceSinks = new();
+        
+        // Volatile snapshot fields for Interceptors and Decorators, rebuilt on every mutation.
+        // SignalBus dispatch reads Interceptors/Decorators properties during Fire/ExecuteWithDecorators.
+        // Without snapshots, a concurrent Add() and iteration race throws InvalidOperationException.
+        private volatile IReadOnlyList<ISignalInterceptor> _interceptorsSnapshot = Array.Empty<ISignalInterceptor>();
+        private volatile IReadOnlyList<ICommandDecorator> _decoratorsSnapshot = Array.Empty<ICommandDecorator>();
+        private readonly object _listLock = new();
 
         public IContext Context => _context;
-        public IReadOnlyList<ISignalInterceptor> Interceptors => _interceptors;
-        public IReadOnlyList<ICommandDecorator> Decorators => _decorators;
+        public IReadOnlyList<ISignalInterceptor> Interceptors => _interceptorsSnapshot;
+        public IReadOnlyList<ICommandDecorator> Decorators => _decoratorsSnapshot;
         public IReadOnlyList<IModelSerializer> Serializers => _serializers;
         public IReadOnlyList<INexusTraceSink> TraceSinks => _traceSinks;
 
@@ -94,7 +101,11 @@ namespace Nexus.Core
             {
                 throw new UnauthorizedPluginAccessException($"Plugin '{_plugin.Manifest.Name}' is not authorized to register SignalInterceptors. Please declare SignalInterceptor capability in manifest.");
             }
-            _interceptors.Add(interceptor);
+            lock (_listLock)
+            {
+                _interceptors.Add(interceptor);
+                _interceptorsSnapshot = new List<ISignalInterceptor>(_interceptors);
+            }
             if (_context is Context ctx)
             {
                 ctx.IncrementInterceptorsCount();
@@ -107,7 +118,11 @@ namespace Nexus.Core
             {
                 throw new UnauthorizedPluginAccessException($"Plugin '{_plugin.Manifest.Name}' is not authorized to register CommandDecorators. Please declare CommandDecorator capability in manifest.");
             }
-            _decorators.Add(decorator);
+            lock (_listLock)
+            {
+                _decorators.Add(decorator);
+                _decoratorsSnapshot = new List<ICommandDecorator>(_decorators);
+            }
         }
 
         public void RegisterModelSerializer(IModelSerializer serializer)
@@ -142,8 +157,13 @@ namespace Nexus.Core
                     ctx.DecrementInterceptorsCount();
                 }
             }
-            _interceptors.Clear();
-            _decorators.Clear();
+            lock (_listLock)
+            {
+                _interceptors.Clear();
+                _decorators.Clear();
+                _interceptorsSnapshot = Array.Empty<ISignalInterceptor>();
+                _decoratorsSnapshot = Array.Empty<ICommandDecorator>();
+            }
             _serializers.Clear();
             _traceSinks.Clear();
         }
