@@ -32,6 +32,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
+    [StubService("Replace with AdMob / IronSource adapter before release")]
     public class AdService : IAdService, INexusService
     {
         private IAdNetworkAdapter _adapter;

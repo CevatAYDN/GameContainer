@@ -25,6 +25,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
+    [StubService("Integrate with platform-specific haptic/audio SDKs or replace with native implementations")]
     public class FeedbackService : IFeedbackService, INexusService
     {
         [Inject] public IAudioService AudioService { get; set; }

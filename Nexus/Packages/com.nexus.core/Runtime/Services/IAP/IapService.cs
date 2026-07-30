@@ -41,6 +41,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
+    [StubService("Replace with Unity IAP / RevenueCat adapter before release")]
     public class IapService : IIapService, INexusService
     {
         private IIapStoreAdapter _adapter;

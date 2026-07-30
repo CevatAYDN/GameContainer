@@ -94,6 +94,9 @@ namespace Nexus.Editor
 
                 // 7. Validate DI binding completeness across assemblies
                 ValidateDiBindings(ref errorCount, ref warningCount);
+
+                // 8. Warn about stub services that should be replaced before release
+                ValidateNoStubServices(ref errorCount, ref warningCount);
             }
             catch (Exception ex)
             {
@@ -662,6 +665,37 @@ namespace Nexus.Editor
                 catch (ReflectionTypeLoadException ex)
                 {
                     Debug.LogWarning($"[Nexus] Command state leak scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
+                }
+            }
+        }
+
+        private static void ValidateNoStubServices(ref int errorCount, ref int warningCount)
+        {
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            {
+                var name = assembly.GetName().Name;
+                if (IsAssemblyExcluded(name))
+                    continue;
+                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+
+                try
+                {
+                    foreach (var type in assembly.GetTypes())
+                    {
+                        if (!type.IsClass || type.IsAbstract) continue;
+                        var stubAttr = type.GetCustomAttribute<StubServiceAttribute>();
+                        if (stubAttr != null)
+                        {
+                            var msg = $"[Nexus Warning] Stub Service: {type.FullName} is a stub{(string.IsNullOrEmpty(stubAttr.Description) ? "" : $" — {stubAttr.Description}")}. Replace with a real SDK implementation before release.";
+                            Debug.LogWarning(msg);
+                            warningCount++;
+                        }
+                    }
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Debug.LogWarning($"[Nexus] Stub service scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
                 }
             }
         }

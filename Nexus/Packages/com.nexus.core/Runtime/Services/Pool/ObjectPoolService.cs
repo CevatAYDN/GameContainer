@@ -32,7 +32,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
-    public class ObjectPoolService : IObjectPoolService, INexusService, IDisposable
+    public class ObjectPoolService : NexusService<IObjectPoolService>, IObjectPoolService
     {
 #pragma warning disable CS0619
 #pragma warning disable 0619
@@ -57,7 +57,7 @@ namespace Nexus.Core.Services
         private Transform _masterPoolRoot;
         private GameObject _masterRootObject;
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             _masterRootObject = new GameObject("[Nexus_ObjectPool]");
             UnityEngine.Object.DontDestroyOnLoad(_masterRootObject);
@@ -229,9 +229,7 @@ namespace Nexus.Core.Services
             _poolsByInstanceId.Clear();
         }
 
-        public void OnDispose() => Dispose();
-
-        public void Dispose()
+        public override void Dispose()
         {
             ClearAllPools();
             if (_masterRootObject != null)

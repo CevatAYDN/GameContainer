@@ -111,6 +111,7 @@ namespace Nexus.Core
             Container.BindInstance(HybridQueue);
 
             _viewBinder = new ViewBinder(this, Container);
+            Container.BindInstance(_viewBinder);
         }
 
         /// <summary>

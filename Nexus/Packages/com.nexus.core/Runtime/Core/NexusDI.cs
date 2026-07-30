@@ -35,6 +35,7 @@ namespace Nexus.Core
         private readonly ConditionalWeakTable<object, PendingInjection> _pendingInjections = new();
         private readonly HashSet<Type> _constructingSingletons = new();
         private readonly object _singletonLock = new();
+        private readonly Injector _injector;
 
         [ThreadStatic]
         private static HashSet<Type> s_resolutionStack;
@@ -420,6 +421,7 @@ namespace Nexus.Core
         public NexusDI(NexusDI parent = null)
         {
             _parent = parent;
+            _injector = new Injector(this);
         }
 
         // ─── Public API: Bind ───
@@ -496,9 +498,8 @@ namespace Nexus.Core
 
                             try
                             {
-                                var injector = new Injector(this);
-                                singletonInstance = injector.CreateInstance(binding.ConcreteType);
-                                injector.Inject(singletonInstance);
+                                singletonInstance = _injector.CreateInstance(binding.ConcreteType);
+                                _injector.Inject(singletonInstance);
                                 binding.Instance = singletonInstance;
                                 _resolvedSingletons.Add(singletonInstance);
                             }
@@ -511,9 +512,8 @@ namespace Nexus.Core
                         return singletonInstance;
                     }
 
-                    var transientInjector = new Injector(this);
-                    var transientInstance = transientInjector.CreateInstance(binding.ConcreteType);
-                    transientInjector.Inject(transientInstance);
+                    var transientInstance = _injector.CreateInstance(binding.ConcreteType);
+                    _injector.Inject(transientInstance);
                     return transientInstance;
                 }
                 finally
@@ -530,7 +530,7 @@ namespace Nexus.Core
         // ─── Public API: Inject (delegates to Injector) ───
         public void Inject(object instance)
         {
-            new Injector(this).Inject(instance);
+            _injector.Inject(instance);
         }
 
         // ─── Public API: ReInject (pending tracking) ───

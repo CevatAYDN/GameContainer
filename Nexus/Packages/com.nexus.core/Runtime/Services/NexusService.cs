@@ -26,7 +26,7 @@ namespace Nexus.Core
     /// </code>
     /// </summary>
     [Preserve]
-    public abstract class NexusService<T> : INexusService where T : class
+    public abstract class NexusService<T> : INexusService, IDisposable where T : class
     {
         /// <summary>The owning Nexus context. Automatically injected.</summary>
         [Inject] public IContext Context { get; protected set; }
@@ -35,6 +35,18 @@ namespace Nexus.Core
         [Inject] public ISignalBus SignalBus { get; protected set; }
 
         public virtual ValueTask InitializeAsync(CancellationToken ct) => default;
-        public virtual void OnDispose() { }
+
+        /// <summary>
+        /// Delegates to <see cref="Dispose"/> so services that only override
+        /// <c>Dispose()</c> do not need to repeat <c>OnDispose() => Dispose()</c>.
+        /// Override this directly if you need custom cleanup before <c>Dispose()</c>.
+        /// </summary>
+        public virtual void OnDispose() => Dispose();
+
+        /// <summary>
+        /// Override to provide custom cleanup logic.
+        /// Called automatically by <see cref="OnDispose"/>.
+        /// </summary>
+        public virtual void Dispose() { }
     }
 }

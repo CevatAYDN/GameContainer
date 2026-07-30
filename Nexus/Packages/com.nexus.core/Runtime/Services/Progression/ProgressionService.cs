@@ -24,7 +24,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
-    public class ProgressionService : IProgressionService, INexusService, IDisposable
+    public class ProgressionService : NexusService<IProgressionService>, IProgressionService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
 
@@ -34,7 +34,7 @@ namespace Nexus.Core.Services
         public ObservableProperty<int> CurrentLevel { get; } = new(1);
         public ObservableProperty<int> MaxUnlockedLevel { get; } = new(1);
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             if (PlayerPrefsService != null)
             {
@@ -80,9 +80,7 @@ namespace Nexus.Core.Services
             };
         }
 
-        public void OnDispose() => Dispose();
-
-        public void Dispose()
+        public override void Dispose()
         {
             CurrentLevel.ClearOnChanged();
             MaxUnlockedLevel.ClearOnChanged();

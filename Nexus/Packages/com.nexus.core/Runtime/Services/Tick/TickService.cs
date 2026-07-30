@@ -24,7 +24,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
-    public class TickService : ITickService, INexusService, IDisposable
+    public class TickService : NexusService<ITickService>, ITickService
     {
         private class TickDriver : MonoBehaviour
         {
@@ -57,7 +57,7 @@ namespace Nexus.Core.Services
 
         public bool IsPaused { get; set; }
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             if (_driverObject != null)
             {
@@ -219,9 +219,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        public void OnDispose() => Dispose();
-
-        public void Dispose()
+        public override void Dispose()
         {
             lock (_lock)
             {

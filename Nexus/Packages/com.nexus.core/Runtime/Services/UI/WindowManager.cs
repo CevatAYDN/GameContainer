@@ -41,7 +41,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
-    public class WindowManager : IWindowManager, INexusService, IDisposable
+    public class WindowManager : NexusService<IWindowManager>, IWindowManager
     {
         [Inject] public IUIAssetProvider AssetProvider { get; set; }
 
@@ -54,7 +54,7 @@ namespace Nexus.Core.Services
         private Transform _canvasRoot;
         private GameObject _canvasObject;
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             if (AssetProvider == null)
             {
@@ -432,8 +432,6 @@ namespace Nexus.Core.Services
             }
         }
 
-        public void OnDispose() => Dispose();
-
         // ── Editor introspection (G-3) ────────────────────────────
 
         /// <summary>Immutable description of one open window for editor visibility.</summary>
@@ -495,7 +493,7 @@ namespace Nexus.Core.Services
             return UILayer.Screen;
         }
 
-        public void Dispose()
+        public override void Dispose()
         {
             // Destroy all active windows directly; lifecycle events are skipped during teardown
             foreach (var kvp in _activeWindows)

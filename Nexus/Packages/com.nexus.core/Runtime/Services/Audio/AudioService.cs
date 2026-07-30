@@ -50,7 +50,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
-    public class AudioService : IAudioService, INexusService, IDisposable
+    public class AudioService : NexusService<IAudioService>, IAudioService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
         [Inject] public IAudioRootProvider AudioRootProvider { get; set; }
@@ -132,7 +132,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             _audioRoot = AudioRootProvider?.GetOrCreateRoot();
             if (_audioRoot == null)
@@ -235,9 +235,7 @@ namespace Nexus.Core.Services
             return source;
         }
 
-        public void OnDispose() => Dispose();
-
-        public void Dispose()
+        public override void Dispose()
         {
             if (_audioRoot != null)
             {

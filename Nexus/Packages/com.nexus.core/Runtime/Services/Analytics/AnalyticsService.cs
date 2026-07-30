@@ -13,6 +13,7 @@ namespace Nexus.Core.Services
         void SetUserProperty(string key, string value);
     }
 
+    [StubService("Replace with Firebase Analytics or Amplitude before release")]
     public class AnalyticsService : IAnalyticsService, INexusService
     {
         public ValueTask InitializeAsync(CancellationToken ct) => default;

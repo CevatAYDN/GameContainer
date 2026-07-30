@@ -24,14 +24,14 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
-    public class EconomyService : IEconomyService, INexusService, IDisposable
+    public class EconomyService : NexusService<IEconomyService>, IEconomyService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
         [Inject] public INetworkEconomyValidator NetworkValidator { get; set; }
 
         private readonly Dictionary<string, ObservableProperty<long>> _balances = new();
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             return default;
         }
@@ -116,9 +116,7 @@ namespace Nexus.Core.Services
             PlayerPrefsService?.SetLong($"NT_Eco_{currencyId}", amount);
         }
 
-        public void OnDispose() => Dispose();
-
-        public void Dispose()
+        public override void Dispose()
         {
             lock (_balances)
             {

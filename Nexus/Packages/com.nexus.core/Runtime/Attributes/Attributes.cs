@@ -164,4 +164,22 @@ namespace Nexus.Core
             DependencyScopeName = dependencyScopeName;
         }
     }
+
+    /// <summary>
+    /// Marks a service as a stub implementation that logs to console instead of using
+    /// a real SDK. BuildValidation warns about stub services so they are not shipped
+    /// to production by accident.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
+    [Preserve]
+    public sealed class StubServiceAttribute : Attribute
+    {
+        /// <summary>Optional description of what real service should replace this stub.</summary>
+        public string Description { get; }
+
+        public StubServiceAttribute(string description = "")
+        {
+            Description = description;
+        }
+    }
 }
