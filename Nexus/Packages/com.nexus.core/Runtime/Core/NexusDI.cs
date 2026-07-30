@@ -29,6 +29,9 @@ namespace Nexus.Core
         private readonly HashSet<object> _resolvedSingletons = new();
         private volatile bool _disposed;
 
+        // Editor accessor properties — avoid fragile reflection in NexusEditorDataProvider / ExplorerPlugin.
+        internal HashSet<object> EditorResolvedSingletons => _resolvedSingletons;
+
         private static readonly ConcurrentDictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
         private static readonly ConcurrentDictionary<Type, Action<object>> s_customClearers = new();
 
@@ -645,6 +648,27 @@ namespace Nexus.Core
             types.Add(typeof(ISignalBus));
             if (_parent != null) types.UnionWith(_parent.GetAllRegisteredTypes());
             return types;
+        }
+
+        /// <summary>Safe editor snapshot of resolved singleton instances.</summary>
+        internal List<(Type InterfaceType, object Instance)> GetEditorSingletonSnapshot()
+        {
+            var result = new List<(Type, object)>();
+            foreach (var kvp in _bindings)
+            {
+                if (kvp.Value.IsSingleton && kvp.Value.Instance != null)
+                    result.Add((kvp.Key, kvp.Value.Instance));
+            }
+            return result;
+        }
+
+        /// <summary>Safe editor snapshot of interface→concrete type mappings (no private-type leak).</summary>
+        internal List<(Type InterfaceType, Type ConcreteType)> GetEditorTypeMappings()
+        {
+            var result = new List<(Type, Type)>();
+            foreach (var kvp in _bindings)
+                result.Add((kvp.Key, kvp.Value.ConcreteType ?? kvp.Key));
+            return result;
         }
 
         internal bool TryGetExistingInstance(Type type, out object instance)

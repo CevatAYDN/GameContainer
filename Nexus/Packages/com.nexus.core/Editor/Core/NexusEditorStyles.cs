@@ -382,8 +382,10 @@ namespace Nexus.Editor
         // ─── Sparkline (mini bar chart) ───────────────────────────
         /// <summary>
         /// Creates a simple horizontal bar-chart sparkline from a float[] history.
+        /// <para>Consider using <see cref="NexusVisualization.CreateSparkline"/> instead.</para>
         /// Width is fixed; bar heights are normalized to the provided max value.
         /// </summary>
+        [System.Obsolete("Use NexusVisualization.CreateSparkline instead")]
         internal static VisualElement CreateSparkline(float[] values, float maxValue,
             Color barColor, float width = 120f, float height = 32f)
         {
@@ -429,7 +431,9 @@ namespace Nexus.Editor
             return container;
         }
 
-        /// <summary>Updates an existing sparkline element in-place (removes children and redraws).</summary>
+        /// <summary>Updates an existing sparkline element in-place (removes children and redraws).
+        /// <para>Consider using <see cref="NexusVisualization.UpdateSparkline"/> instead.</para></summary>
+        [System.Obsolete("Use NexusVisualization.UpdateSparkline instead")]
         internal static void UpdateSparkline(VisualElement sparkline, float[] values,
             float maxValue, Color barColor, float width = 120f, float height = 32f)
         {
@@ -460,7 +464,9 @@ namespace Nexus.Editor
         }
 
         // ─── Gauge (value indicator bar) ─────────────────────────
-        /// <summary>Creates a horizontal fill-bar gauge showing a value 0..max.</summary>
+        /// <summary>Creates a horizontal fill-bar gauge showing a value 0..max.
+        /// <para>Consider using <see cref="NexusVisualization.CreateGauge"/> instead.</para></summary>
+        [System.Obsolete("Use NexusVisualization.CreateGauge instead")]
         internal static VisualElement CreateGauge(float value, float max,
             Color fillColor, float width = 100f, float height = 6f)
         {
@@ -491,6 +497,7 @@ namespace Nexus.Editor
         }
 
         // ─── Stat Row ───
+        [System.Obsolete("Use NexusVisualization.CreateStatRow instead")]
         internal static VisualElement CreateStatRow(string key, string value,
             Color valueColor = default, float fontSize = 10f)
         {
@@ -517,6 +524,7 @@ namespace Nexus.Editor
         }
 
         // ─── Data Table ───
+        [System.Obsolete("Use NexusVisualization.CreateDataTable instead")]
         internal static VisualElement CreateDataTable(
             (string Header, float WidthFraction)[] columns,
             System.Collections.Generic.IEnumerable<string[]> rows,

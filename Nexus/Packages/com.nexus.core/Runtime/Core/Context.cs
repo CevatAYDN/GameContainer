@@ -58,6 +58,7 @@ namespace Nexus.Core
         private IContextLifecycle[] _configuredLifecycles = Array.Empty<IContextLifecycle>();
 
         internal IReadOnlyList<IContextLifecycle> ConfiguredLifecycles => _configuredLifecycles;
+        internal ContextBuilder Builder => _builder;
         public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
 
         public bool HasInterceptors => System.Threading.Volatile.Read(ref _interceptorsCount) > 0;

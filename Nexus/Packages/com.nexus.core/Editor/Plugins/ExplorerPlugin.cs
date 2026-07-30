@@ -267,54 +267,35 @@ namespace Nexus.Editor
                 foldout.style.paddingLeft = 5;
                 foldout.style.paddingTop = 5;
 
-                var containerField = typeof(NexusDI).GetField("_bindings", BindingFlags.NonPublic | BindingFlags.Instance);
-                if (containerField != null)
+                var singletons = castedCtx.Container.GetEditorSingletonSnapshot();
+                foreach (var (interfaceType, instance) in singletons)
                 {
-                    var bindings = containerField.GetValue(castedCtx.Container) as System.Collections.IDictionary;
-                    if (bindings != null)
+                    if (instance is IContext || instance is NexusDI || instance is CommandPoolManager || instance is ISignalBus)
+                        continue;
+
+                    var instanceType = instance.GetType();
+                    
+                    var modelFoldout = new Foldout { text = $"{interfaceType.Name} -> {instanceType.Name}", value = false };
+                    modelFoldout.style.marginLeft = 15;
+                    modelFoldout.style.color = new StyleColor(NexusEditorStyles.AccentGreen);
+
+                    var props = instanceType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+                    foreach (var prop in props)
                     {
-                        foreach (System.Collections.DictionaryEntry entry in bindings)
+                        if (!prop.CanRead || prop.GetIndexParameters().Length > 0) continue;
+                        try
                         {
-                            Type interfaceType = entry.Key as Type;
-                            object bindingObj = entry.Value;
-                            if (bindingObj == null) continue;
-                            
-                            var instanceProp = bindingObj.GetType().GetProperty("Instance", BindingFlags.Public | BindingFlags.Instance);
-                            if (instanceProp != null)
-                            {
-                                object instance = instanceProp.GetValue(bindingObj);
-                                if (instance != null)
-                                {
-                                    if (instance is IContext || instance is NexusDI || instance is CommandPoolManager || instance is ISignalBus)
-                                        continue;
-
-                                    var instanceType = instance.GetType();
-                                    
-                                    var modelFoldout = new Foldout { text = $"{interfaceType.Name} -> {instanceType.Name}", value = false };
-                                    modelFoldout.style.marginLeft = 15;
-                                    modelFoldout.style.color = new StyleColor(NexusEditorStyles.AccentGreen);
-
-                                    var props = instanceType.GetProperties(BindingFlags.Public | BindingFlags.Instance);
-                                    foreach (var prop in props)
-                                    {
-                                        if (!prop.CanRead || prop.GetIndexParameters().Length > 0) continue;
-                                        try
-                                        {
-                                            object val = prop.GetValue(instance);
-                                            string valStr = val != null ? val.ToString() : "null";
-                                            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15 } };
-                                            row.Add(new Label(prop.Name) { style = { width = 150, color = NexusEditorStyles.TextSecondary } });
-                                            row.Add(new Label(valStr) { style = { color = Color.white } });
-                                            modelFoldout.Add(row);
-                                        }
-                                        catch { }
-                                    }
-                                    
-                                    foldout.Add(modelFoldout);
-                                }
-                            }
+                            object val = prop.GetValue(instance);
+                            string valStr = val != null ? val.ToString() : "null";
+                            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15 } };
+                            row.Add(new Label(prop.Name) { style = { width = 150, color = NexusEditorStyles.TextSecondary } });
+                            row.Add(new Label(valStr) { style = { color = Color.white } });
+                            modelFoldout.Add(row);
                         }
+                        catch (Exception ex) { Debug.LogWarning($"[Explorer] Property read failed for {prop.Name}: {ex.Message}"); }
                     }
+                    
+                    foldout.Add(modelFoldout);
                 }
                 
                 container.Add(foldout);

@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Reflection;
 using Nexus.Core;
 using UnityEditor;
 using UnityEditor.Callbacks;
@@ -160,19 +158,13 @@ namespace Nexus.Editor
         /// <summary>Returns all service types registered in a context's builder.</summary>
         internal static IReadOnlyList<Type> GetLiveServiceTypes(IContext context)
         {
-            if (context is not Context ctx) return System.Array.Empty<Type>();
+            if (context is not Context ctx) return Array.Empty<Type>();
             try
             {
-                // Access builder via reflection if builder is internal
-                var builderField = typeof(Context).GetField("_builder",
-                    BindingFlags.NonPublic | BindingFlags.Instance);
-                var builder = builderField?.GetValue(ctx) as ContextBuilder;
-                var serviceTypesProp = typeof(ContextBuilder).GetProperty("ServiceTypes",
-                    BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.Public);
-                var serviceTypes = serviceTypesProp?.GetValue(builder) as IReadOnlyList<Type>;
-                return serviceTypes ?? (IReadOnlyList<Type>)System.Array.Empty<Type>();
+                var builder = ctx.Builder;
+                return builder?.ServiceTypes ?? Array.Empty<Type>();
             }
-            catch { return System.Array.Empty<Type>(); }
+            catch (Exception ex) { Debug.LogWarning($"[NexusDataProvider] Failed to get live service types: {ex.Message}"); return Array.Empty<Type>(); }
         }
 
         /// <summary>Attempts to safely resolve a service instance from a context.</summary>
@@ -194,21 +186,10 @@ namespace Nexus.Editor
             if (context is not Context ctx || ctx.Container == null) return result;
             try
             {
-                var bindingsField = typeof(NexusDI).GetField("_bindings",
-                    BindingFlags.NonPublic | BindingFlags.Instance);
-                if (bindingsField?.GetValue(ctx.Container) is ConcurrentDictionary<Type, object> bindings)
-                {
-                    foreach (var kvp in bindings)
-                    {
-                        // Binding is internal class; get ConcreteType via reflection
-                        var concreteTypeProp = kvp.Value.GetType()
-                            .GetProperty("ConcreteType", BindingFlags.Public | BindingFlags.Instance);
-                        var concreteType = concreteTypeProp?.GetValue(kvp.Value) as Type ?? kvp.Key;
-                        result[kvp.Key] = concreteType;
-                    }
-                }
+                foreach (var (interfaceType, concreteType) in ctx.Container.GetEditorTypeMappings())
+                    result[interfaceType] = concreteType;
             }
-            catch { }
+            catch (Exception ex) { Debug.LogWarning($"[NexusDataProvider] Failed to get type mappings: {ex.Message}"); }
             return result;
         }
 
@@ -219,14 +200,10 @@ namespace Nexus.Editor
             if (context is not Context ctx || ctx.Container == null) return result;
             try
             {
-                var singletonsField = typeof(NexusDI).GetField("_resolvedSingletons",
-                    BindingFlags.NonPublic | BindingFlags.Instance);
-                if (singletonsField?.GetValue(ctx.Container) is HashSet<object> singletons)
-                {
-                    result.AddRange(singletons);
-                }
+                var singletons = ctx.Container.EditorResolvedSingletons;
+                result.AddRange(singletons);
             }
-            catch { }
+            catch (Exception ex) { Debug.LogWarning($"[NexusDataProvider] Failed to get resolved singletons: {ex.Message}"); }
             return result;
         }
     }
