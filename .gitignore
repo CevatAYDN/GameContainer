@@ -51,6 +51,7 @@ Nexus/Packages/com.nexus.core/*.csproj.meta
 *.csproj.user
 *.sln.docstate
 *.slnx.user
+*.devin
 
 # OS-specific ignores
 .DS_Store

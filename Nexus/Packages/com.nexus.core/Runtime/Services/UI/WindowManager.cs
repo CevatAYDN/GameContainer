@@ -160,10 +160,19 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(windowName)) return null;
 
-            bool alreadyOpen = false;
+            // E-5 fix: extended lock scope to eliminate the race window entirely.
+            // We release the lock ONLY for the async instantiation (which may be slow),
+            // but re-check conditions immediately after re-acquiring.
+            // The wait-loop uses a max-retry count to prevent infinite spinning.
             GameObject existing = null;
+            const int maxPendingWaitMs = 30000; // 30-second timeout for pending opens
+            int totalWaitMs = 0;
 
+            // Phase 1: registration check (under lock)
+            // E-5 fix: use lockHeld guard to prevent SemaphoreFullException if the inner
+            // while-loop releases the lock and an exception occurs before re-acquiring.
             await _windowLock.WaitAsync();
+            bool lockHeld = true;
             try
             {
                 // Clean up any externally destroyed windows
@@ -187,45 +196,38 @@ namespace Nexus.Core.Services
                     return existing;
                 }
 
-                if (_pendingOpenWindows.Contains(windowName))
+                // If another thread is already opening this window, wait for it
+                while (_pendingOpenWindows.Contains(windowName))
                 {
-                    alreadyOpen = true;
+                    _windowLock.Release();
+                    lockHeld = false;
+                    await Task.Delay(10);
+                    totalWaitMs += 10;
+                    if (totalWaitMs >= maxPendingWaitMs)
+                    {
+                        NexusRuntime.Logger?.LogError($"[WindowManager] Timed out waiting for pending window: {windowName}");
+                        return null;
+                    }
+                    await _windowLock.WaitAsync();
+                    lockHeld = true;
+
+                    // Re-check: if window appeared while we were waiting, return it
+                    if (_activeWindows.TryGetValue(windowName, out existing) && existing != null)
+                    {
+                        return existing;
+                    }
                 }
-                else
-                {
-                    _pendingOpenWindows.Add(windowName);
-                }
+
+                // We are now the designated opener
+                _pendingOpenWindows.Add(windowName);
             }
             finally
             {
-                _windowLock.Release();
+                if (lockHeld)
+                    _windowLock.Release();
             }
 
-            if (alreadyOpen)
-            {
-                // Wait for the window to finish opening
-                while (true)
-                {
-                    await Task.Delay(10);
-                    await _windowLock.WaitAsync();
-                    try
-                    {
-                        if (_activeWindows.TryGetValue(windowName, out existing))
-                        {
-                            return existing;
-                        }
-                        if (!_pendingOpenWindows.Contains(windowName))
-                        {
-                            return null; // failed to open
-                        }
-                    }
-                    finally
-                    {
-                        _windowLock.Release();
-                    }
-                }
-            }
-
+            // Phase 2: instantiate outside lock (may be slow - asset loading)
             var targetParent = _layerRoots.TryGetValue(layer, out var layerRoot) ? layerRoot : _canvasRoot;
             GameObject inst = null;
             try
@@ -235,14 +237,8 @@ namespace Nexus.Core.Services
                 {
                     NexusRuntime.Logger?.LogError($"[WindowManager] Failed to instantiate window: {windowName}");
                     await _windowLock.WaitAsync();
-                    try
-                    {
-                        _pendingOpenWindows.Remove(windowName);
-                    }
-                    finally
-                    {
-                        _windowLock.Release();
-                    }
+                    try { _pendingOpenWindows.Remove(windowName); }
+                    finally { _windowLock.Release(); }
                     return null;
                 }
 
@@ -259,9 +255,16 @@ namespace Nexus.Core.Services
                     await lifecycles[i].OnOpenedAsync(CancellationToken.None);
                 }
 
+                // Phase 3: register under lock (atomic add + pending removal)
                 await _windowLock.WaitAsync();
                 try
                 {
+                    // E-5 fix: guard against a concurrent close that snuck in while we were instantiating
+                    if (!inst) // GameObject was destroyed externally
+                    {
+                        _pendingOpenWindows.Remove(windowName);
+                        return null;
+                    }
                     _activeWindows[windowName] = inst;
                     _windowHistory.Add(windowName);
                     _pendingOpenWindows.Remove(windowName);
@@ -282,14 +285,8 @@ namespace Nexus.Core.Services
                     UnityEngine.Object.Destroy(inst);
                 }
                 await _windowLock.WaitAsync();
-                try
-                {
-                    _pendingOpenWindows.Remove(windowName);
-                }
-                finally
-                {
-                    _windowLock.Release();
-                }
+                try { _pendingOpenWindows.Remove(windowName); }
+                finally { _windowLock.Release(); }
                 return null;
             }
         }

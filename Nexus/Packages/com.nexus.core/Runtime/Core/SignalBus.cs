@@ -861,7 +861,9 @@ namespace Nexus.Core
                             }
                             else if (handler is Func<T, CancellationToken, ValueTask> asyncSub)
                             {
-                                await asyncSub(signal, _context.LifetimeToken);
+                                // P2-12 fix: pass the command-scoped token so subscriptions
+                                // also honour the FireAsyncWithTimeout timeout.
+                                await asyncSub(signal, commandCt);
                             }
                         }
                         current = current.Next;

@@ -24,4 +24,10 @@
     <type fullname="Nexus.Core.CommandHandlerInfo" preserve="all"/>
     <type fullname="Nexus.Core.CompositeTriggerState" preserve="all"/>
   </assembly>
+
+  <!-- P1-13 fix: preserve UnityEngine.UI types accessed by WindowManager at runtime -->
+  <assembly fullname="UnityEngine.UI">
+    <type fullname="UnityEngine.UI.CanvasScaler" preserve="all"/>
+    <type fullname="UnityEngine.UI.GraphicRaycaster" preserve="all"/>
+  </assembly>
 </linker>

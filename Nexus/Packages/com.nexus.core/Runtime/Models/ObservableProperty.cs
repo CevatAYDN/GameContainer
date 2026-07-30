@@ -27,6 +27,7 @@ namespace Nexus.Core
         private List<Action<T, T>> _handlers;
         private Action<T, T>[] _snapshotCache;
         private bool _snapshotDirty;
+        private bool _isNotifying; // P2-3 fix: reentrancy guard
         private readonly object _handlersLock = new();
 
         // ── Construction ───────────────────────────────────────
@@ -43,7 +44,7 @@ namespace Nexus.Core
             get => _value;
             set
             {
-                if (EqualityComparer<T>.Default.Equals(_value, value))
+                if (_isNotifying || EqualityComparer<T>.Default.Equals(_value, value))
                     return;
 
                 var old = _value;
@@ -60,9 +61,17 @@ namespace Nexus.Core
                 }
                 if (snapshot != null)
                 {
-                    for (int i = 0; i < snapshot.Length; i++)
+                    _isNotifying = true;
+                    try
                     {
-                        snapshot[i]?.Invoke(old, value);
+                        for (int i = 0; i < snapshot.Length; i++)
+                        {
+                            snapshot[i]?.Invoke(old, value);
+                        }
+                    }
+                    finally
+                    {
+                        _isNotifying = false;
                     }
                 }
             }
@@ -132,10 +141,12 @@ namespace Nexus.Core
     {
         private readonly List<T> _items = new();
 
-        // Callbacks (multicast delegates)
-        private event Action<int, T> _onAdded;   // (index, item)
-        private event Action<int, T> _onRemoved; // (index, item)
-        private event Action _onCleared;
+        // E-10 fix: use snapshot + lock pattern (like ObservableProperty) for reentrancy safety
+        private readonly object _eventLock = new();
+        private List<Action<int, T>> _onAdded;
+        private List<Action<int, T>> _onRemoved;
+        private List<Action> _onCleared;
+        private bool _isNotifying;
 
         // ── Access ─────────────────────────────────────────────
         public int Count => _items.Count;
@@ -150,51 +161,162 @@ namespace Nexus.Core
         // ── Mutation ───────────────────────────────────────────
         public void Add(T item)
         {
-            var index = _items.Count;
-            _items.Add(item);
-            _onAdded?.Invoke(index, item);
+            Action<int, T>[] addedSnapshot = null;
+            int index;
+            lock (_eventLock)
+            {
+                index = _items.Count;
+                _items.Add(item);
+                if (!_isNotifying && _onAdded != null)
+                    addedSnapshot = _onAdded.ToArray();
+            }
+            if (addedSnapshot != null)
+            {
+                _isNotifying = true;
+                try
+                {
+                    for (int i = 0; i < addedSnapshot.Length; i++)
+                        addedSnapshot[i]?.Invoke(index, item);
+                }
+                finally { _isNotifying = false; }
+            }
         }
 
         public bool Remove(T item)
         {
-            var index = _items.IndexOf(item);
-            if (index < 0) return false;
-            _items.RemoveAt(index);
-            _onRemoved?.Invoke(index, item);
+            Action<int, T>[] removedSnapshot = null;
+            int index;
+            lock (_eventLock)
+            {
+                index = _items.IndexOf(item);
+                if (index < 0) return false;
+                _items.RemoveAt(index);
+                if (!_isNotifying && _onRemoved != null)
+                    removedSnapshot = _onRemoved.ToArray();
+            }
+            if (removedSnapshot != null)
+            {
+                _isNotifying = true;
+                try
+                {
+                    for (int i = 0; i < removedSnapshot.Length; i++)
+                        removedSnapshot[i]?.Invoke(index, item);
+                }
+                finally { _isNotifying = false; }
+            }
             return true;
         }
 
         public void RemoveAt(int index)
         {
-            var item = _items[index];
-            _items.RemoveAt(index);
-            _onRemoved?.Invoke(index, item);
+            Action<int, T>[] removedSnapshot = null;
+            T item;
+            lock (_eventLock)
+            {
+                item = _items[index];
+                _items.RemoveAt(index);
+                if (!_isNotifying && _onRemoved != null)
+                    removedSnapshot = _onRemoved.ToArray();
+            }
+            if (removedSnapshot != null)
+            {
+                _isNotifying = true;
+                try
+                {
+                    for (int i = 0; i < removedSnapshot.Length; i++)
+                        removedSnapshot[i]?.Invoke(index, item);
+                }
+                finally { _isNotifying = false; }
+            }
         }
 
         public void Clear()
         {
-            _items.Clear();
-            _onCleared?.Invoke();
+            Action[] clearedSnapshot = null;
+            lock (_eventLock)
+            {
+                _items.Clear();
+                if (!_isNotifying && _onCleared != null)
+                    clearedSnapshot = _onCleared.ToArray();
+            }
+            if (clearedSnapshot != null)
+            {
+                _isNotifying = true;
+                try
+                {
+                    for (int i = 0; i < clearedSnapshot.Length; i++)
+                        clearedSnapshot[i]?.Invoke();
+                }
+                finally { _isNotifying = false; }
+            }
         }
 
         public bool Contains(T item) => _items.Contains(item);
         public int IndexOf(T item) => _items.IndexOf(item);
 
         // ── Observation ────────────────────────────────────────
-        public void OnAdded(Action<int, T> handler) { if (handler != null) _onAdded += handler; }
-        public void RemoveOnAdded(Action<int, T> handler) { if (handler != null) _onAdded -= handler; }
+        public void OnAdded(Action<int, T> handler)
+        {
+            if (handler == null) return;
+            lock (_eventLock)
+            {
+                _onAdded ??= new List<Action<int, T>>(2);
+                _onAdded.Add(handler);
+            }
+        }
+        public void RemoveOnAdded(Action<int, T> handler)
+        {
+            if (handler == null) return;
+            lock (_eventLock)
+            {
+                _onAdded?.Remove(handler);
+            }
+        }
 
-        public void OnRemoved(Action<int, T> handler) { if (handler != null) _onRemoved += handler; }
-        public void RemoveOnRemoved(Action<int, T> handler) { if (handler != null) _onRemoved -= handler; }
+        public void OnRemoved(Action<int, T> handler)
+        {
+            if (handler == null) return;
+            lock (_eventLock)
+            {
+                _onRemoved ??= new List<Action<int, T>>(2);
+                _onRemoved.Add(handler);
+            }
+        }
+        public void RemoveOnRemoved(Action<int, T> handler)
+        {
+            if (handler == null) return;
+            lock (_eventLock)
+            {
+                _onRemoved?.Remove(handler);
+            }
+        }
 
-        public void OnCleared(Action handler) { if (handler != null) _onCleared += handler; }
-        public void RemoveOnCleared(Action handler) { if (handler != null) _onCleared -= handler; }
+        public void OnCleared(Action handler)
+        {
+            if (handler == null) return;
+            lock (_eventLock)
+            {
+                _onCleared ??= new List<Action>(2);
+                _onCleared.Add(handler);
+            }
+        }
+        public void RemoveOnCleared(Action handler)
+        {
+            if (handler == null) return;
+            lock (_eventLock)
+            {
+                _onCleared?.Remove(handler);
+            }
+        }
 
         public void ClearAllCallbacks()
         {
-            _onAdded = null;
-            _onRemoved = null;
-            _onCleared = null;
+            lock (_eventLock)
+            {
+                _onAdded?.Clear();
+                _onRemoved?.Clear();
+                _onCleared?.Clear();
+            }
         }
 
         // ── Enumeration ────────────────────────────────────────

@@ -77,19 +77,23 @@ namespace Nexus.Core
 
         private static void WarnIfStateLeakRisk(Type type)
         {
-            if (s_stateLeakWarningIssued.Contains(type)) return;
             if (typeof(IResettable).IsAssignableFrom(type)) return;
 
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var field in fields)
+            // P2-4 fix: single lock acquisition for both Contains and Add
+            lock (s_stateLeakWarningIssued)
             {
-                if (field.IsInitOnly || field.IsLiteral) continue;
-                if (field.GetCustomAttribute<InjectAttribute>() != null) continue;
-                if (field.FieldType.IsValueType && !field.FieldType.IsPrimitive && field.FieldType != typeof(decimal)) continue;
+                if (s_stateLeakWarningIssued.Contains(type)) return;
 
-                // Non-injected, non-readonly field could leak state across pool reuse
-                if (s_stateLeakWarningIssued.Add(type))
+                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                foreach (var field in fields)
                 {
+                    if (field.IsInitOnly || field.IsLiteral) continue;
+                    if (field.GetCustomAttribute<InjectAttribute>() != null) continue;
+                    // P2-4 fix: also flag non-primitive struct fields (they can leak state too)
+                    if (field.FieldType.IsPrimitive || field.FieldType.IsEnum) continue;
+
+                    // Non-injected, non-readonly field could leak state across pool reuse
+                    s_stateLeakWarningIssued.Add(type);
                     NexusRuntime.Logger?.LogWarning($"[Nexus] Command '{type.Name}' has mutable field '{field.Name}' but does not implement IResettable. " +
                     "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
                     return;

@@ -18,9 +18,22 @@ namespace Nexus.Core
         private bool _snapshotDirty;
         private readonly object _handlersLock = new();
 
+        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+
+        private static int GetSecureRandomKey()
+        {
+            // P2-2 fix: use crypto RNG instead of UnityEngine.Random which is main-thread-only.
+            // RandomNumberGenerator is thread-safe on .NET Standard 2.1+ — no lock needed.
+            // Also reads/writes _obscuredValue and _cryptoKey atomically via Interlocked.
+            byte[] bytes = new byte[4];
+            s_rng.GetBytes(bytes);
+            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF; // ensure positive
+            return Math.Max(key, 1000);
+        }
+
         public SecureObservableInt(int initialValue = 0)
         {
-            _cryptoKey = UnityEngine.Random.Range(1000, 9999999);
+            _cryptoKey = GetSecureRandomKey();
             _obscuredValue = initialValue ^ _cryptoKey;
         }
 
@@ -33,8 +46,10 @@ namespace Nexus.Core
                 if (current == value) return;
 
                 int old = current;
-                _cryptoKey = UnityEngine.Random.Range(1000, 9999999);
-                _obscuredValue = value ^ _cryptoKey;
+                int newKey = GetSecureRandomKey();
+                // P2-2 fix: atomic write of both fields via Interlocked.Exchange to prevent torn reads
+                System.Threading.Interlocked.Exchange(ref _obscuredValue, value ^ newKey);
+                System.Threading.Interlocked.Exchange(ref _cryptoKey, newKey);
 
                 Action<int, int>[] snapshot;
                 lock (_handlersLock)
@@ -58,8 +73,9 @@ namespace Nexus.Core
 
         public void SetWithoutNotify(int value)
         {
-            _cryptoKey = UnityEngine.Random.Range(1000, 9999999);
-            _obscuredValue = value ^ _cryptoKey;
+            int newKey = GetSecureRandomKey();
+            System.Threading.Interlocked.Exchange(ref _obscuredValue, value ^ newKey);
+            System.Threading.Interlocked.Exchange(ref _cryptoKey, newKey);
         }
 
         public void OnChanged(Action<int, int> handler)

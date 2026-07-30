@@ -63,6 +63,43 @@ This guide describes recommended Nexus Core architectural setups, context topolo
 
 ---
 
+## ⏳ 6. Idle Arcade Games (e.g. Clicker / Idle Tycoon)
+
+- **Topology:** Dual Context (Simulation + UI):
+  - `IdleContext` (Pure C# context via `CreatePureContextAsync`) — tick-based simulation, headless
+  - `UIContext` (Scene-anchored Root) — HUD, shop, prestige UI mediators
+- **Characteristics:** Low signal frequency (< 5 sigs/sec user input), **persistent tick simulation**, offline earnings calculation, heavy UI with upgrade trees.
+- **Setup Pattern:**
+  - `EconomyService` (Coins, Gems, Energy) for multi-currency passive income.
+  - `ProgressionService` for linear/exponential upgrade cost curves.
+  - `TickService` + `ITickable` for passive income per-second simulation.
+  - `EncryptedStorageService` for offline earnings persistence.
+  - `WindowManager` (HUD → Shop → Prestige modal) layered UI navigation.
+  - `Sequential` mode for discrete upgrades; `Composite` triggers for multi-resource milestones.
+- **Performance Budget:** 60 FPS, < 500B GC/frame, < 30 draw calls (UI-heavy).
+- **Offline Earnings Example:**
+  ```csharp
+  public class OfflineEarningsCommand : ICommand<TickSignal>
+  {
+      [Inject] public IEconomyService Economy { get; set; }
+      [Inject] public IEncryptedStorageService Save { get; set; }
+
+      public void Execute(TickSignal signal)
+      {
+          // Passive income per second
+          Economy.AddCurrency("Coins", CalculateIncomePerSec() * signal.DeltaTime);
+      }
+
+      public void CalculateOfflineReward()
+      {
+          double elapsed = (DateTime.UtcNow - _lastSaveTime).TotalSeconds;
+          Economy.AddCurrency("Coins", (long)(CalculateIncomePerSec() * elapsed));
+      }
+  }
+  ```
+
+---
+
 ## 🔗 Related Documentation
 - 📖 [README.md](../README.md) — Main framework index and decision flows
 - 🏛️ [ARCHITECTURE.md](ARCHITECTURE.md) — Runtime architecture & sequence diagrams

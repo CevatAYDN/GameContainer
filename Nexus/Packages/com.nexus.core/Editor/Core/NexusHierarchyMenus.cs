@@ -3,7 +3,7 @@ using UnityEngine;
 using UnityEngine.UI;
 using Nexus.Core;
 
-namespace Nexus.Editor.Core
+namespace Nexus.Editor
 {
     public static class NexusHierarchyMenus
     {

@@ -130,9 +130,8 @@ namespace Nexus.Editor
             // Scan all loaded assemblies
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
-                // Skip system/unity assemblies to speed up
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                    var name = assembly.GetName().Name;
+                if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
@@ -312,7 +311,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
@@ -395,7 +394,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
@@ -597,7 +596,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
@@ -634,6 +633,10 @@ namespace Nexus.Editor
 
                             // Skip value types that are primitives (int, bool, etc. — trivially reset)
                             if (field.FieldType.IsPrimitive)
+                                continue;
+
+                            // Skip enum fields — they're backed by integers and trivially re-assigned
+                            if (field.FieldType.IsEnum)
                                 continue;
 
                             // A non-injected, non-readonly, non-primitive mutable field in a command
@@ -693,7 +696,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
@@ -758,7 +761,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
@@ -942,6 +945,48 @@ namespace Nexus.Editor
             return false;
         }
 
+        private static bool IsAssemblyExcluded(string name)
+        {
+            if (name == null) return true;
+            if (name.StartsWith("System", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("Unity", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("Microsoft", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("mono", StringComparison.OrdinalIgnoreCase)) return true;
+            // Third-party and Unity-internal assemblies that should not be DI-validated
+            if (name.StartsWith("Newtonsoft", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("Grpc", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("ExCSS", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("log4net", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("TextMateSharp", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("Onigwrap", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("unityplastic", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("Codice", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("Plastic", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("NUnit", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("MCPForUnity", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("Mono", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.StartsWith("nunit.framework", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.Equals("mscorlib", StringComparison.OrdinalIgnoreCase)) return true;
+            if (name.Equals("netstandard", StringComparison.OrdinalIgnoreCase)) return true;
+            return false;
+        }
+
+        private static bool IsTypeAvailable(Type type, HashSet<string> availableTypeNames)
+        {
+            // A type is available if:
+            // 1. Its FullName is in the availableTypeNames set, OR
+            // 2. Its assembly is excluded by IsAssemblyExcluded (meaning it's a system/Unity/3rd-party type always present at runtime)
+            if (type.FullName == null) return true;
+            if (availableTypeNames.Contains(type.FullName)) return true;
+            try
+            {
+                var asmName = type.Assembly.GetName().Name;
+                if (IsAssemblyExcluded(asmName)) return true;
+            }
+            catch { }
+            return false;
+        }
+
         private static void ValidateDiBindings(ref int errorCount, ref int warningCount)
         {
             // Build a set of all available types from non-system loaded assemblies.
@@ -953,7 +998,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
@@ -989,7 +1034,7 @@ namespace Nexus.Editor
                 {
                     foreach (var paramType in meta.ConstructorParameterTypes)
                     {
-                        if (paramType.FullName != null && !availableTypeNames.Contains(paramType.FullName))
+                        if (!IsTypeAvailable(paramType, availableTypeNames))
                         {
                             Debug.LogWarning($"[Nexus Warning] DI: '{type.FullName}' constructor depends on '{paramType.FullName}', which is not available in any scanned assembly. Verify the assembly reference.");
                             warningCount++;
@@ -1000,7 +1045,7 @@ namespace Nexus.Editor
                 // [Inject] field validation
                 foreach (var field in meta.Fields)
                 {
-                    if (!field.IsOptional && field.Type.FullName != null && !availableTypeNames.Contains(field.Type.FullName))
+                    if (!field.IsOptional && !IsTypeAvailable(field.Type, availableTypeNames))
                     {
                         Debug.LogWarning($"[Nexus Warning] DI: [Inject] field '{type.FullName}.{field.Field.Name}' requires '{field.Type.FullName}', which is not available in any scanned assembly.");
                         warningCount++;
@@ -1010,7 +1055,7 @@ namespace Nexus.Editor
                 // [Inject] property validation
                 foreach (var prop in meta.Properties)
                 {
-                    if (!prop.IsOptional && prop.Type.FullName != null && !availableTypeNames.Contains(prop.Type.FullName))
+                    if (!prop.IsOptional && !IsTypeAvailable(prop.Type, availableTypeNames))
                     {
                         Debug.LogWarning($"[Nexus Warning] DI: [Inject] property '{type.FullName}.{prop.Property.Name}' requires '{prop.Type.FullName}', which is not available in any scanned assembly.");
                         warningCount++;
@@ -1022,7 +1067,7 @@ namespace Nexus.Editor
                 {
                     for (int i = 0; i < method.ParameterTypes.Length; i++)
                     {
-                        if (!method.OptionalParameterMask[i] && method.ParameterTypes[i].FullName != null && !availableTypeNames.Contains(method.ParameterTypes[i].FullName))
+                        if (!method.OptionalParameterMask[i] && !IsTypeAvailable(method.ParameterTypes[i], availableTypeNames))
                         {
                             var paramName = method.Method.GetParameters()[i].Name;
                             Debug.LogWarning($"[Nexus Warning] DI: [Inject] method '{type.FullName}.{method.Method.Name}' parameter '{paramName}' requires '{method.ParameterTypes[i].FullName}', which is not available in any scanned assembly.");
@@ -1069,7 +1114,7 @@ namespace Nexus.Editor
             foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                if (IsAssemblyExcluded(name))
                     continue;
                 try
                 {

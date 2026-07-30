@@ -86,31 +86,19 @@ namespace Nexus.Editor
             var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("gamemanager_title"));
             _root.Add(toolbar);
 
-            // Breadcrumb / section bar
-            _breadcrumb = new VisualElement
-            {
-                style =
-                {
-                    flexDirection = FlexDirection.Row,
-                    backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg),
-                    paddingLeft = 8,
-                    paddingRight = 8,
-                    paddingTop = 4,
-                    paddingBottom = 4,
-                    borderBottomWidth = 1,
-                    borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor),
-                    flexWrap = Wrap.Wrap
-                }
-            };
+            _breadcrumb = new VisualElement();
+            _breadcrumb.AddToClassList(NexusEditorStyles.ClassBreadcrumb);
             _root.Add(_breadcrumb);
             BuildBreadcrumb();
 
             _content = new ScrollView { style = { flexGrow = 1 } };
             _root.Add(_content);
 
-            var quickBar = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginLeft = 12, marginRight = 12, marginTop = 8 } };
+            var quickBar = new VisualElement();
+            quickBar.AddToClassList(NexusEditorStyles.ClassQuickbar);
             _quickFindField = new TextField { value = string.Empty, isDelayed = false };
             _quickFindField.style.flexGrow = 1;
+            _quickFindField.AddToClassList(NexusEditorStyles.ClassSearchField);
             _quickFindField.label = NexusLang.Get("gm_quick_find");
             _quickFindField.tooltip = NexusLang.Get("gm_quick_find_tooltip");
             _quickFindField.RegisterValueChangedCallback(evt =>
@@ -213,33 +201,13 @@ namespace Nexus.Editor
             {
                 var btn = new Button(() => SelectSection(s));
                 btn.name = $"gm_{s}";
-                btn.style.unityFontStyleAndWeight = FontStyle.Bold;
-                btn.style.fontSize = 10;
-                btn.style.paddingLeft = 10;
-                btn.style.paddingRight = 10;
-                btn.style.paddingTop = 5;
-                btn.style.paddingBottom = 5;
-                btn.style.marginLeft = 2;
-                btn.style.marginRight = 2;
-                btn.style.marginBottom = 4;
-                btn.style.borderTopLeftRadius = 4;
-                btn.style.borderTopRightRadius = 4;
-                btn.style.borderBottomLeftRadius = 4;
-                btn.style.borderBottomRightRadius = 4;
-                btn.style.borderTopWidth = 0;
-                btn.style.borderBottomWidth = 0;
-                btn.style.borderLeftWidth = 0;
-                btn.style.borderRightWidth = 0;
-                btn.style.backgroundColor = new StyleColor(Color.clear);
-                btn.style.flexShrink = 0;
-                btn.style.alignItems = Align.Center;
-                btn.style.flexDirection = FlexDirection.Row;
+                btn.AddToClassList(NexusEditorStyles.ClassSectionTab);
 
                 var dot = NexusEditorStyles.CreateStatusDot(color, 6);
                 btn.Add(dot);
 
                 var txtLabel = new Label(label);
-                txtLabel.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
+                txtLabel.AddToClassList(NexusEditorStyles.ClassSectionTabText);
                 btn.Add(txtLabel);
 
                 _breadcrumb.Add(btn);
@@ -262,17 +230,10 @@ namespace Nexus.Editor
             foreach (var kvp in _sectionButtons)
             {
                 bool active = kvp.Key == _activeSection;
-                kvp.Value.style.backgroundColor = active
-                    ? new StyleColor(NexusEditorStyles.HighlightBg)
-                    : new StyleColor(Color.clear);
-
-                var txtLabel = kvp.Value.Q<Label>();
-                if (txtLabel != null)
-                {
-                    txtLabel.style.color = active
-                        ? new StyleColor(NexusEditorStyles.AccentBlue)
-                        : new StyleColor(NexusEditorStyles.TextPrimary);
-                }
+                if (active)
+                    kvp.Value.AddToClassList("active");
+                else
+                    kvp.Value.RemoveFromClassList("active");
             }
         }
 
@@ -449,28 +410,18 @@ namespace Nexus.Editor
             var s = _snapshot;
             bool playing = Application.isPlaying;
 
-            // Header status
-            var statusRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15, marginTop = 10, marginBottom = 10 } };
+            var statusRow = new VisualElement();
+            statusRow.AddToClassList("nexus-status-row");
             var dot = NexusEditorStyles.CreateStatusDot(playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.DimText, 10);
             statusRow.Add(dot);
-            var statusText = new Label(playing ? NexusLang.Get("gamemanager_active") : NexusLang.Get("gamemanager_standby"))
-            {
-                style = { fontSize = 14, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary) }
-            };
+            var statusText = new Label(playing ? NexusLang.Get("gamemanager_active") : NexusLang.Get("gamemanager_standby"));
+            statusText.AddToClassList("nexus-status-text");
+            statusText.style.color = new StyleColor(playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary);
             statusRow.Add(statusText);
             _content.Add(statusRow);
 
-            // Stats grid
-            var grid = new VisualElement
-            {
-                style =
-                {
-                    flexDirection = FlexDirection.Row,
-                    flexWrap = Wrap.Wrap,
-                    marginLeft = 15,
-                    marginRight = 15
-                }
-            };
+            var grid = new VisualElement();
+            grid.AddToClassList("nexus-flex-grid");
 
             AddStatCard(grid, NexusLang.Get("gamemanager_stat_contexts"), s.ContextCount.ToString(), NexusEditorStyles.AccentGreen, NexusLang.Get("gamemanager_desc_contexts"));
             AddStatCard(grid, NexusLang.Get("gamemanager_stat_models"), s.ModelCount.ToString(), NexusEditorStyles.AccentYellow, NexusLang.Get("gamemanager_desc_models"));
@@ -482,13 +433,13 @@ namespace Nexus.Editor
 
             _content.Add(grid);
 
-            // Quick actions (G-6: Consolidated single actions row)
             var actionsLabel = NexusEditorStyles.CreateSectionTitle(NexusLang.Get("gamemanager_quick_actions"));
             actionsLabel.style.marginLeft = 15;
             actionsLabel.style.marginTop = 15;
             _content.Add(actionsLabel);
 
-            var actionsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 15, marginTop = 5, flexWrap = Wrap.Wrap } };
+            var actionsRow = new VisualElement();
+            actionsRow.AddToClassList("nexus-actions-row");
             actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_wizard"), () => Window?.SwitchToPlugin("Wizard"), NexusEditorStyles.BtnBlue));
             actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_tracer"), () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal));
             actionsRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_graph"), () => Window?.SwitchToPlugin("Graph"), NexusEditorStyles.BtnPurple));
@@ -502,41 +453,25 @@ namespace Nexus.Editor
 
         private void AddStatCard(VisualElement parent, string label, string value, Color accent, string description)
         {
-            var card = new VisualElement
-            {
-                style =
-                {
-                    width = 140,
-                    height = 80,
-                    backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
-                    borderTopLeftRadius = 6, borderTopRightRadius = 6,
-                    borderBottomLeftRadius = 6, borderBottomRightRadius = 6,
-                    marginLeft = 5, marginRight = 5, marginTop = 5, marginBottom = 5,
-                    paddingLeft = 10, paddingRight = 10, paddingTop = 8, paddingBottom = 8,
-                    borderLeftWidth = 3, borderLeftColor = new StyleColor(accent),
-                }
-            };
+            var card = new VisualElement();
+            card.AddToClassList("nexus-gm-stat-card");
+            card.style.borderLeftColor = new StyleColor(accent);
 
             MakeDoubleClickToOpen(card, label.Contains("Context") ? "Hierarchy" : "GameManager");
 
-            var valLabel = new Label(value)
-            {
-                style = { fontSize = 22, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(accent) }
-            };
+            var valLabel = new Label(value);
+            valLabel.AddToClassList("nexus-gm-stat-value");
+            valLabel.style.color = new StyleColor(accent);
             card.Add(valLabel);
 
-            var nameLabel = new Label(label)
-            {
-                style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), unityFontStyleAndWeight = FontStyle.Bold, marginTop = 2 }
-            };
+            var nameLabel = new Label(label);
+            nameLabel.AddToClassList("nexus-gm-stat-label");
             card.Add(nameLabel);
 
             if (!string.IsNullOrEmpty(description))
             {
-                var desc = new Label(description)
-                {
-                    style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 2, whiteSpace = WhiteSpace.Normal }
-                };
+                var desc = new Label(description);
+                desc.AddToClassList("nexus-gm-stat-desc");
                 card.Add(desc);
             }
 
@@ -811,12 +746,12 @@ namespace Nexus.Editor
         // ─── Helpers ───────────────────────────────────────────
         private void AddSectionHeader(string text, Color accentColor)
         {
-            var header = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginLeft = 15, marginTop = 10, marginBottom = 5 } };
+            var header = new VisualElement();
+            header.AddToClassList("nexus-section-header");
             header.Add(NexusEditorStyles.CreateStatusDot(accentColor, 8));
-            header.Add(new Label(text)
-            {
-                style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.TextPrimary), marginLeft = 5 }
-            });
+            var lbl = new Label(text);
+            lbl.AddToClassList("nexus-section-header-text");
+            header.Add(lbl);
             _content.Add(header);
         }
 
@@ -940,17 +875,13 @@ namespace Nexus.Editor
 
         private VisualElement CreateMetricBox(string label, string value, Color accent)
         {
-            var box = new VisualElement
-            {
-                style =
-                {
-                    flexGrow = 1, alignItems = Align.Center, paddingLeft = 6, paddingRight = 6,
-                    paddingTop = 4, paddingBottom = 4, marginRight = 4,
-                    borderRightWidth = 1, borderRightColor = new StyleColor(NexusEditorStyles.BorderColor)
-                }
-            };
-            var valLabel = new Label(value) { style = { fontSize = 16, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(accent) } };
-            var descLabel = new Label(label) { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary) } };
+            var box = new VisualElement();
+            box.AddToClassList(NexusEditorStyles.ClassMetricBox);
+            var valLabel = new Label(value);
+            valLabel.AddToClassList(NexusEditorStyles.ClassMetricValue);
+            valLabel.style.color = new StyleColor(accent);
+            var descLabel = new Label(label);
+            descLabel.AddToClassList(NexusEditorStyles.ClassMetricLabel);
             box.Add(valLabel);
             box.Add(descLabel);
             return box;

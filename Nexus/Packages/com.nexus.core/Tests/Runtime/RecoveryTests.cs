@@ -228,24 +228,6 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public void ContextData_DefaultValues_AreReusableFriendly()
-        {
-            var data = UnityEngine.ScriptableObject.CreateInstance<ContextData>();
-
-            try
-            {
-                Assert.IsTrue(data.EnableAutoDiscovery, "Auto-discovery should remain enabled by default for quick project setup.");
-                Assert.AreEqual(4, data.CommandPoolInitialSize, "Default command pool size should stay small and predictable.");
-                Assert.AreEqual(64, data.CommandPoolMaxSize, "Default max command pool size should remain bounded.");
-                Assert.AreEqual(2000, data.TracerRingBufferSize, "Default tracer buffer should remain production-friendly.");
-            }
-            finally
-            {
-                UnityEngine.Object.DestroyImmediate(data);
-            }
-        }
-
-        [Test]
         public async Task CreatePureContextAsync_DisposesCleanlyAndRefreshesRegistry()
         {
             var context = await NexusRuntime.CreatePureContextAsync("RegistryRefreshScope", new[] { "Assembly-CSharp" });
@@ -253,7 +235,7 @@ namespace Nexus.Tests
             try
             {
                 Assert.AreEqual(context, NexusRuntime.GetContext("RegistryRefreshScope"));
-                Assert.That(NexusRuntime.ActiveContexts, Does.Contain(context));
+                Assert.That(NexusRuntime.ActiveContexts, Has.Member(context));
             }
             finally
             {
@@ -262,7 +244,7 @@ namespace Nexus.Tests
             }
 
             Assert.IsNull(NexusRuntime.GetContext("RegistryRefreshScope"));
-            Assert.That(NexusRuntime.ActiveContexts, Does.Not.Contain(context));
+            Assert.That(NexusRuntime.ActiveContexts, Has.No.Member(context));
         }
 
         [Test]

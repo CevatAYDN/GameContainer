@@ -4,49 +4,71 @@ using UnityEngine.UIElements;
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Design system constants and helpers for the Nexus Editor.
+    /// Palette is deliberately small to ensure visual consistency.
+    /// </summary>
     internal static class NexusEditorStyles
     {
-        // ─── Color Palette ───
-        internal static readonly Color Background = new(0.12f, 0.12f, 0.14f);
-        internal static readonly Color CardBg = new(0.18f, 0.18f, 0.2f);
-        internal static readonly Color CardBgAlt = new(0.16f, 0.16f, 0.18f);
-        internal static readonly Color CardBgGreen = new(0.14f, 0.18f, 0.14f);
-        internal static readonly Color CardBgYellow = new(0.2f, 0.18f, 0.14f);
-        internal static readonly Color CardBgRed = new(0.2f, 0.14f, 0.14f);
-        internal static readonly Color CardBgBlue = new(0.14f, 0.16f, 0.2f);
-        internal static readonly Color AccentBlue = new(0.3f, 0.8f, 1f);
-        internal static readonly Color AccentGreen = new(0.4f, 1f, 0.4f);
-        internal static readonly Color AccentYellow = new(1f, 0.85f, 0.3f);
-        internal static readonly Color AccentOrange = new(1f, 0.7f, 0.2f);
-        internal static readonly Color AccentPurple = new(0.8f, 0.6f, 0.9f);
-        internal static readonly Color AccentRed = new(1f, 0.3f, 0.3f);
-        internal static readonly Color TextPrimary = new(0.85f, 0.85f, 0.85f);
-        internal static readonly Color TextSecondary = new(0.6f, 0.6f, 0.6f);
-        internal static readonly Color BorderColor = new(0.2f, 0.2f, 0.22f);
-        internal static readonly Color BorderLight = new(0.25f, 0.25f, 0.28f);
-        internal static readonly Color SignalBlue = new(0.7f, 0.85f, 1f);
-        internal static readonly Color BtnBlue = new(0.2f, 0.35f, 0.5f);
-        internal static readonly Color BtnPurple = new(0.3f, 0.2f, 0.4f);
-        internal static readonly Color BtnTeal = new(0.2f, 0.3f, 0.3f);
-        internal static readonly Color BtnGray = new(0.25f, 0.25f, 0.28f);
-        internal static readonly Color BtnGreen = new(0.2f, 0.4f, 0.2f);
-        internal static readonly Color BtnRed = new(0.5f, 0.2f, 0.2f);
-        internal static readonly Color BtnYellow = new(0.5f, 0.4f, 0.1f);
-        internal static readonly Color DarkPanel = new(0.08f, 0.08f, 0.1f);
-        internal static readonly Color SidebarBg = new(0.1f, 0.1f, 0.12f);
-        internal static readonly Color ToolbarBg = new(0.1f, 0.1f, 0.12f);
-        internal static readonly Color HighlightBg = new(0.18f, 0.22f, 0.28f);
-        internal static readonly Color SelectedRow = new(0.18f, 0.22f, 0.28f);
-        internal static readonly Color RowAlt = new(0.15f, 0.15f, 0.17f);
-        internal static readonly Color RowBase = new(0.18f, 0.18f, 0.2f);
+        // ─── Simplified Color Palette ───
+        // Surfaces
+        internal static readonly Color SurfaceDark   = new(0.10f, 0.10f, 0.12f); // Sidebar, toolbar bg
+        internal static readonly Color Surface       = new(0.14f, 0.14f, 0.16f); // Main background
+        internal static readonly Color SurfaceAlt    = new(0.17f, 0.17f, 0.19f); // Card bg
+        internal static readonly Color SurfaceHover  = new(0.21f, 0.21f, 0.23f); // Hover state
+        internal static readonly Color SurfaceActive = new(0.23f, 0.26f, 0.31f); // Active/selected
+        internal static readonly Color Border        = new(0.20f, 0.20f, 0.22f); // Borders
+        internal static readonly Color BorderLight   = new(0.24f, 0.24f, 0.26f); // Subtle borders
+
+        // Text
+        internal static readonly Color TextPrimary   = new(0.88f, 0.88f, 0.88f);
+        internal static readonly Color TextSecondary = new(0.60f, 0.60f, 0.60f);
+        internal static readonly Color TextDim       = new(0.40f, 0.40f, 0.40f);
+
+        // Accents — only 6 core colors for semantic meaning
+        internal static readonly Color AccentBlue    = new(0.30f, 0.80f, 1.00f); // Primary info
+        internal static readonly Color AccentGreen   = new(0.40f, 1.00f, 0.40f); // Success, live
+        internal static readonly Color AccentYellow  = new(1.00f, 0.85f, 0.30f); // Warning
+        internal static readonly Color AccentRed     = new(1.00f, 0.30f, 0.30f); // Error
+        internal static readonly Color AccentPurple  = new(0.78f, 0.61f, 0.90f); // Signal, handler
+        internal static readonly Color AccentOrange  = new(1.00f, 0.70f, 0.28f); // Command
+
+        // Semantic button colors — derive from accent palette
+        internal static readonly Color BtnPrimary    = new(0.22f, 0.38f, 0.52f);
+        internal static readonly Color BtnSecondary  = new(0.25f, 0.25f, 0.28f);
+        internal static readonly Color BtnSuccess    = new(0.20f, 0.40f, 0.20f);
+        internal static readonly Color BtnDanger     = new(0.45f, 0.20f, 0.20f);
+
+        // Legacy aliases — kept for backward compatibility
+        internal static readonly Color Background    = Surface;
+        internal static readonly Color CardBg        = SurfaceAlt;
+        internal static readonly Color CardBgAlt     = Surface;
+        internal static readonly Color BorderColor   = Border;
+        internal static readonly Color DimText       = TextDim;
+        internal static readonly Color DarkPanel     = SurfaceDark;
+        internal static readonly Color SidebarBg     = SurfaceDark;
+        internal static readonly Color ToolbarBg     = SurfaceDark;
+        internal static readonly Color HighlightBg   = SurfaceActive;
+        internal static readonly Color RowBase       = SurfaceAlt;
+        internal static readonly Color RowAlt        = new(0.15f, 0.15f, 0.17f);
         internal static readonly Color TableHeaderBg = new(0.16f, 0.16f, 0.18f);
-
-        internal static readonly Color AccentBlueText = new(0.7f, 0.9f, 1f);
-        internal static readonly Color AccentPurpleText = new(0.9f, 0.7f, 1f);
-        internal static readonly Color AccentGreenText = new(0.6f, 1f, 0.6f);
-        internal static readonly Color DimText = new(0.4f, 0.4f, 0.4f);
-
-        internal static readonly Color TitleColor = AccentBlue;
+        internal static readonly Color SelectedRow   = SurfaceActive;
+        internal static readonly Color BtnBlue       = BtnPrimary;
+        internal static readonly Color BtnPurple     = new(0.30f, 0.22f, 0.40f);
+        internal static readonly Color BtnTeal       = new(0.22f, 0.30f, 0.30f);
+        internal static readonly Color BtnGray       = BtnSecondary;
+        internal static readonly Color BtnGreen      = BtnSuccess;
+        internal static readonly Color BtnRed        = BtnDanger;
+        internal static readonly Color BtnYellow     = new(0.45f, 0.35f, 0.12f);
+        internal static readonly Color AccentBlueText  = new(0.70f, 0.90f, 1.00f);
+        internal static readonly Color AccentPurpleText = new(0.90f, 0.70f, 1.00f);
+        internal static readonly Color AccentGreenText  = new(0.60f, 1.00f, 0.60f);
+        internal static readonly Color CardBgGreen   = new(0.14f, 0.18f, 0.14f);
+        internal static readonly Color CardBgYellow  = new(0.20f, 0.18f, 0.14f);
+        internal static readonly Color CardBgRed     = new(0.20f, 0.14f, 0.14f);
+        internal static readonly Color CardBgBlue    = new(0.14f, 0.16f, 0.20f);
+        internal static readonly Color TitleColor    = AccentBlue;
+        internal static readonly Color SignalBlue    = AccentBlue;
 
         internal const float CardRadius = 6f;
         internal const float BtnRadius = 4f;
@@ -54,9 +76,16 @@ namespace Nexus.Editor
         internal const float CardPadding = 12f;
 
         // ─── USS Class Name Constants ───
+        internal const string ClassSidebar = "nexus-sidebar";
         internal const string ClassSidebarBtn = "nexus-sidebar-btn";
         internal const string ClassActiveSidebar = "nexus-sidebar-btn active";
+        internal const string ClassSidebarLabel = "nexus-sidebar-label";
+        internal const string ClassBrandTitle = "nexus-brand-title";
+        internal const string ClassBrandSubtitle = "nexus-brand-subtitle";
+        internal const string ClassSidebarSep = "nexus-sidebar-separator";
+        internal const string ClassCategoryHeader = "nexus-category-header";
         internal const string ClassCard = "nexus-card";
+        internal const string ClassPill = "nexus-pill";
         internal const string ClassPillGreen = "nexus-pill-green";
         internal const string ClassPillBlue = "nexus-pill-blue";
         internal const string ClassPillPurple = "nexus-pill-purple";
@@ -64,9 +93,32 @@ namespace Nexus.Editor
         internal const string ClassFilterBtn = "nexus-filter-btn";
         internal const string ClassActionBtn = "nexus-action-btn";
         internal const string ClassToolbar = "nexus-toolbar";
+        internal const string ClassToolbarTitle = "nexus-toolbar-title";
         internal const string ClassEmptyState = "nexus-empty-state";
         internal const string ClassSectionTitle = "nexus-section-title";
         internal const string ClassDashboardActionCard = "nexus-dashboard-action-card";
+        internal const string ClassStatBox = "nexus-stat-box";
+        internal const string ClassStatValue = "nexus-stat-value";
+        internal const string ClassStatLabel = "nexus-stat-label";
+        internal const string ClassMetricBox = "nexus-metric-box";
+        internal const string ClassMetricValue = "nexus-metric-value";
+        internal const string ClassMetricLabel = "nexus-metric-label";
+        internal const string ClassBtn = "nexus-btn";
+        internal const string ClassStatusDot = "nexus-status-dot";
+        internal const string ClassStatusBar = "nexus-statusbar";
+        internal const string ClassWarningBox = "nexus-warning-box";
+        internal const string ClassRow = "nexus-table-row";
+        internal const string ClassHeader = "nexus-table-header";
+        internal const string ClassBarBg = "nexus-bar-bg";
+        internal const string ClassBarFill = "nexus-bar-fill";
+        internal const string ClassMetricBtn = "nexus-metric-btn";
+        internal const string ClassSearchField = "nexus-search-field";
+        internal const string ClassQfRow = "nexus-qf-row";
+        internal const string ClassQfBtn = "nexus-qf-btn";
+        internal const string ClassSectionTab = "nexus-section-tab";
+        internal const string ClassSectionTabText = "nexus-section-tab-text";
+        internal const string ClassBreadcrumb = "nexus-breadcrumb";
+        internal const string ClassQuickbar = "nexus-quickbar";
 
         // ─── USS Loading ───
         internal static void LoadTheme(VisualElement root)
@@ -77,16 +129,23 @@ namespace Nexus.Editor
                 root.styleSheets.Add(theme);
         }
 
+        /// <summary>Apply a class list to a VisualElement. Convenience for readability.</summary>
+        internal static void AddClasses(VisualElement el, params string[] classes)
+        {
+            foreach (var c in classes)
+                el.AddToClassList(c);
+        }
+
         // ─── Icon Helpers ───
         internal static Texture2D GetIcon(string iconName)
         {
-            // Load from editor default resources; returns null silently if not found.
             return EditorGUIUtility.Load($"Editor Default Resources/Icons/{iconName}.png") as Texture2D;
         }
 
         internal static VisualElement CreateColorIcon(Color color, int size = 16)
         {
             var icon = new VisualElement();
+            icon.AddToClassList("nexus-plugin-icon");
             icon.style.width = size;
             icon.style.height = size;
             icon.style.borderTopLeftRadius = size / 2;
@@ -94,12 +153,9 @@ namespace Nexus.Editor
             icon.style.borderBottomLeftRadius = size / 2;
             icon.style.borderBottomRightRadius = size / 2;
             icon.style.backgroundColor = new StyleColor(color);
-            icon.style.marginRight = 8;
-            icon.style.flexShrink = 0;
             return icon;
         }
 
-        // Legacy aliases — kept for compatibility with agent-generated plugin code.
         internal static void SetIcon(VisualElement element, string iconName) { }
         internal static VisualElement CreateIcon(string iconName, int size = 16) => CreateColorIcon(Color.gray, size);
 
@@ -116,55 +172,32 @@ namespace Nexus.Editor
             }
 
             var txt = new Label(label);
+            txt.AddToClassList(ClassSidebarLabel);
             btn.Add(txt);
 
             return btn;
         }
 
-        /// <summary>
-        /// Creates a standardized stat tile card displaying a metric value, label, accent color, and optional description.
-        /// Unifies stat card rendering across Dashboard, GameManager, and diagnostic plugins.
-        /// </summary>
-        /// <param name="label">The title or metric description.</param>
-        /// <param name="value">The formatted metric value string.</param>
-        /// <param name="accent">The accent border and text color.</param>
-        /// <param name="description">Optional detailed description text.</param>
-        /// <returns>A configured VisualElement stat tile.</returns>
+        /// <summary>Creates a standardized stat tile card.</summary>
         internal static VisualElement CreateStatTile(string label, string value, Color accent, string description = null)
         {
-            var card = new VisualElement
-            {
-                style =
-                {
-                    width = 140,
-                    minHeight = 72,
-                    backgroundColor = new StyleColor(CardBg),
-                    borderTopLeftRadius = CardRadius, borderTopRightRadius = CardRadius,
-                    borderBottomLeftRadius = CardRadius, borderBottomRightRadius = CardRadius,
-                    marginLeft = 4, marginRight = 4, marginTop = 4, marginBottom = 4,
-                    paddingLeft = 8, paddingRight = 8, paddingTop = 6, paddingBottom = 6,
-                    borderLeftWidth = 3, borderLeftColor = new StyleColor(accent)
-                }
-            };
+            var card = new VisualElement();
+            card.AddToClassList("nexus-stat-tile");
+            card.style.borderLeftColor = new StyleColor(accent);
 
-            var valLabel = new Label(value)
-            {
-                style = { fontSize = 20, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(accent) }
-            };
+            var valLabel = new Label(value);
+            valLabel.AddToClassList("nexus-stat-tile-value");
+            valLabel.style.color = new StyleColor(accent);
             card.Add(valLabel);
 
-            var nameLabel = new Label(label)
-            {
-                style = { fontSize = 9, color = new StyleColor(TextSecondary), unityFontStyleAndWeight = FontStyle.Bold, marginTop = 2 }
-            };
+            var nameLabel = new Label(label);
+            nameLabel.AddToClassList("nexus-stat-tile-label");
             card.Add(nameLabel);
 
             if (!string.IsNullOrEmpty(description))
             {
-                var descLabel = new Label(description)
-                {
-                    style = { fontSize = 8, color = new StyleColor(DimText), marginTop = 2, whiteSpace = WhiteSpace.Normal }
-                };
+                var descLabel = new Label(description);
+                descLabel.AddToClassList("nexus-stat-tile-desc");
                 card.Add(descLabel);
             }
 
@@ -182,48 +215,36 @@ namespace Nexus.Editor
 
         internal static Label CreateTitle(string text, Color color, int fontSize = 11)
         {
-            return new Label(text)
-            {
-                style =
-                {
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    fontSize = fontSize,
-                    color = new StyleColor(color),
-                    marginBottom = 6
-                }
-            };
+            var lbl = new Label(text);
+            lbl.style.unityFontStyleAndWeight = FontStyle.Bold;
+            lbl.style.fontSize = fontSize;
+            lbl.style.color = new StyleColor(color);
+            lbl.style.marginBottom = 6;
+            return lbl;
         }
 
         internal static Label CreateBody(string text, int fontSize = 11)
         {
-            return new Label(text)
-            {
-                style =
-                {
-                    color = new StyleColor(TextPrimary),
-                    fontSize = fontSize,
-                    whiteSpace = WhiteSpace.Normal
-                }
-            };
+            var lbl = new Label(text);
+            lbl.style.color = new StyleColor(TextPrimary);
+            lbl.style.fontSize = fontSize;
+            lbl.style.whiteSpace = WhiteSpace.Normal;
+            return lbl;
         }
 
         internal static Label CreateHint(string text)
         {
-            return new Label(text)
-            {
-                style =
-                {
-                    color = new StyleColor(TextSecondary),
-                    fontSize = 10,
-                    whiteSpace = WhiteSpace.Normal
-                }
-            };
+            var lbl = new Label(text);
+            lbl.style.color = new StyleColor(TextSecondary);
+            lbl.style.fontSize = 10;
+            lbl.style.whiteSpace = WhiteSpace.Normal;
+            return lbl;
         }
 
         internal static Button CreateButton(string label, System.Action onClick, Color bgColor)
         {
             var btn = new Button(onClick) { text = label };
-            btn.AddToClassList("nexus-btn");
+            btn.AddToClassList(ClassBtn);
             if (bgColor != default)
                 btn.style.backgroundColor = new StyleColor(bgColor);
             return btn;
@@ -260,7 +281,7 @@ namespace Nexus.Editor
             toolbar.AddToClassList(ClassToolbar);
 
             var titleLabel = new Label(windowTitle);
-            titleLabel.AddToClassList("nexus-toolbar-title");
+            titleLabel.AddToClassList(ClassToolbarTitle);
             toolbar.Add(titleLabel);
 
             return toolbar;
@@ -269,105 +290,51 @@ namespace Nexus.Editor
         internal static void AddToolbarButton(VisualElement toolbar, string label, System.Action onClick)
         {
             var btn = new Button(onClick) { text = label };
-            btn.style.backgroundColor = new StyleColor(BtnGray);
-            btn.style.borderTopLeftRadius = BtnRadius;
-            btn.style.borderTopRightRadius = BtnRadius;
-            btn.style.borderBottomLeftRadius = BtnRadius;
-            btn.style.borderBottomRightRadius = BtnRadius;
-            btn.style.color = Color.white;
-            btn.style.paddingLeft = 10;
-            btn.style.paddingRight = 10;
-            btn.style.marginLeft = 5;
+            btn.AddToClassList("nexus-toolbar-btn");
             toolbar.Add(btn);
         }
 
         internal static Label CreateStatusBar()
         {
-            return new Label
-            {
-                style =
-                {
-                    backgroundColor = new StyleColor(ToolbarBg),
-                    color = new StyleColor(TextSecondary),
-                    fontSize = 10,
-                    paddingLeft = 10,
-                    paddingRight = 10,
-                    paddingTop = 4,
-                    paddingBottom = 4,
-                    borderTopWidth = 1,
-                    borderTopColor = new StyleColor(BorderColor),
-                    unityFontStyleAndWeight = FontStyle.Bold
-                }
-            };
+            var lbl = new Label();
+            lbl.AddToClassList(ClassStatusBar);
+            return lbl;
         }
 
         internal static Label CreateEmptyState(string text)
         {
-            return new Label(text)
-            {
-                style =
-                {
-                    color = new StyleColor(TextSecondary),
-                    fontSize = 11,
-                    alignSelf = Align.Center,
-                    marginTop = 20
-                }
-            };
+            var lbl = new Label(text);
+            lbl.AddToClassList(ClassEmptyState);
+            return lbl;
         }
 
         internal static VisualElement CreatePill(string text, Color bgColor, Color textColor)
         {
             var pill = new Label(text);
-            pill.style.fontSize = 8;
+            pill.AddToClassList(ClassPill);
             pill.style.backgroundColor = new StyleColor(bgColor);
             pill.style.color = new StyleColor(textColor);
-            pill.style.paddingLeft = 3;
-            pill.style.paddingRight = 3;
-            pill.style.paddingTop = 1;
-            pill.style.paddingBottom = 1;
-            pill.style.marginLeft = 6;
-            pill.style.borderTopLeftRadius = 2;
-            pill.style.borderTopRightRadius = 2;
-            pill.style.borderBottomLeftRadius = 2;
-            pill.style.borderBottomRightRadius = 2;
-            pill.style.unityFontStyleAndWeight = FontStyle.Bold;
             return pill;
         }
 
         internal static VisualElement CreateFilterButton(string label, System.Action onClick, Color activeColor)
         {
             var btn = new Button(onClick) { text = label };
-            btn.style.fontSize = 8;
-            btn.style.paddingLeft = 4;
-            btn.style.paddingRight = 4;
-            btn.style.paddingTop = 1;
-            btn.style.paddingBottom = 1;
-            btn.style.marginLeft = 2;
-            btn.style.marginRight = 2;
-            btn.style.borderTopLeftRadius = 2;
-            btn.style.borderTopRightRadius = 2;
-            btn.style.borderBottomLeftRadius = 2;
-            btn.style.borderBottomRightRadius = 2;
-            btn.style.borderTopWidth = 0;
-            btn.style.borderBottomWidth = 0;
-            btn.style.borderLeftWidth = 0;
-            btn.style.borderRightWidth = 0;
+            btn.AddToClassList(ClassFilterBtn);
             btn.style.backgroundColor = new StyleColor(activeColor);
-            btn.style.color = Color.white;
             return btn;
         }
 
         internal static VisualElement CreateStatusDot(Color dotColor, int size = 6)
         {
             var dot = new VisualElement();
+            dot.AddToClassList(ClassStatusDot);
             dot.style.width = size;
             dot.style.height = size;
             dot.style.borderTopLeftRadius = size / 2;
             dot.style.borderTopRightRadius = size / 2;
             dot.style.borderBottomLeftRadius = size / 2;
             dot.style.borderBottomRightRadius = size / 2;
-            dot.style.marginRight = 6;
-            dot.style.flexShrink = 0;
             dot.style.backgroundColor = new StyleColor(dotColor);
             return dot;
         }
@@ -375,17 +342,7 @@ namespace Nexus.Editor
         internal static VisualElement CreateTag(string text, Color bgColor, Color textColor)
         {
             var tag = new Label(text);
-            tag.style.unityFontStyleAndWeight = FontStyle.Bold;
-            tag.style.fontSize = 8;
-            tag.style.paddingLeft = 4;
-            tag.style.paddingRight = 4;
-            tag.style.paddingTop = 1;
-            tag.style.paddingBottom = 1;
-            tag.style.borderTopLeftRadius = 2;
-            tag.style.borderTopRightRadius = 2;
-            tag.style.borderBottomLeftRadius = 2;
-            tag.style.borderBottomRightRadius = 2;
-            tag.style.marginRight = 6;
+            tag.AddToClassList(ClassPill);
             tag.style.backgroundColor = new StyleColor(bgColor);
             tag.style.color = new StyleColor(textColor);
             return tag;
@@ -394,29 +351,14 @@ namespace Nexus.Editor
         internal static VisualElement CreateWarningBox(string text)
         {
             var box = new Label(text);
-            box.style.color = new StyleColor(AccentOrange);
-            box.style.backgroundColor = new StyleColor(new Color(0.2f, 0.15f, 0.1f));
-            box.style.paddingLeft = 8;
-            box.style.paddingRight = 8;
-            box.style.paddingTop = 8;
-            box.style.paddingBottom = 8;
-            box.style.marginTop = 8;
-            box.style.fontSize = 10;
-            box.style.whiteSpace = WhiteSpace.Normal;
-            box.style.borderTopLeftRadius = 4;
-            box.style.borderTopRightRadius = 4;
-            box.style.borderBottomLeftRadius = 4;
-            box.style.borderBottomRightRadius = 4;
+            box.AddToClassList(ClassWarningBox);
             return box;
         }
 
         internal static VisualElement CreateSectionTitle(string text)
         {
             var label = new Label(text);
-            label.style.fontSize = 10;
-            label.style.unityFontStyleAndWeight = FontStyle.Bold;
-            label.style.color = new StyleColor(TextSecondary);
-            label.style.marginBottom = 4;
+            label.AddToClassList(ClassSectionTitle);
             return label;
         }
 
@@ -435,7 +377,6 @@ namespace Nexus.Editor
             row.style.borderBottomLeftRadius = 4;
             row.style.borderBottomRightRadius = 4;
             row.style.backgroundColor = new StyleColor(bgColor);
-            // clickable styling is applied via hover in USS
         }
 
         // ─── Sparkline (mini bar chart) ───────────────────────────
@@ -549,24 +490,13 @@ namespace Nexus.Editor
             return bg;
         }
 
-        // ─── Stat Row (key: value pair) ───────────────────────────
-        /// <summary>Creates a single-line key/value label row for stat displays.</summary>
+        // ─── Stat Row ───
         internal static VisualElement CreateStatRow(string key, string value,
             Color valueColor = default, float fontSize = 10f)
         {
             if (valueColor == default) valueColor = TextPrimary;
-            var row = new VisualElement
-            {
-                style =
-                {
-                    flexDirection = FlexDirection.Row,
-                    justifyContent = Justify.SpaceBetween,
-                    paddingLeft = 8, paddingRight = 8,
-                    paddingTop = 3, paddingBottom = 3,
-                    borderBottomWidth = 1,
-                    borderBottomColor = new StyleColor(BorderColor)
-                }
-            };
+            var row = new VisualElement();
+            row.AddToClassList("nexus-stat-row");
             row.Add(new Label(key)
             {
                 style = { fontSize = fontSize, color = new StyleColor(TextSecondary) }
@@ -578,92 +508,47 @@ namespace Nexus.Editor
             return row;
         }
 
-        // ─── Live Badge ───────────────────────────────────────────
-        /// <summary>Creates an animated "● LIVE" badge label.</summary>
+        // ─── Live Badge ───
         internal static Label CreateLiveBadge()
         {
-            var label = new Label("● LIVE")
-            {
-                style =
-                {
-                    fontSize = 9,
-                    color = new StyleColor(AccentGreen),
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    paddingLeft = 6, paddingRight = 6,
-                    paddingTop = 2, paddingBottom = 2,
-                    backgroundColor = new StyleColor(new Color(0.1f, 0.3f, 0.1f)),
-                    borderTopLeftRadius = 3, borderTopRightRadius = 3,
-                    borderBottomLeftRadius = 3, borderBottomRightRadius = 3
-                }
-            };
+            var label = new Label("● LIVE");
+            label.AddToClassList("nexus-live-badge");
             return label;
         }
 
-        // ─── Data Table ───────────────────────────────────────────
-        /// <summary>
-        /// Creates a simple scrollable table with a header row and data rows.
-        /// columns: (header, width fraction 0-1)
-        /// rows: string[] per row matching column count
-        /// </summary>
+        // ─── Data Table ───
         internal static VisualElement CreateDataTable(
             (string Header, float WidthFraction)[] columns,
             System.Collections.Generic.IEnumerable<string[]> rows,
             float tableWidth = 400f)
         {
-            var container = new VisualElement { style = { flexDirection = FlexDirection.Column } };
+            var container = new VisualElement();
+            container.style.flexDirection = FlexDirection.Column;
 
-            // Header
-            var header = new VisualElement
-            {
-                style =
-                {
-                    flexDirection = FlexDirection.Row,
-                    backgroundColor = new StyleColor(TableHeaderBg),
-                    paddingLeft = 4, paddingRight = 4, paddingTop = 4, paddingBottom = 4,
-                    borderBottomWidth = 1, borderBottomColor = new StyleColor(BorderColor)
-                }
-            };
+            var header = new VisualElement();
+            header.AddToClassList(ClassHeader);
             foreach (var col in columns)
             {
-                header.Add(new Label(col.Header)
-                {
-                    style =
-                    {
-                        width = new Length(col.WidthFraction * 100f, LengthUnit.Percent),
-                        fontSize = 9,
-                        unityFontStyleAndWeight = FontStyle.Bold,
-                        color = new StyleColor(TextSecondary)
-                    }
-                });
+                var lbl = new Label(col.Header);
+                lbl.AddToClassList("nexus-table-header-text");
+                lbl.style.width = new Length(col.WidthFraction * 100f, LengthUnit.Percent);
+                header.Add(lbl);
             }
             container.Add(header);
 
-            // Data rows
             bool alt = false;
             foreach (var row in rows)
             {
-                var dataRow = new VisualElement
-                {
-                    style =
-                    {
-                        flexDirection = FlexDirection.Row,
-                        backgroundColor = new StyleColor(alt ? RowAlt : RowBase),
-                        paddingLeft = 4, paddingRight = 4, paddingTop = 3, paddingBottom = 3
-                    }
-                };
+                var dataRow = new VisualElement();
+                dataRow.AddToClassList(ClassRow);
+                if (alt)
+                    dataRow.AddToClassList("alt");
                 for (int c = 0; c < columns.Length && c < row.Length; c++)
                 {
-                    dataRow.Add(new Label(row[c] ?? "")
-                    {
-                        style =
-                        {
-                            width = new Length(columns[c].WidthFraction * 100f, LengthUnit.Percent),
-                            fontSize = 9,
-                            color = new StyleColor(TextPrimary),
-                            overflow = Overflow.Hidden,
-                            whiteSpace = WhiteSpace.NoWrap
-                        }
-                    });
+                    var cell = new Label(row[c] ?? "");
+                    cell.AddToClassList("nexus-table-cell");
+                    cell.style.width = new Length(columns[c].WidthFraction * 100f, LengthUnit.Percent);
+                    dataRow.Add(cell);
                 }
                 container.Add(dataRow);
                 alt = !alt;

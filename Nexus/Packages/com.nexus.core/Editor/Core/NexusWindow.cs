@@ -137,44 +137,24 @@ namespace Nexus.Editor
             // Load USS theme
             NexusEditorStyles.LoadTheme(root);
 
-            root.style.flexDirection = FlexDirection.Row;
-            root.style.backgroundColor = new StyleColor(NexusEditorStyles.Background);
+            root.AddToClassList("nexus-root");
 
             // Left Sidebar
             _sidebar = new VisualElement();
-            _sidebar.style.width = 200;
-            _sidebar.style.borderRightWidth = 1;
-            _sidebar.style.borderRightColor = new StyleColor(NexusEditorStyles.BorderColor);
-            _sidebar.style.backgroundColor = new StyleColor(new Color(0.1f, 0.1f, 0.12f));
-            _sidebar.style.paddingTop = 20;
-            _sidebar.style.paddingLeft = 8;
-            _sidebar.style.paddingRight = 8;
+            _sidebar.AddToClassList(NexusEditorStyles.ClassSidebar);
 
             // Brand Header
             var brandLabel = new Label(NexusLang.Get("brand_title"));
-            brandLabel.style.unityFontStyleAndWeight = FontStyle.Bold;
-            brandLabel.style.fontSize = 22;
-            brandLabel.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
-            brandLabel.style.marginBottom = 2;
-            brandLabel.style.alignSelf = Align.Center;
-            brandLabel.style.letterSpacing = 3;
+            brandLabel.AddToClassList(NexusEditorStyles.ClassBrandTitle);
             _sidebar.Add(brandLabel);
 
             var subtitleLabel = new Label("Architecture Suite");
-            subtitleLabel.style.fontSize = 9;
-            subtitleLabel.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
-            subtitleLabel.style.marginBottom = 24;
-            subtitleLabel.style.alignSelf = Align.Center;
-            subtitleLabel.style.letterSpacing = 1;
+            subtitleLabel.AddToClassList(NexusEditorStyles.ClassBrandSubtitle);
             _sidebar.Add(subtitleLabel);
 
             // Separator
             var sep = new VisualElement();
-            sep.style.height = 1;
-            sep.style.backgroundColor = new StyleColor(NexusEditorStyles.BorderColor);
-            sep.style.marginBottom = 8;
-            sep.style.marginLeft = 4;
-            sep.style.marginRight = 4;
+            sep.AddToClassList(NexusEditorStyles.ClassSidebarSep);
             _sidebar.Add(sep);
 
             // Dynamic Tab Buttons grouped into categories
@@ -198,7 +178,6 @@ namespace Nexus.Editor
                 }
             }
 
-            // Safety net: any discovered plugin not assigned to a category
             var uncategorized = _plugins.Where(p => !rendered.Contains(p.Id)).ToList();
             if (uncategorized.Count > 0)
             {
@@ -214,28 +193,15 @@ namespace Nexus.Editor
 
             if (_discoveryFailed)
             {
-                _sidebar.Add(new Label(string.Format(NexusLang.Get("sidebar_discovery_failed"), _discoveryError))
-                {
-                    style =
-                    {
-                        color = new StyleColor(Color.red),
-                        unityTextAlign = TextAnchor.MiddleCenter,
-                        marginTop = 12,
-                        whiteSpace = WhiteSpace.Normal
-                    }
-                });
+                var errLabel = new Label(string.Format(NexusLang.Get("sidebar_discovery_failed"), _discoveryError));
+                errLabel.AddToClassList("nexus-discovery-error");
+                _sidebar.Add(errLabel);
             }
             else if (!_plugins.Any())
             {
-                _sidebar.Add(new Label(NexusLang.Get("sidebar_no_plugins"))
-                {
-                    style =
-                    {
-                        color = new StyleColor(NexusEditorStyles.TextSecondary),
-                        unityTextAlign = TextAnchor.MiddleCenter,
-                        marginTop = 12
-                    }
-                });
+                var infoLabel = new Label(NexusLang.Get("sidebar_no_plugins"));
+                infoLabel.AddToClassList("nexus-discovery-info");
+                _sidebar.Add(infoLabel);
             }
 
             // Version at bottom of sidebar
@@ -244,57 +210,24 @@ namespace Nexus.Editor
 
             // Language selector in sidebar
             var langContainer = new VisualElement();
-            langContainer.style.flexDirection = FlexDirection.Row;
-            langContainer.style.justifyContent = Justify.Center;
-            langContainer.style.marginBottom = 12;
-            langContainer.style.paddingTop = 8;
-            langContainer.style.borderTopWidth = 1;
-            langContainer.style.borderTopColor = new StyleColor(NexusEditorStyles.BorderColor);
+            langContainer.AddToClassList("nexus-lang-container");
 
             var enBtn = new Button(() => SetLocale("en")) { text = "EN" };
-            enBtn.style.fontSize = 9;
-            enBtn.style.paddingLeft = 8;
-            enBtn.style.paddingRight = 8;
-            enBtn.style.paddingTop = 2;
-            enBtn.style.paddingBottom = 2;
-            enBtn.style.borderTopLeftRadius = 3;
-            enBtn.style.borderBottomLeftRadius = 3;
-            enBtn.style.borderTopRightRadius = 0;
-            enBtn.style.borderBottomRightRadius = 0;
-            enBtn.style.borderRightWidth = 0;
+            enBtn.AddToClassList("nexus-lang-btn");
+            enBtn.AddToClassList("first");
 
             var trBtn = new Button(() => SetLocale("tr")) { text = "TR" };
-            trBtn.style.fontSize = 9;
-            trBtn.style.paddingLeft = 8;
-            trBtn.style.paddingRight = 8;
-            trBtn.style.paddingTop = 2;
-            trBtn.style.paddingBottom = 2;
-            trBtn.style.borderTopRightRadius = 3;
-            trBtn.style.borderBottomRightRadius = 3;
-            trBtn.style.borderTopLeftRadius = 0;
-            trBtn.style.borderBottomLeftRadius = 0;
-            trBtn.style.borderLeftWidth = 0;
+            trBtn.AddToClassList("nexus-lang-btn");
+            trBtn.AddToClassList("last");
 
             var cur = NexusLang.CurrentLocale;
             if (cur == "tr")
             {
-                trBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
-                trBtn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
-                trBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
-
-                enBtn.style.backgroundColor = new StyleColor(Color.clear);
-                enBtn.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
-                enBtn.style.unityFontStyleAndWeight = FontStyle.Normal;
+                trBtn.AddToClassList("active");
             }
             else
             {
-                enBtn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
-                enBtn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
-                enBtn.style.unityFontStyleAndWeight = FontStyle.Bold;
-
-                trBtn.style.backgroundColor = new StyleColor(Color.clear);
-                trBtn.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
-                trBtn.style.unityFontStyleAndWeight = FontStyle.Normal;
+                enBtn.AddToClassList("active");
             }
 
             langContainer.Add(enBtn);
@@ -302,19 +235,14 @@ namespace Nexus.Editor
             _sidebar.Add(langContainer);
 
             var versionLabel = new Label("v0.4.0");
-            versionLabel.style.fontSize = 9;
-            versionLabel.style.color = new StyleColor(NexusEditorStyles.DimText);
-            versionLabel.style.alignSelf = Align.Center;
-            versionLabel.style.marginBottom = 8;
-            versionLabel.style.paddingTop = 4;
+            versionLabel.AddToClassList("nexus-version-label");
             _sidebar.Add(versionLabel);
 
             root.Add(_sidebar);
 
             // Main Content Container (Right Pane)
             var rightPanel = new VisualElement();
-            rightPanel.style.flexGrow = 1;
-            rightPanel.style.flexDirection = FlexDirection.Column;
+            rightPanel.AddToClassList("nexus-right-panel");
 
             if (_discoveryFailed)
             {
@@ -423,13 +351,7 @@ namespace Nexus.Editor
         private void AddCategoryHeader(string label)
         {
             var header = new Label(label.ToUpper());
-            header.style.fontSize = 9;
-            header.style.color = new StyleColor(NexusEditorStyles.DimText);
-            header.style.unityFontStyleAndWeight = FontStyle.Bold;
-            header.style.letterSpacing = 1;
-            header.style.marginTop = 12;
-            header.style.marginBottom = 2;
-            header.style.marginLeft = 6;
+            header.AddToClassList(NexusEditorStyles.ClassCategoryHeader);
             _sidebar.Add(header);
         }
 
@@ -437,36 +359,16 @@ namespace Nexus.Editor
         {
             var btn = new Button(() => SwitchToPlugin(pluginId));
             btn.name = $"Tab_{pluginId}";
-            btn.style.backgroundColor = new StyleColor(Color.clear);
-            btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
-            btn.style.fontSize = 11;
-            btn.style.paddingLeft = 12;
-            btn.style.paddingRight = 12;
-            btn.style.paddingTop = 8;
-            btn.style.paddingBottom = 8;
-            btn.style.borderTopLeftRadius = 4;
-            btn.style.borderTopRightRadius = 4;
-            btn.style.borderBottomLeftRadius = 4;
-            btn.style.borderBottomRightRadius = 4;
-            btn.style.borderTopWidth = 0;
-            btn.style.borderBottomWidth = 0;
-            btn.style.borderLeftWidth = 0;
-            btn.style.borderRightWidth = 0;
-            btn.style.marginTop = 2;
-            btn.style.marginBottom = 2;
-            btn.style.unityFontStyleAndWeight = FontStyle.Normal;
-            btn.style.alignItems = Align.Center;
-            btn.style.flexDirection = FlexDirection.Row;
+            btn.AddToClassList(NexusEditorStyles.ClassSidebarBtn);
 
-            // Add colored dot icon
             if (PluginIconColors.TryGetValue(pluginId, out var iconColor))
             {
                 var icon = NexusEditorStyles.CreateColorIcon(iconColor);
                 btn.Add(icon);
             }
 
-            // Add label
             var txtLabel = new Label(label);
+            txtLabel.AddToClassList(NexusEditorStyles.ClassSidebarLabel);
             _tabLabels[pluginId] = txtLabel;
             btn.Add(txtLabel);
 
@@ -483,7 +385,6 @@ namespace Nexus.Editor
                 return;
             }
 
-            // Dispose the old plugin view before switching
             if (_activePlugin != null)
             {
                 try { _activePlugin.OnDisable(); } catch (Exception ex) { Debug.LogException(ex); }
@@ -491,7 +392,6 @@ namespace Nexus.Editor
 
             _activePlugin = targetPlugin;
 
-            // Highlight active sidebar button
             foreach (var plugin in _plugins)
             {
                 var btn = _sidebar.Q<Button>($"Tab_{plugin.Id}");
@@ -499,15 +399,11 @@ namespace Nexus.Editor
                 {
                     if (plugin.Id == pluginId)
                     {
-                        btn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
-                        btn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
-                        btn.style.unityFontStyleAndWeight = FontStyle.Bold;
+                        btn.AddToClassList("active");
                     }
                     else
                     {
-                        btn.style.backgroundColor = new StyleColor(Color.clear);
-                        btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
-                        btn.style.unityFontStyleAndWeight = FontStyle.Normal;
+                        btn.RemoveFromClassList("active");
                     }
                 }
             }
@@ -537,35 +433,13 @@ namespace Nexus.Editor
             if (_contextActionBar == null || _activePlugin == null) return;
             _contextActionBar.Clear();
 
-            var row = new VisualElement
-            {
-                style =
-                {
-                    flexDirection = FlexDirection.Row,
-                    alignItems = Align.Center,
-                    paddingLeft = 12,
-                    paddingRight = 12,
-                    paddingTop = 6,
-                    paddingBottom = 6,
-                    backgroundColor = new StyleColor(new Color(0.14f, 0.14f, 0.17f)),
-                    borderBottomWidth = 1,
-                    borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor)
-                }
-            };
+            var row = new VisualElement();
+            row.AddToClassList("nexus-actionbar");
 
-            var tagLabel = new Label(string.Format(NexusLang.Get("actions_label"), _activePlugin.DisplayName.ToUpper()))
-            {
-                style =
-                {
-                    fontSize = 10,
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    color = new StyleColor(NexusEditorStyles.AccentBlue),
-                    marginRight = 12
-                }
-            };
+            var tagLabel = new Label(string.Format(NexusLang.Get("actions_label"), _activePlugin.DisplayName.ToUpper()));
+            tagLabel.AddToClassList("nexus-actionbar-label");
             row.Add(tagLabel);
 
-            // Delegate action buttons to the plugin itself
             var actions = _activePlugin.GetContextActions();
             if (actions != null)
             {
@@ -584,7 +458,7 @@ namespace Nexus.Editor
                 playing ? new Color(0.1f, 0.4f, 0.2f) : new Color(0.3f, 0.3f, 0.3f),
                 playing ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary
             );
-            statusPill.style.fontSize = 8;
+            statusPill.AddToClassList("nexus-actionbar-status");
             row.Add(statusPill);
 
             _contextActionBar.Add(row);
@@ -592,26 +466,9 @@ namespace Nexus.Editor
 
         private void AddContextActionButton(VisualElement parent, string label, System.Action onClick, Color color)
         {
-            var btn = new Button(() => onClick())
-            {
-                text = label,
-                style =
-                {
-                    marginRight = 6,
-                    paddingLeft = 8,
-                    paddingRight = 8,
-                    paddingTop = 3,
-                    paddingBottom = 3,
-                    fontSize = 9,
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    backgroundColor = new StyleColor(color),
-                    color = Color.white,
-                    borderTopLeftRadius = 3,
-                    borderTopRightRadius = 3,
-                    borderBottomLeftRadius = 3,
-                    borderBottomRightRadius = 3
-                }
-            };
+            var btn = new Button(() => onClick()) { text = label };
+            btn.AddToClassList("nexus-actionbar-btn");
+            btn.style.backgroundColor = new StyleColor(color);
             parent.Add(btn);
         }
 
@@ -623,7 +480,8 @@ namespace Nexus.Editor
             }
 
             // Forward to active plugin for lightweight polling updates
-            try { _activePlugin?.OnUpdate(); } catch { }
+            try { _activePlugin?.OnUpdate(); }
+            catch (Exception ex) { UnityEngine.Debug.LogWarning($"[Nexus] Plugin OnUpdate failed: {ex.Message}"); }
 
             UpdateStatusBarText();
         }

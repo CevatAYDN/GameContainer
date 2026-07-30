@@ -15,7 +15,10 @@ namespace Nexus.Core
         /// <summary>The execution mode (Sequential, Concurrent, Exclusive, or Composite).</summary>
         public ExecutionMode Mode { get; }
 
-        /// <summary>Execution priority; higher values run first.</summary>
+        /// <summary>
+        /// Execution priority.
+        /// <b>Higher values run first</b> (sorts descending).
+        /// </summary>
         public int Priority { get; }
 
         /// <summary>True if the command implements <see cref="IAsyncCommand"/> or <see cref="IAsyncCommand{TSignal}"/>.</summary>
@@ -33,7 +36,7 @@ namespace Nexus.Core
         /// <summary>Creates a new <see cref="CommandHandlerInfo"/> instance.</summary>
         /// <param name="commandType">The <see cref="Type"/> of the command.</param>
         /// <param name="mode">The execution mode for this handler.</param>
-        /// <param name="priority">Execution priority (higher runs first).</param>
+        /// <param name="priority">Execution priority (<b>higher runs first</b>, sorted descending).</param>
         /// <param name="isAsync">Whether the command is asynchronous (<see cref="IAsyncCommand"/>).</param>
         /// <param name="timeoutMs">Execution timeout in milliseconds (0 = no timeout).</param>
         public CommandHandlerInfo(Type commandType, ExecutionMode mode, int priority, bool isAsync, int timeoutMs = 0)

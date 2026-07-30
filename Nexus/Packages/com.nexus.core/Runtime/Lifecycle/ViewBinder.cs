@@ -171,8 +171,7 @@ namespace Nexus.Core
             var mediatorAttr = view.GetType().GetCustomAttribute<MediatorAttribute>();
             if (mediatorAttr == null)
             {
-                var logger = _context?.TryResolve<ILoggerService>();
-                logger?.Log($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
+                NexusRuntime.Logger?.Log($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
                 _container.Inject(view);
                 view.Bind(_context);
                 return;
@@ -264,8 +263,7 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    var logger = _context?.TryResolve<ILoggerService>();
-                    logger?.LogException(ex);
+                    NexusRuntime.Logger?.LogException(ex);
                 }
             }
             _activeMediators.Clear();

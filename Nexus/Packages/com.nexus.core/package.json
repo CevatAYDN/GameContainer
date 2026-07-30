@@ -4,8 +4,12 @@
   "displayName": "Nexus Observable Architecture",
   "description": "Open source observable MVCS architecture for Unity 6. Features: 0 GC allocation, 4 execution modes, causal tracing, build validation, reactive models, service lifecycle, Game Manager editor, and debug HUD.",
   "unity": "6000.0",
-  "documentationUrl": "README.md",
+  "documentationUrl": "docs/10_MIN_QUICKSTART.md",
   "changelogUrl": "CHANGELOG.md",
+  "quickstartUrls": {
+    "en": "docs/10_MIN_QUICKSTART.md",
+    "tr": "docs/10_MIN_QUICKSTART_TR.md"
+  },
   "licenses": [
     {
       "type": "MIT",
@@ -36,6 +40,11 @@
       "displayName": "Counter Example",
       "description": "A simple counter application demonstrating generic 0-GC commands, reactive model, and mediator bindings in Nexus.",
       "path": "Samples~/Counter"
+    },
+    {
+      "displayName": "Nexus Starter Package",
+      "description": "Minimal starter project with Root, Lifecycle, Signal, Command, Model, View, and Mediator — ready to run in 5 minutes.",
+      "path": "Samples~/NexusStarter"
     }
   ]
 }

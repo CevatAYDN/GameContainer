@@ -238,10 +238,14 @@ namespace Nexus.Core
             internal static void RecordTrace(string entry)
             {
                 int rawIndex = System.Threading.Interlocked.Increment(ref s_traceIndex);
-                int idx = ((rawIndex % TraceBufferSize) + TraceBufferSize) % TraceBufferSize;
+                // P2-9 fix: use unsigned modulo to handle negative overflow properly
+                int idx = rawIndex >= 0
+                    ? rawIndex % TraceBufferSize
+                    : (TraceBufferSize - 1 - ((-rawIndex - 1) % TraceBufferSize));
                 s_traceBuffer[idx] = entry;
-                if (s_traceCount < TraceBufferSize)
-                    System.Threading.Interlocked.Increment(ref s_traceCount);
+                int currentCount = System.Threading.Volatile.Read(ref s_traceCount);
+                if (currentCount < TraceBufferSize)
+                    System.Threading.Interlocked.CompareExchange(ref s_traceCount, currentCount + 1, currentCount);
             }
 
             public static string[] GetRecentTraces(out int count)

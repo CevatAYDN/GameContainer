@@ -137,15 +137,14 @@ namespace Nexus.Core
                         }
                         catch (Exception ex)
                         {
-                            var logger = TryResolve<ILoggerService>();
-                            logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
+                            NexusRuntime.Logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
                         }
                     }
                 }
 
                 if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
                 {
-                    TryResolve<ILoggerService>()?.LogWarning("[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
+                    NexusRuntime.Logger?.LogWarning("[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
                 }
             }
 
@@ -173,12 +172,11 @@ namespace Nexus.Core
             var issues = _builder.Validate();
             if (issues.Count > 0)
             {
-                var logger = TryResolve<ILoggerService>();
                 foreach (var issue in issues)
                 {
                     var message = $"[Nexus] DI Validation: {issue.Message}";
-                    if (logger != null)
-                        logger.LogError(message);
+                    if (NexusRuntime.Logger != null)
+                        NexusRuntime.Logger.LogError(message);
                     else
                         UnityEngine.Debug.LogError(message);
                 }
@@ -351,7 +349,7 @@ namespace Nexus.Core
                     }
                     else
                     {
-                        TryResolve<ILoggerService>()?.LogError($"[Nexus] [SignalHandler] type '{type.FullName}' does not implement ICommand/IAsyncCommand.");
+                        NexusRuntime.Logger?.LogError($"[Nexus] [SignalHandler] type '{type.FullName}' does not implement ICommand/IAsyncCommand.");
                     }
                 }
             }
@@ -371,7 +369,7 @@ namespace Nexus.Core
                 {
                     if (logWarnings)
                     {
-                        TryResolve<ILoggerService>()?.LogWarning($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
+                        NexusRuntime.Logger?.LogWarning($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
                     }
                 }
             }
@@ -505,7 +503,7 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                TryResolve<ILoggerService>()?.LogException(ex);
+                NexusRuntime.Logger?.LogException(ex);
             }
         }
 
@@ -544,7 +542,7 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                TryResolve<ILoggerService>()?.LogException(ex);
+                NexusRuntime.Logger?.LogException(ex);
             }
         }
 
@@ -566,7 +564,7 @@ namespace Nexus.Core
                     }
                     catch (Exception ex)
                     {
-                        TryResolve<ILoggerService>()?.LogException(ex);
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
             }
@@ -580,7 +578,7 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    TryResolve<ILoggerService>()?.LogException(ex);
+                    NexusRuntime.Logger?.LogException(ex);
                 }
             }
 
@@ -601,7 +599,7 @@ namespace Nexus.Core
                     }
                     catch (Exception ex)
                     {
-                        TryResolve<ILoggerService>()?.LogException(ex);
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
             }
@@ -626,7 +624,7 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    TryResolve<ILoggerService>()?.LogException(ex);
+                    NexusRuntime.Logger?.LogException(ex);
                 }
             }
 

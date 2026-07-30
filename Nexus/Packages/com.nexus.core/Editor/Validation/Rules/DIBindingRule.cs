@@ -12,7 +12,11 @@ namespace Nexus.Editor.Validation.Rules
         public IEnumerable<ValidationIssue> Evaluate()
         {
             var issues = new List<ValidationIssue>();
-            // Rule evaluation placeholder - validates static bindings and prevents missing singleton dependencies
+
+            // DI binding validation is now handled directly in BuildValidation.ValidateDiBindings()
+            // This rule class is kept as an extension point for future modular validation rules.
+            // If you add a new validation, implement it here instead of modifying BuildValidation.cs.
+
             return issues;
         }
     }

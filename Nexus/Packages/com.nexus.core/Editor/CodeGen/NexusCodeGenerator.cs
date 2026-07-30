@@ -20,6 +20,43 @@ namespace Nexus.Editor
             set => EditorPrefs.SetBool(AutoGenKey, value);
         }
 
+        /// <summary>
+        /// Returns true if the AOT binder has injectable types registered (non-empty binder will be generated).
+        /// Used by the Dashboard plugin to warn users when AOT generation is disabled.
+        /// </summary>
+        public static bool HasInjectableTypes
+        {
+            get
+            {
+                // Quick-check: scan non-system assemblies for types with [Inject] attributes
+                // without generating the full binder (avoids triggering asset database refresh).
+                foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+                {
+                    var name = assembly.GetName().Name;
+                    if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
+                        continue;
+                    try
+                    {
+                        foreach (var type in assembly.GetTypes())
+                        {
+                            if (type.IsClass && !type.IsAbstract)
+                            {
+                                var fields = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                foreach (var f in fields)
+                                    if (f.GetCustomAttribute<InjectAttribute>() != null) return true;
+
+                                var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                                foreach (var p in properties)
+                                    if (p.GetCustomAttribute<InjectAttribute>() != null) return true;
+                            }
+                        }
+                    }
+                    catch (ReflectionTypeLoadException) { }
+                }
+                return false;
+            }
+        }
+
         [MenuItem("Nexus/Auto-Generate AOT on Script Reload")]
         private static void ToggleAutoGenerate()
         {

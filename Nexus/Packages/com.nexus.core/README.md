@@ -17,6 +17,16 @@
 
 ---
 
+## 🚀 Quick Start
+
+| 🇬🇧 English | 🇹🇷 Türkçe |
+|------------|----------|
+| [10-Minute Quickstart Guide](docs/10_MIN_QUICKSTART.md) | [10 Dakikada Hızlı Başlangıç](docs/10_MIN_QUICKSTART_TR.md) |
+
+**Prefer a hands-on demo?** Install the [Counter Sample](Samples~/Counter/README.md) via Package Manager → Nexus → Samples.
+
+---
+
 ## 📖 Glossary
 
 | Term | Definition | Concrete Example |

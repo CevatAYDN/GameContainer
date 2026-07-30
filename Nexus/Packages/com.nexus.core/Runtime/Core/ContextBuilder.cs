@@ -105,7 +105,7 @@ namespace Nexus.Core
         /// <typeparam name="TSignal">The signal struct type that triggers the command.</typeparam>
         /// <typeparam name="TCommand">The command class (must implement <see cref="ICommand"/>).</typeparam>
         /// <param name="mode">Execution mode (Sequential, Concurrent, or Exclusive). Composite triggers must be registered via [CompositeSignalHandler] instead.</param>
-        /// <param name="priority">Execution priority; higher values run first.</param>
+        /// <param name="priority">Execution priority; <b>higher values run first</b>.</param>
         public void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class where TSignal : struct
         {
@@ -135,7 +135,7 @@ namespace Nexus.Core
         /// <typeparam name="TSignal">The signal struct type that triggers the command.</typeparam>
         /// <typeparam name="TCommand">The command class.</typeparam>
         /// <param name="mode">Execution mode (Sequential, Concurrent, or Exclusive). Composite triggers must be registered via [CompositeSignalHandler] instead.</param>
-        /// <param name="priority">Execution priority; higher values run first.</param>
+        /// <param name="priority">Execution priority; <b>higher values run first</b>.</param>
         public void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class where TSignal : struct
         {
