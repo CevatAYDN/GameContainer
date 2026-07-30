@@ -458,8 +458,8 @@ After successful migration:
 If you encounter issues during migration:
 
 1. **Check the Troubleshooting Guide** - [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-2. **Review GitLab Issues** - [GitLab Issues](https://gitlab.com/beehivegame/GameContainer/issues)
-3. **Ask in Discussions** - [GitLab Discussions](https://gitlab.com/beehivegame/GameContainer/discussions)
+2. **Review GitHub Issues** - [GitHub Issues](https://github.com/CevatAYDN/GameContainer/issues)
+3. **Ask in Discussions** - [GitHub Discussions](https://github.com/CevatAYDN/GameContainer/discussions)
 4. **Check Sample Projects** - [Samples~/Counter](Samples~/Counter/README.md)
 
 ---

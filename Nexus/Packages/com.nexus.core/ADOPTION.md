@@ -2,7 +2,7 @@
 
 > **Gap P2-D.** Nexus is authored and maintained primarily by a single developer.
 > For multi-game studio use, **fork and own the package** rather than consuming the
-> upstream `GameContainer` repo (`gitlab.com/beehivegame/GameContainer`) directly.
+> upstream `GameContainer` repo (`https://github.com/CevatAYDN/GameContainer`) directly.
 
 ## Why fork
 
@@ -46,6 +46,6 @@ git submodule add https://github.com/<your-org>/com.nexus.core.git Packages/com.
 
 ## Real-game reference
 
-The reference real-game consumer is **RingFlow** (`https://gitlab.com/beehivegame/RingFlow`),
+The reference real-game consumer uses Nexus the same way your games should: the infrastructure lives in the
 which uses Nexus the same way your games should: the infrastructure lives in the
 fork, the game logic lives in the game repo.

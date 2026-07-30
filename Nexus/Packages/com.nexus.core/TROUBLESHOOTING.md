@@ -923,13 +923,13 @@ If you can't resolve your issue:
 
 ### 2. Search GitHub Issues
 
-- [GitLab Issues](https://gitlab.com/beehivegame/GameContainer/issues)
+- [GitHub Issues](https://github.com/CevatAYDN/GameContainer/issues)
 - Search for your error message
 - Check if issue is already reported
 
 ### 3. Ask in Discussions
 
-- [GitLab Discussions](https://gitlab.com/beehivegame/GameContainer/discussions)
+- [GitHub Discussions](https://github.com/CevatAYDN/GameContainer/discussions)
 - Describe your issue clearly
 - Provide code examples
 - Include error messages
