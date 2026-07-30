@@ -250,41 +250,9 @@ namespace Nexus.Core
             }
         }
 
-        // P1-17 fix: frame gates so N active Roots update global metrics only once per frame.
-        private static int s_lastFrameMetricsFrame = -1;
-        private static int s_lastMemoryMetricsFrame = -1;
-
-        private void Update()
-        {
-            if (Context != null && IsInitialized)
-            {
-                Context.HybridQueue.DrainThreadSafe();
-            }
-
-            // Update performance metrics once per frame regardless of Root count
-            if (s_lastFrameMetricsFrame != Time.frameCount)
-            {
-                s_lastFrameMetricsFrame = Time.frameCount;
-                PerformanceMonitor.UpdateFrameMetrics();
-            }
-        }
-
-        private void LateUpdate()
-        {
-            if (Context != null && IsInitialized)
-            {
-                Context.HybridQueue.DrainNextFrame();
-            }
-
-            // Update memory and GC metrics every 60 frames (approximately 1 second),
-            // once per frame regardless of Root count
-            if (Time.frameCount % 60 == 0 && s_lastMemoryMetricsFrame != Time.frameCount)
-            {
-                s_lastMemoryMetricsFrame = Time.frameCount;
-                PerformanceMonitor.UpdateMemoryMetrics();
-                PerformanceMonitor.UpdateGCMetrics();
-            }
-        }
+        // Queue draining and metrics sampling are handled by <see cref="QueueDrainer"/>
+        // and <see cref="MetricsSampler"/> MonoBehaviours on the same GameObject.
+        // Root focuses solely on context lifecycle.
 
         private void OnDestroy()
         {

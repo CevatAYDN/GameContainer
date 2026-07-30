@@ -25,55 +25,15 @@ namespace Nexus.Core
             // View has not been registered yet and Mediator has not been connected.
         }
 
-        private Root _pendingRoot;
-
         /// <summary>
         /// Automatically registers this view with the nearest parent Root's context.
-        /// Falls back to FindObjectsByType only when the scene has one unambiguous Root.
+        /// Delegates Root discovery to <see cref="ViewRegistration"/> so the view
+        /// doesn't know about Root, Context, or pending buffers.
         /// </summary>
         protected virtual void OnEnable()
         {
             if (_isBound) return;
-            var root = GetComponentInParent<Root>();
-            if (root != null)
-            {
-                if (root.Context != null)
-                {
-                    root.Context.RegisterView(this);
-                }
-                else
-                {
-                    _pendingRoot = root;
-                    root.RegisterPendingView(this);
-                }
-                return;
-            }
-
-            // Fallback only when the scene has a single unambiguous active root.
-            var roots = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
-            if (roots.Length == 1)
-            {
-                var singleRoot = roots[0];
-                if (singleRoot.Context != null)
-                {
-                    singleRoot.Context.RegisterView(this);
-                }
-                else
-                {
-                    _pendingRoot = singleRoot;
-                    singleRoot.RegisterPendingView(this);
-                }
-            }
-            else if (roots.Length > 1)
-            {
-                NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: Multiple Root instances found. " +
-                    "Auto-binding is ambiguous; keep a single active Root per scene or the view may bind to the wrong context.");
-            }
-            else if (roots.Length == 0)
-            {
-                NexusRuntime.Logger?.LogError($"[Nexus] View '{gameObject.name}' OnEnable: No Root GameObject found in scene. " +
-                    "Create a Root via GameObject → Nexus → Create Root.");
-            }
+            ViewRegistration.Register(this, ref _pendingRoot);
         }
 
         /// <summary>
@@ -90,9 +50,7 @@ namespace Nexus.Core
                     _pendingRoot = null;
                 }
                 if (Context != null)
-                {
                     Context.UnregisterView(this);
-                }
             }
             catch (Exception ex)
             {

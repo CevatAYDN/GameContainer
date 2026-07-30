@@ -13,66 +13,6 @@ using Nexus.Core.Services;
 
 namespace Nexus.Core
 {
-
-
-    internal class SubscriptionNode
-    {
-        public object Handler;
-        public object RawSubscription;
-        public bool IsActive = true;
-        public bool IsAsync;
-        public SubscriptionNode Next;
-
-        public void Reset()
-        {
-            Handler = null;
-            RawSubscription = null;
-            IsActive = true;
-            IsAsync = false;
-            Next = null;
-        }
-    }
-
-    internal static class SubscriptionNodePool
-    {
-        private static readonly Stack<SubscriptionNode> s_pool = new();
-
-        public static SubscriptionNode Rent(object handler, object rawSub, bool isAsync)
-        {
-            lock (s_pool)
-            {
-                if (s_pool.Count > 0)
-                {
-                    var node = s_pool.Pop();
-                    node.Handler = handler;
-                    node.RawSubscription = rawSub;
-                    node.IsActive = true;
-                    node.IsAsync = isAsync;
-                    node.Next = null;
-                    return node;
-                }
-            }
-            return new SubscriptionNode { Handler = handler, RawSubscription = rawSub, IsAsync = isAsync };
-        }
-
-        public static void Return(SubscriptionNode node)
-        {
-            node.Reset();
-            lock (s_pool)
-            {
-                s_pool.Push(node);
-            }
-        }
-
-        public static void Clear()
-        {
-            lock (s_pool)
-            {
-                s_pool.Clear();
-            }
-        }
-    }
-
     /// <summary>
     /// Runs async work in a fire-and-forget manner. Uses async Task internally
     /// (not async void) so unhandled exceptions are caught by the Task infrastructure
@@ -82,9 +22,6 @@ namespace Nexus.Core
     {
         public static void Run(Func<ValueTask> func, string errorContext)
         {
-            // Fire-and-forget: the Task is not awaited, but the async state machine
-            // uses async Task (not async void), meaning exceptions are captured on
-            // the Task and never escape to the Unity SynchronizationContext.
             _ = RunAsync(func, errorContext);
         }
 
@@ -103,8 +40,39 @@ namespace Nexus.Core
     }
 
     [Preserve]
-    public class SignalBus : ISignalBus, IDisposable
+    public partial class SignalBus : ISignalBus, IDisposable
     {
+        // ─── Subscription management (nested for depth) ───
+        internal class SubscriptionNode
+        {
+            public object Handler;
+            public object RawSubscription;
+            public bool IsActive = true;
+            public bool IsAsync;
+            public SubscriptionNode Next;
+            public void Reset() { Handler = null; RawSubscription = null; IsActive = true; IsAsync = false; Next = null; }
+        }
+
+        internal static class SubscriptionNodePool
+        {
+            private static readonly Stack<SubscriptionNode> s_pool = new();
+            public static SubscriptionNode Rent(object handler, object rawSub, bool isAsync)
+            {
+                lock (s_pool)
+                {
+                    if (s_pool.Count > 0)
+                    {
+                        var node = s_pool.Pop();
+                        node.Handler = handler; node.RawSubscription = rawSub;
+                        node.IsActive = true; node.IsAsync = isAsync; node.Next = null;
+                        return node;
+                    }
+                }
+                return new SubscriptionNode { Handler = handler, RawSubscription = rawSub, IsAsync = isAsync };
+            }
+            public static void Return(SubscriptionNode node) { node.Reset(); lock (s_pool) { s_pool.Push(node); } }
+            public static void Clear() { lock (s_pool) { s_pool.Clear(); } }
+        }
         public static event Action<Exception, string> OnUnhandledException;
 
         internal static void RaiseUnhandledException(Exception ex, string context)

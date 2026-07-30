@@ -5,12 +5,20 @@ namespace Nexus.Editor
 {
     /// <summary>
     /// Contract for all Nexus editor plugins hosted inside <see cref="NexusWindow"/>.
+    /// Plugins declare their own category and icon color so the sidebar is auto-organized.
     /// </summary>
     public interface INexusEditorPlugin
     {
         string Id { get; }
         string DisplayName { get; }
         int Order { get; }
+
+        /// <summary>Category key for sidebar grouping (e.g. "cat_overview", "cat_diagnostics").</summary>
+        string Category { get; }
+
+        /// <summary>Accent color for the sidebar icon dot.</summary>
+        UnityEngine.Color IconColor { get; }
+
         void Initialize(NexusWindow window);
         VisualElement CreateView();
         void OnEnable();
@@ -35,6 +43,11 @@ namespace Nexus.Editor
         public abstract string Id { get; }
         public abstract string DisplayName { get; }
         public abstract int Order { get; }
+
+        /// <summary>Category key for sidebar grouping. Override to place the plugin in a specific group.</summary>
+        public virtual string Category => "cat_other";
+        /// <summary>Accent color for the sidebar icon dot. Default gray.</summary>
+        public virtual UnityEngine.Color IconColor => new(0.6f, 0.6f, 0.6f);
 
         protected NexusWindow Window { get; private set; }
 

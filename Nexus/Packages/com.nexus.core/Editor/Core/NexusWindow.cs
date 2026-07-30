@@ -16,33 +16,9 @@ namespace Nexus.Editor
     /// </summary>
     public partial class NexusWindow : EditorWindow
     {
-        // Distinct colors for each plugin's sidebar icon (used as colored circles).
-        private static readonly Dictionary<string, Color> PluginIconColors = new()
-        {
-            { "Dashboard", new Color(0.3f, 0.8f, 1f) },
-            { "Wizard", new Color(1f, 0.85f, 0.3f) },
-            { "Hierarchy", new Color(0.4f, 1f, 0.4f) },
-            { "Explorer", new Color(0.8f, 0.6f, 0.9f) },
-            { "Tracer", new Color(1f, 0.7f, 0.2f) },
-            { "Graph", new Color(0.9f, 0.4f, 0.4f) },
-            { "TypeAnalyzer", new Color(0.6f, 0.6f, 0.6f) },
-            { "GameManager", new Color(0.3f, 1f, 0.8f) },
-            { "casual_services", new Color(1f, 0.4f, 0.8f) },
-            { "Help", new Color(0.6f, 0.6f, 1f) },
-            { "ErrorDashboard", new Color(1f, 0.3f, 0.3f) },
-            { "PerformanceDashboard", new Color(0.3f, 1f, 0.6f) },
-            { "NetworkDashboard", new Color(0.4f, 0.8f, 1f) },
-            { "ContextInspector", new Color(0.6f, 1f, 0.9f) },
-        };
-
-        private static readonly List<(string CategoryKey, string[] PluginIds)> SidebarCategories = new()
-        {
-            ("cat_overview",     new[] { "Dashboard", "GameManager" }),
-            ("cat_architecture", new[] { "Hierarchy", "Explorer", "Graph", "TypeAnalyzer", "ContextInspector", "FSM" }),
-            ("cat_diagnostics",  new[] { "Tracer", "ErrorDashboard", "PerformanceDashboard", "NetworkDashboard" }),
-            ("cat_tools",        new[] { "Wizard", "casual_services", "Help" }),
-        };
-
+        // Plugin icon colors and sidebar categories are now declared on each plugin
+        // via INexusEditorPlugin.IconColor and INexusEditorPlugin.Category.
+        // NexusWindow groups plugins by their self-declared category.
         private static readonly HashSet<string> HiddenPluginIds = new();
 
         private List<INexusEditorPlugin> _plugins = new();
@@ -157,37 +133,20 @@ namespace Nexus.Editor
             sep.AddToClassList(NexusEditorStyles.ClassSidebarSep);
             _sidebar.Add(sep);
 
-            // Dynamic Tab Buttons grouped into categories
-            var rendered = new HashSet<string>();
-            foreach (var (categoryKey, pluginIds) in SidebarCategories)
-            {
-                var members = pluginIds
-                    .Select(id => _plugins.FirstOrDefault(p => p.Id == id))
-                    .Where(p => p != null)
-                    .ToList();
-                if (members.Count == 0) continue;
+            // Group plugins by their self-declared Category
+            var grouped = _plugins
+                .GroupBy(p => p.Category)
+                .OrderBy(g => g.Min(p => p.Order)); // sort categories by lowest plugin order
 
-                AddCategoryHeader(NexusLang.Get(categoryKey));
-                foreach (var plugin in members)
+            foreach (var group in grouped)
+            {
+                AddCategoryHeader(NexusLang.Get(group.Key));
+                foreach (var plugin in group.OrderBy(p => p.Order))
                 {
                     string key = $"tab_{plugin.Id.ToLower()}";
                     string label = NexusLang.Get(key);
                     if (label == key) label = plugin.DisplayName;
-                    AddTabButton(label, plugin.Id);
-                    rendered.Add(plugin.Id);
-                }
-            }
-
-            var uncategorized = _plugins.Where(p => !rendered.Contains(p.Id)).ToList();
-            if (uncategorized.Count > 0)
-            {
-                AddCategoryHeader(NexusLang.Get("cat_other"));
-                foreach (var plugin in uncategorized)
-                {
-                    string key = $"tab_{plugin.Id.ToLower()}";
-                    string label = NexusLang.Get(key);
-                    if (label == key) label = plugin.DisplayName;
-                    AddTabButton(label, plugin.Id);
+                    AddTabButton(label, plugin);
                 }
             }
 
@@ -355,21 +314,18 @@ namespace Nexus.Editor
             _sidebar.Add(header);
         }
 
-        private void AddTabButton(string label, string pluginId)
+        private void AddTabButton(string label, INexusEditorPlugin plugin)
         {
-            var btn = new Button(() => SwitchToPlugin(pluginId));
-            btn.name = $"Tab_{pluginId}";
+            var btn = new Button(() => SwitchToPlugin(plugin.Id));
+            btn.name = $"Tab_{plugin.Id}";
             btn.AddToClassList(NexusEditorStyles.ClassSidebarBtn);
 
-            if (PluginIconColors.TryGetValue(pluginId, out var iconColor))
-            {
-                var icon = NexusEditorStyles.CreateColorIcon(iconColor);
-                btn.Add(icon);
-            }
+            var icon = NexusEditorStyles.CreateColorIcon(plugin.IconColor);
+            btn.Add(icon);
 
             var txtLabel = new Label(label);
             txtLabel.AddToClassList(NexusEditorStyles.ClassSidebarLabel);
-            _tabLabels[pluginId] = txtLabel;
+            _tabLabels[plugin.Id] = txtLabel;
             btn.Add(txtLabel);
 
             _sidebar.Add(btn);
