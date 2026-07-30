@@ -44,8 +44,15 @@ namespace Nexus.Core
             get => _value;
             set
             {
-                if (_isNotifying || EqualityComparer<T>.Default.Equals(_value, value))
+                if (EqualityComparer<T>.Default.Equals(_value, value))
                     return;
+
+                if (_isNotifying)
+                {
+                    // Honour reentrant sets instead of silently dropping them.
+                    _value = value;
+                    return;
+                }
 
                 var old = _value;
                 _value = value;

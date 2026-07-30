@@ -339,19 +339,24 @@ namespace Nexus.Core.Services
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
+            AssetProvider.ReleaseWindow(go);
+
+            // Only remove if still the same GameObject — a concurrent OpenWindowAsync
+            // may have reopened the same name while callbacks ran outside the lock.
             await _windowLock.WaitAsync();
             try
             {
-                _activeWindows.Remove(windowName);
-                _windowHistory.Remove(windowName);
-                UpdateLayerInteractivity();
+                if (_activeWindows.TryGetValue(windowName, out var current) && current == go)
+                {
+                    _activeWindows.Remove(windowName);
+                    _windowHistory.Remove(windowName);
+                    UpdateLayerInteractivity();
+                }
             }
             finally
             {
                 _windowLock.Release();
             }
-
-            AssetProvider.ReleaseWindow(go);
         }
 
         public void CloseWindow(string windowName)
@@ -400,7 +405,8 @@ namespace Nexus.Core.Services
         public bool IsWindowOpen(string windowName)
         {
             if (string.IsNullOrEmpty(windowName)) return false;
-            _windowLock.Wait();
+            // Non-blocking — avoids deadlocking the main thread when an async method holds the lock.
+            if (!_windowLock.Wait(0)) return false;
             try
             {
                 return _activeWindows.ContainsKey(windowName);
@@ -414,7 +420,7 @@ namespace Nexus.Core.Services
         public GameObject GetWindow(string windowName)
         {
             if (string.IsNullOrEmpty(windowName)) return null;
-            _windowLock.Wait();
+            if (!_windowLock.Wait(0)) return null;
             try
             {
                 _activeWindows.TryGetValue(windowName, out var go);

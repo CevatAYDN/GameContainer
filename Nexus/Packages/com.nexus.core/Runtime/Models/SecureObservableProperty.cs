@@ -11,6 +11,9 @@ namespace Nexus.Core
     [Preserve]
     public sealed class SecureObservableInt
     {
+        // _valueLock protects the (obscuredValue, cryptoKey) pair so a concurrent
+        // getter never observes a crossed state between the two fields.
+        private readonly object _valueLock = new();
         private int _obscuredValue;
         private int _cryptoKey;
         private List<Action<int, int>> _handlers;
@@ -22,12 +25,10 @@ namespace Nexus.Core
 
         private static int GetSecureRandomKey()
         {
-            // P2-2 fix: use crypto RNG instead of UnityEngine.Random which is main-thread-only.
-            // RandomNumberGenerator is thread-safe on .NET Standard 2.1+ — no lock needed.
-            // Also reads/writes _obscuredValue and _cryptoKey atomically via Interlocked.
+            // Use crypto RNG (thread-safe, no main-thread restriction).
             byte[] bytes = new byte[4];
             s_rng.GetBytes(bytes);
-            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF; // ensure positive
+            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
             return Math.Max(key, 1000);
         }
 
@@ -39,17 +40,23 @@ namespace Nexus.Core
 
         public int Value
         {
-            get => _obscuredValue ^ _cryptoKey;
+            get
+            {
+                lock (_valueLock)
+                {
+                    return _obscuredValue ^ _cryptoKey;
+                }
+            }
             set
             {
-                int current = Value;
-                if (current == value) return;
-
-                int old = current;
-                int newKey = GetSecureRandomKey();
-                // P2-2 fix: atomic write of both fields via Interlocked.Exchange to prevent torn reads
-                System.Threading.Interlocked.Exchange(ref _obscuredValue, value ^ newKey);
-                System.Threading.Interlocked.Exchange(ref _cryptoKey, newKey);
+                int old;
+                lock (_valueLock)
+                {
+                    old = _obscuredValue ^ _cryptoKey;
+                    if (old == value) return;
+                    _cryptoKey = GetSecureRandomKey();
+                    _obscuredValue = value ^ _cryptoKey;
+                }
 
                 Action<int, int>[] snapshot;
                 lock (_handlersLock)
@@ -73,9 +80,11 @@ namespace Nexus.Core
 
         public void SetWithoutNotify(int value)
         {
-            int newKey = GetSecureRandomKey();
-            System.Threading.Interlocked.Exchange(ref _obscuredValue, value ^ newKey);
-            System.Threading.Interlocked.Exchange(ref _cryptoKey, newKey);
+            lock (_valueLock)
+            {
+                _cryptoKey = GetSecureRandomKey();
+                _obscuredValue = value ^ _cryptoKey;
+            }
         }
 
         public void OnChanged(Action<int, int> handler)

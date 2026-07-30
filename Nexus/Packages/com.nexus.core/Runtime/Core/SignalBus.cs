@@ -325,8 +325,10 @@ namespace Nexus.Core
                     list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
                 }
 
-                // Rebuild lock-free read snapshots (volatile publish)
-                _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers);
+                // Deep-copy each list so concurrent dispatch iterates an immutable snapshot.
+                _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers.Count);
+                foreach (var kvp in _commandHandlers)
+                    _commandHandlersReadCopy[kvp.Key] = new List<CommandHandlerInfo>(kvp.Value);
                 _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>(_hasAsyncHandler);
             }
 
@@ -1751,12 +1753,13 @@ namespace Nexus.Core
 
         private void ExecuteWithDecorators(object command, Action next)
         {
-            if (_context is Context ctx && ctx.Plugins.Count > 0)
+            if (_context is Context ctx && ctx.PluginsReadOnlyCopy.Count > 0)
             {
+                var snapshot = ctx.PluginsReadOnlyCopy;
                 Action current = next;
-                for (int i = ctx.Plugins.Count - 1; i >= 0; i--)
+                for (int i = snapshot.Count - 1; i >= 0; i--)
                 {
-                    var decorators = ctx.Plugins[i].context.Decorators;
+                    var decorators = snapshot[i].context.Decorators;
                     for (int j = decorators.Count - 1; j >= 0; j--)
                     {
                         var d = decorators[j];
@@ -1774,12 +1777,13 @@ namespace Nexus.Core
 
         private async ValueTask ExecuteWithDecoratorsAsync(object command, Func<ValueTask> next)
         {
-            if (_context is Context ctx && ctx.Plugins.Count > 0)
+            if (_context is Context ctx && ctx.PluginsReadOnlyCopy.Count > 0)
             {
+                var snapshot = ctx.PluginsReadOnlyCopy;
                 Func<ValueTask> current = next;
-                for (int i = ctx.Plugins.Count - 1; i >= 0; i--)
+                for (int i = snapshot.Count - 1; i >= 0; i--)
                 {
-                    var decorators = ctx.Plugins[i].context.Decorators;
+                    var decorators = snapshot[i].context.Decorators;
                     for (int j = decorators.Count - 1; j >= 0; j--)
                     {
                         var d = decorators[j];
