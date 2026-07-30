@@ -375,9 +375,15 @@ namespace Nexus.Core
                 {
                     if (binding.IsSingleton)
                     {
-                        object instance = null;
+                        object singletonInstance;
                         lock (_singletonLock)
                         {
+                            // Defect #2 fix: if the container is being disposed, reject new resolves
+                            // to prevent singletons being created and then never disposed.
+                            if (_disposed)
+                                throw new ObjectDisposedException(nameof(NexusDI),
+                                    $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
+
                             if (binding.Instance != null)
                                 return binding.Instance;
 
@@ -389,9 +395,12 @@ namespace Nexus.Core
 
                             try
                             {
-                                instance = CreateInstance(binding.ConcreteType);
-                                binding.Instance = instance;
-                                _resolvedSingletons.Add(instance);
+                                singletonInstance = CreateInstance(binding.ConcreteType);
+                                // Defect #1 fix: inject BEFORE publishing the instance, so no other
+                                // thread can observe a partially-injected singleton.
+                                Inject(singletonInstance);
+                                binding.Instance = singletonInstance;
+                                _resolvedSingletons.Add(singletonInstance);
                             }
                             finally
                             {
@@ -400,8 +409,7 @@ namespace Nexus.Core
                             }
                         }
 
-                        Inject(instance);
-                        return instance;
+                        return singletonInstance;
                     }
 
                     var transientInstance = CreateInstance(binding.ConcreteType);
