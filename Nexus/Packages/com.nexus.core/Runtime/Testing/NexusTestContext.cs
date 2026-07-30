@@ -351,15 +351,16 @@ namespace Nexus.Core
             Context.Container.BindInstance(instance);
         }
 
-        /// <summary>Calls OnInitializeAsync on the registered lifecycle, if any.</summary>
+        /// <summary>
+        /// Runs the full context initialization pipeline:
+        /// InitializeReactiveModelsAsync → InitializeServicesAsync (calls InitializeAsync on all INexusServices) 
+        /// → ReInjectAll → lifecycle.OnInitializeAsync → ReInjectAll → lifecycle.OnStartAsync.
+        /// This matches the production initialization sequence in Context.InitializeLifecycleAsync.
+        /// </summary>
         /// <param name="ct">Cancellation token.</param>
         public async ValueTask InitializeAsync(CancellationToken ct = default)
         {
-            if (Context.Container.IsRegistered(typeof(IContextLifecycle)))
-            {
-                var lifecycle = Context.Container.Resolve<IContextLifecycle>();
-                await lifecycle.OnInitializeAsync(ct);
-            }
+            await Context.InitializeLifecycleAsync(Context.ConfiguredLifecycles, ct);
         }
 
         /// <summary>Calls OnStartAsync on the registered lifecycle, if any.</summary>

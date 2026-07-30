@@ -306,6 +306,7 @@ namespace Nexus.Editor
             foreach (var type in injectTypes)
             {
                 string fullName = type.FullName.Replace("+", ".");
+                string typeSafeName = fullName.Replace(".", "_").Replace("+", "_");
                 
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var f in fields)
@@ -313,9 +314,9 @@ namespace Nexus.Editor
                     if (f.GetCustomAttribute<InjectAttribute>() != null)
                     {
                         if (f.IsPublic)
-                            preserveSb.AppendLine($"                var _f_{type.Name}_{f.Name} = default({fullName}).{f.Name};");
+                            preserveSb.AppendLine($"                var _f_{typeSafeName}_{f.Name} = default({fullName}).{f.Name};");
                         else
-                            preserveSb.AppendLine($"                var _f_{type.Name}_{f.Name} = typeof({fullName}).GetField(\"{f.Name}\", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
+                            preserveSb.AppendLine($"                var _f_{typeSafeName}_{f.Name} = typeof({fullName}).GetField(\"{f.Name}\", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
                     }
                 }
 
@@ -326,12 +327,12 @@ namespace Nexus.Editor
                     {
                         if (p.GetMethod != null && p.GetMethod.IsPublic)
                         {
-                            preserveSb.AppendLine($"                var _p_{type.Name}_{p.Name} = default({fullName}).{p.Name};");
-                            preserveSb.AppendLine($"                _ = _p_{type.Name}_{p.Name}; // Suppress CS0219 warning");
+                            preserveSb.AppendLine($"                var _p_{typeSafeName}_{p.Name} = default({fullName}).{p.Name};");
+                            preserveSb.AppendLine($"                _ = _p_{typeSafeName}_{p.Name}; // Suppress CS0219 warning");
                         }
                         else
                         {
-                            preserveSb.AppendLine($"                var _p_{type.Name}_{p.Name} = typeof({fullName}).GetProperty(\"{p.Name}\", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
+                            preserveSb.AppendLine($"                var _p_{typeSafeName}_{p.Name} = typeof({fullName}).GetProperty(\"{p.Name}\", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
                         }
                     }
                 }
