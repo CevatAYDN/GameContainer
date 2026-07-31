@@ -215,7 +215,7 @@ namespace Nexus.Core
 
         internal async ValueTask InitializeReactiveModelsAsync(CancellationToken ct)
         {
-            if (_builder != null) await _builder.InitializeReactiveModelsAsync(SignalBus, ct);
+            if (_builder != null) await _builder.InitializeReactiveModelsAsync(ct);
         }
 
         internal async ValueTask InitializeServicesAsync(CancellationToken ct)
@@ -243,6 +243,11 @@ namespace Nexus.Core
                 for (int i = 0; i < lifecycles.Count; i++)
                     await lifecycles[i].OnStartAsync(ct);
             }
+
+            // Drain lazy services first resolved during OnStartAsync (e.g. by views/mediators).
+            // Previously the single drain ran before OnStartAsync, so a lazy service resolved
+            // during startup would never receive InitializeAsync.
+            await InitializeLazyServicesAsync(ct);
         }
 
         internal async ValueTask InitializeLazyServicesAsync(CancellationToken ct)
@@ -494,14 +499,30 @@ namespace Nexus.Core
             if (_builder != null)
             {
                 var serviceTypes = _builder.ServiceTypes;
+                var disposedServices = new HashSet<object>();
                 for (int i = serviceTypes.Count - 1; i >= 0; i--)
                 {
                     try
                     {
-                        if (Container.TryGetExistingInstance(serviceTypes[i], out var existing) && existing is INexusService service)
+                        if (Container.TryGetExistingInstance(serviceTypes[i], out var existing) && existing is INexusService service
+                            && disposedServices.Add(existing))
+                        {
                             service.OnDispose();
+                        }
                     }
                     catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+                }
+
+                // Dispose any remaining resolved INexusService singletons (e.g. lazy services
+                // first resolved outside the eager ServiceTypes list) so nothing leaks now that
+                // NexusDI.Dispose skips INexusService (their lifecycle is owned by the Context).
+                foreach (var instance in Container.GetActiveSingletons())
+                {
+                    if (instance is INexusService service && disposedServices.Add(instance))
+                    {
+                        try { service.OnDispose(); }
+                        catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+                    }
                 }
             }
 

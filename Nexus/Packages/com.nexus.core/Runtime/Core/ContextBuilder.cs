@@ -174,13 +174,28 @@ namespace Nexus.Core
         public List<DiValidationIssue> Validate()
         {
             var issues = new List<DiValidationIssue>();
+
+            // What can actually be resolved = binding keys (interfaces).
             var allRegisteredTypes = _container.GetAllRegisteredTypes();
 
-            foreach (var type in allRegisteredTypes)
+            // Validate concrete implementations too: Bind<TInterface, TImplementation> keys the
+            // binding by interface, so the concrete type's [Inject]/ctor dependencies were
+            // previously never checked. Resolve-time lookups still use the key set only.
+            var typesToValidate = new HashSet<Type>(allRegisteredTypes);
+            foreach (var (_, concrete) in _container.GetEditorTypeMappings())
+            {
+                if (concrete != null) typesToValidate.Add(concrete);
+            }
+
+            foreach (var type in typesToValidate)
             {
                 NexusDI.InjectableMetadata meta;
                 try { meta = NexusDI.GetOrCreateInjectMetadata(type); }
-                catch { continue; }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogWarning($"[Nexus] DI validation skipped type '{type.Name}': {ex.Message}");
+                    continue;
+                }
 
                 // Check constructor parameters
                 if (meta.ConstructorParameterTypes != null)
@@ -201,6 +216,10 @@ namespace Nexus.Core
                 // Check [Inject] fields
                 foreach (var field in meta.Fields)
                 {
+                    // LazyInjection<T> fields are constructed by the injector directly
+                    // (never resolved), so they are always satisfiable — skip them.
+                    if (field.Type.IsGenericType && field.Type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
+                        continue;
                     if (!field.IsOptional && !allRegisteredTypes.Contains(field.Type))
                     {
                         issues.Add(new DiValidationIssue(
@@ -214,6 +233,8 @@ namespace Nexus.Core
                 // Check [Inject] properties
                 foreach (var prop in meta.Properties)
                 {
+                    if (prop.Type.IsGenericType && prop.Type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
+                        continue;
                     if (!prop.IsOptional && !allRegisteredTypes.Contains(prop.Type))
                     {
                         issues.Add(new DiValidationIssue(
@@ -248,7 +269,7 @@ namespace Nexus.Core
         internal IReadOnlyList<Type> ReactiveModelTypes => _reactiveModelTypes;
         internal IReadOnlyList<Type> ServiceTypes => _serviceTypes;
 
-        internal async ValueTask InitializeReactiveModelsAsync(ISignalBus signalBus, CancellationToken ct)
+        internal async ValueTask InitializeReactiveModelsAsync(CancellationToken ct)
         {
             foreach (var modelType in _reactiveModelTypes)
             {

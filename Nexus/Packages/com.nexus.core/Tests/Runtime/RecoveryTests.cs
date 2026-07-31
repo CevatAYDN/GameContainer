@@ -67,6 +67,42 @@ namespace Nexus.Tests
             }
         }
 
+        // Generic-only commands (implement only ICommand<TSignal> / IAsyncCommand<TSignal>,
+        // NOT the non-generic ICommand/IAsyncCommand). These exercise the object-based fallback
+        // dispatch path, which used to silently no-op for them.
+        public class GenericOnlyFallbackCommand : ICommand<FailSignal>
+        {
+            [Inject] private RecoveryTestResults _results;
+            public void Execute(FailSignal signal)
+            {
+                _results.FallbackCount++;
+                _results.FallbackMessage = signal.Message;
+            }
+        }
+
+        public class GenericOnlyAsyncFallbackCommand : IAsyncCommand<FailSignal>
+        {
+            [Inject] private RecoveryTestResults _results;
+            public ValueTask ExecuteAsync(FailSignal signal, CancellationToken ct)
+            {
+                _results.AsyncFallbackCount++;
+                _results.AsyncFallbackMessage = signal.Message;
+                return default;
+            }
+        }
+
+        // Async command that always fails, so FireAsync routes through the async recovery
+        // handler (HandleCommandErrorWithDecisionAsync) rather than the sync one.
+        public class AsyncThrowCommand : IAsyncCommand<FailSignal>
+        {
+            [Inject] private RecoveryTestResults _results;
+            public ValueTask ExecuteAsync(FailSignal signal, CancellationToken ct)
+            {
+                _results.ThrowCount++;
+                throw new InvalidOperationException("Async command failed intendedly: " + signal.Message);
+            }
+        }
+
         public class CustomRecoveryStrategy : IRecoveryStrategy
         {
             public Func<CommandFailureContext, RecoveryDecision> DecisionFactory;
@@ -99,6 +135,9 @@ namespace Nexus.Tests
             _container.BindInstance(_results);
             _container.Bind<FallbackCommand>(isSingleton: false);
             _container.Bind<AsyncFallbackCommand>(isSingleton: false);
+            _container.Bind<GenericOnlyFallbackCommand>(isSingleton: false);
+            _container.Bind<GenericOnlyAsyncFallbackCommand>(isSingleton: false);
+            _container.Bind<AsyncThrowCommand>(isSingleton: false);
         }
 
         [TearDown]
@@ -150,6 +189,52 @@ namespace Nexus.Tests
             Assert.AreEqual(1, _results.ThrowCount);
             Assert.AreEqual(1, _results.AsyncFallbackCount);
             Assert.AreEqual("FallbackAsyncTest", _results.AsyncFallbackMessage);
+        }
+
+        [Test]
+        public void Recovery_Fallback_GenericOnlyCommand_ExecutesViaObjectDispatch()
+        {
+            // Regression: a fallback command implementing only ICommand<TSignal> (not ICommand)
+            // used to be silently skipped by the object-based ExecuteCommand path.
+            _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
+            _strategy.DecisionFactory = ctx => new RecoveryDecision(RecoveryAction.Fallback, typeof(GenericOnlyFallbackCommand), 0);
+
+            _signalBus.Fire(new FailSignal("GenericFallbackTest"));
+
+            Assert.AreEqual(1, _results.ThrowCount);
+            Assert.AreEqual(1, _results.FallbackCount, "Generic-only fallback command must execute.");
+            Assert.AreEqual("GenericFallbackTest", _results.FallbackMessage);
+        }
+
+        [Test]
+        public async Task Recovery_FallbackAsync_GenericOnlyAsyncCommand_ExecutesViaObjectDispatch()
+        {
+            // Regression: a fallback command implementing only IAsyncCommand<TSignal> (not
+            // IAsyncCommand) used to be silently skipped by the object-based async dispatch path.
+            // An async throwing command ensures the async recovery handler is exercised.
+            _signalBus.RegisterCommand(typeof(FailSignal), typeof(AsyncThrowCommand), ExecutionMode.Sequential, 0, true);
+            _strategy.DecisionFactory = ctx => new RecoveryDecision(RecoveryAction.Fallback, typeof(GenericOnlyAsyncFallbackCommand), 0);
+
+            await _signalBus.FireAsync(new FailSignal("GenericAsyncFallbackTest"));
+
+            Assert.AreEqual(1, _results.ThrowCount);
+            Assert.AreEqual(1, _results.AsyncFallbackCount, "Generic-only async fallback command must execute.");
+            Assert.AreEqual("GenericAsyncFallbackTest", _results.AsyncFallbackMessage);
+        }
+
+        [Test]
+        public void Recovery_Fallback_AsyncOnlyCommandInSyncContext_IsRejectedNotRecursed()
+        {
+            // Regression: an async-only fallback type returned from the SYNC error handler must
+            // be rejected (treated as Skip) rather than dispatched — dispatching it would throw
+            // and re-enter the recovery strategy with the same decision, recursing forever.
+            _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
+            _strategy.DecisionFactory = ctx => new RecoveryDecision(RecoveryAction.Fallback, typeof(GenericOnlyAsyncFallbackCommand), 0);
+
+            Assert.DoesNotThrow(() => _signalBus.Fire(new FailSignal("SyncContextAsyncFallback")));
+
+            Assert.AreEqual(1, _results.ThrowCount);
+            Assert.AreEqual(0, _results.AsyncFallbackCount, "Async-only fallback must not run in a sync context.");
         }
 
         [Test]

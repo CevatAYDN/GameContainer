@@ -71,5 +71,25 @@ namespace Nexus.Editor.Tests
             Assert.IsTrue(command.WasReset);
             Assert.IsNull(command.Dependency);
         }
+
+        [Test]
+        public void Return_DoubleReturn_DoesNotPoolTheSameInstanceTwice()
+        {
+            _pool = new CommandPool(typeof(ResettableCommand), () => _container.Resolve(typeof(ResettableCommand)));
+
+            var command = (ResettableCommand)_pool.Get();
+            _pool.Return(command);
+
+            // Double-return: the second return must be discarded, not pushed again —
+            // otherwise Get() would hand the same instance to two consumers.
+            _pool.Return(command);
+
+            var first = (ResettableCommand)_pool.Get();
+            var second = (ResettableCommand)_pool.Get();
+
+            Assert.AreSame(command, first);
+            Assert.AreNotSame(first, second, "Pool must not contain the same instance twice.");
+            Assert.GreaterOrEqual(_pool.GetStats().TotalDiscarded, 1);
+        }
     }
 }

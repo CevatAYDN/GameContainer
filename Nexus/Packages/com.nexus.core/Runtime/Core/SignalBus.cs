@@ -93,7 +93,7 @@ namespace Nexus.Core
         // P0-3 fix: snapshots are cached behind a dirty flag so repeated property access
         // does not allocate a new Dictionary each time.
         private Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersSnapshot = new();
-        private Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersReadCopy = new();
+        private volatile Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersReadCopy = new();
         private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _registeredHandlersSnapshot = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>();
         private bool _handlersSnapshotDirty = true;
 
@@ -131,11 +131,15 @@ namespace Nexus.Core
             if (!_handlersSnapshotDirty && _commandHandlersSnapshot != null) return;
             _handlersSnapshotDirty = false;
 
-            _commandHandlersSnapshot = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers);
+            // Deep-copy the per-type handler lists so editor consumers never observe
+            // concurrent mutation while a new handler is being registered.
+            _commandHandlersSnapshot = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers.Count);
             var dict = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>(_commandHandlers.Count);
             foreach (var kvp in _commandHandlers)
             {
-                dict[kvp.Key] = kvp.Value;
+                var listCopy = new List<CommandHandlerInfo>(kvp.Value);
+                _commandHandlersSnapshot[kvp.Key] = listCopy;
+                dict[kvp.Key] = listCopy;
             }
             _registeredHandlersSnapshot = dict;
         }
@@ -167,6 +171,12 @@ namespace Nexus.Core
         private const int MaxInFlightAsyncCommands = 100;
 
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_signalSetterCache = new();
+
+        // Cached dispatchers for generic-only commands (ICommand<TSignal>/IAsyncCommand<TSignal>)
+        // used by the object-based fallback paths (recovery). Without these, a generic-only
+        // fallback command would silently no-op because it is not a non-generic ICommand.
+        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_genericSyncDispatchCache = new();
+        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Func<object, object, CancellationToken, ValueTask>> s_genericAsyncDispatchCache = new();
 
         private static readonly Stack<List<object>> s_listPool = new();
         private static List<object> GetPooledList()
@@ -311,6 +321,23 @@ namespace Nexus.Core
             if (signalTypes.Length > 64 || signalTypes.Length == 0)
                 throw new ArgumentException($"Composite command requires between 1 and 64 signal types. Received {signalTypes.Length}.", nameof(signalTypes));
 
+            // A duplicate signal type would set the same bit twice; the trigger could never
+            // reach its TargetMask (or would fire with an ambiguous payload), so reject it.
+            for (int i = 0; i < signalTypes.Length; i++)
+            {
+                if (signalTypes[i] == null)
+                    throw new ArgumentException("Composite signal types cannot be null.", nameof(signalTypes));
+                for (int j = i + 1; j < signalTypes.Length; j++)
+                {
+                    if (signalTypes[i] == signalTypes[j])
+                    {
+                        throw new ArgumentException(
+                            $"Composite command requires unique signal types; '{signalTypes[i].Name}' appears more than once.",
+                            nameof(signalTypes));
+                    }
+                }
+            }
+
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             // Composite commands cannot use the single-signal generic command interfaces
             // (ICommand<T>/IAsyncCommand<T>) since a composite spans multiple signal types.
@@ -387,7 +414,11 @@ namespace Nexus.Core
             {
                 await FireInternalAsync(signal, isCrossContextSource: false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException)
+            {
+                // Expected during context teardown; nothing to surface (and no unobserved task).
+            }
+            catch (Exception ex)
             {
                 if (onError != null)
                 {
@@ -452,6 +483,13 @@ namespace Nexus.Core
                         current = current.Next;
                     }
                 }
+            }
+
+            // Free dead nodes immediately when nothing is dispatching (deferred to the next
+            // fire's finally otherwise, which could otherwise retain handlers until then).
+            if (s_stackDepth.Value == 0)
+            {
+                SweepDeadNodes();
             }
         }
 
@@ -968,6 +1006,28 @@ namespace Nexus.Core
                             syncCmd.Execute();
                         }
                     }
+                    else if (signal != null)
+                    {
+                        // Generic-only command (ICommand<TSignal>): dispatch via cached reflection.
+                        // Previously this silently no-oped because the command was not ICommand.
+                        var dispatcher = GetGenericSyncDispatcher(command.GetType(), signal.GetType());
+                        if (dispatcher == null)
+                        {
+                            throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement ICommand or ICommand<{signal.GetType().Name}>.");
+                        }
+                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                        {
+                            ExecuteWithDecorators(command, () => dispatcher(command, signal));
+                        }
+                        else
+                        {
+                            dispatcher(command, signal);
+                        }
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement ICommand.");
+                    }
                     shouldRun = false; // completed successfully
 #if NEXUS_DEBUG
                     NexusTrace.EndEvent(traceId, TraceStatus.OK);
@@ -1169,6 +1229,62 @@ namespace Nexus.Core
                         {
                             syncCmd.Execute();
                         }
+                    }
+                    else if (signal != null)
+                    {
+                        // Generic-only command: prefer IAsyncCommand<TSignal>, then ICommand<TSignal>.
+                        // Previously a generic-only fallback command silently no-oped here.
+                        var asyncDispatcher = GetGenericAsyncDispatcher(command.GetType(), signal.GetType());
+                        if (asyncDispatcher != null)
+                        {
+                            if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                            {
+                                if (handler.TimeoutMs > 0)
+                                {
+                                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                    timeoutCts.CancelAfter(handler.TimeoutMs);
+                                    var timeoutToken = timeoutCts.Token;
+                                    await ExecuteWithDecoratorsAsync(command, async () => await asyncDispatcher(command, signal, timeoutToken));
+                                }
+                                else
+                                {
+                                    await ExecuteWithDecoratorsAsync(command, async () => await asyncDispatcher(command, signal, ct));
+                                }
+                            }
+                            else
+                            {
+                                if (handler.TimeoutMs > 0)
+                                {
+                                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                    timeoutCts.CancelAfter(handler.TimeoutMs);
+                                    await asyncDispatcher(command, signal, timeoutCts.Token);
+                                }
+                                else
+                                {
+                                    await asyncDispatcher(command, signal, ct);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var syncDispatcher = GetGenericSyncDispatcher(command.GetType(), signal.GetType());
+                            if (syncDispatcher == null)
+                            {
+                                throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement IAsyncCommand, IAsyncCommand<TSignal>, ICommand, or ICommand<{signal.GetType().Name}>.");
+                            }
+                            if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
+                            {
+                                ExecuteWithDecorators(command, () => syncDispatcher(command, signal));
+                            }
+                            else
+                            {
+                                syncDispatcher(command, signal);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement IAsyncCommand or ICommand.");
                     }
                     shouldRun = false; // success
 #if NEXUS_DEBUG
@@ -1616,31 +1732,19 @@ namespace Nexus.Core
                     }
                     if (decision.Action == RecoveryAction.Fallback)
                     {
-                        if (decision.FallbackCommandType != null)
+                        if (decision.FallbackCommandType != null && IsSyncCapableFallbackType(decision.FallbackCommandType, signal))
                         {
                             ExecuteCommand(new CommandHandlerInfo(decision.FallbackCommandType, ExecutionMode.Sequential, 0, false), signal);
                         }
+                        else if (decision.FallbackCommandType != null)
+                        {
+                            // Reject fallback types that cannot execute in this (sync) context —
+                            // async-only types or types implementing no supported command interface —
+                            // so we neither silently no-op nor recurse forever on the same decision.
+                            NexusRuntime.Logger?.LogError($"[Nexus] Fallback command '{decision.FallbackCommandType.Name}' cannot execute synchronously for signal '{signal?.GetType().Name ?? "unknown"}'. Treating as Skip.");
+                        }
                         return RecoveryAction.Fallback;
                     }
-                    if (decision.Action == RecoveryAction.Retry)
-                    {
-                        if (retryCount >= decision.MaxRetries)
-                        {
-                            NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
-                            throw new InvalidOperationException($"Retry limit reached for command {commandType.Name}.", ex);
-                        }
-                        return RecoveryAction.Retry;
-                    }
-                }
-                catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
-                {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
-                }
-            }
-
-            FireFailedSignalSafe(failedSignal);
-            return RecoveryAction.Skip;
-        }
 
         private async ValueTask<RecoveryAction> HandleCommandErrorWithDecisionAsync(Exception ex, Type commandType, object signal, int retryCount, CancellationToken ct)
         {
@@ -1682,7 +1786,7 @@ namespace Nexus.Core
                     }
                     if (decision.Action == RecoveryAction.Fallback)
                     {
-                        if (decision.FallbackCommandType != null)
+                        if (decision.FallbackCommandType != null && IsValidFallbackType(decision.FallbackCommandType, signal))
                         {
                             // E-4/P0-1-aligned: recognize generic-only async fallback commands too.
                             var isAsync = typeof(IAsyncCommand).IsAssignableFrom(decision.FallbackCommandType)
@@ -1695,6 +1799,10 @@ namespace Nexus.Core
                             {
                                 ExecuteCommand(new CommandHandlerInfo(decision.FallbackCommandType, ExecutionMode.Sequential, 0, false), signal);
                             }
+                        }
+                        else if (decision.FallbackCommandType != null)
+                        {
+                            NexusRuntime.Logger?.LogError($"[Nexus] Fallback command '{decision.FallbackCommandType.Name}' implements no supported command interface for signal '{signal?.GetType().Name ?? "unknown"}'. Treating as Skip.");
                         }
                         return RecoveryAction.Fallback;
                     }
@@ -1717,6 +1825,75 @@ namespace Nexus.Core
             // P0-4 fix: async-safe dispatch of the failure signal.
             await FireAsyncAndForget(failedSignal);
             return RecoveryAction.Skip;
+        }
+
+        /// <summary>
+        /// True if <paramref name="fallbackType"/> implements a command interface usable by the
+        /// object-based async dispatch paths for <paramref name="signal"/>: non-generic
+        /// ICommand/IAsyncCommand, or the generic ICommand&lt;TSignal&gt;/IAsyncCommand&lt;TSignal&gt;
+        /// matching the signal type.
+        /// </summary>
+        private static bool IsValidFallbackType(Type fallbackType, object signal)
+        {
+            if (typeof(ICommand).IsAssignableFrom(fallbackType) || typeof(IAsyncCommand).IsAssignableFrom(fallbackType))
+                return true;
+            if (signal == null) return false;
+            var signalType = signal.GetType();
+            return typeof(ICommand<>).MakeGenericType(signalType).IsAssignableFrom(fallbackType)
+                || typeof(IAsyncCommand<>).MakeGenericType(signalType).IsAssignableFrom(fallbackType);
+        }
+
+        /// <summary>
+        /// True if <paramref name="fallbackType"/> can execute <b>synchronously</b> for
+        /// <paramref name="signal"/>: non-generic <see cref="ICommand"/> or the generic
+        /// <see cref="ICommand{TSignal}"/> matching the signal type. Async-only types are rejected
+        /// here because the sync error path has no way to await them (attempting dispatch would
+        /// throw and re-enter the recovery strategy).
+        /// </summary>
+        private static bool IsSyncCapableFallbackType(Type fallbackType, object signal)
+        {
+            if (typeof(ICommand).IsAssignableFrom(fallbackType)) return true;
+            if (signal == null) return false;
+            return typeof(ICommand<>).MakeGenericType(signal.GetType()).IsAssignableFrom(fallbackType);
+        }
+
+        /// <summary>
+        /// Returns a cached dispatcher that invokes <see cref="ICommand{TSignal}"/>.Execute on a
+        /// generic-only command (or null if the command type does not implement that interface).
+        /// Used by the object-based fallback paths so generic-only commands are not silently skipped.
+        /// </summary>
+        private static Action<object, object> GetGenericSyncDispatcher(Type commandType, Type signalType)
+        {
+            var key = (commandType, signalType);
+            if (s_genericSyncDispatchCache.TryGetValue(key, out var cached)) return cached;
+
+            var genericInterface = typeof(ICommand<>).MakeGenericType(signalType);
+            if (!genericInterface.IsAssignableFrom(commandType)) return null;
+            var method = genericInterface.GetMethod("Execute");
+            Action<object, object> dispatcher = (cmd, sig) => method.Invoke(cmd, new[] { sig });
+            s_genericSyncDispatchCache.TryAdd(key, dispatcher);
+            return dispatcher;
+        }
+
+        /// <summary>
+        /// Returns a cached dispatcher that invokes <see cref="IAsyncCommand{TSignal}"/>.ExecuteAsync on
+        /// a generic-only async command (or null if the command type does not implement that interface).
+        /// </summary>
+        private static Func<object, object, CancellationToken, ValueTask> GetGenericAsyncDispatcher(Type commandType, Type signalType)
+        {
+            var key = (commandType, signalType);
+            if (s_genericAsyncDispatchCache.TryGetValue(key, out var cached)) return cached;
+
+            var genericInterface = typeof(IAsyncCommand<>).MakeGenericType(signalType);
+            if (!genericInterface.IsAssignableFrom(commandType)) return null;
+            var method = genericInterface.GetMethod("ExecuteAsync");
+            Func<object, object, CancellationToken, ValueTask> dispatcher = (cmd, sig, ct) =>
+            {
+                var result = method.Invoke(cmd, new[] { sig, ct });
+                return (ValueTask)result;
+            };
+            s_genericAsyncDispatchCache.TryAdd(key, dispatcher);
+            return dispatcher;
         }
 
         private void ExecuteWithDecorators(object command, Action next)
@@ -1813,6 +1990,8 @@ namespace Nexus.Core
         internal static void ClearStaticCaches()
         {
             s_signalSetterCache.Clear();
+            s_genericSyncDispatchCache.Clear();
+            s_genericAsyncDispatchCache.Clear();
             lock (s_listPool)
             {
                 s_listPool.Clear();

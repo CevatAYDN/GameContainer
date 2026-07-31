@@ -90,6 +90,18 @@ Type-safe reactive property wrapper providing allocation-free change notificatio
 ### 4. `NexusEditorPlugin` & `NexusWindow`
 Editor tools implement `INexusEditorPlugin`. The host window drives tab updates via `OnUpdate()` cadence (~200ms interval) without custom background timers.
 
+### 5. Service Disposal Contract
+Service lifecycle (`INexusService`) is **owned by the Context**, not by the DI container:
+- `Context.Dispose()` calls `OnDispose()` on every resolved `INexusService` singleton — eager services (from `ServiceTypes`) and lazy services (first resolved outside that list, e.g. during `OnStartAsync`) — exactly once each (guarded by a `disposedServices` set).
+- `NexusDI.Dispose()` / `DisposeAsync()` **skip** `INexusService` instances; a bare container without a Context never disposes services. This prevents the double-dispose that occurred when `NexusService<T>.OnDispose() => Dispose()` was followed by the container disposing the same instance via `IDisposable`.
+- Plain `IDisposable`/`IAsyncDisposable` singletons that are *not* services are still disposed by the container as before.
+
+### 6. Recovery Fallback Dispatch
+Both recovery paths dispatch fallback commands through object-based `ExecuteCommand`/`ExecuteCommandAsync`, which now support **generic-only** commands (`ICommand<TSignal>` / `IAsyncCommand<TSignal>` that do not implement the non-generic interface) via cached reflection dispatchers. The sync error handler additionally rejects async-only fallback types (it cannot await them) to avoid re-entering the same strategy decision endlessly — those are logged and treated as `Skip`.
+
+### 7. DI Validation Scope
+`ContextBuilder.Validate()` validates the *concrete* implementations of interface bindings (`Bind<TInterface, TImplementation>`) — not just the interface keys — so missing constructor/`[Inject]` dependencies are reported for the types that are actually constructed. `LazyInjection<T>` fields are excluded (the injector constructs them directly).
+
 ---
 
 ## 🚫 Architectural Anti-Patterns
@@ -134,7 +146,7 @@ public override void OnDisable()
 
 ---
 
-**Last updated:** 2026-07-24  
+**Last updated:** 2026-07-31  
 **Code version:** 0.4.0  
 **Maintainers:** Nexus Core Team  
 **Re-review trigger:** Any change to `Runtime/Core/Context.cs` or `Runtime/Core/SignalBus.cs`.

@@ -755,6 +755,10 @@ namespace Nexus.Core
                 if (!alreadyDisposed.Add(instance)) continue;
                 try
                 {
+                    // INexusService lifecycle (InitializeAsync/OnDispose) is owned by the owning
+                    // Context, which disposes services in reverse registration order. Skipping
+                    // them here prevents double-dispose (NexusService<T>.OnDispose → Dispose()).
+                    if (instance is INexusService) continue;
                     if (instance is IDisposable disposable) disposable.Dispose();
                     else if (instance is IAsyncDisposable asyncDisposable)
                         SafeAsyncRunner.Run(() => asyncDisposable.DisposeAsync(),
@@ -787,6 +791,9 @@ namespace Nexus.Core
                 {
                     try
                     {
+                        // Same contract as Dispose(): INexusService lifecycle is owned by the
+                        // owning Context, so skip here to avoid double-dispose.
+                        if (instance is INexusService) continue;
                         if (instance is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
                         else if (instance is IDisposable disposable) disposable.Dispose();
                     }

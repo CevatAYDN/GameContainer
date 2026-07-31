@@ -36,6 +36,7 @@
 - `ObservableProperty<T>` reactive system
 - `Root` scene component behavior
 - Command execution order: Commands → Subscriptions → Composites
+- **Service disposal contract** — the owning Context calls `OnDispose()` on every `INexusService` singleton exactly once; the DI container skips services (lifecycle ownership is Context-scoped)
 
 ---
 
@@ -46,7 +47,7 @@
 - `NetworkSignalBus` and replay system
 - `[CommandTimeout]` implementation details
 - `IRecoveryStrategy` API specifics
-- Non-generic `ICommand`/`IAsyncCommand` fallback paths (used for recovery composites)
+- Non-generic `ICommand`/`IAsyncCommand` fallback paths (used for recovery composites) — generic-only `ICommand<TSignal>`/`IAsyncCommand<TSignal>` fallback dispatch is now implemented and tested, but its exact behavior may still evolve pre-1.0
 
 ---
 
@@ -59,5 +60,5 @@
 
 ---
 
-**Last updated:** 2026-07-30  
+**Last updated:** 2026-07-31  
 **Code version:** 0.4.0

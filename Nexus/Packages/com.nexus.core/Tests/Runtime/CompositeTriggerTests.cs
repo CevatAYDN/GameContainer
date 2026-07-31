@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using Nexus.Core;
+using System;
 using System.Threading;
 
 namespace Nexus.Tests
@@ -114,6 +115,32 @@ namespace Nexus.Tests
             _signalBus.Fire(new SignalC());
 
             Assert.AreEqual(1, TestCompositeCommand.ExecutionCount);
+        }
+
+        [Test]
+        public void RegisterCompositeCommand_DuplicateSignalType_Throws()
+        {
+            // Regression: a duplicate signal type sets the same bit twice, so the mask could
+            // never reach TargetMask. Registration must reject it up front.
+            Assert.Throws<ArgumentException>(() => _signalBus.RegisterCompositeCommand(
+                new[] { typeof(SignalA), typeof(SignalA) },
+                typeof(TestCompositeCommand),
+                oneShot: false,
+                priority: 0,
+                isAsync: false
+            ));
+        }
+
+        [Test]
+        public void RegisterCompositeCommand_NullSignalType_Throws()
+        {
+            Assert.Throws<ArgumentException>(() => _signalBus.RegisterCompositeCommand(
+                new[] { typeof(SignalA), null },
+                typeof(TestCompositeCommand),
+                oneShot: false,
+                priority: 0,
+                isAsync: false
+            ));
         }
 
         [Test]

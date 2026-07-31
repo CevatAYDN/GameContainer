@@ -46,6 +46,11 @@ namespace Nexus.Core
         private readonly Type _commandType;
         private readonly Func<object> _factory;
         private readonly Stack<object> _pool = new();
+
+        // Instances currently held by the pool. Guards against double-return, which would
+        // otherwise put the same instance in the pool twice (later producing two Get() results
+        // pointing at the same object) and would re-run cleanup on an instance in active use.
+        private readonly HashSet<object> _pooledInstances = new();
         private readonly object _poolLock = new();
         private readonly int _maxSize;
         private static readonly HashSet<Type> s_stateLeakWarningIssued = new();
@@ -69,7 +74,9 @@ namespace Nexus.Core
 
             for (int i = 0; i < initialSize; i++)
             {
-                _pool.Push(_factory());
+                var instance = _factory();
+                _pool.Push(instance);
+                _pooledInstances.Add(instance);
             }
 
             WarnIfStateLeakRisk(commandType);
@@ -109,7 +116,9 @@ namespace Nexus.Core
             {
                 if (_pool.Count > 0)
                 {
-                    return _pool.Pop();
+                    var instance = _pool.Pop();
+                    _pooledInstances.Remove(instance);
+                    return instance;
                 }
             }
             System.Threading.Interlocked.Increment(ref _totalCreated);
@@ -121,19 +130,31 @@ namespace Nexus.Core
         public void Return(object command)
         {
             if (command == null) return;
-            
-            Cleanup(command);
-            
+
             lock (_poolLock)
             {
+                // Double-return guard: an instance already in the pool must not be pooled again
+                // (and must not be re-cleaned, which would clobber the state of the instance
+                // another consumer may have just retrieved).
+                if (!_pooledInstances.Add(command))
+                {
+                    System.Threading.Interlocked.Increment(ref _totalDiscarded);
+                    return;
+                }
+
+                Cleanup(command);
+
                 if (_pool.Count < _maxSize)
                 {
                     _pool.Push(command);
                     System.Threading.Interlocked.Increment(ref _totalReturns);
                     return;
                 }
+
+                // Pool full: roll back the membership marker before discarding.
+                _pooledInstances.Remove(command);
+                System.Threading.Interlocked.Increment(ref _totalDiscarded);
             }
-            System.Threading.Interlocked.Increment(ref _totalDiscarded);
         }
 
         private void Cleanup(object command)
@@ -147,6 +168,7 @@ namespace Nexus.Core
             lock (_poolLock)
             {
                 _pool.Clear();
+                _pooledInstances.Clear();
             }
         }
 
