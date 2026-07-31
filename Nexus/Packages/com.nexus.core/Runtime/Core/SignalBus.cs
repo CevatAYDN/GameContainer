@@ -390,16 +390,22 @@ namespace Nexus.Core
             await FireInternalAsync(signal, isCrossContextSource: false);
         }
 
+        private HybridQueue _cachedHybridQueue;
+        private HybridQueue GetHybridQueue()
+        {
+            if (_cachedHybridQueue != null) return _cachedHybridQueue;
+            _cachedHybridQueue = _container.Resolve<HybridQueue>();
+            return _cachedHybridQueue;
+        }
+
         public void FireThreadSafe<T>(T signal) where T : struct
         {
-            var hybridQueue = _container.Resolve<HybridQueue>();
-            hybridQueue.EnqueueThreadSafe(signal);
+            GetHybridQueue().EnqueueThreadSafe(signal);
         }
 
         public void FireNextFrame<T>(T signal) where T : struct
         {
-            var hybridQueue = _container.Resolve<HybridQueue>();
-            hybridQueue.EnqueueNextFrame(signal);
+            GetHybridQueue().EnqueueNextFrame(signal);
         }
 
         public async ValueTask FireAsyncWithTimeout<T>(T signal, int timeoutMilliseconds) where T : struct
