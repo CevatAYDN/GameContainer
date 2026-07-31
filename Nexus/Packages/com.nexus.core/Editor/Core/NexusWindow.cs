@@ -30,6 +30,7 @@ namespace Nexus.Editor
         private VisualElement _contentArea;
         private Label _statusBar;
         private readonly Dictionary<string, Label> _tabLabels = new();
+        private bool _uiCallbacksRegistered;
 
         private HierarchyPlugin _hierarchyPlugin; // Keep reference to update trackers in Play Mode
 
@@ -63,6 +64,8 @@ namespace Nexus.Editor
 
         private void OnDisable()
         {
+            _uiCallbacksRegistered = false;
+
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.hierarchyChanged -= OnHierarchyChanged;
 
@@ -229,14 +232,18 @@ namespace Nexus.Editor
                 SwitchToPlugin(_plugins[0].Id);
             }
 
-            // Keyboard shortcuts: Ctrl+1..9 for tabs
-            root.RegisterCallback<KeyDownEvent>(OnKeyDown);
-            root.RegisterCallback<ContextClickEvent>(OnContextClick);
+            // Keyboard shortcuts: Ctrl+1..9 for tabs.
+            // Guard against double registration: RefreshDiscovery() and SetLocale() re-run
+            // CreateGUI() on the same root, and root.Clear() does not remove callbacks/schedules.
+            if (!_uiCallbacksRegistered)
+            {
+                root.RegisterCallback<KeyDownEvent>(OnKeyDown);
+                root.RegisterCallback<ContextClickEvent>(OnContextClick);
+                root.schedule.Execute(OnScheduledUpdate).Every(200);
+                _uiCallbacksRegistered = true;
+            }
 
             UpdateStatusBarText();
-
-            // Scheduler to update Hierarchy trackers when in Play Mode and Hierarchy tab is active
-            root.schedule.Execute(OnScheduledUpdate).Every(200);
         }
 
         private void DiscoverPlugins()

@@ -96,9 +96,10 @@ namespace Nexus.Editor
 
             ScanExplorerAndPopulate();
 
+            // Must be here: the window calls CreateView on every tab show, but OnEnable only once at window open.
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-            
+
             RenderTab();
 
             return _view;

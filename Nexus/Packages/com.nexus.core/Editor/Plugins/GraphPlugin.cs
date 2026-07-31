@@ -27,9 +27,9 @@ namespace Nexus.Editor
         private int _totalEdgeCount;
 
         // Trace sink Write() may be called from any thread; marshal highlights to the
-        // main (UI) thread via a lock-free queue drained on the view schedule.
+        // main (UI) thread via a lock-free queue drained in OnUpdate.
         private readonly ConcurrentQueue<(bool isSignal, string typeName)> _highlightQueue = new();
-        private IVisualElementScheduledItem _drainSchedule;
+        private double _lastDrainTime;
 
         public override VisualElement CreateView()
         {
@@ -71,14 +71,20 @@ namespace Nexus.Editor
 
             BuildGraph();
             NexusTrace.AddSink(this);
-            _drainSchedule = _view.schedule.Execute(DrainHighlights).Every(100);
 
             return _view;
         }
 
+        public override void OnUpdate()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            if (now - _lastDrainTime < 0.1) return;
+            _lastDrainTime = now;
+            DrainHighlights();
+        }
+
         public override void OnDisable()
         {
-            _drainSchedule?.Pause();
             NexusTrace.RemoveSink(this);
             _signalNodes.Clear();
             _handlerNodes.Clear();

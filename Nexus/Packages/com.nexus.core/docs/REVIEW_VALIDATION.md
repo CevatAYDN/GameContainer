@@ -134,3 +134,38 @@ Raporun 4 maddesinden 3'ü önceki turlarda çözülmüştü; gerçek boşluk ol
 
 **LSP Diagnostics:** Tüm değiştirilen dosyalar: **0 error**.
 **CHANGELOG:** Güncellendi — `CHANGELOG.md` Security + Fixed bölümleri.
+
+---
+
+## 🔧 Üçüncü Kod Review — Editor Plugin Denetimi (31 Temmuz 2026)
+
+**Kapsam:** `Editor/Plugins/*.cs` (15 plugin) + `Editor/Core/*` + `Editor/Inspector/*` + `Editor/LiveReload/*` + `Editor/CodeGen/*` — event subscription dengeleri, `_view.schedule` kullanımı, OnEnable/OnDisable/CreateView lifecycle uyumu, state reset.
+
+### Bulunan ve Düzeltilen Sorunlar
+
+| # | Sorun | Seviye | Durum | Dosya |
+|---|-------|--------|-------|-------|
+| 1 | `GraphPlugin`: 100ms recurring `_view.schedule.Execute(DrainHighlights)` — gizli sekmede de çalışırdı | 🟡 MEDIUM | ✅ Düzeltildi | `Editor/Plugins/GraphPlugin.cs` |
+| 2 | `ExplorerPlugin`: `playModeStateChanged` aboneliği `CreateView`'da `-=`+`+=` ile dedupe ediliyordu ama `OnDisable`'da çözülmüyordu; ayrıca `OnEnable`'a taşınamaz (NexusWindow tab değişiminde `OnEnable` çağırmaz, sadece `CreateView`) | 🟡 MEDIUM | ✅ Düzeltildi | `Editor/Plugins/ExplorerPlugin.cs` |
+| 3 | `GameManagerPlugin.OnDisable`: `UnsubscribePlayMode()` `base.OnDisable()`'dan SONRA çağrılıyordu — tab değişimi sırasında handler yarı-teardown plugin'e ateşlenebilirdi | 🟡 LOW | ✅ Düzeltildi | `Editor/Plugins/GameManagerPlugin.cs` |
+| 4 | `NexusWindow.CreateGUI`: `RefreshDiscovery()` (Ctrl+F5) ve `SetLocale()` her çağrıda `root.RegisterCallback` + `root.schedule.Execute(OnScheduledUpdate).Every(200)` yığıyor — `root.Clear()` callback/schedule temizlemez; locale değişimi sonrası OnUpdate 200ms'de 2×, kısayollar 2× tetiklenirdi | 🔴 HIGH | ✅ Düzeltildi | `Editor/Core/NexusWindow.cs` |
+
+**Kanıt (düzeltmeler):**
+1. `GraphPlugin` — `_drainSchedule` field + `OnDisable`'daki `Pause()` kaldırıldı; `OnUpdate()` içinde `EditorApplication.timeSinceStartup` tabanlı 0.1s throttle ile `DrainHighlights()`. `node.schedule.Execute(...).StartingIn(500)` (tek seferlik highlight geri alma) doğru desen olarak korundu — recurring değil.
+2. `ExplorerPlugin` — abonelik `CreateView` sonunda dedupe (`-=`+`+=`), `OnDisable`'da `-=`; kaldırılan `OnEnable` override'ı geri gelmedi (NexusWindow `SwitchToPlugin` yeni plugin'e `OnEnable` çağırmaz).
+3. `GameManagerPlugin` — `OnDisable()` artık önce `UnsubscribePlayMode()`, sonra `base.OnDisable()`.
+4. `NexusWindow` — `_uiCallbacksRegistered` flag'i: ilk `CreateGUI`'de callback+schedule kaydı, tekrar `CreateGUI`'de atla, `OnDisable`'da sıfırla (pencere yeniden açılınca yeniden kayıt).
+
+### Doğrulanan Temiz Dosyalar (değişiklik gerekmedi)
+
+- **Event dengesi doğru olanlar:** `DashboardPlugin` (flag-guard'lı çift `+=` — CreateView + OnEnable — tek `-=`), `ContextInspectorPlugin` (CreateView'da dedupe, OnDisable'da çöz), `HierarchyPlugin` (aynı desen), `ErrorDashboardPlugin` (`+=` CreateView / `-=` OnDisable + `_dirty` guard'lı refresh), `FSMPlugin` (`_subscribed` sözlüğü; OnDisable + stale-machine temizliği), `WizardPlugin` (CreateView/OnDisable çifti), `TracerPlugin` (`NexusTrace.AddSink`/`RemoveSink` çifti), `NetworkDashboardPlugin` + `PerformanceDashboardPlugin` (+= / -= dengeli).
+- **Aboneliksiz olanlar:** `HelpPlugin`, `TypeAnalyzerPlugin` (statik cache'ler, `[DidReloadScripts]` invalidasyonu).
+- **Core:** `NexusEditorDataProvider` (statik editor-lifetime aboneliği — dedupe `-=` öncesinde, kasıtlı), `NexusTemplateProvider` (üretilen şablon string'lerde OnBind/OnUnbind eşleşmesi), `NexusSetupWizard` (`delayCall` kendi `-=`'sini yapıyor, SessionState tabanlı domain-reload güvenli), `TypeDependencyAnalyzerWindow` (`OnDisable` → `_plugin?.OnDisable()`), `NexusHierarchyMenus`, `NexusEditorSettings`, `NexusEditorStyles`, `NexusLang`, `NexusVisualization`.
+- **Inspector:** `ContextDataEditor`, `RootEditor`, `ViewEditor` (IMGUI, event yok).
+- **LiveReload:** `LiveReloadProcessor` (statik AssetPostprocessor; `catch { continue; }` satır 104 bilinçli system-boundary guard — kullanıcı property getter'ı fırlatabilir, tarama durmamalı).
+
+### Sonuç
+15 plugin'in tamamı `INexusEditorPlugin.OnUpdate()` sözleşmesine uyuyor (recurring `_view.schedule` kalmadı — tek istisnalar tek seferlik `StartingIn` debounce/highlight desenleri). Tüm event abonelikleri CreateView/OnDisable veya flag-guard deseniyle dengeli. `NexusWindow` çift-kayıt bug'ı giderildi.
+
+**LSP Diagnostics:** Değiştirilen 4 dosya: **0 error**.
+**CHANGELOG:** Güncellendi — `CHANGELOG.md` Fixed bölümü (6 plugin + ExplorerPlugin + GameManagerPlugin + NexusWindow).

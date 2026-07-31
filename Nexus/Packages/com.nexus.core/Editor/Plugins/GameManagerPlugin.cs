@@ -137,8 +137,8 @@ namespace Nexus.Editor
 
         public override void OnDisable()
         {
-            base.OnDisable();
             UnsubscribePlayMode();
+            base.OnDisable();
         }
 
         public override void OnUpdate()

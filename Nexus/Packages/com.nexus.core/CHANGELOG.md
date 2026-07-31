@@ -16,12 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **ResourcesUIAssetProvider** — replaced busy-wait loop (`while(!request.isDone) await Task.Yield()`) with direct `await request`, eliminating unnecessary per-frame re-scheduling. Added null asset handling after load.
 - **GameStateMachine.Dispose** — `_stateCts` write/read now uses `Interlocked.Exchange` for thread safety. `Tick()` reads `_currentState` into a local copy before invocation to prevent null-ref during concurrent Dispose.
 - **ObjectPoolService** — `ClearPool()` and `ClearAllPools()` now call `OnDespawned()` on active instances before destroying them, matching the lifecycle contract established by `Despawn()`. Previously active instances were destroyed without notification.
-- **5 Editor plugins** migrated from `_view.schedule.Execute().Every()` to `OnUpdate()`:
+- **6 Editor plugins** migrated from `_view.schedule.Execute().Every()` to `OnUpdate()`:
   - `FSMPlugin` — 300ms schedule → `OnUpdate()` with 300ms throttle
   - `ContextInspectorPlugin` — 500ms schedule removed (OnUpdate already handled refresh)
   - `CasualServicesPlugin` — 500ms schedule → `OnUpdate()` with 500ms throttle
   - `NetworkDashboardPlugin` — 500ms schedule → `OnUpdate()` with 500ms throttle
   - `PerformanceDashboardPlugin` — field declaration cleanup (already used OnUpdate)
+  - `GraphPlugin` — 100ms highlight-drain schedule → `OnUpdate()` with 100ms throttle
+- **ExplorerPlugin** — `EditorApplication.playModeStateChanged` subscription moved from `CreateView()`-only into the paired `CreateView`/`OnDisable` lifecycle (dedupe `-=`+`+=` on show, `-=` on hide). Previously the subscription was never removed on tab switch; `NexusWindow` calls `CreateView` on every tab show but `OnEnable` only once at window open, so an `OnEnable`-based subscription would be lost after the first tab switch.
+- **GameManagerPlugin** — `OnDisable()` now unsubscribes `playModeStateChanged` **before** `base.OnDisable()` (was after), so the event handler can never fire against a half-torn-down plugin during tab switch.
+- **NexusWindow** — `CreateGUI()` callback/schedule registration is now guarded by `_uiCallbacksRegistered`: `RefreshDiscovery()` (Ctrl+F5) and `SetLocale()` re-run `CreateGUI()` on the same root, and `root.Clear()` does not remove callbacks/schedules — previously each re-run stacked a duplicate `OnScheduledUpdate` (200ms) and duplicate `KeyDownEvent`/`ContextClickEvent` handlers. Flag reset in `OnDisable()` so re-open re-registers.
 - **CommandExecutionPipeline.cs** — removed (dead code, zero references across Runtime + Editor + Tests)
 - **SignalBus.Dispose** — `_inFlightAsyncCommands` is now read via `Volatile.Read()` instead of unsynchronized field access, preventing a race condition when Dispose() is called concurrently with in-flight async commands.
 - **CommandPool** — `Cleanup()` (reflection-based `ClearInjectedReferences`) is now skipped for command types with zero `[Inject]` fields, reducing CPU overhead on every `Return()` for simple commands.
