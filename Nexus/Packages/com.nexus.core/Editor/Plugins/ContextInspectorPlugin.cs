@@ -877,6 +877,12 @@ namespace Nexus.Editor
             // Fire button
             var fireBtn = new Button(() =>
             {
+                if (!Application.isPlaying)
+                {
+                    resultLabel.text = "Signal firing requires Play Mode.";
+                    resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentOrange);
+                    return;
+                }
                 if (_selectedContext?.SignalBus == null || _fireSignalInstance == null)
                 {
                     resultLabel.text = NexusLang.Get("ci_err_no_context_signal");
@@ -911,10 +917,13 @@ namespace Nexus.Editor
                 }
             })
             {
-                text = string.Format(NexusLang.Get("ci_fire_btn"), _fireSignalType?.Name ?? "Signal"),
+                text = Application.isPlaying
+                    ? string.Format(NexusLang.Get("ci_fire_btn"), _fireSignalType?.Name ?? "Signal")
+                    : string.Format(NexusLang.Get("ci_fire_btn"), _fireSignalType?.Name ?? "Signal") + " (Play Mode Required)",
+                enabledSelf = Application.isPlaying,
                 style =
                 {
-                    backgroundColor = new StyleColor(NexusEditorStyles.BtnRed),
+                    backgroundColor = new StyleColor(Application.isPlaying ? NexusEditorStyles.BtnRed : NexusEditorStyles.BtnGray),
                     color = Color.white,
                     unityFontStyleAndWeight = FontStyle.Bold,
                     paddingTop = 6, paddingBottom = 6,

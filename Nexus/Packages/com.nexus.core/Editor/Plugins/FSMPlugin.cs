@@ -203,13 +203,16 @@ namespace Nexus.Editor
                 }
             }
 
-            // Drop bookkeeping/subscriptions for machines that are no longer active.
+            // Drop bookkeeping/subscriptions for machines that are no longer active or destroyed.
             var staleSubs = new List<KeyValuePair<GameStateMachine, System.Action<StateTransitionRecord>>>();
             foreach (var kvp in _subscribed)
             {
-                if (!live.Contains(kvp.Key))
+                if (kvp.Key == null || !live.Contains(kvp.Key))
                 {
-                    kvp.Key.OnStateChanged -= kvp.Value;
+                    if (kvp.Key != null)
+                    {
+                        try { kvp.Key.OnStateChanged -= kvp.Value; } catch { }
+                    }
                     staleSubs.Add(kvp);
                 }
             }

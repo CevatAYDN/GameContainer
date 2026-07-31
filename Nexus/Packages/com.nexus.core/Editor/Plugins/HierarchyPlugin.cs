@@ -49,16 +49,19 @@ namespace Nexus.Editor
             var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("hierarchy_title"));
             _view.Add(toolbar);
 
-            var splitView = new VisualElement { style = { flexDirection = FlexDirection.Row, flexGrow = 1 } };
+            var splitView = new TwoPaneSplitView(0, 260, TwoPaneSplitViewOrientation.Horizontal)
+            {
+                style = { flexGrow = 1 }
+            };
 
             // Left Panel (Tree Graph)
-            _leftPanel = new ScrollView { style = { width = new Length(50, LengthUnit.Percent), paddingLeft = 12, paddingRight = 12, paddingTop = 10, paddingBottom = 10 } };
+            _leftPanel = new ScrollView { style = { flexGrow = 1, paddingLeft = 12, paddingRight = 12, paddingTop = 10, paddingBottom = 10 } };
             _leftPanel.style.borderRightWidth = 1;
             _leftPanel.style.borderRightColor = new StyleColor(NexusEditorStyles.BorderColor);
             splitView.Add(_leftPanel);
 
             // Right Panel (DI Inspector)
-            _rightPanel = new VisualElement { style = { width = new Length(50, LengthUnit.Percent), paddingLeft = 12, paddingRight = 12, paddingTop = 10, paddingBottom = 10 } };
+            _rightPanel = new VisualElement { style = { flexGrow = 1, paddingLeft = 12, paddingRight = 12, paddingTop = 10, paddingBottom = 10 } };
             
             var detailTitle = new Label(NexusLang.Get("hierarchy_di_inspector")) { style = { unityFontStyleAndWeight = FontStyle.Bold, fontSize = 12, color = new StyleColor(Color.gray), marginBottom = 10 } };
             _rightPanel.Add(detailTitle);

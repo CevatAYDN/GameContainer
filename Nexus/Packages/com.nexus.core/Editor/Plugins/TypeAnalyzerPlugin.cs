@@ -17,7 +17,7 @@ namespace Nexus.Editor
 
         private TextField _searchField;
         private ScrollView _scrollView;
-        private string _searchedTypeName = "GridModel";
+        private string _searchedTypeName = string.Empty;
 
         // Cache: type name (lower) → cached analysis
         private static readonly ConcurrentDictionary<string, AnalysisResult> s_analysisCache = new();

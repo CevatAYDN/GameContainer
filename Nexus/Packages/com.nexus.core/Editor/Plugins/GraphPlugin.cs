@@ -38,36 +38,42 @@ namespace Nexus.Editor
             var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("graph_title"));
             _view.Add(toolbar);
 
-            // Status bar below toolbar
+            // Control & Status Bar below toolbar
+            var controlBar = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Row,
+                    alignItems = Align.Center,
+                    paddingLeft = 10, paddingRight = 10, paddingTop = 4, paddingBottom = 4,
+                    borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor)
+                }
+            };
+
             _statusLabel = new Label(NexusLang.Get("graph_ready"))
             {
-                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), paddingLeft = 10, paddingTop = 4, paddingBottom = 4,
-                    borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) }
+                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), flexGrow = 1 }
             };
-            _view.Add(_statusLabel);
+            controlBar.Add(_statusLabel);
 
-            _graphView = new SignalGraphView();
-            _graphView.style.flexGrow = 1;
-            _view.Add(_graphView);
-
-            var refreshBtn = NexusEditorStyles.CreateButton(NexusLang.Get("graph_refresh"), BuildGraph, NexusEditorStyles.BtnBlue);
-            refreshBtn.style.position = Position.Absolute;
-            refreshBtn.style.top = 58;
-            refreshBtn.style.right = 10;
-            _view.Add(refreshBtn);
-
-            // Adjustable node budget — replaces the former hard 50-node cap.
             var limitField = new IntegerField(NexusLang.Get("graph_max_nodes")) { value = _maxNodes };
-            limitField.style.position = Position.Absolute;
-            limitField.style.top = 58;
-            limitField.style.right = 92;
             limitField.style.width = 130;
+            limitField.style.marginRight = 8;
             limitField.RegisterValueChangedCallback(evt =>
             {
                 _maxNodes = Mathf.Clamp(evt.newValue, 10, 2000);
                 BuildGraph();
             });
-            _view.Add(limitField);
+            controlBar.Add(limitField);
+
+            var refreshBtn = NexusEditorStyles.CreateButton(NexusLang.Get("graph_refresh"), BuildGraph, NexusEditorStyles.BtnBlue);
+            controlBar.Add(refreshBtn);
+
+            _view.Add(controlBar);
+
+            _graphView = new SignalGraphView();
+            _graphView.style.flexGrow = 1;
+            _view.Add(_graphView);
 
             BuildGraph();
             NexusTrace.AddSink(this);
