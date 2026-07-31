@@ -37,6 +37,7 @@ namespace Nexus.Core
         private static readonly ConcurrentDictionary<Type, Action<object>> s_customClearers = new();
 
         private readonly ConditionalWeakTable<object, PendingInjection> _pendingInjections = new();
+        private readonly object _pendingInjectionsLock = new();
         private readonly HashSet<Type> _constructingSingletons = new();
         private readonly object _singletonLock = new();
         private readonly Injector _injector;
@@ -711,7 +712,10 @@ namespace Nexus.Core
         public int ReInjectAll()
         {
             var snapshot = new List<KeyValuePair<object, PendingInjection>>();
-            foreach (var kvp in _pendingInjections) snapshot.Add(kvp);
+            lock (_pendingInjectionsLock)
+            {
+                foreach (var kvp in _pendingInjections) snapshot.Add(kvp);
+            }
 
             int resolved = 0;
             foreach (var kvp in snapshot)
@@ -723,41 +727,53 @@ namespace Nexus.Core
 
         public void ClearPendingInjection(object instance)
         {
-            _pendingInjections.Remove(instance);
+            lock (_pendingInjectionsLock)
+            {
+                _pendingInjections.Remove(instance);
+            }
         }
 
         private void RecordPendingField(object instance, InjectableField field)
         {
-            var pending = _pendingInjections.GetOrCreateValue(instance);
-            pending.Fields.Add(field);
+            lock (_pendingInjectionsLock)
+            {
+                var pending = _pendingInjections.GetOrCreateValue(instance);
+                pending.Fields.Add(field);
+            }
         }
 
         private void RecordPendingProperty(object instance, InjectableProperty property)
         {
-            var pending = _pendingInjections.GetOrCreateValue(instance);
-            pending.Properties.Add(property);
+            lock (_pendingInjectionsLock)
+            {
+                var pending = _pendingInjections.GetOrCreateValue(instance);
+                pending.Properties.Add(property);
+            }
         }
 
         private void RecordPendingMethodParam(object instance, InjectableMethod method, int paramIndex)
         {
-            var pending = _pendingInjections.GetOrCreateValue(instance);
-            for (int i = 0; i < pending.Methods.Count; i++)
+            lock (_pendingInjectionsLock)
             {
-                if (pending.Methods[i].Method == method)
+                var pending = _pendingInjections.GetOrCreateValue(instance);
+                for (int i = 0; i < pending.Methods.Count; i++)
                 {
-                    var existing = pending.Methods[i];
-                    var indices = existing.ParamIndices;
-                    if (Array.IndexOf(indices, paramIndex) < 0)
+                    if (pending.Methods[i].Method == method)
                     {
-                        var newIndices = new int[indices.Length + 1];
-                        Array.Copy(indices, newIndices, indices.Length);
-                        newIndices[newIndices.Length - 1] = paramIndex;
-                        pending.Methods[i] = (method, newIndices);
+                        var existing = pending.Methods[i];
+                        var indices = existing.ParamIndices;
+                        if (Array.IndexOf(indices, paramIndex) < 0)
+                        {
+                            var newIndices = new int[indices.Length + 1];
+                            Array.Copy(indices, newIndices, indices.Length);
+                            newIndices[newIndices.Length - 1] = paramIndex;
+                            pending.Methods[i] = (method, newIndices);
+                        }
+                        return;
                     }
-                    return;
                 }
+                pending.Methods.Add((method, new[] { paramIndex }));
             }
-            pending.Methods.Add((method, new[] { paramIndex }));
         }
 
         // ─── Public API: Query ───

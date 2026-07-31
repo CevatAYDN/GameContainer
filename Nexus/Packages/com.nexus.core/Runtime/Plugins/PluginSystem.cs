@@ -131,7 +131,10 @@ namespace Nexus.Core
             {
                 throw new UnauthorizedPluginAccessException($"Plugin '{_plugin.Manifest.Name}' is not authorized to register ModelSerializers. Please declare ModelSerializer capability in manifest.");
             }
-            _serializers.Add(serializer);
+            lock (_listLock)
+            {
+                _serializers.Add(serializer);
+            }
         }
 
         public void RegisterTraceSink(INexusTraceSink sink)
@@ -140,13 +143,22 @@ namespace Nexus.Core
             {
                 throw new UnauthorizedPluginAccessException($"Plugin '{_plugin.Manifest.Name}' is not authorized to register TraceSinks. Please declare TraceProvider capability in manifest.");
             }
-            _traceSinks.Add(sink);
+            lock (_listLock)
+            {
+                _traceSinks.Add(sink);
+            }
             NexusTrace.AddSink(sink);
         }
 
         public void Clear()
         {
-            foreach (var sink in _traceSinks)
+            List<INexusTraceSink> sinksToClear;
+            lock (_listLock)
+            {
+                sinksToClear = new List<INexusTraceSink>(_traceSinks);
+            }
+
+            foreach (var sink in sinksToClear)
             {
                 NexusTrace.RemoveSink(sink);
             }
@@ -161,11 +173,11 @@ namespace Nexus.Core
             {
                 _interceptors.Clear();
                 _decorators.Clear();
+                _serializers.Clear();
+                _traceSinks.Clear();
                 _interceptorsSnapshot = Array.Empty<ISignalInterceptor>();
                 _decoratorsSnapshot = Array.Empty<ICommandDecorator>();
             }
-            _serializers.Clear();
-            _traceSinks.Clear();
         }
     }
 }
