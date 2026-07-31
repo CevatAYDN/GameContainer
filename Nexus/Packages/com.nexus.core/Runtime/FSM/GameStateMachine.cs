@@ -85,7 +85,10 @@ namespace Nexus.Core.FSM
         public const int TransitionHistoryCapacity = 32;
 
         private readonly Dictionary<Type, IGameState> _states = new();
-        private IGameState _currentState;
+        // EKSİK-5 fix: volatile ensures Tick() (Unity main thread) always observes the
+        // latest state written by an async transition continuation — prevents torn reads
+        // on platforms without strong memory ordering guarantees.
+        private volatile IGameState _currentState;
         private Type _errorStateType;
         private CancellationTokenSource _stateCts;
 
@@ -301,11 +304,16 @@ namespace Nexus.Core.FSM
             _transitionHead = (_transitionHead + 1) % TransitionHistoryCapacity;
             if (_transitionCount < TransitionHistoryCapacity) _transitionCount++;
 
-            // Causal tracing integration (compiled away without NEXUS_DEBUG).
+            // BUG-14 fix: NexusTrace calls are now wrapped in the same NEXUS_DEBUG guard
+            // used by every other trace site in the framework. Without the guard, every
+            // production build paid two method-call overheads per state transition even
+            // though the trace ring-buffer stubs compile to no-ops anyway.
+#if NEXUS_DEBUG
             int traceId = NexusTrace.BeginEvent(TraceEventType.StateTransition, toName ?? fromName ?? "null");
             NexusTrace.EndEvent(traceId,
                 status == StateTransitionStatus.Success ? TraceStatus.OK :
                 status == StateTransitionStatus.Failed ? TraceStatus.Failed : TraceStatus.Cancelled);
+#endif
 
             OnStateChanged?.Invoke(record);
         }

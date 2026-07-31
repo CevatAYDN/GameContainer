@@ -50,6 +50,9 @@ namespace Nexus.Core
 
         private static readonly ConcurrentBag<ErrorEntry> s_errors = new();
         private static readonly Dictionary<string, int> s_errorGrouping = new();
+        // Guards both s_errorGrouping mutations and the s_errors.Add call so that
+        // grouping counters and the bag stay in sync even under concurrent writers.
+        private static readonly object s_addLock = new();
         private static int s_nextId = 1;
         private static int s_maxErrors = 1000;
         private static bool s_enabled = true;
@@ -87,9 +90,10 @@ namespace Nexus.Core
                 RelatedType = relatedType
             };
 
-            // Group similar errors
+            // BUG-16 fix: group update and bag.Add are now atomic under s_addLock so that
+            // grouping counters and the bag always stay consistent even under concurrent writers.
             var key = $"{category}:{message}";
-            lock (s_errorGrouping)
+            lock (s_addLock)
             {
                 if (s_errorGrouping.ContainsKey(key))
                 {
@@ -101,14 +105,16 @@ namespace Nexus.Core
                     entry.Count = 1;
                     s_errorGrouping[key] = 1;
                 }
-            }
 
-            s_errors.Add(entry);
+                s_errors.Add(entry);
 
-            // Prune old errors if over limit
-            while (s_errors.Count > s_maxErrors)
-            {
-                s_errors.TryTake(out _);
+                // Prune old errors if over limit.
+                // ConcurrentBag.TryTake() removes an unspecified element — that is acceptable
+                // here because we only need to cap size, not maintain ordering during pruning.
+                while (s_errors.Count > s_maxErrors)
+                {
+                    s_errors.TryTake(out _);
+                }
             }
 
             OnErrorAdded?.Invoke(entry);
@@ -151,7 +157,10 @@ namespace Nexus.Core
 
         public static ErrorEntry[] GetErrors(ErrorSeverity? minSeverity = null, ErrorCategory? category = null, int limit = 100)
         {
-            var query = s_errors.AsEnumerable();
+            // BUG-15 fix: take a thread-safe snapshot first so LINQ runs on stable data
+            // even if another thread calls Collect() concurrently.
+            var snapshot = s_errors.ToArray();
+            var query = snapshot.AsEnumerable();
 
             if (minSeverity.HasValue)
             {
@@ -168,32 +177,36 @@ namespace Nexus.Core
 
         public static ErrorEntry[] GetRecentErrors(int count = 20)
         {
-            return s_errors.OrderByDescending(e => e.Timestamp).Take(count).ToArray();
+            // BUG-15 fix: snapshot before LINQ to avoid concurrent mutation.
+            return s_errors.ToArray().OrderByDescending(e => e.Timestamp).Take(count).ToArray();
         }
 
         public static Dictionary<ErrorCategory, int> GetErrorCounts()
         {
-            return s_errors.GroupBy(e => e.Category)
-                          .ToDictionary(g => g.Key, g => g.Count());
+            var snapshot = s_errors.ToArray();
+            return snapshot.GroupBy(e => e.Category)
+                           .ToDictionary(g => g.Key, g => g.Count());
         }
 
         public static Dictionary<ErrorSeverity, int> GetSeverityCounts()
         {
-            return s_errors.GroupBy(e => e.Severity)
-                          .ToDictionary(g => g.Key, g => g.Count());
+            var snapshot = s_errors.ToArray();
+            return snapshot.GroupBy(e => e.Severity)
+                           .ToDictionary(g => g.Key, g => g.Count());
         }
 
         public static Dictionary<ErrorCategory, int> GetCategoryCounts()
         {
-            return s_errors.GroupBy(e => e.Category)
-                          .ToDictionary(g => g.Key, g => g.Count());
+            var snapshot = s_errors.ToArray();
+            return snapshot.GroupBy(e => e.Category)
+                           .ToDictionary(g => g.Key, g => g.Count());
         }
 
         public static void Clear()
         {
-            s_errors.Clear();
-            lock (s_errorGrouping)
+            lock (s_addLock)
             {
+                s_errors.Clear();
                 s_errorGrouping.Clear();
             }
             OnErrorCountChanged?.Invoke(0, s_maxErrors);
@@ -229,19 +242,32 @@ namespace Nexus.Core
 
         public static void ClearBefore(DateTime timestamp)
         {
-            var toRemove = s_errors.Where(e => e.Timestamp < timestamp).ToList();
-            foreach (var error in toRemove)
+            // CRITICAL-3 fix: ConcurrentBag.TryTake() removes an *unspecified* element,
+            // so the old loop deleted random entries instead of old ones.
+            // We now rebuild the bag atomically under s_addLock, keeping only entries
+            // that are not older than the cutoff timestamp.
+            lock (s_addLock)
             {
-                s_errors.TryTake(out _);
+                var toKeep = s_errors.Where(e => e.Timestamp >= timestamp).ToList();
+                s_errors.Clear();
+                s_errorGrouping.Clear();
+                foreach (var entry in toKeep)
+                {
+                    s_errors.Add(entry);
+                    var key = $"{entry.Category}:{entry.Message}";
+                    s_errorGrouping[key] = s_errorGrouping.TryGetValue(key, out var cnt) ? cnt + 1 : 1;
+                }
             }
         }
 
         public static ErrorEntry[] GetFrequentErrors(int minCount = 3, int limit = 10)
         {
-            return s_errors.Where(e => e.Count >= minCount)
-                         .OrderByDescending(e => e.Count)
-                         .Take(limit)
-                         .ToArray();
+            // BUG-15 fix: snapshot before LINQ.
+            return s_errors.ToArray()
+                           .Where(e => e.Count >= minCount)
+                           .OrderByDescending(e => e.Count)
+                           .Take(limit)
+                           .ToArray();
         }
     }
 }

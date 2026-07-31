@@ -23,8 +23,13 @@ namespace Nexus.Core
 
         private const int MaxSampleQueueSize = 2000; // Bounded: prevents the samples queue from growing forever
         private static readonly ConcurrentQueue<MetricSample> s_samples = new();
+        // BUG-17 fix: s_metricHistory and s_currentValues are accessed from both the game
+        // thread (RecordMetric, UpdateFrameMetrics) and the editor/monitoring thread
+        // (GetMetric, GetMetricHistory, GetAllCurrentMetrics). Plain Dictionary is not
+        // thread-safe; protect all reads and writes with a dedicated lock.
         private static readonly Dictionary<string, Queue<float>> s_metricHistory = new();
         private static readonly Dictionary<string, float> s_currentValues = new();
+        private static readonly object s_metricsLock = new();
         private static int s_maxHistorySize = 300; // 5 seconds at 60fps
         private static bool s_enabled = true;
         private static bool s_recording = false;
@@ -65,23 +70,24 @@ namespace Nexus.Core
         {
             if (!s_enabled) return;
 
-            // Always keep the latest value queryable via GetMetric, even when not recording.
-            s_currentValues[name] = value;
-
-            // History stays bounded (MaxHistorySize) regardless of recording state, so it can
-            // never leak; only the sample queue and event notifications are recording-gated.
-            if (!s_metricHistory.TryGetValue(name, out var history))
+            // BUG-17 fix: all dictionary reads and writes are now under s_metricsLock.
+            lock (s_metricsLock)
             {
-                history = new Queue<float>();
-                s_metricHistory[name] = history;
+                // Always keep the latest value queryable via GetMetric, even when not recording.
+                s_currentValues[name] = value;
+
+                // History stays bounded (MaxHistorySize) regardless of recording state.
+                if (!s_metricHistory.TryGetValue(name, out var history))
+                {
+                    history = new Queue<float>();
+                    s_metricHistory[name] = history;
+                }
+                history.Enqueue(value);
+                while (history.Count > s_maxHistorySize)
+                    history.Dequeue();
             }
-            history.Enqueue(value);
-            while (history.Count > s_maxHistorySize)
-                history.Dequeue();
 
             // Only allocate / enqueue / notify while actively recording.
-            // Previously every sample was enqueued forever (the queue is only drained by
-            // ClearHistory), which leaked the managed heap — observed climbing to ~800 MB.
             if (!s_recording) return;
 
             var sample = new MetricSample
@@ -102,32 +108,46 @@ namespace Nexus.Core
 
         public static float GetMetric(string name)
         {
-            return s_currentValues.TryGetValue(name, out var value) ? value : 0f;
+            lock (s_metricsLock)
+                return s_currentValues.TryGetValue(name, out var value) ? value : 0f;
         }
 
         public static float[] GetMetricHistory(string name)
         {
-            return s_metricHistory.TryGetValue(name, out var history) ? history.ToArray() : Array.Empty<float>();
+            lock (s_metricsLock)
+                return s_metricHistory.TryGetValue(name, out var history) ? history.ToArray() : Array.Empty<float>();
         }
 
         public static float GetMetricAverage(string name, int sampleCount = 60)
         {
-            if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
-            var recent = history.TakeLast(sampleCount).ToArray();
+            float[] recent;
+            lock (s_metricsLock)
+            {
+                if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
+                recent = history.TakeLast(sampleCount).ToArray();
+            }
             return recent.Length > 0 ? recent.Average() : 0f;
         }
 
         public static float GetMetricMax(string name, int sampleCount = 60)
         {
-            if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
-            var recent = history.TakeLast(sampleCount).ToArray();
+            float[] recent;
+            lock (s_metricsLock)
+            {
+                if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
+                recent = history.TakeLast(sampleCount).ToArray();
+            }
             return recent.Length > 0 ? recent.Max() : 0f;
         }
 
         public static float GetMetricMin(string name, int sampleCount = 60)
         {
-            if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
-            var recent = history.TakeLast(sampleCount).ToArray();
+            float[] recent;
+            lock (s_metricsLock)
+            {
+                if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
+                recent = history.TakeLast(sampleCount).ToArray();
+            }
             return recent.Length > 0 ? recent.Min() : 0f;
         }
 
@@ -138,8 +158,11 @@ namespace Nexus.Core
 
         public static void ClearHistory()
         {
-            s_metricHistory.Clear();
-            s_currentValues.Clear();
+            lock (s_metricsLock)
+            {
+                s_metricHistory.Clear();
+                s_currentValues.Clear();
+            }
             while (s_samples.TryDequeue(out _)) { }
         }
 
@@ -151,11 +174,12 @@ namespace Nexus.Core
 
         public static void ClearMetric(string name)
         {
-            if (s_metricHistory.ContainsKey(name))
+            lock (s_metricsLock)
             {
-                s_metricHistory[name].Clear();
+                if (s_metricHistory.ContainsKey(name))
+                    s_metricHistory[name].Clear();
+                s_currentValues.Remove(name);
             }
-            s_currentValues.Remove(name);
         }
 
         // Built-in metrics
@@ -175,7 +199,9 @@ namespace Nexus.Core
             s_lastFrameMetricFrame = Time.frameCount;
 
             var deltaTime = Time.deltaTime;
-            var fps = 1f / deltaTime;
+            // BUG-18 fix: deltaTime can be 0 on the first frame or during a freeze;
+            // dividing by zero produces Infinity which corrupts average / max calculations.
+            var fps = deltaTime > 0f ? 1f / deltaTime : 0f;
             var frameTimeMs = deltaTime * 1000f;
 
             RecordMetric("FPS", fps, "fps", "Frame");
@@ -217,12 +243,14 @@ namespace Nexus.Core
 
         public static Dictionary<string, float> GetAllCurrentMetrics()
         {
-            return new Dictionary<string, float>(s_currentValues);
+            lock (s_metricsLock)
+                return new Dictionary<string, float>(s_currentValues);
         }
 
         public static string[] GetAvailableMetrics()
         {
-            return s_metricHistory.Keys.ToArray();
+            lock (s_metricsLock)
+                return s_metricHistory.Keys.ToArray();
         }
     }
 }

@@ -474,12 +474,21 @@ namespace Nexus.Core
                 {
                     var m = meta.Methods[i];
                     var args = new object[m.ParameterTypes.Length];
+                    // BUG-2 fix: track whether all required parameters were resolved.
+                    // If any required parameter is missing, skip the invocation entirely and
+                    // record it as pending — invoking with null could cause a
+                    // NullReferenceException inside user code with no clear error origin.
+                    bool allRequiredResolved = true;
+
                     for (int j = 0; j < m.ParameterTypes.Length; j++)
                     {
                         args[j] = _di.TryResolve(m.ParameterTypes[j]);
                         if (args[j] == null)
                         {
-                            if (m.OptionalParameterMask[j]) { }
+                            if (m.OptionalParameterMask[j])
+                            {
+                                // Optional: null is acceptable — leave it null.
+                            }
                             else if (_di.StrictInjection)
                             {
                                 throw new InvalidOperationException(
@@ -488,13 +497,21 @@ namespace Nexus.Core
                             else
                             {
                                 _di.RecordPendingMethodParam(instance, m, j);
+                                allRequiredResolved = false;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-                                NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{m.ParameterTypes[j].FullName}' for method '{type.FullName}.{m.Method.Name}' is not registered; null was passed.");
+                                NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{m.ParameterTypes[j].FullName}' for method '{type.FullName}.{m.Method.Name}' is not registered; method invocation deferred.");
 #endif
                             }
                         }
                     }
-                    m.Method.Invoke(instance, args);
+
+                    // Only invoke the method when every required parameter is available.
+                    // Methods with unresolved required parameters are re-attempted during
+                    // the next ReInjectAll() pass (triggered after additional bindings are registered).
+                    if (allRequiredResolved)
+                    {
+                        m.Method.Invoke(instance, args);
+                    }
                 }
             }
         }

@@ -1684,10 +1684,13 @@ namespace Nexus.Core
                 var targetCtx = contexts[i];
                 if (targetCtx == _context) continue; // Skip self
 
-                // Check scope tag
+                // BUG-5 fix: use OrdinalIgnoreCase to match NexusRuntime.GetContext()
+                // behaviour. The previous == comparison was case-sensitive, so a ScopeTag
+                // mismatch like "Gameplay" vs "gameplay" would silently skip the target.
                 if (!string.IsNullOrEmpty(scopeTag))
                 {
-                    if (targetCtx is Context concreteCtx && concreteCtx.ScopeTag == scopeTag)
+                    if (targetCtx is Context concreteCtx &&
+                        string.Equals(concreteCtx.ScopeTag, scopeTag, StringComparison.OrdinalIgnoreCase))
                     {
                         concreteCtx.SignalBusInternal.FireCrossContext(signal);
                     }

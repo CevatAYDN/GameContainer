@@ -88,25 +88,30 @@ namespace Nexus.Core
         {
             if (typeof(IResettable).IsAssignableFrom(type)) return;
 
-            // P2-4 fix: single lock acquisition for both Contains and Add
+            // BUG-8 fix: collect ALL risky (mutable, non-injected, non-primitive) fields
+            // and report them together in a single warning instead of stopping at the first one.
             lock (s_stateLeakWarningIssued)
             {
                 if (s_stateLeakWarningIssued.Contains(type)) return;
 
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var riskyFields = new System.Text.StringBuilder();
                 foreach (var field in fields)
                 {
                     if (field.IsInitOnly || field.IsLiteral) continue;
                     if (field.GetCustomAttribute<InjectAttribute>() != null) continue;
-                    // P2-4 fix: also flag non-primitive struct fields (they can leak state too)
                     if (field.FieldType.IsPrimitive || field.FieldType.IsEnum) continue;
 
-                    // Non-injected, non-readonly field could leak state across pool reuse
-                    s_stateLeakWarningIssued.Add(type);
-                    NexusRuntime.Logger?.LogWarning($"[Nexus] Command '{type.Name}' has mutable field '{field.Name}' but does not implement IResettable. " +
-                    "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
-                    return;
+                    if (riskyFields.Length > 0) riskyFields.Append(", ");
+                    riskyFields.Append(field.Name);
                 }
+
+                if (riskyFields.Length == 0) return;
+
+                s_stateLeakWarningIssued.Add(type);
+                NexusRuntime.Logger?.LogWarning(
+                    $"[Nexus] Command '{type.Name}' has mutable field(s) [{riskyFields}] but does not implement IResettable. " +
+                    "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
             }
         }
 
@@ -159,11 +164,17 @@ namespace Nexus.Core
             }
         }
 
-        private static bool HasInjectableFields(Type type)
+        // BUG-9 fix: previously only [Inject] fields were checked, so commands that only
+        // use property- or method-injection would not have their references cleared on
+        // Return(), causing pooled commands to retain stale service references across reuses.
+        // This method now checks fields, properties, and method parameters.
+        private static bool HasInjectableMembers(Type type)
         {
             lock (s_injectableCacheLock)
             {
                 if (s_injectableTypeCache.Contains(type)) return true;
+
+                // Check [Inject] fields
                 foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 {
                     if (field.GetCustomAttribute<InjectAttribute>() != null)
@@ -172,13 +183,34 @@ namespace Nexus.Core
                         return true;
                     }
                 }
+
+                // Check [Inject] properties
+                foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (prop.CanWrite && prop.GetCustomAttribute<InjectAttribute>() != null)
+                    {
+                        s_injectableTypeCache.Add(type);
+                        return true;
+                    }
+                }
+
+                // Check [Inject] methods (any method with the attribute implies injectable params)
+                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (method.GetCustomAttribute<InjectAttribute>() != null)
+                    {
+                        s_injectableTypeCache.Add(type);
+                        return true;
+                    }
+                }
+
                 return false;
             }
         }
 
         private void Cleanup(object command)
         {
-            if (HasInjectableFields(_commandType))
+            if (HasInjectableMembers(_commandType))
                 NexusDI.ClearInjectedReferences(command);
         }
 
