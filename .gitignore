@@ -60,3 +60,6 @@ Thumbs.db
 # OpenCode / IDE scratch
 .omo/
 OPENCODE_CONTINUE.md
+
+# Freebuff scratch / benchmark workspace
+.freebuff/
