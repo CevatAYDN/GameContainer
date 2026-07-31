@@ -144,6 +144,7 @@ namespace Nexus.Editor
             captureToggle.RegisterValueChangedCallback(evt => ErrorCollection.Enabled = evt.newValue);
             bar.Add(captureToggle);
 
+            bar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ed_copy_all"), CopyAllLogsToClipboard, NexusEditorStyles.BtnPurple));
             bar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ed_export_csv"), ExportCsv, NexusEditorStyles.BtnBlue));
             bar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("ed_clear"), () => { ErrorCollection.Clear(); _dirty = true; RefreshUI(); }, NexusEditorStyles.BtnRed));
 
@@ -274,6 +275,16 @@ namespace Nexus.Editor
             });
             if (!string.IsNullOrEmpty(error.RelatedType))
                 meta.Add(new Label(error.RelatedType) { style = { color = NexusEditorStyles.AccentPurpleText, fontSize = 9, marginLeft = 6 } });
+
+            var copyBtn = NexusEditorStyles.CreateButton(NexusLang.Get("ed_copy_log"), () => CopySingleErrorLog(error), NexusEditorStyles.BtnPurple);
+            copyBtn.style.marginLeft = 12;
+            copyBtn.style.paddingLeft = 8;
+            copyBtn.style.paddingRight = 8;
+            copyBtn.style.paddingTop = 2;
+            copyBtn.style.paddingBottom = 2;
+            copyBtn.style.fontSize = 9;
+            meta.Add(copyBtn);
+
             foldout.Add(meta);
 
             if (!string.IsNullOrEmpty(error.Context))
@@ -336,6 +347,44 @@ namespace Nexus.Editor
                 $"nexus_errors_{DateTime.Now:yyyyMMdd_HHmmss}.csv");
             System.IO.File.WriteAllText(path, sb.ToString());
             Debug.Log($"[Nexus] Error report exported: {System.IO.Path.GetFullPath(path)}");
+        }
+
+        private static void CopySingleErrorLog(ErrorCollection.ErrorEntry error)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"[{error.Severity}] [{error.Category}] {error.Timestamp:yyyy-MM-dd HH:mm:ss} (Count: {error.Count})");
+            if (!string.IsNullOrEmpty(error.RelatedType)) sb.AppendLine($"RelatedType: {error.RelatedType}");
+            sb.AppendLine($"Message: {error.Message}");
+            if (!string.IsNullOrEmpty(error.Context)) sb.AppendLine($"Context: {error.Context}");
+            if (!string.IsNullOrEmpty(error.StackTrace)) sb.AppendLine($"StackTrace:\n{error.StackTrace}");
+
+            EditorGUIUtility.systemCopyBuffer = sb.ToString();
+            Debug.Log($"[Nexus] Copied error log to clipboard: {error.Message}");
+        }
+
+        private void CopyAllLogsToClipboard()
+        {
+            var errors = ErrorCollection.GetErrors(_minSeverity, _categoryFilter, ErrorCollection.MaxErrors);
+            if (errors.Length == 0)
+            {
+                Debug.LogWarning("[Nexus] No error logs to copy.");
+                return;
+            }
+
+            var sb = new StringBuilder();
+            sb.AppendLine($"=== NEXUS ERROR LOG EXPORT ({errors.Length} entries) ===");
+            foreach (var e in errors)
+            {
+                sb.AppendLine("----------------------------------------------------------------");
+                sb.AppendLine($"[{e.Severity}] [{e.Category}] {e.Timestamp:yyyy-MM-dd HH:mm:ss} (Count: {e.Count})");
+                if (!string.IsNullOrEmpty(e.RelatedType)) sb.AppendLine($"RelatedType: {e.RelatedType}");
+                sb.AppendLine($"Message: {e.Message}");
+                if (!string.IsNullOrEmpty(e.Context)) sb.AppendLine($"Context: {e.Context}");
+                if (!string.IsNullOrEmpty(e.StackTrace)) sb.AppendLine($"StackTrace:\n{e.StackTrace}");
+            }
+
+            EditorGUIUtility.systemCopyBuffer = sb.ToString();
+            Debug.Log($"[Nexus] Copied all {errors.Length} error log(s) to system clipboard.");
         }
 
         private static string Csv(string value)

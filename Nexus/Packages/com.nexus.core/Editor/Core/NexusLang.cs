@@ -434,6 +434,9 @@ namespace Nexus.Editor
             s_strings["ed_search_placeholder"] = "Search message...";
             s_strings["ed_capture"] = "Capture";
             s_strings["ed_export_csv"] = "Export CSV";
+            s_strings["ed_copy_all"] = "📋 Copy All";
+            s_strings["ed_copy_log"] = "📋 Copy Log";
+            s_strings["ed_copied"] = "Copied to clipboard!";
             s_strings["ed_clear"] = "Clear";
             s_strings["ed_total"] = "TOTAL";
             s_strings["ed_info"] = "INFO";
