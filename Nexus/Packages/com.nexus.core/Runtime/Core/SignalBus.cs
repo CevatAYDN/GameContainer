@@ -1717,14 +1717,20 @@ namespace Nexus.Core
         /// handlers or subscriptions, it is routed through the async path fire-and-forget
         /// (with error capture) instead of throwing <see cref="NexusSyncAsyncMismatchException"/>.
         /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void RunQueuedAsyncDispatch<T>(T signal) where T : struct
+        {
+            SafeAsyncRunner.Run(() => FireInternalAsync(signal, isCrossContextSource: false),
+                $"Queued async dispatch failed for signal '{typeof(T).FullName}'");
+        }
+
         internal void FireQueued<T>(T signal) where T : struct
         {
             bool hasAsync = (_hasAsyncHandlerReadCopy.TryGetValue(typeof(T), out var flag) && flag)
                 || HasAsyncSubscriptions(typeof(T));
             if (hasAsync)
             {
-                SafeAsyncRunner.Run(() => FireInternalAsync(signal, isCrossContextSource: false),
-                    $"Queued async dispatch failed for signal '{typeof(T).FullName}'");
+                RunQueuedAsyncDispatch(signal);
             }
             else
             {

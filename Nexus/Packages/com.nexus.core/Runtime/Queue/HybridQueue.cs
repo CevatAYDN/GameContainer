@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using UnityEngine.Scripting;
 
@@ -51,7 +50,8 @@ namespace Nexus.Core
     /// </summary>
     public static class QueuedSignalPool<T> where T : struct
     {
-        private static readonly ConcurrentQueue<QueuedSignalWrapper<T>> s_pool = new();
+        private static readonly Stack<QueuedSignalWrapper<T>> s_pool = new();
+        private static readonly object s_poolLock = new();
 
         // P1-15 fix: bound the pool and register clearing with NexusRuntime.Reset.
         private const int MaxPoolSize = 256;
@@ -64,7 +64,15 @@ namespace Nexus.Core
         /// <summary>Rents a pooled wrapper initialized with the given signal.</summary>
         public static QueuedSignalWrapper<T> Rent(T signal)
         {
-            if (!s_pool.TryDequeue(out var wrapper))
+            QueuedSignalWrapper<T> wrapper = null;
+            lock (s_poolLock)
+            {
+                if (s_pool.Count > 0)
+                {
+                    wrapper = s_pool.Pop();
+                }
+            }
+            if (wrapper == null)
             {
                 wrapper = new QueuedSignalWrapper<T>();
             }
@@ -76,21 +84,27 @@ namespace Nexus.Core
         public static void Return(QueuedSignalWrapper<T> wrapper)
         {
             wrapper.Signal = default;
-            if (s_pool.Count < MaxPoolSize)
+            lock (s_poolLock)
             {
-                s_pool.Enqueue(wrapper);
+                if (s_pool.Count < MaxPoolSize)
+                {
+                    s_pool.Push(wrapper);
+                }
             }
         }
 
         /// <summary>Empties the pool. Called via <see cref="QueuedSignalPoolRegistry"/> on runtime reset.</summary>
         public static void Clear()
         {
-            while (s_pool.TryDequeue(out _)) { }
+            lock (s_poolLock)
+            {
+                s_pool.Clear();
+            }
         }
     }
 
     /// <summary>
-    /// A pooled class wrapper for signals to avoid boxing in ConcurrentQueue.
+    /// A pooled class wrapper for signals to avoid boxing.
     /// </summary>
     public class QueuedSignalWrapper<T> : IQueuedSignal where T : struct
     {
@@ -99,8 +113,6 @@ namespace Nexus.Core
 
         /// <summary>
         /// Fires the wrapped signal into the signal bus.
-        /// P0-4 fix: routes through the async-aware queued dispatch so signals with
-        /// async handlers do not throw <see cref="NexusSyncAsyncMismatchException"/> on drain.
         /// </summary>
         public void Fire(SignalBus bus)
         {
@@ -115,6 +127,61 @@ namespace Nexus.Core
     }
 
     /// <summary>
+    /// Zero-allocation ring buffer queue for storing IQueuedSignal items without GC churn.
+    /// </summary>
+    internal class QueuedSignalRingBuffer
+    {
+        private IQueuedSignal[] _items;
+        private int _head;
+        private int _tail;
+        private int _count;
+
+        public QueuedSignalRingBuffer(int initialCapacity = 256)
+        {
+            _items = new IQueuedSignal[initialCapacity];
+        }
+
+        public int Count => _count;
+
+        public void Enqueue(IQueuedSignal item)
+        {
+            if (_count == _items.Length)
+            {
+                var newItems = new IQueuedSignal[_items.Length * 2];
+                for (int i = 0; i < _count; i++)
+                {
+                    newItems[i] = _items[(_head + i) % _items.Length];
+                }
+                _items = newItems;
+                _head = 0;
+                _tail = _count;
+            }
+            _items[_tail] = item;
+            _tail = (_tail + 1) % _items.Length;
+            _count++;
+        }
+
+        public IQueuedSignal Dequeue()
+        {
+            if (_count == 0) return null;
+            var item = _items[_head];
+            _items[_head] = null;
+            _head = (_head + 1) % _items.Length;
+            _count--;
+            return item;
+        }
+
+        public void Clear()
+        {
+            while (_count > 0)
+            {
+                var item = Dequeue();
+                item?.Release();
+            }
+        }
+    }
+
+    /// <summary>
     /// Manages thread-safe and next-frame deferred signal queues.
     /// Provides zero-allocation draining while preserving chronological interleaved order.
     /// Used by <see cref="Context"/> for cross-thread and deferred signal delivery.
@@ -124,18 +191,19 @@ namespace Nexus.Core
     {
         private readonly SignalBus _signalBus;
         
-        private readonly ConcurrentQueue<IQueuedSignal> _threadSafeQueue = new();
-        private readonly ConcurrentQueue<IQueuedSignal> _nextFrameQueue = new();
+        private readonly QueuedSignalRingBuffer _threadSafeQueue = new(256);
+        private readonly QueuedSignalRingBuffer _nextFrameQueue = new(256);
+        private readonly object _threadSafeLock = new();
+        private readonly object _nextFrameLock = new();
 
         // Editor introspection (G-2): live queue depth + cumulative throughput.
-        // Counters use Interlocked for cross-thread correctness; reads are lock-free.
         private long _totalEnqueued;
         private long _totalDrained;
 
         /// <summary>Current number of signals waiting in the thread-safe queue.</summary>
-        public int ThreadSafeQueueDepth => _threadSafeQueue.Count;
+        public int ThreadSafeQueueDepth { get { lock (_threadSafeLock) return _threadSafeQueue.Count; } }
         /// <summary>Current number of signals waiting in the next-frame queue.</summary>
-        public int NextFrameQueueDepth => _nextFrameQueue.Count;
+        public int NextFrameQueueDepth { get { lock (_nextFrameLock) return _nextFrameQueue.Count; } }
         /// <summary>Total signals enqueued across both queues since creation.</summary>
         public long TotalEnqueued => System.Threading.Interlocked.Read(ref _totalEnqueued);
         /// <summary>Total signals drained (dispatched) since creation.</summary>
@@ -154,7 +222,10 @@ namespace Nexus.Core
         public void EnqueueThreadSafe<T>(T signal) where T : struct
         {
             var wrapper = QueuedSignalPool<T>.Rent(signal);
-            _threadSafeQueue.Enqueue(wrapper);
+            lock (_threadSafeLock)
+            {
+                _threadSafeQueue.Enqueue(wrapper);
+            }
             System.Threading.Interlocked.Increment(ref _totalEnqueued);
         }
 
@@ -164,47 +235,55 @@ namespace Nexus.Core
         public void EnqueueNextFrame<T>(T signal) where T : struct
         {
             var wrapper = QueuedSignalPool<T>.Rent(signal);
-            _nextFrameQueue.Enqueue(wrapper);
+            lock (_nextFrameLock)
+            {
+                _nextFrameQueue.Enqueue(wrapper);
+            }
             System.Threading.Interlocked.Increment(ref _totalEnqueued);
         }
 
         /// <summary>
         /// Drains all thread-safe queued signals into the signal bus in chronological order.
         /// Called from <c>Root.Update()</c>. Zero-allocation.
-        /// P1-15 fix: the drain is capped at the queue's size at drain start, so a handler
-        /// that re-enqueues during the drain cannot livelock the frame; those signals run
-        /// next frame. P0-4 fix: per-item exceptions are logged and the drain continues.
         /// </summary>
         public void DrainThreadSafe()
         {
-            Drain(_threadSafeQueue);
+            Drain(_threadSafeQueue, _threadSafeLock);
         }
 
         /// <summary>
         /// Drains all next-frame queued signals into the signal bus in chronological order.
         /// Called from <c>Root.LateUpdate()</c>. Zero-allocation.
-        /// P1-15 fix: signals enqueued during the drain are deferred to the next frame
-        /// (count snapshot), restoring "next frame" semantics.
         /// </summary>
         public void DrainNextFrame()
         {
-            Drain(_nextFrameQueue);
+            Drain(_nextFrameQueue, _nextFrameLock);
         }
 
-        private void Drain(ConcurrentQueue<IQueuedSignal> queue)
+        private void Drain(QueuedSignalRingBuffer queue, object queueLock)
         {
-            int max = queue.Count;
+            int max;
+            lock (queueLock)
+            {
+                max = queue.Count;
+            }
+
             for (int i = 0; i < max; i++)
             {
-                if (!queue.TryDequeue(out var queuedSignal)) break;
+                IQueuedSignal queuedSignal = null;
+                lock (queueLock)
+                {
+                    if (queue.Count > 0) queuedSignal = queue.Dequeue();
+                }
+                if (queuedSignal == null) break;
+
                 try
                 {
                     queuedSignal.Fire(_signalBus);
                 }
                 catch (Exception ex)
                 {
-                    // One failing signal must not abort the rest of the drain.
-                    NexusRuntime.Logger?.LogError($"[Nexus] Queued signal dispatch failed during drain: {ex.Message}\n{ex.StackTrace}");
+                    NexusRuntime.Logger?.LogError($"[Nexus] Exception during queued signal drain: {ex.Message}\n{ex.StackTrace}");
                 }
                 finally
                 {
@@ -214,16 +293,16 @@ namespace Nexus.Core
             }
         }
 
-        /// <summary>Clears all queues. Thread-safe.</summary>
+        /// <summary>Clears all pending signals from both queues. Called on context dispose.</summary>
         public void Clear()
         {
-            while (_threadSafeQueue.TryDequeue(out var queuedSignal))
+            lock (_threadSafeLock)
             {
-                queuedSignal.Release();
+                _threadSafeQueue.Clear();
             }
-            while (_nextFrameQueue.TryDequeue(out var queuedSignal))
+            lock (_nextFrameLock)
             {
-                queuedSignal.Release();
+                _nextFrameQueue.Clear();
             }
         }
     }
