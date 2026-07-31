@@ -673,4 +673,106 @@ namespace Nexus.Core
         public static implicit operator string(SecureObservableString prop) => prop.Value;
         public override string ToString() => Value ?? string.Empty;
     }
+
+    /// <summary>
+    /// Obfuscated, Anti-Cheat reactive property wrapper for BigDouble Idle numbers memory protection.
+    /// Obscures both Mantissa and Exponent using dual independent keys and integrity guards.
+    /// </summary>
+    [Preserve]
+    public sealed class SecureObservableBigDouble
+    {
+        private readonly SecureObservableLong _mantissaBits;
+        private readonly SecureObservableLong _exponent;
+        private List<Action<BigDouble, BigDouble>> _handlers;
+        private Action<BigDouble, BigDouble>[] _snapshotCache;
+        private bool _snapshotDirty;
+        private readonly object _handlersLock = new();
+
+        public SecureObservableBigDouble(BigDouble initialValue = default)
+        {
+            _mantissaBits = new SecureObservableLong(BitConverter.DoubleToInt64Bits(initialValue.Mantissa));
+            _exponent = new SecureObservableLong(initialValue.Exponent);
+        }
+
+        public BigDouble Value
+        {
+            get
+            {
+                double m = BitConverter.Int64BitsToDouble(_mantissaBits.Value);
+                long e = _exponent.Value;
+                return new BigDouble(m, e);
+            }
+            set
+            {
+                BigDouble old = Value;
+                if (old.Equals(value)) return;
+
+                _mantissaBits.Value = BitConverter.DoubleToInt64Bits(value.Mantissa);
+                _exponent.Value = value.Exponent;
+
+                Action<BigDouble, BigDouble>[] snapshot = null;
+                lock (_handlersLock)
+                {
+                    if (_handlers != null && _handlers.Count > 0)
+                    {
+                        if (_snapshotDirty || _snapshotCache == null)
+                        {
+                            _snapshotCache = _handlers.ToArray();
+                            _snapshotDirty = false;
+                        }
+                        snapshot = _snapshotCache;
+                    }
+                }
+
+                if (snapshot != null)
+                {
+                    for (int i = 0; i < snapshot.Length; i++)
+                        snapshot[i]?.Invoke(old, value);
+                }
+            }
+        }
+
+        public void SetWithoutNotify(BigDouble value)
+        {
+            _mantissaBits.SetWithoutNotify(BitConverter.DoubleToInt64Bits(value.Mantissa));
+            _exponent.SetWithoutNotify(value.Exponent);
+        }
+
+        public void OnChanged(Action<BigDouble, BigDouble> handler)
+        {
+            if (handler == null) return;
+            lock (_handlersLock)
+            {
+                _handlers ??= new List<Action<BigDouble, BigDouble>>(2);
+                if (!_handlers.Contains(handler))
+                {
+                    _handlers.Add(handler);
+                    _snapshotDirty = true;
+                }
+            }
+        }
+
+        public void RemoveOnChanged(Action<BigDouble, BigDouble> handler)
+        {
+            if (handler == null) return;
+            lock (_handlersLock)
+            {
+                if (_handlers != null && _handlers.Remove(handler))
+                    _snapshotDirty = true;
+            }
+        }
+
+        public void ClearOnChanged()
+        {
+            lock (_handlersLock)
+            {
+                _handlers?.Clear();
+                _snapshotCache = null;
+                _snapshotDirty = false;
+            }
+        }
+
+        public static implicit operator BigDouble(SecureObservableBigDouble prop) => prop.Value;
+        public override string ToString() => Value.ToString();
+    }
 }

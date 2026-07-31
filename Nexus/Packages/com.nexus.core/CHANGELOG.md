@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **BigDouble & SecureObservableBigDouble** — lightweight 0-GC struct for Idle & Incremental games supporting numbers up to $10^{308}+$ with auto-normalization, Idle suffixes (K, M, B, T, aa, ab...), RAM obfuscation, and AES-256 encrypted storage (`GetBigDouble`/`SetBigDouble`).
+- **INetworkAdapter** — official abstraction interface connecting 3rd-party multiplayer network frameworks (Photon Fusion, Netcode for GameObjects, Mirror, FishNet) to Nexus SignalBus with latency tracking and `NetworkMonitor` integration.
+- **AOT / IL2CPP Compilation Guards** — `NexusDI.cs` now explicitly bypasses `Expression.Compile()` on AOT platforms (`ENABLE_IL2CPP`, `UNITY_AOT`, `UNITY_IOS`, `UNITY_WEBGL`), eliminating try-catch JIT exception overhead on iOS/WebGL/Consoles.
+- **SignalBus Direct HybridQueue Caching** — `SignalBus` caches `HybridQueue` reference on creation, ensuring 0-lock, thread-safe background thread signal enqueueing (`FireThreadSafe<T>`).
+
 ### Security
 - **SecureObservableInt/Long/Float/String** — memory obfuscation upgraded from single-XOR to **dual independent keys** with integrity canary (`_guard`). A memory scanner must locate three separate fields to reconstruct the plaintext. Keys are regenerated on every write. Integrity canary detects tampering on read. (Previously: single key stored adjacent to value — GameGuardian/CheatEngine read both fields.)
 - **EncryptedStorageService** — HMAC-SHA256 output is now stored in **full 32 bytes** (previously truncated to 16, reducing effective security). New on-disk format (v2): `[VERSION:1] [IV:16] [HMAC:32] [ciphertext:N]`. Legacy v1 files (16-byte HMAC) are detected and migrated to v2 on first read. Format version byte enables forward migration.

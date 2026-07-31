@@ -261,6 +261,9 @@ namespace Nexus.Core
             /// <summary>Compiles a fast setter for an injectable field, or null if unsupported (fallback to reflection).</summary>
             internal static Action<object, object> CompileFieldSetter(Type targetType, FieldInfo field)
             {
+#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
+                return null; // AOT safety: bypass Expression.Compile on AOT platforms to eliminate exception overhead
+#else
                 try
                 {
                     var instance = Expression.Parameter(typeof(object), "instance");
@@ -275,11 +278,15 @@ namespace Nexus.Core
                     LogSetterCompileFailureOnce(targetType, field.Name, ex);
                     return null; // AOT/IL2CPP safety: fall back to reflection SetValue.
                 }
+#endif
             }
 
             /// <summary>Compiles a fast setter for an injectable property, or null if unsupported.</summary>
             internal static Action<object, object> CompilePropertySetter(Type targetType, PropertyInfo prop)
             {
+#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
+                return null; // AOT safety: bypass Expression.Compile on AOT platforms
+#else
                 try
                 {
                     var setter = prop.GetSetMethod(true);
@@ -297,6 +304,7 @@ namespace Nexus.Core
                     LogSetterCompileFailureOnce(targetType, prop.Name, ex);
                     return null;
                 }
+#endif
             }
 
             // Logged-once-per-member guard so a genuine setter compile failure is surfaced
