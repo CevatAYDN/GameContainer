@@ -27,7 +27,7 @@ namespace Nexus.Editor.Tests
         {
             // Deliberately IGNORES cancellation: the machine must still drop a superseded
             // transition via its sequence check even when the state never cooperates.
-            public async ValueTask OnExitAsync(CancellationToken ct) => await Task.Delay(30);
+            public async ValueTask OnExitAsync(CancellationToken ct) => await Task.Delay(80);
             public ValueTask OnEnterAsync(object args, CancellationToken ct) => default;
             public void OnTick(float deltaTime) { }
         }

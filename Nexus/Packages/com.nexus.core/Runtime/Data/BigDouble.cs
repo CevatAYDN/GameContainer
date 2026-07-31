@@ -130,6 +130,12 @@ namespace Nexus.Core
         public static implicit operator BigDouble(int value) => new BigDouble(value);
         public static explicit operator double(BigDouble val) => val.Mantissa * Math.Pow(10, val.Exponent);
 
+        public int CompareTo(object obj)
+        {
+            if (obj is BigDouble other) return CompareTo(other);
+            throw new ArgumentException("Object is not a BigDouble.");
+        }
+
         public int CompareTo(BigDouble other)
         {
             if (Mantissa == 0.0 && other.Mantissa == 0.0) return 0;
@@ -167,7 +173,8 @@ namespace Nexus.Core
         public string ToFormattedString()
         {
             if (Mantissa == 0.0) return "0";
-            if (Exponent < 3) return (Mantissa * Math.Pow(10, Exponent)).ToString("F0");
+            var culture = System.Globalization.CultureInfo.InvariantCulture;
+            if (Exponent < 3) return (Mantissa * Math.Pow(10, Exponent)).ToString("F0", culture);
 
             long suffixIndex = Exponent / 3;
             long remainder = Exponent % 3;
@@ -176,10 +183,10 @@ namespace Nexus.Core
 
             if (suffixIndex < StandardSuffixes.Length)
             {
-                return $"{displayValue:F2}{StandardSuffixes[suffixIndex]}";
+                return $"{displayValue.ToString("F2", culture)}{StandardSuffixes[suffixIndex]}";
             }
 
-            return $"{Mantissa:F2}e{Exponent}";
+            return $"{Mantissa.ToString("F2", culture)}e{Exponent}";
         }
 
         public override string ToString()

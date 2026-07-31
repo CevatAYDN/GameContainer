@@ -71,6 +71,25 @@ namespace Nexus.Core.Services
             PlayerPrefs.Save();
         }
 
+        public BigDouble GetBigDouble(string key, BigDouble defaultValue = default)
+        {
+            string stringValue = PlayerPrefs.GetString(key, null);
+            if (stringValue == null) return defaultValue;
+            string[] parts = stringValue.Split(';');
+            if (parts.Length == 2 && double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double m)
+                && long.TryParse(parts[1], out long e))
+            {
+                return new BigDouble(m, e);
+            }
+            return defaultValue;
+        }
+
+        public void SetBigDouble(string key, BigDouble value)
+        {
+            PlayerPrefs.SetString(key, $"{value.Mantissa.ToString(System.Globalization.CultureInfo.InvariantCulture)};{value.Exponent}");
+            PlayerPrefs.Save();
+        }
+
         public bool HasKey(string key)
         {
             return PlayerPrefs.HasKey(key);

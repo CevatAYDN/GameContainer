@@ -17,8 +17,8 @@ namespace Nexus.Core.Services
         void SetFloat(string key, float value);
         long GetLong(string key, long defaultValue = 0L);
         void SetLong(string key, long value);
-        BigDouble GetBigDouble(string key, BigDouble defaultValue = default);
-        void SetBigDouble(string key, BigDouble value);
+        BigDouble GetBigDouble(string key, BigDouble defaultValue = default) => defaultValue;
+        void SetBigDouble(string key, BigDouble value) { }
         bool HasKey(string key);
         void DeleteKey(string key);
         void Save();
