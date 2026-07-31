@@ -9,10 +9,12 @@ namespace Nexus.Core
     /// </summary>
     public class MockContext : IContext
     {
-        public ISignalBus SignalBus => null;
+        public ISignalBus SignalBus { get; set; }
         public CancellationToken LifetimeToken => CancellationToken.None;
-        public string ScopeTag => null;
-        public IContext Parent => null;
+        public string ScopeTag { get; set; }
+        public IContext Parent { get; set; }
+
+        public MockContext(ISignalBus bus = null) { SignalBus = bus; }
 
         public void RegisterView(IView view) { }
         public void UnregisterView(IView view) { }

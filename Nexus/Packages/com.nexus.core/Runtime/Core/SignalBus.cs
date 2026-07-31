@@ -1690,17 +1690,21 @@ namespace Nexus.Core
                 // mismatch like "Gameplay" vs "gameplay" would silently skip the target.
                 if (!string.IsNullOrEmpty(scopeTag))
                 {
-                    if (targetCtx is Context concreteCtx &&
-                        string.Equals(concreteCtx.ScopeTag, scopeTag, StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals(targetCtx.ScopeTag, scopeTag, StringComparison.OrdinalIgnoreCase) &&
+                        targetCtx.SignalBus is SignalBus concreteBus)
                     {
-                        concreteCtx.SignalBusInternal.FireCrossContext(signal);
+                        concreteBus.FireCrossContext(signal);
                     }
                 }
                 else
                 {
-                    if (targetCtx is Context concreteCtx)
+                    if (targetCtx.SignalBus is SignalBus concreteBus)
                     {
-                        concreteCtx.SignalBusInternal.FireCrossContext(signal);
+                        concreteBus.FireCrossContext(signal);
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[DEBUG-BROADCAST-FAIL] targetCtx={targetCtx.GetType().Name}, SignalBus={targetCtx.SignalBus?.GetType().Name ?? "null"}");
                     }
                 }
             }

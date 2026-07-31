@@ -50,7 +50,14 @@ namespace Nexus.Core
         // Instances currently held by the pool. Guards against double-return, which would
         // otherwise put the same instance in the pool twice (later producing two Get() results
         // pointing at the same object) and would re-run cleanup on an instance in active use.
-        private readonly HashSet<object> _pooledInstances = new();
+        private class ReferenceComparer : IEqualityComparer<object>
+        {
+            public static readonly ReferenceComparer Instance = new ReferenceComparer();
+            public new bool Equals(object x, object y) => ReferenceEquals(x, y);
+            public int GetHashCode(object obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+        }
+
+        private readonly HashSet<object> _pooledInstances = new(ReferenceComparer.Instance);
         private readonly object _poolLock = new();
         private readonly int _maxSize;
         private static readonly HashSet<Type> s_stateLeakWarningIssued = new();
@@ -168,44 +175,26 @@ namespace Nexus.Core
         // use property- or method-injection would not have their references cleared on
         // Return(), causing pooled commands to retain stale service references across reuses.
         // This method now checks fields, properties, and method parameters.
+        private static readonly ConcurrentDictionary<Type, bool> s_hasInjectableMembersCache = new();
+
         private static bool HasInjectableMembers(Type type)
         {
-            lock (s_injectableCacheLock)
+            return s_hasInjectableMembersCache.GetOrAdd(type, static t =>
             {
-                if (s_injectableTypeCache.Contains(type)) return true;
-
-                // Check [Inject] fields
-                foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                foreach (var field in t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 {
-                    if (field.GetCustomAttribute<InjectAttribute>() != null)
-                    {
-                        s_injectableTypeCache.Add(type);
-                        return true;
-                    }
+                    if (field.GetCustomAttribute<InjectAttribute>() != null) return true;
                 }
-
-                // Check [Inject] properties
-                foreach (var prop in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                foreach (var prop in t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 {
-                    if (prop.CanWrite && prop.GetCustomAttribute<InjectAttribute>() != null)
-                    {
-                        s_injectableTypeCache.Add(type);
-                        return true;
-                    }
+                    if (prop.CanWrite && prop.GetCustomAttribute<InjectAttribute>() != null) return true;
                 }
-
-                // Check [Inject] methods (any method with the attribute implies injectable params)
-                foreach (var method in type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                foreach (var method in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 {
-                    if (method.GetCustomAttribute<InjectAttribute>() != null)
-                    {
-                        s_injectableTypeCache.Add(type);
-                        return true;
-                    }
+                    if (method.GetCustomAttribute<InjectAttribute>() != null) return true;
                 }
-
                 return false;
-            }
+            });
         }
 
         private void Cleanup(object command)

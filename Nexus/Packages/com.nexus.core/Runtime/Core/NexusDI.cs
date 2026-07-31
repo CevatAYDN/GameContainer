@@ -59,6 +59,7 @@ namespace Nexus.Core
             public FieldInfo Field { get; set; }
             public Type Type { get; set; }
             public bool IsOptional { get; set; }
+            public bool IsLazy { get; set; }
             /// <summary>Compiled setter delegate (fallback to reflection if null).</summary>
             public Action<object, object> Setter { get; set; }
         }
@@ -122,6 +123,7 @@ namespace Nexus.Core
                                 Field = field,
                                 Type = field.FieldType,
                                 IsOptional = field.GetCustomAttribute<OptionalInjectAttribute>() != null,
+                                IsLazy = field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(LazyInjection<>),
                                 Setter = CompileFieldSetter(t, field)
                             });
                         }
@@ -259,20 +261,27 @@ namespace Nexus.Core
                 });
             }
 
-            /// <summary>Compiles a fast setter for an injectable field, or null if unsupported (fallback to reflection).</summary>
+            /// <summary>Compiles a fast zero-GC setter for an injectable field using DynamicMethod IL generation.</summary>
             internal static Action<object, object> CompileFieldSetter(Type targetType, FieldInfo field)
             {
 #if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
-                return null; // AOT safety: bypass Expression.Compile on AOT platforms to eliminate exception overhead
+                return null; // AOT safety: bypass IL emitting on AOT platforms
 #else
                 try
                 {
-                    var instance = Expression.Parameter(typeof(object), "instance");
-                    var value = Expression.Parameter(typeof(object), "value");
-                    var assign = Expression.Assign(
-                        Expression.Field(Expression.Convert(instance, targetType), field),
-                        Expression.Convert(value, field.FieldType));
-                    return Expression.Lambda<Action<object, object>>(assign, instance, value).Compile();
+                    var dm = new System.Reflection.Emit.DynamicMethod(
+                        $"Set_{field.Name}", typeof(void), new[] { typeof(object), typeof(object) }, targetType.Module, true);
+                    var il = dm.GetILGenerator();
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+                    il.Emit(System.Reflection.Emit.OpCodes.Castclass, targetType);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_1);
+                    if (field.FieldType.IsValueType)
+                        il.Emit(System.Reflection.Emit.OpCodes.Unbox_Any, field.FieldType);
+                    else if (!field.FieldType.IsInterface && field.FieldType != typeof(object))
+                        il.Emit(System.Reflection.Emit.OpCodes.Castclass, field.FieldType);
+                    il.Emit(System.Reflection.Emit.OpCodes.Stfld, field);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ret);
+                    return (Action<object, object>)dm.CreateDelegate(typeof(Action<object, object>));
                 }
                 catch (Exception ex)
                 {
@@ -282,23 +291,29 @@ namespace Nexus.Core
 #endif
             }
 
-            /// <summary>Compiles a fast setter for an injectable property, or null if unsupported.</summary>
+            /// <summary>Compiles a fast zero-GC setter for an injectable property using DynamicMethod IL generation.</summary>
             internal static Action<object, object> CompilePropertySetter(Type targetType, PropertyInfo prop)
             {
 #if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
-                return null; // AOT safety: bypass Expression.Compile on AOT platforms
+                return null; // AOT safety: bypass IL emitting on AOT platforms
 #else
                 try
                 {
                     var setter = prop.GetSetMethod(true);
                     if (setter == null) return null;
-                    var instance = Expression.Parameter(typeof(object), "instance");
-                    var value = Expression.Parameter(typeof(object), "value");
-                    var call = Expression.Call(
-                        Expression.Convert(instance, targetType),
-                        setter,
-                        Expression.Convert(value, prop.PropertyType));
-                    return Expression.Lambda<Action<object, object>>(call, instance, value).Compile();
+                    var dm = new System.Reflection.Emit.DynamicMethod(
+                        $"Set_{prop.Name}", typeof(void), new[] { typeof(object), typeof(object) }, targetType.Module, true);
+                    var il = dm.GetILGenerator();
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+                    il.Emit(System.Reflection.Emit.OpCodes.Castclass, targetType);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_1);
+                    if (prop.PropertyType.IsValueType)
+                        il.Emit(System.Reflection.Emit.OpCodes.Unbox_Any, prop.PropertyType);
+                    else if (!prop.PropertyType.IsInterface && prop.PropertyType != typeof(object))
+                        il.Emit(System.Reflection.Emit.OpCodes.Castclass, prop.PropertyType);
+                    il.Emit(System.Reflection.Emit.OpCodes.Callvirt, setter);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ret);
+                    return (Action<object, object>)dm.CreateDelegate(typeof(Action<object, object>));
                 }
                 catch (Exception ex)
                 {
@@ -415,7 +430,7 @@ namespace Nexus.Core
                 {
                     var f = meta.Fields[i];
 
-                    if (f.Type.IsGenericType && f.Type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
+                    if (f.IsLazy)
                     {
                         var lazyInstance = Activator.CreateInstance(f.Type, _di);
                         MetadataCache.ApplyFieldSetter(f, instance, lazyInstance);

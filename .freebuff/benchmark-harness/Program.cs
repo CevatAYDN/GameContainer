@@ -363,6 +363,9 @@ namespace NexusBench
             int recoveryFailures = RecoveryRegression.Run();
             _failures += recoveryFailures;
 
+            int stressFailures = FullArchitectureStressSuite.Run();
+            _failures += stressFailures;
+
             Console.WriteLine();
             Console.WriteLine(_failures == 0
                 ? "[Nexus Benchmark] ALL BENCHMARKS PASSED ✓"
