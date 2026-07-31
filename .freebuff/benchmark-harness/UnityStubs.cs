@@ -55,6 +55,8 @@ namespace UnityEngine
     public static class Time
     {
         public static float time => 0f;
+        public static float deltaTime => 0.0166f;
+        public static float unscaledDeltaTime => 0.0166f;
         public static double realtimeSinceStartupAsDouble => 0d;
         public static int frameCount => 0;
     }
@@ -103,6 +105,15 @@ namespace UnityEngine
             public ProfilerMarker(string name) { }
             public void Begin() { }
             public void End() { }
+        }
+
+        public static class Profiler
+        {
+            public static long GetTotalAllocatedMemoryLong() => 0L;
+            public static long GetTotalReservedMemoryLong() => 0L;
+            public static long GetTotalUnusedReservedMemoryLong() => 0L;
+            public static long GetMonoUsedSizeLong() => 0L;
+            public static long GetMonoHeapSizeLong() => 0L;
         }
     }
 }

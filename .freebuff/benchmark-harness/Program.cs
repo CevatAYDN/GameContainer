@@ -12,6 +12,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core;
 using Nexus.Core.FSM;
+using Nexus.Netcode;
 
 namespace NexusBench
 {
@@ -27,6 +28,12 @@ namespace NexusBench
         public ValueTask OnEnterAsync(object payload, CancellationToken ct) => default;
         public ValueTask OnExitAsync(CancellationToken ct) => default;
         public void OnTick(float deltaTime) {}
+    }
+
+    public struct NetcodePerfSignal : INetworkSignal
+    {
+        public int Tick;
+        public NetcodePerfSignal(int tick) => Tick = tick;
     }
 
     public readonly struct PerfSignal
@@ -253,6 +260,78 @@ namespace NexusBench
             Report("HybridQueue_ThreadSafe_ZeroGC", allocated <= 128, $"allocated={allocated} bytes for {batches * perBatch} ops (limit <=128)");
         }
 
+        private static void Netcode_Rollback_And_Replay_ZeroGC()
+        {
+            var history = new NetworkSignalHistory<NetcodePerfSignal>(1024);
+            var container = new NexusDI();
+            var poolManager = new CommandPoolManager(container);
+            var bus = new SignalBus(container, poolManager, new MockContext());
+
+            // Warmup steady-state history operations
+            for (int c = 0; c < 50; c++)
+            {
+                for (int t = 0; t < 5; t++) history.Add(c * 5 + t, new NetcodePerfSignal(c * 5 + t));
+                history.ReplaySignals(c * 5 + 2, bus);
+                history.RemoveSignalsAfter(c * 5 + 3);
+                history.Prune(c * 5 + 1);
+            }
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            long start = GC.GetAllocatedBytesForCurrentThread();
+            const int cycles = 1000;
+            for (int c = 50; c < 50 + cycles; c++)
+            {
+                // Simulate 5 ticks of network signals
+                for (int t = 0; t < 5; t++) history.Add(c * 5 + t, new NetcodePerfSignal(c * 5 + t));
+                // Simulate rollback replay of 3 ticks
+                history.ReplaySignals(c * 5 + 2, bus);
+                // Simulate rollback compaction
+                history.RemoveSignalsAfter(c * 5 + 3);
+                // Prune confirmed ticks
+                history.Prune(c * 5 + 1);
+            }
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - start;
+
+            Console.WriteLine($"[Nexus Benchmark] Netcode Rollback/Replay steady-state: {allocated} bytes for {cycles} rollback cycles");
+            Report("Netcode_Rollback_And_Replay_ZeroGC", allocated <= 128, $"allocated={allocated} bytes for {cycles} cycles (limit <=128)");
+        }
+
+        private static void ErrorCollection_Concurrent_StressTest()
+        {
+            ErrorCollection.Clear();
+            var exceptions = new Exception[100];
+            for (int i = 0; i < exceptions.Length; i++) exceptions[i] = new InvalidOperationException($"Err {i}");
+
+            var threads = new Thread[4];
+            const int opsPerThread = 10000;
+
+            var sw = Stopwatch.StartNew();
+            for (int t = 0; t < threads.Length; t++)
+            {
+                threads[t] = new Thread(() =>
+                {
+                    for (int i = 0; i < opsPerThread; i++)
+                    {
+                        ErrorCollection.CollectException(exceptions[i % exceptions.Length]);
+                    }
+                });
+                threads[t].Start();
+            }
+            for (int t = 0; t < threads.Length; t++) threads[t].Join();
+            sw.Stop();
+
+            var recent = ErrorCollection.GetRecentErrors();
+            var frequent = ErrorCollection.GetFrequentErrors();
+            ErrorCollection.ClearBefore(DateTime.UtcNow.AddMinutes(1));
+
+            Console.WriteLine($"[Nexus Benchmark] ErrorCollection: 40,000 concurrent exceptions in {sw.ElapsedMilliseconds} ms (recent={recent.Length}, frequent={frequent.Length})");
+            Report("ErrorCollection_Concurrent_StressTest", sw.ElapsedMilliseconds < 1000 && recent.Length > 0,
+                $"elapsed={sw.ElapsedMilliseconds}ms for 40k exceptions (limit <1000ms)");
+        }
+
         public static int Main(string[] args)
         {
             if (args.Length > 0 && args[0] == "--alloc-diag")
@@ -278,6 +357,8 @@ namespace NexusBench
             Run("Benchmark_SignalFire_WithSubscriberNs", Benchmark_SignalFire_WithSubscriberNs);
             Run("FSM_StateTransition_Performance", FSM_StateTransition_Performance);
             Run("HybridQueue_ThreadSafe_ZeroGC", HybridQueue_ThreadSafe_ZeroGC);
+            Run("Netcode_Rollback_And_Replay_ZeroGC", Netcode_Rollback_And_Replay_ZeroGC);
+            Run("ErrorCollection_Concurrent_StressTest", ErrorCollection_Concurrent_StressTest);
 
             int recoveryFailures = RecoveryRegression.Run();
             _failures += recoveryFailures;

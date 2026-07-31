@@ -79,9 +79,14 @@ namespace Nexus.Netcode
 
     public class NetworkSignalHistory<T> : INetworkSignalHistory where T : struct, INetworkSignal
     {
-        private readonly List<BufferedNetworkSignal<T>> _signals = new();
+        private readonly List<BufferedNetworkSignal<T>> _signals;
 
         public List<BufferedNetworkSignal<T>> Signals => _signals;
+
+        public NetworkSignalHistory(int initialCapacity = 256)
+        {
+            _signals = new List<BufferedNetworkSignal<T>>(initialCapacity);
+        }
 
         public void Add(int tick, T signal)
         {
