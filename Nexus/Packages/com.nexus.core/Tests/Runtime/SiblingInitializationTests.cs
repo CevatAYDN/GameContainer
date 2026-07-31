@@ -46,6 +46,21 @@ namespace Nexus.Tests
         {
             UnityEngine.Debug.Log($"[DIAG] START {NUnit.Framework.TestContext.CurrentContext.Test.FullName}");
             _initOrder = new List<string>();
+            Root.ClearRegistry();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            Root.ClearRegistry();
+            var roots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Include);
+            foreach (var r in roots)
+            {
+                if (r != null && r.gameObject != null)
+                {
+                    GameObject.DestroyImmediate(r.gameObject);
+                }
+            }
         }
 
         private void SetPrivateField(object obj, string fieldName, object value)

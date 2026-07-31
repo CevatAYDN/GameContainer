@@ -107,12 +107,18 @@ namespace Nexus.Core
 
         private static void EnsureRegistry()
         {
-            if (!s_registryDirty) return;
             lock (s_rootLock)
             {
+                // Purge destroyed native objects dynamically
+                s_allRoots.RemoveAll(r => r == null);
                 if (!s_registryDirty) return;
+
                 s_allRoots.Clear();
-                s_allRoots.AddRange(FindObjectsByType<Root>(FindObjectsInactive.Exclude));
+                var found = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+                if (found != null)
+                {
+                    s_allRoots.AddRange(found);
+                }
                 s_registryDirty = false;
             }
         }
@@ -197,7 +203,7 @@ namespace Nexus.Core
                 _siblingsToWait.Clear();
                 foreach (var r in s_allRoots)
                 {
-                    if (r == this) continue;
+                    if (r == null || r == this) continue;
                     if (r.parentRoot != this.parentRoot) continue;
                     if (!r.gameObject.activeInHierarchy || !r.enabled) continue;
 
@@ -279,6 +285,12 @@ namespace Nexus.Core
 
         private void OnDestroy()
         {
+            lock (s_rootLock)
+            {
+                s_allRoots.Remove(this);
+                s_registryDirty = true;
+            }
+
             if (Context != null)
             {
                 Context.Dispose();

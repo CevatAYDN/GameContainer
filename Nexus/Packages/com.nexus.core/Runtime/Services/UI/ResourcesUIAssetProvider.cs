@@ -11,13 +11,25 @@ namespace Nexus.Core.Services
     {
         public async Task<GameObject> InstantiateWindowAsync(string windowName, Transform parent)
         {
-            var request = Resources.LoadAsync<GameObject>($"UI/Windows/{windowName}");
-            await request;
+            string path = $"UI/Windows/{windowName}";
+            var request = Resources.LoadAsync<GameObject>(path);
+            int timeout = 300; // 300 frames bound to prevent permanent deadlock
+            while (!request.isDone && timeout > 0)
+            {
+                await Task.Yield();
+                timeout--;
+            }
 
             var prefab = request.asset as GameObject;
             if (prefab == null)
             {
-                NexusRuntime.Logger?.LogError($"[ResourcesUIAssetProvider] Window prefab not found at path: UI/Windows/{windowName}");
+                // Synchronous fallback if async request timed out or returned null
+                prefab = Resources.Load<GameObject>(path);
+            }
+
+            if (prefab == null)
+            {
+                NexusRuntime.Logger?.LogError($"[ResourcesUIAssetProvider] Window prefab not found at path: {path}");
                 return null;
             }
 

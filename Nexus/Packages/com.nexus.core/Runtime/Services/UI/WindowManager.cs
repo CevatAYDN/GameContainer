@@ -460,7 +460,7 @@ namespace Nexus.Core.Services
         public IReadOnlyList<WindowInfo> GetOpenWindowsSnapshot()
         {
             var result = new List<WindowInfo>();
-            _windowLock.Wait();
+            if (!_windowLock.Wait(50)) return result;
             try
             {
                 foreach (var kvp in _activeWindows)
@@ -482,7 +482,7 @@ namespace Nexus.Core.Services
         {
             get
             {
-                _windowLock.Wait();
+                if (!_windowLock.Wait(50)) return 0;
                 try { return _pendingOpenWindows.Count; }
                 finally { _windowLock.Release(); }
             }
