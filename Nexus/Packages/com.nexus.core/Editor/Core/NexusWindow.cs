@@ -19,7 +19,12 @@ namespace Nexus.Editor
         // Plugin icon colors and sidebar categories are now declared on each plugin
         // via INexusEditorPlugin.IconColor and INexusEditorPlugin.Category.
         // NexusWindow groups plugins by their self-declared category.
-        private static readonly HashSet<string> HiddenPluginIds = new();
+        private static readonly HashSet<string> HiddenPluginIds = new()
+        {
+            "TestPlugin",
+            "CustomPlugin",
+            "Wizard" // SetupWizard (Id: "SetupWizard") is the primary wizard.
+        };
 
         private List<INexusEditorPlugin> _plugins = new();
         private INexusEditorPlugin _activePlugin;

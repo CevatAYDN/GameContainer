@@ -21,23 +21,23 @@ namespace Nexus.Editor
         internal static readonly Color BorderLight   = new(0.24f, 0.24f, 0.26f); // Subtle borders
 
         // Text
-        internal static readonly Color TextPrimary   = new(0.88f, 0.88f, 0.88f);
-        internal static readonly Color TextSecondary = new(0.60f, 0.60f, 0.60f);
-        internal static readonly Color TextDim       = new(0.40f, 0.40f, 0.40f);
+        internal static readonly Color TextPrimary   = new(0.96f, 0.96f, 0.98f);
+        internal static readonly Color TextSecondary = new(0.72f, 0.75f, 0.80f);
+        internal static readonly Color TextDim       = new(0.48f, 0.50f, 0.55f);
 
-        // Accents — only 6 core colors for semantic meaning
-        internal static readonly Color AccentBlue    = new(0.30f, 0.80f, 1.00f); // Primary info
-        internal static readonly Color AccentGreen   = new(0.40f, 1.00f, 0.40f); // Success, live
+        // Accents — high-contrast semantic colors
+        internal static readonly Color AccentBlue    = new(0.20f, 0.65f, 1.00f); // Primary info
+        internal static readonly Color AccentGreen   = new(0.00f, 0.90f, 0.50f); // Success, live
         internal static readonly Color AccentYellow  = new(1.00f, 0.85f, 0.30f); // Warning
-        internal static readonly Color AccentRed     = new(1.00f, 0.30f, 0.30f); // Error
-        internal static readonly Color AccentPurple  = new(0.78f, 0.61f, 0.90f); // Signal, handler
-        internal static readonly Color AccentOrange  = new(1.00f, 0.70f, 0.28f); // Command
+        internal static readonly Color AccentRed     = new(1.00f, 0.35f, 0.35f); // Error
+        internal static readonly Color AccentPurple  = new(0.68f, 0.45f, 1.00f); // Signal, handler
+        internal static readonly Color AccentOrange  = new(1.00f, 0.65f, 0.25f); // Command
 
-        // Semantic button colors — derive from accent palette
-        internal static readonly Color BtnPrimary    = new(0.22f, 0.38f, 0.52f);
-        internal static readonly Color BtnSecondary  = new(0.25f, 0.25f, 0.28f);
-        internal static readonly Color BtnSuccess    = new(0.20f, 0.40f, 0.20f);
-        internal static readonly Color BtnDanger     = new(0.45f, 0.20f, 0.20f);
+        // Semantic button colors — vibrant, high-contrast action buttons
+        internal static readonly Color BtnPrimary    = new(0.16f, 0.47f, 0.95f);
+        internal static readonly Color BtnSecondary  = new(0.25f, 0.26f, 0.30f);
+        internal static readonly Color BtnSuccess    = new(0.00f, 0.65f, 0.38f);
+        internal static readonly Color BtnDanger     = new(0.85f, 0.20f, 0.20f);
 
         // Legacy aliases — kept for backward compatibility
         internal static readonly Color Background    = Surface;
@@ -54,8 +54,8 @@ namespace Nexus.Editor
         internal static readonly Color TableHeaderBg = new(0.16f, 0.16f, 0.18f);
         internal static readonly Color SelectedRow   = SurfaceActive;
         internal static readonly Color BtnBlue       = BtnPrimary;
-        internal static readonly Color BtnPurple     = new(0.30f, 0.22f, 0.40f);
-        internal static readonly Color BtnTeal       = new(0.22f, 0.30f, 0.30f);
+        internal static readonly Color BtnPurple     = new(0.48f, 0.30f, 0.95f);
+        internal static readonly Color BtnTeal       = new(0.00f, 0.60f, 0.70f);
         internal static readonly Color BtnGray       = BtnSecondary;
         internal static readonly Color BtnGreen      = BtnSuccess;
         internal static readonly Color BtnRed        = BtnDanger;

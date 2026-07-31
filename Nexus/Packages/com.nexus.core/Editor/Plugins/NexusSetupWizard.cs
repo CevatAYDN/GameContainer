@@ -105,12 +105,27 @@ namespace Nexus.Editor
             foreach (var step in _steps)
                 RenderStep(step);
 
-            _root.Add(new Label
+            var infoBox = new VisualElement
             {
-                text = "After creation, hit Play to see the counter working. " +
-                    "The Button increments a number displayed in the Text via Signal → Command → Model → Mediator → View flow.",
-                style = { color = new StyleColor(NexusEditorStyles.TextSecondary) }
+                style =
+                {
+                    backgroundColor = new StyleColor(NexusEditorStyles.SurfaceDark),
+                    borderLeftWidth = 3, borderLeftColor = new StyleColor(NexusEditorStyles.AccentBlue),
+                    borderTopLeftRadius = 4, borderTopRightRadius = 4,
+                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4,
+                    paddingLeft = 14, paddingRight = 14, paddingTop = 10, paddingBottom = 10,
+                    marginTop = 12
+                }
+            };
+            infoBox.Add(new Label("💡 Quick Start Tip:")
+            {
+                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue), marginBottom = 4 }
             });
+            infoBox.Add(new Label("After creation, hit Play in Unity to see the sample scene in action. The UI Button increments a counter displayed in the Text via: Signal → Command → Model → Mediator → View flow.")
+            {
+                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), whiteSpace = WhiteSpace.Normal }
+            });
+            _root.Add(infoBox);
 
             RefreshStepStatus();
             return _root;
@@ -164,11 +179,13 @@ namespace Nexus.Editor
                 text = step.ButtonText,
                 style =
                 {
-                    marginLeft = 18, paddingLeft = 14, paddingRight = 14, paddingTop = 6, paddingBottom = 6,
-                    fontSize = 10, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue),
+                    marginLeft = 18, paddingLeft = 16, paddingRight = 16, paddingTop = 8, paddingBottom = 8,
+                    fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold,
+                    backgroundColor = new StyleColor(NexusEditorStyles.BtnPrimary),
                     color = Color.white,
                     borderTopLeftRadius = 4, borderTopRightRadius = 4,
-                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4
+                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4,
+                    borderLeftWidth = 0, borderRightWidth = 0, borderTopWidth = 0, borderBottomWidth = 0
                 }
             };
             card.Add(btn);
