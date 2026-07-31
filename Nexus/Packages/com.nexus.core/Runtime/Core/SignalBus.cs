@@ -166,7 +166,8 @@ namespace Nexus.Core
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
         private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
 
-        private static readonly System.Threading.AsyncLocal<int> s_stackDepth = new();
+        [ThreadStatic]
+        private static int s_stackDepth;
         private const int MaxStackDepth = 10;
 
         private int _inFlightAsyncCommands;
@@ -502,7 +503,7 @@ namespace Nexus.Core
 
             // Free dead nodes immediately when nothing is dispatching (deferred to the next
             // fire's finally otherwise, which could otherwise retain handlers until then).
-            if (s_stackDepth.Value == 0)
+            if (s_stackDepth == 0)
             {
                 SweepDeadNodes();
             }
@@ -592,13 +593,13 @@ namespace Nexus.Core
                 NexusRuntime.Logger?.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
             }
 #endif
-            s_stackDepth.Value++;
-            if (s_stackDepth.Value > MaxStackDepth)
+            s_stackDepth++;
+            if (s_stackDepth > MaxStackDepth)
             {
                 // P0-7 fix: never reset the counter to 0 (outer frames still decrement in
                 // their finally blocks, which would drift the counter negative). This branch
                 // runs before this frame's try/finally, so undo only this frame's increment.
-                s_stackDepth.Value--;
+                s_stackDepth--;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
 #else
@@ -704,8 +705,8 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
                 s_DispatchMarker.End();
 #endif
-                s_stackDepth.Value--;
-                if (s_stackDepth.Value == 0 && _pendingCleanups)
+                s_stackDepth--;
+                if (s_stackDepth == 0 && _pendingCleanups)
                 {
                     SweepDeadNodes();
                 }
@@ -761,17 +762,17 @@ namespace Nexus.Core
 
         private async ValueTask FireInternalAsync<T>(T signal, bool isCrossContextSource, CancellationToken ct) where T : struct
         {
-            s_stackDepth.Value++;
+            s_stackDepth++;
 
             // Capture the command-scoped token for use in the nested scopes below.
             // This allows FireAsyncWithTimeout to cancel command execution via a linked token.
             var commandCt = ct;
-            if (s_stackDepth.Value > MaxStackDepth)
+            if (s_stackDepth > MaxStackDepth)
             {
                 // P0-7 fix: never reset the counter to 0 (outer frames still decrement in
                 // their finally blocks, which would drift the counter negative). This branch
                 // runs before this frame's try/finally, so undo only this frame's increment.
-                s_stackDepth.Value--;
+                s_stackDepth--;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
 #else
@@ -917,8 +918,8 @@ namespace Nexus.Core
             }
             finally
             {
-                s_stackDepth.Value--;
-                if (s_stackDepth.Value == 0 && _pendingCleanups)
+                s_stackDepth--;
+                if (s_stackDepth == 0 && _pendingCleanups)
                 {
                     SweepDeadNodes();
                 }
@@ -952,7 +953,7 @@ namespace Nexus.Core
                         // P0-3 fix: bypass closure allocation when no decorators are registered.
                         if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
                         {
-                            ExecuteWithDecorators(genericSyncCmd, () => genericSyncCmd.Execute(signal));
+                            ExecuteDecoratedCommand(genericSyncCmd, signal);
                         }
                         else
                         {
@@ -1732,6 +1733,9 @@ namespace Nexus.Core
         }
 
         private RecoveryAction HandleCommandErrorWithDecision(Exception ex, Type commandType, object signal, ref int retryCount)
+            => HandleCommandErrorWithDecision<object>(ex, commandType, signal, ref retryCount);
+
+        private RecoveryAction HandleCommandErrorWithDecision<TSignal>(Exception ex, Type commandType, TSignal signal, ref int retryCount)
         {
             if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
                 (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
@@ -1950,6 +1954,12 @@ namespace Nexus.Core
             };
             s_genericAsyncDispatchCache.TryAdd(key, dispatcher);
             return dispatcher;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void ExecuteDecoratedCommand<TSignal>(ICommand<TSignal> cmd, TSignal signal) where TSignal : struct
+        {
+            ExecuteWithDecorators(cmd, () => cmd.Execute(signal));
         }
 
         private void ExecuteWithDecorators(object command, Action next)

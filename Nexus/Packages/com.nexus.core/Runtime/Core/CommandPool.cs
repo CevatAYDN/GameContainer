@@ -285,7 +285,10 @@ namespace Nexus.Core
 
         public object GetCommand(Type commandType)
         {
-            var pool = _pools.GetOrAdd(commandType, _createPool);
+            if (!_pools.TryGetValue(commandType, out var pool))
+            {
+                pool = _pools.GetOrAdd(commandType, _createPool);
+            }
             return pool.Get();
         }
 
