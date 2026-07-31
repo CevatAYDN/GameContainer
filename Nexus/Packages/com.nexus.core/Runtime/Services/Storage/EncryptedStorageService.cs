@@ -321,11 +321,28 @@ namespace Nexus.Core.Services
                 Buffer.BlockCopy(hmac, 0, finalBuffer, 16, 16);
                 Buffer.BlockCopy(cipherText, 0, finalBuffer, 32, cipherText.Length);
 
-                // Atomic write with temp file backup
+                // Atomic write with temp file backup. On Windows, File.Delete may not
+                // release the destination handle instantly (AV/indexer/streams), so the
+                // follow-up File.Move can throw IOException "file already exists". .NET
+                // Standard 2.0 has no File.Move(..., overwrite: true) overload, so we
+                // retry the delete+move briefly before giving up.
                 string tempPath = filePath + ".tmp";
                 File.WriteAllBytes(tempPath, finalBuffer);
-                if (File.Exists(filePath)) File.Delete(filePath);
-                File.Move(tempPath, filePath);
+
+                const int maxAttempts = 3;
+                for (int attempt = 0; ; attempt++)
+                {
+                    try
+                    {
+                        if (File.Exists(filePath)) File.Delete(filePath);
+                        File.Move(tempPath, filePath);
+                        break;
+                    }
+                    catch (IOException) when (attempt < maxAttempts - 1)
+                    {
+                        System.Threading.Thread.Sleep(10);
+                    }
+                }
             }
             catch (Exception ex)
             {

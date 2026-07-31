@@ -122,6 +122,88 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(90, eco.GetBalance("Coins"));
         }
 
+        // TCS-based validator: the test controls WHEN the network validation completes.
+        // Task.FromResult would return an already-completed task, which makes the await in
+        // ReconcileSpendAsync continue synchronously — the rollback would run BEFORE Spend
+        // returns, so the optimistic intermediate balance would never be observable.
+        private class FakeNetworkValidator : INetworkEconomyValidator
+        {
+            public TaskCompletionSource<bool> SpendResult = new();
+            public Task<bool> ValidateSpendAsync(string currencyId, long amount, string reason)
+                => SpendResult.Task;
+            public Task ValidateEarnAsync(string currencyId, long amount, string reason)
+                => Task.CompletedTask;
+        }
+
+        [Test]
+        public void EconomyService_Earn_ClampsAtLongMax_NoOverflow()
+        {
+            using var eco = new EconomyService();
+            eco.SetBalance("Coins", long.MaxValue - 10);
+
+            eco.Earn("Coins", 100);
+
+            Assert.AreEqual(long.MaxValue, eco.GetBalance("Coins"),
+                "Earn must clamp at long.MaxValue instead of wrapping negative.");
+        }
+
+        [Test]
+        public void EconomyService_Earn_NegativeOrZeroAmountIgnored()
+        {
+            using var eco = new EconomyService();
+            eco.SetBalance("Coins", 100);
+
+            eco.Earn("Coins", -50);
+            eco.Earn("Coins", 0);
+
+            Assert.AreEqual(100, eco.GetBalance("Coins"));
+        }
+
+        [Test]
+        public async Task EconomyService_ServerRejectedSpend_RestoresBalance()
+        {
+            var validator = new FakeNetworkValidator();
+            using var eco = new EconomyService { NetworkValidator = validator };
+            eco.SetBalance("Coins", 100);
+
+            bool spent = eco.Spend("Coins", 40);
+            Assert.IsTrue(spent);
+            Assert.AreEqual(60, eco.GetBalance("Coins"), "Optimistic local deduction applies immediately.");
+
+            // Reject the spend: the fire-and-forget reconciliation restores the amount.
+            validator.SpendResult.SetResult(false);
+            await Task.Delay(50);
+
+            Assert.AreEqual(100, eco.GetBalance("Coins"),
+                "Server-rejected spend must be rolled back to keep client/server in sync.");
+        }
+
+        [Test]
+        public async Task EconomyService_ServerApprovedSpend_KeepsDeduction()
+        {
+            var validator = new FakeNetworkValidator();
+            using var eco = new EconomyService { NetworkValidator = validator };
+            eco.SetBalance("Coins", 100);
+
+            eco.Spend("Coins", 40);
+            validator.SpendResult.SetResult(true);
+            await Task.Delay(50);
+
+            Assert.AreEqual(60, eco.GetBalance("Coins"),
+                "Approved spend must NOT be rolled back.");
+        }
+
+        [Test]
+        public void EconomyService_GetObservableBalance_ReturnsSecureStorage()
+        {
+            using var eco = new EconomyService();
+            eco.SetBalance("Gems", 12345L);
+
+            var prop = eco.GetObservableBalance("Gems");
+            Assert.IsInstanceOf<SecureObservableLong>(prop);
+            Assert.AreEqual(12345L, prop.Value);
+        }
+
         [Test]
         public void ProgressionService_LevelProgressionAndCostCalculations()
         {

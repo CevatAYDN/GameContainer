@@ -123,6 +123,51 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void SecureObservableLong_RAMObfuscationWorksAndFiresOnChanged()
+        {
+            var secureLong = new SecureObservableLong(50L);
+            int callCount = 0;
+
+            secureLong.OnChanged((oldVal, newVal) => callCount++);
+
+            Assert.AreEqual(50L, (long)secureLong);
+
+            secureLong.Value = 150L;
+            Assert.AreEqual(150L, (long)secureLong);
+            Assert.AreEqual(1, callCount);
+        }
+
+        [Test]
+        public void SecureObservableLong_SetWithoutNotifyDoesNotTriggerOnChanged()
+        {
+            var secureLong = new SecureObservableLong(100L);
+            int callCount = 0;
+
+            secureLong.OnChanged((oldVal, newVal) => callCount++);
+            secureLong.SetWithoutNotify(200L);
+
+            Assert.AreEqual(200L, (long)secureLong);
+            Assert.AreEqual(0, callCount);
+        }
+
+        [Test]
+        public void SecureObservableLong_SupportsFullLongRange()
+        {
+            // Regression for the long economy migration: values beyond int range must
+            // round-trip through the XOR-obscured storage (key rotation on write is
+            // exercised implicitly — the fields are private, so only value round-tripping
+            // is observable from outside).
+            var secureLong = new SecureObservableLong(long.MaxValue);
+            Assert.AreEqual(long.MaxValue, secureLong.Value);
+
+            secureLong.Value = 123456789012345L;
+            Assert.AreEqual(123456789012345L, secureLong.Value);
+
+            secureLong.Value = 0L;
+            Assert.AreEqual(0L, secureLong.Value);
+        }
+
+        [Test]
         public void EncryptedStorageService_LongAndCachingBehavior()
         {
             var salt = "Test_Salt_LongAndCaching";

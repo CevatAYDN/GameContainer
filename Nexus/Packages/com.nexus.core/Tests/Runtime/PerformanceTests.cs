@@ -19,12 +19,27 @@ namespace Nexus.Tests
             public PerfSignal(int index) => Index = index;
         }
 
+        public readonly struct OtherSignal
+        {
+            public readonly int Value;
+            public OtherSignal(int value) => Value = value;
+        }
+
         public class TestCounter { public int Value; }
 
         public class PerfCommand : ICommand<PerfSignal>
         {
             [Inject] public TestCounter Counter;
             public void Execute(PerfSignal signal) { Counter.Value++; }
+        }
+
+        // A single command class that handles TWO different signal types (multi-signal
+        // parameter support on one command via multiple generic command interfaces).
+        public class MultiSignalCommand : ICommand<PerfSignal>, ICommand<OtherSignal>
+        {
+            [Inject] public TestCounter Counter;
+            public void Execute(PerfSignal signal) { Counter.Value += signal.Index; }
+            public void Execute(OtherSignal signal) { Counter.Value += signal.Value; }
         }
 
         private TestCounter _counter;
@@ -184,6 +199,76 @@ namespace Nexus.Tests
             // Regression guard for the published hot-path latency (P2-C). Editor/Mono measured ~9500ns;
             // IL2CPP/Release is faster, so 25us leaves ample headroom for CI variance.
             Assert.Less(nsPerDispatch, 25000, "Hot-path dispatch should stay well under 25us.");
+        }
+
+        [Test]
+        public void SameCommandClass_RegisteredForMultipleSignals_ExecutesBoth()
+        {
+            // Regression: a command class implementing ICommand<PerfSignal> AND
+            // ICommand<OtherSignal> must be registerable for both signal types and
+            // execute for each — the pool is shared per command type.
+            //
+            // Uses an isolated bus: the Setup-registered PerfCommand also fires on
+            // PerfSignal (+1), which would otherwise contaminate the expected total.
+            var counter = new TestCounter();
+            var container = new NexusDI();
+            container.BindInstance(counter);
+            container.Bind<MultiSignalCommand>(isSingleton: false);
+            var poolManager = new CommandPoolManager(container);
+            var bus = new SignalBus(container, poolManager, new MockContext());
+
+            try
+            {
+                bus.RegisterCommand(typeof(PerfSignal), typeof(MultiSignalCommand), ExecutionMode.Sequential, 10, false);
+                bus.RegisterCommand(typeof(OtherSignal), typeof(MultiSignalCommand), ExecutionMode.Sequential, 10, false);
+
+                bus.Fire(new PerfSignal(3));
+                bus.Fire(new OtherSignal(5));
+
+                Assert.AreEqual(8, counter.Value,
+                    "One command class must receive and execute both signal types (3 + 5).");
+            }
+            finally
+            {
+                bus.Dispose();
+                poolManager.Clear();
+                container.Dispose();
+            }
+        }
+
+        [Test]
+        public void CommandPoolManager_GetReturn_SteadyState_DoesNotAllocate()
+        {
+            // Regression: CommandPoolManager.GetCommand used to allocate a new closure
+            // object on EVERY call (the GetOrAdd valueFactory captured `this`), i.e. one
+            // heap allocation per command execution per signal fire. The static factory
+            // overload keeps the hot path allocation-free.
+            var mgr = new CommandPoolManager(_container);
+            var cmdType = typeof(PerfCommand);
+
+            // Warm up: JIT + pool growth + HashSet capacity + compiled clear setters.
+            for (int i = 0; i < 100; i++)
+            {
+                var cmd = mgr.GetCommand(cmdType);
+                mgr.ReturnCommand(cmdType, cmd);
+            }
+
+            System.GC.Collect();
+            System.GC.WaitForPendingFinalizers();
+            System.GC.Collect();
+
+            long startAllocations = System.GC.GetAllocatedBytesForCurrentThread();
+
+            for (int i = 0; i < 5000; i++)
+            {
+                var cmd = mgr.GetCommand(cmdType);
+                mgr.ReturnCommand(cmdType, cmd);
+            }
+
+            long allocatedBytes = System.GC.GetAllocatedBytesForCurrentThread() - startAllocations;
+
+            Assert.LessOrEqual(allocatedBytes, 128,
+                $"CommandPoolManager Get/Return allocated {allocatedBytes} bytes in steady state. Expected ~0.");
         }
 
         [Test]

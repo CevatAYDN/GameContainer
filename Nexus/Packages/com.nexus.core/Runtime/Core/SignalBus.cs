@@ -1974,22 +1974,36 @@ namespace Nexus.Core
         {
             lock (_subLock)
             {
+                // Snapshot the nodes before disposing: RawSubscription.Dispose() re-enters
+                // Unsubscribe → SweepDeadNodes, which mutates _subscriptions. Enumerating the
+                // live dictionary while disposing would throw InvalidOperationException
+                // ("Collection was modified") during teardown. Clear the dictionaries first,
+                // then dispose outside the enumeration.
+                List<SubscriptionNode> nodes = null;
                 foreach (var kvp in _subscriptions)
                 {
                     var current = kvp.Value;
                     while (current != null)
                     {
-                        if (current.IsActive && current.RawSubscription is IDisposable disposable)
-                        {
-                            disposable.Dispose();
-                        }
-                        var temp = current;
+                        (nodes ??= new List<SubscriptionNode>()).Add(current);
                         current = current.Next;
-                        SubscriptionNodePool.Return(temp);
                     }
                 }
                 _subscriptions.Clear();
                 _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>();
+
+                if (nodes != null)
+                {
+                    for (int i = 0; i < nodes.Count; i++)
+                    {
+                        var node = nodes[i];
+                        if (node.IsActive && node.RawSubscription is IDisposable disposable)
+                        {
+                            disposable.Dispose();
+                        }
+                        SubscriptionNodePool.Return(node);
+                    }
+                }
             }
 
             if (_inFlightAsyncCommands > 0)

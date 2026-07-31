@@ -65,9 +65,11 @@ namespace Nexus.Core
         {
             if (!s_enabled) return;
 
+            // Always keep the latest value queryable via GetMetric, even when not recording.
             s_currentValues[name] = value;
 
-            // Maintain bounded history as a FIFO queue (O(1) dequeue, no list shifting).
+            // History stays bounded (MaxHistorySize) regardless of recording state, so it can
+            // never leak; only the sample queue and event notifications are recording-gated.
             if (!s_metricHistory.TryGetValue(name, out var history))
             {
                 history = new Queue<float>();
@@ -141,6 +143,12 @@ namespace Nexus.Core
             while (s_samples.TryDequeue(out _)) { }
         }
 
+        /// <summary>Resets the frame-metric throttle so the next UpdateFrameMetrics call records.</summary>
+        internal static void ResetFrameThrottle()
+        {
+            s_lastFrameMetricFrame = -1;
+        }
+
         public static void ClearMetric(string name)
         {
             if (s_metricHistory.ContainsKey(name))
@@ -161,7 +169,9 @@ namespace Nexus.Core
 
             // Throttle to ~10 Hz (6-frame cadence at 60 fps). Per-frame sampling created
             // ~180 allocations/sec of GC churn that spiked FPS every few seconds.
-            if (Time.frameCount - s_lastFrameMetricFrame < 6) return;
+            // The frame-guard is armed only after the first sample so the initial call
+            // always records instead of being silently dropped.
+            if (s_lastFrameMetricFrame >= 0 && Time.frameCount - s_lastFrameMetricFrame < 6) return;
             s_lastFrameMetricFrame = Time.frameCount;
 
             var deltaTime = Time.deltaTime;

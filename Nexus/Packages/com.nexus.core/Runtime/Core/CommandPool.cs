@@ -208,17 +208,28 @@ namespace Nexus.Core
         private readonly int _initialSize;
         private readonly int _maxSize;
 
+        // Cached factory delegate (one per manager, NOT one per call). A lambda that
+        // captures `this` would allocate a NEW closure object on EVERY GetCommand call —
+        // i.e. once per command execution per signal fire — which is exactly the kind of
+        // heap churn this framework exists to eliminate on mobile. Caching the delegate in
+        // the constructor keeps the hot path allocation-free while staying on the classic
+        // GetOrAdd(TKey, Func<TKey,TValue>) overload, which is available in .NET Standard
+        // 2.0 / .NET Framework 4.x (the GetOrAdd<TArg>(..., TArg) overload that passes the
+        // manager as an argument only exists in .NET Standard 2.1+, so it would break the
+        // build under Unity's default .NET Standard 2.0 API compatibility level).
+        private readonly Func<Type, CommandPool> _createPool;
+
         public CommandPoolManager(NexusDI container, int initialSize = 4, int maxSize = 64)
         {
             _container = container;
             _initialSize = initialSize;
             _maxSize = maxSize;
+            _createPool = type => new CommandPool(type, () => _container.Resolve(type), _initialSize, _maxSize);
         }
 
         public object GetCommand(Type commandType)
         {
-            var pool = _pools.GetOrAdd(commandType,
-                type => new CommandPool(type, () => _container.Resolve(type), _initialSize, _maxSize));
+            var pool = _pools.GetOrAdd(commandType, _createPool);
             return pool.Get();
         }
 

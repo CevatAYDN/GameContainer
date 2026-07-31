@@ -270,8 +270,9 @@ namespace Nexus.Core
                         Expression.Convert(value, field.FieldType));
                     return Expression.Lambda<Action<object, object>>(assign, instance, value).Compile();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    LogSetterCompileFailureOnce(targetType, field.Name, ex);
                     return null; // AOT/IL2CPP safety: fall back to reflection SetValue.
                 }
             }
@@ -291,16 +292,45 @@ namespace Nexus.Core
                         Expression.Convert(value, prop.PropertyType));
                     return Expression.Lambda<Action<object, object>>(call, instance, value).Compile();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    LogSetterCompileFailureOnce(targetType, prop.Name, ex);
                     return null;
                 }
+            }
+
+            // Logged-once-per-member guard so a genuine setter compile failure is surfaced
+            // without spamming the log on every injection. AOT/IL2CPP legitimately fails here
+            // and falls back to reflection, so this is informational rather than an error.
+            // Logging is limited to editor/dev builds: in release players the reflection
+            // fallback is the intended behavior, so staying silent avoids startup warning spam.
+            private static readonly ConcurrentDictionary<(Type, string), byte> s_setterCompileWarnings = new();
+
+            private static void LogSetterCompileFailureOnce(Type targetType, string memberName, Exception ex)
+            {
+                if (!s_setterCompileWarnings.TryAdd((targetType, memberName), 0)) return;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Setter compilation failed for {targetType.FullName}.{memberName}: {ex.Message}. Falling back to reflection.");
+#endif
             }
 
             internal static void ClearAll()
             {
                 InjectMeta.Clear();
                 ClearMeta.Clear();
+                s_setterCompileWarnings.Clear();
+            }
+            // ─── Shared setter dispatch (compiled setter with reflection fallback) ───
+            internal static void ApplyFieldSetter(InjectableField field, object instance, object value)
+            {
+                if (field.Setter != null) field.Setter(instance, value);
+                else field.Field.SetValue(instance, value);
+            }
+
+            internal static void ApplyPropertySetter(InjectableProperty property, object instance, object value)
+            {
+                if (property.Setter != null) property.Setter(instance, value);
+                else property.Property.SetValue(instance, value);
             }
         }
 
@@ -370,16 +400,14 @@ namespace Nexus.Core
                     if (f.Type.IsGenericType && f.Type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
                     {
                         var lazyInstance = Activator.CreateInstance(f.Type, _di);
-                        if (f.Setter != null) f.Setter(instance, lazyInstance);
-                        else f.Field.SetValue(instance, lazyInstance);
+                        MetadataCache.ApplyFieldSetter(f, instance, lazyInstance);
                         continue;
                     }
 
                     var resolvedValue = _di.TryResolve(f.Type);
                     if (resolvedValue != null)
                     {
-                        if (f.Setter != null) f.Setter(instance, resolvedValue);
-                        else f.Field.SetValue(instance, resolvedValue);
+                        MetadataCache.ApplyFieldSetter(f, instance, resolvedValue);
                     }
                     else if (f.IsOptional) { }
                     else if (_di.StrictInjection)
@@ -405,8 +433,7 @@ namespace Nexus.Core
                     var resolvedValue = _di.TryResolve(p.Type);
                     if (resolvedValue != null)
                     {
-                        if (p.Setter != null) p.Setter(instance, resolvedValue);
-                        else p.Property.SetValue(instance, resolvedValue);
+                        MetadataCache.ApplyPropertySetter(p, instance, resolvedValue);
                     }
                     else if (p.IsOptional) { }
                     else if (_di.StrictInjection)
@@ -474,12 +501,14 @@ namespace Nexus.Core
                 var meta = MetadataCache.GetOrCreateClearMetadata(type);
                 for (int i = 0; i < meta.Fields.Length; i++)
                 {
-                    if (meta.FieldSetters != null && meta.FieldSetters[i] != null) meta.FieldSetters[i](instance, null);
+                    var setter = meta.FieldSetters != null ? meta.FieldSetters[i] : null;
+                    if (setter != null) setter(instance, null);
                     else meta.Fields[i].SetValue(instance, null);
                 }
                 for (int i = 0; i < meta.Properties.Length; i++)
                 {
-                    if (meta.PropertySetters != null && meta.PropertySetters[i] != null) meta.PropertySetters[i](instance, null);
+                    var setter = meta.PropertySetters != null ? meta.PropertySetters[i] : null;
+                    if (setter != null) setter(instance, null);
                     else meta.Properties[i].SetValue(instance, null);
                 }
             }
@@ -614,7 +643,7 @@ namespace Nexus.Core
             {
                 var f = pending.Fields[i];
                 var resolvedValue = TryResolve(f.Type);
-                if (resolvedValue != null) { if (f.Setter != null) f.Setter(instance, resolvedValue); else f.Field.SetValue(instance, resolvedValue); pending.Fields.RemoveAt(i); }
+                if (resolvedValue != null) { MetadataCache.ApplyFieldSetter(f, instance, resolvedValue); pending.Fields.RemoveAt(i); }
                 else { allSucceeded = false; }
             }
 
@@ -622,7 +651,7 @@ namespace Nexus.Core
             {
                 var p = pending.Properties[i];
                 var resolvedValue = TryResolve(p.Type);
-                if (resolvedValue != null) { if (p.Setter != null) p.Setter(instance, resolvedValue); else p.Property.SetValue(instance, resolvedValue); pending.Properties.RemoveAt(i); }
+                if (resolvedValue != null) { MetadataCache.ApplyPropertySetter(p, instance, resolvedValue); pending.Properties.RemoveAt(i); }
                 else { allSucceeded = false; }
             }
 

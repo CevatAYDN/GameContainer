@@ -54,6 +54,11 @@ namespace Nexus.Core.Services
 
         private readonly Dictionary<int, PoolData> _poolsByPrefabId = new();
         private readonly Dictionary<int, PoolData> _poolsByInstanceId = new();
+        // Spawn-session generation per instance id. Incremented on every Spawn so a pending
+        // DespawnAfter timer can detect that the instance was despawned and RE-spawned while
+        // it was waiting — despawning then would yank a live object out of the scene.
+        private readonly Dictionary<int, long> _spawnGenerations = new();
+        private long _generationCounter;
         private Transform _masterPoolRoot;
         private GameObject _masterRootObject;
 
@@ -100,7 +105,9 @@ namespace Nexus.Core.Services
             instance.SetActive(true);
 
             pool.Active.Add(instance);
-            _poolsByInstanceId[GetId(instance)] = pool;
+            int spawnedId = GetId(instance);
+            _poolsByInstanceId[spawnedId] = pool;
+            _spawnGenerations[spawnedId] = ++_generationCounter;
 
             var poolables = instance.GetComponents<IPoolable>();
             for (int i = 0; i < poolables.Length; i++)
@@ -125,6 +132,7 @@ namespace Nexus.Core.Services
 
             if (!_poolsByInstanceId.TryGetValue(instanceId, out var pool))
             {
+                _spawnGenerations.Remove(instanceId);
                 UnityEngine.Object.Destroy(instance);
                 return;
             }
@@ -142,22 +150,32 @@ namespace Nexus.Core.Services
             instance.transform.SetParent(pool.RootTransform, false);
             pool.Inactive.Push(instance);
             _poolsByInstanceId.Remove(instanceId);
+            _spawnGenerations.Remove(instanceId);
         }
 
         public void DespawnAfter(GameObject instance, float seconds)
         {
             if (instance == null) return;
+            int instanceId = GetId(instance);
+            if (!_spawnGenerations.TryGetValue(instanceId, out long generation)) return;
+
             if (_masterRootObject != null && _masterRootObject.activeInHierarchy)
             {
                 var runner = _masterRootObject.GetComponent<PoolTimerRunner>() ?? _masterRootObject.AddComponent<PoolTimerRunner>();
-                runner.StartCoroutine(DespawnCoroutine(instance, seconds));
+                runner.StartCoroutine(DespawnCoroutine(instance, instanceId, generation, seconds));
             }
         }
 
-        private IEnumerator DespawnCoroutine(GameObject instance, float delay)
+        private IEnumerator DespawnCoroutine(GameObject instance, int instanceId, long generation, float delay)
         {
             yield return new WaitForSeconds(delay);
-            Despawn(instance);
+            // Only despawn if the instance is still in the SAME spawn session. If it was
+            // manually despawned and re-spawned while the timer was pending, the generation
+            // has advanced — despawning would kill the live re-spawned object.
+            if (_spawnGenerations.TryGetValue(instanceId, out long current) && current == generation)
+            {
+                Despawn(instance);
+            }
         }
 
         private PoolData GetOrCreatePool(GameObject prefab, Transform parent = null)
@@ -193,7 +211,9 @@ namespace Nexus.Core.Services
                 {
                     if (active != null)
                     {
-                        _poolsByInstanceId.Remove(GetId(active));
+                        int activeId = GetId(active);
+                        _poolsByInstanceId.Remove(activeId);
+                        _spawnGenerations.Remove(activeId);
                         UnityEngine.Object.Destroy(active);
                     }
                 }
@@ -227,6 +247,7 @@ namespace Nexus.Core.Services
             }
             _poolsByPrefabId.Clear();
             _poolsByInstanceId.Clear();
+            _spawnGenerations.Clear();
         }
 
         public override void Dispose()

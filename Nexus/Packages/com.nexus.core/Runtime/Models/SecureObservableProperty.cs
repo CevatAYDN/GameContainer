@@ -127,4 +127,128 @@ namespace Nexus.Core
 
         public override string ToString() => Value.ToString();
     }
+
+    /// <summary>
+    /// Obfuscated, Anti-Cheat reactive property wrapper for 64-bit integer memory protection.
+    /// Obfuscates value in RAM using XOR encryption key to prevent GameGuardian / CheatEngine memory scans.
+    /// Mirrors <see cref="SecureObservableInt"/> for <see cref="long"/> balances (e.g. economy currencies).
+    /// </summary>
+    [Preserve]
+    public sealed class SecureObservableLong
+    {
+        // _valueLock protects the (obscuredValue, cryptoKey) pair so a concurrent
+        // getter never observes a crossed state between the two fields.
+        private readonly object _valueLock = new();
+        private long _obscuredValue;
+        private long _cryptoKey;
+        private List<Action<long, long>> _handlers;
+        private Action<long, long>[] _snapshotCache;
+        private bool _snapshotDirty;
+        private readonly object _handlersLock = new();
+
+        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+
+        private static long GetSecureRandomKey()
+        {
+            byte[] bytes = new byte[8];
+            s_rng.GetBytes(bytes);
+            long key = BitConverter.ToInt64(bytes, 0) & long.MaxValue;
+            return Math.Max(key, 1000L);
+        }
+
+        public SecureObservableLong(long initialValue = 0)
+        {
+            _cryptoKey = GetSecureRandomKey();
+            _obscuredValue = initialValue ^ _cryptoKey;
+        }
+
+        public long Value
+        {
+            get
+            {
+                lock (_valueLock)
+                {
+                    return _obscuredValue ^ _cryptoKey;
+                }
+            }
+            set
+            {
+                long old;
+                lock (_valueLock)
+                {
+                    old = _obscuredValue ^ _cryptoKey;
+                    if (old == value) return;
+                    _cryptoKey = GetSecureRandomKey();
+                    _obscuredValue = value ^ _cryptoKey;
+                }
+
+                Action<long, long>[] snapshot;
+                lock (_handlersLock)
+                {
+                    if (_snapshotDirty)
+                    {
+                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
+                        _snapshotDirty = false;
+                    }
+                    snapshot = _snapshotCache;
+                }
+                if (snapshot != null)
+                {
+                    for (int i = 0; i < snapshot.Length; i++)
+                    {
+                        snapshot[i]?.Invoke(old, value);
+                    }
+                }
+            }
+        }
+
+        public void SetWithoutNotify(long value)
+        {
+            lock (_valueLock)
+            {
+                _cryptoKey = GetSecureRandomKey();
+                _obscuredValue = value ^ _cryptoKey;
+            }
+        }
+
+        public void OnChanged(Action<long, long> handler)
+        {
+            if (handler == null) return;
+            lock (_handlersLock)
+            {
+                _handlers ??= new List<Action<long, long>>(2);
+                if (!_handlers.Contains(handler))
+                {
+                    _handlers.Add(handler);
+                    _snapshotDirty = true;
+                }
+            }
+        }
+
+        public void RemoveOnChanged(Action<long, long> handler)
+        {
+            if (handler == null) return;
+            lock (_handlersLock)
+            {
+                if (_handlers != null && _handlers.Remove(handler))
+                {
+                    _snapshotDirty = true;
+                }
+            }
+        }
+
+        public void ClearOnChanged()
+        {
+            lock (_handlersLock)
+            {
+                _handlers?.Clear();
+                _snapshotCache = null;
+                _snapshotDirty = false;
+            }
+        }
+
+        public static implicit operator long(SecureObservableLong prop) => prop.Value;
+
+        public override string ToString() => Value.ToString();
+    }
 }

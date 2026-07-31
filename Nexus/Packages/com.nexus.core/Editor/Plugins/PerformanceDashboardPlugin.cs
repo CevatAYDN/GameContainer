@@ -87,6 +87,15 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             UnsubscribeFromNexusEvents();
+
+            // CONTRIBUTING: OnDisable() must reset all flags, queues, and debounces.
+            // The stat-row cache holds rows belonging to the (now-detached) old container;
+            // a later CreateView rebuilds _statsContainer, so the cache must be cleared to
+            // avoid mutating stale rows and leaving the new summary card empty.
+            _recording = false;
+            _statRowCache.Clear();
+            _statsContainer = null;
+
             base.OnDisable();
         }
 
@@ -210,6 +219,10 @@ namespace Nexus.Editor
         {
             var card = BuildCard(parent, NexusLang.Get("pd_sec_summary"));
             _statsContainer = card;
+            // A fresh container is created every CreateView. If the plugin instance is
+            // reused across window reopens, cached rows belong to the previous container;
+            // drop them so SetStatRow re-creates rows inside this new card.
+            _statRowCache.Clear();
         }
 
         // ── Metric group builder ──────────────────────────────────

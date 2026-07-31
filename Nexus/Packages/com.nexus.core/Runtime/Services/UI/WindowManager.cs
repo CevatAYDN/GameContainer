@@ -405,8 +405,13 @@ namespace Nexus.Core.Services
         public bool IsWindowOpen(string windowName)
         {
             if (string.IsNullOrEmpty(windowName)) return false;
-            // Non-blocking — avoids deadlocking the main thread when an async method holds the lock.
-            if (!_windowLock.Wait(0)) return false;
+            // Bounded wait (not Wait(0)): Wait(0) returns false the instant another thread
+            // (e.g. a background OpenWindowAsync/CloseAllAsync) briefly holds the semaphore,
+            // producing a false negative — the window IS open but the query reports closed,
+            // which can trigger duplicate opens. A short timeout still never blocks the main
+            // thread indefinitely, while eliminating the spurious false-negative on a
+            // transient lock hold.
+            if (!_windowLock.Wait(50)) return false;
             try
             {
                 return _activeWindows.ContainsKey(windowName);
@@ -420,7 +425,8 @@ namespace Nexus.Core.Services
         public GameObject GetWindow(string windowName)
         {
             if (string.IsNullOrEmpty(windowName)) return null;
-            if (!_windowLock.Wait(0)) return null;
+            // Same bounded wait as IsWindowOpen — see comment there for the Wait(0) pitfall.
+            if (!_windowLock.Wait(50)) return null;
             try
             {
                 _activeWindows.TryGetValue(windowName, out var go);

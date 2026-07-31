@@ -89,5 +89,35 @@ namespace Nexus.Editor.Tests
             Assert.IsTrue(instance.DespawnedCalled);
             Assert.IsFalse(instance.gameObject.activeSelf);
         }
+
+        [Test]
+        public void SpawnSessionGenerations_AdvanceOnRespawn_GuardStaleTimers()
+        {
+            // Regression: DespawnAfter used to capture only the instance and blindly despawn
+            // it when the timer fired. If the object was manually despawned and RE-spawned
+            // while the timer was pending, the stale timer killed the live re-spawned object.
+            // The fix tracks a per-instance spawn-session generation: it advances on every
+            // Spawn and is cleared on Despawn, so stale timers can detect the re-spawn.
+            var genField = typeof(ObjectPoolService).GetField("_spawnGenerations",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var generations = (System.Collections.Generic.Dictionary<int, long>)genField.GetValue(_poolService);
+
+            var instance = _poolService.Spawn(_prefab);
+            int id = instance.GetHashCode();
+            Assert.IsTrue(generations.TryGetValue(id, out long firstGen), "Spawn must record a generation.");
+
+            // Manual despawn clears the generation entry (no stale timer can hit it).
+            _poolService.Despawn(instance);
+            Assert.IsFalse(generations.ContainsKey(id), "Despawn must clear the generation entry.");
+
+            // Re-spawn gets a NEW, higher generation.
+            var respawned = _poolService.Spawn(_prefab);
+            Assert.AreSame(instance, respawned, "Pool should reuse the same instance.");
+            Assert.IsTrue(generations.TryGetValue(id, out long secondGen));
+            Assert.Greater(secondGen, firstGen,
+                "Re-spawn must advance the generation so stale DespawnAfter timers are ignored.");
+
+            _poolService.Despawn(respawned);
+        }
     }
 }
