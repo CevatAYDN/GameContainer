@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Nexus.Core;
 using UnityEditor;
 using UnityEditor.Callbacks;
@@ -84,7 +85,12 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch (ReflectionTypeLoadException) { }
+                catch (ReflectionTypeLoadException rtle)
+                {
+                    // CONTRIBUTING.md: never swallow reflection load failures silently.
+                    foreach (var le in rtle.LoaderExceptions ?? Array.Empty<Exception>())
+                        Debug.LogWarning($"[NexusDataProvider] Skipping assembly '{assembly.FullName}': {le?.Message}");
+                }
             }
 
             s_cachedMappings.Sort((a, b) => string.Compare(a.SignalName, b.SignalName, StringComparison.Ordinal));
@@ -175,7 +181,7 @@ namespace Nexus.Editor
                 if (context is Context ctx && ctx.Container.IsRegistered(serviceType))
                     return ctx.Container.Resolve(serviceType);
             }
-            catch { }
+            catch (Exception ex) { Debug.LogWarning($"[NexusDataProvider] Failed to resolve service '{serviceType.Name}': {ex.Message}"); }
             return null;
         }
 

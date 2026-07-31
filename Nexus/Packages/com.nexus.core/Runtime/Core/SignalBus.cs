@@ -1745,6 +1745,25 @@ namespace Nexus.Core
                         }
                         return RecoveryAction.Fallback;
                     }
+                    if (decision.Action == RecoveryAction.Retry)
+                    {
+                        if (retryCount >= decision.MaxRetries)
+                        {
+                            NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
+                            throw new InvalidOperationException($"Retry limit reached for command {commandType.Name}.", ex);
+                        }
+                        return RecoveryAction.Retry;
+                    }
+                }
+                catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
+                {
+                    NexusRuntime.Logger?.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
+                }
+            }
+
+            FireFailedSignalSafe(failedSignal);
+            return RecoveryAction.Skip;
+        }
 
         private async ValueTask<RecoveryAction> HandleCommandErrorWithDecisionAsync(Exception ex, Type commandType, object signal, int retryCount, CancellationToken ct)
         {

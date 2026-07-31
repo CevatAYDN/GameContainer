@@ -7,8 +7,6 @@ using UnityEditor;
 using UnityEditor.Callbacks;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.UI;
-using UnityEngine.EventSystems;
 using UnityEngine.UIElements;
 using UnityEngine.SceneManagement;
 using Nexus.Core;
@@ -139,27 +137,27 @@ namespace Nexus.Editor
             if (_createBtn != null) _createBtn.SetEnabled(valid);
         }
 
-        private static BootstrapManifest FindBootstrapManifest()
+        private static NexusBootstrapManifest FindBootstrapManifest()
         {
-            var guids = AssetDatabase.FindAssets("t:BootstrapManifest");
+            var guids = AssetDatabase.FindAssets("t:NexusBootstrapManifest");
             foreach (var guid in guids)
             {
                 var path = AssetDatabase.GUIDToAssetPath(guid);
-                return AssetDatabase.LoadAssetAtPath<BootstrapManifest>(path);
+                return AssetDatabase.LoadAssetAtPath<NexusBootstrapManifest>(path);
             }
             return null;
         }
 
         private static void CreateDefaultManifest()
         {
-            var manifest = ScriptableObject.CreateInstance<BootstrapManifest>();
+            var manifest = ScriptableObject.CreateInstance<NexusBootstrapManifest>();
             manifest.name = "GameBootstrapManifest";
             AssetDatabase.CreateAsset(manifest, "Assets/GameBootstrapManifest.asset");
             AssetDatabase.SaveAssets();
             Debug.Log("[Nexus] Created bootstrap manifest at Assets/GameBootstrapManifest.asset");
         }
 
-        private static void GenerateSkeleton(BootstrapManifest manifest)
+        private static void GenerateSkeleton(NexusBootstrapManifest manifest)
         {
             foreach (var ctxName in manifest.DefaultContextNames)
             {
@@ -352,25 +350,6 @@ public class {_viewName}Mediator : Mediator<{_viewName}>
             _validationLabel.text = string.Join("\n", errors);
             _validationLabel.style.display = valid ? DisplayStyle.None : DisplayStyle.Flex;
             if (_generateBtn != null) _generateBtn.SetEnabled(valid);
-        }
-    {
-        public string Title => NexusLang.Get("wizard_subtab_signal_gen");
-        private string _signalName = "PlayerScoreChanged";
-        private string _commandName = "UpdateScoreCommand";
-
-        public void BuildUI(VisualElement container)
-        {
-            container.Add(NexusEditorStyles.CreateHint(NexusLang.Get("wizard_signal_gen_desc")));
-
-            var signalField = new TextField(NexusLang.Get("wizard_field_signal_name")) { value = _signalName };
-            signalField.RegisterValueChangedCallback(evt => _signalName = evt.newValue);
-            container.Add(signalField);
-
-            var cmdField = new TextField(NexusLang.Get("wizard_field_command_name")) { value = _commandName };
-            cmdField.RegisterValueChangedCallback(evt => _commandName = evt.newValue);
-            container.Add(cmdField);
-
-            container.Add(new Button(GenerateSignalCommandFiles) { text = NexusLang.Get("wizard_generate_signal"), style = { marginTop = 8, backgroundColor = new StyleColor(NexusEditorStyles.BtnBlue), color = Color.white } });
         }
 
         private void GenerateSignalCommandFiles()

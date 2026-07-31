@@ -19,6 +19,10 @@ namespace Nexus.Core
         protected IContext Context { get; private set; }
         private bool _isBound;
 
+        // Cached pending Root written by ViewRegistration when the nearest Root's
+        // context is not yet initialized; cleared once the view binds.
+        private Root _pendingRoot;
+
         private void Awake()
         {
             // Plan §2.3: Context/SignalBus access is forbidden in Awake.

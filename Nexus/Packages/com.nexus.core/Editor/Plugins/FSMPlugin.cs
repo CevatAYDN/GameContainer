@@ -92,17 +92,17 @@ namespace Nexus.Editor
 
             var currentName = machine.CurrentState?.GetType().Name ?? NexusLang.Get("fsm_none");
             var currentColor = machine.CurrentState != null ? NexusEditorStyles.AccentGreen : NexusEditorStyles.TextSecondary;
-            card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("fsm_current_state"), currentName, currentColor));
+            card.Add(NexusVisualization.CreateStatRow(NexusLang.Get("fsm_current_state"), currentName, currentColor));
 
             var concrete = machine as GameStateMachine;
             if (concrete != null)
             {
                 var errorName = concrete.ErrorStateType?.Name ?? NexusLang.Get("fsm_not_set");
                 var errorColor = concrete.ErrorStateType != null ? NexusEditorStyles.AccentOrange : NexusEditorStyles.TextSecondary;
-                card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("fsm_error_state"), errorName, errorColor));
+                card.Add(NexusVisualization.CreateStatRow(NexusLang.Get("fsm_error_state"), errorName, errorColor));
 
                 var registered = concrete.RegisteredStateTypes;
-                card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("fsm_registered_states"), registered.Count.ToString(), NexusEditorStyles.AccentPurpleText));
+                card.Add(NexusVisualization.CreateStatRow(NexusLang.Get("fsm_registered_states"), registered.Count.ToString(), NexusEditorStyles.AccentPurpleText));
 
                 var statesWrap = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 4, marginBottom = 4 } };
                 foreach (var t in registered)

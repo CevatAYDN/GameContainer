@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using UnityEditor;
 using UnityEngine;
@@ -24,35 +23,14 @@ namespace Nexus.Editor
             SignalCommandGen = 4
         }
 
-        // Custom path inputs
-        private string _wizardScriptsPath = "Assets/Scripts/Nexus";
-        private string _wizardSettingsPath = "Assets/Settings";
-
         // Inputs for Custom Root Context Creation
-        private string _wizardContextName = "Gameplay";
-        private string _wizardScopeTag = "Gameplay";
         private string _wizardParentRootName = "None (Root Context)";
         private readonly HashSet<string> _wizardSelectedAssemblies = new();
-        private bool _wizardGenerateLifecycleScript = true;
-        private bool _wizardGenerateSampleArchitecture = true;
-
-        // Factory Modules
-        private bool _wizardModIAP = false;
-        private bool _wizardModAds = false;
-        private bool _wizardModAnalytics = false;
-        private bool _wizardModInventory = false;
-
-        // Inputs for Service Gen
-        private string _wizardServiceName = "PlayerDataService";
 
         // Inputs for View/Mediator Gen
-        private string _wizardViewName = "GameplayHUD";
         private string _wizardViewTargetRootName = "";
-        private bool _wizardCreateViewGo = true;
 
         // Inputs for Signal/Command Gen
-        private string _wizardSignalName = "PlayerScoreChanged";
-        private string _wizardCommandName = "UpdateScoreCommand";
         private string _wizardSignalTargetRootName = "";
 
         // Inputs for Clean Deletion

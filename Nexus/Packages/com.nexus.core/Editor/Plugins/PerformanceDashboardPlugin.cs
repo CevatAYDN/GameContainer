@@ -202,8 +202,8 @@ namespace Nexus.Editor
         {
             var card = BuildCard(parent, NexusLang.Get("pd_sec_alarms"));
 
-            card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_fps_alarm"), $"{_fpsAlarm:F0}", NexusEditorStyles.AccentOrange));
-            card.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_mem_alarm"), $"{_memAlarmMb:F0}", NexusEditorStyles.AccentOrange));
+            card.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_fps_alarm"), $"{_fpsAlarm:F0}", NexusEditorStyles.AccentOrange));
+            card.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_mem_alarm"), $"{_memAlarmMb:F0}", NexusEditorStyles.AccentOrange));
         }
 
         private void BuildStatsSummary(VisualElement parent)
@@ -250,7 +250,7 @@ namespace Nexus.Editor
             };
             group.Add(valueLabel);
 
-            sparkline = NexusEditorStyles.CreateSparkline(null, maxVal, color, sparkWidth, 32f);
+            sparkline = NexusVisualization.CreateSparkline(null, maxVal, color, sparkWidth, 32f);
             group.Add(sparkline);
 
             return group;
@@ -329,11 +329,11 @@ namespace Nexus.Editor
             _cmdLabel.text  = $"{cmdRate:F1}/s";
 
             // Sparklines
-            NexusEditorStyles.UpdateSparkline(_fpsSparkline,    _fpsBuffer.ToArray(),    120f, NexusEditorStyles.AccentGreen,  120f, 32f);
-            NexusEditorStyles.UpdateSparkline(_memSparkline,    _memBuffer.ToArray(),    _memAlarmMb, NexusEditorStyles.AccentBlue,   120f, 32f);
-            NexusEditorStyles.UpdateSparkline(_gcSparkline,     _gcGen0Buffer.ToArray(), 20f,  NexusEditorStyles.AccentYellow, 120f, 32f);
-            NexusEditorStyles.UpdateSparkline(_sigSparkline,    _signalRateBuffer.ToArray(), 500f, NexusEditorStyles.AccentPurple, 120f, 32f);
-            NexusEditorStyles.UpdateSparkline(_cmdSparkline,    _commandRateBuffer.ToArray(), 200f, NexusEditorStyles.AccentOrange, 120f, 32f);
+            NexusVisualization.UpdateSparkline(_fpsSparkline,    _fpsBuffer.ToArray(),    120f, NexusEditorStyles.AccentGreen,  120f, 32f);
+            NexusVisualization.UpdateSparkline(_memSparkline,    _memBuffer.ToArray(),    _memAlarmMb, NexusEditorStyles.AccentBlue,   120f, 32f);
+            NexusVisualization.UpdateSparkline(_gcSparkline,     _gcGen0Buffer.ToArray(), 20f,  NexusEditorStyles.AccentYellow, 120f, 32f);
+            NexusVisualization.UpdateSparkline(_sigSparkline,    _signalRateBuffer.ToArray(), 500f, NexusEditorStyles.AccentPurple, 120f, 32f);
+            NexusVisualization.UpdateSparkline(_cmdSparkline,    _commandRateBuffer.ToArray(), 200f, NexusEditorStyles.AccentOrange, 120f, 32f);
 
             // Label colors based on alarms
             _fpsLabel.style.color = new StyleColor(fps < _fpsAlarm && _alarmsEnabled
@@ -373,14 +373,14 @@ namespace Nexus.Editor
             var fpsArr = _fpsBuffer.ToArray();
             if (fpsArr.Length > 0)
             {
-                _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_fps_current"), $"{fps:F1}", ColorForFps(fps)));
-                _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_fps_avg"), $"{fpsArr.Average():F1}", NexusEditorStyles.TextPrimary));
-                _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_fps_min"),  $"{fpsArr.Min():F1}", NexusEditorStyles.AccentOrange));
+                _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_fps_current"), $"{fps:F1}", ColorForFps(fps)));
+                _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_fps_avg"), $"{fpsArr.Average():F1}", NexusEditorStyles.TextPrimary));
+                _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_fps_min"),  $"{fpsArr.Min():F1}", NexusEditorStyles.AccentOrange));
             }
-            _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_mono_heap_short"), $"{monoMb:F2} MB", NexusEditorStyles.AccentBlue));
-            _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_signals_current"), $"{sigRate:F1}", NexusEditorStyles.AccentPurple));
-            _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_commands_current"), $"{cmdRate:F1}", NexusEditorStyles.AccentOrange));
-            _statsContainer.Add(NexusEditorStyles.CreateStatRow(NexusLang.Get("pd_gc_delta"), $"{_gcGen0Buffer.Last():F0}", NexusEditorStyles.AccentYellow));
+            _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_mono_heap_short"), $"{monoMb:F2} MB", NexusEditorStyles.AccentBlue));
+            _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_signals_current"), $"{sigRate:F1}", NexusEditorStyles.AccentPurple));
+            _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_commands_current"), $"{cmdRate:F1}", NexusEditorStyles.AccentOrange));
+            _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_gc_delta"), $"{_gcGen0Buffer.Last():F0}", NexusEditorStyles.AccentYellow));
         }
 
         private Color ColorForFps(float fps) =>

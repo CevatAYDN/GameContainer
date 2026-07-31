@@ -165,7 +165,7 @@ namespace Nexus.Editor
             gaugeContainer.Add(gaugeBg);
             row.Add(gaugeContainer);
 
-            _latencySparkline = NexusEditorStyles.CreateSparkline(null, 500f, NexusEditorStyles.AccentBlue, 120f, 32f);
+            _latencySparkline = NexusVisualization.CreateSparkline(null, 500f, NexusEditorStyles.AccentBlue, 120f, 32f);
             row.Add(_latencySparkline);
 
             card.Add(row);
@@ -293,7 +293,7 @@ namespace Nexus.Editor
 
             // Latency sparkline
             PushLatency(latencyMs);
-            NexusEditorStyles.UpdateSparkline(_latencySparkline,
+            NexusVisualization.UpdateSparkline(_latencySparkline,
                 GetLatencyArray(), 500f, NexusEditorStyles.AccentBlue, 120f, 32f);
 
             // Stats
@@ -336,7 +336,7 @@ namespace Nexus.Editor
                 return;
             }
 
-            var table = NexusEditorStyles.CreateDataTable(
+            var table = NexusVisualization.CreateDataTable(
                 new[] {
                     (NexusLang.Get("nd_col_type"), 0.2f),
                     (NexusLang.Get("nd_col_signal"), 0.4f),

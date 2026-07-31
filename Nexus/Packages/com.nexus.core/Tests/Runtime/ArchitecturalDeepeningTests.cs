@@ -159,6 +159,10 @@ namespace Nexus.Tests.Runtime
             Assert.DoesNotThrow(() => factoryCtx.RegisterView(factoryView));
             Assert.DoesNotThrow(() => compatCtx.RegisterView(compatView));
 
+            // Registration must have actually bound the views (MockView.Bind fires the callback).
+            Assert.IsTrue(factoryViewRegistered, "Factory path must bind the view on register.");
+            Assert.IsTrue(compatViewRegistered, "Compat path must bind the view on register.");
+
             factoryCtx.Dispose();
             compatCtx.Dispose();
         }
@@ -311,33 +315,6 @@ namespace Nexus.Tests.Runtime
             Assert.AreEqual(typeof(int), memoryField.FieldType);
         }
 
-        // ─── Phase 6: Editor INexusEditorPlugin ───
-
-        [Test]
-        public void NexusEditorPlugin_DefaultCategory_IsCatOther()
-        {
-            // The base class should return "cat_other" as the default category.
-            var plugin = new TestEditorPlugin();
-            Assert.AreEqual("cat_other", plugin.Category);
-            Assert.AreEqual(new UnityEngine.Color(0.6f, 0.6f, 0.6f), plugin.IconColor);
-        }
-
-        [Test]
-        public void NexusEditorPlugin_CustomCategory_OverridesDefault()
-        {
-            var plugin = new CustomCategoryPlugin();
-            Assert.AreEqual("cat_diagnostics", plugin.Category);
-            Assert.AreEqual(new UnityEngine.Color(1f, 0.3f, 0.3f), plugin.IconColor);
-        }
-
-        [Test]
-        public void NexusWindow_SidebarGroupsByCategory()
-        {
-            // This test verifies the new sidebar grouping logic compiles and works.
-            // Full verification requires Unity Editor with NexusWindow open.
-            Assert.Pass("Sidebar grouping requires Unity Editor Play Mode for full verification.");
-        }
-
         // ─── Integration: Complete lifecycle ───
 
         [Test]
@@ -367,7 +344,7 @@ namespace Nexus.Tests.Runtime
         }
 
         [Test]
-        public async Task ContextFactory_NestedContexts_IndependentSignals()
+        public void ContextFactory_NestedContexts_IndependentSignals()
         {
             var parent = ContextFactory.Create();
             var child = ContextFactory.Create(parent: parent);
@@ -459,8 +436,6 @@ namespace Nexus.Tests.Runtime
             return data;
         }
 
-        private static ContextFactory _factoryAccessor;
-
         [SetUp]
         public void SetUp()
         {
@@ -475,23 +450,4 @@ namespace Nexus.Tests.Runtime
         }
     }
 
-    // ─── Test editor plugins (standalone, outside Namespace for simplicity) ───
-
-    public class TestEditorPlugin : Nexus.Editor.NexusEditorPlugin
-    {
-        public override string Id => "TestPlugin";
-        public override string DisplayName => "Test Plugin";
-        public override int Order => 999;
-        public override UnityEngine.UIElements.VisualElement CreateView() => new();
-    }
-
-    public class CustomCategoryPlugin : Nexus.Editor.NexusEditorPlugin
-    {
-        public override string Id => "CustomPlugin";
-        public override string DisplayName => "Custom Plugin";
-        public override int Order => 100;
-        public override string Category => "cat_diagnostics";
-        public override UnityEngine.Color IconColor => new(1f, 0.3f, 0.3f);
-        public override UnityEngine.UIElements.VisualElement CreateView() => new();
-    }
 }

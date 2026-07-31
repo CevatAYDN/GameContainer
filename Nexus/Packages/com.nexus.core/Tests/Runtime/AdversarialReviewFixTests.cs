@@ -92,7 +92,7 @@ namespace Nexus.Tests.Runtime
         }
 
         [Test]
-        public async Task NexusDI_Dispose_SkipsInNexusServiceSingletons()
+        public void NexusDI_Dispose_SkipsInNexusServiceSingletons()
         {
             using var container = new NexusDI();
             container.Bind<CountingService>(isSingleton: true);
