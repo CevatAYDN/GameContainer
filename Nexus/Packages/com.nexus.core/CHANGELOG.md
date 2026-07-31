@@ -7,7 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Breaking
+### Security
+- **SecureObservableInt/Long/Float/String** — memory obfuscation upgraded from single-XOR to **dual independent keys** with integrity canary (`_guard`). A memory scanner must locate three separate fields to reconstruct the plaintext. Keys are regenerated on every write. Integrity canary detects tampering on read. (Previously: single key stored adjacent to value — GameGuardian/CheatEngine read both fields.)
+- **EncryptedStorageService** — HMAC-SHA256 output is now stored in **full 32 bytes** (previously truncated to 16, reducing effective security). New on-disk format (v2): `[VERSION:1] [IV:16] [HMAC:32] [ciphertext:N]`. Legacy v1 files (16-byte HMAC) are detected and migrated to v2 on first read. Format version byte enables forward migration.
+
+### Fixed
+- **AdService** — `ShowInterstitial` no longer invokes `onComplete` callback inside the `_lock`, preventing potential deadlock when the callback re-enters the service (e.g. showing another ad). Critical path restructured to `lock → check → unlock → callback`.
+- **ResourcesUIAssetProvider** — replaced busy-wait loop (`while(!request.isDone) await Task.Yield()`) with direct `await request`, eliminating unnecessary per-frame re-scheduling. Added null asset handling after load.
+- **GameStateMachine.Dispose** — `_stateCts` write/read now uses `Interlocked.Exchange` for thread safety. `Tick()` reads `_currentState` into a local copy before invocation to prevent null-ref during concurrent Dispose.
+- **ObjectPoolService** — `ClearPool()` and `ClearAllPools()` now call `OnDespawned()` on active instances before destroying them, matching the lifecycle contract established by `Despawn()`. Previously active instances were destroyed without notification.
+- **5 Editor plugins** migrated from `_view.schedule.Execute().Every()` to `OnUpdate()`:
+  - `FSMPlugin` — 300ms schedule → `OnUpdate()` with 300ms throttle
+  - `ContextInspectorPlugin` — 500ms schedule removed (OnUpdate already handled refresh)
+  - `CasualServicesPlugin` — 500ms schedule → `OnUpdate()` with 500ms throttle
+  - `NetworkDashboardPlugin` — 500ms schedule → `OnUpdate()` with 500ms throttle
+  - `PerformanceDashboardPlugin` — field declaration cleanup (already used OnUpdate)
+- **CommandExecutionPipeline.cs** — removed (dead code, zero references across Runtime + Editor + Tests)
+- **SignalBus.Dispose** — `_inFlightAsyncCommands` is now read via `Volatile.Read()` instead of unsynchronized field access, preventing a race condition when Dispose() is called concurrently with in-flight async commands.
+- **CommandPool** — `Cleanup()` (reflection-based `ClearInjectedReferences`) is now skipped for command types with zero `[Inject]` fields, reducing CPU overhead on every `Return()` for simple commands.
+- **NexusDI** — `s_setterCompileWarnings` dictionary bounded at 1024 entries to prevent unbounded memory growth in long-running editor sessions with many assemblies.
+
+### Changed (Editor)
+- **Editor plugin pattern enforcement** — all 15 plugins now comply with `INexusEditorPlugin.OnUpdate()` contract. No plugin uses `_view.schedule` for recurring updates.
 - `IEconomyService.GetObservableBalance` return type changed from `ObservableProperty<long>` to `SecureObservableLong` (the new XOR-masked anti-cheat wrapper). The `Value`/`OnChanged`/`SetWithoutNotify` surface is identical, but code that typed the result as `ObservableProperty<long>` must be updated.
 - `IProgressionService.CurrentLevel` / `MaxUnlockedLevel` changed from `ObservableProperty<int>` to `SecureObservableInt` (XOR-masked anti-cheat wrapper, matching `EconomyService`). The `Value`/`OnChanged`/`SetWithoutNotify` surface is identical.
 

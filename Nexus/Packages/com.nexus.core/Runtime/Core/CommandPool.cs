@@ -54,6 +54,8 @@ namespace Nexus.Core
         private readonly object _poolLock = new();
         private readonly int _maxSize;
         private static readonly HashSet<Type> s_stateLeakWarningIssued = new();
+        private static readonly HashSet<Type> s_injectableTypeCache = new();
+        private static readonly object s_injectableCacheLock = new();
 
         // Editor introspection (G-4): cumulative utilization counters.
         private long _totalGets;
@@ -157,9 +159,27 @@ namespace Nexus.Core
             }
         }
 
+        private static bool HasInjectableFields(Type type)
+        {
+            lock (s_injectableCacheLock)
+            {
+                if (s_injectableTypeCache.Contains(type)) return true;
+                foreach (var field in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+                {
+                    if (field.GetCustomAttribute<InjectAttribute>() != null)
+                    {
+                        s_injectableTypeCache.Add(type);
+                        return true;
+                    }
+                }
+                return false;
+            }
+        }
+
         private void Cleanup(object command)
         {
-            NexusDI.ClearInjectedReferences(command);
+            if (HasInjectableFields(_commandType))
+                NexusDI.ClearInjectedReferences(command);
         }
 
         /// <summary>Clears all pooled instances.</summary>
@@ -177,6 +197,10 @@ namespace Nexus.Core
             lock (s_stateLeakWarningIssued)
             {
                 s_stateLeakWarningIssued.Clear();
+            }
+            lock (s_injectableCacheLock)
+            {
+                s_injectableTypeCache.Clear();
             }
         }
 

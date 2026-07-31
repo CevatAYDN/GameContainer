@@ -38,7 +38,7 @@ namespace Nexus.Editor
         private Label _sentLabel, _rcvdLabel, _errLabel;
         private ScrollView _eventLog;
         private VisualElement _eventTable;
-        private IVisualElementScheduledItem _refreshSchedule;
+        private double _lastRefreshTime;
 
         // ── Counters ──────────────────────────────────────────────
         private int _totalSent, _totalRcvd, _totalErr;
@@ -65,22 +65,25 @@ namespace Nexus.Editor
             _view.Add(scroll);
 
             SubscribeEvents();
-            _refreshSchedule = _view.schedule.Execute(RefreshStatus).Every(500);
             RefreshStatus();
             ApplyFilters();
 
             return _view;
         }
 
+        public override void OnUpdate()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            if (now - _lastRefreshTime < 0.5) return;
+            _lastRefreshTime = now;
+            RefreshStatus();
+        }
+
         public override void OnDisable()
         {
-            _refreshSchedule?.Pause();
             UnsubscribeEvents();
             base.OnDisable();
         }
-
-        // Latency is sampled once per 500ms tick by _refreshSchedule; overriding OnUpdate
-        // here (fires every 200ms) would double-sample and distort the sparkline window.
 
         public override IReadOnlyList<(string Label, Action Action, Color Color)> GetContextActions()
             => new List<(string, Action, Color)>

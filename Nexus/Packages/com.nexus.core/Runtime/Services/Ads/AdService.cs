@@ -94,16 +94,21 @@ namespace Nexus.Core.Services
 
         public void ShowInterstitial(string placement, Action onComplete = null)
         {
+            bool canShow;
             lock (_lock)
             {
-                if (!IsInterstitialAvailable(placement))
+                canShow = IsInterstitialAvailable(placement);
+                if (canShow)
                 {
-                    NexusRuntime.Logger?.LogWarning($"[AdService] Interstitial not ready or on cooldown for placement: {placement}");
-                    onComplete?.Invoke();
-                    return;
+                    _lastInterstitialTime.Value = Time.realtimeSinceStartup;
                 }
+            }
 
-                _lastInterstitialTime.Value = Time.realtimeSinceStartup;
+            if (!canShow)
+            {
+                NexusRuntime.Logger?.LogWarning($"[AdService] Interstitial not ready or on cooldown for placement: {placement}");
+                onComplete?.Invoke();
+                return;
             }
 
             if (_adapter != null)

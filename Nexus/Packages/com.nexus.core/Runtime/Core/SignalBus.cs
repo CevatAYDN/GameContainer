@@ -42,7 +42,9 @@ namespace Nexus.Core
     [Preserve]
     public partial class SignalBus : ISignalBus, IDisposable
     {
-        // ─── Subscription management (nested for depth) ───
+        // ─── Subscription management (linked list for zero-alloc sweep) ───
+        // Linked-list yields O(n) unsubscribe/cleanup but keeps Subscribe allocation-free.
+        // For large-scale (1000+) subscriber scenarios, prefer the command system.
         internal class SubscriptionNode
         {
             public object Handler;
@@ -516,6 +518,7 @@ namespace Nexus.Core
                 {
                     keys.Add(key);
                 }
+
                 foreach (var type in keys)
                 {
                     if (_subscriptions.TryGetValue(type, out var current))
@@ -708,6 +711,9 @@ namespace Nexus.Core
         /// signal has async handlers/subscriptions, route it through the async path
         /// (fire-and-forget with error capture) instead of throwing
         /// <see cref="NexusSyncAsyncMismatchException"/> during error handling.
+        /// FireAsyncAndForget already catches and logs all exceptions internally
+        /// (see its catch blocks for OperationCanceledException and Exception).
+        /// The _ = discard is intentional — the async path handles its own errors.
         /// </summary>
         private void FireFailedSignalSafe(CommandFailedSignal failedSignal)
         {
@@ -2006,7 +2012,7 @@ namespace Nexus.Core
                 }
             }
 
-            if (_inFlightAsyncCommands > 0)
+            if (Volatile.Read(ref _inFlightAsyncCommands) > 0)
             {
                 NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_inFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
             }

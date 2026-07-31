@@ -281,9 +281,7 @@ namespace Nexus.Core.FSM
             }
             finally
             {
-                // Only the newest transition clears the shared slot; superseded transitions
-                // dispose their own source here, after all of their state code has returned.
-                if (mySequence == _transitionSequence) _stateCts = null;
+                if (mySequence == _transitionSequence) Interlocked.Exchange(ref _stateCts, null);
                 myCts.Cancel();
                 myCts.Dispose();
             }
@@ -314,17 +312,14 @@ namespace Nexus.Core.FSM
 
         public void Tick(float deltaTime)
         {
-            _currentState?.OnTick(deltaTime);
+            var current = _currentState;
+            current?.OnTick(deltaTime);
         }
 
         public void Dispose()
         {
-            // Invalidate any in-flight transition; it aborts at its next checkpoint and
-            // disposes its own source in its finally block (CTS.Dispose is idempotent,
-            // so double-disposal with the shared slot below is safe).
             _transitionSequence++;
-            var cts = _stateCts;
-            _stateCts = null;
+            var cts = Interlocked.Exchange(ref _stateCts, null);
             cts?.Cancel();
             cts?.Dispose();
             _states.Clear();

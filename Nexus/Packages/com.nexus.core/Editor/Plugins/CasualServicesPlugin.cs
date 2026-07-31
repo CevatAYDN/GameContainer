@@ -21,7 +21,7 @@ namespace Nexus.Editor.Plugins
         private IntegerField _levelField;
         private TextField _windowNameField;
         private VisualElement _openWindowsList;
-        private IVisualElementScheduledItem _refreshSchedule;
+        private double _lastRefreshTime;
 
         public override VisualElement CreateView()
         {
@@ -148,14 +148,19 @@ namespace Nexus.Editor.Plugins
             feedbackSection.Add(successFeedbackBtn);
             _content.Add(feedbackSection);
 
-            _refreshSchedule = _container.schedule.Execute(RefreshOpenWindows).Every(500);
-
             return _container;
+        }
+
+        public override void OnUpdate()
+        {
+            double now = EditorApplication.timeSinceStartup;
+            if (now - _lastRefreshTime < 0.5) return;
+            _lastRefreshTime = now;
+            RefreshOpenWindows();
         }
 
         public override void OnDisable()
         {
-            _refreshSchedule?.Pause();
             base.OnDisable();
         }
 

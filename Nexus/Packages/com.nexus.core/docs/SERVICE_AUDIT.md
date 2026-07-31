@@ -40,9 +40,10 @@ Bu rapor, 13 servisin **tamamını** kapsayan satır satır incelemenin sonucudu
 
 **Dosya:** `Runtime/Services/Storage/EncryptedStorageService.cs`
 
-- **Şifreleme:** AES-256 gerçek 32-byte anahtar (P0-6 sonrası), HMAC-SHA256 bütünsellik doğrulaması, device-bound seed (XOR maskeleme).
+- **Şifreleme:** AES-256 gerçek 32-byte anahtar (P0-6 sonrası), HMAC-SHA256 bütünsellik doğrulaması (tam 32-byte, P0-10 sonrası), device-bound seed (XOR maskeleme).
 - **Bütünsellik:** `CompareHashes` sabit zamanlı (constant-time) — timing saldırısı yok.
-- **Legacy:** AES-128 formatı tek seferlik migrasyon ile okunup AES-256'ya yeniden şifreleniyor.
+- **Format:** V2 format: `[VERSION:1][IV:16][HMAC:32][ciphertext:N]`. V1 legacy dosyalar (16-byte trunked HMAC) otomatik migrasyonla V2'ye yükseltilir. Format version byte forward-compatibility sağlar.
+- **Legacy:** AES-128 formatı tek seferlik migrasyon ile okunup AES-256'ya (V2) yeniden şifreleniyor.
 - **Hot-path tahsis:** `GetFilePath` sonuçları `_filePathCache`'te — MD5.Create() churn'ü önceden kapatılmış (P2-14).
 - **Concurrency:** Tek `_lock` tüm cache/disk erişimini koruyor; focus-loss save'i `Task.Run` ile worker thread'de (P2-14) — main thread asla bloklanmıyor.
 - **Dayanıklılık:** Atomik temp-file + `File.Move` 3 denemeli retry (Windows handle kilitleri için).

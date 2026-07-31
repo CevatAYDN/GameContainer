@@ -12,10 +12,7 @@ namespace Nexus.Core.Services
         public async Task<GameObject> InstantiateWindowAsync(string windowName, Transform parent)
         {
             var request = Resources.LoadAsync<GameObject>($"UI/Windows/{windowName}");
-            while (!request.isDone)
-            {
-                await Task.Yield();
-            }
+            await request;
 
             var prefab = request.asset as GameObject;
             if (prefab == null)

@@ -12,15 +12,34 @@ namespace Nexus.Core.Services
     /// <summary>
     /// AES-256 Encrypted & Device-Bound Storage Service.
     /// Protects game saves against APK modification, XML editing, and save file sharing.
+    ///
+    /// File format (version 2):
+    ///   [VERSION:1 byte] [IV:16 bytes] [HMAC-SHA256:32 bytes] [AES-256 ciphertext:N bytes]
+    ///
+    /// Legacy format (version 1, read-only migration):
+    ///   [IV:16 bytes] [HMAC-SHA256-truncated:16 bytes] [AES-128 ciphertext:N bytes]
+    ///
+    /// HMAC-SHA256 is computed over (IV || ciphertext) using an independent key derived
+    /// from the device-bound seed. On read, HMAC is verified first — tampered payloads
+    /// are detected before decryption is even attempted.
     /// </summary>
     [Preserve]
     public class EncryptedStorageService : IPlayerPrefsService, IDisposable
     {
+        /// <summary>Current on-disk format version.</summary>
+        private const byte CurrentFormatVersion = 2;
+
+        /// <summary>Legacy format has no version prefix; detected by header length.</summary>
+        private const int LegacyHeaderSize = 32; // 16 IV + 16 HMAC
+
+        /// <summary>Current header size: 1 version + 16 IV + 32 HMAC = 49 bytes.</summary>
+        private const int HeaderSize = 1 + 16 + 32;
+
         public bool AutoSave { get; set; } = false;
 
         private readonly byte[] _encryptionKey;
         private readonly byte[] _hmacKey;
-        // Legacy AES-128 keys, retained ONLY for one-time save-data migration (P0-6).
+        // Legacy AES-128 keys, retained ONLY for one-time save-data migration.
         private readonly byte[] _legacyEncryptionKey;
         private readonly byte[] _legacyHmacKey;
         private readonly string _storageFolderPath;
@@ -33,9 +52,7 @@ namespace Nexus.Core.Services
         public EncryptedStorageService(string customSalt = "Nexus_Secure_Salt_2026")
         {
             if (string.IsNullOrEmpty(customSalt))
-            {
                 customSalt = "Nexus_Secure_Salt_2026";
-            }
 
             // Device-bound key for seed obfuscation
             string deviceId = SystemInfo.deviceUniqueIdentifier ?? "Default_Device_ID";
@@ -47,9 +64,8 @@ namespace Nexus.Core.Services
             byte[] seedBytes = new byte[32];
             string seedKey = "NT_StorageSeed";
             if (customSalt != "Nexus_Secure_Salt_2026")
-            {
                 seedKey = $"NT_StorageSeed_{customSalt}";
-            }
+
             string storedObfuscatedSeed = PlayerPrefs.GetString(seedKey, null);
 
             if (string.IsNullOrEmpty(storedObfuscatedSeed))
@@ -61,9 +77,7 @@ namespace Nexus.Core.Services
                 // Obfuscate the seed using the device-bound key
                 byte[] obfuscatedBytes = new byte[32];
                 for (int i = 0; i < 32; i++)
-                {
                     obfuscatedBytes[i] = (byte)(seedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
-                }
 
                 PlayerPrefs.SetString(seedKey, Convert.ToBase64String(obfuscatedBytes));
                 PlayerPrefs.Save();
@@ -74,9 +88,7 @@ namespace Nexus.Core.Services
                 {
                     byte[] obfuscatedBytes = Convert.FromBase64String(storedObfuscatedSeed);
                     for (int i = 0; i < 32; i++)
-                    {
                         seedBytes[i] = (byte)(obfuscatedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
-                    }
                 }
                 catch
                 {
@@ -86,9 +98,7 @@ namespace Nexus.Core.Services
 
                     byte[] obfuscatedBytes = new byte[32];
                     for (int i = 0; i < 32; i++)
-                    {
                         obfuscatedBytes[i] = (byte)(seedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
-                    }
 
                     PlayerPrefs.SetString(seedKey, Convert.ToBase64String(obfuscatedBytes));
                     PlayerPrefs.Save();
@@ -98,9 +108,10 @@ namespace Nexus.Core.Services
             // Derive actual encryption & HMAC keys from the secure random seed
             byte[] finalHash = sha256.ComputeHash(seedBytes);
 
-            // P0-6 fix: use the full 32-byte hash as a genuine AES-256 key and derive an
-            // independent HMAC key from the seed plus an "hmac" salt.
-            _encryptionKey = finalHash; // 32 bytes = AES-256
+            // AES-256 key: full 32-byte hash
+            _encryptionKey = finalHash;
+
+            // Independent HMAC key: SHA256(seed || "hmac")
             byte[] hmacSalt = Encoding.UTF8.GetBytes("hmac");
             byte[] hmacSeed = new byte[seedBytes.Length + hmacSalt.Length];
             Buffer.BlockCopy(seedBytes, 0, hmacSeed, 0, seedBytes.Length);
@@ -108,25 +119,18 @@ namespace Nexus.Core.Services
             _hmacKey = sha256.ComputeHash(hmacSeed);
 
             // Legacy AES-128 key split kept for reading pre-migration save files;
-            // successfully decrypted legacy payloads are re-encrypted with AES-256.
+            // successfully decrypted legacy payloads are re-encrypted with AES-256 (v2 format).
             _legacyEncryptionKey = new byte[16];
             _legacyHmacKey = new byte[16];
             Array.Copy(finalHash, 0, _legacyEncryptionKey, 0, 16);
             Array.Copy(finalHash, 16, _legacyHmacKey, 0, 16);
 
-            if (customSalt == "Nexus_Secure_Salt_2026")
-            {
-                _storageFolderPath = Path.Combine(Application.persistentDataPath, "SecureData");
-            }
-            else
-            {
-                _storageFolderPath = Path.Combine(Application.persistentDataPath, $"SecureData_{customSalt}");
-            }
+            _storageFolderPath = customSalt == "Nexus_Secure_Salt_2026"
+                ? Path.Combine(Application.persistentDataPath, "SecureData")
+                : Path.Combine(Application.persistentDataPath, $"SecureData_{customSalt}");
 
             if (!Directory.Exists(_storageFolderPath))
-            {
                 Directory.CreateDirectory(_storageFolderPath);
-            }
 
             Application.focusChanged += OnFocusChanged;
             Application.quitting += OnQuitting;
@@ -137,13 +141,9 @@ namespace Nexus.Core.Services
             if (!hasFocus)
             {
                 // P2-14 fix: never block the main thread with bulk file IO on focus loss.
-                // Save() is fully guarded by _lock, so it is safe to run on a worker thread.
                 System.Threading.Tasks.Task.Run(() =>
                 {
-                    try
-                    {
-                        Save();
-                    }
+                    try { Save(); }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Background save on focus loss failed: {ex.Message}");
@@ -152,10 +152,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        private void OnQuitting()
-        {
-            Save();
-        }
+        private void OnQuitting() => Save();
 
         public void Dispose()
         {
@@ -170,10 +167,7 @@ namespace Nexus.Core.Services
             return valStr != null && int.TryParse(valStr, out int res) ? res : defaultValue;
         }
 
-        public void SetInt(string key, int value)
-        {
-            SetString(key, value.ToString());
-        }
+        public void SetInt(string key, int value) => SetString(key, value.ToString());
 
         public bool GetBool(string key, bool defaultValue = false)
         {
@@ -181,10 +175,7 @@ namespace Nexus.Core.Services
             return valStr != null && bool.TryParse(valStr, out bool res) ? res : defaultValue;
         }
 
-        public void SetBool(string key, bool value)
-        {
-            SetString(key, value.ToString());
-        }
+        public void SetBool(string key, bool value) => SetString(key, value.ToString());
 
         public float GetFloat(string key, float defaultValue = 0f)
         {
@@ -192,10 +183,7 @@ namespace Nexus.Core.Services
             return valStr != null && float.TryParse(valStr, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float res) ? res : defaultValue;
         }
 
-        public void SetFloat(string key, float value)
-        {
-            SetString(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        }
+        public void SetFloat(string key, float value) => SetString(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
 
         public long GetLong(string key, long defaultValue = 0L)
         {
@@ -203,10 +191,7 @@ namespace Nexus.Core.Services
             return valStr != null && long.TryParse(valStr, out long res) ? res : defaultValue;
         }
 
-        public void SetLong(string key, long value)
-        {
-            SetString(key, value.ToString());
-        }
+        public void SetLong(string key, long value) => SetString(key, value.ToString());
 
         public string GetString(string key, string defaultValue = "")
         {
@@ -215,9 +200,7 @@ namespace Nexus.Core.Services
             lock (_lock)
             {
                 if (_cache.TryGetValue(key, out string cachedVal))
-                {
                     return cachedVal ?? defaultValue;
-                }
 
                 string filePath = GetFilePath(key);
                 if (!File.Exists(filePath))
@@ -229,47 +212,25 @@ namespace Nexus.Core.Services
                 try
                 {
                     byte[] rawData = File.ReadAllBytes(filePath);
-                    if (rawData.Length < 32)
+                    if (rawData.Length < LegacyHeaderSize)
                     {
                         _cache[key] = null;
                         return defaultValue;
                     }
 
-                    // Verify HMAC signature to detect tampering
-                    byte[] iv = new byte[16];
-                    byte[] hmac = new byte[16];
-                    byte[] cipherText = new byte[rawData.Length - 32];
+                    // Detect format from header length.
+                    // Version 2: 1 (version) + 16 (IV) + 32 (HMAC) = 49 bytes minimum header.
+                    // Version 1 (legacy): 16 (IV) + 16 (HMAC) = 32 bytes minimum header.
+                    bool isVersion2 = rawData.Length >= HeaderSize && rawData[0] == CurrentFormatVersion;
 
-                    Buffer.BlockCopy(rawData, 0, iv, 0, 16);
-                    Buffer.BlockCopy(rawData, 16, hmac, 0, 16);
-                    Buffer.BlockCopy(rawData, 32, cipherText, 0, cipherText.Length);
-
-                    byte[] computedHmac = ComputeHmac(cipherText, iv);
-                    if (!CompareHashes(hmac, computedHmac))
+                    if (isVersion2)
                     {
-                        // P0-6 migration: attempt legacy AES-128 format; if valid,
-                        // re-encrypt with the new AES-256 keys and continue.
-                        if (TryLegacyDecrypt(iv, hmac, cipherText, out string legacyVal))
-                        {
-                            _cache[key] = legacyVal;
-                            SaveKeyToDisk(key, legacyVal);
-                            return legacyVal;
-                        }
-
-                        NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
-                        _cache[key] = null;
-                        return defaultValue;
+                        return ReadVersion2(rawData, key, defaultValue);
                     }
-
-                    // Decrypt payload
-                    using var aes = Aes.Create();
-                    aes.Key = _encryptionKey;
-                    aes.IV = iv;
-                    using var decryptor = aes.CreateDecryptor();
-                    byte[] plainBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
-                    string val = Encoding.UTF8.GetString(plainBytes);
-                    _cache[key] = val;
-                    return val;
+                    else
+                    {
+                        return ReadLegacy(rawData, key, defaultValue);
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -280,6 +241,71 @@ namespace Nexus.Core.Services
             }
         }
 
+        /// <summary>
+        /// Reads a version-2 format file: VERSION(1) + IV(16) + HMAC(32) + cipherText.
+        /// </summary>
+        private string ReadVersion2(byte[] rawData, string key, string defaultValue)
+        {
+            // Offset: version(1) + IV(16) = 17
+            const int ivOffset = 1;
+            const int hmacOffset = 17; // 1 + 16
+            const int cipherOffset = 49; // 1 + 16 + 32
+
+            byte[] iv = new byte[16];
+            byte[] hmac = new byte[32];
+            byte[] cipherText = new byte[rawData.Length - cipherOffset];
+
+            Buffer.BlockCopy(rawData, ivOffset, iv, 0, 16);
+            Buffer.BlockCopy(rawData, hmacOffset, hmac, 0, 32);
+            Buffer.BlockCopy(rawData, cipherOffset, cipherText, 0, cipherText.Length);
+
+            // Verify HMAC-SHA256 (full 32 bytes)
+            byte[] computedHmac = ComputeHmac(cipherText, iv);
+            if (!CompareHashes(hmac, computedHmac))
+            {
+                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
+                _cache[key] = null;
+                return defaultValue;
+            }
+
+            // Decrypt payload with AES-256
+            using var aes = Aes.Create();
+            aes.Key = _encryptionKey;
+            aes.IV = iv;
+            using var decryptor = aes.CreateDecryptor();
+            byte[] plainBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
+            string val = Encoding.UTF8.GetString(plainBytes);
+            _cache[key] = val;
+            return val;
+        }
+
+        /// <summary>
+        /// Reads a legacy (v1) format file: IV(16) + truncated-HMAC(16) + cipherText.
+        /// Attempts legacy AES-128 decryption; on success, re-encrypts with AES-256 (v2 format).
+        /// </summary>
+        private string ReadLegacy(byte[] rawData, string key, string defaultValue)
+        {
+            byte[] iv = new byte[16];
+            byte[] hmac = new byte[16];
+            byte[] cipherText = new byte[rawData.Length - 32];
+
+            Buffer.BlockCopy(rawData, 0, iv, 0, 16);
+            Buffer.BlockCopy(rawData, 16, hmac, 0, 16);
+            Buffer.BlockCopy(rawData, 32, cipherText, 0, cipherText.Length);
+
+            if (TryLegacyDecrypt(iv, hmac, cipherText, out string legacyVal))
+            {
+                // Successfully migrated: re-encrypt with AES-256 (v2 format) in-place.
+                _cache[key] = legacyVal;
+                SaveKeyToDisk(key, legacyVal);
+                return legacyVal;
+            }
+
+            NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
+            _cache[key] = null;
+            return defaultValue;
+        }
+
         public void SetString(string key, string value)
         {
             if (string.IsNullOrEmpty(key)) return;
@@ -287,21 +313,21 @@ namespace Nexus.Core.Services
             lock (_lock)
             {
                 _cache.TryGetValue(key, out string oldVal);
-                if (oldVal == value) return; // No change
+                if (oldVal == value) return;
 
                 _cache[key] = value;
 
                 if (AutoSave)
-                {
                     SaveKeyToDisk(key, value);
-                }
                 else
-                {
                     _dirtyKeys.Add(key);
-                }
             }
         }
 
+        /// <summary>
+        /// Writes a version-2 format file: VERSION(1) + IV(16) + HMAC-SHA256(32) + cipherText.
+        /// Uses atomic write with temp file + retry for Windows handle-contention safety.
+        /// </summary>
         private void SaveKeyToDisk(string key, string value)
         {
             string filePath = GetFilePath(key);
@@ -316,16 +342,14 @@ namespace Nexus.Core.Services
                 byte[] cipherText = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
                 byte[] hmac = ComputeHmac(cipherText, aes.IV);
 
-                byte[] finalBuffer = new byte[16 + 16 + cipherText.Length];
-                Buffer.BlockCopy(aes.IV, 0, finalBuffer, 0, 16);
-                Buffer.BlockCopy(hmac, 0, finalBuffer, 16, 16);
-                Buffer.BlockCopy(cipherText, 0, finalBuffer, 32, cipherText.Length);
+                // VERSION(1) + IV(16) + HMAC(32) + cipherText
+                byte[] finalBuffer = new byte[HeaderSize + cipherText.Length];
+                finalBuffer[0] = CurrentFormatVersion;
+                Buffer.BlockCopy(aes.IV, 0, finalBuffer, 1, 16);
+                Buffer.BlockCopy(hmac, 0, finalBuffer, 17, 32);
+                Buffer.BlockCopy(cipherText, 0, finalBuffer, HeaderSize, cipherText.Length);
 
-                // Atomic write with temp file backup. On Windows, File.Delete may not
-                // release the destination handle instantly (AV/indexer/streams), so the
-                // follow-up File.Move can throw IOException "file already exists". .NET
-                // Standard 2.0 has no File.Move(..., overwrite: true) overload, so we
-                // retry the delete+move briefly before giving up.
+                // Atomic write with temp file backup
                 string tempPath = filePath + ".tmp";
                 File.WriteAllBytes(tempPath, finalBuffer);
 
@@ -351,9 +375,9 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// P0-6 migration helper: verifies and decrypts a payload written by the old
-        /// AES-128 format (16-byte key split of the seed hash). Returns false if the
-        /// payload does not match the legacy format.
+        /// Legacy (v1) format migration helper: verifies and decrypts a payload written
+        /// with AES-128 + truncated HMAC-SHA256 (16-byte). Returns false if the payload
+        /// does not match the legacy format.
         /// </summary>
         private bool TryLegacyDecrypt(byte[] iv, byte[] hmac, byte[] cipherText, out string value)
         {
@@ -384,9 +408,7 @@ namespace Nexus.Core.Services
             lock (_lock)
             {
                 if (_cache.TryGetValue(key, out string cachedVal))
-                {
                     return cachedVal != null;
-                }
                 return File.Exists(GetFilePath(key));
             }
         }
@@ -403,10 +425,7 @@ namespace Nexus.Core.Services
                 string path = GetFilePath(key);
                 if (File.Exists(path))
                 {
-                    try
-                    {
-                        File.Delete(path);
-                    }
+                    try { File.Delete(path); }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
@@ -424,9 +443,7 @@ namespace Nexus.Core.Services
                 foreach (var key in _dirtyKeys)
                 {
                     if (_cache.TryGetValue(key, out string val) && val != null)
-                    {
                         SaveKeyToDisk(key, val);
-                    }
                 }
                 _dirtyKeys.Clear();
             }
@@ -434,7 +451,6 @@ namespace Nexus.Core.Services
 
         private string GetFilePath(string key)
         {
-            // P2-14 fix: cache computed file paths — avoids MD5.Create() allocation churn per call.
             if (_filePathCache.TryGetValue(key, out string cached)) return cached;
 
             using var md5 = MD5.Create();
@@ -445,22 +461,28 @@ namespace Nexus.Core.Services
             return path;
         }
 
+        /// <summary>
+        /// Computes a full 32-byte HMAC-SHA256 over (IV || cipherText) using the current HMAC key.
+        /// </summary>
         private byte[] ComputeHmac(byte[] data, byte[] iv)
         {
             return ComputeHmacWithKey(data, iv, _hmacKey);
         }
 
+        /// <summary>
+        /// Computes a full 32-byte HMAC-SHA256 over (IV || cipherText) using the specified key.
+        /// </summary>
         private static byte[] ComputeHmacWithKey(byte[] data, byte[] iv, byte[] key)
         {
             using var hmac = new HMACSHA256(key);
             hmac.TransformBlock(iv, 0, iv.Length, null, 0);
             hmac.TransformFinalBlock(data, 0, data.Length);
-            byte[] fullHash = hmac.Hash;
-            byte[] result = new byte[16];
-            Buffer.BlockCopy(fullHash, 0, result, 0, 16);
-            return result;
+            return hmac.Hash; // Full 32-byte HMAC-SHA256 output
         }
 
+        /// <summary>
+        /// Constant-time hash comparison to prevent timing attacks.
+        /// </summary>
         private static bool CompareHashes(byte[] a, byte[] b)
         {
             if (a.Length != b.Length) return false;

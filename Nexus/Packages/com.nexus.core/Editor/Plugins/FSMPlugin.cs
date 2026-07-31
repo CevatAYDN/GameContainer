@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Nexus.Core;
@@ -24,7 +25,8 @@ namespace Nexus.Editor
         private VisualElement _view;
         private ScrollView _content;
         private Label _statusBar;
-        private IVisualElementScheduledItem _refreshSchedule;
+        private bool _rebuildPending;
+        private double _lastRebuildTime;
 
         // Editor-observed transition history keyed by machine instance (weak-ish; cleared on rebind).
         private readonly Dictionary<IGameStateMachine, List<string>> _history = new();
@@ -46,14 +48,23 @@ namespace Nexus.Editor
             _statusBar = NexusEditorStyles.CreateStatusBar();
             _view.Add(_statusBar);
 
-            _refreshSchedule = _view.schedule.Execute(Render).Every(300);
+            _rebuildPending = true;
             Render();
             return _view;
         }
 
+        public override void OnUpdate()
+        {
+            if (!_rebuildPending && EditorApplication.timeSinceStartup - _lastRebuildTime < 0.3)
+                return;
+            _rebuildPending = false;
+            _lastRebuildTime = EditorApplication.timeSinceStartup;
+            Render();
+        }
+
         public override void OnDisable()
         {
-            _refreshSchedule?.Pause();
+            _rebuildPending = false;
             foreach (var kvp in _subscribed)
                 kvp.Key.OnStateChanged -= kvp.Value;
             _subscribed.Clear();

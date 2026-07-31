@@ -119,3 +119,18 @@ Reset → Inject → Bind  (sıralama güvenli)
 | 4. Retry timeout | ✅ Zaten mevcut | `[CommandTimeout]` + linked CTS + 1 yeni test |
 
 Raporun 4 maddesinden 3'ü önceki turlarda çözülmüştü; gerçek boşluk olan 1 madde (ViewBinder reset hijyeni) bu turda hem düzeltildi hem de taban sınıf seviyesinde zorunlu kılındı ve testlerle koruma altına alındı. Ek olarak rapor dışı 2 anti-cheat iyileştirmesi (IapService checksum, AdService cooldown maskeleme) tamamlandı.
+
+---
+
+## 🔧 İkinci Kod Review — 31 Temmuz 2026 Fix Listesi
+
+| # | Sorun | Seviye | Durum | Dosya |
+|---|-------|--------|-------|-------|
+| 1 | SecureObservableInt/Long/Float/String: Tek XOR -> dual keys + integrity canary | 🔴 HIGH | ✅ Düzeltildi | `Runtime/Models/SecureObservableProperty.cs` |
+| 2 | EncryptedStorageService: HMAC truncated 16-byte -> full 32-byte + V2 format | 🔴 HIGH | ✅ Düzeltildi | `Runtime/Services/Storage/EncryptedStorageService.cs` |
+| 3 | SignalBus.Dispose: _inFlightAsyncCommands unsynchronized read | 🔴 HIGH | ✅ Düzeltildi | `Runtime/Core/SignalBus.cs` |
+| 4 | CommandPool.Cleanup: Her Return'de ClearInjectedReferences -> skip non-[Inject] | 🟡 MEDIUM | ✅ Düzeltildi | `Runtime/Core/CommandPool.cs` |
+| 5 | NexusDI: s_setterCompileWarnings unbounded growth -> 1024 limit | 🟡 MEDIUM | ✅ Düzeltildi | `Runtime/Core/NexusDI.cs` |
+
+**LSP Diagnostics:** Tüm değiştirilen dosyalar: **0 error**.
+**CHANGELOG:** Güncellendi — `CHANGELOG.md` Security + Fixed bölümleri.

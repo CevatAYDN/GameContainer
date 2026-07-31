@@ -304,10 +304,19 @@ namespace Nexus.Core
             // and falls back to reflection, so this is informational rather than an error.
             // Logging is limited to editor/dev builds: in release players the reflection
             // fallback is the intended behavior, so staying silent avoids startup warning spam.
-            private static readonly ConcurrentDictionary<(Type, string), byte> s_setterCompileWarnings = new();
+            /// <summary>
+            /// Maximum number of unique (type, member) compile-failure pairs to track.
+            /// Beyond this, warnings are silently dropped to prevent unbounded memory growth
+            /// in long-running editor sessions with many assemblies.
+            /// </summary>
+            private const int MaxSetterCompileWarnings = 1024;
+
+            private static readonly ConcurrentDictionary<(Type, string), byte> s_setterCompileWarnings = new(4, 128);
 
             private static void LogSetterCompileFailureOnce(Type targetType, string memberName, Exception ex)
             {
+                // Prevent unbounded growth in long-running editor sessions
+                if (s_setterCompileWarnings.Count > MaxSetterCompileWarnings) return;
                 if (!s_setterCompileWarnings.TryAdd((targetType, memberName), 0)) return;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 NexusRuntime.Logger?.LogWarning($"[Nexus] Setter compilation failed for {targetType.FullName}.{memberName}: {ex.Message}. Falling back to reflection.");

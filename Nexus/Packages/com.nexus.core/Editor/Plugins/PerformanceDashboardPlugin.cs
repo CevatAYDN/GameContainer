@@ -47,7 +47,6 @@ namespace Nexus.Editor
         private Label _fpsLabel, _memLabel, _gcLabel, _sigLabel, _cmdLabel;
         private Label _fpsAlarmLabel, _memAlarmLabel;
         private VisualElement _statsContainer;
-        private IVisualElementScheduledItem _refreshSchedule;
         private bool _recording;
         private double _sampleInterval = 0.5;
         private double _lastSampleTime;

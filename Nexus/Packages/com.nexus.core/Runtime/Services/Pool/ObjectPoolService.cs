@@ -214,6 +214,12 @@ namespace Nexus.Core.Services
                         int activeId = GetId(active);
                         _poolsByInstanceId.Remove(activeId);
                         _spawnGenerations.Remove(activeId);
+                        var poolables = active.GetComponents<IPoolable>();
+                        for (int i = 0; i < poolables.Length; i++)
+                        {
+                            try { poolables[i].OnDespawned(); }
+                            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+                        }
                         UnityEngine.Object.Destroy(active);
                     }
                 }
@@ -241,7 +247,16 @@ namespace Nexus.Core.Services
                 }
                 foreach (var active in pool.Active)
                 {
-                    if (active != null) UnityEngine.Object.Destroy(active);
+                    if (active != null)
+                    {
+                        var poolables = active.GetComponents<IPoolable>();
+                        for (int i = 0; i < poolables.Length; i++)
+                        {
+                            try { poolables[i].OnDespawned(); }
+                            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+                        }
+                        UnityEngine.Object.Destroy(active);
+                    }
                 }
                 if (pool.RootTransform != null) UnityEngine.Object.Destroy(pool.RootTransform.gameObject);
             }

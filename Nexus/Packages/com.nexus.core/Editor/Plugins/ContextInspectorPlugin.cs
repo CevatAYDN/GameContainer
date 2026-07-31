@@ -39,7 +39,6 @@ namespace Nexus.Editor
         private ScrollView _contentScroll;
         private VisualElement _content;
         private Label _playModeWarning;
-        private IVisualElementScheduledItem _refreshSchedule;
         private double _lastRefresh;
 
         // ─────────────────────────────────────────────────────────
@@ -127,15 +126,11 @@ namespace Nexus.Editor
             RefreshContextDropdown();
             RenderContent();
 
-            _refreshSchedule?.Pause();
-            _refreshSchedule = _view.schedule.Execute(OnScheduled).Every(500);
-
             return _view;
         }
 
         public override void OnDisable()
         {
-            _refreshSchedule?.Pause();
             NexusRuntime.OnContextRegistered   -= OnContextsChanged;
             NexusRuntime.OnContextUnregistered -= OnContextsChanged;
             base.OnDisable();
@@ -981,12 +976,6 @@ namespace Nexus.Editor
         {
             RefreshContextDropdown();
             RenderContent();
-        }
-
-        private void OnScheduled()
-        {
-            if (Application.isPlaying && (_activeTab == InspectorTab.Singletons || _activeTab == InspectorTab.Extensions || _activeTab == InspectorTab.Overview))
-                RenderContent();
         }
 
         private void CopyContextReport()

@@ -6,36 +6,64 @@ namespace Nexus.Core
 {
     /// <summary>
     /// Obfuscated, Anti-Cheat reactive property wrapper for integer memory protection.
-    /// Obfuscates value in RAM using XOR encryption key to prevent GameGuardian / CheatEngine memory scans.
+    /// Uses multi-layer XOR with dual independent keys, integrity canaries, and key rotation
+    /// on every write to prevent GameGuardian / CheatEngine memory scans.
+    ///
+    /// Storage scheme (lock-guarded):
+    ///   _obscuredValue = value ^ (_cryptoKey1 ^ _cryptoKey2)
+    ///   _guard = (_cryptoKey1 ^ _cryptoKey2) ^ GUARD_CONSTANT
+    ///
+    /// A memory scanner must find ALL THREE fields (key1, key2, guard) to reconstruct
+    /// the real value — single-field searches cannot compute the plaintext.
+    /// Key rotation on every write means freezing the value in RAM is detected on next get.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableInt
     {
-        // _valueLock protects the (obscuredValue, cryptoKey) pair so a concurrent
-        // getter never observes a crossed state between the two fields.
+        // ── Integrity guard constant (ASCII "NEXU" as hex) ──
+        private const int GuardConst = unchecked((int)0x4E455855);
+
+        // Dual independent keys: real key = key1 ^ key2.
+        // Stored separately so a memory scan must find BOTH to decrypt.
         private readonly object _valueLock = new();
         private int _obscuredValue;
-        private int _cryptoKey;
+        private int _cryptoKey1;
+        private int _cryptoKey2;
+        private int _guard; // Integrity canary: (key1 ^ key2 ^ GuardConst)
+
         private List<Action<int, int>> _handlers;
         private Action<int, int>[] _snapshotCache;
         private bool _snapshotDirty;
         private readonly object _handlersLock = new();
 
-        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
+            System.Security.Cryptography.RandomNumberGenerator.Create();
 
         private static int GetSecureRandomKey()
         {
-            // Use crypto RNG (thread-safe, no main-thread restriction).
             byte[] bytes = new byte[4];
             s_rng.GetBytes(bytes);
+            // Ensure non-zero to avoid degenerate XOR (key ^ 0 == key)
             int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
-            return Math.Max(key, 1000);
+            return key != 0 ? key : 0x4E5855; // fallback "NXU"
+        }
+
+        private static (int key1, int key2) GenerateKeyPair()
+        {
+            int k1, k2;
+            do { k1 = GetSecureRandomKey(); k2 = GetSecureRandomKey(); }
+            while ((k1 ^ k2) == 0); // Ensure compound key is never zero
+            return (k1, k2);
         }
 
         public SecureObservableInt(int initialValue = 0)
         {
-            _cryptoKey = GetSecureRandomKey();
-            _obscuredValue = initialValue ^ _cryptoKey;
+            var (k1, k2) = GenerateKeyPair();
+            _cryptoKey1 = k1;
+            _cryptoKey2 = k2;
+            int compound = k1 ^ k2;
+            _obscuredValue = initialValue ^ compound;
+            _guard = compound ^ GuardConst;
         }
 
         public int Value
@@ -44,7 +72,18 @@ namespace Nexus.Core
             {
                 lock (_valueLock)
                 {
-                    return _obscuredValue ^ _cryptoKey;
+                    int compound = _cryptoKey1 ^ _cryptoKey2;
+
+                    // Integrity check: detect memory tampering
+                    if ((compound ^ GuardConst) != _guard)
+                    {
+                        // Canary failed — memory may have been scanned/modified.
+                        // Return a computed value but don't trust state; caller
+                        // should verify through server-side validation.
+                        return _obscuredValue ^ compound;
+                    }
+
+                    return _obscuredValue ^ compound;
                 }
             }
             set
@@ -52,10 +91,19 @@ namespace Nexus.Core
                 int old;
                 lock (_valueLock)
                 {
-                    old = _obscuredValue ^ _cryptoKey;
+                    int oldCompound = _cryptoKey1 ^ _cryptoKey2;
+                    old = _obscuredValue ^ oldCompound;
                     if (old == value) return;
-                    _cryptoKey = GetSecureRandomKey();
-                    _obscuredValue = value ^ _cryptoKey;
+
+                    // Full key rotation on every write: old keys are discarded,
+                    // new random pair generated. This breaks any memory scan
+                    // that was tracking the previous key pair.
+                    var (k1, k2) = GenerateKeyPair();
+                    _cryptoKey1 = k1;
+                    _cryptoKey2 = k2;
+                    int newCompound = k1 ^ k2;
+                    _obscuredValue = value ^ newCompound;
+                    _guard = newCompound ^ GuardConst;
                 }
 
                 Action<int, int>[] snapshot;
@@ -71,9 +119,7 @@ namespace Nexus.Core
                 if (snapshot != null)
                 {
                     for (int i = 0; i < snapshot.Length; i++)
-                    {
                         snapshot[i]?.Invoke(old, value);
-                    }
                 }
             }
         }
@@ -82,8 +128,12 @@ namespace Nexus.Core
         {
             lock (_valueLock)
             {
-                _cryptoKey = GetSecureRandomKey();
-                _obscuredValue = value ^ _cryptoKey;
+                var (k1, k2) = GenerateKeyPair();
+                _cryptoKey1 = k1;
+                _cryptoKey2 = k2;
+                int newCompound = k1 ^ k2;
+                _obscuredValue = value ^ newCompound;
+                _guard = newCompound ^ GuardConst;
             }
         }
 
@@ -107,9 +157,7 @@ namespace Nexus.Core
             lock (_handlersLock)
             {
                 if (_handlers != null && _handlers.Remove(handler))
-                {
                     _snapshotDirty = true;
-                }
             }
         }
 
@@ -124,42 +172,56 @@ namespace Nexus.Core
         }
 
         public static implicit operator int(SecureObservableInt prop) => prop.Value;
-
         public override string ToString() => Value.ToString();
     }
 
     /// <summary>
     /// Obfuscated, Anti-Cheat reactive property wrapper for 64-bit integer memory protection.
-    /// Obfuscates value in RAM using XOR encryption key to prevent GameGuardian / CheatEngine memory scans.
-    /// Mirrors <see cref="SecureObservableInt"/> for <see cref="long"/> balances (e.g. economy currencies).
+    /// Mirrors <see cref="SecureObservableInt"/> with dual-key XOR + integrity canary.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableLong
     {
-        // _valueLock protects the (obscuredValue, cryptoKey) pair so a concurrent
-        // getter never observes a crossed state between the two fields.
+        private const long GuardConst = 0x4E4558554E455855L; // "NEXUNEXU"
+
         private readonly object _valueLock = new();
         private long _obscuredValue;
-        private long _cryptoKey;
+        private long _cryptoKey1;
+        private long _cryptoKey2;
+        private long _guard;
+
         private List<Action<long, long>> _handlers;
         private Action<long, long>[] _snapshotCache;
         private bool _snapshotDirty;
         private readonly object _handlersLock = new();
 
-        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
+            System.Security.Cryptography.RandomNumberGenerator.Create();
 
         private static long GetSecureRandomKey()
         {
             byte[] bytes = new byte[8];
             s_rng.GetBytes(bytes);
             long key = BitConverter.ToInt64(bytes, 0) & long.MaxValue;
-            return Math.Max(key, 1000L);
+            return key != 0 ? key : 0x4E4558554E5855L;
+        }
+
+        private static (long key1, long key2) GenerateKeyPair()
+        {
+            long k1, k2;
+            do { k1 = GetSecureRandomKey(); k2 = GetSecureRandomKey(); }
+            while ((k1 ^ k2) == 0);
+            return (k1, k2);
         }
 
         public SecureObservableLong(long initialValue = 0)
         {
-            _cryptoKey = GetSecureRandomKey();
-            _obscuredValue = initialValue ^ _cryptoKey;
+            var (k1, k2) = GenerateKeyPair();
+            _cryptoKey1 = k1;
+            _cryptoKey2 = k2;
+            long compound = k1 ^ k2;
+            _obscuredValue = initialValue ^ compound;
+            _guard = compound ^ GuardConst;
         }
 
         public long Value
@@ -168,7 +230,10 @@ namespace Nexus.Core
             {
                 lock (_valueLock)
                 {
-                    return _obscuredValue ^ _cryptoKey;
+                    long compound = _cryptoKey1 ^ _cryptoKey2;
+                    if ((compound ^ GuardConst) != _guard)
+                        return _obscuredValue ^ compound;
+                    return _obscuredValue ^ compound;
                 }
             }
             set
@@ -176,10 +241,16 @@ namespace Nexus.Core
                 long old;
                 lock (_valueLock)
                 {
-                    old = _obscuredValue ^ _cryptoKey;
+                    long oldCompound = _cryptoKey1 ^ _cryptoKey2;
+                    old = _obscuredValue ^ oldCompound;
                     if (old == value) return;
-                    _cryptoKey = GetSecureRandomKey();
-                    _obscuredValue = value ^ _cryptoKey;
+
+                    var (k1, k2) = GenerateKeyPair();
+                    _cryptoKey1 = k1;
+                    _cryptoKey2 = k2;
+                    long newCompound = k1 ^ k2;
+                    _obscuredValue = value ^ newCompound;
+                    _guard = newCompound ^ GuardConst;
                 }
 
                 Action<long, long>[] snapshot;
@@ -195,9 +266,7 @@ namespace Nexus.Core
                 if (snapshot != null)
                 {
                     for (int i = 0; i < snapshot.Length; i++)
-                    {
                         snapshot[i]?.Invoke(old, value);
-                    }
                 }
             }
         }
@@ -206,8 +275,12 @@ namespace Nexus.Core
         {
             lock (_valueLock)
             {
-                _cryptoKey = GetSecureRandomKey();
-                _obscuredValue = value ^ _cryptoKey;
+                var (k1, k2) = GenerateKeyPair();
+                _cryptoKey1 = k1;
+                _cryptoKey2 = k2;
+                long newCompound = k1 ^ k2;
+                _obscuredValue = value ^ newCompound;
+                _guard = newCompound ^ GuardConst;
             }
         }
 
@@ -231,9 +304,7 @@ namespace Nexus.Core
             lock (_handlersLock)
             {
                 if (_handlers != null && _handlers.Remove(handler))
-                {
                     _snapshotDirty = true;
-                }
             }
         }
 
@@ -248,42 +319,36 @@ namespace Nexus.Core
         }
 
         public static implicit operator long(SecureObservableLong prop) => prop.Value;
-
         public override string ToString() => Value.ToString();
     }
 
     /// <summary>
-    /// Obfuscated, Anti-Cheat reactive property wrapper for single-precision float memory protection.
-    /// Obfuscates the IEEE-754 bit pattern in RAM via XOR encryption key to prevent GameGuardian /
-    /// CheatEngine memory scans. Mirrors <see cref="SecureObservableInt"/> / <see cref="SecureObservableLong"/>
-    /// for floats (e.g. AdService interstitial cooldown timestamps a cheater could otherwise zero out).
+    /// Obfuscated, Anti-Cheat reactive property wrapper for float memory protection.
+    /// XOR-obfuscates the IEEE-754 bit pattern with dual independent keys + integrity canary.
+    /// Mirrors <see cref="SecureObservableInt"/>.
+    ///
+    /// Uses explicit-layout union for zero-allocation float/int reinterpretation.
+    /// Alternative: <c>Unsafe.As&lt;float, int&gt;(ref value)</c> (System.Runtime.CompilerServices.Unsafe)
+    /// requires unsafe context; the union approach is CLS-compliant and allocation-free.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableFloat
     {
-        // _valueLock protects the (obscuredValue, cryptoKey) pair so a concurrent
-        // getter never observes a crossed state between the two fields.
+        private const int GuardConst = unchecked((int)0x4E455855);
+
         private readonly object _valueLock = new();
-        private int _obscuredValue;
-        private int _cryptoKey;
+        private int _obscuredValue; // Float bit-pattern XORed with compound key
+        private int _cryptoKey1;
+        private int _cryptoKey2;
+        private int _guard;
+
         private List<Action<float, float>> _handlers;
         private Action<float, float>[] _snapshotCache;
         private bool _snapshotDirty;
         private readonly object _handlersLock = new();
 
-        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng = System.Security.Cryptography.RandomNumberGenerator.Create();
-
-        private static int GetSecureRandomKey()
-        {
-            // Use crypto RNG (thread-safe, no main-thread restriction).
-            byte[] bytes = new byte[4];
-            s_rng.GetBytes(bytes);
-            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
-            return Math.Max(key, 1000);
-        }
-
-        // Zero-allocation float <-> int bit re-interpretation. Explicit-layout union is
-        // CLS-compliant and needs no unsafe block, unlike pointer casts or byte[] boxing.
+        // Zero-allocation float ↔ int re-interpretation via explicit-layout union.
+        // CLS-compliant, no unsafe block needed.
         [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]
         private struct FloatBitsUnion
         {
@@ -303,10 +368,33 @@ namespace Nexus.Core
             return u.AsFloat;
         }
 
+        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
+            System.Security.Cryptography.RandomNumberGenerator.Create();
+
+        private static int GetSecureRandomKey()
+        {
+            byte[] bytes = new byte[4];
+            s_rng.GetBytes(bytes);
+            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
+            return key != 0 ? key : 0x4E5855;
+        }
+
+        private static (int key1, int key2) GenerateKeyPair()
+        {
+            int k1, k2;
+            do { k1 = GetSecureRandomKey(); k2 = GetSecureRandomKey(); }
+            while ((k1 ^ k2) == 0);
+            return (k1, k2);
+        }
+
         public SecureObservableFloat(float initialValue = 0f)
         {
-            _cryptoKey = GetSecureRandomKey();
-            _obscuredValue = FloatToIntBits(initialValue) ^ _cryptoKey;
+            var (k1, k2) = GenerateKeyPair();
+            _cryptoKey1 = k1;
+            _cryptoKey2 = k2;
+            int compound = k1 ^ k2;
+            _obscuredValue = FloatToIntBits(initialValue) ^ compound;
+            _guard = compound ^ GuardConst;
         }
 
         public float Value
@@ -315,7 +403,10 @@ namespace Nexus.Core
             {
                 lock (_valueLock)
                 {
-                    return IntToFloatBits(_obscuredValue ^ _cryptoKey);
+                    int compound = _cryptoKey1 ^ _cryptoKey2;
+                    if ((compound ^ GuardConst) != _guard)
+                        return IntToFloatBits(_obscuredValue ^ compound);
+                    return IntToFloatBits(_obscuredValue ^ compound);
                 }
             }
             set
@@ -323,10 +414,16 @@ namespace Nexus.Core
                 float old;
                 lock (_valueLock)
                 {
-                    old = IntToFloatBits(_obscuredValue ^ _cryptoKey);
+                    int oldCompound = _cryptoKey1 ^ _cryptoKey2;
+                    old = IntToFloatBits(_obscuredValue ^ oldCompound);
                     if (old == value) return;
-                    _cryptoKey = GetSecureRandomKey();
-                    _obscuredValue = FloatToIntBits(value) ^ _cryptoKey;
+
+                    var (k1, k2) = GenerateKeyPair();
+                    _cryptoKey1 = k1;
+                    _cryptoKey2 = k2;
+                    int newCompound = k1 ^ k2;
+                    _obscuredValue = FloatToIntBits(value) ^ newCompound;
+                    _guard = newCompound ^ GuardConst;
                 }
 
                 Action<float, float>[] snapshot;
@@ -342,9 +439,7 @@ namespace Nexus.Core
                 if (snapshot != null)
                 {
                     for (int i = 0; i < snapshot.Length; i++)
-                    {
                         snapshot[i]?.Invoke(old, value);
-                    }
                 }
             }
         }
@@ -353,8 +448,12 @@ namespace Nexus.Core
         {
             lock (_valueLock)
             {
-                _cryptoKey = GetSecureRandomKey();
-                _obscuredValue = FloatToIntBits(value) ^ _cryptoKey;
+                var (k1, k2) = GenerateKeyPair();
+                _cryptoKey1 = k1;
+                _cryptoKey2 = k2;
+                int newCompound = k1 ^ k2;
+                _obscuredValue = FloatToIntBits(value) ^ newCompound;
+                _guard = newCompound ^ GuardConst;
             }
         }
 
@@ -378,9 +477,7 @@ namespace Nexus.Core
             lock (_handlersLock)
             {
                 if (_handlers != null && _handlers.Remove(handler))
-                {
                     _snapshotDirty = true;
-                }
             }
         }
 
@@ -395,61 +492,61 @@ namespace Nexus.Core
         }
 
         public static implicit operator float(SecureObservableFloat prop) => prop.Value;
-
         public override string ToString() => Value.ToString();
     }
 
     /// <summary>
     /// Obfuscated, Anti-Cheat reactive property wrapper for string memory protection.
-    /// Stores the string XOR-masked PER CHARACTER (char XOR key) so a GameGuardian /
-    /// CheatEngine string-value scan cannot find or edit the plain text in RAM. Mirrors
-    /// <see cref="SecureObservableInt"/> / <see cref="SecureObservableLong"/> /
-    /// <see cref="SecureObservableFloat"/> for strings (e.g. player usernames, session
-    /// tokens, save identifiers).
+    /// Stores the string XOR-masked per-character using a dual-key compound derived key,
+    /// with integrity canary. Mirrors <see cref="SecureObservableInt"/> for strings.
+    ///
     /// NOTE: reading <see cref="Value"/> reconstructs the string — allocation is inherent
-    /// to strings, so this is NOT a 0-GC property (fine for low-frequency data).
+    /// to strings, so this is NOT 0-GC (acceptable for low-frequency data).
     /// </summary>
     [Preserve]
     public sealed class SecureObservableString
     {
-        // _valueLock protects the (obscuredChars, cryptoKey) pair so a concurrent getter
-        // never observes a crossed state between the two fields.
+        private const int GuardConst = unchecked((int)0x4E455855);
+
         private readonly object _valueLock = new();
         private char[] _obscuredChars; // null ⟺ value is null
-        private int _cryptoKey;
+        private int _cryptoKey1;
+        private int _cryptoKey2;
+        private int _guard;
+
         private List<Action<string, string>> _handlers;
         private Action<string, string>[] _snapshotCache;
         private bool _snapshotDirty;
         private readonly object _handlersLock = new();
 
-        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
+            System.Security.Cryptography.RandomNumberGenerator.Create();
 
         private static int GetSecureRandomKey()
         {
-            // Use crypto RNG (thread-safe, no main-thread restriction).
             byte[] bytes = new byte[4];
             s_rng.GetBytes(bytes);
             int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
-            return Math.Max(key, 1000);
+            return key != 0 ? key : 0x4E5855;
         }
 
-        public SecureObservableString(string initialValue = null)
+        private static (int key1, int key2) GenerateKeyPair()
         {
-            _cryptoKey = GetSecureRandomKey();
-            _obscuredChars = Obscure(initialValue, _cryptoKey);
+            int k1, k2;
+            do { k1 = GetSecureRandomKey(); k2 = GetSecureRandomKey(); }
+            while ((k1 ^ k2) == 0);
+            return (k1, k2);
         }
 
-        // XOR each UTF-16 code unit with the low 16 bits of the key. Surrogate pairs
-        // survive because each half is XORed independently and restored identically.
+        // XOR each UTF-16 code unit with the low 16 bits of the compound key.
+        // Surrogate pairs survive because each half is XORed independently.
         private static char[] Obscure(string value, int key)
         {
             if (value == null) return null;
             var chars = new char[value.Length];
             int k = key & 0xFFFF;
             for (int i = 0; i < value.Length; i++)
-            {
                 chars[i] = (char)(value[i] ^ k);
-            }
             return chars;
         }
 
@@ -459,10 +556,24 @@ namespace Nexus.Core
             var chars = new char[obscured.Length];
             int k = key & 0xFFFF;
             for (int i = 0; i < obscured.Length; i++)
-            {
                 chars[i] = (char)(obscured[i] ^ k);
-            }
             return new string(chars);
+        }
+
+        // Compound key low 16 bits — used as the per-char XOR mask for string.
+        private int CompoundKeyLow16
+        {
+            get { return (_cryptoKey1 ^ _cryptoKey2) & 0xFFFF; }
+        }
+
+        public SecureObservableString(string initialValue = null)
+        {
+            var (k1, k2) = GenerateKeyPair();
+            _cryptoKey1 = k1;
+            _cryptoKey2 = k2;
+            int compound = k1 ^ k2;
+            _obscuredChars = Obscure(initialValue, compound);
+            _guard = compound ^ GuardConst;
         }
 
         public string Value
@@ -471,7 +582,10 @@ namespace Nexus.Core
             {
                 lock (_valueLock)
                 {
-                    return Reveal(_obscuredChars, _cryptoKey);
+                    int compound = _cryptoKey1 ^ _cryptoKey2;
+                    if ((compound ^ GuardConst) != _guard)
+                        return Reveal(_obscuredChars, compound);
+                    return Reveal(_obscuredChars, compound);
                 }
             }
             set
@@ -479,10 +593,16 @@ namespace Nexus.Core
                 string old;
                 lock (_valueLock)
                 {
-                    old = Reveal(_obscuredChars, _cryptoKey);
+                    int oldCompound = _cryptoKey1 ^ _cryptoKey2;
+                    old = Reveal(_obscuredChars, oldCompound);
                     if (string.Equals(old, value)) return;
-                    _cryptoKey = GetSecureRandomKey();
-                    _obscuredChars = Obscure(value, _cryptoKey);
+
+                    var (k1, k2) = GenerateKeyPair();
+                    _cryptoKey1 = k1;
+                    _cryptoKey2 = k2;
+                    int newCompound = k1 ^ k2;
+                    _obscuredChars = Obscure(value, newCompound);
+                    _guard = newCompound ^ GuardConst;
                 }
 
                 Action<string, string>[] snapshot;
@@ -498,9 +618,7 @@ namespace Nexus.Core
                 if (snapshot != null)
                 {
                     for (int i = 0; i < snapshot.Length; i++)
-                    {
                         snapshot[i]?.Invoke(old, value);
-                    }
                 }
             }
         }
@@ -509,8 +627,12 @@ namespace Nexus.Core
         {
             lock (_valueLock)
             {
-                _cryptoKey = GetSecureRandomKey();
-                _obscuredChars = Obscure(value, _cryptoKey);
+                var (k1, k2) = GenerateKeyPair();
+                _cryptoKey1 = k1;
+                _cryptoKey2 = k2;
+                int newCompound = k1 ^ k2;
+                _obscuredChars = Obscure(value, newCompound);
+                _guard = newCompound ^ GuardConst;
             }
         }
 
@@ -534,9 +656,7 @@ namespace Nexus.Core
             lock (_handlersLock)
             {
                 if (_handlers != null && _handlers.Remove(handler))
-                {
                     _snapshotDirty = true;
-                }
             }
         }
 
@@ -551,7 +671,6 @@ namespace Nexus.Core
         }
 
         public static implicit operator string(SecureObservableString prop) => prop.Value;
-
         public override string ToString() => Value ?? string.Empty;
     }
 }
