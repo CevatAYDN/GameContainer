@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `EconomyService.Spend` is now reconciled with the network validator: a server-rejected spend rolls the locally-deducted amount back (bounded at `long.MaxValue`), preventing client/server balance desync.
 
 ### Added
+- `SecureObservableString` (per-char XOR-masked RAM obfuscation, mirroring `SecureObservableInt`/`Long`/`Float`) — player usernames, session tokens and other string state no longer sit in plain RAM where GameGuardian/CheatEngine string scans can read or edit them. Same reactive API (`OnChanged`, `SetWithoutNotify`, implicit `string`).
+- `ViewBinder` pool telemetry — `PoolPopCount`/`PoolReturnCount`/`PoolResetCount`/`PoolLeakWarnings`/`ActiveMediatorCount` counters plus a leak warning when a mediator is returned to the pool while still tracked as active (zombie-binding signal for double-unregister).
 - `docs/SERVICE_AUDIT.md` — full line-by-line audit of all 13 core services (hot-path allocations, O(N²) risks, concurrency, anti-cheat), documenting the two fixes below plus 11 clean/stub verdicts.
 - `docs/REVIEW_VALIDATION.md` — verification & resolution tracker for the 31-Jul detailed code-review report's 4 action items (status, evidence file:line, tests per item).
 - `RecoveryTests.CommandTimeout_CancelsHangingCommand_DoesNotBlockRetryLoop` — proves a `[CommandTimeout]`-annotated hanging async command is cancelled via the linked CTS and never re-enters the retry loop (no infinite retry even with `Retry(10)`).
@@ -32,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `TickService` profiler markers — `Nexus.TickService.Update/FixedUpdate/LateUpdate` via unconditional static `ProfilerMarker`s (same pattern as `SignalBus`; zero-allocation in all builds).
 
 ### Fixed
+- `FSMTransitionHistoryTests.FSM_SupersededTransitionIsRecordedAndSkipped` test expectation corrected: the machine records EVERY transition attempt, so the supersession scenario yields 3 records (initial `null→SlowExit` Success, preempted A Superseded, B Success), not 2 — the test previously asserted the wrong count and shifted indices.
 - `ViewBinder.GetMediator` now calls `(mediator as IResettable)?.Reset()` before re-injecting a pooled mediator — pooled reuse hygiene is now two-way (return-to-pool resets via `ClearInjectedReferences`, pop-from-pool resets defensively) so stale private state from a previous view session can never leak into a new binding.
 - `Mediator<TView>` now implements `IResettable` (with `Reset()` + protected virtual `OnReset()` hook) so pooled-reuse hygiene is **mandatory for all mediators**, not opt-in: `Reset()` disposes surviving subscriptions, nulls `View`/`SignalBus`, and invokes `OnReset()` for derived private state. Idempotent and safe on a freshly created mediator.
 - `HapticService` Android hot path is now allocation-minimal: the six `VibrationEffect` objects (one per `HapticType`) are pre-created at init and cached, eliminating the per-trigger `createOneShot` `AndroidJavaObject` + boxed-args allocation that previously violated the service's 0-GC claim. `OnDispose` releases the cached effects.

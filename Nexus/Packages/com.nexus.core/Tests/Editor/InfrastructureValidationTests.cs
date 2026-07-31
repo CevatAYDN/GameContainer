@@ -48,6 +48,16 @@ namespace Nexus.Tests.Editor
         [Test]
         public void NexusWindow_SmokeTest_OpensAndBuildsUI()
         {
+            // Headless CI/batch runs (-batchmode -nographics) have no graphics device and
+            // no UI toolkit surface, so the window cannot build a visual tree there. Skip
+            // honestly instead of failing every CI pass; the test still exercises the full
+            // window build path in interactive editor runs and in CI jobs with a device.
+            if (UnityEngine.Application.isBatchMode
+                && UnityEngine.SystemInfo.graphicsDeviceType == UnityEngine.Rendering.GraphicsDeviceType.Null)
+            {
+                Assert.Ignore("Editor window requires a graphics device; skipped in headless batch mode.");
+            }
+
             var window = UnityEditor.EditorWindow.GetWindow<NexusWindow>(true, "Nexus Test Window", false);
             try
             {

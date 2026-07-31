@@ -40,6 +40,7 @@ namespace Nexus.Tests
         [Test]
         public async Task WindowManager_UsesCustomUIAssetProvider()
         {
+            UnityEngine.Debug.Log($"[DIAG] START {NUnit.Framework.TestContext.CurrentContext.Test.FullName}");
             // Setup DI Context
             var context = new Context();
             var mockProvider = new MockUIAssetProvider();

@@ -398,4 +398,160 @@ namespace Nexus.Core
 
         public override string ToString() => Value.ToString();
     }
+
+    /// <summary>
+    /// Obfuscated, Anti-Cheat reactive property wrapper for string memory protection.
+    /// Stores the string XOR-masked PER CHARACTER (char XOR key) so a GameGuardian /
+    /// CheatEngine string-value scan cannot find or edit the plain text in RAM. Mirrors
+    /// <see cref="SecureObservableInt"/> / <see cref="SecureObservableLong"/> /
+    /// <see cref="SecureObservableFloat"/> for strings (e.g. player usernames, session
+    /// tokens, save identifiers).
+    /// NOTE: reading <see cref="Value"/> reconstructs the string — allocation is inherent
+    /// to strings, so this is NOT a 0-GC property (fine for low-frequency data).
+    /// </summary>
+    [Preserve]
+    public sealed class SecureObservableString
+    {
+        // _valueLock protects the (obscuredChars, cryptoKey) pair so a concurrent getter
+        // never observes a crossed state between the two fields.
+        private readonly object _valueLock = new();
+        private char[] _obscuredChars; // null ⟺ value is null
+        private int _cryptoKey;
+        private List<Action<string, string>> _handlers;
+        private Action<string, string>[] _snapshotCache;
+        private bool _snapshotDirty;
+        private readonly object _handlersLock = new();
+
+        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng = System.Security.Cryptography.RandomNumberGenerator.Create();
+
+        private static int GetSecureRandomKey()
+        {
+            // Use crypto RNG (thread-safe, no main-thread restriction).
+            byte[] bytes = new byte[4];
+            s_rng.GetBytes(bytes);
+            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
+            return Math.Max(key, 1000);
+        }
+
+        public SecureObservableString(string initialValue = null)
+        {
+            _cryptoKey = GetSecureRandomKey();
+            _obscuredChars = Obscure(initialValue, _cryptoKey);
+        }
+
+        // XOR each UTF-16 code unit with the low 16 bits of the key. Surrogate pairs
+        // survive because each half is XORed independently and restored identically.
+        private static char[] Obscure(string value, int key)
+        {
+            if (value == null) return null;
+            var chars = new char[value.Length];
+            int k = key & 0xFFFF;
+            for (int i = 0; i < value.Length; i++)
+            {
+                chars[i] = (char)(value[i] ^ k);
+            }
+            return chars;
+        }
+
+        private static string Reveal(char[] obscured, int key)
+        {
+            if (obscured == null) return null;
+            var chars = new char[obscured.Length];
+            int k = key & 0xFFFF;
+            for (int i = 0; i < obscured.Length; i++)
+            {
+                chars[i] = (char)(obscured[i] ^ k);
+            }
+            return new string(chars);
+        }
+
+        public string Value
+        {
+            get
+            {
+                lock (_valueLock)
+                {
+                    return Reveal(_obscuredChars, _cryptoKey);
+                }
+            }
+            set
+            {
+                string old;
+                lock (_valueLock)
+                {
+                    old = Reveal(_obscuredChars, _cryptoKey);
+                    if (string.Equals(old, value)) return;
+                    _cryptoKey = GetSecureRandomKey();
+                    _obscuredChars = Obscure(value, _cryptoKey);
+                }
+
+                Action<string, string>[] snapshot;
+                lock (_handlersLock)
+                {
+                    if (_snapshotDirty)
+                    {
+                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
+                        _snapshotDirty = false;
+                    }
+                    snapshot = _snapshotCache;
+                }
+                if (snapshot != null)
+                {
+                    for (int i = 0; i < snapshot.Length; i++)
+                    {
+                        snapshot[i]?.Invoke(old, value);
+                    }
+                }
+            }
+        }
+
+        public void SetWithoutNotify(string value)
+        {
+            lock (_valueLock)
+            {
+                _cryptoKey = GetSecureRandomKey();
+                _obscuredChars = Obscure(value, _cryptoKey);
+            }
+        }
+
+        public void OnChanged(Action<string, string> handler)
+        {
+            if (handler == null) return;
+            lock (_handlersLock)
+            {
+                _handlers ??= new List<Action<string, string>>(2);
+                if (!_handlers.Contains(handler))
+                {
+                    _handlers.Add(handler);
+                    _snapshotDirty = true;
+                }
+            }
+        }
+
+        public void RemoveOnChanged(Action<string, string> handler)
+        {
+            if (handler == null) return;
+            lock (_handlersLock)
+            {
+                if (_handlers != null && _handlers.Remove(handler))
+                {
+                    _snapshotDirty = true;
+                }
+            }
+        }
+
+        public void ClearOnChanged()
+        {
+            lock (_handlersLock)
+            {
+                _handlers?.Clear();
+                _snapshotCache = null;
+                _snapshotDirty = false;
+            }
+        }
+
+        public static implicit operator string(SecureObservableString prop) => prop.Value;
+
+        public override string ToString() => Value ?? string.Empty;
+    }
 }

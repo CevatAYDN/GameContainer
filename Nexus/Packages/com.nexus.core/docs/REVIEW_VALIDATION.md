@@ -102,6 +102,11 @@ Reset → Inject → Bind  (sıralama güvenli)
 - `Runtime/Services/Ads/AdService.cs` — `_interstitialCooldownSeconds` / `_lastInterstitialTime` artık XOR-maskeli; `OnDispose` `ClearOnChanged`.
 - **Testler:** `Tests/Editor/EncryptedStorageAndAntiCheatTests.cs` — 3 `SecureObservableFloat` + 1 AdService cooldown entegrasyon testi.
 
+### 4c. `SecureObservableString` + `ViewBinder` havuz telemetrisi (rapor dışı, takip dokümanının parçası)
+- `Runtime/Models/SecureObservableProperty.cs` — `SecureObservableString` (karakter başına XOR-maskeli, `char ^ (key & 0xFFFF)`; null/boş/surrogate-pair güvenli). Oyun içi kullanıcı adı / oturum token'ı gibi string durumları artık düz RAM'de değil.
+- `Runtime/Lifecycle/ViewBinder.cs` — havuz telemetrisi: `PoolPopCount` / `PoolReturnCount` / `PoolResetCount` / `PoolLeakWarnings` / `ActiveMediatorCount` sayaçları + hâlâ aktif takip edilen bir mediator'ın havuza dönmesinde leak uyarısı (double-unregister / zombie sinyali).
+- **Testler:** `Tests/Editor/EncryptedStorageAndAntiCheatTests.cs` — 4 `SecureObservableString` testi; `Tests/Runtime/ViewBindingTests.cs` — `ViewBinder_PoolStatistics_TrackPopReturnAndReset` + `ViewBinder_PoolLeakWarning_FiresWhenReturningStillActiveMediator` (reflection ile gerçek leak yolunu tetikler).
+
 ---
 
 ## 📌 Sonuç

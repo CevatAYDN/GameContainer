@@ -113,14 +113,23 @@ namespace Nexus.Editor.Tests
             await t1;
 
             Assert.AreSame(stateB, fsm.CurrentState);
-            Assert.AreEqual(2, fsm.TransitionCount,
-                "Both the superseded A attempt and the successful B transition are recorded.");
+            // THREE records, not two: the initial null→SlowExit transition is recorded too
+            // (proven by FSM_RecordsTransitionsAndFiresOnStateChanged, where the first
+            // ChangeStateAsync yields TransitionCount == 1). History is therefore:
+            //   [0] Success    null→MockStateSlowExit
+            //   [1] Superseded MockStateSlowExit→MockStateA   (preempted by B)
+            //   [2] Success    MockStateSlowExit→MockStateB
+            Assert.AreEqual(3, fsm.TransitionCount,
+                "The initial transition, the superseded A attempt, and the successful B transition are all recorded.");
 
             var recent = fsm.GetRecentTransitions();
-            Assert.AreEqual(StateTransitionStatus.Superseded, recent[0].Status);
-            Assert.AreEqual("MockStateA", recent[0].ToState);
-            Assert.AreEqual(StateTransitionStatus.Success, recent[1].Status);
-            Assert.AreEqual("MockStateB", recent[1].ToState);
+            Assert.AreEqual(StateTransitionStatus.Success, recent[0].Status);
+            Assert.AreEqual("MockStateSlowExit", recent[0].ToState);
+            Assert.AreEqual(StateTransitionStatus.Superseded, recent[1].Status);
+            Assert.AreEqual("MockStateSlowExit", recent[1].FromState);
+            Assert.AreEqual("MockStateA", recent[1].ToState);
+            Assert.AreEqual(StateTransitionStatus.Success, recent[2].Status);
+            Assert.AreEqual("MockStateB", recent[2].ToState);
         }
 
         [Test]

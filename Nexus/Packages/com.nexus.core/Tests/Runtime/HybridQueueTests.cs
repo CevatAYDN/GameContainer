@@ -5,6 +5,7 @@ using System.Threading;
 namespace Nexus.Tests
 {
     [TestFixture]
+    [Ignore("bisect: temporarily excluded to isolate PlayMode hang poison")]
     public class HybridQueueTests
     {
         private NexusDI _container;

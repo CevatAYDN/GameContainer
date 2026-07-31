@@ -102,6 +102,24 @@ namespace Nexus.Core
 
         private readonly int _maxMediatorPoolSize = 64;
 
+        // Pool telemetry (main-thread only; plain ints are fine — ViewBinder is not shared
+        // across threads). Used by diagnostics/tests to verify pool hygiene and spot leaks.
+        private int _poolPopCount;
+        private int _poolReturnCount;
+        private int _poolResetCount;
+        private int _poolLeakWarnings;
+
+        /// <summary>Total mediators popped from a pool for reuse (excludes fresh resolves).</summary>
+        public int PoolPopCount => _poolPopCount;
+        /// <summary>Total mediators returned to a pool (includes overflow drops).</summary>
+        public int PoolReturnCount => _poolReturnCount;
+        /// <summary>Total defensive <see cref="IResettable.Reset"/> calls on pool pop.</summary>
+        public int PoolResetCount => _poolResetCount;
+        /// <summary>Times a mediator was returned to the pool while still tracked as active (leak signal).</summary>
+        public int PoolLeakWarnings => _poolLeakWarnings;
+        /// <summary>Currently bound views.</summary>
+        public int ActiveMediatorCount => _activeMediators.Count;
+
         /// <summary>Creates a new <see cref="ViewBinder"/> for the given context.</summary>
         /// <param name="context">The context that owns this binder.</param>
         /// <param name="container">The DI container for resolving mediators.</param>
@@ -179,13 +197,18 @@ namespace Nexus.Core
             if (pool.Count > 0)
             {
                 var mediator = pool.Pop();
+                _poolPopCount++;
                 // Reset BEFORE injecting: a mediator that implements IResettable is reset
                 // when returned to the pool (ClearInjectedReferences), but defensive hygiene
                 // demands the object handed out is guaranteed clean — regardless of which
                 // path put it into the pool (or if the pool was seeded externally). Calling
                 // Reset() again here is idempotent and cheap, and covers private (non-
                 // [Inject]) state that ClearInjectedReferences does not touch.
-                (mediator as IResettable)?.Reset();
+                if (mediator is IResettable resettable)
+                {
+                    resettable.Reset();
+                    _poolResetCount++;
+                }
                 _container.Inject(mediator);
                 return mediator;
             }
@@ -207,7 +230,20 @@ namespace Nexus.Core
                 pool = new Stack<IMediator>();
                 _mediatorPools[type] = pool;
             }
-            
+
+            _poolReturnCount++;
+
+            // Leak signal: a mediator still tracked in _activeMediators at return time means
+            // it was returned without being removed first (double-unregister, or an Unbind
+            // path that skipped the map). The pool would hand out a zombie binding later.
+            if (_activeMediators.ContainsValue(mediator))
+            {
+                _poolLeakWarnings++;
+                NexusRuntime.Logger?.LogWarning(
+                    $"[Nexus] Mediator '{type.Name}' returned to the pool while still tracked as active — " +
+                    "possible mediator leak (double-unregister). The binding map was not cleared for this instance.");
+            }
+
             CleanupMediator(mediator);
             if (pool.Count < _maxMediatorPoolSize)
             {

@@ -41,6 +41,12 @@ namespace Nexus.Tests
             }
         }
 
+        [SetUp]
+        public void Setup()
+        {
+            UnityEngine.Debug.Log($"[DIAG] START {NUnit.Framework.TestContext.CurrentContext.Test.FullName}");
+        }
+
         [Test]
         public void TickService_UpdatesRegisteredTickables()
         {

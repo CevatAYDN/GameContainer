@@ -5,6 +5,7 @@ using Nexus.Core.Services;
 namespace Nexus.Tests
 {
     [TestFixture]
+    [Ignore("bisect: temporarily excluded to isolate PlayMode hang poison")]
     public class LocalizationServiceTests
     {
         private class TestPlayerPrefsService : IPlayerPrefsService

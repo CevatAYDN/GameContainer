@@ -211,6 +211,65 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void SecureObservableString_RAMObfuscationWorksAndFiresOnChanged()
+        {
+            var secureString = new SecureObservableString("Hero");
+            int callCount = 0;
+
+            secureString.OnChanged((oldVal, newVal) => callCount++);
+
+            Assert.AreEqual("Hero", (string)secureString);
+
+            secureString.Value = "Mage";
+            Assert.AreEqual("Mage", (string)secureString);
+            Assert.AreEqual(1, callCount);
+        }
+
+        [Test]
+        public void SecureObservableString_SetWithoutNotifyDoesNotTriggerOnChanged()
+        {
+            var secureString = new SecureObservableString("Hero");
+            int callCount = 0;
+
+            secureString.OnChanged((oldVal, newVal) => callCount++);
+            secureString.SetWithoutNotify("Mage");
+
+            Assert.AreEqual("Mage", (string)secureString);
+            Assert.AreEqual(0, callCount);
+        }
+
+        [Test]
+        public void SecureObservableString_RoundTripsUnicodeNullAndEmpty()
+        {
+            // Per-char XOR masking must survive surrogate pairs (emoji), null, and empty.
+            var secureString = new SecureObservableString("Café-😀-玩家");
+            Assert.AreEqual("Café-😀-玩家", secureString.Value);
+
+            secureString.Value = "";
+            Assert.AreEqual("", secureString.Value);
+
+            secureString.Value = null;
+            Assert.IsNull(secureString.Value);
+
+            var nullStart = new SecureObservableString(null);
+            Assert.IsNull(nullStart.Value);
+            nullStart.Value = "started-null";
+            Assert.AreEqual("started-null", nullStart.Value);
+        }
+
+        [Test]
+        public void SecureObservableString_SameValueAssignmentDoesNotFireOnChanged()
+        {
+            var secureString = new SecureObservableString("Hero");
+            int callCount = 0;
+
+            secureString.OnChanged((oldVal, newVal) => callCount++);
+            secureString.Value = "Hero"; // identical string
+
+            Assert.AreEqual(0, callCount, "Assigning the same value must not notify.");
+        }
+
+        [Test]
         public void IapService_MockOwnedIntegrity_TamperDetectedAndSetCleared()
         {
             var iap = new IapService();

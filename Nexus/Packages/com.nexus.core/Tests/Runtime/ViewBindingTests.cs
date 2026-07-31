@@ -152,6 +152,7 @@ namespace Nexus.Tests
         [SetUp]
         public void Setup()
         {
+            UnityEngine.Debug.Log($"[DIAG] START {NUnit.Framework.TestContext.CurrentContext.Test.FullName}");
             _context = new Context();
         }
 
@@ -340,6 +341,75 @@ namespace Nexus.Tests
 
             binder.UnregisterView(view2);
             Object.DestroyImmediate(go2);
+        }
+
+        [Test]
+        public void ViewBinder_PoolStatistics_TrackPopReturnAndReset()
+        {
+            // Smoke test for the pool telemetry: a fresh resolve must not count as a pop,
+            // a return must increment the return counter, and a reused (popped) mediator must
+            // increment pop + reset counters. Leak warnings must stay at zero in normal flow.
+            var binder = _context.Resolve<ViewBinder>();
+
+            var go1 = new GameObject();
+            var view1 = go1.AddComponent<ResettableDecoratedView>();
+            binder.RegisterView(view1);
+
+            Assert.AreEqual(0, binder.PoolPopCount, "First registration resolves fresh — no pop yet.");
+            Assert.AreEqual(1, binder.ActiveMediatorCount);
+
+            binder.UnregisterView(view1); // ReturnMediator → pool
+            Object.DestroyImmediate(go1);
+            Assert.AreEqual(1, binder.PoolReturnCount);
+
+            var go2 = new GameObject();
+            var view2 = go2.AddComponent<ResettableDecoratedView>();
+            binder.RegisterView(view2); // GetMediator pops the pooled instance + resets
+
+            Assert.AreEqual(1, binder.PoolPopCount, "Second registration must reuse the pool.");
+            Assert.AreEqual(1, binder.PoolResetCount, "Pop must defensively Reset() the pooled mediator.");
+            Assert.AreEqual(0, binder.PoolLeakWarnings, "Normal return/pop flow must not trip the leak detector.");
+
+            binder.UnregisterView(view2);
+            Object.DestroyImmediate(go2);
+            Assert.AreEqual(2, binder.PoolReturnCount);
+            Assert.AreEqual(0, binder.ActiveMediatorCount);
+        }
+
+        [Test]
+        public void ViewBinder_PoolLeakWarning_FiresWhenReturningStillActiveMediator()
+        {
+            // The leak detector can't trip via the public API (UnregisterView removes the
+            // mediator from _activeMediators BEFORE returning it), so exercise it directly:
+            // force-return a mediator that is STILL tracked as active — exactly the zombie
+            // state a double-unregister would create — and assert the warning counter rises.
+            var binder = _context.Resolve<ViewBinder>();
+
+            var go = new GameObject();
+            var view = go.AddComponent<ResettableDecoratedView>();
+            binder.RegisterView(view);
+
+            var activeMediatorsField = typeof(ViewBinder).GetField("_activeMediators",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var activeMediators = activeMediatorsField.GetValue(binder) as System.Collections.IDictionary;
+            var mediator = activeMediators[view] as ResettableMockMediator;
+            Assert.IsNotNull(mediator);
+
+            // Bypass UnregisterView: return the mediator while it is STILL in _activeMediators.
+            var returnMediatorMethod = typeof(ViewBinder).GetMethod("ReturnMediator",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.IsNotNull(returnMediatorMethod, "ReturnMediator must exist as a private instance method.");
+            returnMediatorMethod.Invoke(binder, new object[] { mediator });
+
+            Assert.AreEqual(1, binder.PoolLeakWarnings,
+                "Returning a mediator that is still tracked as active must increment the leak counter.");
+            Assert.AreEqual(1, binder.PoolReturnCount);
+
+            // Clean up the still-active binding. Note: UnregisterView re-returns the mediator,
+            // leaving the same instance in the pool twice — benign, because each test owns a
+            // fresh binder and TearDown clears all pools (no cross-test pollution, no re-pop).
+            binder.UnregisterView(view);
+            Object.DestroyImmediate(go);
         }
 
         [Test]

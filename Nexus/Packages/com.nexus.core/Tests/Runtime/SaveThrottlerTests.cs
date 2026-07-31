@@ -47,6 +47,12 @@ namespace Nexus.Tests
             public float Now { get; set; } = 0f;
         }
 
+        [SetUp]
+        public void Setup()
+        {
+            UnityEngine.Debug.Log($"[DIAG] START {NUnit.Framework.TestContext.CurrentContext.Test.FullName}");
+        }
+
         [Test]
         public void SaveThrottler_FlushesPendingSaveOnTick()
         {
