@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
@@ -57,12 +58,16 @@ namespace Nexus.Core
             public FieldInfo Field { get; set; }
             public Type Type { get; set; }
             public bool IsOptional { get; set; }
+            /// <summary>Compiled setter delegate (fallback to reflection if null).</summary>
+            public Action<object, object> Setter { get; set; }
         }
         internal class InjectableProperty
         {
             public PropertyInfo Property { get; set; }
             public Type Type { get; set; }
             public bool IsOptional { get; set; }
+            /// <summary>Compiled setter delegate (fallback to reflection if null).</summary>
+            public Action<object, object> Setter { get; set; }
         }
         internal class InjectableMethod
         {
@@ -82,6 +87,9 @@ namespace Nexus.Core
         {
             public FieldInfo[] Fields { get; set; }
             public PropertyInfo[] Properties { get; set; }
+            /// <summary>Compiled null-setters (fallback to reflection if null).</summary>
+            public Action<object, object>[] FieldSetters { get; set; }
+            public Action<object, object>[] PropertySetters { get; set; }
         }
         private class PendingInjection
         {
@@ -112,7 +120,8 @@ namespace Nexus.Core
                             {
                                 Field = field,
                                 Type = field.FieldType,
-                                IsOptional = field.GetCustomAttribute<OptionalInjectAttribute>() != null
+                                IsOptional = field.GetCustomAttribute<OptionalInjectAttribute>() != null,
+                                Setter = CompileFieldSetter(t, field)
                             });
                         }
                     }
@@ -129,7 +138,8 @@ namespace Nexus.Core
                             {
                                 Property = prop,
                                 Type = prop.PropertyType,
-                                IsOptional = prop.GetCustomAttribute<OptionalInjectAttribute>() != null
+                                IsOptional = prop.GetCustomAttribute<OptionalInjectAttribute>() != null,
+                                Setter = CompilePropertySetter(t, prop)
                             });
                         }
                     }
@@ -237,8 +247,54 @@ namespace Nexus.Core
                             propList.Add(prop);
                     }
 
-                    return new ClearableMetadata { Fields = fieldList.ToArray(), Properties = propList.ToArray() };
+                    var clearFields = fieldList.ToArray();
+                    var clearProps = propList.ToArray();
+                    var fieldSetters = new Action<object, object>[clearFields.Length];
+                    var propSetters = new Action<object, object>[clearProps.Length];
+                    for (int i = 0; i < clearFields.Length; i++) fieldSetters[i] = CompileFieldSetter(t, clearFields[i]);
+                    for (int i = 0; i < clearProps.Length; i++) propSetters[i] = CompilePropertySetter(t, clearProps[i]);
+
+                    return new ClearableMetadata { Fields = clearFields, Properties = clearProps, FieldSetters = fieldSetters, PropertySetters = propSetters };
                 });
+            }
+
+            /// <summary>Compiles a fast setter for an injectable field, or null if unsupported (fallback to reflection).</summary>
+            internal static Action<object, object> CompileFieldSetter(Type targetType, FieldInfo field)
+            {
+                try
+                {
+                    var instance = Expression.Parameter(typeof(object), "instance");
+                    var value = Expression.Parameter(typeof(object), "value");
+                    var assign = Expression.Assign(
+                        Expression.Field(Expression.Convert(instance, targetType), field),
+                        Expression.Convert(value, field.FieldType));
+                    return Expression.Lambda<Action<object, object>>(assign, instance, value).Compile();
+                }
+                catch
+                {
+                    return null; // AOT/IL2CPP safety: fall back to reflection SetValue.
+                }
+            }
+
+            /// <summary>Compiles a fast setter for an injectable property, or null if unsupported.</summary>
+            internal static Action<object, object> CompilePropertySetter(Type targetType, PropertyInfo prop)
+            {
+                try
+                {
+                    var setter = prop.GetSetMethod(true);
+                    if (setter == null) return null;
+                    var instance = Expression.Parameter(typeof(object), "instance");
+                    var value = Expression.Parameter(typeof(object), "value");
+                    var call = Expression.Call(
+                        Expression.Convert(instance, targetType),
+                        setter,
+                        Expression.Convert(value, prop.PropertyType));
+                    return Expression.Lambda<Action<object, object>>(call, instance, value).Compile();
+                }
+                catch
+                {
+                    return null;
+                }
             }
 
             internal static void ClearAll()
@@ -314,14 +370,16 @@ namespace Nexus.Core
                     if (f.Type.IsGenericType && f.Type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
                     {
                         var lazyInstance = Activator.CreateInstance(f.Type, _di);
-                        f.Field.SetValue(instance, lazyInstance);
+                        if (f.Setter != null) f.Setter(instance, lazyInstance);
+                        else f.Field.SetValue(instance, lazyInstance);
                         continue;
                     }
 
                     var resolvedValue = _di.TryResolve(f.Type);
                     if (resolvedValue != null)
                     {
-                        f.Field.SetValue(instance, resolvedValue);
+                        if (f.Setter != null) f.Setter(instance, resolvedValue);
+                        else f.Field.SetValue(instance, resolvedValue);
                     }
                     else if (f.IsOptional) { }
                     else if (_di.StrictInjection)
@@ -347,7 +405,8 @@ namespace Nexus.Core
                     var resolvedValue = _di.TryResolve(p.Type);
                     if (resolvedValue != null)
                     {
-                        p.Property.SetValue(instance, resolvedValue);
+                        if (p.Setter != null) p.Setter(instance, resolvedValue);
+                        else p.Property.SetValue(instance, resolvedValue);
                     }
                     else if (p.IsOptional) { }
                     else if (_di.StrictInjection)
@@ -414,9 +473,15 @@ namespace Nexus.Core
 
                 var meta = MetadataCache.GetOrCreateClearMetadata(type);
                 for (int i = 0; i < meta.Fields.Length; i++)
-                    meta.Fields[i].SetValue(instance, null);
+                {
+                    if (meta.FieldSetters != null && meta.FieldSetters[i] != null) meta.FieldSetters[i](instance, null);
+                    else meta.Fields[i].SetValue(instance, null);
+                }
                 for (int i = 0; i < meta.Properties.Length; i++)
-                    meta.Properties[i].SetValue(instance, null);
+                {
+                    if (meta.PropertySetters != null && meta.PropertySetters[i] != null) meta.PropertySetters[i](instance, null);
+                    else meta.Properties[i].SetValue(instance, null);
+                }
             }
         }
 
@@ -549,7 +614,7 @@ namespace Nexus.Core
             {
                 var f = pending.Fields[i];
                 var resolvedValue = TryResolve(f.Type);
-                if (resolvedValue != null) { f.Field.SetValue(instance, resolvedValue); pending.Fields.RemoveAt(i); }
+                if (resolvedValue != null) { if (f.Setter != null) f.Setter(instance, resolvedValue); else f.Field.SetValue(instance, resolvedValue); pending.Fields.RemoveAt(i); }
                 else { allSucceeded = false; }
             }
 
@@ -557,7 +622,7 @@ namespace Nexus.Core
             {
                 var p = pending.Properties[i];
                 var resolvedValue = TryResolve(p.Type);
-                if (resolvedValue != null) { p.Property.SetValue(instance, resolvedValue); pending.Properties.RemoveAt(i); }
+                if (resolvedValue != null) { if (p.Setter != null) p.Setter(instance, resolvedValue); else p.Property.SetValue(instance, resolvedValue); pending.Properties.RemoveAt(i); }
                 else { allSucceeded = false; }
             }
 

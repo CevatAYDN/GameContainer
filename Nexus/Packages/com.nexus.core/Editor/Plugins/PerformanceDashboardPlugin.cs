@@ -363,24 +363,43 @@ namespace Nexus.Editor
             }
         }
 
+        // Stat-row cache so per-refresh updates mutate existing rows instead of
+        // removing/re-creating them (the summary refreshes every 0.5 s while playing).
+        private readonly List<VisualElement> _statRowCache = new();
+
+        private void SetStatRow(int index, string key, string value, Color color)
+        {
+            // Rows live after the card title (child 0). Reuse cached rows; create on demand.
+            while (_statRowCache.Count <= index)
+            {
+                var row = NexusVisualization.CreateStatRow("", "", NexusEditorStyles.TextPrimary);
+                _statsContainer.Add(row);
+                _statRowCache.Add(row);
+            }
+            var cachedRow = _statRowCache[index];
+            if (cachedRow.childCount >= 2 && cachedRow[0] is Label keyLabel && cachedRow[1] is Label valueLabel)
+            {
+                keyLabel.text = key;
+                valueLabel.text = value;
+                valueLabel.style.color = new StyleColor(color);
+            }
+        }
+
         private void RefreshStatsSummary(float fps, float monoMb, float sigRate, float cmdRate)
         {
             if (_statsContainer == null) return;
-            // Remove old stat rows (keep the title = first child)
-            while (_statsContainer.childCount > 1)
-                _statsContainer.RemoveAt(_statsContainer.childCount - 1);
 
             var fpsArr = _fpsBuffer.ToArray();
             if (fpsArr.Length > 0)
             {
-                _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_fps_current"), $"{fps:F1}", ColorForFps(fps)));
-                _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_fps_avg"), $"{fpsArr.Average():F1}", NexusEditorStyles.TextPrimary));
-                _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_fps_min"),  $"{fpsArr.Min():F1}", NexusEditorStyles.AccentOrange));
+                SetStatRow(0, NexusLang.Get("pd_fps_current"), $"{fps:F1}", ColorForFps(fps));
+                SetStatRow(1, NexusLang.Get("pd_fps_avg"), $"{fpsArr.Average():F1}", NexusEditorStyles.TextPrimary);
+                SetStatRow(2, NexusLang.Get("pd_fps_min"),  $"{fpsArr.Min():F1}", NexusEditorStyles.AccentOrange);
             }
-            _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_mono_heap_short"), $"{monoMb:F2} MB", NexusEditorStyles.AccentBlue));
-            _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_signals_current"), $"{sigRate:F1}", NexusEditorStyles.AccentPurple));
-            _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_commands_current"), $"{cmdRate:F1}", NexusEditorStyles.AccentOrange));
-            _statsContainer.Add(NexusVisualization.CreateStatRow(NexusLang.Get("pd_gc_delta"), $"{_gcGen0Buffer.Last():F0}", NexusEditorStyles.AccentYellow));
+            SetStatRow(3, NexusLang.Get("pd_mono_heap_short"), $"{monoMb:F2} MB", NexusEditorStyles.AccentBlue);
+            SetStatRow(4, NexusLang.Get("pd_signals_current"), $"{sigRate:F1}", NexusEditorStyles.AccentPurple);
+            SetStatRow(5, NexusLang.Get("pd_commands_current"), $"{cmdRate:F1}", NexusEditorStyles.AccentOrange);
+            SetStatRow(6, NexusLang.Get("pd_gc_delta"), $"{_gcGen0Buffer.Last():F0}", NexusEditorStyles.AccentYellow);
         }
 
         private Color ColorForFps(float fps) =>

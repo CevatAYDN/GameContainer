@@ -178,6 +178,13 @@ namespace Nexus.Core
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_genericSyncDispatchCache = new();
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Func<object, object, CancellationToken, ValueTask>> s_genericAsyncDispatchCache = new();
 
+        // Cached per-signal-type [CrossContext] attribute so the hot fire path never
+        // performs an uncached reflection GetCustomAttribute call per signal dispatch.
+        private static readonly ConcurrentDictionary<Type, CrossContextAttribute> s_crossContextCache = new();
+
+        private static CrossContextAttribute GetCachedCrossContext(Type type)
+            => s_crossContextCache.GetOrAdd(type, static t => t.GetCustomAttribute<CrossContextAttribute>());
+
         private static readonly Stack<List<object>> s_listPool = new();
         private static List<object> GetPooledList()
         {
@@ -630,7 +637,7 @@ namespace Nexus.Core
                 // Handle Cross-Context
                 if (!isCrossContextSource)
                 {
-                    var crossContextAttr = type.GetCustomAttribute<CrossContextAttribute>();
+                    var crossContextAttr = GetCachedCrossContext(type);
                     if (crossContextAttr != null)
                     {
                         BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
@@ -801,7 +808,7 @@ namespace Nexus.Core
                 // Handle Cross-Context
                 if (!isCrossContextSource)
                 {
-                    var crossContextAttr = type.GetCustomAttribute<CrossContextAttribute>();
+                    var crossContextAttr = GetCachedCrossContext(type);
                     if (crossContextAttr != null)
                     {
                         BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
@@ -2011,6 +2018,7 @@ namespace Nexus.Core
             s_signalSetterCache.Clear();
             s_genericSyncDispatchCache.Clear();
             s_genericAsyncDispatchCache.Clear();
+            s_crossContextCache.Clear();
             lock (s_listPool)
             {
                 s_listPool.Clear();

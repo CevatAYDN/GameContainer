@@ -60,33 +60,50 @@ namespace Nexus.Editor
             return container;
         }
 
-        /// <summary>Updates an existing sparkline element in-place (removes children and redraws).</summary>
+        /// <summary>
+        /// Updates an existing sparkline element in-place, REUSING its bar children so the
+        /// per-refresh redraw (the dashboard refreshes every 0.5 s while playing) does not
+        /// allocate and discard hundreds of VisualElements.
+        /// </summary>
         internal static void UpdateSparkline(VisualElement sparkline, float[] values,
             float maxValue, Color barColor, float width = 120f, float height = 32f)
         {
-            sparkline.Clear();
-            if (values == null || values.Length == 0) return;
+            if (sparkline == null) return;
+            if (values == null || values.Length == 0)
+            {
+                sparkline.Clear();
+                return;
+            }
 
             float barW = Mathf.Max(2f, width / Mathf.Min(values.Length, 60));
             int startIdx = Mathf.Max(0, values.Length - Mathf.FloorToInt(width / barW));
             float effectiveMax = maxValue > 0 ? maxValue : 1f;
 
-            for (int i = startIdx; i < values.Length; i++)
+            int barCount = values.Length - startIdx;
+
+            // Grow or shrink the child list to match the required bar count.
+            while (sparkline.childCount < barCount)
             {
-                float ratio = Mathf.Clamp01(values[i] / effectiveMax);
-                float barH = Mathf.Max(1f, ratio * (height - 4f));
-                var bar = new VisualElement
+                sparkline.Add(new VisualElement
                 {
                     style =
                     {
-                        width = barW - 1,
-                        height = barH,
-                        backgroundColor = new StyleColor(barColor),
                         marginRight = 1,
                         borderTopLeftRadius = 1, borderTopRightRadius = 1
                     }
-                };
-                sparkline.Add(bar);
+                });
+            }
+            while (sparkline.childCount > barCount)
+                sparkline.RemoveAt(sparkline.childCount - 1);
+
+            for (int i = 0; i < barCount; i++)
+            {
+                float ratio = Mathf.Clamp01(values[startIdx + i] / effectiveMax);
+                float barH = Mathf.Max(1f, ratio * (height - 4f));
+                var bar = sparkline[i];
+                bar.style.width = barW - 1;
+                bar.style.height = barH;
+                bar.style.backgroundColor = new StyleColor(barColor);
             }
         }
 

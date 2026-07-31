@@ -21,8 +21,9 @@ namespace Nexus.Core
             public string Category { get; set; }
         }
 
+        private const int MaxSampleQueueSize = 2000; // Bounded: prevents the samples queue from growing forever
         private static readonly ConcurrentQueue<MetricSample> s_samples = new();
-        private static readonly Dictionary<string, List<float>> s_metricHistory = new();
+        private static readonly Dictionary<string, Queue<float>> s_metricHistory = new();
         private static readonly Dictionary<string, float> s_currentValues = new();
         private static int s_maxHistorySize = 300; // 5 seconds at 60fps
         private static bool s_enabled = true;
@@ -64,6 +65,23 @@ namespace Nexus.Core
         {
             if (!s_enabled) return;
 
+            s_currentValues[name] = value;
+
+            // Maintain bounded history as a FIFO queue (O(1) dequeue, no list shifting).
+            if (!s_metricHistory.TryGetValue(name, out var history))
+            {
+                history = new Queue<float>();
+                s_metricHistory[name] = history;
+            }
+            history.Enqueue(value);
+            while (history.Count > s_maxHistorySize)
+                history.Dequeue();
+
+            // Only allocate / enqueue / notify while actively recording.
+            // Previously every sample was enqueued forever (the queue is only drained by
+            // ClearHistory), which leaked the managed heap — observed climbing to ~800 MB.
+            if (!s_recording) return;
+
             var sample = new MetricSample
             {
                 Name = name,
@@ -74,19 +92,8 @@ namespace Nexus.Core
             };
 
             s_samples.Enqueue(sample);
-            s_currentValues[name] = value;
-
-            // Maintain history
-            if (!s_metricHistory.ContainsKey(name))
-            {
-                s_metricHistory[name] = new List<float>();
-            }
-
-            s_metricHistory[name].Add(value);
-            if (s_metricHistory[name].Count > s_maxHistorySize)
-            {
-                s_metricHistory[name].RemoveAt(0);
-            }
+            while (s_samples.Count > MaxSampleQueueSize)
+                s_samples.TryDequeue(out _);
 
             OnMetricRecorded?.Invoke(sample);
         }
@@ -146,10 +153,16 @@ namespace Nexus.Core
         // Built-in metrics
         private static float s_lastFrameTime;
         private static int s_frameCount;
+        private static int s_lastFrameMetricFrame = -1;
 
         public static void UpdateFrameMetrics()
         {
-            if (!s_enabled) return;
+            if (!s_enabled || !s_recording) return;
+
+            // Throttle to ~10 Hz (6-frame cadence at 60 fps). Per-frame sampling created
+            // ~180 allocations/sec of GC churn that spiked FPS every few seconds.
+            if (Time.frameCount - s_lastFrameMetricFrame < 6) return;
+            s_lastFrameMetricFrame = Time.frameCount;
 
             var deltaTime = Time.deltaTime;
             var fps = 1f / deltaTime;
@@ -164,7 +177,7 @@ namespace Nexus.Core
 
         public static void UpdateMemoryMetrics()
         {
-            if (!s_enabled) return;
+            if (!s_enabled || !s_recording) return;
 
             var totalMemory = System.GC.GetTotalMemory(false) / (1024f * 1024f); // MB
             var allocatedMemory = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024f * 1024f); // MB
@@ -181,7 +194,7 @@ namespace Nexus.Core
 
         public static void UpdateGCMetrics()
         {
-            if (!s_enabled) return;
+            if (!s_enabled || !s_recording) return;
 
             var gen0 = System.GC.CollectionCount(0);
             var gen1 = System.GC.CollectionCount(1);
