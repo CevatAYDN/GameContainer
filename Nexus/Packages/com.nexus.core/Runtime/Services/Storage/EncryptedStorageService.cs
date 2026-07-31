@@ -419,6 +419,42 @@ namespace Nexus.Core.Services
             }
         }
 
+        public string ExportEncryptedSaveData(string key)
+        {
+            if (string.IsNullOrEmpty(key)) return null;
+            lock (_lock)
+            {
+                Save();
+                string path = GetFilePath(key);
+                if (!File.Exists(path)) return null;
+                byte[] raw = File.ReadAllBytes(path);
+                return Convert.ToBase64String(raw);
+            }
+        }
+
+        public bool ImportEncryptedSaveData(string key, string base64Data)
+        {
+            if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(base64Data)) return false;
+            try
+            {
+                byte[] rawData = Convert.FromBase64String(base64Data);
+                if (rawData.Length < HeaderSize || rawData[0] != CurrentFormatVersion) return false;
+
+                string path = GetFilePath(key);
+                File.WriteAllBytes(path, rawData);
+                lock (_lock)
+                {
+                    _cache.Remove(key);
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save import failed for key '{key}': {ex.Message}");
+                return false;
+            }
+        }
+
         public bool HasKey(string key)
         {
             if (string.IsNullOrEmpty(key)) return false;

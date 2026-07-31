@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **IFloatingTextService & FloatingTextService** — 0-GC pooled floating text manager for World-Space to Screen UI numbers (`+$500`, `+$1.2M`, `-25 HP`).
+- **IEncryptedStorageService Cloud Sync** — `ExportEncryptedSaveData()` & `ImportEncryptedSaveData(base64)` for syncing AES-256 encrypted saves to Firebase, PlayFab, or Cloud Save.
+- **OfflineTimeCalculator** — safe offline duration calculator with anti-cheat detection against device clock tampering.
+- **IInputService & InputService** — 0-GC Virtual Joystick and Desktop Keyboard/Touch input service with `PlayerMoveSignal` struct signal.
+- **PlaySfxWithRandomPitch** — `IAudioService` extension for playing SFX with randomized pitch variations to prevent repetitive robotic sound feel.
 - **BigDouble & SecureObservableBigDouble** — lightweight 0-GC struct for Idle & Incremental games supporting numbers up to $10^{308}+$ with auto-normalization, Idle suffixes (K, M, B, T, aa, ab...), RAM obfuscation, and AES-256 encrypted storage (`GetBigDouble`/`SetBigDouble`).
 - **INetworkAdapter** — official abstraction interface connecting 3rd-party multiplayer network frameworks (Photon Fusion, Netcode for GameObjects, Mirror, FishNet) to Nexus SignalBus with latency tracking and `NetworkMonitor` integration.
 - **AOT / IL2CPP Compilation Guards** — `NexusDI.cs` now explicitly bypasses `Expression.Compile()` on AOT platforms (`ENABLE_IL2CPP`, `UNITY_AOT`, `UNITY_IOS`, `UNITY_WEBGL`), eliminating try-catch JIT exception overhead on iOS/WebGL/Consoles.

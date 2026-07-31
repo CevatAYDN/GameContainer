@@ -47,6 +47,7 @@ namespace Nexus.Core.Services
         void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0.5f);
         void StopBgm(float fadeDuration = 0.5f);
         void PlaySfx(AudioClip clip, float volume = 1f, float pitchMin = 1f, float pitchMax = 1f);
+        void PlaySfxWithRandomPitch(AudioClip clip, float minPitch = 0.9f, float maxPitch = 1.1f, float volume = 1f) => PlaySfx(clip, volume, minPitch, maxPitch);
         void PlaySfxAtPosition(AudioClip clip, Vector3 position, float volume = 1f);
     }
 
@@ -204,6 +205,8 @@ namespace Nexus.Core.Services
                 _bgmSourceActive.clip = null;
             }
         }
+
+        public void PlaySfxWithRandomPitch(AudioClip clip, float minPitch = 0.9f, float maxPitch = 1.1f, float volume = 1f) => PlaySfx(clip, volume, minPitch, maxPitch);
 
         public void PlaySfx(AudioClip clip, float volume = 1f, float pitchMin = 1f, float pitchMax = 1f)
         {

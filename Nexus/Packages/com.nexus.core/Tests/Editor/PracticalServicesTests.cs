@@ -1,0 +1,91 @@
+using NUnit.Framework;
+using Nexus.Core;
+using Nexus.Core.Services;
+using UnityEngine;
+
+namespace Nexus.Editor.Tests
+{
+    [TestFixture]
+    public class PracticalServicesTests
+    {
+        [Test]
+        public void AudioService_PlaySfxWithRandomPitch_ExecutesCleanly()
+        {
+            var audioService = new AudioService();
+            // AudioService should accept PlaySfxWithRandomPitch interface call without throwing exceptions
+            Assert.DoesNotThrow(() => audioService.PlaySfxWithRandomPitch(null, 0.95f, 1.05f));
+        }
+
+        [Test]
+        public void EncryptedStorageService_CloudExportAndImport_RoundTripsData()
+        {
+            using var storage = new EncryptedStorageService("Test_Cloud_Salt");
+            storage.SetString("User_Cloud_Data", "Level_50_Player_Save");
+            storage.Save();
+
+            string exportedBase64 = storage.ExportEncryptedSaveData("User_Cloud_Data");
+            Assert.IsNotNull(exportedBase64);
+            Assert.Greater(exportedBase64.Length, 0);
+
+            // Import into a new key
+            bool importSuccess = storage.ImportEncryptedSaveData("User_Cloud_Imported", exportedBase64);
+            Assert.IsTrue(importSuccess);
+
+            string importedValue = storage.GetString("User_Cloud_Imported", null);
+            Assert.AreEqual("Level_50_Player_Save", importedValue);
+
+            storage.DeleteKey("User_Cloud_Data");
+            storage.DeleteKey("User_Cloud_Imported");
+        }
+
+        [Test]
+        public void OfflineTimeCalculator_ValidatesTimeAndDetectsTampering()
+        {
+            using var storage = new EncryptedStorageService("Test_Offline_Salt");
+
+            // Record quit timestamp
+            OfflineTimeCalculator.RecordQuitTimestamp(storage);
+
+            // Calculate offline time (should be 0 or small positive number)
+            long offlineSec = OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600);
+            Assert.GreaterOrEqual(offlineSec, 0);
+
+            // Test anti-cheat: set quit time 1000 seconds into the future
+            long futureTimestamp = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 1000;
+            storage.SetLong("NT_LastQuitTimestamp", futureTimestamp);
+            storage.Save();
+
+            long tamperedOfflineSec = OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600);
+            Assert.AreEqual(0, tamperedOfflineSec, "Tampered future timestamp must return 0 offline seconds.");
+
+            storage.DeleteKey("NT_LastQuitTimestamp");
+        }
+
+        [Test]
+        public void InputService_MoveInput_And_PlayerMoveSignal_Works()
+        {
+            var inputService = new InputService();
+            inputService.SetVirtualJoystickInput(new Vector2(0.5f, 0.8f));
+
+            inputService.UpdateInput(0.016f);
+
+            Assert.IsTrue(inputService.IsInputActive);
+            Assert.AreEqual(0.5f, inputService.MoveInput.x, 0.001f);
+            Assert.AreEqual(0.8f, inputService.MoveInput.y, 0.001f);
+        }
+
+        [Test]
+        public void FloatingTextService_SpawnsAndUpdatesCleanly()
+        {
+            var floatService = new FloatingTextService();
+            floatService.SpawnFloatingText("+$500", Vector3.zero, Color.yellow, 1.0f);
+
+            Assert.AreEqual(1, floatService.ActiveTexts.Count);
+            Assert.AreEqual("+$500", floatService.ActiveTexts[0].Text);
+
+            // Update time to expire text
+            floatService.UpdateService(1.1f);
+            Assert.AreEqual(0, floatService.ActiveTexts.Count);
+        }
+    }
+}
