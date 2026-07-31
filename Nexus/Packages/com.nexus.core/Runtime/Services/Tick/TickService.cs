@@ -4,6 +4,8 @@ using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core.Services;
 using UnityEngine;
+using UnityEngine.Profiling;
+using Unity.Profiling;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
@@ -56,6 +58,13 @@ namespace Nexus.Core.Services
         private readonly object _lock = new();
         private TickDriver _driver;
         private GameObject _driverObject;
+
+        // Zero-allocation profiler markers (same pattern as SignalBus). ProfilerMarker is a
+        // cheap struct no-op when the profiler is not attached, so these are unconditional —
+        // no #if wrapper needed and the production GC guarantee is untouched.
+        private static readonly ProfilerMarker s_UpdateMarker = new("Nexus.TickService.Update");
+        private static readonly ProfilerMarker s_FixedUpdateMarker = new("Nexus.TickService.FixedUpdate");
+        private static readonly ProfilerMarker s_LateUpdateMarker = new("Nexus.TickService.LateUpdate");
 
         public float TimeScale
         {
@@ -164,84 +173,108 @@ namespace Nexus.Core.Services
         internal void OnTick(float deltaTime)
         {
             if (IsPaused) return;
-            ITickable[] snapshot;
-            lock (_lock)
+            s_UpdateMarker.Begin();
+            try
             {
-                if (_tickablesDirty)
+                ITickable[] snapshot;
+                lock (_lock)
                 {
-                    _tickableSnapshot = _tickables.Count > 0 ? _tickables.ToArray() : null;
-                    _tickablesDirty = false;
+                    if (_tickablesDirty)
+                    {
+                        _tickableSnapshot = _tickables.Count > 0 ? _tickables.ToArray() : null;
+                        _tickablesDirty = false;
+                    }
+                    snapshot = _tickableSnapshot;
                 }
-                snapshot = _tickableSnapshot;
-            }
-            if (snapshot == null) return;
+                if (snapshot == null) return;
 
-            for (int i = 0; i < snapshot.Length; i++)
+                for (int i = 0; i < snapshot.Length; i++)
+                {
+                    try
+                    {
+                        snapshot[i]?.Tick(deltaTime);
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogException(ex);
+                    }
+                }
+            }
+            finally
             {
-                try
-                {
-                    snapshot[i]?.Tick(deltaTime);
-                }
-                catch (Exception ex)
-                {
-                    NexusRuntime.Logger?.LogException(ex);
-                }
+                s_UpdateMarker.End();
             }
         }
 
         internal void OnFixedTick(float fixedDeltaTime)
         {
             if (IsPaused) return;
-            IFixedTickable[] snapshot;
-            lock (_lock)
+            s_FixedUpdateMarker.Begin();
+            try
             {
-                if (_fixedTickablesDirty)
+                IFixedTickable[] snapshot;
+                lock (_lock)
                 {
-                    _fixedTickableSnapshot = _fixedTickables.Count > 0 ? _fixedTickables.ToArray() : null;
-                    _fixedTickablesDirty = false;
+                    if (_fixedTickablesDirty)
+                    {
+                        _fixedTickableSnapshot = _fixedTickables.Count > 0 ? _fixedTickables.ToArray() : null;
+                        _fixedTickablesDirty = false;
+                    }
+                    snapshot = _fixedTickableSnapshot;
                 }
-                snapshot = _fixedTickableSnapshot;
-            }
-            if (snapshot == null) return;
+                if (snapshot == null) return;
 
-            for (int i = 0; i < snapshot.Length; i++)
+                for (int i = 0; i < snapshot.Length; i++)
+                {
+                    try
+                    {
+                        snapshot[i]?.FixedTick(fixedDeltaTime);
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogException(ex);
+                    }
+                }
+            }
+            finally
             {
-                try
-                {
-                    snapshot[i]?.FixedTick(fixedDeltaTime);
-                }
-                catch (Exception ex)
-                {
-                    NexusRuntime.Logger?.LogException(ex);
-                }
+                s_FixedUpdateMarker.End();
             }
         }
 
         internal void OnLateTick(float deltaTime)
         {
             if (IsPaused) return;
-            ILateTickable[] snapshot;
-            lock (_lock)
+            s_LateUpdateMarker.Begin();
+            try
             {
-                if (_lateTickablesDirty)
+                ILateTickable[] snapshot;
+                lock (_lock)
                 {
-                    _lateTickableSnapshot = _lateTickables.Count > 0 ? _lateTickables.ToArray() : null;
-                    _lateTickablesDirty = false;
+                    if (_lateTickablesDirty)
+                    {
+                        _lateTickableSnapshot = _lateTickables.Count > 0 ? _lateTickables.ToArray() : null;
+                        _lateTickablesDirty = false;
+                    }
+                    snapshot = _lateTickableSnapshot;
                 }
-                snapshot = _lateTickableSnapshot;
-            }
-            if (snapshot == null) return;
+                if (snapshot == null) return;
 
-            for (int i = 0; i < snapshot.Length; i++)
+                for (int i = 0; i < snapshot.Length; i++)
+                {
+                    try
+                    {
+                        snapshot[i]?.LateTick(deltaTime);
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogException(ex);
+                    }
+                }
+            }
+            finally
             {
-                try
-                {
-                    snapshot[i]?.LateTick(deltaTime);
-                }
-                catch (Exception ex)
-                {
-                    NexusRuntime.Logger?.LogException(ex);
-                }
+                s_LateUpdateMarker.End();
             }
         }
 

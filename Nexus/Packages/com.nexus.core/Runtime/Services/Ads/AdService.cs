@@ -1,6 +1,7 @@
 using System;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core;
 using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.Scripting;
@@ -36,8 +37,13 @@ namespace Nexus.Core.Services
     public class AdService : IAdService, INexusService
     {
         private IAdNetworkAdapter _adapter;
-        private float _interstitialCooldownSeconds = 30f;
-        private float _lastInterstitialTime = -999f;
+        // Anti-cheat: cooldown config and the last-show timestamp are XOR-masked in RAM
+        // (SecureObservableFloat, matching the project's SecureObservableInt/Long story) so a
+        // GameGuardian/CheatEngine memory scan can't zero the cooldown or backdate the timer
+        // to spam interstitials. The economic impact is low (revenue is still verified by the
+        // ad network) but the masking costs nothing on this call frequency.
+        private readonly SecureObservableFloat _interstitialCooldownSeconds = new(30f);
+        private readonly SecureObservableFloat _lastInterstitialTime = new(-999f);
         private bool _isInitialized;
         private readonly object _lock = new();
 
@@ -63,7 +69,7 @@ namespace Nexus.Core.Services
         {
             lock (_lock)
             {
-                _interstitialCooldownSeconds = Mathf.Max(0f, seconds);
+                _interstitialCooldownSeconds.Value = Mathf.Max(0f, seconds);
             }
         }
 
@@ -71,7 +77,7 @@ namespace Nexus.Core.Services
         {
             lock (_lock)
             {
-                if (Time.realtimeSinceStartup - _lastInterstitialTime < _interstitialCooldownSeconds)
+                if (Time.realtimeSinceStartup - _lastInterstitialTime.Value < _interstitialCooldownSeconds.Value)
                     return false;
 
                 return _adapter != null ? _adapter.IsInterstitialReady(placement) : true;
@@ -97,7 +103,7 @@ namespace Nexus.Core.Services
                     return;
                 }
 
-                _lastInterstitialTime = Time.realtimeSinceStartup;
+                _lastInterstitialTime.Value = Time.realtimeSinceStartup;
             }
 
             if (_adapter != null)
@@ -139,6 +145,10 @@ namespace Nexus.Core.Services
             OnImpressionRecorded?.Invoke(network, revenue, placement);
         }
 
-        public void OnDispose() { }
+        public void OnDispose()
+        {
+            _interstitialCooldownSeconds.ClearOnChanged();
+            _lastInterstitialTime.ClearOnChanged();
+        }
     }
 }

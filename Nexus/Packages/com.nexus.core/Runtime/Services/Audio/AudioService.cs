@@ -38,8 +38,9 @@ namespace Nexus.Core.Services
         bool IsMuted { get; set; }
 
         /// <summary>FIX P0.3 — Transient state-driven BGM volume multiplier (0..1).
-        /// Returning to the main menu resets this to 1.0 so the saved user preference is
-        /// preserved across level transitions. The effective BGM volume is
+        /// NOT persisted: the caller (e.g. a gameplay state) is responsible for restoring
+        /// 1.0 — typically when returning to the main menu — so the saved user preference
+        /// is preserved across level transitions. The effective BGM volume is
         /// <c>MasterVolume × BgmVolume × BgmStateMultiplier</c> when not muted.</summary>
         float BgmStateMultiplier { get; set; }
 
@@ -65,12 +66,20 @@ namespace Nexus.Core.Services
         private AudioSource _bgmSourceFade;
         private readonly List<AudioSource> _sfxPool = new();
 
+        // Hard cap on the SFX source pool. The old GetAvailableSfxSource grew the pool
+        // unboundedly (a new GameObject + interpolated name string per allocation) on
+        // SFX-heavy scenes — under a burst of simultaneous sounds the linear scan plus
+        // create became effectively O(N²) with permanent memory growth. Once the cap is
+        // reached the oldest channel is stolen instead of allocating another source.
+        private const int MaxSfxPoolSize = 32;
+
         private float _masterVolume = 1f;
         private float _bgmVolume = 1f;
         private float _sfxVolume = 1f;
-        // FIX P0.3: not persisted on purpose. This is the per-state ducking scalar; it resets
-        // to 1.0 whenever a new state calls into the audio service, so a level-load cannot
-        // silently overwrite the player's saved BgmVolume slider value.
+        // FIX P0.3: not persisted on purpose. This is the per-state ducking scalar, driven
+        // by gameplay states and restored to 1.0 by the CALLER (e.g. on returning to the
+        // main menu) — the service never auto-resets, so a level-load cannot silently
+        // overwrite the player's saved BgmVolume slider value.
         private float _bgmStateMultiplier = 1f;
         private bool _isMuted;
 
@@ -200,6 +209,10 @@ namespace Nexus.Core.Services
         {
             if (clip == null || _isMuted) return;
 
+            // Guard: Random.Range(float, float) throws when min > max. Mirror the
+            // FeedbackService.PlayCustom swap so inverted pitch ranges never crash.
+            if (pitchMin > pitchMax) (pitchMin, pitchMax) = (pitchMax, pitchMin);
+
             var source = GetAvailableSfxSource();
             source.spatialBlend = 0f; // 2D sound
             source.volume = Mathf.Clamp01(volume) * _masterVolume * _sfxVolume;
@@ -225,6 +238,16 @@ namespace Nexus.Core.Services
             {
                 if (!_sfxPool[i].isPlaying)
                     return _sfxPool[i];
+            }
+
+            if (_sfxPool.Count >= MaxSfxPoolSize)
+            {
+                // Pool exhausted — steal the oldest channel instead of growing the pool
+                // forever on SFX-heavy scenes. Stop the victim first so the volume / pitch
+                // / spatialBlend / position set below do not distort the clip that was
+                // still playing on it.
+                _sfxPool[0].Stop();
+                return _sfxPool[0];
             }
 
             var newSourceGo = new GameObject($"SFXSource_{_sfxPool.Count}");

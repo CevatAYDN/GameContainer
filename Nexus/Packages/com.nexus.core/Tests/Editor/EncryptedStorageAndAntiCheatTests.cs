@@ -168,6 +168,69 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void SecureObservableFloat_RAMObfuscationWorksAndFiresOnChanged()
+        {
+            var secureFloat = new SecureObservableFloat(0.75f);
+            int callCount = 0;
+
+            secureFloat.OnChanged((oldVal, newVal) => callCount++);
+
+            Assert.AreEqual(0.75f, (float)secureFloat, 0.0001f);
+
+            secureFloat.Value = 12.5f;
+            Assert.AreEqual(12.5f, (float)secureFloat, 0.0001f);
+            Assert.AreEqual(1, callCount);
+        }
+
+        [Test]
+        public void SecureObservableFloat_SetWithoutNotifyDoesNotTriggerOnChanged()
+        {
+            var secureFloat = new SecureObservableFloat(1f);
+            int callCount = 0;
+
+            secureFloat.OnChanged((oldVal, newVal) => callCount++);
+            secureFloat.SetWithoutNotify(3.25f);
+
+            Assert.AreEqual(3.25f, (float)secureFloat, 0.0001f);
+            Assert.AreEqual(0, callCount);
+        }
+
+        [Test]
+        public void SecureObservableFloat_RoundTripsNegativeAndZero()
+        {
+            // Bit-pattern XOR storage must survive sign and exponent bits untouched,
+            // not just positive fractional values.
+            var secureFloat = new SecureObservableFloat(-42.5f);
+            Assert.AreEqual(-42.5f, secureFloat.Value, 0.0001f);
+
+            secureFloat.Value = 0f;
+            Assert.AreEqual(0f, secureFloat.Value, 0.0001f);
+
+            secureFloat.Value = -0f;
+            Assert.AreEqual(0f, secureFloat.Value, 0.0001f); // -0.0 bit pattern XOR round-trips to -0.0
+        }
+
+        [Test]
+        public void AdService_InterstitialCooldownUsesObfuscatedStorage()
+        {
+            var service = new AdService();
+            service.SetInterstitialCooldown(30f);
+
+            // No adapter bound → IsInterstitialAvailable reflects only the cooldown gate.
+            // Initial _lastInterstitialTime is -999f, so the first check passes.
+            Assert.IsTrue(service.IsInterstitialAvailable("main"));
+
+            // ShowInterstitial stamps _lastInterstitialTime = now → cooldown becomes active.
+            service.ShowInterstitial("main");
+            Assert.IsFalse(service.IsInterstitialAvailable("main"),
+                "Interstitial must be unavailable right after a show (cooldown active).");
+
+            // A zero cooldown clears the gate immediately.
+            service.SetInterstitialCooldown(0f);
+            Assert.IsTrue(service.IsInterstitialAvailable("main"));
+        }
+
+        [Test]
         public void EncryptedStorageService_LongAndCachingBehavior()
         {
             var salt = "Test_Salt_LongAndCaching";

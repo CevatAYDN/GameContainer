@@ -18,7 +18,7 @@ namespace Nexus.Netcode
     {
         void Capture(int tick);
         void Restore(int tick);
-        void Prune(int tick);
+        void Prune(int confirmedTick);
     }
 
     /// <summary>
@@ -49,12 +49,12 @@ namespace Nexus.Netcode
             }
         }
 
-        public void Prune(int tick)
+        public void Prune(int confirmedTick)
         {
             _keysToPrune.Clear();
             foreach (int k in _snapshots.Keys)
             {
-                if (k <= tick) _keysToPrune.Add(k);
+                if (k <= confirmedTick) _keysToPrune.Add(k);
             }
             for (int i = 0; i < _keysToPrune.Count; i++)
             {
@@ -67,7 +67,7 @@ namespace Nexus.Netcode
     {
         void ReplaySignals(int tick, ISignalBus localSignalBus);
         void RemoveSignalsAfter(int tick);
-        void Prune(int tick);
+        void Prune(int confirmedTick);
         void Clear();
     }
 
@@ -110,25 +110,41 @@ namespace Nexus.Netcode
 
         public void RemoveSignalsAfter(int tick)
         {
-            // Backwards index loop to prune without allocations (0-GC)
-            for (int i = _signals.Count - 1; i >= 0; i--)
+            // In-place compaction: single O(N) pass, zero allocation. Repeated RemoveAt
+            // in the old backwards loop was O(N²) for large histories (each removal
+            // shifts every later element). List.RemoveAll would allocate a predicate;
+            // manual compaction keeps the 0-GC steady-state guarantee.
+            int write = 0;
+            for (int read = 0; read < _signals.Count; read++)
             {
-                if (_signals[i].Tick > tick)
+                if (_signals[read].Tick <= tick)
                 {
-                    _signals.RemoveAt(i);
+                    _signals[write] = _signals[read];
+                    write++;
                 }
+            }
+            if (write < _signals.Count)
+            {
+                _signals.RemoveRange(write, _signals.Count - write);
             }
         }
 
-        public void Prune(int tick)
+        public void Prune(int confirmedTick)
         {
-            // Backwards index loop to prune older history
-            for (int i = _signals.Count - 1; i >= 0; i--)
+            // Same O(N), zero-allocation in-place compaction as RemoveSignalsAfter —
+            // keeps only signals strictly newer than the confirmed tick.
+            int write = 0;
+            for (int read = 0; read < _signals.Count; read++)
             {
-                if (_signals[i].Tick <= tick)
+                if (_signals[read].Tick > confirmedTick)
                 {
-                    _signals.RemoveAt(i);
+                    _signals[write] = _signals[read];
+                    write++;
                 }
+            }
+            if (write < _signals.Count)
+            {
+                _signals.RemoveRange(write, _signals.Count - write);
             }
         }
 

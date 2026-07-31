@@ -30,6 +30,11 @@ namespace Nexus.Editor
         private readonly Dictionary<IGameStateMachine, List<string>> _history = new();
         private readonly Dictionary<IGameStateMachine, string> _lastState = new();
 
+        // Event-driven subscriptions for concrete GameStateMachine instances. The 300 ms
+        // schedule stays for machine discovery + card layout, but transition history itself
+        // updates in real time via OnStateChanged — nothing is missed, no diffing needed.
+        private readonly Dictionary<GameStateMachine, System.Action<StateTransitionRecord>> _subscribed = new();
+
         public override VisualElement CreateView()
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
@@ -49,6 +54,9 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             _refreshSchedule?.Pause();
+            foreach (var kvp in _subscribed)
+                kvp.Key.OnStateChanged -= kvp.Value;
+            _subscribed.Clear();
             base.OnDisable();
         }
 
@@ -158,23 +166,67 @@ namespace Nexus.Editor
             foreach (var (_, machine) in machines)
             {
                 live.Add(machine);
-                var current = machine.CurrentState?.GetType().Name ?? NexusLang.Get("fsm_no_state");
-                if (!_lastState.TryGetValue(machine, out var last) || last != current)
+                if (machine is GameStateMachine concrete)
                 {
-                    _lastState[machine] = current;
-                    if (last != null) // skip the very first observation
+                    // Event-driven: subscribe once per concrete machine instance.
+                    if (!_subscribed.ContainsKey(concrete))
                     {
-                        if (!_history.TryGetValue(machine, out var hist))
-                            _history[machine] = hist = new List<string>();
-                        hist.Add($"{DateTime.Now:HH:mm:ss}  {last} → {current}");
-                        if (hist.Count > MaxHistory) hist.RemoveAt(0);
+                        System.Action<StateTransitionRecord> handler = r => OnMachineTransition(concrete, r);
+                        _subscribed[concrete] = handler;
+                        concrete.OnStateChanged += handler;
+                    }
+                }
+                else
+                {
+                    // Custom IGameStateMachine implementations expose only CurrentState —
+                    // keep the polling diff fallback for them.
+                    var current = machine.CurrentState?.GetType().Name ?? NexusLang.Get("fsm_no_state");
+                    if (!_lastState.TryGetValue(machine, out var last) || last != current)
+                    {
+                        _lastState[machine] = current;
+                        if (last != null) // skip the very first observation
+                        {
+                            AppendHistory(machine, $"{DateTime.Now:HH:mm:ss}  {last} → {current}");
+                        }
                     }
                 }
             }
 
-            // Drop bookkeeping for machines that are no longer active.
+            // Drop bookkeeping/subscriptions for machines that are no longer active.
+            var staleSubs = new List<KeyValuePair<GameStateMachine, System.Action<StateTransitionRecord>>>();
+            foreach (var kvp in _subscribed)
+            {
+                if (!live.Contains(kvp.Key))
+                {
+                    kvp.Key.OnStateChanged -= kvp.Value;
+                    staleSubs.Add(kvp);
+                }
+            }
+            foreach (var kvp in staleSubs)
+            {
+                _subscribed.Remove(kvp.Key);
+                _history.Remove(kvp.Key);
+            }
+
             var stale = _lastState.Keys.Where(m => !live.Contains(m)).ToList();
             foreach (var m in stale) { _lastState.Remove(m); _history.Remove(m); }
+        }
+
+        private void OnMachineTransition(GameStateMachine machine, StateTransitionRecord record)
+        {
+            string statusMark = record.Status == StateTransitionStatus.Success
+                ? ""
+                : $"  [{record.Status}]";
+            AppendHistory(machine,
+                $"{DateTime.Now:HH:mm:ss}  {record.FromState ?? "—"} → {record.ToState ?? "—"}{statusMark}  ({record.DurationMs:F0} ms)");
+        }
+
+        private void AppendHistory(IGameStateMachine machine, string line)
+        {
+            if (!_history.TryGetValue(machine, out var hist))
+                _history[machine] = hist = new List<string>();
+            hist.Add(line);
+            if (hist.Count > MaxHistory) hist.RemoveAt(0);
         }
     }
 }

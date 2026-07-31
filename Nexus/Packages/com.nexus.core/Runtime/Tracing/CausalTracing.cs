@@ -14,7 +14,9 @@ namespace Nexus.Core
         /// <summary>A command was executed.</summary>
         Command,
         /// <summary>A model was changed.</summary>
-        ModelChange
+        ModelChange,
+        /// <summary>A state machine transition was attempted (Success / Superseded / Failed).</summary>
+        StateTransition
     }
 
     /// <summary>Status of a traced event.</summary>

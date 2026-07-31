@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Scripting;
@@ -44,6 +45,13 @@ namespace Nexus.Core
 
         // Pending views registered before Context is initialized
         private readonly List<IView> _pendingViews = new();
+
+        // Main-thread id captured in Awake. async void Start() awaits user lifecycle code;
+        // if a lifecycle implementation switches threads internally (ConfigureAwait(false),
+        // Task.Run) and Unity's SynchronizationContext is absent (batch mode, headless
+        // tests, or Start invoked off-thread), the continuation can resume on a worker
+        // thread. We guard post-await state writes against that.
+        private int _mainThreadId = -1;
 
         public void RegisterPendingView(IView view)
         {
@@ -122,6 +130,7 @@ namespace Nexus.Core
 
         private void Awake()
         {
+            _mainThreadId = Thread.CurrentThread.ManagedThreadId;
             InitializeContext();
         }
 
@@ -225,6 +234,20 @@ namespace Nexus.Core
                 }
 
                 await Context.InitializeLifecycleAsync(_lifecycles, Context.LifetimeToken);
+
+                // Guard: user lifecycle code may have escaped the Unity main thread
+                // (ConfigureAwait(false) / Task.Run) in environments without a
+                // SynchronizationContext. Only the main thread may publish IsInitialized
+                // and let dependent siblings/parents proceed — otherwise we dispose
+                // deterministically instead of corrupting Unity state from a worker thread.
+                if (Thread.CurrentThread.ManagedThreadId != _mainThreadId)
+                {
+                    // Single log source: the catch below logs this exception with its
+                    // stack trace, so no separate LogError here (avoids double logging).
+                    throw new ThreadStateException(
+                        $"[Nexus] Root '{gameObject.name}' lifecycle initialization resumed off the main thread (worker id {Thread.CurrentThread.ManagedThreadId}). " +
+                        "A lifecycle implementation likely called ConfigureAwait(false) or Task.Run without marshalling back to the main thread.");
+                }
 
                 IsInitialized = true;
             }
