@@ -1116,17 +1116,32 @@ namespace Nexus.Core
  
                     if (command is IAsyncCommand<TSignal> genericAsyncCmd)
                     {
-                        // P0-5 fix: apply [CommandTimeout] via a linked, self-cancelling token.
-                        if (handler.TimeoutMs > 0)
+                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
                         {
-                            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                            timeoutCts.CancelAfter(handler.TimeoutMs);
-                            var timeoutToken = timeoutCts.Token;
-                            await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, timeoutToken));
+                            if (handler.TimeoutMs > 0)
+                            {
+                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                timeoutCts.CancelAfter(handler.TimeoutMs);
+                                var timeoutToken = timeoutCts.Token;
+                                await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, timeoutToken));
+                            }
+                            else
+                            {
+                                await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, ct));
+                            }
                         }
                         else
                         {
-                            await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, ct));
+                            if (handler.TimeoutMs > 0)
+                            {
+                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                                timeoutCts.CancelAfter(handler.TimeoutMs);
+                                await genericAsyncCmd.ExecuteAsync(signal, timeoutCts.Token);
+                            }
+                            else
+                            {
+                                await genericAsyncCmd.ExecuteAsync(signal, ct);
+                            }
                         }
                     }
                     else if (command is ICommand<TSignal> genericSyncCmd)
