@@ -45,6 +45,14 @@ namespace Nexus.Core.Services
         private IFixedTickable[] _fixedTickableSnapshot;
         private ILateTickable[] _lateTickableSnapshot;
 
+        // Register is deferred (dirty flag): N registrations in one frame produce exactly
+        // ONE snapshot rebuild, so spawn storms can't allocate one array per call.
+        // Unregister stays immediate — a just-removed tickable (often a destroyed object)
+        // must never receive another tick, and its removal is allocation-free anyway.
+        private bool _tickablesDirty;
+        private bool _fixedTickablesDirty;
+        private bool _lateTickablesDirty;
+
         private readonly object _lock = new();
         private TickDriver _driver;
         private GameObject _driverObject;
@@ -83,7 +91,7 @@ namespace Nexus.Core.Services
                 if (!_tickables.Contains(tickable))
                 {
                     _tickables.Add(tickable);
-                    _tickableSnapshot = _tickables.ToArray();
+                    _tickablesDirty = true;
                 }
             }
         }
@@ -96,6 +104,7 @@ namespace Nexus.Core.Services
                 if (_tickables.Remove(tickable))
                 {
                     _tickableSnapshot = _tickables.Count > 0 ? _tickables.ToArray() : null;
+                    _tickablesDirty = false; // snapshot is already current — avoid a redundant rebuild.
                 }
             }
         }
@@ -108,7 +117,7 @@ namespace Nexus.Core.Services
                 if (!_fixedTickables.Contains(fixedTickable))
                 {
                     _fixedTickables.Add(fixedTickable);
-                    _fixedTickableSnapshot = _fixedTickables.ToArray();
+                    _fixedTickablesDirty = true;
                 }
             }
         }
@@ -121,6 +130,7 @@ namespace Nexus.Core.Services
                 if (_fixedTickables.Remove(fixedTickable))
                 {
                     _fixedTickableSnapshot = _fixedTickables.Count > 0 ? _fixedTickables.ToArray() : null;
+                    _fixedTickablesDirty = false; // snapshot is already current — avoid a redundant rebuild.
                 }
             }
         }
@@ -133,7 +143,7 @@ namespace Nexus.Core.Services
                 if (!_lateTickables.Contains(lateTickable))
                 {
                     _lateTickables.Add(lateTickable);
-                    _lateTickableSnapshot = _lateTickables.ToArray();
+                    _lateTickablesDirty = true;
                 }
             }
         }
@@ -146,6 +156,7 @@ namespace Nexus.Core.Services
                 if (_lateTickables.Remove(lateTickable))
                 {
                     _lateTickableSnapshot = _lateTickables.Count > 0 ? _lateTickables.ToArray() : null;
+                    _lateTickablesDirty = false; // snapshot is already current — avoid a redundant rebuild.
                 }
             }
         }
@@ -156,6 +167,11 @@ namespace Nexus.Core.Services
             ITickable[] snapshot;
             lock (_lock)
             {
+                if (_tickablesDirty)
+                {
+                    _tickableSnapshot = _tickables.Count > 0 ? _tickables.ToArray() : null;
+                    _tickablesDirty = false;
+                }
                 snapshot = _tickableSnapshot;
             }
             if (snapshot == null) return;
@@ -179,6 +195,11 @@ namespace Nexus.Core.Services
             IFixedTickable[] snapshot;
             lock (_lock)
             {
+                if (_fixedTickablesDirty)
+                {
+                    _fixedTickableSnapshot = _fixedTickables.Count > 0 ? _fixedTickables.ToArray() : null;
+                    _fixedTickablesDirty = false;
+                }
                 snapshot = _fixedTickableSnapshot;
             }
             if (snapshot == null) return;
@@ -202,6 +223,11 @@ namespace Nexus.Core.Services
             ILateTickable[] snapshot;
             lock (_lock)
             {
+                if (_lateTickablesDirty)
+                {
+                    _lateTickableSnapshot = _lateTickables.Count > 0 ? _lateTickables.ToArray() : null;
+                    _lateTickablesDirty = false;
+                }
                 snapshot = _lateTickableSnapshot;
             }
             if (snapshot == null) return;
@@ -229,6 +255,9 @@ namespace Nexus.Core.Services
                 _tickableSnapshot = null;
                 _fixedTickableSnapshot = null;
                 _lateTickableSnapshot = null;
+                _tickablesDirty = false;
+                _fixedTickablesDirty = false;
+                _lateTickablesDirty = false;
             }
 
             if (_driverObject != null)

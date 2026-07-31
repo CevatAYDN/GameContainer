@@ -52,5 +52,23 @@ namespace Nexus.Tests
             string formatted = service.FormatRTLIfNeeded(input);
             Assert.AreEqual(expected, formatted);
         }
+
+        [Test]
+        public void LocalizationService_RTLReversal_PreservesSurrogatePairs()
+        {
+            var prefs = new TestPlayerPrefsService();
+            var service = new LocalizationService(prefs);
+            service.SetLanguage("ar");
+
+            // "مرحبا" + an emoji (U+1F600, a UTF-16 surrogate pair). A raw char-array
+            // reversal would tear the pair apart; grapheme-aware reversal must keep it.
+            string input = "مرحبا" + "\U0001F600";
+
+            string formatted = service.FormatRTLIfNeeded(input);
+
+            Assert.AreEqual("\U0001F600" + "ابحرم", formatted);
+            Assert.AreEqual(input.Length, formatted.Length,
+                "The surrogate pair must survive the reversal intact (same UTF-16 length).");
+        }
     }
 }

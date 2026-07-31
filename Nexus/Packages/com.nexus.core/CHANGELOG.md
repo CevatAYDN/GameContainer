@@ -9,13 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Breaking
 - `IEconomyService.GetObservableBalance` return type changed from `ObservableProperty<long>` to `SecureObservableLong` (the new XOR-masked anti-cheat wrapper). The `Value`/`OnChanged`/`SetWithoutNotify` surface is identical, but code that typed the result as `ObservableProperty<long>` must be updated.
+- `IProgressionService.CurrentLevel` / `MaxUnlockedLevel` changed from `ObservableProperty<int>` to `SecureObservableInt` (XOR-masked anti-cheat wrapper, matching `EconomyService`). The `Value`/`OnChanged`/`SetWithoutNotify` surface is identical.
 
 ### Security
 - Added `SecureObservableLong` (XOR-masked RAM obfuscation, mirroring `SecureObservableInt`) and migrated `EconomyService` balances to it — currency values are no longer stored as plain `long` in memory, closing the anti-cheat gap flagged for RAM scanners (GameGuardian/CheatEngine).
+- `ProgressionService` level data migrated to `SecureObservableInt` — `CurrentLevel`/`MaxUnlockedLevel` are no longer plain `int` in RAM.
 - `EconomyService.Earn` now clamps at `long.MaxValue` instead of overflowing to a negative balance.
+- `ProgressionService.CalculateUpgradeCost` clamps NaN/Infinity/overflow at `long.MaxValue` (the old unchecked `double`→`long` cast wrapped to `long.MinValue` at extreme levels) and never returns a cost below the base cost (Linear curves with `multiplier < 1` previously went negative).
 - `EconomyService.Spend` is now reconciled with the network validator: a server-rejected spend rolls the locally-deducted amount back (bounded at `long.MaxValue`), preventing client/server balance desync.
 
 ### Fixed
+- `GameStateMachine.ChangeStateAsync` race — concurrent transitions now serialize via a monotonic sequence: a superseded transition aborts at its next await instead of clobbering `_currentState` or running `OnEnterAsync` (previously two states could end up active). Cancellation sources are disposed by their owning transition in `finally`, so a state holding the old token can no longer hit `ObjectDisposedException`.
+- `LocalizationService.FormatRTLIfNeeded` reverses by grapheme cluster (`StringInfo.ParseCombiningCharacters`) instead of raw UTF-16 code units — surrogate pairs (emoji) and combining marks survive RTL reversal.
+- `TickService` register paths are deferred to a dirty flag: N registrations in one frame produce exactly one snapshot rebuild instead of one `ToArray()` per call (spawn/despawn storms). Unregister stays immediate so destroyed tickables never tick again.
 - `NexusRuntime.Reset()` deadlock fix using snapshot-then-dispose pattern to dispose contexts outside locks during Play Mode transitions.
 - Pure context lifecycle duplication — `CreatePureContextAsync` now routes through `Context.InitializeLifecycleAsync`.
 - `SignalBus.BroadcastCrossContext` global registry access now abstracts cleanly via `IContextResolver`.

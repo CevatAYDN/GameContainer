@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -88,8 +89,30 @@ namespace Nexus.Core.Services
         public string FormatRTLIfNeeded(string text)
         {
             if (string.IsNullOrEmpty(text) || !IsRTL) return text;
+
+            // Reverse by text element (grapheme cluster) instead of raw UTF-16 code
+            // units: Array.Reverse tears surrogate pairs (emoji, CJK ext) and combining
+            // marks apart, producing broken glyphs. Strategy: reverse the whole buffer,
+            // then re-reverse each cluster in place so its internal char order survives.
+            int[] elements = StringInfo.ParseCombiningCharacters(text);
+            if (elements.Length <= 1) return text;
+
             char[] chars = text.ToCharArray();
             Array.Reverse(chars);
+
+            int n = chars.Length;
+            for (int k = 0; k < elements.Length; k++)
+            {
+                int start = elements[k];
+                int len = (k + 1 < elements.Length ? elements[k + 1] : n) - start;
+                // After the global reversal this cluster occupies [n - start - len, n - start).
+                int lo = n - start - len;
+                int hi = n - start;
+                for (int a = lo, b = hi - 1; a < b; a++, b--)
+                {
+                    char t = chars[a]; chars[a] = chars[b]; chars[b] = t;
+                }
+            }
             return new string(chars);
         }
 

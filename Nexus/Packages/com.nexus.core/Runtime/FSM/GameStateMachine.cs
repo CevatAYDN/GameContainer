@@ -42,6 +42,12 @@ namespace Nexus.Core.FSM
         private Type _errorStateType;
         private CancellationTokenSource _stateCts;
 
+        // Monotonic sequence used to serialize concurrent ChangeStateAsync calls.
+        // A transition records its sequence on entry; after every await it bails out
+        // if a NEWER transition has superseded it — so two transitions can never
+        // both write _currentState or run OnEnterAsync at the same time.
+        private long _transitionSequence;
+
         public IGameState CurrentState => _currentState;
 
         /// <summary>Editor/introspection: state types registered via <see cref="RegisterState{TState}"/>.</summary>
@@ -81,48 +87,101 @@ namespace Nexus.Core.FSM
 
             if (_currentState == nextState) return;
 
-            _stateCts?.Cancel();
-            _stateCts?.Dispose();
-            _stateCts = ct != CancellationToken.None 
-                ? CancellationTokenSource.CreateLinkedTokenSource(ct) 
+            // Preempt any in-flight transition. The superseded transition observes the
+            // cancellation at its next await point and abandons its own transition
+            // (see the sequence check after every await below). We deliberately do NOT
+            // dispose its source here — the superseded flow disposes its OWN source in
+            // its finally block, so a state still holding a reference to the old token
+            // can never hit ObjectDisposedException.
+            var superseded = _stateCts;
+            _stateCts = null;
+            superseded?.Cancel();
+
+            long mySequence = ++_transitionSequence;
+            var myCts = ct != CancellationToken.None
+                ? CancellationTokenSource.CreateLinkedTokenSource(ct)
                 : new CancellationTokenSource();
+            _stateCts = myCts;
+            var token = myCts.Token;
 
-            var token = _stateCts.Token;
-            token.ThrowIfCancellationRequested();
-
-            if (_currentState != null)
+            if (token.IsCancellationRequested)
             {
-                try
-                {
-                    await _currentState.OnExitAsync(token);
-                }
-                catch (Exception ex)
-                {
-                    NexusRuntime.Logger?.LogException(ex);
-                }
+                myCts.Cancel();
+                myCts.Dispose();
+                return;
             }
-
-            _currentState = nextState;
 
             try
             {
-                await _currentState.OnEnterAsync(args, token);
+                if (_currentState != null)
+                {
+                    try
+                    {
+                        await _currentState.OnExitAsync(token);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Superseded or externally cancelled — abort without touching state.
+                        return;
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogException(ex);
+                    }
+                }
+
+                // A newer transition may have superseded us while we awaited OnExitAsync.
+                if (mySequence != _transitionSequence) return;
+
+                _currentState = nextState;
+
+                try
+                {
+                    await _currentState.OnEnterAsync(args, token);
+                }
+                catch (OperationCanceledException)
+                {
+                    // Superseded or externally cancelled mid-enter. _currentState already
+                    // points at nextState; a superseding transition overwrites it itself.
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    // If a newer transition superseded us while we were inside OnEnterAsync,
+                    // it owns the machine now — a stale error-state fallback here would
+                    // clobber its committed _currentState. Abort silently.
+                    if (mySequence != _transitionSequence) return;
+
+                    NexusRuntime.Logger?.LogException(ex);
+                    // Attempt to transition to the consumer-registered error state for safe recovery.
+                    if (_errorStateType != null && _states.TryGetValue(_errorStateType, out var errorState))
+                    {
+                        _currentState = errorState;
+                        // Pass exception information to the error state.
+                        try
+                        {
+                            await _currentState.OnEnterAsync(ex, token);
+                        }
+                        catch (OperationCanceledException) { }
+                        catch (Exception innerEx)
+                        {
+                            NexusRuntime.Logger?.LogException(innerEx);
+                        }
+                    }
+                    else
+                    {
+                        // Fallback to null state if no error state is registered.
+                        _currentState = null;
+                    }
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                NexusRuntime.Logger?.LogException(ex);
-                // Attempt to transition to the consumer-registered error state for safe recovery.
-                if (_errorStateType != null && _states.TryGetValue(_errorStateType, out var errorState))
-                {
-                    _currentState = errorState;
-                    // Pass exception information to the error state.
-                    await _currentState.OnEnterAsync(ex, token);
-                }
-                else
-                {
-                    // Fallback to null state if no error state is registered.
-                    _currentState = null;
-                }
+                // Only the newest transition clears the shared slot; superseded transitions
+                // dispose their own source here, after all of their state code has returned.
+                if (mySequence == _transitionSequence) _stateCts = null;
+                myCts.Cancel();
+                myCts.Dispose();
             }
         }
 
@@ -133,8 +192,14 @@ namespace Nexus.Core.FSM
 
         public void Dispose()
         {
-            _stateCts?.Cancel();
-            _stateCts?.Dispose();
+            // Invalidate any in-flight transition; it aborts at its next checkpoint and
+            // disposes its own source in its finally block (CTS.Dispose is idempotent,
+            // so double-disposal with the shared slot below is safe).
+            _transitionSequence++;
+            var cts = _stateCts;
+            _stateCts = null;
+            cts?.Cancel();
+            cts?.Dispose();
             _states.Clear();
             _currentState = null;
         }

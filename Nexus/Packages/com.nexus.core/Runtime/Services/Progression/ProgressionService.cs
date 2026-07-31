@@ -15,8 +15,10 @@ namespace Nexus.Core.Services
 
     public interface IProgressionService
     {
-        ObservableProperty<int> CurrentLevel { get; }
-        ObservableProperty<int> MaxUnlockedLevel { get; }
+        // XOR-masked reactive properties: level data must not sit in plain RAM where
+        // GameGuardian / CheatEngine scans can find and edit it.
+        SecureObservableInt CurrentLevel { get; }
+        SecureObservableInt MaxUnlockedLevel { get; }
 
         void CompleteCurrentLevel();
         void SetLevel(int levelIndex);
@@ -31,8 +33,8 @@ namespace Nexus.Core.Services
         private const string KeyCurrentLevel = "NT_Prog_CurrentLevel";
         private const string KeyMaxLevel = "NT_Prog_MaxLevel";
 
-        public ObservableProperty<int> CurrentLevel { get; } = new(1);
-        public ObservableProperty<int> MaxUnlockedLevel { get; } = new(1);
+        public SecureObservableInt CurrentLevel { get; } = new(1);
+        public SecureObservableInt MaxUnlockedLevel { get; } = new(1);
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
@@ -71,13 +73,24 @@ namespace Nexus.Core.Services
         {
             if (level <= 1) return baseCost;
 
-            return curveType switch
+            double rawCost = curveType switch
             {
-                CurveType.Linear => (long)(baseCost * (1 + (level - 1) * (multiplier - 1))),
-                CurveType.Exponential => (long)(baseCost * Math.Pow(multiplier, level - 1)),
-                CurveType.Polynomial => (long)(baseCost * Math.Pow(level, multiplier)),
+                CurveType.Linear => baseCost * (1 + (level - 1) * (multiplier - 1)),
+                CurveType.Exponential => baseCost * Math.Pow(multiplier, level - 1),
+                CurveType.Polynomial => baseCost * Math.Pow(level, multiplier),
                 _ => baseCost
             };
+
+            // Clamp NaN / Infinity / overflow so extreme levels never wrap around to
+            // long.MinValue (the unchecked double->long cast does exactly that), and
+            // never produce a negative cost (Linear curves can go negative when
+            // multiplier < 1). A maxed cost is far safer than a broken one.
+            if (double.IsNaN(rawCost) || double.IsInfinity(rawCost) || rawCost >= long.MaxValue)
+            {
+                return long.MaxValue;
+            }
+
+            return (long)Math.Max(Math.Max(baseCost, rawCost), 1L);
         }
 
         public override void Dispose()

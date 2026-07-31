@@ -84,6 +84,27 @@ namespace Nexus.Editor.Tests
             public void OnTick(float deltaTime) { }
         }
 
+        // A state whose OnExitAsync is slow and IGNORES cancellation. This is the worst
+        // case for a concurrent transition: the machine must still drop the superseded
+        // transition via its sequence check, even though the state never cooperates.
+        public class MockStateSlowExit : IGameState
+        {
+            public bool IsEntered { get; private set; }
+
+            public ValueTask OnEnterAsync(object args, CancellationToken ct)
+            {
+                IsEntered = true;
+                return default;
+            }
+
+            public async ValueTask OnExitAsync(CancellationToken ct)
+            {
+                await Task.Delay(30);
+            }
+
+            public void OnTick(float deltaTime) { }
+        }
+
         [Test]
         public async Task GameStateMachine_TransitionsBetweenStates()
         {
@@ -102,6 +123,36 @@ namespace Nexus.Editor.Tests
             Assert.IsTrue(stateA.IsExited);
             Assert.IsTrue(stateB.IsEntered);
             Assert.AreSame(stateB, fsm.CurrentState);
+        }
+
+        [Test]
+        public async Task GameStateMachine_ConcurrentChangeState_SupersedesWithoutCorruption()
+        {
+            using var fsm = new GameStateMachine();
+            var slow = new MockStateSlowExit();
+            var stateA = new MockStateA();
+            var stateB = new MockStateB();
+
+            fsm.RegisterState(slow);
+            fsm.RegisterState(stateA);
+            fsm.RegisterState(stateB);
+
+            await fsm.ChangeStateAsync<MockStateSlowExit>();
+            Assert.AreSame(slow, fsm.CurrentState);
+
+            // Fire A, then immediately supersede it with B while A's transition is still
+            // awaiting the slow OnExitAsync. Exactly one state may end up current, and
+            // the superseded A must never be entered.
+            var t1 = fsm.ChangeStateAsync<MockStateA>();
+            var t2 = fsm.ChangeStateAsync<MockStateB>();
+
+            await t2;
+            await t1;
+
+            Assert.AreSame(stateB, fsm.CurrentState,
+                "The newest transition wins; the superseded one must not clobber _currentState.");
+            Assert.IsFalse(stateA.IsEntered, "Superseded transition must never run OnEnterAsync.");
+            Assert.IsTrue(stateB.IsEntered);
         }
 
         [Test]
@@ -223,6 +274,28 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(100, expCostLvl1);
             Assert.AreEqual(150, expCostLvl2);
             Assert.AreEqual(225, expCostLvl3);
+        }
+
+        [Test]
+        public void ProgressionService_UpgradeCost_ClampsInsteadOfOverflowing()
+        {
+            using var prog = new ProgressionService();
+
+            // 100 * 1.15^1999 is astronomically past long.MaxValue; the old unchecked
+            // (long) cast wrapped to long.MinValue. Must clamp instead.
+            Assert.AreEqual(long.MaxValue, prog.CalculateUpgradeCost(100, 2000, 1.15f, CurveType.Exponential));
+
+            // 100 * 2000^10 is also way beyond long range → clamp, not wrap.
+            Assert.AreEqual(long.MaxValue, prog.CalculateUpgradeCost(100, 2000, 10f, CurveType.Polynomial));
+
+            // Linear with multiplier < 1 goes negative on raw math; cost must never drop
+            // below the base cost (and never go negative).
+            long lin = prog.CalculateUpgradeCost(100, 50, 0.5f, CurveType.Linear);
+            Assert.GreaterOrEqual(lin, 100);
+
+            // Ordinary values still follow the documented curves.
+            Assert.AreEqual(150, prog.CalculateUpgradeCost(100, 2, 1.5f, CurveType.Exponential));
+            Assert.AreEqual(225, prog.CalculateUpgradeCost(100, 3, 1.5f, CurveType.Exponential));
         }
     }
 }
