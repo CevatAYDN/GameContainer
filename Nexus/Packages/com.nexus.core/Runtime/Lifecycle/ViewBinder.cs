@@ -179,6 +179,13 @@ namespace Nexus.Core
             if (pool.Count > 0)
             {
                 var mediator = pool.Pop();
+                // Reset BEFORE injecting: a mediator that implements IResettable is reset
+                // when returned to the pool (ClearInjectedReferences), but defensive hygiene
+                // demands the object handed out is guaranteed clean — regardless of which
+                // path put it into the pool (or if the pool was seeded externally). Calling
+                // Reset() again here is idempotent and cheap, and covers private (non-
+                // [Inject]) state that ClearInjectedReferences does not touch.
+                (mediator as IResettable)?.Reset();
                 _container.Inject(mediator);
                 return mediator;
             }

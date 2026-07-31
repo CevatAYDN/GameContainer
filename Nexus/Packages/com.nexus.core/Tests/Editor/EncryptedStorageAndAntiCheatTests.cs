@@ -211,6 +211,154 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void IapService_MockOwnedIntegrity_TamperDetectedAndSetCleared()
+        {
+            var iap = new IapService();
+            bool purchased = false;
+            iap.PurchaseProduct("no_ads", (ok, id) => purchased = ok);
+            Assert.IsTrue(purchased);
+            Assert.IsTrue(iap.IsProductOwned("no_ads"));
+
+            // Simulate a RAM scan injecting a fake product directly into the mock set,
+            // bypassing the checksum recomputation (as a memory editor would).
+            var field = typeof(IapService).GetField("_mockOwnedProducts",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var set = field?.GetValue(iap) as System.Collections.Generic.HashSet<string>;
+            Assert.IsNotNull(set, "_mockOwnedProducts must exist as a HashSet<string>.");
+            set.Add("hacked_owned_product");
+
+            // The integrity check must reject the forged ownership and wipe the set so
+            // no stale (including previously-legitimate) entries survive the tamper.
+            Assert.IsFalse(iap.IsProductOwned("hacked_owned_product"),
+                "Tampered product ownership must be rejected.");
+            Assert.IsFalse(iap.IsProductOwned("no_ads"),
+                "After a tamper the whole mock set is cleared (fail-closed).");
+
+            // A new legitimate purchase still works after the wipe.
+            bool repurchased = false;
+            iap.PurchaseProduct("no_ads", (ok, id) => repurchased = ok);
+            Assert.IsTrue(repurchased);
+            Assert.IsTrue(iap.IsProductOwned("no_ads"));
+        }
+
+        [Test]
+        public void IapService_MockOwned_NormalFlowUnaffected()
+        {
+            var iap = new IapService();
+            iap.PurchaseProduct("gem_pack", (ok, id) => { });
+            iap.PurchaseProduct("coin_pack", (ok, id) => { });
+
+            Assert.IsTrue(iap.IsProductOwned("gem_pack"));
+            Assert.IsTrue(iap.IsProductOwned("coin_pack"));
+            Assert.IsFalse(iap.IsProductOwned("never_bought"));
+        }
+
+        [Test]
+        public void IapService_MockOwned_PurchasePathRejectsTamperedSet()
+        {
+            // Regression: the purchase path must verify the checksum BEFORE mutating.
+            // Otherwise a RAM-injected product would be silently legitimized: the next
+            // legitimate purchase recomputes the checksum over the forged set, blessing
+            // the injection permanently.
+            var iap = new IapService();
+            iap.PurchaseProduct("no_ads", (ok, id) => { });
+            Assert.IsTrue(iap.IsProductOwned("no_ads"));
+
+            var field = typeof(IapService).GetField("_mockOwnedProducts",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var set = field?.GetValue(iap) as System.Collections.Generic.HashSet<string>;
+            Assert.IsNotNull(set);
+            set.Add("hacked_owned_product");
+
+            // Purchase directly (no IsProductOwned in between) — the purchase path itself
+            // must detect the tamper, wipe the set, and only then grant the legit purchase.
+            bool purchased = false;
+            iap.PurchaseProduct("gem_pack", (ok, id) => purchased = ok);
+            Assert.IsTrue(purchased);
+
+            Assert.IsFalse(iap.IsProductOwned("hacked_owned_product"),
+                "Forged ownership must not survive a legitimate purchase.");
+            Assert.IsTrue(iap.IsProductOwned("gem_pack"),
+                "The legitimate purchase must be granted on a clean set.");
+        }
+
+        [Test]
+        public void IapService_MockOwned_ChecksumRotatesAcrossReads()
+        {
+            // The stored checksum is XOR-masked with a mask that rotates on every successful
+            // verify. Two reads of an IDENTICAL set must yield different stored values — that
+            // is what defeats a value-scan/static patch of the checksum field.
+            var iap = new IapService();
+            iap.PurchaseProduct("no_ads", (ok, id) => { });
+            Assert.IsTrue(iap.IsProductOwned("no_ads"));
+
+            var checksumField = typeof(IapService).GetField("_mockOwnedChecksum",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            int before = (int)checksumField.GetValue(iap);
+
+            Assert.IsTrue(iap.IsProductOwned("no_ads"), "A second read of a clean set must still succeed.");
+            int after = (int)checksumField.GetValue(iap);
+
+            Assert.AreNotEqual(before, after,
+                "The rotating mask must change the stored checksum on every successful read (otherwise a static value-scan could patch it).");
+        }
+
+        [Test]
+        public void IapService_MockOwned_SnapshotReplayOfChecksumIsDetected()
+        {
+            // Stronger attack than a plain append: the attacker snapshots a consistent
+            // (set, checksum, mask) triple, appends a fake product, then REPLAYS the snapshot
+            // checksum+mask so the stored fields are internally consistent. The salted hash
+            // over the changed set no longer matches, so the tamper is still detected.
+            var iap = new IapService();
+            iap.PurchaseProduct("no_ads", (ok, id) => { });
+            Assert.IsTrue(iap.IsProductOwned("no_ads"));
+
+            var checksumField = typeof(IapService).GetField("_mockOwnedChecksum",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var maskField = typeof(IapService).GetField("_mockOwnedMask",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var setField = typeof(IapService).GetField("_mockOwnedProducts",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            int snapshotChecksum = (int)checksumField.GetValue(iap);
+            int snapshotMask = (int)maskField.GetValue(iap);
+
+            var set = setField?.GetValue(iap) as System.Collections.Generic.HashSet<string>;
+            Assert.IsNotNull(set);
+            set.Add("hacked_owned_product");
+            checksumField.SetValue(iap, snapshotChecksum); // replay the consistent snapshot
+            maskField.SetValue(iap, snapshotMask);
+
+            Assert.IsFalse(iap.IsProductOwned("hacked_owned_product"),
+                "Replaying a consistent (checksum, mask) snapshot after appending must still be rejected.");
+            Assert.IsFalse(iap.IsProductOwned("no_ads"),
+                "After a tamper the whole mock set is cleared (fail-closed).");
+
+            // A fresh legitimate purchase works after the wipe.
+            bool repurchased = false;
+            iap.PurchaseProduct("no_ads", (ok, id) => repurchased = ok);
+            Assert.IsTrue(repurchased);
+            Assert.IsTrue(iap.IsProductOwned("no_ads"));
+        }
+
+        [Test]
+        public void IapService_MockOwned_ReadBeforeAnyPurchaseIsStable()
+        {
+            // Behavioral lock (not a regression detector): _mockOwnedChecksum is seeded
+            // to the empty-set hash in the constructor, so the very first read on a fresh
+            // service does not report a spurious "memory tampering detected" (0 vs.
+            // empty-set hash mismatch). Wiping an empty set is unobservable, so this test
+            // passes on both old and new code — it pins the constructor-seeding invariant.
+            var iap = new IapService();
+            Assert.IsFalse(iap.IsProductOwned("nothing_bought"));
+
+            // A purchase after the read must still work and persist.
+            iap.PurchaseProduct("coins_100", (ok, id) => { });
+            Assert.IsTrue(iap.IsProductOwned("coins_100"));
+            Assert.IsFalse(iap.IsProductOwned("nothing_bought"));
+        }
+
+        [Test]
         public void AdService_InterstitialCooldownUsesObfuscatedStorage()
         {
             var service = new AdService();

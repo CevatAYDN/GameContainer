@@ -20,8 +20,14 @@ namespace Nexus.Core
     /// Mediators connect views to the signal system and models, handling view lifecycle and signal subscriptions.
     /// </summary>
     /// <typeparam name="TView">The view type this mediator manages (must be a class).</typeparam>
+    /// <remarks>
+    /// Implements <see cref="IResettable"/> so pooled reuse hygiene is guaranteed for ALL
+    /// mediators, not just those that opt in: <see cref="ViewBinder.GetMediator"/> calls
+    /// <see cref="Reset"/> on pool pop and <see cref="NexusDI.ClearInjectedReferences"/>
+    /// calls it on pool return. Override <see cref="OnReset"/> to clear derived private state.
+    /// </remarks>
     [Preserve]
-    public abstract class Mediator<TView> : IMediator where TView : class
+    public abstract class Mediator<TView> : IMediator, IResettable where TView : class
     {
         /// <summary>The bound view instance. Set after <see cref="Bind"/> is called.</summary>
         protected TView View { get; private set; }
@@ -69,6 +75,38 @@ namespace Nexus.Core
         protected virtual void OnBind() { }
         /// <summary>Override to perform custom cleanup when the mediator is unbound.</summary>
         protected virtual void OnUnbind() { }
+
+        /// <summary>
+        /// Resets the mediator to a clean, unbound state for pool reuse. Disposes any
+        /// subscriptions that survived (normally Unbind clears them), nulls the view and
+        /// signal bus, then invokes <see cref="OnReset"/> for derived private state.
+        /// Idempotent and safe on a freshly created mediator.
+        ///
+        /// NOTE: Unlike <see cref="Unbind"/> (which calls <see cref="OnUnbind"/> while the
+        /// view/signal bus are still set), Reset nulls the view and signal bus BEFORE calling
+        /// <see cref="OnReset"/> — derived code must not expect to reach the old view from its
+        /// reset hook. Also note Reset does NOT invoke <see cref="OnUnbind"/>; the two hooks have
+        /// different contracts (OnUnbind = teardown, OnReset = pool-reuse hygiene).
+        /// </summary>
+        public void Reset()
+        {
+            for (int i = 0; i < _subscriptions.Count; i++)
+            {
+                _subscriptions[i].Dispose();
+            }
+            _subscriptions.Clear();
+            View = null;
+            SignalBus = null;
+            OnReset();
+        }
+
+        /// <summary>
+        /// Override to reset derived private state when the mediator is reused from the pool.
+        /// MUST be idempotent: Reset() is invoked twice per pool cycle — once on return
+        /// (ClearInjectedReferences) and once defensively on pop (GetMediator) — so derived
+        /// state cleared here must be safe to clear again. Runs after View/SignalBus are nulled.
+        /// </summary>
+        protected virtual void OnReset() { }
 
         /// <summary>Subscribes to a signal type. The subscription is auto-disposed on <see cref="Unbind"/>.</summary>
         /// <typeparam name="T">The signal struct type.</typeparam>

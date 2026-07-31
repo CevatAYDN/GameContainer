@@ -103,6 +103,20 @@ namespace Nexus.Tests
             }
         }
 
+        // Hangs until the [CommandTimeout] linked token cancels it. If the timeout were not
+        // wired into the retry loop (or the OCE were retried), FireAsync would either hang
+        // forever or retry indefinitely — the test proves neither happens.
+        [CommandTimeout(50)]
+        public class HangingAsyncCommand : IAsyncCommand<FailSignal>
+        {
+            [Inject] private RecoveryTestResults _results;
+            public async ValueTask ExecuteAsync(FailSignal signal, CancellationToken ct)
+            {
+                _results.ThrowCount++;
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+            }
+        }
+
         public class CustomRecoveryStrategy : IRecoveryStrategy
         {
             public Func<CommandFailureContext, RecoveryDecision> DecisionFactory;
@@ -138,6 +152,7 @@ namespace Nexus.Tests
             _container.Bind<GenericOnlyFallbackCommand>(isSingleton: false);
             _container.Bind<GenericOnlyAsyncFallbackCommand>(isSingleton: false);
             _container.Bind<AsyncThrowCommand>(isSingleton: false);
+            _container.Bind<HangingAsyncCommand>(isSingleton: false);
         }
 
         [TearDown]
@@ -256,6 +271,46 @@ namespace Nexus.Tests
             Assert.AreEqual(typeof(ThrowCommand), caughtFailedSignal.Value.SourceCommand);
             Assert.IsInstanceOf<FailSignal>(caughtFailedSignal.Value.SourceSignal);
             Assert.AreEqual("SkipTest", ((FailSignal)caughtFailedSignal.Value.SourceSignal).Message);
+        }
+
+        [Test]
+        public async Task CommandTimeout_CancelsHangingCommand_DoesNotBlockRetryLoop()
+        {
+            _signalBus.RegisterCommand(typeof(FailSignal), typeof(HangingAsyncCommand), ExecutionMode.Sequential, 0, true);
+            _strategy.DecisionFactory = ctx => RecoveryDecision.Retry(10); // would loop forever if timeout didn't break out
+
+            // Race FireAsync against a bounded delay: if the timeout mechanism regresses and
+            // never fires, the task never completes — a plain await (or a blocking ThrowsAsync)
+            // would hang CI forever. The race turns that regression into a fast, clearly-
+            // messaged failure instead.
+            var fireTask = _signalBus.FireAsync(new FailSignal("Timeout")).AsTask();
+            var completed = await Task.WhenAny(fireTask, Task.Delay(TimeSpan.FromSeconds(5)));
+
+            // fireTask winning the 5s race already proves prompt completion (the 50ms
+            // timeout fired well inside the bound); no separate elapsed assertion needed.
+            Assert.AreSame(fireTask, completed,
+                "FireAsync must complete within 5s — if the [CommandTimeout] linked token stops firing, a hanging command blocks the signal line forever.");
+
+            // fireTask is guaranteed complete here (proven by the AreSame race above), so
+            // re-awaiting it cannot deadlock or hang. Surface its exception manually instead of
+            // using Assert.ThrowsAsync: that API's return type differs across NUnit versions
+            // (some return Task<T>; Unity's ext.nunit returns the exception directly and is
+            // NOT awaitable — CS1061), so the try/catch form is version-agnostic. The command
+            // must surface an OCE (rethrow, P1-3), NOT a retried generic failure (which would
+            // loop Retry(10) and blow ThrowCount).
+            bool threwOperationCanceled = false;
+            try
+            {
+                await fireTask;
+            }
+            catch (OperationCanceledException)
+            {
+                threwOperationCanceled = true;
+            }
+            Assert.IsTrue(threwOperationCanceled,
+                "A [CommandTimeout] async command must surface as OperationCanceledException.");
+            Assert.AreEqual(1, _results.ThrowCount,
+                "A timed-out command must NOT be retried: OperationCanceledException rethrows (P1-3) instead of entering the retry loop.");
         }
 
         [Test]
