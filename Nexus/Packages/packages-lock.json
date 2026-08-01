@@ -21,7 +21,9 @@
       "version": "file:com.nexus.core",
       "depth": 0,
       "source": "embedded",
-      "dependencies": {}
+      "dependencies": {
+        "com.unity.ugui": "2.0.0"
+      }
     },
     "com.unity.ai.navigation": {
       "version": "2.0.14",

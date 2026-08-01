@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **docs/INTEGRATION.md** — integration guide covering UPM (Git URL), npm (not applicable), and git submodule integration paths, including consumer-project verification steps.
+- **package.json** — declared `com.unity.ugui` (2.0.0) in `dependencies` (runtime asmdef references `UnityEngine.UI`; previously undeclared, which could break consumers without UGUI).
 - **IFloatingTextService & FloatingTextService** — 0-GC pooled floating text manager for World-Space to Screen UI numbers (`+$500`, `+$1.2M`, `-25 HP`).
 - **IEncryptedStorageService Cloud Sync** — `ExportEncryptedSaveData()` & `ImportEncryptedSaveData(base64)` for syncing AES-256 encrypted saves to Firebase, PlayFab, or Cloud Save.
 - **OfflineTimeCalculator** — safe offline duration calculator with anti-cheat detection against device clock tampering.
