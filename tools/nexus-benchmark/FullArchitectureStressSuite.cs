@@ -2150,18 +2150,18 @@ namespace NexusBench
                 var s2 = new EncryptedStorageService("HarnessSalt_28");
                 bool persisted = s2.GetString("profile") == "hero=42" && s2.GetLong("coins") == 12345;
 
-                // Tamper: flip a ciphertext byte. Read must fail HMAC and return default.
+                // Tamper: reject an invalid cloud payload without replacing the good local save.
                 string export = s2.ExportEncryptedSaveData("profile");
                 byte[] tampered = Convert.FromBase64String(export);
                 tampered[tampered.Length - 1] ^= 0xFF;
                 bool imported = s2.ImportEncryptedSaveData("profile", Convert.ToBase64String(tampered));
-                bool tamperDetected = s2.GetString("profile") == "";
+                bool tamperDetected = !imported && s2.GetString("profile") == "hero=42";
 
                 s2.DeleteKey("coins");
                 bool deleted = !s2.HasKey("coins");
                 s2.Dispose();
 
-                ok = roundTrip && longRt && persisted && imported && tamperDetected && deleted;
+                ok = roundTrip && longRt && persisted && tamperDetected && deleted;
             }
             finally
             {
@@ -2172,7 +2172,7 @@ namespace NexusBench
 
             Console.WriteLine($"[Nexus Architecture Stress] Encrypted storage: roundTrip={ok}");
             Report("28. EncryptedStorage_RoundTrip_TamperDetection", ok,
-                "AES-256+HMAC round-trip, persistence across instances, ciphertext tamper detected (HMAC revert to default), delete key");
+                "AES-256+HMAC round-trip, persistence across instances, corrupt cloud import rejected without replacing local data, delete key");
         }
 
         // ── 29. SaveThrottler + OfflineTimeCalculator + GameSaveManager ─────────
