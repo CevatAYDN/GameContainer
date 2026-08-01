@@ -50,6 +50,8 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/MetricsSampler.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/QueueDrainer.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusBootstrapManifest.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Pipelines/SignalDispatchPipeline.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Lifecycle/ContextLifecycleOrchestrator.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Services/AssemblyScanService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Lifecycle/**/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/ModelData.cs" />
