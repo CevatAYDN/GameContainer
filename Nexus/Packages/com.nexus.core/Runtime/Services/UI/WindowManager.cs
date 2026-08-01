@@ -473,6 +473,7 @@ namespace Nexus.Core.Services
             // B3: mark disposed FIRST so in-flight async loops bail out, then wake any
             // pending waiters so they stop waiting instead of timing out for 30 s.
             _disposed = true;
+            _pendingOpenWindows.Clear();
             SignalPendingChanged();
 
             // Destroy all active windows directly; lifecycle events are skipped during teardown

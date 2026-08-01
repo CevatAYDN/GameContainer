@@ -64,6 +64,7 @@ namespace Nexus.Core
             OnUnhandledException?.Invoke(ex, context);
         }
 
+        private volatile bool _disposed;
         private readonly NexusDI _container;
         private readonly IContext _context;
         private readonly IContextResolver _contextResolver;
@@ -691,7 +692,7 @@ namespace Nexus.Core
                     }
                     else
                     {
-                        Console.WriteLine($"[DEBUG-BROADCAST-FAIL] targetCtx={targetCtx.GetType().Name}, SignalBus={targetCtx.SignalBus?.GetType().Name ?? "null"}");
+                        NexusRuntime.Logger?.LogWarning($"[Nexus] Cross-context broadcast failed: target context '{targetCtx.GetType().Name}' does not use a SignalBus-backed ISignalBus. Broadcast skipped.");
                     }
                 }
             }
@@ -740,6 +741,8 @@ namespace Nexus.Core
 
         public void Dispose()
         {
+            if (_disposed) return;
+            _disposed = true;
             // Snapshot the nodes before disposing: RawSubscription.Dispose() re-enters
             // the registry's Unsubscribe → deferred sweep. The registries then reclaim
             // every node and clear all state, so we dispose the raw subscriptions first
