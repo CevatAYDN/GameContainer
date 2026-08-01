@@ -91,6 +91,70 @@ namespace Nexus.Tests
             Assert.AreEqual(80, model.LastHealth);
         }
 
+        // B7: FireAtTick must only fire synchronously when targeting the CURRENT tick
+        // and the bus is NOT resimulating. A past/future tick records to history only.
+        [Test]
+        public void FireAtTick_AtCurrentTick_FiresSynchronously()
+        {
+            var model = new TestPlayerSnapshot();
+            _networkBus.RegisterModel(model);
+            _container.BindInstance(model);
+            _container.Bind<UpdateHealthCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(TestPlayerSignal), typeof(UpdateHealthCommand), ExecutionMode.Sequential, 0, false);
+
+            _networkBus.SetTick(0);
+            _networkBus.FireAtTick(new TestPlayerSignal(1, 42), 0);
+
+            Assert.AreEqual(42, model.LastHealth, "Current-tick FireAtTick must apply locally.");
+            var history = (NetworkSignalHistory<TestPlayerSignal>)_networkBus.Histories[typeof(TestPlayerSignal)];
+            Assert.AreEqual(1, history.Signals.Count);
+        }
+
+        [Test]
+        public void FireAtTick_AtNonCurrentTick_RecordsWithoutFiring()
+        {
+            var model = new TestPlayerSnapshot();
+            _networkBus.RegisterModel(model);
+            _container.BindInstance(model);
+            _container.Bind<UpdateHealthCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(TestPlayerSignal), typeof(UpdateHealthCommand), ExecutionMode.Sequential, 0, false);
+
+            _networkBus.SetTick(0);
+            _networkBus.FireAtTick(new TestPlayerSignal(1, 42), 5);
+
+            Assert.AreEqual(0, model.LastHealth, "Non-current-tick FireAtTick must NOT fire synchronously.");
+            var history = (NetworkSignalHistory<TestPlayerSignal>)_networkBus.Histories[typeof(TestPlayerSignal)];
+            Assert.AreEqual(1, history.Signals.Count);
+            Assert.AreEqual(5, history.Signals[0].Tick);
+        }
+
+        // B7: a signal that exists at the rollback tick must not be double-applied when
+        // the bus resimulates — the model must reflect exactly one application per tick.
+        [Test]
+        public void RollbackAndResimulate_NoDoubleApplyOfReplayedSignals()
+        {
+            var model = new TestPlayerSnapshot();
+            _networkBus.RegisterModel(model);
+            _container.BindInstance(model);
+            _container.Bind<UpdateHealthCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(TestPlayerSignal), typeof(UpdateHealthCommand), ExecutionMode.Sequential, 0, false);
+
+            _networkBus.SetTick(0);
+            _networkBus.Fire(new TestPlayerSignal(1, 100));
+            _networkBus.SetTick(1);
+            _networkBus.Fire(new TestPlayerSignal(1, 200));
+
+            // Roll back to 0 and resimulate to 1: model must be exactly the tick-1 value.
+            _networkBus.RollbackAndResimulate(0, 1);
+            Assert.AreEqual(200, model.LastHealth,
+                "Replay must apply each tick exactly once; the final model equals the tick-1 signal.");
+
+            // Repeat the rollback: deterministic, no drift from double-application.
+            _networkBus.RollbackAndResimulate(0, 1);
+            Assert.AreEqual(200, model.LastHealth,
+                "Repeated rollback must be deterministic (no double-apply).");
+        }
+
         [Test]
         public void PruneHistory_RemovesOldEntries()
         {

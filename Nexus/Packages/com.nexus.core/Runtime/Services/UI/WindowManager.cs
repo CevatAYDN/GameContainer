@@ -49,9 +49,28 @@ namespace Nexus.Core.Services
         private readonly List<string> _windowHistory = new();
         private readonly SemaphoreSlim _windowLock = new(1, 1);
         private readonly HashSet<string> _pendingOpenWindows = new();
-        private readonly Dictionary<string, TaskCompletionSource<GameObject>> _pendingOpenCompletions = new();
+
+        // A4b: lock-free read snapshot. Every mutation to _activeWindows happens under
+        // _windowLock and is followed by RefreshReadSnapshot(); readers (IsWindowOpen /
+        // GetWindow) answer from this volatile snapshot without ever taking the
+        // semaphore — so they cannot block the main thread and cannot return a false
+        // negative from a transient lock hold.
+        private volatile Dictionary<string, GameObject> _activeWindowsRead = new();
+
+        // A4a: completion signal fired (under the lock) whenever the pending set
+        // changes, so a concurrent opener waits on the actual state change instead of
+        // polling every 10 ms (~3000 timer allocations over a 30 s contention window).
+        private TaskCompletionSource<bool> _pendingChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // B3: set at the start of Dispose so in-flight async open/close loops bail out
+        // instead of touching a disposed semaphore / destroyed GameObjects.
+        private volatile bool _disposed;
 
         private readonly UICanvasSystem _canvas = new();
+
+        /// <summary>A4c: context lifetime token so window lifecycle callbacks are
+        /// cancelled during context teardown instead of running with CancellationToken.None.</summary>
+        private CancellationToken LifetimeToken => Context?.LifetimeToken ?? CancellationToken.None;
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
@@ -63,14 +82,60 @@ namespace Nexus.Core.Services
             return default;
         }
 
+        /// <summary>Refreshes the lock-free read snapshot. Call under _windowLock.</summary>
+        private void RefreshReadSnapshot()
+        {
+            _activeWindowsRead = new Dictionary<string, GameObject>(_activeWindows);
+        }
+
+        /// <summary>Signals waiters that the pending-open set changed. Call under _windowLock.</summary>
+        private void SignalPendingChanged()
+        {
+            var previous = _pendingChanged;
+            _pendingChanged = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            previous.TrySetResult(true);
+        }
+
+        /// <summary>
+        /// Acquires the window lock, returning false if the manager is disposing (or a
+        /// concurrent Dispose has already released the semaphore) — callers bail out
+        /// instead of crashing on ObjectDisposedException.
+        /// </summary>
+        private async Task<bool> TryAcquireWindowLockAsync()
+        {
+            if (_disposed) return false;
+            try
+            {
+                await _windowLock.WaitAsync();
+            }
+            catch (ObjectDisposedException)
+            {
+                return false;
+            }
+            if (_disposed)
+            {
+                try { _windowLock.Release(); } catch (ObjectDisposedException) { }
+                return false;
+            }
+            return true;
+        }
+
         public async Task<GameObject> OpenWindowAsync(string windowName, UILayer layer = UILayer.Screen, object args = null)
         {
             if (string.IsNullOrEmpty(windowName)) return null;
+            if (_disposed) return null;
 
+            // E-5 fix: extended lock scope to eliminate the race window entirely.
+            // We release the lock ONLY for the async instantiation (which may be slow),
+            // but re-check conditions immediately after re-acquiring.
+            // The wait uses a completion signal (A4a) with a max-retry timeout instead
+            // of a 10 ms poll loop.
             GameObject existing = null;
+            const int maxPendingWaitMs = 30000; // 30-second timeout for pending opens
 
             // Phase 1: registration check (under lock)
-            await _windowLock.WaitAsync();
+            if (!await TryAcquireWindowLockAsync()) return null;
+            bool lockHeld = true;
             try
             {
                 // Clean up any externally destroyed windows
@@ -82,33 +147,66 @@ namespace Nexus.Core.Services
                         keysToRemove.Add(kvp.Key);
                     }
                 }
-                foreach (var key in keysToRemove)
+                if (keysToRemove.Count > 0)
                 {
-                    _activeWindows.Remove(key);
-                    _windowHistory.Remove(key);
+                    foreach (var key in keysToRemove)
+                    {
+                        _activeWindows.Remove(key);
+                        _windowHistory.Remove(key);
+                    }
+                    RefreshReadSnapshot();
                 }
 
                 if (_activeWindows.TryGetValue(windowName, out existing) && existing != null)
                 {
                     existing.transform.SetAsLastSibling();
+                    // B6: keep the history order in sync with the visual top-most window so
+                    // CloseTopWindowAsync closes what the player actually sees on top.
+                    _windowHistory.Remove(windowName);
+                    _windowHistory.Add(windowName);
                     return existing;
                 }
 
-                // If another thread/task is already opening this window, await its completion
-                if (_pendingOpenCompletions.TryGetValue(windowName, out var pendingTcs))
+                // If another thread is already opening this window, wait for the pending-set
+                // change signal instead of polling. Each iteration allocates ONE delay task
+                // for the remaining timeout, never 3000×10 ms timers.
+                var pendingWait = System.Diagnostics.Stopwatch.StartNew();
+                while (_pendingOpenWindows.Contains(windowName))
                 {
                     _windowLock.Release();
-                    return await pendingTcs.Task;
+                    lockHeld = false;
+
+                    var signal = _pendingChanged.Task;
+                    int remainingMs = maxPendingWaitMs - (int)pendingWait.ElapsedMilliseconds;
+                    if (remainingMs <= 0)
+                    {
+                        NexusRuntime.Logger?.LogError($"[WindowManager] Timed out waiting for pending window: {windowName}");
+                        return null;
+                    }
+                    var completed = await Task.WhenAny(signal, Task.Delay(remainingMs));
+                    if (completed != signal)
+                    {
+                        NexusRuntime.Logger?.LogError($"[WindowManager] Timed out waiting for pending window: {windowName}");
+                        return null;
+                    }
+
+                    if (!await TryAcquireWindowLockAsync()) return null;
+                    lockHeld = true;
+
+                    // Re-check: if window appeared while we were waiting, return it
+                    if (_activeWindows.TryGetValue(windowName, out existing) && existing != null)
+                    {
+                        return existing;
+                    }
                 }
 
-                // Designated opener
-                var tcs = new TaskCompletionSource<GameObject>(TaskCreationOptions.RunContinuationsAsynchronously);
-                _pendingOpenCompletions[windowName] = tcs;
+                // We are now the designated opener
                 _pendingOpenWindows.Add(windowName);
+                SignalPendingChanged();
             }
             finally
             {
-                if (_windowLock.CurrentCount == 0)
+                if (lockHeld)
                     _windowLock.Release();
             }
 
@@ -121,46 +219,47 @@ namespace Nexus.Core.Services
                 if (inst == null)
                 {
                     NexusRuntime.Logger?.LogError($"[WindowManager] Failed to instantiate window: {windowName}");
-                    await _windowLock.WaitAsync();
-                    try
+                    if (await TryAcquireWindowLockAsync())
                     {
-                        _pendingOpenWindows.Remove(windowName);
-                        if (_pendingOpenCompletions.Remove(windowName, out var failedTcs))
-                            failedTcs.TrySetResult(null);
+                        try { _pendingOpenWindows.Remove(windowName); SignalPendingChanged(); }
+                        finally { _windowLock.Release(); }
                     }
-                    finally { _windowLock.Release(); }
                     return null;
                 }
 
                 var lifecycles = inst.GetComponents<IUIWindowLifecycle>();
                 for (int i = 0; i < lifecycles.Length; i++)
                 {
-                    await lifecycles[i].OnOpeningAsync(args, CancellationToken.None);
+                    await lifecycles[i].OnOpeningAsync(args, LifetimeToken);
                 }
 
                 inst.SetActive(true);
 
                 for (int i = 0; i < lifecycles.Length; i++)
                 {
-                    await lifecycles[i].OnOpenedAsync(CancellationToken.None);
+                    await lifecycles[i].OnOpenedAsync(LifetimeToken);
                 }
 
                 // Phase 3: register under lock (atomic add + pending removal)
-                await _windowLock.WaitAsync();
+                if (!await TryAcquireWindowLockAsync())
+                {
+                    if (inst != null) UnityEngine.Object.Destroy(inst);
+                    return null;
+                }
                 try
                 {
+                    // E-5 fix: guard against a concurrent close that snuck in while we were instantiating
                     if (!inst) // GameObject was destroyed externally
                     {
                         _pendingOpenWindows.Remove(windowName);
-                        if (_pendingOpenCompletions.Remove(windowName, out var cancelledTcs))
-                            cancelledTcs.TrySetResult(null);
+                        SignalPendingChanged();
                         return null;
                     }
                     _activeWindows[windowName] = inst;
                     _windowHistory.Add(windowName);
                     _pendingOpenWindows.Remove(windowName);
-                    if (_pendingOpenCompletions.Remove(windowName, out var successTcs))
-                        successTcs.TrySetResult(inst);
+                    SignalPendingChanged();
+                    RefreshReadSnapshot();
                     _canvas.UpdateLayerInteractivity(_activeWindows);
                 }
                 finally
@@ -177,14 +276,11 @@ namespace Nexus.Core.Services
                 {
                     UnityEngine.Object.Destroy(inst);
                 }
-                await _windowLock.WaitAsync();
-                try
+                if (await TryAcquireWindowLockAsync())
                 {
-                    _pendingOpenWindows.Remove(windowName);
-                    if (_pendingOpenCompletions.Remove(windowName, out var errTcs))
-                        errTcs.TrySetResult(null);
+                    try { _pendingOpenWindows.Remove(windowName); SignalPendingChanged(); }
+                    finally { _windowLock.Release(); }
                 }
-                finally { _windowLock.Release(); }
                 return null;
             }
         }
@@ -197,7 +293,7 @@ namespace Nexus.Core.Services
         public async Task CloseWindowAsync(string windowName)
         {
             GameObject go = null;
-            await _windowLock.WaitAsync();
+            if (!await TryAcquireWindowLockAsync()) return;
             try
             {
                 // Clean up externally destroyed windows first
@@ -209,10 +305,14 @@ namespace Nexus.Core.Services
                         keysToRemove.Add(kvp.Key);
                     }
                 }
-                foreach (var key in keysToRemove)
+                if (keysToRemove.Count > 0)
                 {
-                    _activeWindows.Remove(key);
-                    _windowHistory.Remove(key);
+                    foreach (var key in keysToRemove)
+                    {
+                        _activeWindows.Remove(key);
+                        _windowHistory.Remove(key);
+                    }
+                    RefreshReadSnapshot();
                 }
 
                 _activeWindows.TryGetValue(windowName, out go);
@@ -227,13 +327,13 @@ namespace Nexus.Core.Services
             var lifecycles = go.GetComponents<IUIWindowLifecycle>();
             for (int i = 0; i < lifecycles.Length; i++)
             {
-                try { await lifecycles[i].OnClosingAsync(CancellationToken.None); }
+                try { await lifecycles[i].OnClosingAsync(LifetimeToken); }
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
             for (int i = 0; i < lifecycles.Length; i++)
             {
-                try { await lifecycles[i].OnClosedAsync(CancellationToken.None); }
+                try { await lifecycles[i].OnClosedAsync(LifetimeToken); }
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
@@ -241,13 +341,15 @@ namespace Nexus.Core.Services
 
             // Only remove if still the same GameObject — a concurrent OpenWindowAsync
             // may have reopened the same name while callbacks ran outside the lock.
-            await _windowLock.WaitAsync();
+            if (!await TryAcquireWindowLockAsync()) return;
             try
             {
                 if (_activeWindows.TryGetValue(windowName, out var current) && current == go)
                 {
                     _activeWindows.Remove(windowName);
                     _windowHistory.Remove(windowName);
+                    SignalPendingChanged();
+                    RefreshReadSnapshot();
                     _canvas.UpdateLayerInteractivity(_activeWindows);
                 }
             }
@@ -279,7 +381,7 @@ namespace Nexus.Core.Services
         public async Task CloseAllAsync()
         {
             List<string> windows;
-            await _windowLock.WaitAsync();
+            if (!await TryAcquireWindowLockAsync()) return;
             try
             {
                 windows = new List<string>(_activeWindows.Keys);
@@ -300,33 +402,19 @@ namespace Nexus.Core.Services
             _ = CloseAllAsync();
         }
 
+        // A4b: lock-free reads from the volatile snapshot — never take the semaphore, so
+        // these cannot block the main thread and cannot false-negative on a lock hold.
         public bool IsWindowOpen(string windowName)
         {
             if (string.IsNullOrEmpty(windowName)) return false;
-            _windowLock.Wait();
-            try
-            {
-                return _activeWindows.TryGetValue(windowName, out var go) && go != null;
-            }
-            finally
-            {
-                _windowLock.Release();
-            }
+            return _activeWindowsRead.ContainsKey(windowName);
         }
 
         public GameObject GetWindow(string windowName)
         {
             if (string.IsNullOrEmpty(windowName)) return null;
-            _windowLock.Wait();
-            try
-            {
-                _activeWindows.TryGetValue(windowName, out var go);
-                return go;
-            }
-            finally
-            {
-                _windowLock.Release();
-            }
+            _activeWindowsRead.TryGetValue(windowName, out var go);
+            return go;
         }
 
         // ── Editor introspection (G-3) ────────────────────────────
@@ -351,7 +439,8 @@ namespace Nexus.Core.Services
         public IReadOnlyList<WindowInfo> GetOpenWindowsSnapshot()
         {
             var result = new List<WindowInfo>();
-            if (!_windowLock.Wait(50)) return result;
+            // B3: bail out cleanly if the manager is being disposed (no ObjectDisposedException).
+            if (_disposed || !_windowLock.Wait(50)) return result;
             try
             {
                 foreach (var kvp in _activeWindows)
@@ -373,7 +462,7 @@ namespace Nexus.Core.Services
         {
             get
             {
-                if (!_windowLock.Wait(50)) return 0;
+                if (_disposed || !_windowLock.Wait(50)) return 0;
                 try { return _pendingOpenWindows.Count; }
                 finally { _windowLock.Release(); }
             }
@@ -381,6 +470,11 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
+            // B3: mark disposed FIRST so in-flight async loops bail out, then wake any
+            // pending waiters so they stop waiting instead of timing out for 30 s.
+            _disposed = true;
+            SignalPendingChanged();
+
             // Destroy all active windows directly; lifecycle events are skipped during teardown
             foreach (var kvp in _activeWindows)
             {
@@ -389,6 +483,7 @@ namespace Nexus.Core.Services
             }
             _activeWindows.Clear();
             _windowHistory.Clear();
+            _activeWindowsRead = new Dictionary<string, GameObject>();
 
             _canvas.Dispose();
 

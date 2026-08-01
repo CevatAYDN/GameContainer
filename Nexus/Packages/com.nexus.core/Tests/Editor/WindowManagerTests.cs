@@ -62,45 +62,41 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void IsWindowOpen_UnderLockContention_WaitsInsteadOfFalseNegative()
+        public void IsWindowOpen_LockFreeRead_NoFalseNegativeUnderContention()
         {
-            // Regression: IsWindowOpen used _windowLock.Wait(0), which returns false the
-            // instant any other thread (e.g. a background OpenWindowAsync) briefly holds the
-            // semaphore — a false negative that can trigger duplicate window opens. The fix
-            // uses a bounded 50 ms wait, so a transient ~20 ms hold is waited out and the
-            // query still reports the window as open.
+            // A4b regression: IsWindowOpen now reads a lock-free volatile snapshot
+            // (_activeWindowsRead) that is refreshed under the lock after every
+            // mutation. It never takes the semaphore, so it can neither block the
+            // main thread nor return a false negative when another thread holds the
+            // window lock — the old Wait(0)/Wait(50) paths could do both.
             var lockField = typeof(WindowManager).GetField("_windowLock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             var semaphore = (System.Threading.SemaphoreSlim)lockField.GetValue(_windowManager);
 
             var activeField = typeof(WindowManager).GetField("_activeWindows", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             var active = (System.Collections.Generic.Dictionary<string, GameObject>)activeField.GetValue(_windowManager);
+
+            var readField = typeof(WindowManager).GetField("_activeWindowsRead", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             var fakeWindow = new GameObject("FakeWindow");
             try
             {
                 active["FakeWindow"] = fakeWindow;
+                // Refresh the lock-free read snapshot the way a committed mutation would.
+                readField.SetValue(_windowManager, new System.Collections.Generic.Dictionary<string, GameObject>(active));
 
-                var acquired = new System.Threading.ManualResetEventSlim(false);
-                // Worker holds the lock for ~20 ms (well under the 50 ms bounded wait),
-                // then releases. With Wait(0) this test would get a false negative; with
-                // the bounded wait IsWindowOpen blocks until the hold ends and returns true.
-                var holder = System.Threading.Tasks.Task.Run(() =>
+                // Hold the lock on this thread: the query must still answer immediately
+                // (no wait, no false negative) because it reads the snapshot, not the
+                // semaphore-guarded dictionary.
+                semaphore.Wait();
+                try
                 {
-                    semaphore.Wait();
-                    acquired.Set();
-                    System.Threading.Thread.Sleep(20);
+                    bool isOpen = _windowManager.IsWindowOpen("FakeWindow");
+                    Assert.IsTrue(isOpen,
+                        "IsWindowOpen must read the lock-free snapshot and never block on the window lock.");
+                }
+                finally
+                {
                     semaphore.Release();
-                });
-
-                Assert.IsTrue(acquired.Wait(1000), "Worker never acquired the window lock.");
-                bool isOpen = _windowManager.IsWindowOpen("FakeWindow");
-                Assert.IsTrue(holder.Wait(2000), "Lock holder task did not complete.");
-
-                // Best-effort guard: in the uncontended case (call happens after the 20 ms
-                // hold already ended) this passes even with the old Wait(0) — but when the
-                // call DOES overlap the hold, Wait(0) returns false here and the test fails.
-                // Deterministic timing assertions are flaky in CI, so this form is preferred.
-                Assert.IsTrue(isOpen,
-                    "IsWindowOpen must wait out a transient lock hold instead of returning a false negative.");
+                }
             }
             finally
             {

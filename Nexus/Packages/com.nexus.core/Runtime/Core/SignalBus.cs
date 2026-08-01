@@ -506,17 +506,35 @@ namespace Nexus.Core
                         // Run concurrently
                         int taskCount = handlers.Count;
                         var tasks = System.Buffers.ArrayPool<ValueTask>.Shared.Rent(taskCount);
+                        int started = 0;
                         try
                         {
-                            for (int i = 0; i < taskCount; i++)
+                            // A5: track how many tasks actually started. If ExecuteAsync throws
+                            // synchronously mid-batch, the already-started ValueTasks must still
+                            // be awaited — otherwise they are abandoned (their exceptions become
+                            // unobserved and their work is silently lost).
+                            for (; started < taskCount; started++)
                             {
-                                tasks[i] = _commandExecutor.ExecuteAsync(handlers[i], signal, commandCt);
+                                tasks[started] = _commandExecutor.ExecuteAsync(handlers[started], signal, commandCt);
                             }
-                            
-                            for (int i = 0; i < taskCount; i++)
+
+                            for (int i = 0; i < started; i++)
                             {
                                 await tasks[i];
                             }
+                        }
+                        catch (Exception ex)
+                        {
+                            // Drain the tasks that were started before the failure so none is
+                            // abandoned; swallow their individual errors (the original exception
+                            // below is the one that propagates to recovery/error handling).
+                            for (int i = 0; i < started; i++)
+                            {
+                                try { await tasks[i]; }
+                                catch { /* original error wins */ }
+                            }
+                            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+                            throw; // unreachable — keeps the compiler happy
                         }
                         finally
                         {
@@ -697,6 +715,15 @@ namespace Nexus.Core
                 $"Queued async dispatch failed for signal '{typeof(T).FullName}'");
         }
 
+        /// <summary>
+        /// Dispatches a signal from a queued/replay context (HybridQueue drain, network
+        /// replay) without throwing NexusSyncAsyncMismatchException when the signal has
+        /// async handlers.
+        /// B8 contract: ordering is guaranteed only for sync-only signals. When the
+        /// signal has async handlers, dispatch is fire-and-forget (async ordering is
+        /// best-effort). Network replay is deterministic for sync signals; async replay
+        /// signals should be awaited by the caller for strict ordering.
+        /// </summary>
         internal void FireQueued<T>(T signal) where T : struct
         {
             bool hasAsync = _commandRegistry.HasAsyncCommandHandlers(typeof(T))

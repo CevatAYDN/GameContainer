@@ -93,6 +93,13 @@ namespace Nexus.Netcode
             _signals.Add(new BufferedNetworkSignal<T> { Tick = tick, Signal = signal });
         }
 
+        /// <summary>
+        /// Replays every buffered signal recorded at the given tick through the local bus.
+        /// B8 contract: deterministic replay ordering is guaranteed for sync handlers
+        /// (dispatched in-record-order). Signals with async handlers go through
+        /// <see cref="SignalBus.FireQueued"/> which is fire-and-forget — for strict
+        /// replay ordering, prefer sync commands or await the dispatch from the caller.
+        /// </summary>
         public void ReplaySignals(int tick, ISignalBus localSignalBus)
         {
             for (int i = 0; i < _signals.Count; i++)
@@ -170,6 +177,11 @@ namespace Nexus.Netcode
         private readonly List<INetworkModelSnapshotHandler> _modelHandlers = new();
         private int _currentTick;
 
+        // B7: true while RollbackAndResimulate is driving the tick pointer. FireAtTick
+        // records to history but suppresses the synchronous local fire during this
+        // window so a signal cannot be applied twice (once by replay, once by the call).
+        private bool _isResimulating;
+
         public int CurrentTick => _currentTick;
         public IReadOnlyDictionary<Type, INetworkSignalHistory> Histories => _histories;
 
@@ -219,53 +231,73 @@ namespace Nexus.Netcode
             _localSignalBus.Fire(signal);
         }
 
-        /// <summary>
-        /// Fires a signal queued specifically at a target tick.
-        /// </summary>
-        public void FireAtTick<T>(T signal, int tick) where T : struct, INetworkSignal
+    /// <summary>
+    /// Fires a signal queued specifically at a target tick.
+    /// B7: the synchronous local fire only happens when the target tick equals the
+    /// current tick AND the bus is NOT mid-resimulation. During RollbackAndResimulate
+    /// the tick pointer moves as signals replay, so firing here would double-apply a
+    /// signal to the models (once from replay, once from this call). Inside a
+    /// resimulation the signal is recorded to history only; the replay loop applies it.
+    /// </summary>
+    public void FireAtTick<T>(T signal, int tick) where T : struct, INetworkSignal
+    {
+        GetOrCreateHistory<T>().Add(tick, signal);
+        
+        if (tick == _currentTick && !_isResimulating)
         {
-            GetOrCreateHistory<T>().Add(tick, signal);
-            
-            if (tick == _currentTick)
-            {
-                _localSignalBus.Fire(signal);
-            }
+            _localSignalBus.Fire(signal);
         }
+    }
 
         /// <summary>
         /// Re-simulates all buffered network signals starting from a specific rollback tick up to the target tick.
         /// Clears invalid future signals during rollback.
+        ///
+        /// Snapshot convention (A2): snapshot[tick] is the model state BEFORE that tick's
+        /// signals are applied — the same convention SetTick uses (capture, then fire).
+        /// The loop therefore CAPTURES first, then REPLAYS. Capturing after replay would
+        /// make snapshot[tick] the post-signal state, which is inconsistent with SetTick
+        /// snapshots and causes a subsequent Restore(tick)+Replay(tick) to apply the tick's
+        /// signals twice (double-apply). The deterministic-repeat rollback tests guard this.
         /// </summary>
         public void RollbackAndResimulate(int rollbackTick, int targetTick)
         {
-            // Prune signals that occurred after the target tick (future prediction mistakes)
-            foreach (var history in _histories.Values)
+            _isResimulating = true;
+            try
             {
-                history.RemoveSignalsAfter(targetTick);
-            }
-
-            // Restore models to the rollback tick state first
-            for (int i = 0; i < _modelHandlers.Count; i++)
-            {
-                _modelHandlers[i].Restore(rollbackTick);
-            }
-
-            _currentTick = rollbackTick;
-
-            // Replay all signals starting from the rollback point up to the new target tick
-            while (_currentTick <= targetTick)
-            {
+                // Prune signals that occurred after the target tick (future prediction mistakes)
                 foreach (var history in _histories.Values)
                 {
-                    history.ReplaySignals(_currentTick, _localSignalBus);
+                    history.RemoveSignalsAfter(targetTick);
                 }
 
-                // Capture snapshots after resimulating signals so state reflects post-signal values
+                // Restore models to the rollback tick state first
                 for (int i = 0; i < _modelHandlers.Count; i++)
                 {
-                    _modelHandlers[i].Capture(_currentTick);
+                    _modelHandlers[i].Restore(rollbackTick);
                 }
-                _currentTick++;
+
+                _currentTick = rollbackTick;
+
+                // Replay all signals starting from the rollback point up to the new target tick.
+                // Order matters: Capture BEFORE Replay keeps the pre-tick snapshot contract.
+                while (_currentTick <= targetTick)
+                {
+                    for (int i = 0; i < _modelHandlers.Count; i++)
+                    {
+                        _modelHandlers[i].Capture(_currentTick);
+                    }
+
+                    foreach (var history in _histories.Values)
+                    {
+                        history.ReplaySignals(_currentTick, _localSignalBus);
+                    }
+                    _currentTick++;
+                }
+            }
+            finally
+            {
+                _isResimulating = false;
             }
         }
 

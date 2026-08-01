@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq.Expressions;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine.Scripting;
 
@@ -559,15 +560,33 @@ namespace Nexus.Core
                         object singletonInstance = binding.Instance;
                         if (singletonInstance != null) return singletonInstance;
 
-                        lock (_singletonLock)
+                        // B2: same-thread cycles are caught by the thread-local
+                        // s_resolutionStack above, so a failed Add here can only mean
+                        // ANOTHER thread is mid-construction of this singleton. Wait for
+                        // the builder instead of throwing a spurious "circular dependency"
+                        // on a perfectly valid concurrent first-resolve.
+                        var constructionDeadline = DateTime.UtcNow.AddSeconds(10);
+                        while (true)
                         {
-                            if (_disposed)
-                                throw new ObjectDisposedException(nameof(NexusDI), $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
+                            lock (_singletonLock)
+                            {
+                                if (_disposed)
+                                    throw new ObjectDisposedException(nameof(NexusDI), $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
 
-                            if (binding.Instance != null) return binding.Instance;
-                            if (!_constructingSingletons.Add(type))
-                                throw new InvalidOperationException($"Circular dependency detected while resolving singleton {type.FullName}.");
-                            addedToConstructing = true;
+                                if (binding.Instance != null) return binding.Instance;
+                                if (_constructingSingletons.Add(type))
+                                {
+                                    addedToConstructing = true;
+                                    break;
+                                }
+                            }
+
+                            // Another thread is building this singleton right now. Yield
+                            // briefly and retry — the builder publishes binding.Instance
+                            // (volatile) and removes the construction marker on exit.
+                            if (DateTime.UtcNow > constructionDeadline)
+                                throw new InvalidOperationException($"Timed out waiting for concurrent construction of singleton {type.FullName}.");
+                            Thread.Yield();
                         }
 
                         try

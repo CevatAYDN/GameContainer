@@ -283,13 +283,15 @@ namespace Nexus.Core
         public int IndexOf(T item) => _items.IndexOf(item);
 
         // ── Observation ────────────────────────────────────────
+        // B4 fix: handler registration dedupes like SecureObserverSet<T> — registering the
+        // same handler twice previously invoked it twice (SecureObservable never did).
         public void OnAdded(Action<int, T> handler)
         {
             if (handler == null) return;
             lock (_eventLock)
             {
                 _onAdded ??= new List<Action<int, T>>(2);
-                _onAdded.Add(handler);
+                if (!_onAdded.Contains(handler)) _onAdded.Add(handler);
             }
         }
         public void RemoveOnAdded(Action<int, T> handler)
@@ -307,7 +309,7 @@ namespace Nexus.Core
             lock (_eventLock)
             {
                 _onRemoved ??= new List<Action<int, T>>(2);
-                _onRemoved.Add(handler);
+                if (!_onRemoved.Contains(handler)) _onRemoved.Add(handler);
             }
         }
         public void RemoveOnRemoved(Action<int, T> handler)
@@ -325,7 +327,7 @@ namespace Nexus.Core
             lock (_eventLock)
             {
                 _onCleared ??= new List<Action>(2);
-                _onCleared.Add(handler);
+                if (!_onCleared.Contains(handler)) _onCleared.Add(handler);
             }
         }
         public void RemoveOnCleared(Action handler)
