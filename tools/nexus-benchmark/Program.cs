@@ -490,6 +490,8 @@ namespace NexusBench
             _failures += CrossThreadSuite.Run();
             _failures += GameSessionSuite.Run();
             _failures += ServicesSuite.Run();
+            _failures += RegistrySuite.Run();
+            _failures += ConcurrentDiffSuite.Run();
             return _failures;
         }
     }

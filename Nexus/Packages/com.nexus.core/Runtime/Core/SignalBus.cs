@@ -1,7 +1,5 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -42,39 +40,16 @@ namespace Nexus.Core
     [Preserve]
     public partial class SignalBus : ISignalBus, IDisposable
     {
-        // ─── Subscription management (linked list for zero-alloc sweep) ───
-        // Linked-list yields O(n) unsubscribe/cleanup but keeps Subscribe allocation-free.
-        // For large-scale (1000+) subscriber scenarios, prefer the command system.
-        internal class SubscriptionNode
-        {
-            public object Handler;
-            public object RawSubscription;
-            public bool IsActive = true;
-            public bool IsAsync;
-            public SubscriptionNode Next;
-            public void Reset() { Handler = null; RawSubscription = null; IsActive = true; IsAsync = false; Next = null; }
-        }
+        // ─── Registry wiring (single source of truth) ───
+        // Command registration/handler metadata lives in CommandRegistry; subscription
+        // storage/pool/sweep lives in SubscriptionRegistry. SignalBus owns dispatch,
+        // recovery, and queueing only — it delegates ALL registration and subscription
+        // state to the registries so there is exactly one storage layer (the harness's
+        // differential suite proves the wired bus behaves identically to the standalone
+        // registries).
+        private readonly CommandRegistry _commandRegistry;
+        private readonly SubscriptionRegistry _subscriptionRegistry;
 
-        internal static class SubscriptionNodePool
-        {
-            private static readonly Stack<SubscriptionNode> s_pool = new();
-            public static SubscriptionNode Rent(object handler, object rawSub, bool isAsync)
-            {
-                lock (s_pool)
-                {
-                    if (s_pool.Count > 0)
-                    {
-                        var node = s_pool.Pop();
-                        node.Handler = handler; node.RawSubscription = rawSub;
-                        node.IsActive = true; node.IsAsync = isAsync; node.Next = null;
-                        return node;
-                    }
-                }
-                return new SubscriptionNode { Handler = handler, RawSubscription = rawSub, IsAsync = isAsync };
-            }
-            public static void Return(SubscriptionNode node) { node.Reset(); lock (s_pool) { s_pool.Push(node); } }
-            public static void Clear() { lock (s_pool) { s_pool.Clear(); } }
-        }
         public static event Action<Exception, string> OnUnhandledException;
 
         internal static void RaiseUnhandledException(Exception ex, string context)
@@ -87,64 +62,14 @@ namespace Nexus.Core
         private readonly IContext _context;
         private readonly IContextResolver _contextResolver;
 
-        private readonly Dictionary<Type, List<CommandHandlerInfo>> _commandHandlers = new();
-        private readonly Dictionary<Type, List<CompositeTriggerState>> _compositeTriggersBySignal = new();
-        private readonly List<CompositeTriggerState> _allCompositeTriggers = new();
-        private readonly object _handlerReadLock = new();
-
-        // P0-3 fix: snapshots are cached behind a dirty flag so repeated property access
-        // does not allocate a new Dictionary each time.
-        private Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersSnapshot = new();
-        private volatile Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersReadCopy = new();
-        private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _registeredHandlersSnapshot = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>();
-        private bool _handlersSnapshotDirty = true;
-
-        public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers
-        {
-            get
-            {
-                lock (_handlerReadLock)
-                {
-                    RebuildHandlerSnapshotsIfDirty();
-                    return _commandHandlersSnapshot;
-                }
-            }
-        }
+        /// <summary>Registered signal→handler snapshots, owned by the command registry.</summary>
+        public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers => _commandRegistry.CommandHandlers;
 
         /// <summary>
         /// Returns all registered signal→handler mappings.
         /// Populated by both fluent API (BindSignal/To) and attribute-based discovery.
         /// </summary>
-        public IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers
-        {
-            get
-            {
-                lock (_handlerReadLock)
-                {
-                    RebuildHandlerSnapshotsIfDirty();
-                    return _registeredHandlersSnapshot;
-                }
-            }
-        }
-
-        // Must be called while holding _handlerReadLock.
-        private void RebuildHandlerSnapshotsIfDirty()
-        {
-            if (!_handlersSnapshotDirty && _commandHandlersSnapshot != null) return;
-            _handlersSnapshotDirty = false;
-
-            // Deep-copy the per-type handler lists so editor consumers never observe
-            // concurrent mutation while a new handler is being registered.
-            _commandHandlersSnapshot = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers.Count);
-            var dict = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>(_commandHandlers.Count);
-            foreach (var kvp in _commandHandlers)
-            {
-                var listCopy = new List<CommandHandlerInfo>(kvp.Value);
-                _commandHandlersSnapshot[kvp.Key] = listCopy;
-                dict[kvp.Key] = listCopy;
-            }
-            _registeredHandlersSnapshot = dict;
-        }
+        public IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers => _commandRegistry.RegisteredHandlers;
 
         /// <summary>
         /// P0-3 fix: cached per-signal-type trace label so the trace ring buffer
@@ -155,16 +80,9 @@ namespace Nexus.Core
             public static readonly string Fire = "▶ " + typeof(T).Name;
         }
 
-        private readonly Dictionary<Type, SubscriptionNode> _subscriptions = new();
-        private volatile Dictionary<Type, SubscriptionNode> _subscriptionsReadCopy = new();
-        private readonly object _subLock = new();
+        // Serializes composite-trigger state mutation across concurrent dispatches of this
+        // bus (the trigger tables themselves live in the command registry).
         private readonly object _compositeLock = new();
-        private bool _pendingCleanups;
-
-        // Precomputed cache: does this signal type have at least one async handler?
-        // Used by FireInternal to decide whether to delegate to the async path.
-        private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
-        private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
 
         // Reentrancy guard for the synchronous fast path. Thread-static by design: sync
         // dispatch is main-thread-only, so each thread tracks its own nesting and threads
@@ -188,37 +106,9 @@ namespace Nexus.Core
         private int _inFlightAsyncCommands;
         private const int MaxInFlightAsyncCommands = 100;
 
-        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_signalSetterCache = new();
-
-        // Cached dispatchers for generic-only commands (ICommand<TSignal>/IAsyncCommand<TSignal>)
-        // used by the object-based fallback paths (recovery). Without these, a generic-only
-        // fallback command would silently no-op because it is not a non-generic ICommand.
-        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_genericSyncDispatchCache = new();
-        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Func<object, object, CancellationToken, ValueTask>> s_genericAsyncDispatchCache = new();
-
-        // Cached per-signal-type [CrossContext] attribute so the hot fire path never
-        // performs an uncached reflection GetCustomAttribute call per signal dispatch.
-        private static readonly ConcurrentDictionary<Type, CrossContextAttribute> s_crossContextCache = new();
-
-        private static CrossContextAttribute GetCachedCrossContext(Type type)
-            => s_crossContextCache.GetOrAdd(type, static t => t.GetCustomAttribute<CrossContextAttribute>());
-
-        private static readonly Stack<List<object>> s_listPool = new();
-        private static List<object> GetPooledList()
-        {
-            lock (s_listPool)
-            {
-                return s_listPool.Count > 0 ? s_listPool.Pop() : new List<object>();
-            }
-        }
-        private static void ReturnPooledList(List<object> list)
-        {
-            list.Clear();
-            lock (s_listPool)
-            {
-                s_listPool.Push(list);
-            }
-        }
+        // Shared reflection caches (signal setters, generic dispatchers, cross-context
+        // attributes) live in CommandRegistry so every bus and the standalone registry share
+        // ONE cache; cleared via CommandRegistry.ClearStaticCaches().
 
 #if NEXUS_DEBUG
         private static readonly ProfilerMarker s_DispatchMarker = new ProfilerMarker("Nexus.Signal.Dispatch");
@@ -237,6 +127,11 @@ namespace Nexus.Core
             _poolManager = poolManager;
             _context = context;
             _contextResolver = contextResolver ?? NexusRuntime.DefaultContextResolver;
+            _commandRegistry = new CommandRegistry(container);
+            _subscriptionRegistry = new SubscriptionRegistry();
+            // Restore the pre-refactor SignalBus semantics: an Unsubscribe while the bus is NOT
+            // dispatching reclaims the node immediately; during dispatch it defers to unwind.
+            _subscriptionRegistry.ImmediateSweepWhenIdle = true;
         }
 
         internal static bool ImplementsGenericInterface(Type type, Type genericInterface)
@@ -251,149 +146,17 @@ namespace Nexus.Core
 
         public void RegisterCommand(Type signalType, Type commandType, ExecutionMode mode, int priority, bool isAsync)
         {
-            var genericSyncType = typeof(ICommand<>).MakeGenericType(signalType);
-            var genericAsyncType = typeof(IAsyncCommand<>).MakeGenericType(signalType);
-            bool implementsGenericSync = genericSyncType.IsAssignableFrom(commandType);
-            bool implementsGenericAsync = genericAsyncType.IsAssignableFrom(commandType);
-
-            if (!implementsGenericSync && !implementsGenericAsync)
-            {
-                throw new InvalidOperationException($"Command type {commandType.Name} registered for signal {signalType.Name} must implement either ICommand<{signalType.Name}> or IAsyncCommand<{signalType.Name}>.");
-            }
-
-            if (implementsGenericAsync && implementsGenericSync)
-            {
-                throw new InvalidOperationException($"Command type {commandType.Name} cannot implement both ICommand and IAsyncCommand interfaces.");
-            }
-            if (implementsGenericAsync && !isAsync)
-            {
-                throw new InvalidOperationException($"Command type {commandType.Name} implements IAsyncCommand but is being registered as sync. It must be registered as async (isAsync: true).");
-            }
-
-            // P0-5 fix: honor [CommandTimeout] at registration time.
-            var timeoutAttr = commandType.GetCustomAttribute<CommandTimeoutAttribute>();
-            int timeoutMs = timeoutAttr != null ? timeoutAttr.Milliseconds : 0;
-
-            // P1-2 fix: all handler-table mutations happen under _handlerReadLock,
-            // and lock-free readers get rebuilt volatile snapshots.
-            lock (_handlerReadLock)
-            {
-                if (!_commandHandlers.TryGetValue(signalType, out var list))
-                {
-                    list = new List<CommandHandlerInfo>();
-                    _commandHandlers[signalType] = list;
-                }
-
-                // Verify Mixed-Mode restriction
-                if (list.Count > 0 && list[0].Mode != mode)
-                {
-                    throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {list[0].Mode}, cannot add handler with mode {mode}.");
-                }
-
-                // Verify Exclusive mode restriction
-                if (mode == ExecutionMode.Exclusive && list.Count > 0)
-                {
-                    throw new InvalidOperationException($"Exclusive execution mode violation: Signal {signalType.Name} already has a handler registered.");
-                }
-
-                // Verify priority uniqueness for Sequential/Exclusive
-                if (mode != ExecutionMode.Concurrent)
-                {
-                    foreach (var handler in list)
-                    {
-                        if (handler.Priority == priority)
-                        {
-                            // Priority tie break fallback check or Build/Validation error
-                            throw new InvalidOperationException($"Duplicate priority {priority} for signal {signalType.Name}.");
-                        }
-                    }
-                }
-
-                list.Add(new CommandHandlerInfo(commandType, mode, priority, isAsync, timeoutMs));
-                _handlersSnapshotDirty = true;
-
-                // Update async handler cache — if any handler is async, mark the signal type
-                if (isAsync)
-                {
-                    _hasAsyncHandler[signalType] = true;
-                }
-                else if (!_hasAsyncHandler.ContainsKey(signalType))
-                {
-                    _hasAsyncHandler[signalType] = false;
-                }
-
-                // Sort by priority descending (higher priority runs first)
-                if (mode != ExecutionMode.Concurrent)
-                {
-                    list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
-                }
-
-                // Deep-copy each list so concurrent dispatch iterates an immutable snapshot.
-                _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers.Count);
-                foreach (var kvp in _commandHandlers)
-                    _commandHandlersReadCopy[kvp.Key] = new List<CommandHandlerInfo>(kvp.Value);
-                _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>(_hasAsyncHandler);
-            }
-
-            // Bind command type in DI so CommandPoolManager can resolve it
-            _container.Bind(commandType, isSingleton: false);
+            // Registration, validation, snapshot rebuild, async-handler tracking, and DI binding
+            // all live in the CommandRegistry — SignalBus only dispatches against the registry.
+            _commandRegistry.RegisterCommand(signalType, commandType, mode, priority, isAsync);
         }
 
         public void RegisterCompositeCommand(Type[] signalTypes, Type commandType, bool oneShot, int priority, bool isAsync)
         {
-            if (signalTypes == null || signalTypes.Length == 0)
-                throw new ArgumentException("Composite command requires at least one signal type.", nameof(signalTypes));
-            if (signalTypes.Length > 64 || signalTypes.Length == 0)
-                throw new ArgumentException($"Composite command requires between 1 and 64 signal types. Received {signalTypes.Length}.", nameof(signalTypes));
-
-            // A duplicate signal type would set the same bit twice; the trigger could never
-            // reach its TargetMask (or would fire with an ambiguous payload), so reject it.
-            for (int i = 0; i < signalTypes.Length; i++)
-            {
-                if (signalTypes[i] == null)
-                    throw new ArgumentException("Composite signal types cannot be null.", nameof(signalTypes));
-                for (int j = i + 1; j < signalTypes.Length; j++)
-                {
-                    if (signalTypes[i] == signalTypes[j])
-                    {
-                        throw new ArgumentException(
-                            $"Composite command requires unique signal types; '{signalTypes[i].Name}' appears more than once.",
-                            nameof(signalTypes));
-                    }
-                }
-            }
-
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            // Composite commands cannot use the single-signal generic command interfaces
-            // (ICommand<T>/IAsyncCommand<T>) since a composite spans multiple signal types.
-            // Guide the user toward ICompositeCommand/IAsyncCompositeCommand for payload access.
-            if (ImplementsGenericInterface(commandType, typeof(ICommand<>)) || ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>)))
-            {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' implements a single-signal generic command interface (ICommand<T>/IAsyncCommand<T>), which is not supported for composites. Implement ICompositeCommand / IAsyncCompositeCommand to receive all trigger payloads, or non-generic ICommand / IAsyncCommand if no payload is needed.");
-            }
-#endif
-
-            var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority);
-
-            // P1-2 fix: mutate composite tables under _compositeLock (same lock the
-            // dispatch path uses) so registration cannot race ProcessCompositeTriggers.
-            lock (_compositeLock)
-            {
-                _allCompositeTriggers.Add(state);
-
-                foreach (var sigType in signalTypes)
-                {
-                    if (!_compositeTriggersBySignal.TryGetValue(sigType, out var list))
-                    {
-                        list = new List<CompositeTriggerState>();
-                        _compositeTriggersBySignal[sigType] = list;
-                    }
-                    list.Add(state);
-                    list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
-                }
-            }
-
-            _container.Bind(commandType, isSingleton: false);
+            // Validation, the composite tables (all-triggers + by-signal, sorted by priority),
+            // and the DI binding all live in the CommandRegistry — SignalBus only dispatches
+            // against them via TryGetCompositeTriggers/ProcessCompositeTriggers.
+            _commandRegistry.RegisterCompositeCommand(signalTypes, commandType, oneShot, priority, isAsync);
         }
 
         public void Fire<T>(T signal) where T : struct
@@ -465,119 +228,18 @@ namespace Nexus.Core
 
         public ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct
         {
-            var type = typeof(T);
-            SignalSubscription<T> sub = null;
-            sub = new SignalSubscription<T>(handler, _context.LifetimeToken, () => Unsubscribe(type, sub));
-
-            lock (_subLock)
-            {
-                _subscriptions.TryGetValue(type, out var head);
-                var node = SubscriptionNodePool.Rent(handler, sub, isAsync: false);
-                node.Next = head;
-                _subscriptions[type] = node;
-                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
-            }
-            return sub;
+            // Delegated to the SubscriptionRegistry — the single storage layer owns the pooled
+            // node list, the volatile read copy, and the deferred sweep on dispatch unwind.
+            return _subscriptionRegistry.Subscribe<T>(handler, _context.LifetimeToken);
         }
 
         public ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct
         {
-            var type = typeof(T);
-            AsyncSignalSubscription<T> sub = null;
-            sub = new AsyncSignalSubscription<T>(handler, _context.LifetimeToken, () => Unsubscribe(type, sub));
-
-            lock (_subLock)
-            {
-                _subscriptions.TryGetValue(type, out var head);
-                var node = SubscriptionNodePool.Rent(handler, sub, isAsync: true);
-                node.Next = head;
-                _subscriptions[type] = node;
-                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
-            }
-            return sub;
+            return _subscriptionRegistry.SubscribeAsync<T>(handler, _context.LifetimeToken);
         }
 
-        private void Unsubscribe(Type type, object rawSub)
-        {
-            lock (_subLock)
-            {
-                if (_subscriptions.TryGetValue(type, out var current))
-                {
-                    while (current != null)
-                    {
-                        if (current.RawSubscription == rawSub)
-                        {
-                            current.IsActive = false;
-                            _pendingCleanups = true;
-                            break;
-                        }
-                        current = current.Next;
-                    }
-                }
-            }
-
-            // Free dead nodes immediately when nothing is dispatching (deferred to the next
-            // fire's finally otherwise, which could otherwise retain handlers until then).
-            if (s_stackDepth == 0)
-            {
-                SweepDeadNodes();
-            }
-        }
-
-        // P0-3 fix: reusable key buffer so SweepDeadNodes does not allocate per sweep.
-        private readonly List<Type> _sweepKeysCache = new();
-
-        private void SweepDeadNodes()
-        {
-            lock (_subLock)
-            {
-                if (!_pendingCleanups) return;
-                _pendingCleanups = false;
-
-                var keys = _sweepKeysCache;
-                keys.Clear();
-                foreach (var key in _subscriptions.Keys)
-                {
-                    keys.Add(key);
-                }
-
-                foreach (var type in keys)
-                {
-                    if (_subscriptions.TryGetValue(type, out var current))
-                    {
-                        SubscriptionNode prev = null;
-                        while (current != null)
-                        {
-                            if (!current.IsActive)
-                            {
-                                var next = current.Next;
-                                if (prev == null)
-                                {
-                                    if (next == null)
-                                        _subscriptions.Remove(type);
-                                    else
-                                        _subscriptions[type] = next;
-                                }
-                                else
-                                {
-                                    prev.Next = next;
-                                }
-                                var temp = current;
-                                current = next;
-                                SubscriptionNodePool.Return(temp);
-                            }
-                            else
-                            {
-                                prev = current;
-                                current = current.Next;
-                            }
-                        }
-                    }
-                }
-
-                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
-            }
-        }
+        // Unsubscribe/SweepDeadNodes live in the SubscriptionRegistry (deferred sweep on
+        // dispatch unwind so a pooled node is never reset while a reader walks it).
 
         private void FireInternal<T>(T signal, bool isCrossContextSource) where T : struct
         {
@@ -591,8 +253,8 @@ namespace Nexus.Core
             // The async path properly awaits each handler in priority order.
             // Sync-only signals take the fast path below with zero async overhead.
             // P1-2 fix: reads go through volatile snapshots (no unsynchronized Dictionary access).
-            bool hasAsync = _hasAsyncHandlerReadCopy.TryGetValue(type, out var asyncFlag) && asyncFlag;
-            bool hasAsyncSubscriptions = HasAsyncSubscriptions(type);
+            bool hasAsync = _commandRegistry.HasAsyncCommandHandlers(type);
+            bool hasAsyncSubscriptions = _subscriptionRegistry.HasAsyncSubscriptions(type);
 
             if (hasAsync || hasAsyncSubscriptions)
             {
@@ -603,7 +265,7 @@ namespace Nexus.Core
 
             // === FAST PATH: All handlers are synchronous ===
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (!_subscriptionsReadCopy.ContainsKey(type) && !_commandHandlersReadCopy.ContainsKey(type))
+            if (!_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _))
             {
                 NexusRuntime.Logger?.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
             }
@@ -627,6 +289,7 @@ namespace Nexus.Core
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
             s_DispatchMarker.Begin();
 #endif
+            _subscriptionRegistry.EnterDispatch();
             try
             {
                 // Run plugins' SignalInterceptors
@@ -662,7 +325,7 @@ namespace Nexus.Core
                 // Handle Cross-Context
                 if (!isCrossContextSource)
                 {
-                    var crossContextAttr = GetCachedCrossContext(type);
+                    var crossContextAttr = _commandRegistry.GetCachedCrossContext(type);
                     if (crossContextAttr != null)
                     {
                         BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
@@ -675,7 +338,7 @@ namespace Nexus.Core
                 // This ensures mediators/views always read post-command state.
 
                 // Phase 1: Process commands (mutate state)
-                if (_commandHandlersReadCopy.TryGetValue(type, out var handlers))
+                if (_commandRegistry.TryGetHandlers(type, out var handlers))
                 {
                     foreach (var handler in handlers)
                     {
@@ -684,7 +347,7 @@ namespace Nexus.Core
                 }
 
                 // Phase 2: Process subscriptions (observe final state)
-                if (_subscriptionsReadCopy.TryGetValue(type, out var node))
+                if (_subscriptionRegistry.SubscriptionsReadCopy.TryGetValue(type, out var node))
                 {
                     var current = node;
                     while (current != null)
@@ -721,10 +384,7 @@ namespace Nexus.Core
                 s_DispatchMarker.End();
 #endif
                 s_stackDepth--;
-                if (s_stackDepth == 0 && _pendingCleanups)
-                {
-                    SweepDeadNodes();
-                }
+                _subscriptionRegistry.ExitDispatch();
             }
         }
 
@@ -739,8 +399,8 @@ namespace Nexus.Core
         /// </summary>
         private void FireFailedSignalSafe(CommandFailedSignal failedSignal)
         {
-            bool hasAsync = (_hasAsyncHandlerReadCopy.TryGetValue(typeof(CommandFailedSignal), out var flag) && flag)
-                || HasAsyncSubscriptions(typeof(CommandFailedSignal));
+            bool hasAsync = _commandRegistry.HasAsyncCommandHandlers(typeof(CommandFailedSignal))
+                || _subscriptionRegistry.HasAsyncSubscriptions(typeof(CommandFailedSignal));
             if (hasAsync)
             {
                 SafeAsyncRunner.Run(() => FireInternalAsync(failedSignal, isCrossContextSource: false),
@@ -752,23 +412,6 @@ namespace Nexus.Core
             }
         }
 
-        /// <summary>
-        /// Checks if a signal type has any async subscriptions (SubscribeAsync).
-        /// </summary>
-        private bool HasAsyncSubscriptions(Type signalType)
-        {
-            if (!_subscriptionsReadCopy.TryGetValue(signalType, out var node))
-                return false;
-
-            var current = node;
-            while (current != null)
-            {
-                if (current.IsActive && current.IsAsync)
-                    return true;
-                current = current.Next;
-            }
-            return false;
-        }
 
         private async ValueTask FireInternalAsync<T>(T signal, bool isCrossContextSource) where T : struct
         {
@@ -799,6 +442,7 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
 #endif
+            _subscriptionRegistry.EnterDispatch();
             try
             {
                 var type = typeof(T);
@@ -836,7 +480,7 @@ namespace Nexus.Core
                 // Handle Cross-Context
                 if (!isCrossContextSource)
                 {
-                    var crossContextAttr = GetCachedCrossContext(type);
+                    var crossContextAttr = _commandRegistry.GetCachedCrossContext(type);
                     if (crossContextAttr != null)
                     {
                         BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
@@ -848,7 +492,7 @@ namespace Nexus.Core
                 // then subscriptions execute AFTER (they observe final state).
 
                 // Phase 1: Process commands (mutate state)
-                if (_commandHandlersReadCopy.TryGetValue(type, out var handlers))
+                if (_commandRegistry.TryGetHandlers(type, out var handlers))
                 {
                     if (handlers.Count > 0 && handlers[0].Mode == ExecutionMode.Concurrent)
                     {
@@ -890,7 +534,7 @@ namespace Nexus.Core
                 }
 
                 // Phase 2: Process subscriptions (observe final state)
-                if (_subscriptionsReadCopy.TryGetValue(type, out var node))
+                if (_subscriptionRegistry.SubscriptionsReadCopy.TryGetValue(type, out var node))
                 {
                     var current = node;
                     while (current != null)
@@ -934,10 +578,7 @@ namespace Nexus.Core
             finally
             {
                 s_asyncStackDepth.Value--;
-                if (s_asyncStackDepth.Value == 0 && _pendingCleanups)
-                {
-                    SweepDeadNodes();
-                }
+                _subscriptionRegistry.ExitDispatch();
             }
         }
 
@@ -1045,7 +686,7 @@ namespace Nexus.Core
                     {
                         // Generic-only command (ICommand<TSignal>): dispatch via cached reflection.
                         // Previously this silently no-oped because the command was not ICommand.
-                        var dispatcher = GetGenericSyncDispatcher(command.GetType(), signal.GetType());
+                        var dispatcher = _commandRegistry.GetGenericSyncDispatcher(command.GetType(), signal.GetType());
                         if (dispatcher == null)
                         {
                             throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement ICommand or ICommand<{signal.GetType().Name}>.");
@@ -1284,7 +925,7 @@ namespace Nexus.Core
                     {
                         // Generic-only command: prefer IAsyncCommand<TSignal>, then ICommand<TSignal>.
                         // Previously a generic-only fallback command silently no-oped here.
-                        var asyncDispatcher = GetGenericAsyncDispatcher(command.GetType(), signal.GetType());
+                        var asyncDispatcher = _commandRegistry.GetGenericAsyncDispatcher(command.GetType(), signal.GetType());
                         if (asyncDispatcher != null)
                         {
                             if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
@@ -1317,7 +958,7 @@ namespace Nexus.Core
                         }
                         else
                         {
-                            var syncDispatcher = GetGenericSyncDispatcher(command.GetType(), signal.GetType());
+                            var syncDispatcher = _commandRegistry.GetGenericSyncDispatcher(command.GetType(), signal.GetType());
                             if (syncDispatcher == null)
                             {
                                 throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement IAsyncCommand, IAsyncCommand<TSignal>, ICommand, or ICommand<{signal.GetType().Name}>.");
@@ -1375,84 +1016,31 @@ namespace Nexus.Core
 
         /// <summary>
         /// InjectSignal assigns the signal payload to the matching field or property on the command instance.
-        /// This is only used in non-generic ICommand execution.
-        /// Performs reflection once per (commandType, signalType) pair, then caches the compiled setter
-        /// delegate in a thread-safe dictionary to avoid reflection overhead on subsequent dispatches.
+        /// This is only used in non-generic ICommand execution. The compiled setter cache lives in the
+        /// CommandRegistry (shared with the standalone registry; the CR/DIFF suite proves parity).
         /// </summary>
         private void InjectSignal(object command, object signal)
         {
             if (signal == null) return;
 
-            var commandType = command.GetType();
-            var signalType = signal.GetType();
-            var cacheKey = (commandType, signalType);
-
-            var setter = s_signalSetterCache.GetOrAdd(cacheKey, key =>
-            {
-                var cmdType = key.commandType;
-                var sigType = key.signalType;
-                Action<object, object> newSetter = null;
-                MemberInfo foundMember = null;
-
-                // Match fields by exact type OR name convention (e.g. _signal or signal)
-                var fields = cmdType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                foreach (var field in fields)
-                {
-                    if (field.FieldType == sigType || 
-                        (field.FieldType.IsInstanceOfType(signal) && 
-                         (field.Name.Equals("_signal", StringComparison.OrdinalIgnoreCase) || 
-                          field.Name.Equals("signal", StringComparison.OrdinalIgnoreCase))))
-                    {
-                        foundMember = field;
-                        break;
-                    }
-                }
-
-                if (foundMember == null)
-                {
-                    var properties = cmdType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                    foreach (var prop in properties)
-                    {
-                        if (prop.PropertyType == sigType && prop.CanWrite)
-                        {
-                            foundMember = prop;
-                            break;
-                        }
-                    }
-                }
-
-                if (foundMember != null)
-                {
-                    if (foundMember is FieldInfo f)
-                        newSetter = (target, val) => f.SetValue(target, val);
-                    else if (foundMember is PropertyInfo p)
-                        newSetter = (target, val) => p.SetValue(target, val);
-                }
-                else
-                {
-                    newSetter = (target, val) => { };
-                }
-                return newSetter;
-            });
-
-            setter(command, signal);
+            _commandRegistry.GetSignalSetter(command.GetType(), signal.GetType())(command, signal);
         }
 
         private void ProcessCompositeTriggers<T>(T signal) where T : struct
         {
-            // P1-14 fix: collect due triggers under _compositeLock, then execute them
-            // OUTSIDE the lock so user command code never runs while holding it.
+            // P1-14 fix: collect due triggers under the registry's composite lock (snapshot copy),
+            // then execute them OUTSIDE any lock so user command code never runs while holding one.
             var signalType = typeof(T);
             List<(CompositeTriggerState trigger, CompositeContext context)> dueTriggers = null;
             // Composite payload support: box the signal at most once, and only when it actually
             // feeds a registered composite trigger. Non-composite signals never allocate here.
             object boxedSignal = null;
 
+            if (!_commandRegistry.TryGetCompositeTriggers(signalType, out var triggers))
+                return;
+
             lock (_compositeLock)
             {
-                if (!_compositeTriggersBySignal.TryGetValue(signalType, out var triggers))
-                    return;
-
                 foreach (var trigger in triggers)
                 {
                     if (trigger.IsCompleted) continue;
@@ -1745,8 +1333,8 @@ namespace Nexus.Core
 
         internal void FireQueued<T>(T signal) where T : struct
         {
-            bool hasAsync = (_hasAsyncHandlerReadCopy.TryGetValue(typeof(T), out var flag) && flag)
-                || HasAsyncSubscriptions(typeof(T));
+            bool hasAsync = _commandRegistry.HasAsyncCommandHandlers(typeof(T))
+                || _subscriptionRegistry.HasAsyncSubscriptions(typeof(T));
             if (hasAsync)
             {
                 RunQueuedAsyncDispatch(signal);
@@ -1942,44 +1530,9 @@ namespace Nexus.Core
             return typeof(ICommand<>).MakeGenericType(signal.GetType()).IsAssignableFrom(fallbackType);
         }
 
-        /// <summary>
-        /// Returns a cached dispatcher that invokes <see cref="ICommand{TSignal}"/>.Execute on a
-        /// generic-only command (or null if the command type does not implement that interface).
-        /// Used by the object-based fallback paths so generic-only commands are not silently skipped.
-        /// </summary>
-        private static Action<object, object> GetGenericSyncDispatcher(Type commandType, Type signalType)
-        {
-            var key = (commandType, signalType);
-            if (s_genericSyncDispatchCache.TryGetValue(key, out var cached)) return cached;
-
-            var genericInterface = typeof(ICommand<>).MakeGenericType(signalType);
-            if (!genericInterface.IsAssignableFrom(commandType)) return null;
-            var method = genericInterface.GetMethod("Execute");
-            Action<object, object> dispatcher = (cmd, sig) => method.Invoke(cmd, new[] { sig });
-            s_genericSyncDispatchCache.TryAdd(key, dispatcher);
-            return dispatcher;
-        }
-
-        /// <summary>
-        /// Returns a cached dispatcher that invokes <see cref="IAsyncCommand{TSignal}"/>.ExecuteAsync on
-        /// a generic-only async command (or null if the command type does not implement that interface).
-        /// </summary>
-        private static Func<object, object, CancellationToken, ValueTask> GetGenericAsyncDispatcher(Type commandType, Type signalType)
-        {
-            var key = (commandType, signalType);
-            if (s_genericAsyncDispatchCache.TryGetValue(key, out var cached)) return cached;
-
-            var genericInterface = typeof(IAsyncCommand<>).MakeGenericType(signalType);
-            if (!genericInterface.IsAssignableFrom(commandType)) return null;
-            var method = genericInterface.GetMethod("ExecuteAsync");
-            Func<object, object, CancellationToken, ValueTask> dispatcher = (cmd, sig, ct) =>
-            {
-                var result = method.Invoke(cmd, new[] { sig, ct });
-                return (ValueTask)result;
-            };
-            s_genericAsyncDispatchCache.TryAdd(key, dispatcher);
-            return dispatcher;
-        }
+        // Generic-only dispatcher/setter caches live in CommandRegistry (shared across every bus
+        // and the standalone registry). SignalBus only dispatches through them — see
+        // CommandRegistry.GetGenericSyncDispatcher / GetGenericAsyncDispatcher / GetSignalSetter.
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private void ExecuteDecoratedCommand<TSignal>(ICommand<TSignal> cmd, TSignal signal) where TSignal : struct
@@ -2037,71 +1590,45 @@ namespace Nexus.Core
 
         public void Dispose()
         {
-            lock (_subLock)
+            // Snapshot the nodes before disposing: RawSubscription.Dispose() re-enters
+            // the registry's Unsubscribe → deferred sweep. The registries then reclaim
+            // every node and clear all state, so we dispose the raw subscriptions first
+            // (their callbacks can no-op safely once the registries are emptied).
+            List<SubscriptionNode> nodes = null;
+            foreach (var kvp in _subscriptionRegistry.SubscriptionsReadCopy)
             {
-                // Snapshot the nodes before disposing: RawSubscription.Dispose() re-enters
-                // Unsubscribe → SweepDeadNodes, which mutates _subscriptions. Enumerating the
-                // live dictionary while disposing would throw InvalidOperationException
-                // ("Collection was modified") during teardown. Clear the dictionaries first,
-                // then dispose outside the enumeration.
-                List<SubscriptionNode> nodes = null;
-                foreach (var kvp in _subscriptions)
+                var current = kvp.Value;
+                while (current != null)
                 {
-                    var current = kvp.Value;
-                    while (current != null)
-                    {
-                        (nodes ??= new List<SubscriptionNode>()).Add(current);
-                        current = current.Next;
-                    }
+                    (nodes ??= new List<SubscriptionNode>()).Add(current);
+                    current = current.Next;
                 }
-                _subscriptions.Clear();
-                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>();
+            }
 
-                if (nodes != null)
+            if (nodes != null)
+            {
+                for (int i = 0; i < nodes.Count; i++)
                 {
-                    for (int i = 0; i < nodes.Count; i++)
+                    var node = nodes[i];
+                    if (node.IsActive && node.RawSubscription is IDisposable disposable)
                     {
-                        var node = nodes[i];
-                        if (node.IsActive && node.RawSubscription is IDisposable disposable)
-                        {
-                            disposable.Dispose();
-                        }
-                        SubscriptionNodePool.Return(node);
+                        disposable.Dispose();
                     }
                 }
             }
+
+            _subscriptionRegistry.Dispose();
+            _commandRegistry.Dispose();
 
             if (Volatile.Read(ref _inFlightAsyncCommands) > 0)
             {
                 NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_inFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
             }
-
-            lock (_handlerReadLock)
-            {
-                _commandHandlers.Clear();
-                _hasAsyncHandler.Clear();
-                _handlersSnapshotDirty = true;
-                _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>();
-                _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>();
-            }
-
-            lock (_compositeLock)
-            {
-                _compositeTriggersBySignal.Clear();
-                _allCompositeTriggers.Clear();
-            }
         }
 
         internal static void ClearStaticCaches()
         {
-            s_signalSetterCache.Clear();
-            s_genericSyncDispatchCache.Clear();
-            s_genericAsyncDispatchCache.Clear();
-            s_crossContextCache.Clear();
-            lock (s_listPool)
-            {
-                s_listPool.Clear();
-            }
+            CommandRegistry.ClearStaticCaches();
             SubscriptionNodePool.Clear();
             OnUnhandledException = null;
         }

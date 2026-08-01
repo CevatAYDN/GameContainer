@@ -61,19 +61,20 @@ namespace NexusBench
         {
             var probes = new List<CacheProbe>();
             var busType = typeof(SignalBus);
+            // The four reflection caches moved to CommandRegistry with the registry wiring
+            // (single source of truth); probe THEM so soak watches the live production caches.
+            var registryType = typeof(CommandRegistry);
 
             void DictProbe(string fieldName)
             {
-                var f = busType.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static);
-                probes.Add(new CacheProbe(fieldName, () => ((System.Collections.IDictionary)f.GetValue(null)).Count));
+                var f = registryType.GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Static);
+                probes.Add(new CacheProbe("CommandRegistry." + fieldName, () =>
+                    ((System.Collections.IDictionary)f.GetValue(null)).Count));
             }
             DictProbe("s_signalSetterCache");
             DictProbe("s_genericSyncDispatchCache");
             DictProbe("s_genericAsyncDispatchCache");
             DictProbe("s_crossContextCache");
-
-            var listPool = busType.GetField("s_listPool", BindingFlags.NonPublic | BindingFlags.Static);
-            probes.Add(new CacheProbe("s_listPool", () => ((Stack<List<object>>)listPool.GetValue(null)).Count));
 
             var nodePoolType = busType.Assembly.GetType("Nexus.Core.SubscriptionNodePool");
             var nodePool = nodePoolType?.GetField("s_pool", BindingFlags.NonPublic | BindingFlags.Static);
