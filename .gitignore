@@ -63,3 +63,11 @@ OPENCODE_CONTINUE.md
 
 # Freebuff scratch / benchmark workspace
 .freebuff/
+
+# Nexus benchmark harness (tracked under tools/nexus-benchmark/)
+# Build artifacts and scratch logs are ignored; the sources are tracked.
+tools/nexus-benchmark/bin/
+tools/nexus-benchmark/obj/
+tools/nexus-benchmark/*.txt
+# `*.csproj` is ignored globally above; keep the harness project tracked.
+!tools/nexus-benchmark/NexusBenchmark.csproj

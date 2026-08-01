@@ -1,0 +1,71 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net5.0</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>NexusBenchmark</AssemblyName>
+    <RootNamespace>NexusBench</RootNamespace>
+    <Optimize>true</Optimize>
+    <TieredCompilation>false</TieredCompilation>
+    <ServerGarbageCollection>false</ServerGarbageCollection>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Pure-C# benchmark path files (Unity-coupled siblings are stubbed in NexusStubs.cs). -->
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/SignalBus.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusDI.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandPool.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandHandlerInfo.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandFailedSignal.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CompositeTriggerState.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/SignalSubscriptions.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/LazyInjection.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ErrorCollection.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ITickable.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Interfaces/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Attributes/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Recovery/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Queue/HybridQueue.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Plugins/PluginSystem.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Logging/ILoggerService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/INexusService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/IReactiveModel.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/ObservableProperty.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/SecureObservableProperty.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Data/BigDouble.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/NexusService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Tick/TickService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/PerformanceMonitor.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NetworkMonitor.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Context.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ContextBuilder.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ContextData.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/DiValidationIssue.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/VersionedScriptableObject.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusRuntime.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Root.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/MetricsSampler.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/QueueDrainer.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusBootstrapManifest.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Services/AssemblyScanService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Lifecycle/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/ModelData.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Logging/LoggerService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Economy/EconomyService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Progression/ProgressionService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Pool/ObjectPoolService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Storage/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Extensions/GameSaveManager.cs" />
+    <!-- Real tracing implementation (replaces the old NexusTrace stub): SignalBus calls into
+         NexusTrace/TraceEventType/TraceStatus, which live here. Keeping the real file means the
+         harness can never drift from the runtime's tracing surface again. -->
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Tracing/CausalTracing.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Netcode/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/FSM/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Testing/MockContext.cs" />
+  </ItemGroup>
+
+</Project>
