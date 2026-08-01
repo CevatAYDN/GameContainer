@@ -187,6 +187,7 @@ namespace NexusBench
         private static void Report(string name, bool ok, string detail)
         {
             Console.WriteLine($"[Nexus Architecture Stress] {(ok ? "PASS" : "FAIL")}  {name}: {detail}");
+            ResultSink.Capture("ArchitectureStress", name, ok, detail);
             if (!ok) _failures++;
             _testCount++;
         }

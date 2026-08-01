@@ -26,6 +26,16 @@ namespace NexusBench
     {
         private const long HeapGrowthLimitBytes = 2 * 1024 * 1024;   // managed heap, post-GC
         private const long WorkingSetGrowthLimitBytes = 12 * 1024 * 1024;
+        // Committed memory (GC.GetGCMemoryInfo().TotalCommittedBytes) is what the runtime
+        // actually reserved for the managed heap; a steady plateau is normal, but growth
+        // beyond 32MB means pages are retained that the GC is not returning to the OS —
+        // the failure mode working-set deltas often miss on long-running Unity sessions.
+        private const long CommittedGrowthLimitBytes = 32 * 1024 * 1024;
+        // Collection counts are REPORTED, not gated: this workload legitimately churns
+        // ~30+ gen2 collections per iteration (test 11's composite path boxes payloads
+        // into LOH-sized buffers by design), so counts grow steadily while heap and
+        // committed memory plateau. A leak shows up in committed/heap/caches, not in
+        // collection counts; gating on gen2 would be a false positive.
         // C2 (CrossThreadSuite) intentionally spawns ~20 short-lived threads per run and
         // joins them before returning; the OS can lag thread reaping by a few. 12 gives
         // that headroom while still catching a real leak (a leaky suite would add dozens).
@@ -105,12 +115,14 @@ namespace NexusBench
             var probes = BuildCacheProbes();
             bool leakDetected = false;
             bool failuresDetected = false;
-            long heapBaseline = -1, wsBaseline = -1;
+            long heapBaseline = -1, wsBaseline = -1, committedBaseline = -1;
             int threadBaseline = -1, poolBaseline = -1;
+            int gen0Baseline = -1, gen1Baseline = -1, gen2Baseline = -1;
             var sw = Stopwatch.StartNew();
 
             for (int iter = 1; iter <= iterations; iter++)
             {
+                ResultSink.Clear();
                 var iterSw = Stopwatch.StartNew();
                 int failures = Program.RunAll();
                 iterSw.Stop();
@@ -122,6 +134,10 @@ namespace NexusBench
 
                 long heap = GC.GetTotalMemory(true);
                 long ws = Process.GetCurrentProcess().WorkingSet64;
+                long committed = GC.GetGCMemoryInfo().TotalCommittedBytes;
+                int gen0 = GC.CollectionCount(0);
+                int gen1 = GC.CollectionCount(1);
+                int gen2 = GC.CollectionCount(2);
                 int threads = Process.GetCurrentProcess().Threads.Count;
                 int pool = ThreadPool.ThreadCount;
 
@@ -136,8 +152,12 @@ namespace NexusBench
                 {
                     heapBaseline = heap;
                     wsBaseline = ws;
+                    committedBaseline = committed;
                     threadBaseline = threads;
                     poolBaseline = pool;
+                    gen0Baseline = gen0;
+                    gen1Baseline = gen1;
+                    gen2Baseline = gen2;
                 }
 
                 bool leakNow = false;
@@ -151,17 +171,21 @@ namespace NexusBench
                     }
                     leakNow = heap - heapBaseline > HeapGrowthLimitBytes
                         || ws - wsBaseline > WorkingSetGrowthLimitBytes
+                        || committed - committedBaseline > CommittedGrowthLimitBytes
                         || threads - threadBaseline > ThreadGrowthLimit
                         || pool - poolBaseline > PoolThreadGrowthLimit
                         || grew.Count > 0;
                     if (leakNow) leakDetected = true;
                     metrics = $"heapΔ={MB(heap - heapBaseline):+0.00;-0.00}MB wsΔ={MB(ws - wsBaseline):+0.00;-0.00}MB " +
+                        $"committedΔ={MB(committed - committedBaseline):+0.00;-0.00}MB " +
+                        $"gen0Δ={gen0 - gen0Baseline:+0;-0} gen1Δ={gen1 - gen1Baseline:+0;-0} gen2Δ={gen2 - gen2Baseline:+0;-0} " +
                         $"threadsΔ={threads - threadBaseline:+0;-0} poolΔ={pool - poolBaseline:+0;-0}" +
                         (grew.Count > 0 ? $" caches=[{string.Join(",", grew)}]" : "");
                 }
                 else
                 {
-                    metrics = $"heap={MB(heap):F1}MB ws={MB(ws):F1}MB threads={threads} pool={pool} (warmup)";
+                    metrics = $"heap={MB(heap):F1}MB ws={MB(ws):F1}MB committed={MB(committed):F1}MB " +
+                        $"gen0={gen0} gen1={gen1} gen2={gen2} threads={threads} pool={pool} (warmup)";
                 }
 
                 Console.WriteLine($"[Nexus Benchmark]   soak {iter}/{iterations}: failures={failures} " +

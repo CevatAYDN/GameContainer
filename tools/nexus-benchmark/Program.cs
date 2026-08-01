@@ -11,7 +11,9 @@
 //                                               watch heap/thread/static-cache growth)
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core;
@@ -83,6 +85,7 @@ namespace NexusBench
         private static void Report(string name, bool ok, string detail)
         {
             Console.WriteLine($"[Nexus Benchmark] {(ok ? "PASS" : "FAIL")}  {name}: {detail}");
+            ResultSink.Capture("Benchmarks", name, ok, detail);
             if (!ok) _failures++;
         }
 
@@ -369,22 +372,76 @@ namespace NexusBench
 
         public static int Main(string[] args)
         {
+            int pinCore = -1;
+            bool json = false;
+            var cmdArgs = new List<string>();
+            for (int i = 0; i < args.Length; i++)
+            {
+                switch (args[i])
+                {
+                    case "--json":
+                        json = true;
+                        break;
+                    case "--pin-cpu":
+                        if (i + 1 < args.Length && int.TryParse(args[i + 1], out int core) && core >= 0)
+                        {
+                            pinCore = core;
+                            i++;
+                        }
+                        else
+                        {
+                            Console.WriteLine("[Nexus Benchmark] WARN: --pin-cpu needs a core index (0..N-1); ignoring");
+                        }
+                        break;
+                    default:
+                        cmdArgs.Add(args[i]);
+                        break;
+                }
+            }
+
             Console.WriteLine($"[Nexus Benchmark] Runtime: {Environment.Version}, {Environment.ProcessorCount} cores, {(Environment.Is64BitProcess ? "x64" : "x86")}");
             Console.WriteLine($"[Nexus Benchmark] Process: {Process.GetCurrentProcess().ProcessName}");
+            Console.WriteLine($"[Nexus Benchmark] OS: {RuntimeInformation.OSDescription} arch={RuntimeInformation.ProcessArchitecture} " +
+                $"serverGC={System.Runtime.GCSettings.IsServerGC}");
 
-            if (args.Length > 0 && args[0] == "--alloc-diag")
+            if (pinCore >= 0)
+            {
+                if (pinCore < Environment.ProcessorCount)
+                {
+                    var proc = Process.GetCurrentProcess();
+                    try
+                    {
+                        proc.ProcessorAffinity = (IntPtr)(1L << pinCore);
+                    }
+                    catch
+                    {
+                        Console.WriteLine($"[Nexus Benchmark] WARN: could not set ProcessorAffinity to core {pinCore}");
+                    }
+                    proc.PriorityClass = ProcessPriorityClass.High;
+                    Thread.CurrentThread.Priority = ThreadPriority.Highest;
+                    Console.WriteLine($"[Nexus Benchmark] Pinned to core {pinCore} (affinity=0x{proc.ProcessorAffinity.ToInt64():X}, priority=High)");
+                }
+                else
+                {
+                    Console.WriteLine($"[Nexus Benchmark] WARN: core {pinCore} out of range (0..{Environment.ProcessorCount - 1}); not pinning");
+                }
+            }
+
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--alloc-diag")
             {
                 return Diagnostics.Run() ? 0 : 1;
             }
-            if (args.Length > 0 && args[0] == "--pool-split")
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--pool-split")
             {
                 return PoolSplit.Run();
             }
-            if (args.Length > 0 && args[0] == "--soak")
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--soak")
             {
                 int iterations = 10;
-                if (args.Length > 1 && int.TryParse(args[1], out int n) && n > 0) iterations = n;
-                return SoakMode.Run(iterations);
+                if (cmdArgs.Count > 1 && int.TryParse(cmdArgs[1], out int n) && n > 0) iterations = n;
+                int rc = SoakMode.Run(iterations);
+                if (json) EmitJson();
+                return rc;
             }
 
             int failures = RunAll();
@@ -393,7 +450,15 @@ namespace NexusBench
             Console.WriteLine(failures == 0
                 ? "[Nexus Benchmark] ALL BENCHMARKS PASSED ✓"
                 : $"[Nexus Benchmark] {failures} BENCHMARK(S) FAILED ✗");
+            if (json) EmitJson();
             return failures == 0 ? 0 : 1;
+        }
+
+        private static void EmitJson()
+        {
+            Console.WriteLine();
+            Console.WriteLine("[Nexus Benchmark] JSON REPORT:");
+            Console.WriteLine(ResultSink.ToJson());
         }
 
         /// <summary>Full pipeline: benchmarks + recovery regression + architecture stress suite.</summary>

@@ -84,6 +84,7 @@ namespace NexusBench
         private static void Report(string name, bool ok, string detail)
         {
             Console.WriteLine($"[Nexus Fuzz] {(ok ? "PASS" : "FAIL")}  {name}: {detail}");
+            ResultSink.Capture("Fuzz", name, ok, detail);
             if (!ok) _failures++;
         }
 

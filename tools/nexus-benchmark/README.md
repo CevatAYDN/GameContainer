@@ -23,9 +23,30 @@ dotnet run -c Release                            # benchmarks + recovery regress
 dotnet run -c Release -- --alloc-diag            # allocation-source diagnostics
 dotnet run -c Release -- --pool-split            # pool round-trip split diagnostics
 dotnet run -c Release -- --soak [N]              # run the full pipeline N times (default 10), fail on state creep
+dotnet run -c Release -- --json                  # additionally emit a machine-readable JSON report of every test result
+dotnet run -c Release -- --pin-cpu 0             # pin the process to core N + High priority (deterministic ns/op numbers)
 ```
 
+Flags combine: `dotnet run -c Release -- --json --pin-cpu 2 --soak 20`.
+Note: `--pin-cpu` pins the whole process; the cross-thread suite (C2) then time-slices
+its 8 workers onto that one core — use it for micro-benchmark/soak stability, not for
+timing-bound cross-thread runs.
+
 Exit code is `0` when everything passes, `1` otherwise.
+
+### Profiling the harness run (.NET 10 tooling)
+
+The run header prints reproducible environment info (runtime version, OS description,
+architecture, core count, serverGC flag). For deeper analysis, the standard .NET 10
+tooling works against the harness directly:
+
+```powershell
+dotnet tool install -g dotnet-trace dotnet-counters dotnet-gcdump   # once
+dotnet run -c Release &                                             # start the run in another terminal
+dotnet-counters monitor -p <pid> --counters System.Runtime          # live GC/allocation counters
+dotnet-gcdump collect -p <pid>                                      # heap snapshot for leak analysis
+dotnet-trace collect -p <pid> --profile gc-verbose                  # allocation-sampled trace
+```
 
 ## What is measured
 
@@ -135,12 +156,18 @@ only by Unity editor tests:
   mediator (`ClearInjectedReferences → IResettable.Reset`), so "removed" is proven by
   the counter staying at its reset value, not by comparing to the pre-unregister count.
 - Soak mode baselines at iteration 2 (iteration 1 is warmup) and fails on: managed
-  heap growth >2MB, working-set growth >12MB, >12 new process threads (C2 spawns
-  ~20 short-lived threads per run; the OS can lag reaping by a few), >4 new
-  ThreadPool threads, or growth in any static cache probed via reflection
-  (`SignalBus` setter/generic-dispatch/cross-context/list caches + `s_stackDepth`,
-  `SubscriptionNodePool`, `NexusRuntime.s_activeContexts`, `Root.s_allRoots`,
-  `UnityEngine.Object.s_all`, `NetworkMonitor.s_events`). Tests must be repeat-run
+  heap growth >2MB, working-set growth >12MB, **committed-memory growth >32MB**
+  (`GC.GetGCMemoryInfo().TotalCommittedBytes` — pages the GC reserves but does not
+  return to the OS; the failure mode working-set deltas miss on long sessions),
+  >12 new process threads (C2 spawns ~20 short-lived threads per run; the OS can lag
+  reaping by a few), >4 new ThreadPool threads, or growth in any static cache probed
+  via reflection (`SignalBus` setter/generic-dispatch/cross-context/list caches +
+  `s_stackDepth`, `SubscriptionNodePool`, `NexusRuntime.s_activeContexts`,
+  `Root.s_allRoots`, `UnityEngine.Object.s_all`, `NetworkMonitor.s_events`). Gen0/1/2
+  collection counts are REPORTED but not gated: the workload legitimately churns ~33
+  gen2 collections per iteration (test 11's composite path boxes payloads into
+  LOH-sized buffers by design), so counts grow steadily while heap and committed
+  memory plateau — gating on counts would false-positive. Tests must be repeat-run
   safe: test 26 seeds `UpdateConnectionStatus(false)` (ClearHistory resets history,
   not live status) and tests 25/30 destroy caller-owned `ContextData`/prefab in
   `finally` blocks (the runtime only destroys objects it spawned).

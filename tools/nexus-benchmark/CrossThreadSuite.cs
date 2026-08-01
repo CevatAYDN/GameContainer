@@ -42,6 +42,7 @@ namespace NexusBench
         private static void Report(string name, bool ok, string detail)
         {
             Console.WriteLine($"[Nexus CrossThread] {(ok ? "PASS" : "FAIL")}  {name}: {detail}");
+            ResultSink.Capture("CrossThread", name, ok, detail);
             if (!ok) _failures++;
         }
 

@@ -113,6 +113,7 @@ namespace NexusBench
         private static void Check(string name, bool ok, string detail)
         {
             Console.WriteLine($"[Nexus Benchmark] {(ok ? "PASS" : "FAIL")}  {name}: {detail}");
+            ResultSink.Capture("RecoveryRegression", name, ok, detail);
             if (!ok) _failures++;
         }
 
