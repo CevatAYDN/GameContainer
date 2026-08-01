@@ -29,7 +29,7 @@ namespace Nexus.Core
         /// <summary>The Nexus context owned by this root.</summary>
         public Context Context { get; private set; }
         /// <summary>True after async initialization (OnInitializeAsync + OnStartAsync) completes.</summary>
-        public bool IsInitialized { get; private set; }
+        public volatile bool IsInitialized = false;
         /// <summary>Priority for sibling sorting; higher values initialize earlier.</summary>
         public int InitializationPriority => initializationPriority;
         /// <summary>Configuration data for this context.</summary>

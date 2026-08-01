@@ -14,8 +14,8 @@ namespace Nexus.Core
     public class LazyInjection<T> where T : class
     {
         private readonly NexusDI _container;
-        private T _value;
-        private bool _resolved;
+        private volatile T _value;
+        private volatile bool _resolved;
         private readonly object _lock = new();
 
         internal LazyInjection(NexusDI container)

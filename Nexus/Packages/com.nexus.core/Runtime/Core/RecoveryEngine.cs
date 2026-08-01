@@ -99,7 +99,7 @@ namespace Nexus.Core
                 }
                 catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
                 {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
+                    NexusRuntime.Logger?.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}\nOriginal command exception: {ex.Message}");
                 }
             }
 

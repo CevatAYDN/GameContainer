@@ -200,7 +200,12 @@ namespace Nexus.Core.Services
                 {
                     try
                     {
-                        snapshot[i]?.Tick(deltaTime);
+                        var tickable = snapshot[i];
+                        // Unity "fake null": a destroyed MonoBehaviour is not C# null, so we
+                        // check via both reference null and the Unity-specific cast-to-bool.
+                        if (tickable == null || (tickable is UnityEngine.Object uo && uo == false))
+                            continue;
+                        tickable.Tick(deltaTime);
                     }
                     catch (Exception ex)
                     {
@@ -236,7 +241,10 @@ namespace Nexus.Core.Services
                 {
                     try
                     {
-                        snapshot[i]?.FixedTick(fixedDeltaTime);
+                        var tickable = snapshot[i];
+                        if (tickable == null || (tickable is UnityEngine.Object uo && uo == false))
+                            continue;
+                        tickable.FixedTick(fixedDeltaTime);
                     }
                     catch (Exception ex)
                     {
@@ -272,7 +280,10 @@ namespace Nexus.Core.Services
                 {
                     try
                     {
-                        snapshot[i]?.LateTick(deltaTime);
+                        var tickable = snapshot[i];
+                        if (tickable == null || (tickable is UnityEngine.Object uo && uo == false))
+                            continue;
+                        tickable.LateTick(deltaTime);
                     }
                     catch (Exception ex)
                     {

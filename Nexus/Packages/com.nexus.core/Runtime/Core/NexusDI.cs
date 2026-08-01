@@ -873,8 +873,15 @@ namespace Nexus.Core
                     if (instance is INexusService) continue;
                     if (instance is IDisposable disposable) disposable.Dispose();
                     else if (instance is IAsyncDisposable asyncDisposable)
-                        SafeAsyncRunner.Run(() => asyncDisposable.DisposeAsync(),
-                            $"Async disposal of singleton '{instance.GetType().FullName}' failed");
+                    {
+                        // Block on async dispose in synchronous Dispose() so the resource
+                        // is released before _bindings.Clear() runs below.
+                        try { asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
+                        catch (Exception ex)
+                        {
+                            NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {instance.GetType().FullName}: {ex.Message}");
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {

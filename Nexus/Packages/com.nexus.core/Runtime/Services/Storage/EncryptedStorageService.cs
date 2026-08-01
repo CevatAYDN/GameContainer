@@ -446,14 +446,19 @@ namespace Nexus.Core.Services
         public string ExportEncryptedSaveData(string key)
         {
             if (string.IsNullOrEmpty(key)) return null;
+
+            string filePath;
             lock (_lock)
             {
                 Save();
-                string path = GetFilePath(key);
-                if (!File.Exists(path)) return null;
-                byte[] raw = File.ReadAllBytes(path);
-                return Convert.ToBase64String(raw);
+                filePath = GetFilePath(key);
+                if (!File.Exists(filePath)) return null;
             }
+
+            // B1 parity: file I/O outside the shared lock so a slow read cannot stall
+            // every other key operation.
+            byte[] raw = File.ReadAllBytes(filePath);
+            return Convert.ToBase64String(raw);
         }
 
         public bool ImportEncryptedSaveData(string key, string base64Data)

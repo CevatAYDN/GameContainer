@@ -448,7 +448,10 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch (ReflectionTypeLoadException) { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Debug.LogWarning($"[Nexus Warning] Context dependency validation skipped types from assembly '{assembly.FullName}': {ex.Message}");
+                }
             }
 
             // DFS-based cycle detection across all dependencies

@@ -260,6 +260,10 @@ namespace Nexus.Core
                     }
                     else if (command is ICommand<TSignal> genericSyncCmd)
                     {
+                        // A sync command executed in the async dispatch path must still
+                        // honour the cancellation token so a timeout or teardown does not
+                        // stall the pipeline.
+                        ct.ThrowIfCancellationRequested();
                         ExecuteWithDecorators(genericSyncCmd, () => genericSyncCmd.Execute(signal));
                     }
                     else
