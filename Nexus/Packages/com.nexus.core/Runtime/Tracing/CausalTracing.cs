@@ -96,15 +96,30 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
         private class TraceFrame
         {
-            public readonly int ParentId;
-            public readonly int BufferIndex;
-            public readonly TraceFrame Previous;
-            public TraceFrame(int parentId, int bufferIndex, TraceFrame previous)
+            public int ParentId;
+            public int BufferIndex;
+            public TraceFrame Previous;
+        }
+
+        private static readonly System.Collections.Concurrent.ConcurrentBag<TraceFrame> s_framePool = new();
+
+        private static TraceFrame RentFrame(int parentId, int bufferIndex, TraceFrame previous)
+        {
+            if (s_framePool.TryTake(out var frame))
             {
-                ParentId = parentId;
-                BufferIndex = bufferIndex;
-                Previous = previous;
+                frame.ParentId = parentId;
+                frame.BufferIndex = bufferIndex;
+                frame.Previous = previous;
+                return frame;
             }
+            return new TraceFrame { ParentId = parentId, BufferIndex = bufferIndex, Previous = previous };
+        }
+
+        private static void ReturnFrame(TraceFrame frame)
+        {
+            if (frame == null) return;
+            frame.Previous = null;
+            s_framePool.Add(frame);
         }
 
         private static int s_globalEventIdCounter = 0;
@@ -198,7 +213,7 @@ namespace Nexus.Core
                 UnityEngine.Debug.LogWarning($"[NexusTrace] Ring buffer overflow detected. Traced events count ({totalWritten}) exceeded MaxEvents limit ({MaxEvents}). Older events are being overwritten.");
             }
 
-            s_currentFrame.Value = new TraceFrame(parentId, index, s_currentFrame.Value);
+            s_currentFrame.Value = RentFrame(parentId, index, s_currentFrame.Value);
             s_currentActiveEventId.Value = eventId;
 
             var timestamp = UnityEngine.Time.realtimeSinceStartupAsDouble;
@@ -240,6 +255,7 @@ namespace Nexus.Core
 
             s_currentFrame.Value = frame.Previous;
             s_currentActiveEventId.Value = frame.ParentId;
+            ReturnFrame(frame);
 
             int bufferIndex = frame.BufferIndex;
             if (bufferIndex >= 0 && bufferIndex < MaxEvents)

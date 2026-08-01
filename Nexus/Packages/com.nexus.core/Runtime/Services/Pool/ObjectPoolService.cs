@@ -229,10 +229,29 @@ namespace Nexus.Core.Services
             }
         }
 
+        private static readonly Func<UnityEngine.Object, int> s_getIdDelegate = CreateGetIdDelegate();
+
+        private static Func<UnityEngine.Object, int> CreateGetIdDelegate()
+        {
+            var type = typeof(UnityEngine.Object);
+            var method = type.GetMethod("GetEntityId", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+                      ?? type.GetMethod("GetInstanceID", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+
+            if (method != null)
+            {
+                try
+                {
+                    return (Func<UnityEngine.Object, int>)Delegate.CreateDelegate(typeof(Func<UnityEngine.Object, int>), null, method);
+                }
+                catch { }
+            }
+            return obj => obj.GetHashCode();
+        }
+
         private static int GetId(UnityEngine.Object obj)
         {
             if (obj == null) return 0;
-            return obj.GetHashCode();
+            return s_getIdDelegate(obj);
         }
 
         public void ClearAllPools()

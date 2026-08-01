@@ -219,16 +219,13 @@ namespace Nexus.Core.FSM
                     return;
                 }
 
-                _currentState = nextState;
-
                 try
                 {
-                    await _currentState.OnEnterAsync(args, token);
+                    await nextState.OnEnterAsync(args, token);
                 }
                 catch (OperationCanceledException)
                 {
-                    // Superseded or externally cancelled mid-enter. _currentState already
-                    // points at nextState; a superseding transition overwrites it itself.
+                    // Superseded or externally cancelled mid-enter.
                     RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
                     return;
                 }
@@ -248,23 +245,25 @@ namespace Nexus.Core.FSM
                     // Attempt to transition to the consumer-registered error state for safe recovery.
                     if (_errorStateType != null && _states.TryGetValue(_errorStateType, out var errorState))
                     {
-                        _currentState = errorState;
                         toName = errorState.GetType().Name;
-                        // Pass exception information to the error state.
                         try
                         {
-                            await _currentState.OnEnterAsync(ex, token);
+                            await errorState.OnEnterAsync(ex, token);
+                            if (mySequence == _transitionSequence)
+                            {
+                                _currentState = errorState;
+                            }
                         }
                         catch (OperationCanceledException) { }
                         catch (Exception innerEx)
                         {
                             NexusRuntime.Logger?.LogException(innerEx);
+                            if (mySequence == _transitionSequence) _currentState = null;
                         }
                     }
                     else
                     {
-                        // Fallback to null state if no error state is registered.
-                        _currentState = null;
+                        if (mySequence == _transitionSequence) _currentState = null;
                         toName = null;
                     }
                 }
@@ -277,6 +276,11 @@ namespace Nexus.Core.FSM
                 {
                     RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
                     return;
+                }
+
+                if (status == StateTransitionStatus.Success)
+                {
+                    _currentState = nextState;
                 }
 
                 // Committed — record the success (or failed-with-error-state) transition.

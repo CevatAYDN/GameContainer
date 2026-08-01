@@ -49,6 +49,7 @@ namespace Nexus.Core.Services
         private readonly List<string> _windowHistory = new();
         private readonly SemaphoreSlim _windowLock = new(1, 1);
         private readonly HashSet<string> _pendingOpenWindows = new();
+        private readonly Dictionary<string, TaskCompletionSource<GameObject>> _pendingOpenCompletions = new();
 
         private readonly UICanvasSystem _canvas = new();
 
@@ -66,19 +67,10 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(windowName)) return null;
 
-            // E-5 fix: extended lock scope to eliminate the race window entirely.
-            // We release the lock ONLY for the async instantiation (which may be slow),
-            // but re-check conditions immediately after re-acquiring.
-            // The wait-loop uses a max-retry count to prevent infinite spinning.
             GameObject existing = null;
-            const int maxPendingWaitMs = 30000; // 30-second timeout for pending opens
-            int totalWaitMs = 0;
 
             // Phase 1: registration check (under lock)
-            // E-5 fix: use lockHeld guard to prevent SemaphoreFullException if the inner
-            // while-loop releases the lock and an exception occurs before re-acquiring.
             await _windowLock.WaitAsync();
-            bool lockHeld = true;
             try
             {
                 // Clean up any externally destroyed windows
@@ -102,34 +94,21 @@ namespace Nexus.Core.Services
                     return existing;
                 }
 
-                // If another thread is already opening this window, wait for it
-                while (_pendingOpenWindows.Contains(windowName))
+                // If another thread/task is already opening this window, await its completion
+                if (_pendingOpenCompletions.TryGetValue(windowName, out var pendingTcs))
                 {
                     _windowLock.Release();
-                    lockHeld = false;
-                    await Task.Delay(10);
-                    totalWaitMs += 10;
-                    if (totalWaitMs >= maxPendingWaitMs)
-                    {
-                        NexusRuntime.Logger?.LogError($"[WindowManager] Timed out waiting for pending window: {windowName}");
-                        return null;
-                    }
-                    await _windowLock.WaitAsync();
-                    lockHeld = true;
-
-                    // Re-check: if window appeared while we were waiting, return it
-                    if (_activeWindows.TryGetValue(windowName, out existing) && existing != null)
-                    {
-                        return existing;
-                    }
+                    return await pendingTcs.Task;
                 }
 
-                // We are now the designated opener
+                // Designated opener
+                var tcs = new TaskCompletionSource<GameObject>(TaskCreationOptions.RunContinuationsAsynchronously);
+                _pendingOpenCompletions[windowName] = tcs;
                 _pendingOpenWindows.Add(windowName);
             }
             finally
             {
-                if (lockHeld)
+                if (_windowLock.CurrentCount == 0)
                     _windowLock.Release();
             }
 
@@ -143,7 +122,12 @@ namespace Nexus.Core.Services
                 {
                     NexusRuntime.Logger?.LogError($"[WindowManager] Failed to instantiate window: {windowName}");
                     await _windowLock.WaitAsync();
-                    try { _pendingOpenWindows.Remove(windowName); }
+                    try
+                    {
+                        _pendingOpenWindows.Remove(windowName);
+                        if (_pendingOpenCompletions.Remove(windowName, out var failedTcs))
+                            failedTcs.TrySetResult(null);
+                    }
                     finally { _windowLock.Release(); }
                     return null;
                 }
@@ -165,15 +149,18 @@ namespace Nexus.Core.Services
                 await _windowLock.WaitAsync();
                 try
                 {
-                    // E-5 fix: guard against a concurrent close that snuck in while we were instantiating
                     if (!inst) // GameObject was destroyed externally
                     {
                         _pendingOpenWindows.Remove(windowName);
+                        if (_pendingOpenCompletions.Remove(windowName, out var cancelledTcs))
+                            cancelledTcs.TrySetResult(null);
                         return null;
                     }
                     _activeWindows[windowName] = inst;
                     _windowHistory.Add(windowName);
                     _pendingOpenWindows.Remove(windowName);
+                    if (_pendingOpenCompletions.Remove(windowName, out var successTcs))
+                        successTcs.TrySetResult(inst);
                     _canvas.UpdateLayerInteractivity(_activeWindows);
                 }
                 finally
@@ -191,7 +178,12 @@ namespace Nexus.Core.Services
                     UnityEngine.Object.Destroy(inst);
                 }
                 await _windowLock.WaitAsync();
-                try { _pendingOpenWindows.Remove(windowName); }
+                try
+                {
+                    _pendingOpenWindows.Remove(windowName);
+                    if (_pendingOpenCompletions.Remove(windowName, out var errTcs))
+                        errTcs.TrySetResult(null);
+                }
                 finally { _windowLock.Release(); }
                 return null;
             }
@@ -311,16 +303,10 @@ namespace Nexus.Core.Services
         public bool IsWindowOpen(string windowName)
         {
             if (string.IsNullOrEmpty(windowName)) return false;
-            // Bounded wait (not Wait(0)): Wait(0) returns false the instant another thread
-            // (e.g. a background OpenWindowAsync/CloseAllAsync) briefly holds the semaphore,
-            // producing a false negative — the window IS open but the query reports closed,
-            // which can trigger duplicate opens. A short timeout still never blocks the main
-            // thread indefinitely, while eliminating the spurious false-negative on a
-            // transient lock hold.
-            if (!_windowLock.Wait(50)) return false;
+            _windowLock.Wait();
             try
             {
-                return _activeWindows.ContainsKey(windowName);
+                return _activeWindows.TryGetValue(windowName, out var go) && go != null;
             }
             finally
             {
@@ -331,8 +317,7 @@ namespace Nexus.Core.Services
         public GameObject GetWindow(string windowName)
         {
             if (string.IsNullOrEmpty(windowName)) return null;
-            // Same bounded wait as IsWindowOpen — see comment there for the Wait(0) pitfall.
-            if (!_windowLock.Wait(50)) return null;
+            _windowLock.Wait();
             try
             {
                 _activeWindows.TryGetValue(windowName, out var go);

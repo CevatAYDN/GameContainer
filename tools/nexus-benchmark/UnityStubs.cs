@@ -388,6 +388,8 @@ namespace UnityEngine
     public class Object
     {
         public string name;
+        public int GetInstanceID() => GetHashCode();
+        public int GetEntityId() => GetHashCode();
 
         private static readonly List<Object> s_all = new();
         private static readonly object s_lock = new();

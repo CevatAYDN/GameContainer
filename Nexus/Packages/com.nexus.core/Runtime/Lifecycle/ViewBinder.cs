@@ -98,6 +98,7 @@ namespace Nexus.Core
         private readonly IContext _context;
         private readonly NexusDI _container;
         private readonly Dictionary<IView, IMediator> _activeMediators = new();
+        private readonly HashSet<IMediator> _activeMediatorSet = new();
         private readonly Dictionary<Type, Stack<IMediator>> _mediatorPools = new();
 
         private readonly int _maxMediatorPoolSize = 64;
@@ -167,6 +168,7 @@ namespace Nexus.Core
             var mediator = GetMediator(mediatorType);
 
             _activeMediators[view] = mediator;
+            _activeMediatorSet.Add(mediator);
             
             // Mediator attaches after the view is already bound to the context.
             mediator.Bind(view, _context.SignalBus);
@@ -181,6 +183,7 @@ namespace Nexus.Core
 
             if (_activeMediators.Remove(view, out var mediator))
             {
+                _activeMediatorSet.Remove(mediator);
                 mediator.Unbind();
                 ReturnMediator(mediator);
             }
@@ -236,7 +239,7 @@ namespace Nexus.Core
             // Leak signal: a mediator still tracked in _activeMediators at return time means
             // it was returned without being removed first (double-unregister, or an Unbind
             // path that skipped the map). The pool would hand out a zombie binding later.
-            if (_activeMediators.ContainsValue(mediator))
+            if (_activeMediatorSet.Contains(mediator))
             {
                 _poolLeakWarnings++;
                 NexusRuntime.Logger?.LogWarning(
@@ -272,6 +275,7 @@ namespace Nexus.Core
                 }
             }
             _activeMediators.Clear();
+            _activeMediatorSet.Clear();
             _mediatorPools.Clear();
         }
     }

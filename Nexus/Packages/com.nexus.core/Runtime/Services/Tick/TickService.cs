@@ -74,20 +74,28 @@ namespace Nexus.Core.Services
 
         public bool IsPaused { get; set; }
 
+        private static GameObject s_sharedDriverObject;
+        private static TickDriver s_sharedDriver;
+        private static int s_activeDriverCount;
+        private static readonly object s_driverLock = new();
+
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
-            if (_driverObject != null)
+            lock (s_driverLock)
             {
-                return default;
+                if (s_sharedDriverObject == null)
+                {
+                    s_sharedDriverObject = new GameObject("[Nexus_TickDriver]");
+                    UnityEngine.Object.DontDestroyOnLoad(s_sharedDriverObject);
+                    s_sharedDriver = s_sharedDriverObject.AddComponent<TickDriver>();
+                }
+                s_activeDriverCount++;
+                _driver = s_sharedDriver;
+                _driverObject = s_sharedDriverObject;
+                _driver.OnUpdate += OnTick;
+                _driver.OnFixedUpdate += OnFixedTick;
+                _driver.OnLateUpdate += OnLateTick;
             }
-
-            _driverObject = new GameObject("[Nexus_TickDriver]");
-            UnityEngine.Object.DontDestroyOnLoad(_driverObject);
-            _driver = _driverObject.AddComponent<TickDriver>();
-
-            _driver.OnUpdate = OnTick;
-            _driver.OnFixedUpdate = OnFixedTick;
-            _driver.OnLateUpdate = OnLateTick;
 
             return default;
         }
@@ -293,10 +301,23 @@ namespace Nexus.Core.Services
                 _lateTickablesDirty = false;
             }
 
-            if (_driverObject != null)
+            lock (s_driverLock)
             {
-                UnityEngine.Object.Destroy(_driverObject);
-                _driverObject = null;
+                if (_driver != null)
+                {
+                    _driver.OnUpdate -= OnTick;
+                    _driver.OnFixedUpdate -= OnFixedTick;
+                    _driver.OnLateUpdate -= OnLateTick;
+                    _driver = null;
+                    _driverObject = null;
+                    s_activeDriverCount--;
+                    if (s_activeDriverCount <= 0 && s_sharedDriverObject != null)
+                    {
+                        UnityEngine.Object.Destroy(s_sharedDriverObject);
+                        s_sharedDriverObject = null;
+                        s_sharedDriver = null;
+                    }
+                }
             }
         }
     }

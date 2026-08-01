@@ -199,7 +199,7 @@ namespace Nexus.Core
 
         private void Cleanup(object command)
         {
-            if (HasInjectableMembers(_commandType))
+            if (HasInjectableMembers(_commandType) || typeof(IResettable).IsAssignableFrom(_commandType))
                 NexusDI.ClearInjectedReferences(command);
         }
 

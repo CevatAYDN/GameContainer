@@ -221,15 +221,22 @@ namespace Nexus.Core.Services
                     return cachedVal ?? defaultValue;
 
                 string filePath = GetFilePath(key);
-                if (!File.Exists(filePath))
+                string targetPath = filePath;
+                if (!File.Exists(targetPath))
                 {
-                    _cache[key] = null; // Cache negative result
-                    return defaultValue;
+                    string tempPath = filePath + ".tmp";
+                    if (File.Exists(tempPath))
+                        targetPath = tempPath;
+                    else
+                    {
+                        _cache[key] = null; // Cache negative result
+                        return defaultValue;
+                    }
                 }
 
                 try
                 {
-                    byte[] rawData = File.ReadAllBytes(filePath);
+                    byte[] rawData = File.ReadAllBytes(targetPath);
                     if (rawData.Length < LegacyHeaderSize)
                     {
                         _cache[key] = null;
@@ -507,8 +514,10 @@ namespace Nexus.Core.Services
         {
             if (_filePathCache.TryGetValue(key, out string cached)) return cached;
 
-            using var md5 = MD5.Create();
-            byte[] hash = md5.ComputeHash(Encoding.UTF8.GetBytes(key));
+            using var sha256 = SHA256.Create();
+            byte[] fullHash = sha256.ComputeHash(Encoding.UTF8.GetBytes(key));
+            byte[] hash = new byte[16];
+            Buffer.BlockCopy(fullHash, 0, hash, 0, 16);
             string hashedFileName = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant() + ".dat";
             string path = Path.Combine(_storageFolderPath, hashedFileName);
             _filePathCache[key] = path;

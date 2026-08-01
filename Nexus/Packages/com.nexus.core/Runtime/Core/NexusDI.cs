@@ -556,7 +556,9 @@ namespace Nexus.Core
                 {
                     if (binding.IsSingleton)
                     {
-                        object singletonInstance;
+                        object singletonInstance = binding.Instance;
+                        if (singletonInstance != null) return singletonInstance;
+
                         lock (_singletonLock)
                         {
                             if (_disposed)
@@ -566,19 +568,25 @@ namespace Nexus.Core
                             if (!_constructingSingletons.Add(type))
                                 throw new InvalidOperationException($"Circular dependency detected while resolving singleton {type.FullName}.");
                             addedToConstructing = true;
+                        }
 
-                            try
+                        try
+                        {
+                            singletonInstance = _injector.CreateInstance(binding.ConcreteType);
+                            _injector.Inject(singletonInstance);
+                            lock (_singletonLock)
                             {
-                                singletonInstance = _injector.CreateInstance(binding.ConcreteType);
-                                _injector.Inject(singletonInstance);
                                 binding.Instance = singletonInstance;
                                 _resolvedSingletons.Add(singletonInstance);
                             }
-                            finally
+                        }
+                        finally
+                        {
+                            lock (_singletonLock)
                             {
                                 _constructingSingletons.Remove(type);
-                                addedToConstructing = false;
                             }
+                            addedToConstructing = false;
                         }
                         return singletonInstance;
                     }
@@ -772,9 +780,11 @@ namespace Nexus.Core
         /// </summary>
         internal static InjectableMetadata GetOrCreateInjectMetadata(Type type) => MetadataCache.GetOrCreateInjectMetadata(type);
 
+        private readonly ConcurrentDictionary<INexusService, bool> _lazyServicesEnqueued = new();
+
         internal void NotifyLazyServiceResolved(Type type, object instance)
         {
-            if (instance is INexusService service)
+            if (instance is INexusService service && _lazyServicesEnqueued.TryAdd(service, true))
                 _lazyServicesPendingInit.Enqueue(service);
         }
 

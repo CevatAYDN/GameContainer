@@ -28,6 +28,8 @@ namespace Nexus.Core
         private Action<T, T>[] _snapshotCache;
         private bool _snapshotDirty;
         private bool _isNotifying; // P2-3 fix: reentrancy guard
+        private bool _hasPendingReentrantValue;
+        private T _pendingReentrantValue;
         private readonly object _handlersLock = new();
 
         // ── Construction ───────────────────────────────────────
@@ -49,8 +51,9 @@ namespace Nexus.Core
 
                 if (_isNotifying)
                 {
-                    // Honour reentrant sets instead of silently dropping them.
                     _value = value;
+                    _pendingReentrantValue = value;
+                    _hasPendingReentrantValue = true;
                     return;
                 }
 
@@ -71,14 +74,32 @@ namespace Nexus.Core
                     _isNotifying = true;
                     try
                     {
-                        for (int i = 0; i < snapshot.Length; i++)
+                        while (true)
                         {
-                            snapshot[i]?.Invoke(old, value);
+                            _hasPendingReentrantValue = false;
+                            for (int i = 0; i < snapshot.Length; i++)
+                            {
+                                snapshot[i]?.Invoke(old, _value);
+                            }
+                            if (!_hasPendingReentrantValue) break;
+                            old = _value;
+                            _value = _pendingReentrantValue;
+                            lock (_handlersLock)
+                            {
+                                if (_snapshotDirty)
+                                {
+                                    _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
+                                    _snapshotDirty = false;
+                                }
+                                snapshot = _snapshotCache;
+                            }
+                            if (snapshot == null) break;
                         }
                     }
                     finally
                     {
                         _isNotifying = false;
+                        _hasPendingReentrantValue = false;
                     }
                 }
             }

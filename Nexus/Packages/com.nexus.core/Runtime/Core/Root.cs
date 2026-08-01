@@ -78,13 +78,15 @@ namespace Nexus.Core
         // Registry to avoid FindObjectsByType in every Start()
         private static readonly List<Root> s_allRoots = new();
         private static readonly object s_rootLock = new();
-        private static bool s_registryDirty = true;
 
         private void OnEnable()
         {
             lock (s_rootLock)
             {
-                s_registryDirty = true;
+                if (!s_allRoots.Contains(this))
+                {
+                    s_allRoots.Add(this);
+                }
             }
         }
 
@@ -92,18 +94,15 @@ namespace Nexus.Core
         {
             lock (s_rootLock)
             {
-                s_registryDirty = true;
+                s_allRoots.Remove(this);
             }
         }
 
         internal static void ClearRegistry()
         {
-            // P0-8 fix: use the same lock object (s_rootLock) as OnEnable/OnDisable/EnsureRegistry,
-            // and set the dirty flag inside the lock.
             lock (s_rootLock)
             {
                 s_allRoots.Clear();
-                s_registryDirty = true;
             }
         }
 
@@ -113,15 +112,6 @@ namespace Nexus.Core
             {
                 // Purge destroyed native objects dynamically
                 s_allRoots.RemoveAll(r => r == null);
-                if (!s_registryDirty) return;
-
-                s_allRoots.Clear();
-                var found = FindObjectsByType<Root>(FindObjectsInactive.Exclude);
-                if (found != null)
-                {
-                    s_allRoots.AddRange(found);
-                }
-                s_registryDirty = false;
             }
         }
 
@@ -290,7 +280,6 @@ namespace Nexus.Core
             lock (s_rootLock)
             {
                 s_allRoots.Remove(this);
-                s_registryDirty = true;
             }
 
             if (Context != null)

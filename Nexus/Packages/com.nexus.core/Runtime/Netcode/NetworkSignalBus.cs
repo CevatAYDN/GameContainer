@@ -52,9 +52,9 @@ namespace Nexus.Netcode
         public void Prune(int confirmedTick)
         {
             _keysToPrune.Clear();
-            foreach (int k in _snapshots.Keys)
+            foreach (var kvp in _snapshots)
             {
-                if (k <= confirmedTick) _keysToPrune.Add(k);
+                if (kvp.Key <= confirmedTick) _keysToPrune.Add(kvp.Key);
             }
             for (int i = 0; i < _keysToPrune.Count; i++)
             {
@@ -255,15 +255,15 @@ namespace Nexus.Netcode
             // Replay all signals starting from the rollback point up to the new target tick
             while (_currentTick <= targetTick)
             {
-                // Capture snapshots during resimulation steps to update intermediate states
-                for (int i = 0; i < _modelHandlers.Count; i++)
-                {
-                    _modelHandlers[i].Capture(_currentTick);
-                }
-
                 foreach (var history in _histories.Values)
                 {
                     history.ReplaySignals(_currentTick, _localSignalBus);
+                }
+
+                // Capture snapshots after resimulating signals so state reflects post-signal values
+                for (int i = 0; i < _modelHandlers.Count; i++)
+                {
+                    _modelHandlers[i].Capture(_currentTick);
                 }
                 _currentTick++;
             }
