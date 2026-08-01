@@ -11,7 +11,9 @@ checked-in runtime.
 
 ## Requirements
 
-- .NET 5 SDK (the project targets `net5.0`; developed with 5.0.402)
+- .NET 10 SDK (the project targets `net10.0`; C# stays on `LangVersion 9` to match
+  the Unity 6000.5 compiler, so the harness can never use language features the
+  runtime's Unity build cannot)
 - No NuGet dependencies — the harness compiles the real runtime sources directly
 
 ## Run
