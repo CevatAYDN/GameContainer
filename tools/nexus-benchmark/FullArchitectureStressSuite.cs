@@ -263,6 +263,7 @@ namespace NexusBench
             Test_Netcode_RollbackAndResimulate_RestoresState();
             Test_AsyncFire_Path_AllDelivered().GetAwaiter().GetResult();
             Test_ObservableProperty_Raise_ZeroGC();
+            Test_ObservableList_Mutation_ZeroGC();
             Test_SecureObservable_Write_NoTamper();
             Test_BigDouble_Arithmetic_Correctness();
             Test_TickService_Dispatch_ZeroGC();
@@ -974,6 +975,47 @@ namespace NexusBench
             Console.WriteLine($"[Nexus Architecture Stress] ObservableProperty raise: {allocated} bytes for {sets} notify-sets (received={received})");
             Report("17. ObservableProperty_Raise_ZeroGC", allocated <= 128 && received == sets && lastOld == 100 + sets - 1 && lastNew == 100 + sets,
                 $"allocated={allocated} bytes for {sets} notify-sets (limit <=128), received={received}, lastOld={lastOld} lastNew={lastNew}");
+        }
+
+        // ---------------------------------------------------------------------
+        // 17b. ObservableList Mutation Zero-GC (cached snapshot steady state)
+        // ---------------------------------------------------------------------
+        private static void Test_ObservableList_Mutation_ZeroGC()
+        {
+            var list = new ObservableList<int>();
+            int added = 0;
+            int removed = 0;
+            int cleared = 0;
+            list.OnAdded((i, v) => added++);
+            list.OnRemoved((i, v) => removed++);
+            list.OnCleared(() => cleared++);
+
+            // Warm up: build each channel's snapshot cache and grow the backing
+            // capacity beyond the measured loop, so the hot path only reuses
+            // cached arrays (GetSnapshot returns the cached copy when not dirty).
+            for (int i = 0; i < 1000; i++) list.Add(i);
+            list.Clear();
+            added = 0;
+            removed = 0;
+            cleared = 0;
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            long start = GC.GetAllocatedBytesForCurrentThread();
+            const int cycles = 5000;
+            for (int i = 0; i < cycles; i++)
+            {
+                list.Add(i);
+                list.Remove(i);
+            }
+            list.Clear();
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - start;
+
+            Console.WriteLine($"[Nexus Architecture Stress] ObservableList mutation: {allocated} bytes for {cycles} add/remove cycles + clear (added={added}, removed={removed}, cleared={cleared})");
+            Report("17b. ObservableList_Mutation_ZeroGC", allocated <= 128 && added == cycles && removed == cycles && cleared == 1,
+                $"allocated={allocated} bytes for {cycles} cycles (limit <=128), added={added}, removed={removed}, cleared={cleared}");
         }
 
         // ---------------------------------------------------------------------
