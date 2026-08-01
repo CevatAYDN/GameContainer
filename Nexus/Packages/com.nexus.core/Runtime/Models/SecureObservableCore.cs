@@ -4,25 +4,25 @@ using System.Collections.Generic;
 namespace Nexus.Core
 {
     /// <summary>
-    /// Shared observer dispatch machinery for the secure observable family.
-    /// Owns the handler list, the zero-GC snapshot cache, the dirty flag and the
-    /// handler lock — the block that was previously copy-pasted across all five
-    /// SecureObservable* types. The value-type-specific masking stays in the thin
-    /// wrappers; everything about "who gets notified and when" lives here once.
+    /// Generic multicast-handler snapshot cache — the shared observer core for the whole
+    /// observable family (SecureObservable*, ObservableProperty, ObservableList).
+    /// Owns the handler list, the zero-GC snapshot cache, the dirty flag and the handler
+    /// lock — the block that was previously copy-pasted across every observable type.
+    /// Handler registration dedupes: registering the same delegate twice is a no-op.
     /// </summary>
-    internal sealed class SecureObserverSet<T>
+    internal sealed class SnapshotDelegateSet<TDelegate>
     {
-        private List<Action<T, T>> _handlers;
-        private Action<T, T>[] _snapshotCache;
+        private List<TDelegate> _handlers;
+        private TDelegate[] _snapshotCache;
         private bool _snapshotDirty;
         private readonly object _handlersLock = new();
 
-        public void OnChanged(Action<T, T> handler)
+        public void Add(TDelegate handler)
         {
             if (handler == null) return;
             lock (_handlersLock)
             {
-                _handlers ??= new List<Action<T, T>>(2);
+                _handlers ??= new List<TDelegate>(2);
                 if (!_handlers.Contains(handler))
                 {
                     _handlers.Add(handler);
@@ -31,7 +31,7 @@ namespace Nexus.Core
             }
         }
 
-        public void RemoveOnChanged(Action<T, T> handler)
+        public void Remove(TDelegate handler)
         {
             if (handler == null) return;
             lock (_handlersLock)
@@ -51,11 +51,10 @@ namespace Nexus.Core
             }
         }
 
-        /// <summary>Invokes the snapshot cache with the change. Zero-GC on the hot path:
-        /// the array is rebuilt only when the handler set changed since the last notify.</summary>
-        public void Notify(T oldValue, T newValue)
+        /// <summary>Returns the snapshot cache. Zero-GC on the hot path: the array is
+        /// rebuilt only when the handler set changed since the last call.</summary>
+        public TDelegate[] GetSnapshot()
         {
-            Action<T, T>[] snapshot;
             lock (_handlersLock)
             {
                 if (_snapshotDirty)
@@ -63,8 +62,33 @@ namespace Nexus.Core
                     _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
                     _snapshotDirty = false;
                 }
-                snapshot = _snapshotCache;
+                return _snapshotCache;
             }
+        }
+    }
+
+    /// <summary>
+    /// Observer dispatch for the SecureObservable family. Thin wrapper over the shared
+    /// <see cref="SnapshotDelegateSet{TDelegate}"/> core plus a <see cref="Notify"/> that
+    /// matches the family's (old, new) change signature. <see cref="GetSnapshot"/> lets
+    /// callers drive their own dispatch loop (e.g. ObservableProperty's reentrancy coalescing).
+    /// </summary>
+    internal sealed class SecureObserverSet<T>
+    {
+        private readonly SnapshotDelegateSet<Action<T, T>> _delegates = new();
+
+        public void OnChanged(Action<T, T> handler) => _delegates.Add(handler);
+        public void RemoveOnChanged(Action<T, T> handler) => _delegates.Remove(handler);
+        public void Clear() => _delegates.Clear();
+
+        /// <summary>Returns the current handler snapshot (zero-GC cached).</summary>
+        public Action<T, T>[] GetSnapshot() => _delegates.GetSnapshot();
+
+        /// <summary>Invokes the snapshot cache with the change. Zero-GC on the hot path:
+        /// the array is rebuilt only when the handler set changed since the last notify.</summary>
+        public void Notify(T oldValue, T newValue)
+        {
+            Action<T, T>[] snapshot = _delegates.GetSnapshot();
             if (snapshot != null)
             {
                 for (int i = 0; i < snapshot.Length; i++)

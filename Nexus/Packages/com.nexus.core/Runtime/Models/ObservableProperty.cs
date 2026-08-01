@@ -24,13 +24,12 @@ namespace Nexus.Core
     {
         // ── State ──────────────────────────────────────────────
         private T _value;
-        private List<Action<T, T>> _handlers;
-        private Action<T, T>[] _snapshotCache;
-        private bool _snapshotDirty;
+        // N1: handler list, zero-GC snapshot cache, dirty flag and handler lock now
+        // live once in the shared SecureObserverSet<T> core instead of being copied here.
+        private readonly SecureObserverSet<T> _observers = new();
         private bool _isNotifying; // P2-3 fix: reentrancy guard
         private bool _hasPendingReentrantValue;
         private T _pendingReentrantValue;
-        private readonly object _handlersLock = new();
 
         // ── Construction ───────────────────────────────────────
         /// <summary>Creates an observable property with the given initial value.</summary>
@@ -59,16 +58,7 @@ namespace Nexus.Core
 
                 var old = _value;
                 _value = value;
-                Action<T, T>[] snapshot;
-                lock (_handlersLock)
-                {
-                    if (_snapshotDirty)
-                    {
-                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
-                        _snapshotDirty = false;
-                    }
-                    snapshot = _snapshotCache;
-                }
+                Action<T, T>[] snapshot = _observers.GetSnapshot();
                 if (snapshot != null)
                 {
                     _isNotifying = true;
@@ -84,15 +74,7 @@ namespace Nexus.Core
                             if (!_hasPendingReentrantValue) break;
                             old = _value;
                             _value = _pendingReentrantValue;
-                            lock (_handlersLock)
-                            {
-                                if (_snapshotDirty)
-                                {
-                                    _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
-                                    _snapshotDirty = false;
-                                }
-                                snapshot = _snapshotCache;
-                            }
+                            snapshot = _observers.GetSnapshot();
                             if (snapshot == null) break;
                         }
                     }
@@ -113,43 +95,13 @@ namespace Nexus.Core
 
         // ── Observation ────────────────────────────────────────
         /// <summary>Subscribes a handler invoked when the value changes.</summary>
-        public void OnChanged(Action<T, T> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                _handlers ??= new List<Action<T, T>>(2);
-                if (!_handlers.Contains(handler))
-                {
-                    _handlers.Add(handler);
-                    _snapshotDirty = true;
-                }
-            }
-        }
+        public void OnChanged(Action<T, T> handler) => _observers.OnChanged(handler);
 
         /// <summary>Unsubscribes a previously added handler.</summary>
-        public void RemoveOnChanged(Action<T, T> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                if (_handlers != null && _handlers.Remove(handler))
-                {
-                    _snapshotDirty = true;
-                }
-            }
-        }
+        public void RemoveOnChanged(Action<T, T> handler) => _observers.RemoveOnChanged(handler);
 
         /// <summary>Removes all change handlers.</summary>
-        public void ClearOnChanged()
-        {
-            lock (_handlersLock)
-            {
-                _handlers?.Clear();
-                _snapshotCache = null;
-                _snapshotDirty = false;
-            }
-        }
+        public void ClearOnChanged() => _observers.Clear();
 
         // ── Implicit conversion (read convenience) ─────────────
         public static implicit operator T(ObservableProperty<T> prop) => prop._value;
@@ -169,11 +121,14 @@ namespace Nexus.Core
     {
         private readonly List<T> _items = new();
 
-        // E-10 fix: use snapshot + lock pattern (like ObservableProperty) for reentrancy safety
+        // N1: the three callback channels share the SnapshotDelegateSet core (dedupe +
+        // zero-GC snapshot cache) instead of hand-rolled lists + per-mutation ToArray copies.
+        private readonly SnapshotDelegateSet<Action<int, T>> _onAdded = new();
+        private readonly SnapshotDelegateSet<Action<int, T>> _onRemoved = new();
+        private readonly SnapshotDelegateSet<Action> _onCleared = new();
+
+        // E-10 fix: snapshot + lock pattern (like ObservableProperty) for reentrancy safety
         private readonly object _eventLock = new();
-        private List<Action<int, T>> _onAdded;
-        private List<Action<int, T>> _onRemoved;
-        private List<Action> _onCleared;
         private bool _isNotifying;
 
         // ── Access ─────────────────────────────────────────────
@@ -195,8 +150,8 @@ namespace Nexus.Core
             {
                 index = _items.Count;
                 _items.Add(item);
-                if (!_isNotifying && _onAdded != null)
-                    addedSnapshot = _onAdded.ToArray();
+                if (!_isNotifying)
+                    addedSnapshot = _onAdded.GetSnapshot();
             }
             if (addedSnapshot != null)
             {
@@ -219,8 +174,8 @@ namespace Nexus.Core
                 index = _items.IndexOf(item);
                 if (index < 0) return false;
                 _items.RemoveAt(index);
-                if (!_isNotifying && _onRemoved != null)
-                    removedSnapshot = _onRemoved.ToArray();
+                if (!_isNotifying)
+                    removedSnapshot = _onRemoved.GetSnapshot();
             }
             if (removedSnapshot != null)
             {
@@ -243,8 +198,8 @@ namespace Nexus.Core
             {
                 item = _items[index];
                 _items.RemoveAt(index);
-                if (!_isNotifying && _onRemoved != null)
-                    removedSnapshot = _onRemoved.ToArray();
+                if (!_isNotifying)
+                    removedSnapshot = _onRemoved.GetSnapshot();
             }
             if (removedSnapshot != null)
             {
@@ -264,8 +219,8 @@ namespace Nexus.Core
             lock (_eventLock)
             {
                 _items.Clear();
-                if (!_isNotifying && _onCleared != null)
-                    clearedSnapshot = _onCleared.ToArray();
+                if (!_isNotifying)
+                    clearedSnapshot = _onCleared.GetSnapshot();
             }
             if (clearedSnapshot != null)
             {
@@ -283,70 +238,20 @@ namespace Nexus.Core
         public int IndexOf(T item) => _items.IndexOf(item);
 
         // ── Observation ────────────────────────────────────────
-        // B4 fix: handler registration dedupes like SecureObserverSet<T> — registering the
+        // B4 fix preserved: registration dedupes via the shared core — registering the
         // same handler twice previously invoked it twice (SecureObservable never did).
-        public void OnAdded(Action<int, T> handler)
-        {
-            if (handler == null) return;
-            lock (_eventLock)
-            {
-                _onAdded ??= new List<Action<int, T>>(2);
-                if (!_onAdded.Contains(handler)) _onAdded.Add(handler);
-            }
-        }
-        public void RemoveOnAdded(Action<int, T> handler)
-        {
-            if (handler == null) return;
-            lock (_eventLock)
-            {
-                _onAdded?.Remove(handler);
-            }
-        }
-
-        public void OnRemoved(Action<int, T> handler)
-        {
-            if (handler == null) return;
-            lock (_eventLock)
-            {
-                _onRemoved ??= new List<Action<int, T>>(2);
-                if (!_onRemoved.Contains(handler)) _onRemoved.Add(handler);
-            }
-        }
-        public void RemoveOnRemoved(Action<int, T> handler)
-        {
-            if (handler == null) return;
-            lock (_eventLock)
-            {
-                _onRemoved?.Remove(handler);
-            }
-        }
-
-        public void OnCleared(Action handler)
-        {
-            if (handler == null) return;
-            lock (_eventLock)
-            {
-                _onCleared ??= new List<Action>(2);
-                if (!_onCleared.Contains(handler)) _onCleared.Add(handler);
-            }
-        }
-        public void RemoveOnCleared(Action handler)
-        {
-            if (handler == null) return;
-            lock (_eventLock)
-            {
-                _onCleared?.Remove(handler);
-            }
-        }
+        public void OnAdded(Action<int, T> handler) => _onAdded.Add(handler);
+        public void RemoveOnAdded(Action<int, T> handler) => _onAdded.Remove(handler);
+        public void OnRemoved(Action<int, T> handler) => _onRemoved.Add(handler);
+        public void RemoveOnRemoved(Action<int, T> handler) => _onRemoved.Remove(handler);
+        public void OnCleared(Action handler) => _onCleared.Add(handler);
+        public void RemoveOnCleared(Action handler) => _onCleared.Remove(handler);
 
         public void ClearAllCallbacks()
         {
-            lock (_eventLock)
-            {
-                _onAdded?.Clear();
-                _onRemoved?.Clear();
-                _onCleared?.Clear();
-            }
+            _onAdded.Clear();
+            _onRemoved.Clear();
+            _onCleared.Clear();
         }
 
         // ── Enumeration ────────────────────────────────────────
