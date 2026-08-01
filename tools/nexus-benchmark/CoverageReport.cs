@@ -52,6 +52,20 @@ namespace NexusBench
         private static string FindProjectDir()
         {
             var dir = new DirectoryInfo(Directory.GetCurrentDirectory());
+            // First check the current directory.
+            if (File.Exists(Path.Combine(dir.FullName, "NexusBenchmark.csproj")))
+                return dir.FullName;
+            // Then search common relative paths, then walk up.
+            string[] commonLocations = {
+                "tools/nexus-benchmark",
+                "tools\\nexus-benchmark"
+            };
+            foreach (var loc in commonLocations)
+            {
+                string candidate = Path.Combine(dir.FullName, loc);
+                if (File.Exists(Path.Combine(candidate, "NexusBenchmark.csproj")))
+                    return candidate;
+            }
             while (dir != null)
             {
                 if (File.Exists(Path.Combine(dir.FullName, "NexusBenchmark.csproj"))) return dir.FullName;

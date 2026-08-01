@@ -34,7 +34,10 @@ namespace Nexus.Core
                 {
                     _subscriptions[i]?.Dispose();
                 }
-                catch { }
+                catch
+                {
+                    // Subscription was already disposed by a prior teardown step.
+                }
             }
 
             _subscriptions.Clear();

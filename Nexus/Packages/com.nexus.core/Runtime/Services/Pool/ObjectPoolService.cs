@@ -243,7 +243,11 @@ namespace Nexus.Core.Services
                 {
                     return (Func<UnityEngine.Object, int>)Delegate.CreateDelegate(typeof(Func<UnityEngine.Object, int>), null, method);
                 }
-                catch { }
+                catch
+                {
+                    // Fallback: GetInstanceID may fail on AOT/IL2CPP platforms where
+                    // Delegate.CreateDelegate for non-static generic methods is restricted.
+                }
             }
             return obj => obj.GetHashCode();
         }

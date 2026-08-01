@@ -413,7 +413,10 @@ namespace Nexus.Editor
                     }
                 }
             }
-            catch {}
+            catch
+            {
+                packageVersion = "unknown";
+            }
 
             sb.AppendLine($"//     Package Version: {packageVersion}");
             sb.AppendLine("//     Changes to this file may cause incorrect behavior and will be lost if");
