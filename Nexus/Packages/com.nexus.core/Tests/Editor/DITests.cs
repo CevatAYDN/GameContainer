@@ -1,11 +1,15 @@
 using NUnit.Framework;
 using Nexus.Core;
+using System.Threading;
+using System.Threading.Tasks;
+using Nexus.Core.Services;
 
 namespace Nexus.Editor.Tests
 {
     [TestFixture]
     public class DITests
     {
+        // ── test helpers ───────────────────────────────────────
         public interface IDependency { }
         public class ConcreteDependency : IDependency { }
 
@@ -169,6 +173,38 @@ namespace Nexus.Editor.Tests
 
             Assert.IsNull(cmd.DependencyField);
             Assert.IsTrue(cmd.ResetCalled);
+        }
+
+        // ── ContextBuilder fluent API smoke test ──────────────
+
+        public struct TestSignal { public int Value; }
+        public class TestCommand : ICommand<TestSignal>
+        {
+            public static int LastValue;
+            public void Execute(TestSignal signal) => LastValue = signal.Value;
+        }
+        public class TestReactiveModel : IReactiveModel
+        {
+            public int BindCount;
+            public ValueTask OnBind(CancellationToken ct) { BindCount++; return default; }
+        }
+
+        [Test]
+        public void ContextBuilder_BindSignalTo_And_BindReactiveModel()
+        {
+            TestCommand.LastValue = 0;
+            using var di = new NexusDI();
+            var poolManager = new CommandPoolManager(di, 4, 64);
+            var bus = new SignalBus(di, poolManager, null);
+            var builder = new ContextBuilder(di, bus);
+
+            builder.BindSignal<TestSignal>().To<TestCommand>();
+            builder.BindReactiveModel<TestReactiveModel>();
+            di.Bind<TestReactiveModel>(isSingleton: true);
+
+            bus.Fire(new TestSignal { Value = 42 });
+            Assert.AreEqual(42, TestCommand.LastValue,
+                "BindSignal<TSignal>().To<TCommand>() must register the command.");
         }
     }
 }

@@ -39,10 +39,24 @@ When reviewing or self-auditing a PR, validate every check item:
 - [ ] No `_view.schedule`, `_root.schedule`, or `EditorApplication.update` calls in plugins.
 - [ ] `OnUpdate()` properly overridden if periodic polling is needed.
 - [ ] `OnDisable()` resets all instance flags, counters, queues, and debounces.
-- [ ] No empty `catch {}` blocks present.
+- [ ] No empty `catch {}` — log `ReflectionTypeLoadException.LoaderExceptions` via `Debug.LogWarning`.
 - [ ] Reflection lookups cached on hot paths (`MethodInfo` dictionary).
 - [ ] No hardcoded user-facing English strings in UI components.
 - [ ] Stat displays use `NexusEditorStyles.CreateStatTile(...)`.
+
+### Concurrency & Thread Safety
+- [ ] `volatile` keyword used on fields read/written across threads without a lock (e.g. `Root.IsInitialized`, `LazyInjection._value`/`_resolved`).
+- [ ] `Task.Run` or `async` continuations that call Unity APIs or `RestoreSaveData` marshal back to the captured `SynchronizationContext`.
+- [ ] Lock scope is minimised: no I/O, `PlayerPrefs`, or network calls inside `lock` blocks.
+- [ ] Signals dispatched via `FireThreadSafe`/`HybridQueue` not by direct `Fire<T>` when the caller may be off the main thread.
+- [ ] `ThreadStatic` fields (e.g. `s_resolutionStack`) are documented with the sync/async decision rationale.
+- [ ] Disposal races prevented: `Dispose()` sets a `_disposed` flag before signalling waiters or running cleanup.
+
+### Persistence & Anti-Cheat
+- [ ] `EncryptedStorageService`: imported cloud payloads are HMAC-validated (`TryReadVersion2`) before touching the local file.
+- [ ] `Save()` retains dirty keys on write failure (caller retries) instead of clearing them unconditionally.
+- [ ] `SecureObservable*` reads and writes are documented as memory-scan deterrence, not cryptographic guarantees.
+- [ ] `File.Replace` (atomic) is used for all persistent writes; no `Delete-then-Move` pattern exists.
 
 ### Automated Testing
 - [ ] At least 1 NUnit test per P1/P2 fix added under `Tests/Editor/`.
