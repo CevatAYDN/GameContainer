@@ -435,6 +435,12 @@ namespace NexusBench
             {
                 return PoolSplit.Run();
             }
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--coverage")
+            {
+                int rc = CoverageReport.Run(json);
+                if (json) EmitJson();
+                return rc;
+            }
             if (cmdArgs.Count > 0 && cmdArgs[0] == "--soak")
             {
                 int iterations = 10;
@@ -482,6 +488,7 @@ namespace NexusBench
             _failures += FullArchitectureStressSuite.Run();
             _failures += FuzzSuite.Run();
             _failures += CrossThreadSuite.Run();
+            _failures += GameSessionSuite.Run();
             return _failures;
         }
     }
