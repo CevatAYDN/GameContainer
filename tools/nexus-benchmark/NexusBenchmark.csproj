@@ -68,6 +68,26 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Netcode/**/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/FSM/**/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Testing/MockContext.cs" />
+    <!-- Service/tooling layer pulled into the harness proof (stubs extended in UnityStubs.cs): -->
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/AssemblyInfo.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Testing/NexusTestContext.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Testing/NexusTestHarness.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Extensions/SceneManagerExtensions.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Analytics/AnalyticsService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Audio/AudioService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Feedback/FeedbackService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Haptics/HapticService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Haptics/IHapticService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/IInputService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/InputService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Localization/ILocalizationService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Localization/LocalizationService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Network/INetworkAdapter.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/FloatingTextService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IFloatingTextService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IUIAssetProvider.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ResourcesUIAssetProvider.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/WindowManager.cs" />
   </ItemGroup>
 
 </Project>

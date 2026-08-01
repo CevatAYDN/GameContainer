@@ -355,6 +355,22 @@ namespace UnityEngine
 
         public int childCount => _children.Count;
         internal List<Transform> ChildrenSnapshot() => new(_children);
+
+        public Transform Find(string name)
+        {
+            for (int i = 0; i < _children.Count; i++)
+            {
+                if (_children[i].gameObject.name == name) return _children[i];
+            }
+            return null;
+        }
+
+        public void SetAsLastSibling()
+        {
+            if (_parent == null) return;
+            _parent._children.Remove(this);
+            _parent._children.Add(this);
+        }
     }
 
     /// <summary>Unity Coroutine/WaitForSeconds — minimal no-ops for StartCoroutine call sites.</summary>
@@ -382,6 +398,14 @@ namespace UnityEngine
         internal bool IsDestroyed => _destroyed;
 
         public static void DontDestroyOnLoad(Object target) { }
+
+        /// <summary>Unity-style truthiness: a destroyed object is falsy.</summary>
+        public static implicit operator bool(Object o) => o != null && !o._destroyed;
+
+        internal static Object[] LiveSnapshot()
+        {
+            lock (s_lock) { return s_all.ToArray(); }
+        }
 
         public static void Destroy(Object target)
         {
@@ -544,6 +568,17 @@ namespace UnityEngine
             _components.Add(component);
         }
 
+        /// <summary>Finds the first live GameObject with the given name (mirrors GameObject.Find).</summary>
+        public static GameObject Find(string name)
+        {
+            var all = Object.LiveSnapshot();
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] is GameObject go && !go.IsDestroyed && go.name == name) return go;
+            }
+            return null;
+        }
+
         internal List<Component> GetComponentsSnapshot() => new(_components);
         internal List<Component> GetComponentsInternal() => _components;
     }
@@ -592,12 +627,281 @@ namespace UnityEngine
             public static long GetMonoHeapSizeLong() => 0L;
         }
     }
+
+    /// <summary>Unity 2D vector — minimal surface for input/joystick math.</summary>
+    public struct Vector2
+    {
+        public float x, y;
+        public Vector2(float x, float y) { this.x = x; this.y = y; }
+        public static Vector2 zero => default;
+        public static Vector2 one => new Vector2(1f, 1f);
+        public float sqrMagnitude => x * x + y * y;
+        public float magnitude => (float)Math.Sqrt(x * x + y * y);
+        public Vector2 normalized
+        {
+            get
+            {
+                float m = magnitude;
+                return m > 1E-05f ? new Vector2(x / m, y / m) : default;
+            }
+        }
+        public static Vector2 ClampMagnitude(Vector2 v, float maxLength)
+        {
+            float m = v.magnitude;
+            if (m > maxLength) return new Vector2(v.x * maxLength / m, v.y * maxLength / m);
+            return v;
+        }
+        public static Vector2 operator +(Vector2 a, Vector2 b) => new Vector2(a.x + b.x, a.y + b.y);
+        public static Vector2 operator -(Vector2 a, Vector2 b) => new Vector2(a.x - b.x, a.y - b.y);
+        public static Vector2 operator *(Vector2 a, float d) => new Vector2(a.x * d, a.y * d);
+        public static Vector2 operator *(float d, Vector2 a) => a * d;
+        public static bool operator ==(Vector2 a, Vector2 b) => a.x == b.x && a.y == b.y;
+        public static bool operator !=(Vector2 a, Vector2 b) => !(a == b);
+        public override bool Equals(object obj) => obj is Vector2 v && this == v;
+        public override int GetHashCode() => x.GetHashCode() ^ y.GetHashCode();
+        public override string ToString() => $"({x}, {y})";
+    }
+
+    /// <summary>Unity color — minimal surface for floating text/UI services.</summary>
+    public struct Color
+    {
+        public float r, g, b, a;
+        public Color(float r, float g, float b, float a = 1f) { this.r = r; this.g = g; this.b = b; this.a = a; }
+        public static Color white => new Color(1f, 1f, 1f, 1f);
+        public static Color black => new Color(0f, 0f, 0f, 1f);
+        public static Color red => new Color(1f, 0f, 0f, 1f);
+        public static Color green => new Color(0f, 1f, 0f, 1f);
+        public static Color blue => new Color(0f, 0f, 1f, 1f);
+        public static bool operator ==(Color a, Color b) => a.r == b.r && a.g == b.g && a.b == b.b && a.a == b.a;
+        public static bool operator !=(Color a, Color b) => !(a == b);
+        public override bool Equals(object obj) => obj is Color c && this == c;
+        public override int GetHashCode() => r.GetHashCode() ^ g.GetHashCode() ^ b.GetHashCode() ^ a.GetHashCode();
+    }
+
+    /// <summary>Unity Random — seeded global; Range mirrors Unity's inclusive floats.</summary>
+    public static class Random
+    {
+        private static readonly System.Random s_rng = new System.Random();
+        private static readonly object s_lock = new object();
+
+        public static float value
+        {
+            get { lock (s_lock) { return (float)s_rng.NextDouble(); } }
+        }
+
+        public static float Range(float min, float max)
+        {
+            lock (s_lock) { return min + (max - min) * (float)s_rng.NextDouble(); }
+        }
+
+        public static int Range(int min, int max)
+        {
+            lock (s_lock) { return s_rng.Next(min, max); }
+        }
+    }
+
+    /// <summary>Unity audio clip — a named handle; no real audio outside Unity.</summary>
+    public class AudioClip : Object
+    {
+        public AudioClip() { }
+        public AudioClip(string name) { this.name = name; }
+    }
+
+    /// <summary>Unity AudioSource — functional play/stop state so the SFX pool logic runs.</summary>
+    public class AudioSource : Component
+    {
+        public AudioClip clip;
+        public bool loop;
+        public bool playOnAwake;
+        public float volume = 1f;
+        public float pitch = 1f;
+        public float spatialBlend;
+        public bool isPlaying { get; private set; }
+
+        public void Play() { isPlaying = true; }
+        public void Stop() { isPlaying = false; }
+        public void PlayOneShot(AudioClip clip) { this.clip = clip; isPlaying = true; }
+    }
+
+    /// <summary>Unity canvas render modes — enum surface only.</summary>
+    public enum RenderMode
+    {
+        ScreenSpaceOverlay = 0,
+        ScreenSpaceCamera = 1,
+        WorldSpace = 2
+    }
+
+    /// <summary>Unity Canvas — functional sort-order state for the WindowManager layers.</summary>
+    public class Canvas : Component
+    {
+        public RenderMode renderMode = RenderMode.ScreenSpaceOverlay;
+        public int sortingOrder;
+        public bool overrideSorting;
+    }
+
+    /// <summary>Unity RectTransform — functional anchor/offset surface.</summary>
+    public class RectTransform : Transform
+    {
+        public Vector2 anchorMin;
+        public Vector2 anchorMax;
+        public Vector2 offsetMin;
+        public Vector2 offsetMax;
+    }
+
+    /// <summary>Unity CanvasGroup — functional interactivity state for modal blocking.</summary>
+    public class CanvasGroup : Component
+    {
+        public bool interactable = true;
+        public bool blocksRaycasts = true;
+        public float alpha = 1f;
+    }
+
+    /// <summary>Unity async asset request — a no-op null result outside Unity.</summary>
+    public class ResourceRequest
+    {
+        public bool isDone { get; set; }
+        public Object asset { get; set; }
+    }
+
+    /// <summary>Unity Resources — always-miss outside Unity (harness injects mock providers).</summary>
+    public static class Resources
+    {
+        public static ResourceRequest LoadAsync<T>(string path) where T : Object => new ResourceRequest { isDone = false, asset = null };
+        public static T Load<T>(string path) where T : Object => null;
+    }
 }
 
 namespace Unity.Profiling
 {
     // SignalBus.cs imports this namespace; only the (guarded) ProfilerMarker usage
     // needs the type, which lives under UnityEngine.Profiling above.
+}
+
+namespace UnityEngine.Assertions
+{
+    /// <summary>Unity assertion exception — thrown by NexusTestContext on failed asserts.</summary>
+    public class AssertionException : Exception
+    {
+        public AssertionException(string message, string detail) : base(message) { }
+    }
+}
+
+namespace UnityEngine.UI
+{
+    /// <summary>Unity UI scaler — enum surface only for the WindowManager canvas setup.</summary>
+    public class CanvasScaler : Component
+    {
+        public enum ScaleMode
+        {
+            ConstantPixelSize = 0,
+            ScaleWithScreenSize = 1,
+            ConstantPhysicalSize = 2
+        }
+
+        public ScaleMode uiScaleMode;
+        public Vector2 referenceResolution;
+        public float matchWidthOrHeight;
+    }
+
+    /// <summary>Unity UI raycast helper — a no-op outside Unity.</summary>
+    public class GraphicRaycaster : Component { }
+}
+
+namespace UnityEngine.SceneManagement
+{
+    /// <summary>Unity scene load mode.</summary>
+    public enum LoadSceneMode
+    {
+        Single = 0,
+        Additive = 1
+    }
+
+    /// <summary>Unity async scene operation — functional pending/done state driven by SceneManager.</summary>
+    public class AsyncOperation
+    {
+        public bool isDone { get; set; }
+        public bool allowSceneActivation { get; set; } = true;
+        internal string _sceneName;
+        internal bool _isUnload;
+    }
+
+    /// <summary>Unity scene handle — minimal validity/loaded state.</summary>
+    public struct Scene
+    {
+        public string name;
+        public bool isLoaded;
+        public bool IsValid() => !string.IsNullOrEmpty(name);
+    }
+
+    /// <summary>
+    /// Functional Unity SceneManager stub: tracks known scenes and pending operations.
+    /// The harness drives completion through SimulateCompleteAll so SceneLoader's
+    /// while(!op.isDone) loop is tested deterministically (a real Unity scene load
+    /// would take many frames; here the test controls when the load finishes).
+    /// </summary>
+    public static class SceneManager
+    {
+        private static readonly HashSet<string> s_known = new HashSet<string>();
+        private static readonly List<AsyncOperation> s_pending = new List<AsyncOperation>();
+        private static readonly HashSet<string> s_loaded = new HashSet<string>();
+        private static string s_active;
+
+        public static void SimulateReset()
+        {
+            s_known.Clear();
+            s_pending.Clear();
+            s_loaded.Clear();
+            s_active = null;
+        }
+
+        public static void SimulateAddScene(string sceneName, bool loaded = true)
+        {
+            s_known.Add(sceneName);
+            if (loaded)
+            {
+                s_loaded.Add(sceneName);
+                if (s_active == null) s_active = sceneName;
+            }
+        }
+
+        public static void SimulateCompleteAll()
+        {
+            foreach (var op in s_pending)
+            {
+                op.isDone = true;
+                if (!op._isUnload && op._sceneName != null) s_loaded.Add(op._sceneName);
+            }
+            s_pending.Clear();
+        }
+
+        public static int SimulatePendingCount => s_pending.Count;
+        public static string SimulateActiveScene => s_active;
+
+        public static AsyncOperation LoadSceneAsync(string sceneName, LoadSceneMode mode)
+        {
+            if (!s_known.Contains(sceneName)) return null;
+            var op = new AsyncOperation { _sceneName = sceneName, _isUnload = false };
+            s_pending.Add(op);
+            return op;
+        }
+
+        public static AsyncOperation UnloadSceneAsync(string sceneName)
+        {
+            if (!s_known.Contains(sceneName) || !s_loaded.Contains(sceneName)) return null;
+            s_loaded.Remove(sceneName);
+            var op = new AsyncOperation { _sceneName = sceneName, _isUnload = true };
+            s_pending.Add(op);
+            return op;
+        }
+
+        public static Scene GetSceneByName(string sceneName) =>
+            new Scene { name = sceneName, isLoaded = s_loaded.Contains(sceneName) };
+
+        public static void SetActiveScene(Scene scene)
+        {
+            if (scene.IsValid()) s_active = scene.name;
+        }
+    }
 }
 
 namespace UnityEngine.Scripting

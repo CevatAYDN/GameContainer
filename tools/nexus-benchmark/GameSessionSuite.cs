@@ -179,18 +179,19 @@ namespace NexusBench
     public sealed class FakeSessionPrefs : IPlayerPrefsService
     {
         private readonly Dictionary<string, string> _store = new();
-        public int GetInt(string key, int defaultValue = 0) => int.TryParse(GetString(key, null), out int r) ? r : defaultValue;
+        public int GetInt(string key, int defaultValue = 0) => int.TryParse(GetString(key, null), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out int r) ? r : defaultValue;
         public void SetInt(string key, int value) => SetString(key, value.ToString());
         public bool GetBool(string key, bool defaultValue = false) => bool.TryParse(GetString(key, null), out bool r) ? r : defaultValue;
         public void SetBool(string key, bool value) => SetString(key, value.ToString());
         public string GetString(string key, string defaultValue = "") => _store.TryGetValue(key, out var v) ? v : defaultValue;
         public void SetString(string key, string value) => _store[key] = value;
-        public float GetFloat(string key, float defaultValue = 0f) => float.TryParse(GetString(key, null), out float r) ? r : defaultValue;
+        public float GetFloat(string key, float defaultValue = 0f) => float.TryParse(GetString(key, null), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float r) ? r : defaultValue;
         public void SetFloat(string key, float value) => SetString(key, value.ToString(System.Globalization.CultureInfo.InvariantCulture));
-        public long GetLong(string key, long defaultValue = 0L) => long.TryParse(GetString(key, null), out long r) ? r : defaultValue;
+        public long GetLong(string key, long defaultValue = 0L) => long.TryParse(GetString(key, null), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out long r) ? r : defaultValue;
         public void SetLong(string key, long value) => SetString(key, value.ToString());
         public bool HasKey(string key) => _store.ContainsKey(key);
         public void DeleteKey(string key) => _store.Remove(key);
+        public int CountKeys() => _store.Count;
         public void Save() { }
     }
 
