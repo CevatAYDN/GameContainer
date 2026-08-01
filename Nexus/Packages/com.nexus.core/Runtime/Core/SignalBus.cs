@@ -1,13 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
-using UnityEngine;
 using UnityEngine.Profiling;
 using UnityEngine.Scripting;
 using Unity.Profiling;
-using Nexus.Core.Services;
 
 namespace Nexus.Core
 {
@@ -50,6 +47,16 @@ namespace Nexus.Core
         private readonly CommandRegistry _commandRegistry;
         private readonly SubscriptionRegistry _subscriptionRegistry;
 
+        // ─── Execution & recovery modules ───
+        // The four command-execution loops (generic/object × sync/async), composite
+        // execution, decorator chaining, signal injection, and the in-flight async guard
+        // live in CommandExecutor; the failure-decision policy (strategy resolution,
+        // fallback validation, retry accounting, failed-signal dispatch) lives in
+        // RecoveryEngine. SignalBus dispatches and delegates — the harness differential
+        // suite proves the wired bus behaves identically to the standalone registries.
+        private readonly CommandExecutor _commandExecutor;
+        private readonly RecoveryEngine _recoveryEngine;
+
         public static event Action<Exception, string> OnUnhandledException;
 
         internal static void RaiseUnhandledException(Exception ex, string context)
@@ -58,7 +65,6 @@ namespace Nexus.Core
         }
 
         private readonly NexusDI _container;
-        private readonly CommandPoolManager _poolManager;
         private readonly IContext _context;
         private readonly IContextResolver _contextResolver;
 
@@ -103,17 +109,12 @@ namespace Nexus.Core
 
         private const int MaxStackDepth = 10;
 
-        private int _inFlightAsyncCommands;
-        private const int MaxInFlightAsyncCommands = 100;
-
         // Shared reflection caches (signal setters, generic dispatchers, cross-context
         // attributes) live in CommandRegistry so every bus and the standalone registry share
         // ONE cache; cleared via CommandRegistry.ClearStaticCaches().
 
 #if NEXUS_DEBUG
         private static readonly ProfilerMarker s_DispatchMarker = new ProfilerMarker("Nexus.Signal.Dispatch");
-        private static readonly ProfilerMarker s_CommandMarker = new ProfilerMarker("Nexus.Command.Execute");
-        private static readonly ProfilerMarker s_DrainMarker = new ProfilerMarker("Nexus.Queue.Drain");
 #endif
 
         public SignalBus(NexusDI container, CommandPoolManager poolManager, IContext context)
@@ -124,7 +125,6 @@ namespace Nexus.Core
         public SignalBus(NexusDI container, CommandPoolManager poolManager, IContext context, IContextResolver contextResolver)
         {
             _container = container;
-            _poolManager = poolManager;
             _context = context;
             _contextResolver = contextResolver ?? NexusRuntime.DefaultContextResolver;
             _commandRegistry = new CommandRegistry(container);
@@ -132,6 +132,13 @@ namespace Nexus.Core
             // Restore the pre-refactor SignalBus semantics: an Unsubscribe while the bus is NOT
             // dispatching reclaims the node immediately; during dispatch it defers to unwind.
             _subscriptionRegistry.ImmediateSweepWhenIdle = true;
+
+            // Recovery first (it needs the bus's failed-signal dispatch), then the executor
+            // (it needs the recovery engine), then attach the executor to the engine so
+            // fallback commands can execute through the real dispatch path.
+            _recoveryEngine = new RecoveryEngine(container, FireFailedSignalSafe, fs => FireAsyncAndForget(fs));
+            _commandExecutor = new CommandExecutor(container, poolManager, context, _commandRegistry, _recoveryEngine);
+            _recoveryEngine.AttachExecutor(_commandExecutor);
         }
 
         internal static bool ImplementsGenericInterface(Type type, Type genericInterface)
@@ -342,7 +349,7 @@ namespace Nexus.Core
                 {
                     foreach (var handler in handlers)
                     {
-                        ExecuteCommand(handler, signal);
+                        _commandExecutor.Execute(handler, signal);
                     }
                 }
 
@@ -503,7 +510,7 @@ namespace Nexus.Core
                         {
                             for (int i = 0; i < taskCount; i++)
                             {
-                                tasks[i] = ExecuteCommandAsync(handlers[i], signal, commandCt);
+                                tasks[i] = _commandExecutor.ExecuteAsync(handlers[i], signal, commandCt);
                             }
                             
                             for (int i = 0; i < taskCount; i++)
@@ -523,11 +530,11 @@ namespace Nexus.Core
                         {
                             if (handler.IsAsync)
                             {
-                                await ExecuteCommandAsync(handler, signal, commandCt);
+                                await _commandExecutor.ExecuteAsync(handler, signal, commandCt);
                             }
                             else
                             {
-                                ExecuteCommand(handler, signal);
+                                _commandExecutor.Execute(handler, signal);
                             }
                         }
                     }
@@ -582,450 +589,6 @@ namespace Nexus.Core
             }
         }
 
-
-
-        private void ExecuteCommand<TSignal>(CommandHandlerInfo handler, TSignal signal) where TSignal : struct
-        {
-            int retryCount = 0;
-            bool shouldRun = true;
-
-            NexusRuntime.Metrics.RecordCommandExecuted();
-            NexusRuntime.Metrics.RecordTrace(handler.TraceLabel);
-
-            while (shouldRun)
-            {
-#if NEXUS_DEBUG
-                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
-                s_CommandMarker.Begin();
-#endif
-                object command = null;
-                try
-                {
-                    command = _poolManager.GetCommand(handler.CommandType);
-                    _container.Inject(command);
-                    
-                    if (command is ICommand<TSignal> genericSyncCmd)
-                    {
-                        // P0-3 fix: bypass closure allocation when no decorators are registered.
-                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                        {
-                            ExecuteDecoratedCommand(genericSyncCmd, signal);
-                        }
-                        else
-                        {
-                            genericSyncCmd.Execute(signal);
-                        }
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Command '{handler.CommandType.Name}' registered for signal '{typeof(TSignal).Name}' must implement ICommand<{typeof(TSignal).Name}>.");
-                    }
-                    shouldRun = false; // completed successfully
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
-#endif
-                }
-                catch (Exception ex)
-                {
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
-#endif
-                    var action = HandleCommandErrorWithDecision(ex, handler.CommandType, signal, ref retryCount);
-                    if (action == RecoveryAction.Retry)
-                    {
-                        retryCount++;
-                    }
-                    else
-                    {
-                        shouldRun = false;
-                    }
-                }
-                finally
-                {
-#if NEXUS_DEBUG
-                    s_CommandMarker.End();
-#endif
-                    if (command != null)
-                    {
-                        _poolManager.ReturnCommand(handler.CommandType, command);
-                    }
-                }
-            }
-        }
-
-        private void ExecuteCommand(CommandHandlerInfo handler, object signal)
-        {
-            int retryCount = 0;
-            bool shouldRun = true;
-
-            while (shouldRun)
-            {
-#if NEXUS_DEBUG
-                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
-                s_CommandMarker.Begin();
-#endif
-                object command = null;
-                try
-                {
-                    command = _poolManager.GetCommand(handler.CommandType);
-                    _container.Inject(command);
-                    InjectSignal(command, signal);
-
-                    if (command is ICommand syncCmd)
-                    {
-                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                        {
-                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
-                        }
-                        else
-                        {
-                            syncCmd.Execute();
-                        }
-                    }
-                    else if (signal != null)
-                    {
-                        // Generic-only command (ICommand<TSignal>): dispatch via cached reflection.
-                        // Previously this silently no-oped because the command was not ICommand.
-                        var dispatcher = _commandRegistry.GetGenericSyncDispatcher(command.GetType(), signal.GetType());
-                        if (dispatcher == null)
-                        {
-                            throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement ICommand or ICommand<{signal.GetType().Name}>.");
-                        }
-                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                        {
-                            ExecuteWithDecorators(command, () => dispatcher(command, signal));
-                        }
-                        else
-                        {
-                            dispatcher(command, signal);
-                        }
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement ICommand.");
-                    }
-                    shouldRun = false; // completed successfully
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
-#endif
-                }
-                catch (Exception ex)
-                {
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
-#endif
-                    var action = HandleCommandErrorWithDecision(ex, handler.CommandType, signal, ref retryCount);
-                    if (action == RecoveryAction.Retry)
-                    {
-                        retryCount++;
-                    }
-                    else
-                    {
-                        shouldRun = false;
-                    }
-                }
-                finally
-                {
-#if NEXUS_DEBUG
-                    s_CommandMarker.End();
-#endif
-                    if (command != null)
-                    {
-                        _poolManager.ReturnCommand(handler.CommandType, command);
-                    }
-                }
-            }
-        }
-
-
-
-        private async ValueTask ExecuteCommandAsync<TSignal>(CommandHandlerInfo handler, TSignal signal, CancellationToken ct) where TSignal : struct
-        {
-            int retryCount = 0;
-            bool shouldRun = true;
-
-            while (shouldRun)
-            {
-#if NEXUS_DEBUG
-                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
-                s_CommandMarker.Begin();
-#endif
-                object command = null;
-                bool inFlightIncremented = false;
-                try
-                {
-                    var count = Interlocked.Increment(ref _inFlightAsyncCommands);
-                    if (count > MaxInFlightAsyncCommands)
-                    {
-                        Interlocked.Decrement(ref _inFlightAsyncCommands);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                        throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
-#else
-                        NexusRuntime.Logger?.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
-                        shouldRun = false;
-                        break;
-#endif
-                    }
-                    inFlightIncremented = true;
-
-                    command = _poolManager.GetCommand(handler.CommandType);
-                    _container.Inject(command);
- 
-                    if (command is IAsyncCommand<TSignal> genericAsyncCmd)
-                    {
-                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                        {
-                            if (handler.TimeoutMs > 0)
-                            {
-                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                                timeoutCts.CancelAfter(handler.TimeoutMs);
-                                var timeoutToken = timeoutCts.Token;
-                                await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, timeoutToken));
-                            }
-                            else
-                            {
-                                await ExecuteWithDecoratorsAsync(genericAsyncCmd, async () => await genericAsyncCmd.ExecuteAsync(signal, ct));
-                            }
-                        }
-                        else
-                        {
-                            if (handler.TimeoutMs > 0)
-                            {
-                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                                timeoutCts.CancelAfter(handler.TimeoutMs);
-                                await genericAsyncCmd.ExecuteAsync(signal, timeoutCts.Token);
-                            }
-                            else
-                            {
-                                await genericAsyncCmd.ExecuteAsync(signal, ct);
-                            }
-                        }
-                    }
-                    else if (command is ICommand<TSignal> genericSyncCmd)
-                    {
-                        ExecuteWithDecorators(genericSyncCmd, () => genericSyncCmd.Execute(signal));
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Command '{handler.CommandType.Name}' registered for signal '{typeof(TSignal).Name}' must implement IAsyncCommand<{typeof(TSignal).Name}> or ICommand<{typeof(TSignal).Name}>.");
-                    }
-                    shouldRun = false; // success
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
-#endif
-                }
-                catch (Exception ex)
-                {
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
-#endif
-                    var action = await HandleCommandErrorWithDecisionAsync(ex, handler.CommandType, signal, retryCount, ct);
-                    if (action == RecoveryAction.Retry)
-                    {
-                        retryCount++;
-                    }
-                    else
-                    {
-                        shouldRun = false;
-                    }
-                }
-                finally
-                {
-#if NEXUS_DEBUG
-                    s_CommandMarker.End();
-#endif
-                    if (inFlightIncremented)
-                    {
-                        Interlocked.Decrement(ref _inFlightAsyncCommands);
-                    }
-                    if (command != null)
-                    {
-                        _poolManager.ReturnCommand(handler.CommandType, command);
-                    }
-                }
-            }
-        }
-
-        private async ValueTask ExecuteCommandAsync(CommandHandlerInfo handler, object signal, CancellationToken ct)
-        {
-            int retryCount = 0;
-            bool shouldRun = true;
-
-            while (shouldRun)
-            {
-#if NEXUS_DEBUG
-                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
-                s_CommandMarker.Begin();
-#endif
-                object command = null;
-                bool inFlightIncremented = false;
-                try
-                {
-                    var count = Interlocked.Increment(ref _inFlightAsyncCommands);
-                    if (count > MaxInFlightAsyncCommands)
-                    {
-                        Interlocked.Decrement(ref _inFlightAsyncCommands);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                        throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
-#else
-                        NexusRuntime.Logger?.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
-                        shouldRun = false;
-                        break;
-#endif
-                    }
-                    inFlightIncremented = true;
-
-                    command = _poolManager.GetCommand(handler.CommandType);
-                    _container.Inject(command);
-                    InjectSignal(command, signal);
-
-                    if (command is IAsyncCommand asyncCmd)
-                    {
-                        // P0-5 fix: apply [CommandTimeout] via a linked, self-cancelling token.
-                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                        {
-                            if (handler.TimeoutMs > 0)
-                            {
-                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                                timeoutCts.CancelAfter(handler.TimeoutMs);
-                                var timeoutToken = timeoutCts.Token;
-                                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(timeoutToken));
-                            }
-                            else
-                            {
-                                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
-                            }
-                        }
-                        else
-                        {
-                            if (handler.TimeoutMs > 0)
-                            {
-                                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                                timeoutCts.CancelAfter(handler.TimeoutMs);
-                                await asyncCmd.ExecuteAsync(timeoutCts.Token);
-                            }
-                            else
-                            {
-                                await asyncCmd.ExecuteAsync(ct);
-                            }
-                        }
-                    }
-                    else if (command is ICommand syncCmd)
-                    {
-                        if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                        {
-                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
-                        }
-                        else
-                        {
-                            syncCmd.Execute();
-                        }
-                    }
-                    else if (signal != null)
-                    {
-                        // Generic-only command: prefer IAsyncCommand<TSignal>, then ICommand<TSignal>.
-                        // Previously a generic-only fallback command silently no-oped here.
-                        var asyncDispatcher = _commandRegistry.GetGenericAsyncDispatcher(command.GetType(), signal.GetType());
-                        if (asyncDispatcher != null)
-                        {
-                            if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                            {
-                                if (handler.TimeoutMs > 0)
-                                {
-                                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                                    timeoutCts.CancelAfter(handler.TimeoutMs);
-                                    var timeoutToken = timeoutCts.Token;
-                                    await ExecuteWithDecoratorsAsync(command, async () => await asyncDispatcher(command, signal, timeoutToken));
-                                }
-                                else
-                                {
-                                    await ExecuteWithDecoratorsAsync(command, async () => await asyncDispatcher(command, signal, ct));
-                                }
-                            }
-                            else
-                            {
-                                if (handler.TimeoutMs > 0)
-                                {
-                                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                                    timeoutCts.CancelAfter(handler.TimeoutMs);
-                                    await asyncDispatcher(command, signal, timeoutCts.Token);
-                                }
-                                else
-                                {
-                                    await asyncDispatcher(command, signal, ct);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            var syncDispatcher = _commandRegistry.GetGenericSyncDispatcher(command.GetType(), signal.GetType());
-                            if (syncDispatcher == null)
-                            {
-                                throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement IAsyncCommand, IAsyncCommand<TSignal>, ICommand, or ICommand<{signal.GetType().Name}>.");
-                            }
-                            if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                            {
-                                ExecuteWithDecorators(command, () => syncDispatcher(command, signal));
-                            }
-                            else
-                            {
-                                syncDispatcher(command, signal);
-                            }
-                        }
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException($"Command '{handler.CommandType.Name}' must implement IAsyncCommand or ICommand.");
-                    }
-                    shouldRun = false; // success
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
-#endif
-                }
-                catch (Exception ex)
-                {
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
-#endif
-                    var action = await HandleCommandErrorWithDecisionAsync(ex, handler.CommandType, signal, retryCount, ct);
-                    if (action == RecoveryAction.Retry)
-                    {
-                        retryCount++;
-                    }
-                    else
-                    {
-                        shouldRun = false;
-                    }
-                }
-                finally
-                {
-#if NEXUS_DEBUG
-                    s_CommandMarker.End();
-#endif
-                    if (inFlightIncremented)
-                    {
-                        Interlocked.Decrement(ref _inFlightAsyncCommands);
-                    }
-                    if (command != null)
-                    {
-                        _poolManager.ReturnCommand(handler.CommandType, command);
-                    }
-                }
-            }
-        }
-
-        /// <summary>
-        /// InjectSignal assigns the signal payload to the matching field or property on the command instance.
-        /// This is only used in non-generic ICommand execution. The compiled setter cache lives in the
-        /// CommandRegistry (shared with the standalone registry; the CR/DIFF suite proves parity).
-        /// </summary>
-        private void InjectSignal(object command, object signal)
-        {
-            if (signal == null) return;
-
-            _commandRegistry.GetSignalSetter(command.GetType(), signal.GetType())(command, signal);
-        }
-
         private void ProcessCompositeTriggers<T>(T signal) where T : struct
         {
             // P1-14 fix: collect due triggers under the registry's composite lock (snapshot copy),
@@ -1078,204 +641,7 @@ namespace Nexus.Core
             {
                 for (int i = 0; i < dueTriggers.Count; i++)
                 {
-                    ExecuteCompositeCommand(dueTriggers[i].trigger, dueTriggers[i].context);
-                }
-            }
-        }
-
-        private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command, CompositeContext context)
-        {
-            int retryCount = 0;
-            bool shouldRun = true;
-
-            while (shouldRun)
-            {
-                bool inFlightIncremented = false;
-#if NEXUS_DEBUG
-                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
-#endif
-                try
-                {
-                    // P1-14 fix: re-inject on retry so the command state is refreshed,
-                    // and run through the decorator pipeline like normal commands.
-                    if (retryCount > 0)
-                    {
-                        _container.Inject(command);
-                    }
-
-                    if (command is ICompositeCommand syncCompCmd)
-                    {
-                        ExecuteWithDecorators(syncCompCmd, () => syncCompCmd.Execute(context));
-                    }
-                    else if (command is ICommand syncCmd)
-                    {
-                        ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
-                    }
-                    else if (command is IAsyncCompositeCommand asyncCompCmd)
-                    {
-                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        Interlocked.Increment(ref _inFlightAsyncCommands);
-                        inFlightIncremented = true;
-                        try
-                        {
-                            if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                            {
-                                await ExecuteWithDecoratorsAsync(asyncCompCmd, async () => await asyncCompCmd.ExecuteAsync(context, ct));
-                            }
-                            else
-                            {
-                                await asyncCompCmd.ExecuteAsync(context, ct);
-                            }
-                        }
-                        finally
-                        {
-                            if (inFlightIncremented)
-                            {
-                                Interlocked.Decrement(ref _inFlightAsyncCommands);
-                                inFlightIncremented = false;
-                            }
-                        }
-                    }
-                    else if (command is IAsyncCommand asyncCmd)
-                    {
-                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        Interlocked.Increment(ref _inFlightAsyncCommands);
-                        inFlightIncremented = true;
-                        try
-                        {
-                            if (_context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0)
-                            {
-                                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
-                            }
-                            else
-                            {
-                                await asyncCmd.ExecuteAsync(ct);
-                            }
-                        }
-                        finally
-                        {
-                            if (inFlightIncremented)
-                            {
-                                Interlocked.Decrement(ref _inFlightAsyncCommands);
-                                inFlightIncremented = false;
-                            }
-                        }
-                    }
-                    shouldRun = false;
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
-#endif
-                }
-                catch (Exception ex)
-                {
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
-#endif
-                    var action = HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
-                    if (action == RecoveryAction.Retry)
-                    {
-                        retryCount++;
-                    }
-                    else
-                    {
-                        shouldRun = false;
-                    }
-                }
-                finally
-                {
-                    if (inFlightIncremented)
-                    {
-                        Interlocked.Decrement(ref _inFlightAsyncCommands);
-                    }
-                    if (command != null && !shouldRun)
-                    {
-                        _poolManager.ReturnCommand(trigger.CommandType, command);
-                    }
-                }
-            }
-        }
-
-        private void ExecuteCompositeCommandAsync(CompositeTriggerState trigger, object command, CompositeContext context)
-        {
-            SafeAsyncRunner.Run(() => ExecuteCompositeCommandAsyncCore(trigger, command, context), 
-                $"Composite command '{trigger.CommandType.FullName}' failed.");
-        }
-
-        private void ExecuteCompositeCommand(CompositeTriggerState trigger, CompositeContext context)
-        {
-            int retryCount = 0;
-            bool shouldRun = true;
-
-            while (shouldRun)
-            {
-                object command = null;
-#if NEXUS_DEBUG
-                int traceId = NexusTrace.BeginEvent(TraceEventType.Command, trigger.CommandType.Name, ExecutionMode.Sequential);
-#endif
-                try
-                {
-                    command = _poolManager.GetCommand(trigger.CommandType);
-                    _container.Inject(command);
-                    bool hasDecorators = _context is Context decoratorCtx && decoratorCtx.Plugins.Count > 0;
-
-                    if (command is ICompositeCommand compCmd)
-                    {
-                        // Composite payload support: pass the captured signal context to the command.
-                        if (hasDecorators)
-                        {
-                            ExecuteWithDecorators(compCmd, () => compCmd.Execute(context));
-                        }
-                        else
-                        {
-                            compCmd.Execute(context);
-                        }
-                    }
-                    else if (command is ICommand syncCmd)
-                    {
-                        // P1-14 fix: composite commands run through the decorator pipeline.
-                        if (hasDecorators)
-                        {
-                            ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
-                        }
-                        else
-                        {
-                            syncCmd.Execute();
-                        }
-                    }
-                    else if (command is IAsyncCompositeCommand || command is IAsyncCommand)
-                    {
-                        var cmdForAsync = command;
-                        command = null; // Prevent finally from returning it; async method owns it now
-                        ExecuteCompositeCommandAsync(trigger, cmdForAsync, context);
-                        shouldRun = false;
-                        return;
-                    }
-                    shouldRun = false;
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.OK);
-#endif
-                }
-                catch (Exception ex)
-                {
-#if NEXUS_DEBUG
-                    NexusTrace.EndEvent(traceId, TraceStatus.Failed);
-#endif
-                    var action = HandleCommandErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
-                    if (action == RecoveryAction.Retry)
-                    {
-                        retryCount++;
-                    }
-                    else
-                    {
-                        shouldRun = false;
-                    }
-                }
-                finally
-                {
-                    if (command != null)
-                    {
-                        _poolManager.ReturnCommand(trigger.CommandType, command);
-                    }
+                    _commandExecutor.ExecuteComposite(dueTriggers[i].trigger, dueTriggers[i].context);
                 }
             }
         }
@@ -1345,249 +711,6 @@ namespace Nexus.Core
             }
         }
 
-        private RecoveryAction HandleCommandErrorWithDecision(Exception ex, Type commandType, object signal, ref int retryCount)
-            => HandleCommandErrorWithDecision<object>(ex, commandType, signal, ref retryCount);
-
-        private RecoveryAction HandleCommandErrorWithDecision<TSignal>(Exception ex, Type commandType, TSignal signal, ref int retryCount)
-        {
-            if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
-                (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
-            {
-                // P1-3 fix: preserve the original stack trace when rethrowing.
-                ExceptionDispatchInfo.Capture(ex).Throw();
-            }
-
-            var failedSignal = new CommandFailedSignal(ex, commandType, signal);
-            
-            if (signal is CommandFailedSignal)
-            {
-                NexusRuntime.Logger?.LogException(ex);
-                return RecoveryAction.Abort;
-            }
-
-            NexusRuntime.Logger?.LogError($"[Nexus] Command {commandType.Name} failed: {ex.Message}\n{ex.StackTrace}");
-            
-            if (_container.IsRegistered(typeof(IRecoveryStrategy)))
-            {
-                try
-                {
-                    var strategy = _container.Resolve<IRecoveryStrategy>();
-                    var ctx = new CommandFailureContext(ex, commandType, signal, retryCount);
-                    var decision = strategy.OnCommandFailed(ctx);
-                    
-                    if (decision.Action == RecoveryAction.Skip)
-                    {
-                        FireFailedSignalSafe(failedSignal);
-                        return RecoveryAction.Skip;
-                    }
-                    if (decision.Action == RecoveryAction.Abort)
-                    {
-                        throw new InvalidOperationException("Execution aborted by recovery strategy.", ex);
-                    }
-                    if (decision.Action == RecoveryAction.Fallback)
-                    {
-                        if (decision.FallbackCommandType != null && IsSyncCapableFallbackType(decision.FallbackCommandType, signal))
-                        {
-                            ExecuteCommand(new CommandHandlerInfo(decision.FallbackCommandType, ExecutionMode.Sequential, 0, false), signal);
-                        }
-                        else if (decision.FallbackCommandType != null)
-                        {
-                            // Reject fallback types that cannot execute in this (sync) context —
-                            // async-only types or types implementing no supported command interface —
-                            // so we neither silently no-op nor recurse forever on the same decision.
-                            NexusRuntime.Logger?.LogError($"[Nexus] Fallback command '{decision.FallbackCommandType.Name}' cannot execute synchronously for signal '{signal?.GetType().Name ?? "unknown"}'. Treating as Skip.");
-                        }
-                        return RecoveryAction.Fallback;
-                    }
-                    if (decision.Action == RecoveryAction.Retry)
-                    {
-                        if (retryCount >= decision.MaxRetries)
-                        {
-                            NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
-                            throw new InvalidOperationException($"Retry limit reached for command {commandType.Name}.", ex);
-                        }
-                        return RecoveryAction.Retry;
-                    }
-                }
-                catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
-                {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
-                }
-            }
-
-            FireFailedSignalSafe(failedSignal);
-            return RecoveryAction.Skip;
-        }
-
-        private async ValueTask<RecoveryAction> HandleCommandErrorWithDecisionAsync(Exception ex, Type commandType, object signal, int retryCount, CancellationToken ct)
-        {
-            if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException || 
-                (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
-            {
-                // P1-3 fix: preserve the original stack trace when rethrowing.
-                ExceptionDispatchInfo.Capture(ex).Throw();
-            }
-
-            var failedSignal = new CommandFailedSignal(ex, commandType, signal);
-            
-            if (signal is CommandFailedSignal)
-            {
-                NexusRuntime.Logger?.LogException(ex);
-                return RecoveryAction.Abort;
-            }
-
-            NexusRuntime.Logger?.LogError($"[Nexus] Command {commandType.Name} failed: {ex.Message}\n{ex.StackTrace}");
-            
-            if (_container.IsRegistered(typeof(IRecoveryStrategy)))
-            {
-                try
-                {
-                    var strategy = _container.Resolve<IRecoveryStrategy>();
-                    var ctx = new CommandFailureContext(ex, commandType, signal, retryCount);
-                    var decision = strategy.OnCommandFailed(ctx);
-                    
-                    if (decision.Action == RecoveryAction.Skip)
-                    {
-                        // P0-4 fix: async-safe dispatch — awaits the full handler chain
-                        // and captures errors instead of throwing a sync/async mismatch.
-                        await FireAsyncAndForget(failedSignal);
-                        return RecoveryAction.Skip;
-                    }
-                    if (decision.Action == RecoveryAction.Abort)
-                    {
-                        throw new InvalidOperationException("Execution aborted by recovery strategy.", ex);
-                    }
-                    if (decision.Action == RecoveryAction.Fallback)
-                    {
-                        if (decision.FallbackCommandType != null && IsValidFallbackType(decision.FallbackCommandType, signal))
-                        {
-                            // E-4/P0-1-aligned: recognize generic-only async fallback commands too.
-                            var isAsync = typeof(IAsyncCommand).IsAssignableFrom(decision.FallbackCommandType)
-                                || ImplementsGenericInterface(decision.FallbackCommandType, typeof(IAsyncCommand<>));
-                            if (isAsync)
-                            {
-                                await ExecuteCommandAsync(new CommandHandlerInfo(decision.FallbackCommandType, ExecutionMode.Sequential, 0, true), signal, ct);
-                            }
-                            else
-                            {
-                                ExecuteCommand(new CommandHandlerInfo(decision.FallbackCommandType, ExecutionMode.Sequential, 0, false), signal);
-                            }
-                        }
-                        else if (decision.FallbackCommandType != null)
-                        {
-                            NexusRuntime.Logger?.LogError($"[Nexus] Fallback command '{decision.FallbackCommandType.Name}' implements no supported command interface for signal '{signal?.GetType().Name ?? "unknown"}'. Treating as Skip.");
-                        }
-                        return RecoveryAction.Fallback;
-                    }
-                    if (decision.Action == RecoveryAction.Retry)
-                    {
-                        if (retryCount >= decision.MaxRetries)
-                        {
-                            NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
-                            throw new InvalidOperationException($"Retry limit reached for command {commandType.Name}.", ex);
-                        }
-                        return RecoveryAction.Retry;
-                    }
-                }
-                catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
-                {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Error recovery strategy failed: {strategyEx.Message}");
-                }
-            }
-
-            // P0-4 fix: async-safe dispatch of the failure signal.
-            await FireAsyncAndForget(failedSignal);
-            return RecoveryAction.Skip;
-        }
-
-        /// <summary>
-        /// True if <paramref name="fallbackType"/> implements a command interface usable by the
-        /// object-based async dispatch paths for <paramref name="signal"/>: non-generic
-        /// ICommand/IAsyncCommand, or the generic ICommand&lt;TSignal&gt;/IAsyncCommand&lt;TSignal&gt;
-        /// matching the signal type.
-        /// </summary>
-        private static bool IsValidFallbackType(Type fallbackType, object signal)
-        {
-            if (typeof(ICommand).IsAssignableFrom(fallbackType) || typeof(IAsyncCommand).IsAssignableFrom(fallbackType))
-                return true;
-            if (signal == null) return false;
-            var signalType = signal.GetType();
-            return typeof(ICommand<>).MakeGenericType(signalType).IsAssignableFrom(fallbackType)
-                || typeof(IAsyncCommand<>).MakeGenericType(signalType).IsAssignableFrom(fallbackType);
-        }
-
-        /// <summary>
-        /// True if <paramref name="fallbackType"/> can execute <b>synchronously</b> for
-        /// <paramref name="signal"/>: non-generic <see cref="ICommand"/> or the generic
-        /// <see cref="ICommand{TSignal}"/> matching the signal type. Async-only types are rejected
-        /// here because the sync error path has no way to await them (attempting dispatch would
-        /// throw and re-enter the recovery strategy).
-        /// </summary>
-        private static bool IsSyncCapableFallbackType(Type fallbackType, object signal)
-        {
-            if (typeof(ICommand).IsAssignableFrom(fallbackType)) return true;
-            if (signal == null) return false;
-            return typeof(ICommand<>).MakeGenericType(signal.GetType()).IsAssignableFrom(fallbackType);
-        }
-
-        // Generic-only dispatcher/setter caches live in CommandRegistry (shared across every bus
-        // and the standalone registry). SignalBus only dispatches through them — see
-        // CommandRegistry.GetGenericSyncDispatcher / GetGenericAsyncDispatcher / GetSignalSetter.
-
-        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        private void ExecuteDecoratedCommand<TSignal>(ICommand<TSignal> cmd, TSignal signal) where TSignal : struct
-        {
-            ExecuteWithDecorators(cmd, () => cmd.Execute(signal));
-        }
-
-        private void ExecuteWithDecorators(object command, Action next)
-        {
-            if (_context is Context ctx && ctx.PluginsReadOnlyCopy.Count > 0)
-            {
-                var snapshot = ctx.PluginsReadOnlyCopy;
-                Action current = next;
-                for (int i = snapshot.Count - 1; i >= 0; i--)
-                {
-                    var decorators = snapshot[i].context.Decorators;
-                    for (int j = decorators.Count - 1; j >= 0; j--)
-                    {
-                        var d = decorators[j];
-                        var prev = current;
-                        current = () => d.DecorateExecute(command, prev);
-                    }
-                }
-                current();
-            }
-            else
-            {
-                next();
-            }
-        }
-
-        private async ValueTask ExecuteWithDecoratorsAsync(object command, Func<ValueTask> next)
-        {
-            if (_context is Context ctx && ctx.PluginsReadOnlyCopy.Count > 0)
-            {
-                var snapshot = ctx.PluginsReadOnlyCopy;
-                Func<ValueTask> current = next;
-                for (int i = snapshot.Count - 1; i >= 0; i--)
-                {
-                    var decorators = snapshot[i].context.Decorators;
-                    for (int j = decorators.Count - 1; j >= 0; j--)
-                    {
-                        var d = decorators[j];
-                        var prev = current;
-                        current = async () => await d.DecorateExecuteAsync(command, prev);
-                    }
-                }
-                await current();
-            }
-            else
-            {
-                await next();
-            }
-        }
-
         public void Dispose()
         {
             // Snapshot the nodes before disposing: RawSubscription.Dispose() re-enters
@@ -1620,9 +743,9 @@ namespace Nexus.Core
             _subscriptionRegistry.Dispose();
             _commandRegistry.Dispose();
 
-            if (Volatile.Read(ref _inFlightAsyncCommands) > 0)
+            if (_commandExecutor.InFlightAsyncCommands > 0)
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_inFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_commandExecutor.InFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
             }
         }
 

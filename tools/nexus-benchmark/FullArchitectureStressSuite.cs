@@ -10,7 +10,6 @@ using Nexus.Core;
 using Nexus.Core.Extensions;
 using Nexus.Core.FSM;
 using Nexus.Core.Lifecycle;
-using Nexus.Core.Pipelines;
 using Nexus.Core.Services;
 using Nexus.Netcode;
 using UnityEngine;
@@ -56,11 +55,27 @@ namespace NexusBench
         public void Execute(BroadcastSignal signal) => Interlocked.Increment(ref FiredCount);
     }
 
+    /// <summary>
+    /// Scoped cross-context signal routed through the REAL SignalBus path (the former
+    /// SignalDispatchPipeline was a divergent orphan copy with case-sensitive == and
+    /// Fire() semantics — deleted. This signal exercises SignalBus.BroadcastCrossContext
+    /// with the BUG-5 OrdinalIgnoreCase scope match against a differently-cased target).
+    /// </summary>
+    [CrossContext("Pipeline-Target")]
     public struct PipelineCrossSignal { public int Id; }
     public class PipelineCrossCmd : ICommand<PipelineCrossSignal>
     {
         public static int FiredCount;
         public void Execute(PipelineCrossSignal signal) => Interlocked.Increment(ref FiredCount);
+    }
+
+    /// <summary>Scoped to a tag no context has — delivery must silently no-op (no throw).</summary>
+    [CrossContext("pipeline-missing")]
+    public struct PipelineMissingSignal { public int Id; }
+    public class PipelineMissingCmd : ICommand<PipelineMissingSignal>
+    {
+        public static int FiredCount;
+        public void Execute(PipelineMissingSignal signal) => Interlocked.Increment(ref FiredCount);
     }
 
     internal sealed class TestLifecycle : IContextLifecycle
@@ -277,7 +292,7 @@ namespace NexusBench
             Test_Subscription_AutoDispose_OnContextDispose();
             Test_DoubleDispose_And_FireAfterDispose();
             Test_Dispose_During_Dispatch();
-            Test_SignalDispatchPipeline_CrossContext_Broadcast();
+            Test_CrossContext_RealPath_ScopedBroadcast();
             Test_ContextLifecycleOrchestrator_Phases_Isolation();
             TraceRegistry("after 39");
             
@@ -1579,40 +1594,58 @@ namespace NexusBench
             Report("37. Dispose_During_Dispatch", ok, detail);
         }
 
-        // ── 38. SignalDispatchPipeline cross-context broadcast (real pipeline) ──
+        // ── 38. Real cross-context broadcast through SignalBus (BUG-5 OrdinalIgnoreCase) ──
+        // The former SignalDispatchPipeline was a divergent orphan copy (case-sensitive ==,
+        // Fire() instead of FireCrossContext, no scope-less broadcast). Deleted; this test
+        // now covers the REAL SignalBus.BroadcastCrossContext path incl. the BUG-5
+        // case-insensitive scope match. (The scope-less broadcast-to-all branch is covered
+        // separately by test 4.)
 
-        private static void Test_SignalDispatchPipeline_CrossContext_Broadcast()
+        private static void Test_CrossContext_RealPath_ScopedBroadcast()
         {
             NexusRuntime.Reset();
 
+            // Source (fires) + target (receives). Target scope differs in case from the
+            // [CrossContext("Pipeline-Target")] attribute → must match OrdinalIgnoreCase.
             var di = new NexusDI();
             var pool = new CommandPoolManager(di);
-            var ctx = new MockContext { ScopeTag = "pipeline-target" };
-            var resolver = new ListContextResolver(new List<IContext> { ctx });
-            var bus = new SignalBus(di, pool, ctx, resolver);
-            ctx.SignalBus = bus;
+            var sourceCtx = new MockContext { ScopeTag = "source" };
+            var targetCtx = new MockContext { ScopeTag = "pipeline-target" };
+            var resolver = new ListContextResolver(new List<IContext> { sourceCtx, targetCtx });
+            var sourceBus = new SignalBus(di, pool, sourceCtx, resolver);
+            sourceCtx.SignalBus = sourceBus;
+            var targetDi = new NexusDI();
+            var targetPool = new CommandPoolManager(targetDi);
+            var targetBus = new SignalBus(targetDi, targetPool, targetCtx, resolver);
+            targetCtx.SignalBus = targetBus;
 
-            di.Bind<PipelineCrossCmd>(isSingleton: false);
-            bus.RegisterCommand(typeof(PipelineCrossSignal), typeof(PipelineCrossCmd), ExecutionMode.Sequential, 0, false);
+            targetDi.Bind<PipelineCrossCmd>(isSingleton: false);
+            targetDi.Bind<PipelineMissingCmd>(isSingleton: false);
+            targetBus.RegisterCommand(typeof(PipelineCrossSignal), typeof(PipelineCrossCmd), ExecutionMode.Sequential, 0, false);
+            targetBus.RegisterCommand(typeof(PipelineMissingSignal), typeof(PipelineMissingCmd), ExecutionMode.Sequential, 0, false);
 
-            var pipeline = new SignalDispatchPipeline(resolver);
-
+            // 1. Scoped broadcast: attribute scope "Pipeline-Target" vs target "pipeline-target" →
+            //    delivered via the REAL path (BUG-5 fix would previously skip case-mismatched scopes).
             PipelineCrossCmd.FiredCount = 0;
-            pipeline.BroadcastCrossContext("pipeline-target", new PipelineCrossSignal { Id = 7 });
+            PipelineMissingCmd.FiredCount = 0;
+            sourceBus.Fire(new PipelineCrossSignal { Id = 7 });
             bool delivered = PipelineCrossCmd.FiredCount == 1;
 
+            // 2. Scoped signal with a tag no context owns → no throw, no delivery.
             bool missingNoThrow = true;
-            try { pipeline.BroadcastCrossContext("pipeline-missing", new PipelineCrossSignal { Id = 8 }); }
+            try { sourceBus.Fire(new PipelineMissingSignal { Id = 8 }); }
             catch { missingNoThrow = false; }
-            bool stillOne = PipelineCrossCmd.FiredCount == 1;
+            bool missingStillZero = PipelineMissingCmd.FiredCount == 0 && PipelineCrossCmd.FiredCount == 1;
 
+            // 3. Default resolver (null contextResolver → NexusRuntime.DefaultContextResolver)
+            //    with no active contexts → broadcast over empty set, no throw.
             bool fallbackNoThrow = true;
-            try { new SignalDispatchPipeline(null).BroadcastCrossContext("pipeline-none", new PipelineCrossSignal { Id = 9 }); }
+            try { new SignalBus(di, pool, new MockContext { ScopeTag = "bare" }).Fire(new PipelineCrossSignal { Id = 9 }); }
             catch { fallbackNoThrow = false; }
 
-            bool ok = delivered && missingNoThrow && stillOne && fallbackNoThrow;
-            Report("38. SignalDispatchPipeline_CrossContext_Broadcast", ok,
-                $"target=delivered({delivered}), missing-tag=no-throw({missingNoThrow}) no-delivery({stillOne}), default-resolver=no-throw({fallbackNoThrow})");
+            bool ok = delivered && missingNoThrow && missingStillZero && fallbackNoThrow;
+            Report("38. CrossContext_RealPath_ScopedBroadcast", ok,
+                $"scoped-case-insensitive=delivered({delivered}), missing-tag=no-throw({missingNoThrow}) no-delivery({missingStillZero}), default-resolver=no-throw({fallbackNoThrow})");
         }
 
         // ── 39. ContextLifecycleOrchestrator phase ordering + isolation + cancel ──

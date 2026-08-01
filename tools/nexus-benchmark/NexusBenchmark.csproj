@@ -16,6 +16,11 @@
   <ItemGroup>
     <!-- Pure-C# benchmark path files (Unity-coupled siblings are stubbed in NexusStubs.cs). -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/SignalBus.cs" />
+    <!-- Execution and recovery live in dedicated modules: the four execute loops
+         (generic/object x sync/async) + composite + decorators in CommandExecutor,
+         the failure-decision policy in RecoveryEngine. SignalBus delegates to both. -->
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandExecutor.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/RecoveryEngine.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandRegistry.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/SubscriptionRegistry.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusDI.cs" />
@@ -52,7 +57,6 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/MetricsSampler.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/QueueDrainer.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusBootstrapManifest.cs" />
-    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Pipelines/SignalDispatchPipeline.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Lifecycle/ContextLifecycleOrchestrator.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Services/AssemblyScanService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Lifecycle/**/*.cs" />
