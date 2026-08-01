@@ -39,6 +39,23 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void EncryptedStorageService_InvalidCloudImport_PreservesExistingValue()
+        {
+            using var storage = new EncryptedStorageService("Test_Cloud_Validation_Salt");
+            storage.SetString("User_Cloud_Data", "valid-local-save");
+            storage.Save();
+
+            string exportedBase64 = storage.ExportEncryptedSaveData("User_Cloud_Data");
+            byte[] tampered = System.Convert.FromBase64String(exportedBase64);
+            tampered[tampered.Length - 1] ^= 0xFF;
+
+            Assert.IsFalse(storage.ImportEncryptedSaveData("User_Cloud_Data", System.Convert.ToBase64String(tampered)));
+            Assert.AreEqual("valid-local-save", storage.GetString("User_Cloud_Data", null));
+
+            storage.DeleteKey("User_Cloud_Data");
+        }
+
+        [Test]
         public void OfflineTimeCalculator_ValidatesTimeAndDetectsTampering()
         {
             using var storage = new EncryptedStorageService("Test_Offline_Salt");

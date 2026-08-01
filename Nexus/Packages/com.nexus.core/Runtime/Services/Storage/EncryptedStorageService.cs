@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Security.Cryptography;
@@ -53,7 +54,7 @@ namespace Nexus.Core.Services
         private readonly byte[] _legacyEncryptionKey;
         private readonly byte[] _legacyHmacKey;
         private readonly string _storageFolderPath;
-        private readonly Dictionary<string, string> _filePathCache = new(StringComparer.Ordinal);
+        private readonly ConcurrentDictionary<string, string> _filePathCache = new(StringComparer.Ordinal);
 
         private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
         private readonly HashSet<string> _dirtyKeys = new(StringComparer.Ordinal);
@@ -376,6 +377,7 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(key)) return;
 
+            bool autoSave;
             lock (_lock)
             {
                 _cache.TryGetValue(key, out string oldVal);
@@ -383,21 +385,28 @@ namespace Nexus.Core.Services
 
                 _cache[key] = value;
 
-                if (AutoSave)
-                    SaveKeyToDisk(key, value);
-                else
+                if (!AutoSave)
+                {
                     _dirtyKeys.Add(key);
+                    return;
+                }
+                autoSave = true;
             }
+
+            // I/O outside lock: AutoSave writes each value immediately.
+            if (autoSave)
+                SaveKeyToDisk(key, value);
         }
 
         /// <summary>
         /// Writes a version-2 format file: VERSION(1) + IV(16) + HMAC-SHA256(32) + cipherText.
+        /// Returns true on success, false on failure (caller retains the dirty key for retry).
         /// A1: the write is ATOMIC — the payload is staged to a temp file and then
         /// rename/overwrite-moved into place in a single filesystem operation. A crash
         /// can only ever leave the previous good file or the new complete file, never
         /// a deleted-but-not-replaced hole.
         /// </summary>
-        private void SaveKeyToDisk(string key, string value)
+        private bool SaveKeyToDisk(string key, string value)
         {
             string filePath = GetFilePath(key);
             try
@@ -424,31 +433,13 @@ namespace Nexus.Core.Services
                 // REPLACE_EXISTING) and Unix (rename). The File.Move(src, dst, overwrite)
                 // overload used before is .NET Core 3.0+ only and does not exist in
                 // Unity's .NET Standard 2.1 reference profile.
-                string tempPath = filePath + ".tmp";
-                File.WriteAllBytes(tempPath, finalBuffer);
-
-                const int maxAttempts = 3;
-                for (int attempt = 0; ; attempt++)
-                {
-                    try
-                    {
-                        if (File.Exists(filePath))
-                            File.Replace(tempPath, filePath, null);
-                        else
-                            File.Move(tempPath, filePath);
-                        break;
-                    }
-                    catch (IOException) when (attempt < maxAttempts - 1)
-                    {
-                        // A1b: yield instead of Thread.Sleep(10) — never block the main
-                        // thread during a rare handle-contention retry.
-                        System.Threading.Thread.Yield();
-                    }
-                }
+                WriteRawDataAtomically(filePath, finalBuffer);
+                return true;
             }
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save write failed for key '{key}': {ex.Message}");
+                return false;
             }
         }
 
@@ -473,12 +464,17 @@ namespace Nexus.Core.Services
                 byte[] rawData = Convert.FromBase64String(base64Data);
                 if (rawData.Length < HeaderSize || rawData[0] != CurrentFormatVersion) return false;
 
+                // Validate before replacing the local file so a corrupt cloud backup cannot
+                // destroy a valid save already stored on the device.
+                if (!TryReadVersion2(rawData, out string value)) return false;
+
                 string path;
                 lock (_lock)
                 {
                     path = GetFilePath(key);
-                    File.WriteAllBytes(path, rawData);
-                    _cache.Remove(key);
+                    WriteRawDataAtomically(path, rawData);
+                    _cache[key] = value;
+                    _dirtyKeys.Remove(key);
                 }
                 return true;
             }
@@ -486,6 +482,30 @@ namespace Nexus.Core.Services
             {
                 NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save import failed for key '{key}': {ex.Message}");
                 return false;
+            }
+        }
+
+        private static void WriteRawDataAtomically(string filePath, byte[] rawData)
+        {
+            string tempPath = filePath + ".tmp";
+            File.WriteAllBytes(tempPath, rawData);
+
+            const int maxAttempts = 3;
+            for (int attempt = 0; ; attempt++)
+            {
+                try
+                {
+                    if (File.Exists(filePath))
+                        File.Replace(tempPath, filePath, null);
+                    else
+                        File.Move(tempPath, filePath);
+                    break;
+                }
+                catch (IOException) when (attempt < maxAttempts - 1)
+                {
+                    // Yield instead of blocking the Unity main thread during contention.
+                    System.Threading.Thread.Yield();
+                }
             }
         }
 
@@ -542,16 +562,36 @@ namespace Nexus.Core.Services
 
         public void Save()
         {
+            string[] keysToWrite;
             lock (_lock)
             {
                 if (_dirtyKeys.Count == 0) return;
+                keysToWrite = new string[_dirtyKeys.Count];
+                _dirtyKeys.CopyTo(keysToWrite);
+            }
 
-                foreach (var key in _dirtyKeys)
+            var failedKeys = new List<string>();
+            foreach (var key in keysToWrite)
+            {
+                string val;
+                lock (_lock)
                 {
-                    if (_cache.TryGetValue(key, out string val) && val != null)
-                        SaveKeyToDisk(key, val);
+                    if (!_cache.TryGetValue(key, out val) || val == null)
+                        continue;
                 }
-                _dirtyKeys.Clear();
+
+                if (!SaveKeyToDisk(key, val))
+                    failedKeys.Add(key);
+            }
+
+            lock (_lock)
+            {
+                foreach (var key in keysToWrite)
+                {
+                    if (failedKeys.Contains(key))
+                        continue;
+                    _dirtyKeys.Remove(key);
+                }
             }
         }
 

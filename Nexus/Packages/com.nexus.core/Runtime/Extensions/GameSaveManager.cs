@@ -72,6 +72,7 @@ namespace Nexus.Core.Extensions
         // Only one active model can participate in save/load.
         // For composite saves, register an aggregate root model.
         private ISaveDataProvider _model;
+        private readonly SynchronizationContext _mainThreadContext = SynchronizationContext.Current;
 
         /// <summary>Registers the model that provides save data.</summary>
         public void RegisterModel(ISaveDataProvider model)
@@ -81,6 +82,7 @@ namespace Nexus.Core.Extensions
 
         public Task SaveAsync(string slotName, CancellationToken ct = default)
         {
+            ValidateSlotName(slotName);
             if (_model == null)
             {
                 NexusRuntime.Logger?.LogWarning("[Nexus] No save model registered. Skipping save.");
@@ -112,6 +114,7 @@ namespace Nexus.Core.Extensions
 
         public Task<bool> LoadAsync(string slotName, CancellationToken ct = default)
         {
+            ValidateSlotName(slotName);
             if (_model == null)
             {
                 NexusRuntime.Logger?.LogWarning("[Nexus] No save model registered. Skipping load.");
@@ -122,27 +125,40 @@ namespace Nexus.Core.Extensions
             if (!File.Exists(path))
                 return Task.FromResult(false);
 
-            return Task.Run(() =>
+            return LoadAndRestoreAsync(path, _mainThreadContext ?? SynchronizationContext.Current, ct);
+        }
+
+        private async Task<bool> LoadAndRestoreAsync(string path, SynchronizationContext synchronizationContext, CancellationToken ct)
+        {
+            byte[] modelData = await Task.Run(() =>
             {
                 ct.ThrowIfCancellationRequested();
                 string json = File.ReadAllText(path);
                 var data = JsonUtility.FromJson<GameSaveData>(json);
-                if (data?.ModelData == null)
-                    return false;
-
-                _model.RestoreSaveData(data.ModelData);
-                return true;
+                return data?.ModelData;
             }, ct);
+
+            if (modelData == null)
+                return false;
+
+            ct.ThrowIfCancellationRequested();
+            await RunOnCapturedContextAsync(
+                () => _model.RestoreSaveData(modelData),
+                synchronizationContext,
+                ct);
+            return true;
         }
 
         public bool SaveExists(string slotName)
         {
+            ValidateSlotName(slotName);
             string path = SaveDirectory + SanitizeSlotName(slotName) + ".sav";
             return File.Exists(path);
         }
 
         public void DeleteSave(string slotName)
         {
+            ValidateSlotName(slotName);
             string path = SaveDirectory + SanitizeSlotName(slotName) + ".sav";
             if (File.Exists(path))
                 File.Delete(path);
@@ -153,6 +169,42 @@ namespace Nexus.Core.Extensions
             foreach (char c in Path.GetInvalidFileNameChars())
                 slotName = slotName.Replace(c, '_');
             return slotName;
+        }
+
+        private static void ValidateSlotName(string slotName)
+        {
+            if (string.IsNullOrWhiteSpace(slotName) || slotName == "." || slotName == "..")
+                throw new ArgumentException("Save slot name must be a non-empty filename and cannot be '.' or '..'.", nameof(slotName));
+        }
+
+        private static Task RunOnCapturedContextAsync(Action action, SynchronizationContext synchronizationContext, CancellationToken ct)
+        {
+            if (synchronizationContext == null)
+            {
+                action();
+                return Task.CompletedTask;
+            }
+
+            var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            synchronizationContext.Post(_ =>
+            {
+                if (ct.IsCancellationRequested)
+                {
+                    completion.TrySetCanceled(ct);
+                    return;
+                }
+
+                try
+                {
+                    action();
+                    completion.TrySetResult(true);
+                }
+                catch (Exception ex)
+                {
+                    completion.TrySetException(ex);
+                }
+            }, null);
+            return completion.Task;
         }
 
         public void Dispose()

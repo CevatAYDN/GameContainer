@@ -48,7 +48,23 @@ namespace Nexus.Tests
             await manager.SaveAsync("slotA", CancellationToken.None);
 
             Assert.IsTrue(manager.SaveExists("slotA"));
-            Assert.GreaterOrEqual(model.BindCount, 0);
+            bool loaded = await manager.LoadAsync("slotA", CancellationToken.None);
+            Assert.IsTrue(loaded);
+            Assert.AreEqual(1, model.BindCount);
+            manager.DeleteSave("slotA");
+            manager.Dispose();
+        }
+
+        [TestCase(null)]
+        [TestCase("")]
+        [TestCase(".")]
+        [TestCase("..")]
+        public void GameSaveManager_InvalidSlotNames_AreRejected(string slotName)
+        {
+            var manager = new GameSaveManager();
+
+            Assert.Throws<ArgumentException>(() => manager.SaveExists(slotName));
+            Assert.Throws<ArgumentException>(() => manager.DeleteSave(slotName));
             manager.Dispose();
         }
     }
