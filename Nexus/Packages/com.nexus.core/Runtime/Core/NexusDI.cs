@@ -126,8 +126,8 @@ namespace Nexus.Core
                                 Type = field.FieldType,
                                 IsOptional = field.GetCustomAttribute<OptionalInjectAttribute>() != null,
                                 IsLazy = field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(LazyInjection<>),
-                                Setter = CompileFieldSetter(t, field),
-                                Getter = CompileFieldGetter(t, field)
+                                Setter = CompiledAccessorEmitter.CompileFieldSetter(t, field),
+                                Getter = CompiledAccessorEmitter.CompileFieldGetter(t, field)
                             });
                         }
                     }
@@ -145,7 +145,7 @@ namespace Nexus.Core
                                 Property = prop,
                                 Type = prop.PropertyType,
                                 IsOptional = prop.GetCustomAttribute<OptionalInjectAttribute>() != null,
-                                Setter = CompilePropertySetter(t, prop)
+                                Setter = CompiledAccessorEmitter.CompilePropertySetter(t, prop)
                             });
                         }
                     }
@@ -257,129 +257,18 @@ namespace Nexus.Core
                     var clearProps = propList.ToArray();
                     var fieldSetters = new Action<object, object>[clearFields.Length];
                     var propSetters = new Action<object, object>[clearProps.Length];
-                    for (int i = 0; i < clearFields.Length; i++) fieldSetters[i] = CompileFieldSetter(t, clearFields[i]);
-                    for (int i = 0; i < clearProps.Length; i++) propSetters[i] = CompilePropertySetter(t, clearProps[i]);
+                    for (int i = 0; i < clearFields.Length; i++) fieldSetters[i] = CompiledAccessorEmitter.CompileFieldSetter(t, clearFields[i]);
+                    for (int i = 0; i < clearProps.Length; i++) propSetters[i] = CompiledAccessorEmitter.CompilePropertySetter(t, clearProps[i]);
 
                     return new ClearableMetadata { Fields = clearFields, Properties = clearProps, FieldSetters = fieldSetters, PropertySetters = propSetters };
                 });
-            }
-
-            /// <summary>Compiles a fast zero-GC setter for an injectable field using DynamicMethod IL generation.</summary>
-            internal static Action<object, object> CompileFieldSetter(Type targetType, FieldInfo field)
-            {
-#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
-                return null; // AOT safety: bypass IL emitting on AOT platforms
-#else
-                try
-                {
-                    var dm = new System.Reflection.Emit.DynamicMethod(
-                        $"Set_{field.Name}", typeof(void), new[] { typeof(object), typeof(object) }, targetType.Module, true);
-                    var il = dm.GetILGenerator();
-                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
-                    il.Emit(System.Reflection.Emit.OpCodes.Castclass, targetType);
-                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_1);
-                    if (field.FieldType.IsValueType)
-                        il.Emit(System.Reflection.Emit.OpCodes.Unbox_Any, field.FieldType);
-                    else if (!field.FieldType.IsInterface && field.FieldType != typeof(object))
-                        il.Emit(System.Reflection.Emit.OpCodes.Castclass, field.FieldType);
-                    il.Emit(System.Reflection.Emit.OpCodes.Stfld, field);
-                    il.Emit(System.Reflection.Emit.OpCodes.Ret);
-                    return (Action<object, object>)dm.CreateDelegate(typeof(Action<object, object>));
-                }
-                catch (Exception ex)
-                {
-                    LogSetterCompileFailureOnce(targetType, field.Name, ex);
-                    return null; // AOT/IL2CPP safety: fall back to reflection SetValue.
-                }
-#endif
-            }
-
-            internal static Func<object, object> CompileFieldGetter(Type targetType, FieldInfo field)
-            {
-#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
-                return null;
-#else
-                try
-                {
-                    var dm = new System.Reflection.Emit.DynamicMethod(
-                        $"Get_{field.Name}", typeof(object), new[] { typeof(object) }, targetType.Module, true);
-                    var il = dm.GetILGenerator();
-                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
-                    il.Emit(System.Reflection.Emit.OpCodes.Castclass, targetType);
-                    il.Emit(System.Reflection.Emit.OpCodes.Ldfld, field);
-                    if (field.FieldType.IsValueType)
-                        il.Emit(System.Reflection.Emit.OpCodes.Box, field.FieldType);
-                    il.Emit(System.Reflection.Emit.OpCodes.Ret);
-                    return (Func<object, object>)dm.CreateDelegate(typeof(Func<object, object>));
-                }
-                catch
-                {
-                    return null;
-                }
-#endif
-            }
-
-            /// <summary>Compiles a fast zero-GC setter for an injectable property using DynamicMethod IL generation.</summary>
-            internal static Action<object, object> CompilePropertySetter(Type targetType, PropertyInfo prop)
-            {
-#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
-                return null; // AOT safety: bypass IL emitting on AOT platforms
-#else
-                try
-                {
-                    var setter = prop.GetSetMethod(true);
-                    if (setter == null) return null;
-                    var dm = new System.Reflection.Emit.DynamicMethod(
-                        $"Set_{prop.Name}", typeof(void), new[] { typeof(object), typeof(object) }, targetType.Module, true);
-                    var il = dm.GetILGenerator();
-                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
-                    il.Emit(System.Reflection.Emit.OpCodes.Castclass, targetType);
-                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_1);
-                    if (prop.PropertyType.IsValueType)
-                        il.Emit(System.Reflection.Emit.OpCodes.Unbox_Any, prop.PropertyType);
-                    else if (!prop.PropertyType.IsInterface && prop.PropertyType != typeof(object))
-                        il.Emit(System.Reflection.Emit.OpCodes.Castclass, prop.PropertyType);
-                    il.Emit(System.Reflection.Emit.OpCodes.Callvirt, setter);
-                    il.Emit(System.Reflection.Emit.OpCodes.Ret);
-                    return (Action<object, object>)dm.CreateDelegate(typeof(Action<object, object>));
-                }
-                catch (Exception ex)
-                {
-                    LogSetterCompileFailureOnce(targetType, prop.Name, ex);
-                    return null;
-                }
-#endif
-            }
-
-            // Logged-once-per-member guard so a genuine setter compile failure is surfaced
-            // without spamming the log on every injection. AOT/IL2CPP legitimately fails here
-            // and falls back to reflection, so this is informational rather than an error.
-            // Logging is limited to editor/dev builds: in release players the reflection
-            // fallback is the intended behavior, so staying silent avoids startup warning spam.
-            /// <summary>
-            /// Maximum number of unique (type, member) compile-failure pairs to track.
-            /// Beyond this, warnings are silently dropped to prevent unbounded memory growth
-            /// in long-running editor sessions with many assemblies.
-            /// </summary>
-            private const int MaxSetterCompileWarnings = 1024;
-
-            private static readonly ConcurrentDictionary<(Type, string), byte> s_setterCompileWarnings = new(4, 128);
-
-            private static void LogSetterCompileFailureOnce(Type targetType, string memberName, Exception ex)
-            {
-                // Prevent unbounded growth in long-running editor sessions
-                if (s_setterCompileWarnings.Count > MaxSetterCompileWarnings) return;
-                if (!s_setterCompileWarnings.TryAdd((targetType, memberName), 0)) return;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Setter compilation failed for {targetType.FullName}.{memberName}: {ex.Message}. Falling back to reflection.");
-#endif
             }
 
             internal static void ClearAll()
             {
                 InjectMeta.Clear();
                 ClearMeta.Clear();
-                s_setterCompileWarnings.Clear();
+                CompiledAccessorEmitter.ClearWarnings();
             }
             // ─── Shared setter dispatch (compiled setter with reflection fallback) ───
             internal static void ApplyFieldSetter(InjectableField field, object instance, object value)

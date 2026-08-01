@@ -8,7 +8,7 @@ kanıtıdır.
 | # | Kapı | Ölçüt | Durum |
 | --- | --- | --- | --- |
 | 1 | **Harness tam kanıt** | `tools/nexus-benchmark` tam pipeline yeşil: 39 stress + 2 fuzz + 2 cross-thread + 8 dogfood + recovery + benchmark, soak 10/10 temiz (committedΔ < 32MB, sıfır state creep) | ✅ Geçildi — 2026-08-01 yerel koşu: `dotnet run -c Release` exit 0, tüm suite'ler PASS (benchmark, recovery, stress, fuzz, cross-thread, dogfood, services, registry, concurrent-diff). Not: soak (`--soak`) bu oturumda tekrar koşulmadı; önceki sürüm koşularında temiz geçtiği commit geçmişinde kayıtlı |
-| 2 | **Kapsam raporu** | `--coverage --json`: derlenen runtime dosyası sayısı + kapsam dışı listesi her sürümde arşivlenir | ✅ 83/83 derleniyor, 0 kapsam dışı (2026-08-01 `--coverage` ile doğrulandı) |
+| 2 | **Kapsam raporu** | `--coverage --json`: derlenen runtime dosyası sayısı + kapsam dışı listesi her sürümde arşivlenir | ✅ 86/86 derleniyor, 0 kapsam dışı (2026-08-01 `--coverage` ile doğrulandı) |
 | 3 | **CI sürekliliği** | `.github/workflows/nexus-ci.yml` harness + coverage + JSON rapor koşar; rapor artifact olarak saklanır | ⏸️ **Pasif** — GitHub Free planı; yalnızca manuel tetikleme (`workflow_dispatch`). push/PR otomatik koşusu askıya alındı (2026-08-01) |
 | 4 | **Unity editör kanıtı** | Unity 6000.5.x'te EditMode + PlayMode suite'leri yeşil — .NET 10'daki yeşillik Unity'deki yeşilliğin yerini tutmaz | 🔶 Yerelde doğru Unity sürümüyle çalıştırılıyor (2026-08-01); sonuçlar henüz arşivlenmedi |
 | 5 | **Self-hosted Unity runner** | Unity 6000.5 kurulu bir makinede GitHub Actions runner `[self-hosted, unity-6000]` etiketiyle kayıtlı; workflow'daki unity-tests job'ı yeşil | ❌ Kurulmadı (CI pasifken askıda) |
@@ -37,7 +37,7 @@ iddiası verilmez.
 ## "Kanıt"ın epistemik sınırı
 
 Harness'ler "kapsanan alt küme, uygulanan kontratlar altında, bu ortamda doğru"
-der — "hiçbir yerde hata yok" demez. Sınırlar: 83/83 runtime dosyası derleniyor
+der — "hiçbir yerde hata yok" demez. Sınırlar: 86/86 runtime dosyası derleniyor
 ancak Unity-bağımlı yollar (GUI, DOTS/Collections, inspector-serialized alanlar)
 stub ortamında yalnızca *derlenip boşta* doğrulanır, davranışları Unity'de
 çalışmaz, fuzz deterministik seed'lerle sınırlı, tek

@@ -46,13 +46,11 @@ namespace Nexus.Core.Services
         [Inject] public IUIAssetProvider AssetProvider { get; set; }
 
         private readonly Dictionary<string, GameObject> _activeWindows = new();
-        private readonly Dictionary<UILayer, Transform> _layerRoots = new();
         private readonly List<string> _windowHistory = new();
         private readonly SemaphoreSlim _windowLock = new(1, 1);
         private readonly HashSet<string> _pendingOpenWindows = new();
 
-        private Transform _canvasRoot;
-        private GameObject _canvasObject;
+        private readonly UICanvasSystem _canvas = new();
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
@@ -60,100 +58,8 @@ namespace Nexus.Core.Services
             {
                 AssetProvider = new ResourcesUIAssetProvider();
             }
-            SetupCanvasAndLayers();
+            _canvas.EnsureInitialized();
             return default;
-        }
-
-        private void SetupCanvasAndLayers()
-        {
-            _canvasObject = GameObject.Find("[Nexus_UICanvas]");
-            if (_canvasObject == null)
-            {
-                _canvasObject = new GameObject("[Nexus_UICanvas]");
-                UnityEngine.Object.DontDestroyOnLoad(_canvasObject);
-
-                var canvas = _canvasObject.AddComponent<Canvas>();
-                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 100;
-
-                var scaler = _canvasObject.AddComponent<UnityEngine.UI.CanvasScaler>();
-                scaler.uiScaleMode = UnityEngine.UI.CanvasScaler.ScaleMode.ScaleWithScreenSize;
-                scaler.referenceResolution = new Vector2(1080, 1920);
-                scaler.matchWidthOrHeight = 0.5f;
-
-                _canvasObject.AddComponent<UnityEngine.UI.GraphicRaycaster>();
-            }
-
-            _canvasRoot = _canvasObject.transform;
-
-            foreach (UILayer layer in Enum.GetValues(typeof(UILayer)))
-            {
-                var layerGo = _canvasRoot.Find(layer.ToString())?.gameObject;
-                if (layerGo == null)
-                {
-                    layerGo = new GameObject(layer.ToString());
-                    var rect = layerGo.AddComponent<RectTransform>();
-                    rect.SetParent(_canvasRoot, false);
-                    rect.anchorMin = Vector2.zero;
-                    rect.anchorMax = Vector2.one;
-                    rect.offsetMin = Vector2.zero;
-                    rect.offsetMax = Vector2.zero;
-
-                    var canvasComponent = layerGo.AddComponent<Canvas>();
-                    canvasComponent.overrideSorting = true;
-                    canvasComponent.sortingOrder = (int)layer;
-
-                    layerGo.AddComponent<UnityEngine.UI.GraphicRaycaster>();
-                }
-                _layerRoots[layer] = layerGo.transform;
-            }
-        }
-
-        private void UpdateLayerInteractivity()
-        {
-            UILayer highestActiveLayer = UILayer.Background;
-            bool hasModalOrHigher = false;
-
-            foreach (var kvp in _activeWindows)
-            {
-                if (kvp.Value != null)
-                {
-                    foreach (var layerRoot in _layerRoots)
-                    {
-                        if (kvp.Value.transform.parent == layerRoot.Value)
-                        {
-                            if (layerRoot.Key >= UILayer.Modal)
-                            {
-                                hasModalOrHigher = true;
-                            }
-                            if (layerRoot.Key > highestActiveLayer)
-                            {
-                                highestActiveLayer = layerRoot.Key;
-                            }
-                        }
-                    }
-                }
-            }
-
-            foreach (var layerRoot in _layerRoots)
-            {
-                var canvasGroup = layerRoot.Value.GetComponent<CanvasGroup>();
-                if (canvasGroup == null)
-                {
-                    canvasGroup = layerRoot.Value.gameObject.AddComponent<CanvasGroup>();
-                }
-
-                if (hasModalOrHigher && layerRoot.Key < UILayer.Modal)
-                {
-                    canvasGroup.interactable = false;
-                    canvasGroup.blocksRaycasts = false;
-                }
-                else
-                {
-                    canvasGroup.interactable = true;
-                    canvasGroup.blocksRaycasts = true;
-                }
-            }
         }
 
         public async Task<GameObject> OpenWindowAsync(string windowName, UILayer layer = UILayer.Screen, object args = null)
@@ -228,7 +134,7 @@ namespace Nexus.Core.Services
             }
 
             // Phase 2: instantiate outside lock (may be slow - asset loading)
-            var targetParent = _layerRoots.TryGetValue(layer, out var layerRoot) ? layerRoot : _canvasRoot;
+            var targetParent = _canvas.GetLayerRoot(layer);
             GameObject inst = null;
             try
             {
@@ -268,7 +174,7 @@ namespace Nexus.Core.Services
                     _activeWindows[windowName] = inst;
                     _windowHistory.Add(windowName);
                     _pendingOpenWindows.Remove(windowName);
-                    UpdateLayerInteractivity();
+                    _canvas.UpdateLayerInteractivity(_activeWindows);
                 }
                 finally
                 {
@@ -350,7 +256,7 @@ namespace Nexus.Core.Services
                 {
                     _activeWindows.Remove(windowName);
                     _windowHistory.Remove(windowName);
-                    UpdateLayerInteractivity();
+                    _canvas.UpdateLayerInteractivity(_activeWindows);
                 }
             }
             finally
@@ -466,7 +372,7 @@ namespace Nexus.Core.Services
                 foreach (var kvp in _activeWindows)
                 {
                     int order = _windowHistory.LastIndexOf(kvp.Key);
-                    result.Add(new WindowInfo(kvp.Key, ResolveLayer(kvp.Value), order, kvp.Value != null));
+                    result.Add(new WindowInfo(kvp.Key, _canvas.ResolveLayer(kvp.Value), order, kvp.Value != null));
                 }
             }
             finally
@@ -488,17 +394,6 @@ namespace Nexus.Core.Services
             }
         }
 
-        private UILayer ResolveLayer(GameObject go)
-        {
-            if (go == null) return UILayer.Screen;
-            var parent = go.transform.parent;
-            foreach (var kvp in _layerRoots)
-            {
-                if (kvp.Value == parent) return kvp.Key;
-            }
-            return UILayer.Screen;
-        }
-
         public override void Dispose()
         {
             // Destroy all active windows directly; lifecycle events are skipped during teardown
@@ -510,11 +405,7 @@ namespace Nexus.Core.Services
             _activeWindows.Clear();
             _windowHistory.Clear();
 
-            if (_canvasObject != null)
-            {
-                UnityEngine.Object.Destroy(_canvasObject);
-                _canvasObject = null;
-            }
+            _canvas.Dispose();
 
             _windowLock.Dispose();
         }

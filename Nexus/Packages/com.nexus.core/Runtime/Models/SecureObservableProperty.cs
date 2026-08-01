@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
@@ -16,6 +15,9 @@ namespace Nexus.Core
     /// A memory scanner must find ALL THREE fields (key1, key2, guard) to reconstruct
     /// the real value — single-field searches cannot compute the plaintext.
     /// Key rotation on every write means freezing the value in RAM is detected on next get.
+    ///
+    /// Thin wrapper: observer dispatch + key generation live in the shared
+    /// <see cref="SecureObserverSet{T}"/> / <see cref="SecureKeyGen"/> core.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableInt
@@ -31,34 +33,11 @@ namespace Nexus.Core
         private int _cryptoKey2;
         private int _guard; // Integrity canary: (key1 ^ key2 ^ GuardConst)
 
-        private List<Action<int, int>> _handlers;
-        private Action<int, int>[] _snapshotCache;
-        private bool _snapshotDirty;
-        private readonly object _handlersLock = new();
-
-        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
-            System.Security.Cryptography.RandomNumberGenerator.Create();
-
-        private static int GetSecureRandomKey()
-        {
-            byte[] bytes = new byte[4];
-            s_rng.GetBytes(bytes);
-            // Ensure non-zero to avoid degenerate XOR (key ^ 0 == key)
-            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
-            return key != 0 ? key : 0x4E5855; // fallback "NXU"
-        }
-
-        private static (int key1, int key2) GenerateKeyPair()
-        {
-            int k1, k2;
-            do { k1 = GetSecureRandomKey(); k2 = GetSecureRandomKey(); }
-            while ((k1 ^ k2) == 0); // Ensure compound key is never zero
-            return (k1, k2);
-        }
+        private readonly SecureObserverSet<int> _observers = new();
 
         public SecureObservableInt(int initialValue = 0)
         {
-            var (k1, k2) = GenerateKeyPair();
+            var (k1, k2) = SecureKeyGen.IntKeyPair();
             _cryptoKey1 = k1;
             _cryptoKey2 = k2;
             int compound = k1 ^ k2;
@@ -98,7 +77,7 @@ namespace Nexus.Core
                     // Full key rotation on every write: old keys are discarded,
                     // new random pair generated. This breaks any memory scan
                     // that was tracking the previous key pair.
-                    var (k1, k2) = GenerateKeyPair();
+                    var (k1, k2) = SecureKeyGen.IntKeyPair();
                     _cryptoKey1 = k1;
                     _cryptoKey2 = k2;
                     int newCompound = k1 ^ k2;
@@ -106,21 +85,7 @@ namespace Nexus.Core
                     _guard = newCompound ^ GuardConst;
                 }
 
-                Action<int, int>[] snapshot;
-                lock (_handlersLock)
-                {
-                    if (_snapshotDirty)
-                    {
-                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
-                        _snapshotDirty = false;
-                    }
-                    snapshot = _snapshotCache;
-                }
-                if (snapshot != null)
-                {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke(old, value);
-                }
+                _observers.Notify(old, value);
             }
         }
 
@@ -128,7 +93,7 @@ namespace Nexus.Core
         {
             lock (_valueLock)
             {
-                var (k1, k2) = GenerateKeyPair();
+                var (k1, k2) = SecureKeyGen.IntKeyPair();
                 _cryptoKey1 = k1;
                 _cryptoKey2 = k2;
                 int newCompound = k1 ^ k2;
@@ -137,39 +102,9 @@ namespace Nexus.Core
             }
         }
 
-        public void OnChanged(Action<int, int> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                _handlers ??= new List<Action<int, int>>(2);
-                if (!_handlers.Contains(handler))
-                {
-                    _handlers.Add(handler);
-                    _snapshotDirty = true;
-                }
-            }
-        }
-
-        public void RemoveOnChanged(Action<int, int> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                if (_handlers != null && _handlers.Remove(handler))
-                    _snapshotDirty = true;
-            }
-        }
-
-        public void ClearOnChanged()
-        {
-            lock (_handlersLock)
-            {
-                _handlers?.Clear();
-                _snapshotCache = null;
-                _snapshotDirty = false;
-            }
-        }
+        public void OnChanged(Action<int, int> handler) => _observers.OnChanged(handler);
+        public void RemoveOnChanged(Action<int, int> handler) => _observers.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _observers.Clear();
 
         public static implicit operator int(SecureObservableInt prop) => prop.Value;
         public override string ToString() => Value.ToString();
@@ -190,33 +125,11 @@ namespace Nexus.Core
         private long _cryptoKey2;
         private long _guard;
 
-        private List<Action<long, long>> _handlers;
-        private Action<long, long>[] _snapshotCache;
-        private bool _snapshotDirty;
-        private readonly object _handlersLock = new();
-
-        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
-            System.Security.Cryptography.RandomNumberGenerator.Create();
-
-        private static long GetSecureRandomKey()
-        {
-            byte[] bytes = new byte[8];
-            s_rng.GetBytes(bytes);
-            long key = BitConverter.ToInt64(bytes, 0) & long.MaxValue;
-            return key != 0 ? key : 0x4E4558554E5855L;
-        }
-
-        private static (long key1, long key2) GenerateKeyPair()
-        {
-            long k1, k2;
-            do { k1 = GetSecureRandomKey(); k2 = GetSecureRandomKey(); }
-            while ((k1 ^ k2) == 0);
-            return (k1, k2);
-        }
+        private readonly SecureObserverSet<long> _observers = new();
 
         public SecureObservableLong(long initialValue = 0)
         {
-            var (k1, k2) = GenerateKeyPair();
+            var (k1, k2) = SecureKeyGen.LongKeyPair();
             _cryptoKey1 = k1;
             _cryptoKey2 = k2;
             long compound = k1 ^ k2;
@@ -245,7 +158,7 @@ namespace Nexus.Core
                     old = _obscuredValue ^ oldCompound;
                     if (old == value) return;
 
-                    var (k1, k2) = GenerateKeyPair();
+                    var (k1, k2) = SecureKeyGen.LongKeyPair();
                     _cryptoKey1 = k1;
                     _cryptoKey2 = k2;
                     long newCompound = k1 ^ k2;
@@ -253,21 +166,7 @@ namespace Nexus.Core
                     _guard = newCompound ^ GuardConst;
                 }
 
-                Action<long, long>[] snapshot;
-                lock (_handlersLock)
-                {
-                    if (_snapshotDirty)
-                    {
-                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
-                        _snapshotDirty = false;
-                    }
-                    snapshot = _snapshotCache;
-                }
-                if (snapshot != null)
-                {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke(old, value);
-                }
+                _observers.Notify(old, value);
             }
         }
 
@@ -275,7 +174,7 @@ namespace Nexus.Core
         {
             lock (_valueLock)
             {
-                var (k1, k2) = GenerateKeyPair();
+                var (k1, k2) = SecureKeyGen.LongKeyPair();
                 _cryptoKey1 = k1;
                 _cryptoKey2 = k2;
                 long newCompound = k1 ^ k2;
@@ -284,39 +183,9 @@ namespace Nexus.Core
             }
         }
 
-        public void OnChanged(Action<long, long> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                _handlers ??= new List<Action<long, long>>(2);
-                if (!_handlers.Contains(handler))
-                {
-                    _handlers.Add(handler);
-                    _snapshotDirty = true;
-                }
-            }
-        }
-
-        public void RemoveOnChanged(Action<long, long> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                if (_handlers != null && _handlers.Remove(handler))
-                    _snapshotDirty = true;
-            }
-        }
-
-        public void ClearOnChanged()
-        {
-            lock (_handlersLock)
-            {
-                _handlers?.Clear();
-                _snapshotCache = null;
-                _snapshotDirty = false;
-            }
-        }
+        public void OnChanged(Action<long, long> handler) => _observers.OnChanged(handler);
+        public void RemoveOnChanged(Action<long, long> handler) => _observers.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _observers.Clear();
 
         public static implicit operator long(SecureObservableLong prop) => prop.Value;
         public override string ToString() => Value.ToString();
@@ -342,10 +211,7 @@ namespace Nexus.Core
         private int _cryptoKey2;
         private int _guard;
 
-        private List<Action<float, float>> _handlers;
-        private Action<float, float>[] _snapshotCache;
-        private bool _snapshotDirty;
-        private readonly object _handlersLock = new();
+        private readonly SecureObserverSet<float> _observers = new();
 
         // Zero-allocation float ↔ int re-interpretation via explicit-layout union.
         // CLS-compliant, no unsafe block needed.
@@ -368,28 +234,9 @@ namespace Nexus.Core
             return u.AsFloat;
         }
 
-        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
-            System.Security.Cryptography.RandomNumberGenerator.Create();
-
-        private static int GetSecureRandomKey()
-        {
-            byte[] bytes = new byte[4];
-            s_rng.GetBytes(bytes);
-            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
-            return key != 0 ? key : 0x4E5855;
-        }
-
-        private static (int key1, int key2) GenerateKeyPair()
-        {
-            int k1, k2;
-            do { k1 = GetSecureRandomKey(); k2 = GetSecureRandomKey(); }
-            while ((k1 ^ k2) == 0);
-            return (k1, k2);
-        }
-
         public SecureObservableFloat(float initialValue = 0f)
         {
-            var (k1, k2) = GenerateKeyPair();
+            var (k1, k2) = SecureKeyGen.IntKeyPair();
             _cryptoKey1 = k1;
             _cryptoKey2 = k2;
             int compound = k1 ^ k2;
@@ -418,7 +265,7 @@ namespace Nexus.Core
                     old = IntToFloatBits(_obscuredValue ^ oldCompound);
                     if (old == value) return;
 
-                    var (k1, k2) = GenerateKeyPair();
+                    var (k1, k2) = SecureKeyGen.IntKeyPair();
                     _cryptoKey1 = k1;
                     _cryptoKey2 = k2;
                     int newCompound = k1 ^ k2;
@@ -426,21 +273,7 @@ namespace Nexus.Core
                     _guard = newCompound ^ GuardConst;
                 }
 
-                Action<float, float>[] snapshot;
-                lock (_handlersLock)
-                {
-                    if (_snapshotDirty)
-                    {
-                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
-                        _snapshotDirty = false;
-                    }
-                    snapshot = _snapshotCache;
-                }
-                if (snapshot != null)
-                {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke(old, value);
-                }
+                _observers.Notify(old, value);
             }
         }
 
@@ -448,7 +281,7 @@ namespace Nexus.Core
         {
             lock (_valueLock)
             {
-                var (k1, k2) = GenerateKeyPair();
+                var (k1, k2) = SecureKeyGen.IntKeyPair();
                 _cryptoKey1 = k1;
                 _cryptoKey2 = k2;
                 int newCompound = k1 ^ k2;
@@ -457,39 +290,9 @@ namespace Nexus.Core
             }
         }
 
-        public void OnChanged(Action<float, float> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                _handlers ??= new List<Action<float, float>>(2);
-                if (!_handlers.Contains(handler))
-                {
-                    _handlers.Add(handler);
-                    _snapshotDirty = true;
-                }
-            }
-        }
-
-        public void RemoveOnChanged(Action<float, float> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                if (_handlers != null && _handlers.Remove(handler))
-                    _snapshotDirty = true;
-            }
-        }
-
-        public void ClearOnChanged()
-        {
-            lock (_handlersLock)
-            {
-                _handlers?.Clear();
-                _snapshotCache = null;
-                _snapshotDirty = false;
-            }
-        }
+        public void OnChanged(Action<float, float> handler) => _observers.OnChanged(handler);
+        public void RemoveOnChanged(Action<float, float> handler) => _observers.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _observers.Clear();
 
         public static implicit operator float(SecureObservableFloat prop) => prop.Value;
         public override string ToString() => Value.ToString();
@@ -514,29 +317,7 @@ namespace Nexus.Core
         private int _cryptoKey2;
         private int _guard;
 
-        private List<Action<string, string>> _handlers;
-        private Action<string, string>[] _snapshotCache;
-        private bool _snapshotDirty;
-        private readonly object _handlersLock = new();
-
-        private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
-            System.Security.Cryptography.RandomNumberGenerator.Create();
-
-        private static int GetSecureRandomKey()
-        {
-            byte[] bytes = new byte[4];
-            s_rng.GetBytes(bytes);
-            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
-            return key != 0 ? key : 0x4E5855;
-        }
-
-        private static (int key1, int key2) GenerateKeyPair()
-        {
-            int k1, k2;
-            do { k1 = GetSecureRandomKey(); k2 = GetSecureRandomKey(); }
-            while ((k1 ^ k2) == 0);
-            return (k1, k2);
-        }
+        private readonly SecureObserverSet<string> _observers = new();
 
         // XOR each UTF-16 code unit with the low 16 bits of the compound key.
         // Surrogate pairs survive because each half is XORed independently.
@@ -560,15 +341,9 @@ namespace Nexus.Core
             return new string(chars);
         }
 
-        // Compound key low 16 bits — used as the per-char XOR mask for string.
-        private int CompoundKeyLow16
-        {
-            get { return (_cryptoKey1 ^ _cryptoKey2) & 0xFFFF; }
-        }
-
         public SecureObservableString(string initialValue = null)
         {
-            var (k1, k2) = GenerateKeyPair();
+            var (k1, k2) = SecureKeyGen.IntKeyPair();
             _cryptoKey1 = k1;
             _cryptoKey2 = k2;
             int compound = k1 ^ k2;
@@ -597,7 +372,7 @@ namespace Nexus.Core
                     old = Reveal(_obscuredChars, oldCompound);
                     if (string.Equals(old, value)) return;
 
-                    var (k1, k2) = GenerateKeyPair();
+                    var (k1, k2) = SecureKeyGen.IntKeyPair();
                     _cryptoKey1 = k1;
                     _cryptoKey2 = k2;
                     int newCompound = k1 ^ k2;
@@ -605,21 +380,7 @@ namespace Nexus.Core
                     _guard = newCompound ^ GuardConst;
                 }
 
-                Action<string, string>[] snapshot;
-                lock (_handlersLock)
-                {
-                    if (_snapshotDirty)
-                    {
-                        _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
-                        _snapshotDirty = false;
-                    }
-                    snapshot = _snapshotCache;
-                }
-                if (snapshot != null)
-                {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke(old, value);
-                }
+                _observers.Notify(old, value);
             }
         }
 
@@ -627,7 +388,7 @@ namespace Nexus.Core
         {
             lock (_valueLock)
             {
-                var (k1, k2) = GenerateKeyPair();
+                var (k1, k2) = SecureKeyGen.IntKeyPair();
                 _cryptoKey1 = k1;
                 _cryptoKey2 = k2;
                 int newCompound = k1 ^ k2;
@@ -636,39 +397,9 @@ namespace Nexus.Core
             }
         }
 
-        public void OnChanged(Action<string, string> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                _handlers ??= new List<Action<string, string>>(2);
-                if (!_handlers.Contains(handler))
-                {
-                    _handlers.Add(handler);
-                    _snapshotDirty = true;
-                }
-            }
-        }
-
-        public void RemoveOnChanged(Action<string, string> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                if (_handlers != null && _handlers.Remove(handler))
-                    _snapshotDirty = true;
-            }
-        }
-
-        public void ClearOnChanged()
-        {
-            lock (_handlersLock)
-            {
-                _handlers?.Clear();
-                _snapshotCache = null;
-                _snapshotDirty = false;
-            }
-        }
+        public void OnChanged(Action<string, string> handler) => _observers.OnChanged(handler);
+        public void RemoveOnChanged(Action<string, string> handler) => _observers.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _observers.Clear();
 
         public static implicit operator string(SecureObservableString prop) => prop.Value;
         public override string ToString() => Value ?? string.Empty;
@@ -676,17 +407,15 @@ namespace Nexus.Core
 
     /// <summary>
     /// Obfuscated, Anti-Cheat reactive property wrapper for BigDouble Idle numbers memory protection.
-    /// Obscures both Mantissa and Exponent using dual independent keys and integrity guards.
+    /// Obscures both Mantissa and Exponent using dual independent keys and integrity guards
+    /// (delegated to two <see cref="SecureObservableLong"/>), with shared observer dispatch.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableBigDouble
     {
         private readonly SecureObservableLong _mantissaBits;
         private readonly SecureObservableLong _exponent;
-        private List<Action<BigDouble, BigDouble>> _handlers;
-        private Action<BigDouble, BigDouble>[] _snapshotCache;
-        private bool _snapshotDirty;
-        private readonly object _handlersLock = new();
+        private readonly SecureObserverSet<BigDouble> _observers = new();
 
         public SecureObservableBigDouble(BigDouble initialValue = default)
         {
@@ -710,25 +439,7 @@ namespace Nexus.Core
                 _mantissaBits.Value = BitConverter.DoubleToInt64Bits(value.Mantissa);
                 _exponent.Value = value.Exponent;
 
-                Action<BigDouble, BigDouble>[] snapshot = null;
-                lock (_handlersLock)
-                {
-                    if (_handlers != null && _handlers.Count > 0)
-                    {
-                        if (_snapshotDirty || _snapshotCache == null)
-                        {
-                            _snapshotCache = _handlers.ToArray();
-                            _snapshotDirty = false;
-                        }
-                        snapshot = _snapshotCache;
-                    }
-                }
-
-                if (snapshot != null)
-                {
-                    for (int i = 0; i < snapshot.Length; i++)
-                        snapshot[i]?.Invoke(old, value);
-                }
+                _observers.Notify(old, value);
             }
         }
 
@@ -738,39 +449,9 @@ namespace Nexus.Core
             _exponent.SetWithoutNotify(value.Exponent);
         }
 
-        public void OnChanged(Action<BigDouble, BigDouble> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                _handlers ??= new List<Action<BigDouble, BigDouble>>(2);
-                if (!_handlers.Contains(handler))
-                {
-                    _handlers.Add(handler);
-                    _snapshotDirty = true;
-                }
-            }
-        }
-
-        public void RemoveOnChanged(Action<BigDouble, BigDouble> handler)
-        {
-            if (handler == null) return;
-            lock (_handlersLock)
-            {
-                if (_handlers != null && _handlers.Remove(handler))
-                    _snapshotDirty = true;
-            }
-        }
-
-        public void ClearOnChanged()
-        {
-            lock (_handlersLock)
-            {
-                _handlers?.Clear();
-                _snapshotCache = null;
-                _snapshotDirty = false;
-            }
-        }
+        public void OnChanged(Action<BigDouble, BigDouble> handler) => _observers.OnChanged(handler);
+        public void RemoveOnChanged(Action<BigDouble, BigDouble> handler) => _observers.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _observers.Clear();
 
         public static implicit operator BigDouble(SecureObservableBigDouble prop) => prop.Value;
         public override string ToString() => Value.ToString();

@@ -24,6 +24,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandRegistry.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/SubscriptionRegistry.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusDI.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CompiledAccessorEmitter.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandPool.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandHandlerInfo.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandFailedSignal.cs" />
@@ -42,6 +43,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/IReactiveModel.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/ObservableProperty.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/SecureObservableProperty.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/SecureObservableCore.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Data/BigDouble.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/NexusService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Tick/TickService.cs" />
@@ -94,6 +96,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IUIAssetProvider.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ResourcesUIAssetProvider.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/WindowManager.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/UICanvasSystem.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapService.cs" />
     <!-- Fully guarded/UI-only files: NexusDOTSBridge is #if UNITY_COLLECTIONS (empty

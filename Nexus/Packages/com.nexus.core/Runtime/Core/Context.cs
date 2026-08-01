@@ -18,26 +18,15 @@ namespace Nexus.Core
     [Preserve]
     public static class ContextFactory
     {
-        /// <summary>Creates a fully-wired Context with all sub-modules initialized.</summary>
+        /// <summary>
+        /// Creates a fully-wired Context with all sub-modules initialized.
+        /// Single construction path: the internal Context constructor owns ALL module
+        /// wiring (DI, command pools, signal bus, hybrid queue, view binder), so the
+        /// factory and the backward-compatible public constructor can never drift.
+        /// </summary>
         public static Context Create(Context parent = null, ContextData contextData = null)
         {
-            var container = new NexusDI(parent?.Container);
-            container.BindInstance(container);
-
-            var poolSize = contextData?.CommandPoolInitialSize ?? 4;
-            var poolMax = contextData?.CommandPoolMaxSize ?? 64;
-            var poolManager = new CommandPoolManager(container, poolSize, poolMax);
-            container.BindInstance(poolManager);
-
-            // Internal constructor creates SignalBus and HybridQueue (they need 'this')
-            var context = new Context(parent, contextData, container, poolManager);
-            container.BindInstance<IContext>(context);
-
-            if (contextData?.EnableStrictInjection == true)
-                container.StrictInjection = true;
-
-            NexusRuntime.RegisterContext(context);
-            return context;
+            return new Context(parent, contextData, null, null);
         }
     }
 
@@ -90,18 +79,29 @@ namespace Nexus.Core
         public SignalBus SignalBusInternal { get; }
 
         /// <summary>
-        /// Primary constructor used by ContextFactory. Takes NexusDI and PoolManager
-        /// (created by the factory), then creates SignalBus and HybridQueue internally
-        /// since they need a reference to this Context.
+        /// Single construction path for every Context. ContextFactory.Create and the
+        /// backward-compatible public constructor both funnel through here, so module
+        /// wiring can never drift between construction routes. Accepts optional
+        /// pre-built NexusDI + CommandPoolManager (null = build the standard modules).
         /// </summary>
         internal Context(Context parent, ContextData contextData, NexusDI container,
             CommandPoolManager poolManager)
         {
             _parent = parent;
             _contextData = contextData;
+
+            if (container == null || poolManager == null)
+            {
+                (container, poolManager) = CreateModules(parent, contextData);
+            }
             Container = container;
+            Container.BindInstance(container);
             PoolManager = poolManager;
+            Container.BindInstance(poolManager);
 
+            // Sub-modules that need a reference to this Context are wired here — the
+            // single wiring point for every construction path. Assignments must stay in
+            // the constructor (readonly members cannot be assigned from a helper method).
             var bus = new SignalBus(Container, PoolManager, this);
             SignalBus = bus;
             SignalBusInternal = bus;
@@ -113,41 +113,33 @@ namespace Nexus.Core
 
             _viewBinder = new ViewBinder(this, Container);
             Container.BindInstance(_viewBinder);
-        }
 
-        /// <summary>
-        /// Backward-compatible constructor. Kept for existing callers (tests, harness).
-        /// New code should prefer <see cref="ContextFactory.Create"/>.
-        /// </summary>
-        public Context(Context parent = null, ContextData contextData = null)
-        {
-            _parent = parent;
-            _contextData = contextData;
-            Container = new NexusDI(parent?.Container);
-            Container.BindInstance(Container);
             Container.BindInstance<IContext>(this);
-
-            var poolSize = contextData?.CommandPoolInitialSize ?? 4;
-            var poolMax = contextData?.CommandPoolMaxSize ?? 64;
-            PoolManager = new CommandPoolManager(Container, poolSize, poolMax);
-            Container.BindInstance(PoolManager);
-
-            var bus = new SignalBus(Container, PoolManager, this);
-            SignalBus = bus;
-            SignalBusInternal = bus;
-            Container.BindInstance<ISignalBus>(bus);
-            Container.BindInstance(bus);
-
-            HybridQueue = new HybridQueue(bus);
-            Container.BindInstance(HybridQueue);
-
-            _viewBinder = new ViewBinder(this, Container);
-            Container.BindInstance(_viewBinder);
-
             if (contextData?.EnableStrictInjection == true)
                 Container.StrictInjection = true;
 
             NexusRuntime.RegisterContext(this);
+        }
+
+        /// <summary>
+        /// Backward-compatible constructor. Kept for existing callers (tests, harness).
+        /// Thin forwarder into the single internal wiring path; new code should prefer
+        /// <see cref="ContextFactory.Create"/>.
+        /// </summary>
+        public Context(Context parent = null, ContextData contextData = null)
+            : this(parent, contextData, null, null)
+        {
+        }
+
+        /// <summary>Builds the standard DI container + command pool manager pair.</summary>
+        private static (NexusDI container, CommandPoolManager poolManager) CreateModules(
+            Context parent, ContextData contextData)
+        {
+            var container = new NexusDI(parent?.Container);
+            var poolSize = contextData?.CommandPoolInitialSize ?? 4;
+            var poolMax = contextData?.CommandPoolMaxSize ?? 64;
+            var poolManager = new CommandPoolManager(container, poolSize, poolMax);
+            return (container, poolManager);
         }
 
         public void Configure(IContextLifecycle[] lifecycles = null)

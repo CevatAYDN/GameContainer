@@ -1,0 +1,46 @@
+# ADR-0001: UI Stack — In-Game UGUI, Editor UI Toolkit
+
+- **Status:** Accepted
+- **Date:** 2026-08-01
+- **Decision makers:** Project owner
+
+## Context
+
+The Nexus framework's window layer (`WindowManager`, `IUIAssetProvider`) is built on
+Unity's legacy GameObject/UGUI pipeline and exposes `Task<GameObject>` from its public
+interface. A prior architecture review flagged the `GameObject` leak as a candidate for
+an opaque `IWindowView` abstraction, but explicitly deferred the decision until the UI
+technology direction was settled.
+
+The project owner has now decided the UI direction:
+
+- **In-game runtime UI:** UGUI (the existing `WindowManager` pipeline stays).
+- **Editor screens and tooling:** UI Toolkit (separate editor-side surface, not the
+  runtime `WindowManager`).
+
+## Decision
+
+1. The in-game runtime window system remains **UGUI/GameObject-based**. `Task<GameObject>`
+   is the *correct* in-game abstraction for UGUI — `IWindowView` is **not** introduced
+   (one adapter, UGUI, is a hypothetical seam; with UGUI fixed as the in-game tech the
+   abstraction would add indirection without a second adapter to justify it).
+2. Editor-side screens use **UI Toolkit** in the `Editor` assembly, separate from the
+   runtime window manager.
+3. The runtime `WindowManager` is deepened instead of abstracted: canvas root creation,
+   per-layer transforms, and modal interactivity policy moved into a dedicated
+   `UICanvasSystem` module (2026-08-01), so the manager is a pure window-lifecycle
+   orchestrator and the UGUI canvas policy lives in exactly one place.
+
+## Consequences
+
+- No public API break in the runtime window layer.
+- If the in-game stack ever migrates to UI Toolkit, `WindowManager` + `UICanvasSystem`
+  are the two files to replace; the lifecycle/interactivity tests are the migration
+  contract.
+- Future architecture reviews should not re-flag the `Task<GameObject>` interface as a
+  deepening candidate while UGUI is the in-game stack.
+
+## References
+
+- 2026-08-01 architecture review — candidate 4 (WindowManager).
+- 2026-08-01 refactor — `UICanvasSystem.cs` extraction.
