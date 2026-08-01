@@ -8,7 +8,7 @@ kanıtıdır.
 | # | Kapı | Ölçüt | Durum |
 | --- | --- | --- | --- |
 | 1 | **Harness tam kanıt** | `tools/nexus-benchmark` tam pipeline yeşil: 39 stress + 2 fuzz + 2 cross-thread + 8 dogfood + recovery + benchmark, soak 10/10 temiz (committedΔ < 32MB, sıfır state creep) | ✅ Geçildi (her yerel koşuda doğrulandı) |
-| 2 | **Kapsam raporu** | `--coverage --json`: derlenen runtime dosyası sayısı + kapsam dışı listesi her sürümde arşivlenir (şu an 57/80) | ✅ Uygulandı; CI arşiviyle süreklileşecek |
+| 2 | **Kapsam raporu** | `--coverage --json`: derlenen runtime dosyası sayısı + kapsam dışı listesi her sürümde arşivlenir (şu an 80/80 — tüm runtime dosyaları harness'te derleniyor) | ✅ Uygulandı; CI arşiviyle süreklileşecek |
 | 3 | **CI sürekliliği** | `.github/workflows/nexus-ci.yml` her push/PR'de harness + coverage + JSON rapor koşar; rapor artifact olarak saklanır | 🔶 Workflow hazır; ilk başarılı koşu bekleniyor |
 | 4 | **Unity editör kanıtı** | Unity 6000.5.0f1'de EditMode (24 test) + PlayMode (20 test) suite'leri yeşil — .NET 10'daki yeşillik Unity'deki yeşilliğin yerini tutmaz | ❌ Yerelde 2020.3.20f1 kurulu (sürüm uyumsuz); Unity 6000.5 gerekiyor |
 | 5 | **Self-hosted Unity runner** | Unity 6000.5 kurulu bir makinede GitHub Actions runner `[self-hosted, unity-6000]` etiketiyle kayıtlı; workflow'daki unity-tests job'ı yeşil | ❌ Kurulmadı |
@@ -33,7 +33,9 @@ iddiası verilmez.
 ## "Kanıt"ın epistemik sınırı
 
 Harness'ler "kapsanan alt küme, uygulanan kontratlar altında, bu ortamda doğru"
-der — "hiçbir yerde hata yok" demez. Sınırlar: 23 runtime dosyası harness
-kapsamı dışında (Unity-bağımlı), fuzz deterministik seed'lerle sınırlı, tek
+der — "hiçbir yerde hata yok" demez. Sınırlar: 80/80 runtime dosyası derleniyor
+ancak Unity-bağımlı yollar (GUI, DOTS/Collections, inspector-serialized alanlar)
+stub ortamında yalnızca *derlenip boşta* doğrulanır, davranışları Unity'de
+çalışmaz, fuzz deterministik seed'lerle sınırlı, tek
 makine/OS/runtime, testler "doğru" olduğuna inanılan davranışı assert eder.
 Bu belgedeki kapıların amacı bu sınırların her sürümde görünür kalmasıdır.

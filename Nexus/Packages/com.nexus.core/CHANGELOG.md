@@ -23,6 +23,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EncryptedStorageService** — HMAC-SHA256 output is now stored in **full 32 bytes** (previously truncated to 16, reducing effective security). New on-disk format (v2): `[VERSION:1] [IV:16] [HMAC:32] [ciphertext:N]`. Legacy v1 files (16-byte HMAC) are detected and migrated to v2 on first read. Format version byte enables forward migration.
 
 ### Fixed
+- **Context.Dispose** — resolved `INexusService` singletons are now disposed even when no `ContextBuilder` was configured (bare test contexts that bind services directly through the container previously orphaned them). Service lifecycle is Context-owned per the `NexusDI.Dispose` contract, so a missing builder no longer skips cleanup.
+- **PerformanceMonitor** — removed dead `s_lastFrameTime`/`s_frameCount` fields.
 - **AdService** — `ShowInterstitial` no longer invokes `onComplete` callback inside the `_lock`, preventing potential deadlock when the callback re-enters the service (e.g. showing another ad). Critical path restructured to `lock → check → unlock → callback`.
 - **ResourcesUIAssetProvider** — replaced busy-wait loop (`while(!request.isDone) await Task.Yield()`) with direct `await request`, eliminating unnecessary per-frame re-scheduling. Added null asset handling after load.
 - **GameStateMachine.Dispose** — `_stateCts` write/read now uses `Interlocked.Exchange` for thread safety. `Tick()` reads `_currentState` into a local copy before invocation to prevent null-ref during concurrent Dispose.

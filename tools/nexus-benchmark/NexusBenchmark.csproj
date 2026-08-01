@@ -90,6 +90,10 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/WindowManager.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapService.cs" />
+    <!-- Fully guarded/UI-only files: NexusDOTSBridge is #if UNITY_COLLECTIONS (empty
+         in the harness), NexusDebugHUD is an OnGUI debug surface backed by no-op stubs. -->
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/DOTS/NexusDOTSBridge.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Debug/NexusDebugHUD.cs" />
   </ItemGroup>
 
 </Project>

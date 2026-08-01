@@ -1186,7 +1186,9 @@ namespace NexusBench
 
         private sealed class LazyHost
         {
+#pragma warning disable 0649 // assigned via DI injection at resolve time
             [Inject] public LazyInjection<TestLazyService> Lazy;
+#pragma warning restore 0649
         }
 
         private sealed class TestInitService : INexusService
@@ -2261,17 +2263,23 @@ namespace NexusBench
 
         private sealed class ValidatedHost
         {
+#pragma warning disable 0649 // assigned via DI injection at resolve time
             [Inject] public MissingDep Dep;
+#pragma warning restore 0649
         }
 
         private sealed class LazyValidatedHost
         {
+#pragma warning disable 0649 // assigned via DI injection at resolve time
             [Inject] public LazyInjection<MissingDep> Dep;
+#pragma warning restore 0649
         }
 
         private sealed class OptionalValidatedHost
         {
+#pragma warning disable 0649 // assigned via DI injection at resolve time
             [OptionalInject] public MissingDep Dep;
+#pragma warning restore 0649
         }
 
         private sealed class CtorValidatedHost

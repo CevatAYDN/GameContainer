@@ -16,6 +16,7 @@ namespace Nexus.Core
     public class Root : MonoBehaviour
     {
         [Header("Hierarchy")]
+#pragma warning disable 0649 // serialized fields: assigned by the Unity inspector
         [SerializeField] private Root parentRoot;
 
         [Header("Configuration")]
@@ -23,6 +24,7 @@ namespace Nexus.Core
         [SerializeField] private int initializationPriority = 0;
         [SerializeField] private int parentTimeoutFrames = 900;
         [SerializeField] private int siblingTimeoutFrames = 900;
+#pragma warning restore 0649
 
         /// <summary>The Nexus context owned by this root.</summary>
         public Context Context { get; private set; }

@@ -183,8 +183,6 @@ namespace Nexus.Core
         }
 
         // Built-in metrics
-        private static float s_lastFrameTime;
-        private static int s_frameCount;
         private static int s_lastFrameMetricFrame = -1;
 
         public static void UpdateFrameMetrics()
@@ -207,8 +205,6 @@ namespace Nexus.Core
             RecordMetric("FPS", fps, "fps", "Frame");
             RecordMetric("FrameTime", frameTimeMs, "ms", "Frame");
             RecordMetric("DeltaTime", deltaTime, "s", "Frame");
-
-            s_frameCount++;
         }
 
         public static void UpdateMemoryMetrics()

@@ -128,15 +128,14 @@ namespace NexusBench
 
         // ── C2: cross-thread HybridQueue ordering + concurrent lifecycle + async drain ──
 
-        private sealed class WorkerState
-        {
-            public volatile Context Ctx;
-            public volatile bool Ready;
-            public readonly List<(int Producer, int Seq)> Received = new();
-            public readonly HashSet<int> Seen = new();
-            public volatile bool OrderBroken;
-            public volatile Exception Error;
-        }
+    private sealed class WorkerState
+    {
+        public Context Ctx;
+        public volatile bool Ready;
+        public readonly List<(int Producer, int Seq)> Received = new();
+        public readonly HashSet<int> Seen = new();
+        public volatile Exception Error;
+    }
 
         private static void CrossThread_HybridQueue_Ordering_And_ConcurrentLifecycle()
         {

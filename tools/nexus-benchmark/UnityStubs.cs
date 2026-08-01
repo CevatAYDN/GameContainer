@@ -30,9 +30,11 @@ namespace UnityEngine
     /// <summary>Unity application surface used by the runtime outside Unity.</summary>
     public static class Application
     {
+#pragma warning disable 0067 // events mirror the Unity surface; nothing raises them in the harness
         public static event LogCallback logMessageReceivedThreaded;
         public static event Action<bool> focusChanged;
         public static event Action quitting;
+#pragma warning restore 0067
 
         public static string identifier => "com.nexus.benchmark";
         public static string version => "9.9.9";
@@ -770,6 +772,75 @@ namespace UnityEngine
         public static ResourceRequest LoadAsync<T>(string path) where T : Object => new ResourceRequest { isDone = false, asset = null };
         public static T Load<T>(string path) where T : Object => null;
     }
+
+    // ── Debug HUD support (NexusDebugHUD.cs) — onGUI surface, no-op outside Unity ──
+    public enum KeyCode { None = 0, F12 = 123 }
+    public enum TextAnchor { UpperLeft, UpperCenter, UpperRight, MiddleLeft, MiddleCenter, MiddleRight, LowerLeft, LowerCenter, LowerRight }
+    public enum TextureFormat { RGBA32 = 4 }
+
+    public struct Rect
+    {
+        public float x, y, width, height;
+        public Rect(float x, float y, float width, float height) { this.x = x; this.y = y; this.width = width; this.height = height; }
+    }
+
+    public sealed class Texture2D : Object
+    {
+        public Texture2D(int width, int height, TextureFormat format, bool mipChain) { }
+        public void SetPixel(int x, int y, Color color) { }
+        public void Apply() { }
+    }
+
+    public sealed class GUIStyleState
+    {
+        public Color textColor;
+        public Texture2D background;
+    }
+
+    public sealed class GUIStyle
+    {
+        public int fontSize;
+        public TextAnchor alignment;
+        public bool wordWrap;
+        public bool richText;
+        public GUIStyleState normal = new GUIStyleState();
+        public GUIStyle() { }
+        public GUIStyle(GUIStyle src) { }
+    }
+
+    public sealed class GUISkin
+    {
+        public GUIStyle box { get; } = new GUIStyle();
+        public GUIStyle label { get; } = new GUIStyle();
+    }
+
+    public static class GUI
+    {
+        public static GUISkin skin { get; } = new GUISkin();
+        public static void Box(Rect rect, string text, GUIStyle style) { }
+    }
+
+    public static class GUILayout
+    {
+        public static void BeginArea(Rect rect, GUIStyle style) { }
+        public static void EndArea() { }
+        public static void BeginVertical() { }
+        public static void EndVertical() { }
+        public static void Label(string text, GUIStyle style) { }
+        public static void Space(float pixels) { }
+    }
+
+    public static class ColorUtility
+    {
+        public static string ToHtmlStringRGB(Color c) => $"#{((int)(c.r * 255)):X2}{((int)(c.g * 255)):X2}{((int)(c.b * 255)):X2}";
+    }
+
+    public static class Input
+    {
+        public static bool GetKeyDown(KeyCode key) => false;
+    }
+
+    public sealed class AddComponentMenuAttribute : Attribute { public AddComponentMenuAttribute(string menuName) { } }
 }
 
 namespace Unity.Profiling
