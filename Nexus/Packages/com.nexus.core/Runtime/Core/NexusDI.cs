@@ -62,6 +62,8 @@ namespace Nexus.Core
             public bool IsLazy { get; set; }
             /// <summary>Compiled setter delegate (fallback to reflection if null).</summary>
             public Action<object, object> Setter { get; set; }
+            /// <summary>Compiled getter delegate (fallback to reflection if null).</summary>
+            public Func<object, object> Getter { get; set; }
         }
         internal class InjectableProperty
         {
@@ -124,7 +126,8 @@ namespace Nexus.Core
                                 Type = field.FieldType,
                                 IsOptional = field.GetCustomAttribute<OptionalInjectAttribute>() != null,
                                 IsLazy = field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(LazyInjection<>),
-                                Setter = CompileFieldSetter(t, field)
+                                Setter = CompileFieldSetter(t, field),
+                                Getter = CompileFieldGetter(t, field)
                             });
                         }
                     }
@@ -291,6 +294,31 @@ namespace Nexus.Core
 #endif
             }
 
+            internal static Func<object, object> CompileFieldGetter(Type targetType, FieldInfo field)
+            {
+#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
+                return null;
+#else
+                try
+                {
+                    var dm = new System.Reflection.Emit.DynamicMethod(
+                        $"Get_{field.Name}", typeof(object), new[] { typeof(object) }, targetType.Module, true);
+                    var il = dm.GetILGenerator();
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+                    il.Emit(System.Reflection.Emit.OpCodes.Castclass, targetType);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldfld, field);
+                    if (field.FieldType.IsValueType)
+                        il.Emit(System.Reflection.Emit.OpCodes.Box, field.FieldType);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ret);
+                    return (Func<object, object>)dm.CreateDelegate(typeof(Func<object, object>));
+                }
+                catch
+                {
+                    return null;
+                }
+#endif
+            }
+
             /// <summary>Compiles a fast zero-GC setter for an injectable property using DynamicMethod IL generation.</summary>
             internal static Action<object, object> CompilePropertySetter(Type targetType, PropertyInfo prop)
             {
@@ -432,8 +460,15 @@ namespace Nexus.Core
 
                     if (f.IsLazy)
                     {
-                        var lazyInstance = Activator.CreateInstance(f.Type, _di);
-                        MetadataCache.ApplyFieldSetter(f, instance, lazyInstance);
+                        var existingLazy = f.Getter != null ? f.Getter(instance) : f.Field.GetValue(instance);
+                        if (existingLazy == null)
+                        {
+                            var lazyInstance = Activator.CreateInstance(f.Type,
+                                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.CreateInstance,
+                                null, new object[] { _di }, null);
+                            MetadataCache.ApplyFieldSetter(f, instance, lazyInstance);
+                        }
                         continue;
                     }
 

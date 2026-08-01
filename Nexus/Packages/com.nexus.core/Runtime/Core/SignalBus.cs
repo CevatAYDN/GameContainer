@@ -166,8 +166,23 @@ namespace Nexus.Core
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
         private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
 
+        // Reentrancy guard for the synchronous fast path. Thread-static by design: sync
+        // dispatch is main-thread-only, so each thread tracks its own nesting and threads
+        // never observe each other's depth.
         [ThreadStatic]
         private static int s_stackDepth;
+
+        // Reentrancy guard for the async path. Must be async-local, NOT thread-static: an
+        // async dispatch is incremented on the caller's thread but its continuations (and
+        // the finally decrement) run on arbitrary thread-pool threads after an await. A
+        // thread-static counter would leak +1 per suspended dispatch on the caller's slot
+        // and push continuation slots negative, permanently drifting until MaxStackDepth
+        // aborts every dispatch on every bus. AsyncLocal flows with the logical chain, so
+        // increments and decrements always land on the same slot, recursion is detected
+        // across threads, and concurrent queued/rollback dispatches never corrupt each
+        // other's depth.
+        private static readonly System.Threading.AsyncLocal<int> s_asyncStackDepth = new();
+
         private const int MaxStackDepth = 10;
 
         private int _inFlightAsyncCommands;
@@ -762,17 +777,17 @@ namespace Nexus.Core
 
         private async ValueTask FireInternalAsync<T>(T signal, bool isCrossContextSource, CancellationToken ct) where T : struct
         {
-            s_stackDepth++;
+            s_asyncStackDepth.Value++;
 
             // Capture the command-scoped token for use in the nested scopes below.
             // This allows FireAsyncWithTimeout to cancel command execution via a linked token.
             var commandCt = ct;
-            if (s_stackDepth > MaxStackDepth)
+            if (s_asyncStackDepth.Value > MaxStackDepth)
             {
                 // P0-7 fix: never reset the counter to 0 (outer frames still decrement in
                 // their finally blocks, which would drift the counter negative). This branch
                 // runs before this frame's try/finally, so undo only this frame's increment.
-                s_stackDepth--;
+                s_asyncStackDepth.Value--;
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
 #else
@@ -918,8 +933,8 @@ namespace Nexus.Core
             }
             finally
             {
-                s_stackDepth--;
-                if (s_stackDepth == 0 && _pendingCleanups)
+                s_asyncStackDepth.Value--;
+                if (s_asyncStackDepth.Value == 0 && _pendingCleanups)
                 {
                     SweepDeadNodes();
                 }
