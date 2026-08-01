@@ -1192,6 +1192,21 @@ namespace Nexus.Editor
                         {
                             cache[klass] = path;
                         }
+
+                        // MonoScript.GetClass() only returns the outermost type.
+                        // Nested command/signal types inside the same file are not findable
+                        // by type alone, which means ValidateAsyncCallGraph silently misses
+                        // their fired signals and cannot detect potential cycles.
+                        // Scan all declared nested types and map them to the same script path
+                        // so nested [SignalHandler] commands are covered by the validator.
+                        if (klass != null)
+                        {
+                            foreach (var nested in klass.GetNestedTypes(BindingFlags.Public | BindingFlags.NonPublic))
+                            {
+                                if (!cache.ContainsKey(nested))
+                                    cache[nested] = path;
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {

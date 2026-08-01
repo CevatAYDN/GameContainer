@@ -39,26 +39,10 @@ namespace Nexus.Core.Services
             return default;
         }
 
-        public SecureObservableLong GetObservableBalance(string currencyId)
-        {
-            if (string.IsNullOrEmpty(currencyId)) return null;
-
-            lock (_balances)
-            {
-                if (!_balances.TryGetValue(currencyId, out var prop))
-                {
-                    long savedAmount = PlayerPrefsService != null ? PlayerPrefsService.GetLong($"NT_Eco_{currencyId}", 0L) : 0L;
-                    prop = new SecureObservableLong(savedAmount);
-                    _balances[currencyId] = prop;
-                }
-
-                return prop;
-            }
-        }
-
         public long GetBalance(string currencyId)
         {
-            return GetObservableBalance(currencyId)?.Value ?? 0L;
+            var prop = GetObservableBalance(currencyId);
+            return prop?.Value ?? 0L;
         }
 
         public bool CanAfford(string currencyId, long amount)
@@ -71,51 +55,82 @@ namespace Nexus.Core.Services
         {
             if (amount <= 0) return true;
 
+            SecureObservableLong prop;
             lock (_balances)
             {
-                var prop = GetObservableBalance(currencyId);
+                prop = LazyLoadBalance(currencyId);
                 if (prop.Value < amount) return false;
-
                 prop.Value -= amount;
-                SaveBalance(currencyId, prop.Value);
-
-                if (NetworkValidator != null)
-                {
-                    // Optimistic local commit + server reconciliation. If the server rejects
-                    // the spend (insufficient funds / cheat detection), ReconcileSpendAsync
-                    // restores the deducted amount so client and server never desync.
-                    _ = ReconcileSpendAsync(currencyId, amount, reason);
-                }
-                return true;
             }
+
+            // I/O and network calls outside the lock so slow storage or a
+            // fire-and-forget network validation never stalls other balance operations.
+            SaveBalance(currencyId, prop.Value);
+
+            if (NetworkValidator != null)
+            {
+                _ = ReconcileSpendAsync(currencyId, amount, reason);
+            }
+            return true;
         }
 
         public void Earn(string currencyId, long amount, string reason = "")
         {
             if (amount <= 0) return;
 
+            SecureObservableLong prop;
             lock (_balances)
             {
-                var prop = GetObservableBalance(currencyId);
-                // Overflow guard: clamp at long.MaxValue instead of wrapping to negative.
+                prop = LazyLoadBalance(currencyId);
                 prop.Value = amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount;
-                SaveBalance(currencyId, prop.Value);
+            }
 
-                if (NetworkValidator != null)
-                {
-                    _ = SafeValidateEarnAsync(currencyId, amount, reason);
-                }
+            SaveBalance(currencyId, prop.Value);
+
+            if (NetworkValidator != null)
+            {
+                _ = SafeValidateEarnAsync(currencyId, amount, reason);
             }
         }
 
         public void SetBalance(string currencyId, long amount)
         {
+            SecureObservableLong prop;
             lock (_balances)
             {
-                var prop = GetObservableBalance(currencyId);
+                prop = LazyLoadBalance(currencyId);
                 prop.Value = Math.Max(0L, amount);
-                SaveBalance(currencyId, prop.Value);
             }
+            SaveBalance(currencyId, prop.Value);
+        }
+
+        // Lock-free lookup: the balance dictionary is only mutated under _balances lock,
+        // but once a SecureObservableLong is registered it is never removed, so reading
+        // the reference outside the lock is safe for existing entries.
+        public SecureObservableLong GetObservableBalance(string currencyId)
+        {
+            if (string.IsNullOrEmpty(currencyId)) return null;
+            if (_balances.TryGetValue(currencyId, out var existing))
+                return existing;
+
+            lock (_balances)
+            {
+                return LazyLoadBalance(currencyId);
+            }
+        }
+
+        // Must be called under _balances lock.
+        private SecureObservableLong LazyLoadBalance(string currencyId)
+        {
+            if (_balances.TryGetValue(currencyId, out var prop))
+                return prop;
+
+            long savedAmount = PlayerPrefsService != null
+                ? PlayerPrefsService.GetLong($"NT_Eco_{currencyId}", 0L)
+                : 0L;
+            prop = new SecureObservableLong(savedAmount);
+            _balances[currencyId] = prop;
+            return prop;
         }
 
         private void SaveBalance(string currencyId, long amount)
