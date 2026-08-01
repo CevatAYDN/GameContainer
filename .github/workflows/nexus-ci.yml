@@ -1,10 +1,11 @@
 name: nexus-ci
 
+# CI is currently PASSIVE: the project uses the GitHub Free plan, so this workflow
+# only runs when triggered manually (workflow_dispatch). Automatic runs on push/PR
+# are suspended to avoid consuming free minutes and failing on the missing
+# self-hosted Unity runner. Re-enable by re-adding the `push` / `pull_request`
+# triggers below when a paid plan or a self-hosted runner is available.
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
   workflow_dispatch:
     inputs:
       soak:
