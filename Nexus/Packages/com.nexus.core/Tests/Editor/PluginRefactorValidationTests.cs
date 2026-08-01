@@ -114,5 +114,31 @@ namespace Nexus.Tests.Editor
             plugin.OnUpdate();
             plugin.OnDisable();
         }
+
+        [Test]
+        public void DashboardPlugin_OnDisable_CancelsDebounce()
+        {
+            var plugin = new DashboardPlugin();
+            var view = plugin.CreateView();
+            Assert.IsNotNull(view);
+
+            plugin.OnEnable();
+            plugin.OnUpdate();
+            plugin.OnDisable();
+            // OnDisable must not throw (debounce paused/nullified).
+        }
+
+        [Test]
+        public void GraphPlugin_OnDisable_CleansHighlights()
+        {
+            var plugin = new GraphPlugin();
+            var view = plugin.CreateView();
+            Assert.IsNotNull(view);
+
+            plugin.OnEnable();
+            plugin.OnUpdate();
+            plugin.OnDisable();
+            // OnDisable must not throw (highlight queue and active items cleared).
+        }
     }
 }

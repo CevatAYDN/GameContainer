@@ -298,6 +298,12 @@ namespace Nexus.Editor
             {
                 esGo.AddComponent(inputModuleType);
             }
+            else
+            {
+                Debug.LogWarning("[Nexus] Could not find an InputModule type to attach to the EventSystem. " +
+                    "The UI will not process input events until a module (e.g. StandaloneInputModule or " +
+                    "InputSystemUIInputModule) is added manually.");
+            }
             Undo.RegisterCreatedObjectUndo(esGo, "Create EventSystem");
 
             // --- Panel (View container) ---

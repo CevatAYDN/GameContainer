@@ -30,6 +30,7 @@ namespace Nexus.Editor
         // main (UI) thread via a lock-free queue drained in OnUpdate.
         private readonly ConcurrentQueue<(bool isSignal, string typeName)> _highlightQueue = new();
         private double _lastDrainTime;
+        private readonly List<IVisualElementScheduledItem> _activeHighlights = new();
 
         public override VisualElement CreateView()
         {
@@ -92,6 +93,9 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             NexusTrace.RemoveSink(this);
+            foreach (var highlight in _activeHighlights)
+                highlight.Pause();
+            _activeHighlights.Clear();
             _signalNodes.Clear();
             _handlerNodes.Clear();
             while (_highlightQueue.TryDequeue(out _)) { }
@@ -301,9 +305,12 @@ namespace Nexus.Editor
         {
             var origColor = node.mainContainer.style.backgroundColor;
             node.mainContainer.style.backgroundColor = new StyleColor(flashColor);
-            node.schedule.Execute(() => {
+            IVisualElementScheduledItem scheduledHighlight = null;
+            scheduledHighlight = node.schedule.Execute(() => {
                 node.mainContainer.style.backgroundColor = origColor;
+                _activeHighlights.Remove(scheduledHighlight);
             }).StartingIn(500);
+            _activeHighlights.Add(scheduledHighlight);
         }
     }
 

@@ -166,6 +166,7 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             _quickFindDebounce?.Pause();
+            _quickFindDebounce = null;
             if (_subscribedPlayMode)
             {
                 EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;

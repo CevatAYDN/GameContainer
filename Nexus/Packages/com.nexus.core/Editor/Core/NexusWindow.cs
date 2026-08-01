@@ -360,6 +360,8 @@ namespace Nexus.Editor
 
             _activePlugin = targetPlugin;
 
+            try { _activePlugin.OnEnable(); } catch (Exception ex) { Debug.LogException(ex); }
+
             foreach (var plugin in _plugins)
             {
                 var btn = _sidebar.Q<Button>($"Tab_{plugin.Id}");
