@@ -1,0 +1,96 @@
+name: nexus-ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      soak:
+        description: "Extra soak iterations after the main run (0 = skip)"
+        required: false
+        default: "0"
+      unity:
+        description: "Force the Unity test job on a self-hosted runner (true/false)"
+        required: false
+        default: "false"
+
+jobs:
+  harness:
+    name: Harness (real runtime on .NET 10)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Build harness
+        working-directory: tools/nexus-benchmark
+        run: dotnet build -c Release --nologo
+
+      - name: Full pipeline + JSON report
+        working-directory: tools/nexus-benchmark
+        run: |
+          dotnet run -c Release --no-build -- --json > report.json 2>&1 || { cat report.json; exit 1; }
+          tail -n 8 report.json
+
+      - name: Coverage report (compiled vs out-of-scope runtime files)
+        working-directory: tools/nexus-benchmark
+        run: |
+          dotnet run -c Release --no-build -- --coverage --json >> report.json 2>&1 || { cat report.json; exit 1; }
+
+      - name: Soak gate
+        working-directory: tools/nexus-benchmark
+        if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.soak != '0' && github.event.inputs.soak != '' }}
+        run: |
+          dotnet run -c Release --no-build -- --soak ${{ github.event.inputs.soak }} --json >> report.json 2>&1 || { cat report.json; exit 1; }
+
+      - name: Upload JSON report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: nexus-harness-report
+          path: tools/nexus-benchmark/report.json
+
+  unity-tests:
+    name: Unity tests (EditMode + PlayMode, Unity 6000.5)
+    # GitHub-hosted runners do not have Unity. This job runs on a self-hosted
+    # runner registered with the labels [self-hosted, unity-6000] — install Unity
+    # 6000.5.0f1 via Unity Hub on that machine, activate it, and register the
+    # runner (https://github.com/CevatAYDN/GameContainer/settings/actions/runners).
+    # Forced on demand with: workflow_dispatch + unity=true
+    runs-on: [self-hosted, unity-6000]
+    if: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.unity == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run EditMode tests
+        env:
+          UNITY_PATH: ${{ vars.UNITY_6000_PATH }}
+        shell: pwsh
+        run: |
+          $unity = if ($env:UNITY_PATH) { $env:UNITY_PATH } else { "C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Unity.exe" }
+          New-Item -ItemType Directory -Force -Path "artifacts" | Out-Null
+          & $unity -batchmode -nographics -projectPath "Nexus" -runTests -testPlatform EditMode -testResults "artifacts/editmode-results.xml" -logFile "artifacts/editmode.log" -quit
+          if ($LASTEXITCODE -ne 0) { Get-Content "artifacts/editmode.log" -Tail 60; exit $LASTEXITCODE }
+          Select-String -Path "artifacts/editmode-results.xml" -Pattern 'result="Failed"' | ForEach-Object { $_; exit 1 }
+
+      - name: Run PlayMode tests
+        env:
+          UNITY_PATH: ${{ vars.UNITY_6000_PATH }}
+        shell: pwsh
+        run: |
+          $unity = if ($env:UNITY_PATH) { $env:UNITY_PATH } else { "C:\Program Files\Unity\Hub\Editor\6000.5.0f1\Editor\Unity.exe" }
+          & $unity -batchmode -nographics -projectPath "Nexus" -runTests -testPlatform PlayMode -testResults "artifacts/playmode-results.xml" -logFile "artifacts/playmode.log" -quit
+          if ($LASTEXITCODE -ne 0) { Get-Content "artifacts/playmode.log" -Tail 60; exit $LASTEXITCODE }
+          Select-String -Path "artifacts/playmode-results.xml" -Pattern 'result="Failed"' | ForEach-Object { $_; exit 1 }
+
+      - name: Upload Unity test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unity-test-results
+          path: artifacts/*.xml

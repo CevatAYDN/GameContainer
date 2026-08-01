@@ -19,11 +19,12 @@ checked-in runtime.
 ## Run
 
 ```powershell
-dotnet run -c Release                            # benchmarks + recovery regression + 37 stress + fuzz + cross-context/thread tests
+dotnet run -c Release                            # benchmarks + recovery + 39 stress + fuzz + cross-context/thread + dogfood session
 dotnet run -c Release -- --alloc-diag            # allocation-source diagnostics
 dotnet run -c Release -- --pool-split            # pool round-trip split diagnostics
 dotnet run -c Release -- --soak [N]              # run the full pipeline N times (default 10), fail on state creep
 dotnet run -c Release -- --json                  # additionally emit a machine-readable JSON report of every test result
+dotnet run -c Release -- --coverage              # report which runtime files are compiled by the harness vs out of scope
 dotnet run -c Release -- --pin-cpu 0             # pin the process to core N + High priority (deterministic ns/op numbers)
 ```
 
@@ -31,6 +32,12 @@ Flags combine: `dotnet run -c Release -- --json --pin-cpu 2 --soak 20`.
 Note: `--pin-cpu` pins the whole process; the cross-thread suite (C2) then time-slices
 its 8 workers onto that one core — use it for micro-benchmark/soak stability, not for
 timing-bound cross-thread runs.
+
+`--coverage` (optionally with `--json`) reads the csproj Compile Includes and reports
+exactly which real runtime files the harness compiles vs. which stay out of scope —
+currently 57/80 (`Coverage` suite in the JSON doc lists every gap as a failed entry, so
+a "ready" claim stays measurable). The gates that decide production readiness live in
+`NEXUS_READY.md` at the repo root.
 
 Exit code is `0` when everything passes, `1` otherwise.
 
@@ -54,10 +61,12 @@ dotnet-trace collect -p <pid> --profile gc-verbose                  # allocation
 | --- | --- |
 | Benchmarks (`Program.cs`) | 1000-dispatch timing (<50ms), 1000-subscriber delivery, command pool reuse, `CommandPoolManager` Get/Return zero-alloc regression (<=128 B / 5000 ops), steady-state zero-GC (<=128 B / 5000 fires), 50k-dispatch stress (<800ms), hot-path ns/dispatch (<25us, <30us with subscriber), FSM transition latency (<50us), HybridQueue thread-safe zero-GC, netcode rollback/replay zero-GC, ErrorCollection 4-thread stress (<1s) |
 | Recovery regression (`RecoveryRegression.cs`) | Restored sync error-handler tail: generic-only fallback dispatch, retry counting, async-only fallback rejection (no recursion), no-strategy fall-through to Skip |
-| Architecture stress (`FullArchitectureStressSuite.cs`) | 37 tests. 1–20: NexusDI resolve+inject, 3-level reentrant zero-GC dispatch, 1000-subscriber fan-out, cross-context routing zero-GC, multi-type pool round-trip zero-GC, 10k FSM transitions, 8-worker HybridQueue stress, plugin interceptor/decorator pipeline (counts asserted: intercepts == decorates == fired == dispatches), high-jitter rollback zero-GC, concurrent ErrorCollection+PerfMonitor, composite trigger (A+B) correctness, lazy-injection resolve-once zero-GC, subscribe/unsubscribe cleanup, HybridQueue next-frame zero-GC, netcode rollback+resimulate state restore, async fire delivery, ObservableProperty zero-GC, SecureObservable write integrity, BigDouble arithmetic, TickService dispatch zero-GC (10k frames × 300 tickables). 21–37 run against the **real runtime** (real `Context`, `Root`, `ContextFactory`, `NexusRuntime`, `ViewBinder`, `SignalBus`, `ContextBuilder`, `NetworkMonitor`, `PluginTraceSink`, storage, pooling, economy): full context lifecycle phase order incl. deferred lazy-service init, assembly-scan auto-registration of `[SignalHandler]`/`[CompositeSignalHandler]` commands, Root parent-child + sibling priority initialization order (via a frame pump), View→ViewRegistration→Context→ViewBinder→mediator bind/unbind/pool-reuse end-to-end (incl. post-unregister silence and re-bind redelivery), NexusRuntime registry/scope lookup/metrics/trace-ring cap, NetworkMonitor event latency + pruning + counts semantics, plugin trace sink auth, AES-256+HMAC encrypted storage, save throttler/offline time/game save, ObjectPoolService spawn/despawn reuse, economy/progression persistence, `ContextBuilder.Validate` strict-injection diagnostics, async ordering (priority order + no-overlap sequential guarantee under an awaited gate), `FireAsyncWithTimeout` cancellation (OCE thrown, command cancelled, bus survives), subscription auto-dispose via context lifetime token, double-dispose idempotence + fire-after-dispose no-op safety, and dispose-during-dispatch (command disposes its own context mid-fire without corrupting the dispatch loop) |
+| Architecture stress (`FullArchitectureStressSuite.cs`) | 39 tests. 1–20: NexusDI resolve+inject, 3-level reentrant zero-GC dispatch, 1000-subscriber fan-out, cross-context routing zero-GC, multi-type pool round-trip zero-GC, 10k FSM transitions, 8-worker HybridQueue stress, plugin interceptor/decorator pipeline (counts asserted: intercepts == decorates == fired == dispatches), high-jitter rollback zero-GC, concurrent ErrorCollection+PerfMonitor, composite trigger (A+B) correctness, lazy-injection resolve-once zero-GC, subscribe/unsubscribe cleanup, HybridQueue next-frame zero-GC, netcode rollback+resimulate state restore, async fire delivery, ObservableProperty zero-GC, SecureObservable write integrity, BigDouble arithmetic, TickService dispatch zero-GC (10k frames × 300 tickables). 21–37 run against the **real runtime** (real `Context`, `Root`, `ContextFactory`, `NexusRuntime`, `ViewBinder`, `SignalBus`, `ContextBuilder`, `NetworkMonitor`, `PluginTraceSink`, storage, pooling, economy): full context lifecycle phase order incl. deferred lazy-service init, assembly-scan auto-registration of `[SignalHandler]`/`[CompositeSignalHandler]` commands, Root parent-child + sibling priority initialization order (via a frame pump), View→ViewRegistration→Context→ViewBinder→mediator bind/unbind/pool-reuse end-to-end (incl. post-unregister silence and re-bind redelivery), NexusRuntime registry/scope lookup/metrics/trace-ring cap, NetworkMonitor event latency + pruning + counts semantics, plugin trace sink auth, AES-256+HMAC encrypted storage, save throttler/offline time/game save, ObjectPoolService spawn/despawn reuse, economy/progression persistence, `ContextBuilder.Validate` strict-injection diagnostics, async ordering (priority order + no-overlap sequential guarantee under an awaited gate), `FireAsyncWithTimeout` cancellation (OCE thrown, command cancelled, bus survives), subscription auto-dispose via context lifetime token, double-dispose idempotence + fire-after-dispose no-op safety, and dispose-during-dispatch (command disposes its own context mid-fire without corrupting the dispatch loop) |
 
 | Fuzz (`FuzzSuite.cs`) | 2 tests against the **real runtime** (`ContextFactory.Create` contexts, real `SignalBus`, `ObjectPoolService`). F1: deterministic xorshift64 fuzz (3 seeds × 10k ops: subscribe/unsubscribe/fire across 8 tags × 5 signal types) with an exact per-tag/per-type delivery model verified after every op, payload integrity (every subscriber of a type sees the most recent fire's payload), plus a zero-GC proof: 20000 fires on a real context with a real registered command — 0 bytes allocated. F2: real object-pool fuzz (10k spawn/despawn ops, 3 prefabs): identity reuse (registry must NOT grow when an inactive instance is available, MUST grow when the stack is empty), balance (instances == created), no-leak teardown |
 | Cross-context/thread (`CrossThreadSuite.cs`) | 2 tests against the **real runtime**. C1: 4 real contexts (Gameplay/Gameplay/UI/Net scopes): `[CrossContext(ScopeTag=...)]` scope routing (local delivery + scope-matched broadcast), no-scope `[CrossContext]` broadcast to all, queue→cross-context chain via real `HybridQueue.EnqueueThreadSafe`/`DrainThreadSafe`, disposal silencing, exact registry counts. C2: 16k queued signals from 8 producer threads (per-producer FIFO preserved, delivered == unique == 16k, queue drains to zero), 8 worker contexts owned by 8 threads with per-owner traffic while 4 producer threads enqueue, concurrent context create/dispose, clean teardown (active == 0); async drain via `SubscribeAsync` (100/100 delivered) |
+| Dogfood session (`GameSessionSuite.cs`) | 8 tests against the **real runtime**: a full hyper-casual session across 4 context boots — GS1 real Context lifecycle phase order (configure→init→start), GS2 120-frame tick loop + passive income + earn/spend/level-up commands + pool reuse, GS3 SaveThrottler (immediate/throttled/forced) + checkpoint write, GS4 session continuity (next boot loads the checkpoint), GS5 offline income (2h → 7200s → exactly 72000 gold), GS6 crash without save (500 gold lost in memory, kill no-throw), GS7 recovery (last good checkpoint intact, economy resynced from checkpoint — the suite proved this resync is REQUIRED because `EconomyService` persists every Earn to prefs immediately, so crash rollback must come from the game checkpoint), GS8 zero leaks (activeContexts == 0 after 4 boots) |
+| Coverage (`CoverageReport.cs`) | Static report: every csproj Compile Include (incl. MSBuild `**` zero-dir globs) expanded against the runtime tree — compiled vs out-of-scope file list, captured as a `Coverage` suite in `--json` output (currently 57/80 compiled) |
 
 The `PerformanceTests.cs` mapping is exact: the harness asserts the same limits
 (`<=128` bytes, `<50ms`, `<800ms`, `<25000ns`, `<30000ns`) against the same
@@ -102,20 +111,21 @@ operations, plus the pool zero-alloc regression.
 CommandPool, HybridQueue, PluginSystem, Recovery, FSM, Netcode, ObservableProperty,
 SecureObservableProperty, BigDouble, NexusService, TickService, Context, ContextFactory,
 ContextBuilder, NexusRuntime, Root, ViewBinder, ViewRegistration, Mediator,
-SignalSubscriptions, NetworkMonitor, PluginTraceSink, storage/encryption, object
+SignalSubscriptions, SignalDispatchPipeline, ContextLifecycleOrchestrator,
+NetworkMonitor, PluginTraceSink, storage/encryption, object
 pooling, economy/progression, and `Tracing/CausalTracing.cs`) directly from
-`Nexus/Packages/com.nexus.core/Runtime/`.
+`Nexus/Packages/com.nexus.core/Runtime/` — 57 of the package's 80 runtime files.
+`--coverage` shows the exact list.
 
-Two stub files keep that compiling outside Unity:
+One stub file keeps that compiling outside Unity:
 
 - `UnityStubs.cs` — functional `UnityEngine.*` surface: a component/Transform scene
   graph with parent/child hierarchy, `Object.Destroy` (cascades to components and
   descendants, matching Unity semantics), `FindObjectsByType`, and `AddComponent`.
-- `NexusStubs.cs` — `NexusRuntime` and a plugin-aware `Context` stand-in. The Context
-  stand-in is deliberately functional (not a no-op): `RegisterPlugin` wires the
-  plugin's `PluginContext` into the SignalBus interceptor/decorator gates
-  (`HasInterceptors` / `Plugins.Count`), so the plugin pipeline stress test genuinely
-  exercises the pipeline instead of timing an empty dispatch path.
+
+`NexusRuntime`, `Context`/`ContextFactory`, `Root` and the plugin machinery are the
+real runtime files (no stand-ins) — that is the whole point: the harness must never
+drift from what Unity compiles.
 
 Do not stub runtime types here — compile the real file instead (see
 `Tracing/CausalTracing.cs`). Stubs drift; real sources cannot.
