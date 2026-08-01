@@ -211,6 +211,7 @@ namespace Nexus.Editor
             _childrenCache.Clear();
             _parentCache.Clear();
             _depthsCache.Clear();
+            _selectedEventId = -1;
             base.OnDisable();
         }
 

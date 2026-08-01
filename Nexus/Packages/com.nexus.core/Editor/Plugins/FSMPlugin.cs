@@ -211,7 +211,8 @@ namespace Nexus.Editor
                 {
                     if (kvp.Key != null)
                     {
-                        try { kvp.Key.OnStateChanged -= kvp.Value; } catch { }
+                        try { kvp.Key.OnStateChanged -= kvp.Value; }
+                        catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Nexus FSM] Failed to unsubscribe from state change: {ex.Message}"); }
                     }
                     staleSubs.Add(kvp);
                 }
