@@ -336,7 +336,15 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    LogTypeLoadWarning("model ownership", assembly, ex, ref warningCount);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus Warning] Model ownership validation skipped assembly '{assembly.FullName}': {ex.Message}");
+                    warningCount++;
+                }
             }
 
             // 2. Verify each disposable model is bound in at least one lifecycle DI container
@@ -348,13 +356,19 @@ namespace Nexus.Editor
                     try
                     {
                         string content = System.IO.File.ReadAllText(path);
-                        if (content.Contains(modelType.Name))
+                        // Match the full type name with word boundaries so "Player" does not
+                        // falsely match a "PlayerView" reference in an unrelated lifecycle class.
+                        if (content.Contains(" " + modelType.Name + " ") || content.Contains(modelType.Name + ";") || content.Contains(modelType.Name + ":") || content.Contains(modelType.Name + ","))
                         {
                             isBound = true;
                             break;
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[Nexus Warning] Model ownership validation could not read '{path}': {ex.Message}");
+                        warningCount++;
+                    }
                 }
 
                 if (!isBound)
@@ -478,6 +492,14 @@ namespace Nexus.Editor
             return false;
         }
 
+        private static void LogTypeLoadWarning(string validationArea, Assembly assembly, ReflectionTypeLoadException exception, ref int warningCount)
+        {
+            var loaderExceptions = exception.LoaderExceptions;
+            int loaderExceptionCount = loaderExceptions?.Length ?? 0;
+            Debug.LogWarning($"[Nexus Warning] {validationArea} validation skipped types from assembly '{assembly.FullName}': {exception.Message} ({loaderExceptionCount} loader exceptions).");
+            warningCount++;
+        }
+
         private static void ValidateContextDataConfiguration(ref int errorCount, ref int warningCount)
         {
             var contextDataAssets = AssetDatabase.FindAssets("t:ContextData");
@@ -488,7 +510,11 @@ namespace Nexus.Editor
                 {
                     loadedAssemblies.Add(assembly.GetName().Name);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus Warning] ContextData configuration could not inspect assembly '{assembly.FullName}': {ex.Message}");
+                    warningCount++;
+                }
             }
 
             foreach (var guid in contextDataAssets)
@@ -838,7 +864,15 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    LogTypeLoadWarning("composite trigger reachability", assembly, ex, ref warningCount);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus Warning] Composite trigger reachability skipped assembly '{assembly.FullName}': {ex.Message}");
+                    warningCount++;
+                }
             }
 
             // 2. Find fired signals for each unique command type that we found
@@ -887,7 +921,11 @@ namespace Nexus.Editor
                             }
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[Nexus Warning] Composite trigger reachability could not read '{scriptPath}': {ex.Message}");
+                        warningCount++;
+                    }
                 }
             }
 
@@ -1017,7 +1055,10 @@ namespace Nexus.Editor
                 var asmName = type.Assembly.GetName().Name;
                 if (IsAssemblyExcluded(asmName)) return true;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus Warning] DI availability inspection failed for '{type.FullName}': {ex.Message}");
+            }
             return false;
         }
 
@@ -1049,7 +1090,15 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch (ReflectionTypeLoadException) { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    LogTypeLoadWarning("DI binding", assembly, ex, ref warningCount);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus Warning] DI binding validation skipped assembly '{assembly.FullName}': {ex.Message}");
+                    warningCount++;
+                }
             }
 
             // Always-resolvable types auto-provided by NexusDI
@@ -1061,7 +1110,12 @@ namespace Nexus.Editor
             {
                 NexusDI.InjectableMetadata meta;
                 try { meta = NexusDI.GetOrCreateInjectMetadata(type); }
-                catch { continue; }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus Warning] DI metadata inspection failed for '{type.FullName}': {ex.Message}");
+                    warningCount++;
+                    continue;
+                }
 
                 // Constructor parameter validation
                 if (meta.ConstructorParameterTypes is { Length: > 0 })
@@ -1136,7 +1190,10 @@ namespace Nexus.Editor
                             cache[klass] = path;
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[Nexus Warning] Type-script mapping skipped '{path}': {ex.Message}");
+                    }
                 }
             }
             return cache;
@@ -1163,7 +1220,14 @@ namespace Nexus.Editor
                         }
                     }
                 }
-                catch { }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Debug.LogWarning($"[Nexus Warning] Signal type map skipped assembly '{assembly.FullName}': {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus Warning] Signal type map skipped assembly '{assembly.FullName}': {ex.Message}");
+                }
             }
             return map;
         }
