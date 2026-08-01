@@ -420,6 +420,10 @@ namespace Nexus.Core.Services
 
                 // Atomic write: stage to temp, then overwrite-rename (single operation on
                 // the same volume). Never Delete-then-Move — the pre-fix data-loss window.
+                // File.Replace (netstandard 2.0+) is atomic on Windows (MoveFileEx
+                // REPLACE_EXISTING) and Unix (rename). The File.Move(src, dst, overwrite)
+                // overload used before is .NET Core 3.0+ only and does not exist in
+                // Unity's .NET Standard 2.1 reference profile.
                 string tempPath = filePath + ".tmp";
                 File.WriteAllBytes(tempPath, finalBuffer);
 
@@ -429,7 +433,7 @@ namespace Nexus.Core.Services
                     try
                     {
                         if (File.Exists(filePath))
-                            File.Move(tempPath, filePath, overwrite: true);
+                            File.Replace(tempPath, filePath, null);
                         else
                             File.Move(tempPath, filePath);
                         break;
