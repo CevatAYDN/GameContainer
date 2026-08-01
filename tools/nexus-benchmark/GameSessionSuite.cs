@@ -318,36 +318,45 @@ namespace NexusBench
                 tickService.RegisterTickable(income);
 
                 var pool = new ObjectPoolService();
-                pool.InitializeAsync(default).GetAwaiter().GetResult();
-                pool.Prewarm(prefab, 2);
-                var firstSpawn = pool.Spawn(prefab);
-                var poolable = firstSpawn.GetComponent<SessionPoolable>();
+                try
+                {
+                    pool.InitializeAsync(default).GetAwaiter().GetResult();
+                    pool.Prewarm(prefab, 2);
+                    var firstSpawn = pool.Spawn(prefab);
+                    var poolable = firstSpawn.GetComponent<SessionPoolable>();
 
-                // 120 frames: passive income fires on frames 60 and 120 -> +10 gold.
-                for (int i = 0; i < 120; i++) tickService.OnTick(0.016f);
+                    // 120 frames: passive income fires on frames 60 and 120 -> +10 gold.
+                    for (int i = 0; i < 120; i++) tickService.OnTick(0.016f);
 
-                // Player earns 90 more and spends 30 via real commands.
-                bus.Fire(new SessionEarnGoldSignal(90));
-                bus.Fire(new SessionSpendGoldSignal(30));
+                    // Player earns 90 more and spends 30 via real commands.
+                    bus.Fire(new SessionEarnGoldSignal(90));
+                    bus.Fire(new SessionSpendGoldSignal(30));
 
-                // Pool reuse: despawn + respawn must return the SAME instance.
-                pool.Despawn(firstSpawn);
-                var respawned = pool.Spawn(prefab);
-                bool poolReused = ReferenceEquals(firstSpawn, respawned);
+                    // Pool reuse: despawn + respawn must return the SAME instance.
+                    pool.Despawn(firstSpawn);
+                    var respawned = pool.Spawn(prefab);
+                    bool poolReused = ReferenceEquals(firstSpawn, respawned);
 
-                // Level up twice via command.
-                bus.Fire(new SessionLevelUpSignal());
-                bus.Fire(new SessionLevelUpSignal());
-                int level = ctx.Resolve<ProgressionService>().CurrentLevel.Value;
+                    // Level up twice via command.
+                    bus.Fire(new SessionLevelUpSignal());
+                    bus.Fire(new SessionLevelUpSignal());
+                    int level = ctx.Resolve<ProgressionService>().CurrentLevel.Value;
 
-                var state = ctx.Resolve<SessionState>();
-                bool goldOk = state.Gold == 10 + 90 - 30; // 70
-                bool levelOk = level == 3; // starts at 1, two level-ups
-                bool incomeOk = income.IncomeEvents == 2 && income.Frames == 120;
-                bool poolOk = poolReused && poolable.SpawnCount == 2;
+                    var state = ctx.Resolve<SessionState>();
+                    bool goldOk = state.Gold == 10 + 90 - 30; // 70
+                    bool levelOk = level == 3; // starts at 1, two level-ups
+                    bool incomeOk = income.IncomeEvents == 2 && income.Frames == 120;
+                    bool poolOk = poolReused && poolable.SpawnCount == 2;
 
-                ok = goldOk && levelOk && incomeOk && poolOk;
-                detail = $"gold={state.Gold} (expected 70), level={level} (expected 3), incomeEvents={income.IncomeEvents} (expected 2), frames={income.Frames}, poolReused={poolReused} spawns={poolable.SpawnCount}";
+                    ok = goldOk && levelOk && incomeOk && poolOk;
+                    detail = $"gold={state.Gold} (expected 70), level={level} (expected 3), incomeEvents={income.IncomeEvents} (expected 2), frames={income.Frames}, poolReused={poolReused} spawns={poolable.SpawnCount}";
+                }
+                finally
+                {
+                    // Raw test-owned service (not bound to a context): dispose it so the
+                    // master root, pool root and prewarmed instances don't leak per iteration.
+                    pool.Dispose();
+                }
             }
             catch (Exception ex)
             {

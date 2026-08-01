@@ -131,7 +131,8 @@ namespace UnityEngine
         public static float fixedDeltaTime => 0.02f;
         public static float timeScale { get; set; } = 1f;
         public static double realtimeSinceStartupAsDouble => 0d;
-        public static float realtimeSinceStartup => 0f;
+        /// <summary>Monotonic runtime clock — settable so suites can advance time (AdService cooldowns).</summary>
+        public static float realtimeSinceStartup { get; set; } = 0f;
         public static int frameCount => 0;
     }
 

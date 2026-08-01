@@ -496,10 +496,13 @@ namespace Nexus.Core
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
+            // INexusService lifecycle is owned by the Context (NexusDI.Dispose skips them), so
+            // dispose every resolved INexusService singleton even when no builder was configured
+            // (e.g. bare test contexts that bound services directly through the container).
+            var disposedServices = new HashSet<object>();
             if (_builder != null)
             {
                 var serviceTypes = _builder.ServiceTypes;
-                var disposedServices = new HashSet<object>();
                 for (int i = serviceTypes.Count - 1; i >= 0; i--)
                 {
                     try
@@ -512,17 +515,16 @@ namespace Nexus.Core
                     }
                     catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                 }
+            }
 
-                // Dispose any remaining resolved INexusService singletons (e.g. lazy services
-                // first resolved outside the eager ServiceTypes list) so nothing leaks now that
-                // NexusDI.Dispose skips INexusService (their lifecycle is owned by the Context).
-                foreach (var instance in Container.GetActiveSingletons())
+            // Dispose any remaining resolved INexusService singletons (e.g. lazy services
+            // first resolved outside the eager ServiceTypes list) so nothing leaks.
+            foreach (var instance in Container.GetActiveSingletons())
+            {
+                if (instance is INexusService service && disposedServices.Add(instance))
                 {
-                    if (instance is INexusService service && disposedServices.Add(instance))
-                    {
-                        try { service.OnDispose(); }
-                        catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
-                    }
+                    try { service.OnDispose(); }
+                    catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                 }
             }
 

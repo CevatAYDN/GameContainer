@@ -102,6 +102,40 @@ namespace NexusBench
         public void OnDispose() { }
     }
 
+    public sealed class SvcRecordingAdAdapter : IAdNetworkAdapter
+    {
+        public bool InterstitialReady = true;
+        public bool RewardedReady = true;
+        public bool Initialized;
+        public readonly List<string> Calls = new();
+        public void Initialize(Action onInitialized) { Initialized = true; onInitialized?.Invoke(); }
+        public bool IsInterstitialReady(string placement) { Calls.Add($"interstitialReady:{placement}"); return InterstitialReady; }
+        public void ShowInterstitial(string placement, Action onClosed) { Calls.Add($"showInterstitial:{placement}"); onClosed?.Invoke(); }
+        public bool IsRewardedReady(string placement) { Calls.Add($"rewardedReady:{placement}"); return RewardedReady; }
+        public void ShowRewarded(string placement, Action<bool> onCompleted) { Calls.Add($"showRewarded:{placement}"); onCompleted?.Invoke(true); }
+        public void ShowBanner(string placement, string position) => Calls.Add($"banner:{placement}:{position}");
+        public void HideBanner() => Calls.Add("hideBanner");
+    }
+
+    public sealed class SvcRecordingIapAdapter : IIapStoreAdapter
+    {
+        public readonly List<string> Calls = new();
+        public readonly List<ProductDefinition> InitProducts = new();
+        public bool Owned;
+        public void Initialize(List<ProductDefinition> products, Action<bool> onInitialized)
+        {
+            InitProducts.AddRange(products);
+            onInitialized?.Invoke(true);
+        }
+        public void Purchase(string productId, Action<bool, string> onComplete)
+        {
+            Calls.Add($"purchase:{productId}");
+            onComplete?.Invoke(true, productId);
+        }
+        public void Restore(Action<bool> onComplete) { Calls.Add("restore"); onComplete?.Invoke(true); }
+        public bool IsOwned(string productId) => Owned;
+    }
+
     // ---------------------------------------------------------------------------
     // The suite
     // ---------------------------------------------------------------------------
@@ -109,6 +143,10 @@ namespace NexusBench
     public static class ServicesSuite
     {
         private static int _failures;
+
+        // Test-created AudioClips live on the stub object registry; the suite owns them
+        // and must destroy them so soak-mode leak probes stay clean.
+        private static readonly List<UnityEngine.Object> s_clipsToDestroy = new();
 
         public static int Run()
         {
@@ -132,6 +170,9 @@ namespace NexusBench
                 RunSceneLoader();
                 RunNexusTestContext();
                 RunWindowManager();
+                RunAds();
+                RunIap();
+                RunZeroGc();
             }
             catch (Exception ex)
             {
@@ -143,6 +184,9 @@ namespace NexusBench
                 UnityEngine.PlayerPrefs.ClearAll();
                 SceneManager.SimulateReset();
                 SvcWindowLifecycleRecorder.Events.Clear();
+                Time.realtimeSinceStartup = 0f;
+                foreach (var clip in s_clipsToDestroy) UnityEngine.Object.Destroy(clip);
+                s_clipsToDestroy.Clear();
             }
 
             Console.WriteLine();
@@ -352,6 +396,7 @@ namespace NexusBench
 
                 // With a preset->clip mapping, Play also hands off to AudioService.
                 var clip = new AudioClip("coin");
+                s_clipsToDestroy.Add(clip);
                 int sfxBefore = CountSfxSources();
                 feedback.PresetAudioClips = new Dictionary<FeedbackPreset, AudioClip> { { FeedbackPreset.CoinCollect, clip } };
                 haptic.Calls.Clear();
@@ -458,11 +503,12 @@ namespace NexusBench
                 audio.InitializeAsync(default).GetAwaiter().GetResult();
 
                 var clip = new AudioClip("sfx");
+                s_clipsToDestroy.Add(clip);
                 int baseline = CountSfxSources();
                 for (int i = 0; i < 40; i++) audio.PlaySfx(clip, 1f, 1f, 1f);
                 int sources = CountSfxSources();
-                Check("A5. SfxPool_Capped_At_32_Steals_Oldest", sources == baseline + 32,
-                    $"sfxSources={sources} (cap=32, 40 plays, baseline={baseline})");
+                Check("A5. SfxPool_Capped_At_32_Steals_Oldest", sources == baseline + 32 && baseline == 0,
+                    $"sfxSources={sources} (cap=32, 40 plays, baseline={baseline}, expected 0->32)");
 
                 // Muted: PlaySfx must return early without touching the pool.
                 audio.IsMuted = true;
@@ -476,6 +522,8 @@ namespace NexusBench
                 var bgm = root.GetComponents<AudioSource>();
                 var clipA = new AudioClip("bgm_a");
                 var clipB = new AudioClip("bgm_b");
+                s_clipsToDestroy.Add(clipA);
+                s_clipsToDestroy.Add(clipB);
                 audio.PlayBgm(clipA);
                 bool first = bgm[0].clip == clipA && bgm[0].isPlaying;
                 audio.PlayBgm(clipA);
@@ -744,13 +792,23 @@ namespace NexusBench
             int activeBefore = NexusRuntime.ActiveContexts.Count;
             var parent = NexusTestHarness.CreateContext("parent-scope");
             var child = NexusTestHarness.CreateChildContext(parent, "child-scope");
-            bool hierarchy = parent.Context != child.Context && child.Context != null;
-            child.Dispose();
-            parent.Dispose();
-            NexusRuntime.Reset();
-            bool cleanup = NexusRuntime.ActiveContexts.Count == 0 && activeBefore >= 0;
-            Check("T6. Child_Context_Scoped_And_Clean_Teardown", hierarchy && cleanup,
-                $"hierarchy={hierarchy} activeAfterReset={NexusRuntime.ActiveContexts.Count}");
+            try
+            {
+                bool hierarchy = parent.Context != child.Context && child.Context != null;
+                child.Dispose();
+                parent.Dispose();
+                NexusRuntime.Reset();
+                bool cleanup = NexusRuntime.ActiveContexts.Count == 0 && activeBefore >= 0;
+                Check("T6. Child_Context_Scoped_And_Clean_Teardown", hierarchy && cleanup,
+                    $"hierarchy={hierarchy} activeAfterReset={NexusRuntime.ActiveContexts.Count}");
+            }
+            finally
+            {
+                // ContextData is caller-owned (ScriptableObject asset semantics): the context
+                // never destroys it, so the suite must, or soak probes see +2 objects/iteration.
+                UnityEngine.Object.Destroy(child.Context?.ContextData);
+                UnityEngine.Object.Destroy(parent.Context?.ContextData);
+            }
         }
 
         // =========================================================================
@@ -851,6 +909,265 @@ namespace NexusBench
                 catch (ObjectDisposedException) { disposed = true; }
                 Check("W7. Dispose_Cleans_Windows_And_Canvas", disposed,
                     $"IsWindowOpen={disposed} (ObjectDisposedException after Dispose = disposed)");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        // ---------------------------------------------------------------------------
+        // Ads — adapter-gated surface: mock fallbacks, cooldown, delegation, events
+        // ---------------------------------------------------------------------------
+
+        private static void RunAds()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            try
+            {
+                var logger = new SvcLoggerRecorder();
+                ctx.Context.Container.BindInstance<ILoggerService>(logger);
+                ctx.Context.Container.Bind<AdService>(isSingleton: true);
+                var ads = ctx.Context.Resolve<AdService>();
+
+                // D1: no adapter → mock shows + cooldown enforced against the clock.
+                Time.realtimeSinceStartup = 100f;
+                ads.SetInterstitialCooldown(30f);
+                bool availableBefore = ads.IsInterstitialAvailable("default");
+                bool closed = false;
+                ads.ShowInterstitial("default", () => closed = true);
+                bool blockedOnCooldown = !ads.IsInterstitialAvailable("default");
+                Time.realtimeSinceStartup = 131f;
+                bool availableAfterElapse = ads.IsInterstitialAvailable("default");
+                Check("D1. Interstitial_Cooldown_Enforced_No_Adapter", availableBefore && closed && blockedOnCooldown && availableAfterElapse,
+                    $"available={availableBefore} closed={closed} blocked={blockedOnCooldown} after31s={availableAfterElapse}");
+
+                // D2: rewarded mock path without adapter completes successfully.
+                bool rewarded = false;
+                ads.ShowRewarded("reward1", ok => rewarded = ok);
+                Check("D2. Rewarded_Mock_Path_Completes", rewarded,
+                    $"rewarded={rewarded}");
+
+                // D3: with an adapter bound, every call delegates to it.
+                var adapter = new SvcRecordingAdAdapter();
+                ads.SetNetworkAdapter(adapter);
+                bool initialized = adapter.Initialized;
+                bool ready = ads.IsRewardedAvailable("r1") && adapter.Calls.Contains("rewardedReady:r1");
+                ads.ShowBanner("b1", "top");
+                ads.HideBanner();
+                bool rewardedDelegated = false;
+                ads.ShowRewarded("r2", _ => rewardedDelegated = true);
+                bool delegated = adapter.Calls.Contains("banner:b1:top")
+                    && adapter.Calls.Contains("hideBanner")
+                    && adapter.Calls.Contains("showRewarded:r2")
+                    && rewardedDelegated;
+                Check("D3. Adapter_Delegation_EndToEnd", initialized && ready && delegated,
+                    $"init={initialized} ready={ready} calls=[{string.Join(",", adapter.Calls)}]");
+
+                // D4: negative cooldown clamps to zero; impression event fires.
+                ads.SetInterstitialCooldown(-10f);
+                Time.realtimeSinceStartup = 200f;
+                bool instantlyAvailable = ads.IsInterstitialAvailable("default");
+                string net = null; double rev = -1; string place = null;
+                ads.OnImpressionRecorded += (n, r, p) => { net = n; rev = r; place = p; };
+                ads.RaiseImpression("admob", 0.42, "default");
+                bool impression = net == "admob" && Math.Abs(rev - 0.42) < 1e-6 && place == "default";
+                Check("D4. Cooldown_Clamped_And_Impression_Event", instantlyAvailable && impression,
+                    $"available={instantlyAvailable} impression=({net},{rev},{place})");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        // =========================================================================
+        // IAP — adapter-gated purchases: catalog, graceful no-adapter fallback, delegation
+        // =========================================================================
+
+        private static void RunIap()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            try
+            {
+                var logger = new SvcLoggerRecorder();
+                ctx.Context.Container.BindInstance<ILoggerService>(logger);
+                ctx.Context.Container.Bind<IapService>(isSingleton: true);
+                var iap = ctx.Context.Resolve<IapService>();
+
+                // D5: product catalog registration + lookup.
+                iap.RegisterProducts(
+                    new ProductDefinition { Id = "gems_100", Type = ProductType.Consumable, PriceString = "$0.99" },
+                    new ProductDefinition { Id = "vip_1mo", Type = ProductType.Subscription },
+                    null,
+                    new ProductDefinition { Id = "" });
+                bool catalog = iap.GetProduct("gems_100") != null
+                    && iap.GetProduct("gems_100").Type == ProductType.Consumable
+                    && iap.GetProduct("vip_1mo").Type == ProductType.Subscription
+                    && iap.GetProduct("missing") == null;
+                Check("D5. Product_Catalog_Registration", catalog,
+                    $"gems={iap.GetProduct("gems_100")?.PriceString} vip={iap.GetProduct("vip_1mo")?.Id ?? "null"} missing={iap.GetProduct("missing") == null}");
+
+                // D6: no adapter → graceful failure, no throw (P0.2 fix).
+                bool ok = true; string msg = null;
+                iap.PurchaseProduct("gems_100", (o, m) => { ok = o; msg = m; });
+                bool purchaseFailed = !ok && msg == "store_unavailable";
+                bool restoreOk = true;
+                iap.RestorePurchases(r => restoreOk = r);
+                bool restoreFailed = !restoreOk;
+                bool logged = logger.Messages.Count == 2;
+                bool ownedWithoutAdapter = iap.IsProductOwned("gems_100");
+                Check("D6. No_Adapter_Graceful_Failure", purchaseFailed && restoreFailed && logged && !ownedWithoutAdapter,
+                    $"ok={ok} msg={msg} restoreOk={restoreOk} logged={logger.Messages.Count} owned={ownedWithoutAdapter}");
+
+                // D7: with an adapter bound, purchase/restore/ownership delegate.
+                var adapter = new SvcRecordingIapAdapter();
+                iap.SetStoreAdapter(adapter);
+                bool initProducts = adapter.InitProducts.Count == 2
+                    && adapter.InitProducts.Exists(p => p.Id == "gems_100")
+                    && adapter.InitProducts.Exists(p => p.Id == "vip_1mo");
+                bool purchaseOk = false; string purchaseMsg = null;
+                iap.PurchaseProduct("gems_100", (o, m) => { purchaseOk = o; purchaseMsg = m; });
+                bool restoreDelegated = false;
+                iap.RestorePurchases(r => restoreDelegated = r);
+                adapter.Owned = true;
+                bool ownedViaAdapter = iap.IsProductOwned("gems_100");
+                Check("D7. Adapter_Delegation_EndToEnd", initProducts && purchaseOk && purchaseMsg == "gems_100"
+                        && adapter.Calls.Contains("purchase:gems_100") && restoreDelegated && ownedViaAdapter,
+                    $"initProducts={initProducts} purchaseOk={purchaseOk} calls=[{string.Join(",", adapter.Calls)}] owned={ownedViaAdapter}");
+
+                // D8: release path (the harness does NOT define UNITY_EDITOR, so the
+                // #else branch is what ships) must never grant ownership from the
+                // in-process mock set — even after a "successful" purchase callback.
+                var bare = new IapService();
+                bool simOk = false; string simMsg = null;
+                bare.RegisterProducts(new ProductDefinition { Id = "sword", Type = ProductType.NonConsumable });
+                bare.PurchaseProduct("sword", (o, m) => { simOk = o; simMsg = m; });
+                bool stillNotOwned = !bare.IsProductOwned("sword");
+                Check("D8. Release_Path_Never_Trusts_Mock_Ownership", !simOk && simMsg == "store_unavailable" && stillNotOwned,
+                    $"purchaseOk={simOk} msg={simMsg} owned={bare.IsProductOwned("sword")}");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        // =========================================================================
+        // Zero-GC — steady-state service hot paths must not allocate (<=128 B / 2k ops)
+        // =========================================================================
+
+        private static void RunZeroGc()
+        {
+            RunZeroGc_Input();
+            RunZeroGc_Audio();
+            RunZeroGc_Localization();
+            RunZeroGc_FloatingText();
+        }
+
+        private static long MeasuredAllocations(Action action)
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            long start = GC.GetAllocatedBytesForCurrentThread();
+            action();
+            return GC.GetAllocatedBytesForCurrentThread() - start;
+        }
+
+        private static void RunZeroGc_Input()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            try
+            {
+                ctx.Context.Container.Bind<InputService>(isSingleton: true);
+                var input = ctx.Context.Resolve<InputService>();
+                int fired = 0;
+                ctx.Context.SignalBus.Subscribe<PlayerMoveSignal>(_ => fired++);
+
+                input.SetVirtualJoystickInput(new Vector2(3f, 4f));
+                for (int i = 0; i < 100; i++) input.UpdateInput(0.016f);
+
+                long alloc = MeasuredAllocations(() =>
+                {
+                    for (int i = 0; i < 2000; i++) input.UpdateInput(0.016f);
+                });
+                Check("G1. Input_Update_And_Fire_ZeroGC", alloc <= 128 && fired == 2100,
+                    $"allocated={alloc} bytes for 2000 updates (limit <=128), fired={fired}");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        private static void RunZeroGc_Audio()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            try
+            {
+                var prefs = new FakeSessionPrefs();
+                var rootProvider = new DefaultAudioRootProvider();
+                ctx.Context.Container.BindInstance<IPlayerPrefsService>(prefs);
+                ctx.Context.Container.BindInstance<IAudioRootProvider>(rootProvider);
+                ctx.Context.Container.Bind<IAudioService, AudioService>(isSingleton: true);
+                var audio = ctx.Context.Resolve<IAudioService>() as AudioService;
+                audio.InitializeAsync(default).GetAwaiter().GetResult();
+
+                var clip = new AudioClip("sfx");
+                s_clipsToDestroy.Add(clip);
+                for (int i = 0; i < 32; i++) audio.PlaySfx(clip);
+
+                long alloc = MeasuredAllocations(() =>
+                {
+                    for (int i = 0; i < 2000; i++) audio.PlaySfx(clip);
+                });
+                Check("G2. Audio_PlaySfx_PoolWarmed_ZeroGC", alloc <= 128,
+                    $"allocated={alloc} bytes for 2000 pool-warmed plays (limit <=128)");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        private static void RunZeroGc_Localization()
+        {
+            var prefs = new FakeSessionPrefs();
+            var svc = new LocalizationService(prefs);
+            for (int i = 0; i < 100; i++) svc.GetString("btn_ok");
+            svc.SetLanguage("tr");
+            for (int i = 0; i < 100; i++) { svc.GetString("btn_undo"); svc.GetString("missing_key", "fb"); }
+
+            long alloc = MeasuredAllocations(() =>
+            {
+                for (int i = 0; i < 1000; i++)
+                {
+                    svc.GetString("btn_ok");
+                    svc.GetString("btn_undo");
+                    svc.GetString("missing_key", "fb");
+                }
+            });
+            Check("G3. Localization_GetString_ZeroGC", alloc <= 128,
+                $"allocated={alloc} bytes for 3000 lookups (limit <=128)");
+        }
+
+        private static void RunZeroGc_FloatingText()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            try
+            {
+                ctx.Context.Container.Bind<IFloatingTextService, FloatingTextService>(isSingleton: true);
+                var svc = ctx.Context.Resolve<IFloatingTextService>() as FloatingTextService;
+                for (int i = 0; i < 50; i++) svc.SpawnFloatingText($"t{i}", Vector3.zero, Color.white, 1f);
+                svc.UpdateService(0.05f);
+
+                long alloc = MeasuredAllocations(() =>
+                {
+                    for (int i = 0; i < 2000; i++) svc.UpdateService(0.05f);
+                });
+                Check("G4. FloatingText_Update_ZeroGC", alloc <= 128,
+                    $"allocated={alloc} bytes for 2000 updates (limit <=128)");
             }
             finally
             {

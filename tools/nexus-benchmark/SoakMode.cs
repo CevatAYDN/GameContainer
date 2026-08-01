@@ -16,6 +16,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.Linq;
 using System.Reflection;
 using System.Threading;
 using Nexus.Core;
@@ -169,18 +170,20 @@ namespace NexusBench
                     {
                         if (p.Grew) grew.Add($"{p.Name}+{p.Count() - p.Baseline}");
                     }
+                    bool sAllGrew = grew.Any(g => g.StartsWith("UnityEngine.Object.s_all"));
                     leakNow = heap - heapBaseline > HeapGrowthLimitBytes
                         || ws - wsBaseline > WorkingSetGrowthLimitBytes
                         || committed - committedBaseline > CommittedGrowthLimitBytes
                         || threads - threadBaseline > ThreadGrowthLimit
                         || pool - poolBaseline > PoolThreadGrowthLimit
                         || grew.Count > 0;
-                    if (leakNow) leakDetected = true;
-                    metrics = $"heapΔ={MB(heap - heapBaseline):+0.00;-0.00}MB wsΔ={MB(ws - wsBaseline):+0.00;-0.00}MB " +
-                        $"committedΔ={MB(committed - committedBaseline):+0.00;-0.00}MB " +
-                        $"gen0Δ={gen0 - gen0Baseline:+0;-0} gen1Δ={gen1 - gen1Baseline:+0;-0} gen2Δ={gen2 - gen2Baseline:+0;-0} " +
-                        $"threadsΔ={threads - threadBaseline:+0;-0} poolΔ={pool - poolBaseline:+0;-0}" +
-                        (grew.Count > 0 ? $" caches=[{string.Join(",", grew)}]" : "");
+                if (leakNow) leakDetected = true;
+                metrics = $"heapΔ={MB(heap - heapBaseline):+0.00;-0.00}MB wsΔ={MB(ws - wsBaseline):+0.00;-0.00}MB " +
+                    $"committedΔ={MB(committed - committedBaseline):+0.00;-0.00}MB " +
+                    $"gen0Δ={gen0 - gen0Baseline:+0;-0} gen1Δ={gen1 - gen1Baseline:+0;-0} gen2Δ={gen2 - gen2Baseline:+0;-0} " +
+                    $"threadsΔ={threads - threadBaseline:+0;-0} poolΔ={pool - poolBaseline:+0;-0}" +
+                    (grew.Count > 0 ? $" caches=[{string.Join(",", grew)}]" : "");
+                if (sAllGrew || iter == 2) LogUnityObjectTypeDeltas();
                 }
                 else
                 {
@@ -203,5 +206,46 @@ namespace NexusBench
         }
 
         private static double MB(long bytes) => bytes / (1024.0 * 1024.0);
+
+        // Type-level diagnostics for the Unity stub object registry: snapshots the type
+        // histogram at baseline and prints per-type deltas when the registry grows.
+        private static Dictionary<string, int> s_objectTypeSnapshot;
+
+        private static void LogUnityObjectTypeDeltas()
+        {
+            var registry = typeof(UnityEngine.Object).GetField("s_all", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null);
+            var hist = new Dictionary<string, int>();
+            foreach (object o in (System.Collections.IEnumerable)registry)
+            {
+                string t = o.GetType().Name;
+                hist.TryGetValue(t, out int n);
+                hist[t] = n + 1;
+            }
+            if (s_objectTypeSnapshot == null)
+            {
+                s_objectTypeSnapshot = hist;
+                return;
+            }
+            var deltas = new List<string>();
+            foreach (var kv in hist)
+            {
+                s_objectTypeSnapshot.TryGetValue(kv.Key, out int prev);
+                if (kv.Value > prev) deltas.Add($"{kv.Key}+{kv.Value - prev}");
+            }
+            foreach (var kv in s_objectTypeSnapshot)
+            {
+                if (!hist.ContainsKey(kv.Key)) deltas.Add($"{kv.Key}-{kv.Value}");
+            }
+            var leakedNames = new List<string>();
+            foreach (object o in (System.Collections.IEnumerable)registry)
+            {
+                if (o is UnityEngine.GameObject go && go.name != null) leakedNames.Add($"GO[{go.name}]");
+            }
+            foreach (object o in (System.Collections.IEnumerable)registry)
+            {
+                if (o is UnityEngine.AudioClip clip && clip.name != null) leakedNames.Add($"clip[{clip.name}]");
+            }
+            Console.WriteLine($"    objects=[{string.Join(",", deltas)}]{(leakedNames.Count > 0 ? $" names={string.Join(",", leakedNames.Distinct())}" : "")}");
+        }
     }
 }

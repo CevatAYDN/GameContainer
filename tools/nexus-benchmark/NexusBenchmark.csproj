@@ -88,6 +88,8 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IUIAssetProvider.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ResourcesUIAssetProvider.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/WindowManager.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapService.cs" />
   </ItemGroup>
 
 </Project>
