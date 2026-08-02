@@ -159,6 +159,60 @@ namespace Nexus.Core
             _commandRegistry.RegisterCommand(signalType, commandType, mode, priority, isAsync, oneShot);
         }
 
+        /// <summary>
+        /// True when <paramref name="type"/> implements a supported command interface
+        /// (non-generic or generic sync/async, composite or plain). Shared by the assembly
+        /// scan and the test harness so classification lives in exactly one place.
+        /// </summary>
+        internal static bool IsCommandType(Type type)
+        {
+            return typeof(ICommand).IsAssignableFrom(type) || ImplementsGenericInterface(type, typeof(ICommand<>))
+                || typeof(IAsyncCommand).IsAssignableFrom(type) || ImplementsGenericInterface(type, typeof(IAsyncCommand<>))
+                || typeof(ICompositeCommand).IsAssignableFrom(type) || typeof(IAsyncCompositeCommand).IsAssignableFrom(type);
+        }
+
+        /// <summary>
+        /// Registers a command type's <c>[SignalHandler]</c>/<c>[CompositeSignalHandler]</c>
+        /// attributes against this bus — the production registration path used by both the
+        /// assembly scan and the test harness, so attribute parsing is never re-implemented.
+        /// </summary>
+        /// <param name="commandType">The command type (already bound in the container).</param>
+        /// <param name="handlers">Pre-scanned <c>[SignalHandler]</c> attributes (may be empty).</param>
+        /// <param name="composite">Pre-scanned <c>[CompositeSignalHandler]</c> attribute (or null).</param>
+        /// <param name="forceAsync">
+        /// When non-null, forces the sync/async flag on every registration (used by the
+        /// harness's RegisterCommand/RegisterAsyncCommand). When null, the flag is derived
+        /// from the command type exactly like the assembly scan does.
+        /// </param>
+        /// <returns>True when at least one handler was registered for a command type.</returns>
+        internal bool RegisterCommandType(Type commandType, IEnumerable<SignalHandlerAttribute> handlers,
+            CompositeSignalHandlerAttribute composite, bool? forceAsync = null)
+        {
+            bool isSync = typeof(ICommand).IsAssignableFrom(commandType) || ImplementsGenericInterface(commandType, typeof(ICommand<>));
+            bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(commandType) || ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>));
+            bool isCompositeSync = typeof(ICompositeCommand).IsAssignableFrom(commandType);
+            bool isCompositeAsync = typeof(IAsyncCompositeCommand).IsAssignableFrom(commandType);
+
+            if (!(isSync || isAsync || isCompositeSync || isCompositeAsync))
+                return false;
+
+            bool registered = false;
+            foreach (var attr in handlers)
+            {
+                RegisterCommand(attr.SignalType, commandType, attr.Mode, attr.Priority, isAsync: forceAsync ?? (isAsync && !isSync));
+                registered = true;
+            }
+
+            if (composite != null)
+            {
+                bool compositeIsAsync = forceAsync ?? ((isCompositeAsync && !isCompositeSync) || (isAsync && !isSync));
+                RegisterCompositeCommand(composite.SignalTypes, commandType, composite.OneShot, composite.Priority, compositeIsAsync);
+                registered = true;
+            }
+
+            return registered;
+        }
+
         /// <summary>Returns true when at least one command handler is registered for the signal type.</summary>
         public bool HasCommandHandler(Type signalType)
             => _commandRegistry.TryGetHandlers(signalType, out var handlers) && handlers.Count > 0;

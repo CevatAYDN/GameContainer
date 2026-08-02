@@ -131,36 +131,29 @@ namespace Nexus.Editor
             var signalHandlers = new Dictionary<Type, List<(Type CommandType, SignalHandlerAttribute Attr)>>();
             
             // Scan all loaded assemblies
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                    var name = assembly.GetName().Name;
+                    var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (type.IsClass && !type.IsAbstract)
                     {
-                        if (type.IsClass && !type.IsAbstract)
+                        var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                        foreach (var attr in attrs)
                         {
-                            var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                            foreach (var attr in attrs)
+                            if (!signalHandlers.TryGetValue(attr.SignalType, out var list))
                             {
-                                if (!signalHandlers.TryGetValue(attr.SignalType, out var list))
-                                {
-                                    list = new List<(Type, SignalHandlerAttribute)>();
-                                    signalHandlers[attr.SignalType] = list;
-                                }
-                                list.Add((type, attr));
+                                list = new List<(Type, SignalHandlerAttribute)>();
+                                signalHandlers[attr.SignalType] = list;
                             }
+                            list.Add((type, attr));
                         }
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    Debug.LogWarning($"[Nexus] Handler validation skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
                 }
             }
 
@@ -311,39 +304,27 @@ namespace Nexus.Editor
             var scriptCache = BuildTypeScriptCache();
 
             // 1. Gather all disposable models and lifecycle paths
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                var name = assembly.GetName().Name;
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (type.IsClass && !type.IsAbstract)
                     {
-                        if (type.IsClass && !type.IsAbstract)
+                        if (typeof(IDisposableModel).IsAssignableFrom(type))
                         {
-                            if (typeof(IDisposableModel).IsAssignableFrom(type))
-                            {
-                                disposableModels.Add(type);
-                            }
-                            else if (typeof(IContextLifecycle).IsAssignableFrom(type) && scriptCache.TryGetValue(type, out var path))
-                            {
-                                lifecyclePaths.Add(path);
-                            }
+                            disposableModels.Add(type);
+                        }
+                        else if (typeof(IContextLifecycle).IsAssignableFrom(type) && scriptCache.TryGetValue(type, out var path))
+                        {
+                            lifecyclePaths.Add(path);
                         }
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    LogTypeLoadWarning("model ownership", assembly, ex, ref warningCount);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Nexus Warning] Model ownership validation skipped assembly '{assembly.FullName}': {ex.Message}");
-                    warningCount++;
                 }
             }
 
@@ -408,49 +389,42 @@ namespace Nexus.Editor
             }
 
             // 2. Gather from IContextLifecycle Attributes (git-friendly distributed registration)
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                var name = assembly.GetName().Name;
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (type.IsClass && !type.IsAbstract && typeof(IContextLifecycle).IsAssignableFrom(type))
                     {
-                        if (type.IsClass && !type.IsAbstract && typeof(IContextLifecycle).IsAssignableFrom(type))
+                        var attrs = type.GetCustomAttributes<ContextDependsOnAttribute>();
+                        if (attrs != null)
                         {
-                            var attrs = type.GetCustomAttributes<ContextDependsOnAttribute>();
-                            if (attrs != null)
+                            string scope = type.Name;
+                            if (scope.EndsWith("ContextLifecycle", StringComparison.OrdinalIgnoreCase))
+                                scope = scope.Substring(0, scope.Length - 16);
+                            else if (scope.EndsWith("Lifecycle", StringComparison.OrdinalIgnoreCase))
+                                scope = scope.Substring(0, scope.Length - 9);
+
+                            if (!dependenciesByName.TryGetValue(scope, out var deps))
                             {
-                                string scope = type.Name;
-                                if (scope.EndsWith("ContextLifecycle", StringComparison.OrdinalIgnoreCase))
-                                    scope = scope.Substring(0, scope.Length - 16);
-                                else if (scope.EndsWith("Lifecycle", StringComparison.OrdinalIgnoreCase))
-                                    scope = scope.Substring(0, scope.Length - 9);
+                                deps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                                dependenciesByName[scope] = deps;
+                            }
 
-                                if (!dependenciesByName.TryGetValue(scope, out var deps))
+                            foreach (var attr in attrs)
+                            {
+                                if (!string.IsNullOrEmpty(attr.DependencyScopeName))
                                 {
-                                    deps = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                                    dependenciesByName[scope] = deps;
-                                }
-
-                                foreach (var attr in attrs)
-                                {
-                                    if (!string.IsNullOrEmpty(attr.DependencyScopeName))
-                                    {
-                                        deps.Add(attr.DependencyScopeName);
-                                    }
+                                    deps.Add(attr.DependencyScopeName);
                                 }
                             }
                         }
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    Debug.LogWarning($"[Nexus Warning] Context dependency validation skipped types from assembly '{assembly.FullName}': {ex.Message}");
                 }
             }
 
@@ -495,29 +469,13 @@ namespace Nexus.Editor
             return false;
         }
 
-        private static void LogTypeLoadWarning(string validationArea, Assembly assembly, ReflectionTypeLoadException exception, ref int warningCount)
-        {
-            var loaderExceptions = exception.LoaderExceptions;
-            int loaderExceptionCount = loaderExceptions?.Length ?? 0;
-            Debug.LogWarning($"[Nexus Warning] {validationArea} validation skipped types from assembly '{assembly.FullName}': {exception.Message} ({loaderExceptionCount} loader exceptions).");
-            warningCount++;
-        }
-
         private static void ValidateContextDataConfiguration(ref int errorCount, ref int warningCount)
         {
             var contextDataAssets = AssetDatabase.FindAssets("t:ContextData");
             var loadedAssemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                try
-                {
-                    loadedAssemblies.Add(assembly.GetName().Name);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Nexus Warning] ContextData configuration could not inspect assembly '{assembly.FullName}': {ex.Message}");
-                    warningCount++;
-                }
+                loadedAssemblies.Add(AssemblyCatalog.GetSimpleName(assembly));
             }
 
             foreach (var guid in contextDataAssets)
@@ -625,106 +583,92 @@ namespace Nexus.Editor
         /// </summary>
         private static void ValidateCommandStateLeak(ref int errorCount, ref int warningCount)
         {
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                var name = assembly.GetName().Name;
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (!type.IsClass || type.IsAbstract) continue;
+                    bool isCommand = typeof(ICommand).IsAssignableFrom(type)
+                        || typeof(IAsyncCommand).IsAssignableFrom(type)
+                        || typeof(ICompositeCommand).IsAssignableFrom(type)
+                        || typeof(IAsyncCompositeCommand).IsAssignableFrom(type)
+                        || SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>))
+                        || SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
+                    if (!isCommand) continue;
+
+                    bool implementsResettable = typeof(IResettable).IsAssignableFrom(type);
+
+                    var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    foreach (var field in fields)
                     {
-                        if (!type.IsClass || type.IsAbstract) continue;
-                        bool isCommand = typeof(ICommand).IsAssignableFrom(type)
-                            || typeof(IAsyncCommand).IsAssignableFrom(type)
-                            || typeof(ICompositeCommand).IsAssignableFrom(type)
-                            || typeof(IAsyncCompositeCommand).IsAssignableFrom(type)
-                            || SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>))
-                            || SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
-                        if (!isCommand) continue;
+                        // Skip [Inject]-annotated fields (auto-cleared by CommandPool)
+                        if (field.GetCustomAttribute<InjectAttribute>() != null)
+                            continue;
 
-                        bool implementsResettable = typeof(IResettable).IsAssignableFrom(type);
+                        // Skip auto-property backing fields whose property has [Inject]
+                        if (IsAutoPropertyWithInject(field, type))
+                            continue;
 
-                        var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                        foreach (var field in fields)
+                        // Skip readonly/const fields (they can't leak)
+                        if (field.IsInitOnly || field.IsLiteral)
+                            continue;
+
+                        // Skip value types that are primitives (int, bool, etc. — trivially reset)
+                        if (field.FieldType.IsPrimitive)
+                            continue;
+
+                        // Skip enum fields — they're backed by integers and trivially re-assigned
+                        if (field.FieldType.IsEnum)
+                            continue;
+
+                        // A non-injected, non-readonly, non-primitive mutable field in a command
+                        // that does not implement IResettable is a potential state leak
+                        if (!implementsResettable)
                         {
-                            // Skip [Inject]-annotated fields (auto-cleared by CommandPool)
-                            if (field.GetCustomAttribute<InjectAttribute>() != null)
-                                continue;
-
-                            // Skip auto-property backing fields whose property has [Inject]
-                            if (IsAutoPropertyWithInject(field, type))
-                                continue;
-
-                            // Skip readonly/const fields (they can't leak)
-                            if (field.IsInitOnly || field.IsLiteral)
-                                continue;
-
-                            // Skip value types that are primitives (int, bool, etc. — trivially reset)
-                            if (field.FieldType.IsPrimitive)
-                                continue;
-
-                            // Skip enum fields — they're backed by integers and trivially re-assigned
-                            if (field.FieldType.IsEnum)
-                                continue;
-
-                            // A non-injected, non-readonly, non-primitive mutable field in a command
-                            // that does not implement IResettable is a potential state leak
-                            if (!implementsResettable)
+                            string strictQA = System.Environment.GetEnvironmentVariable("NEXUS_STRICT_QA_LEAK");
+                            bool errorOnLeak = !string.IsNullOrEmpty(strictQA) && (strictQA == "1" || strictQA.Equals("true", StringComparison.OrdinalIgnoreCase));
+                            if (errorOnLeak)
                             {
-                                string strictQA = System.Environment.GetEnvironmentVariable("NEXUS_STRICT_QA_LEAK");
-                                bool errorOnLeak = !string.IsNullOrEmpty(strictQA) && (strictQA == "1" || strictQA.Equals("true", StringComparison.OrdinalIgnoreCase));
-                                if (errorOnLeak)
-                                {
-                                    Debug.LogError($"[Nexus Error] Command State Leak Violation: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable.");
-                                    errorCount++;
-                                }
-                                else
-                                {
-                                    Debug.LogWarning($"[Nexus Warning] Command State Leak Risk: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable. This field may retain state across pooled reuses. Fix: Implement IResettable and clear state in Reset(), or mark the field as readonly.");
-                                    warningCount++;
-                                }
+                                Debug.LogError($"[Nexus Error] Command State Leak Violation: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable.");
+                                errorCount++;
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"[Nexus Warning] Command State Leak Risk: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable. This field may retain state across pooled reuses. Fix: Implement IResettable and clear state in Reset(), or mark the field as readonly.");
+                                warningCount++;
                             }
                         }
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    Debug.LogWarning($"[Nexus] Command state leak scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
                 }
             }
         }
 
         private static void ValidateNoStubServices(ref int errorCount, ref int warningCount)
         {
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                var name = assembly.GetName().Name;
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (!type.IsClass || type.IsAbstract) continue;
+                    var stubAttr = type.GetCustomAttribute<StubServiceAttribute>();
+                    if (stubAttr != null)
                     {
-                        if (!type.IsClass || type.IsAbstract) continue;
-                        var stubAttr = type.GetCustomAttribute<StubServiceAttribute>();
-                        if (stubAttr != null)
-                        {
-                            var msg = $"[Nexus Warning] Stub Service: {type.FullName} is a stub{(string.IsNullOrEmpty(stubAttr.Description) ? "" : $" — {stubAttr.Description}")}. Replace with a real SDK implementation before release.";
-                            Debug.LogWarning(msg);
-                            warningCount++;
-                        }
+                        var msg = $"[Nexus Warning] Stub Service: {type.FullName} is a stub{(string.IsNullOrEmpty(stubAttr.Description) ? "" : $" — {stubAttr.Description}")}. Replace with a real SDK implementation before release.";
+                        Debug.LogWarning(msg);
+                        warningCount++;
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    Debug.LogWarning($"[Nexus] Stub service scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
                 }
             }
         }
@@ -756,38 +700,31 @@ namespace Nexus.Editor
             var compositeSignalSets = new List<(Type CommandType, Type[] SignalTypes)>();
             var allHandledSignalTypes = new HashSet<Type>();
 
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                var name = assembly.GetName().Name;
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (!type.IsClass || type.IsAbstract) continue;
+
+                    // Collect [SignalHandler] signal types
+                    var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                    foreach (var attr in handlerAttrs)
                     {
-                        if (!type.IsClass || type.IsAbstract) continue;
-
-                        // Collect [SignalHandler] signal types
-                        var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                        foreach (var attr in handlerAttrs)
-                        {
-                            allHandledSignalTypes.Add(attr.SignalType);
-                        }
-
-                        // Collect [CompositeSignalHandler] entries
-                        var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-                        if (compositeAttr != null)
-                        {
-                            compositeSignalSets.Add((type, compositeAttr.SignalTypes));
-                        }
+                        allHandledSignalTypes.Add(attr.SignalType);
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    Debug.LogWarning($"[Nexus] Composite trigger scan skipped assembly '{assembly.GetName().Name}': {ex.LoaderExceptions?[0]?.Message ?? ex.Message}");
+
+                    // Collect [CompositeSignalHandler] entries
+                    var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                    if (compositeAttr != null)
+                    {
+                        compositeSignalSets.Add((type, compositeAttr.SignalTypes));
+                    }
                 }
             }
 
@@ -821,60 +758,48 @@ namespace Nexus.Editor
             var signalTypeMap = BuildSignalTypeMap();
 
             // 1. Gather all handlers and composite handlers
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                var name = assembly.GetName().Name;
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (type.IsClass && !type.IsAbstract)
                     {
-                        if (type.IsClass && !type.IsAbstract)
+                        // Standard SignalHandler
+                        var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                        foreach (var attr in handlerAttrs)
                         {
-                            // Standard SignalHandler
-                            var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                            foreach (var attr in handlerAttrs)
+                            if (!signalCommands.TryGetValue(attr.SignalType, out var list))
                             {
-                                if (!signalCommands.TryGetValue(attr.SignalType, out var list))
-                                {
-                                    list = new List<Type>();
-                                    signalCommands[attr.SignalType] = list;
-                                }
-                                if (!list.Contains(type)) list.Add(type);
+                                list = new List<Type>();
+                                signalCommands[attr.SignalType] = list;
                             }
+                            if (!list.Contains(type)) list.Add(type);
+                        }
 
-                            // Composite SignalHandler
-                            var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-                            if (compositeAttr != null && compositeAttr.SignalTypes != null)
+                        // Composite SignalHandler
+                        var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                        if (compositeAttr != null && compositeAttr.SignalTypes != null)
+                        {
+                            foreach (var sigType in compositeAttr.SignalTypes)
                             {
-                                foreach (var sigType in compositeAttr.SignalTypes)
+                                if (sigType != null)
                                 {
-                                    if (sigType != null)
+                                    if (!signalCommands.TryGetValue(sigType, out var list))
                                     {
-                                        if (!signalCommands.TryGetValue(sigType, out var list))
-                                        {
-                                            list = new List<Type>();
-                                            signalCommands[sigType] = list;
-                                        }
-                                        if (!list.Contains(type)) list.Add(type);
+                                        list = new List<Type>();
+                                        signalCommands[sigType] = list;
                                     }
+                                    if (!list.Contains(type)) list.Add(type);
                                 }
                             }
                         }
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    LogTypeLoadWarning("composite trigger reachability", assembly, ex, ref warningCount);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Nexus Warning] Composite trigger reachability skipped assembly '{assembly.FullName}': {ex.Message}");
-                    warningCount++;
                 }
             }
 
@@ -1020,31 +945,10 @@ namespace Nexus.Editor
             return false;
         }
 
+        /// <summary>Delegates to <see cref="AssemblyCatalog"/> so validation sees the same
+        /// assembly universe as every other Nexus editor tool.</summary>
         private static bool IsAssemblyExcluded(string name)
-        {
-            if (name == null) return true;
-            if (name.StartsWith("System", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("Unity", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("Microsoft", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("mono", StringComparison.OrdinalIgnoreCase)) return true;
-            // Third-party and Unity-internal assemblies that should not be DI-validated
-            if (name.StartsWith("Newtonsoft", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("Grpc", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("ExCSS", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("log4net", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("TextMateSharp", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("Onigwrap", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("unityplastic", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("Codice", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("Plastic", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("NUnit", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("MCPForUnity", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("Mono", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.StartsWith("nunit.framework", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.Equals("mscorlib", StringComparison.OrdinalIgnoreCase)) return true;
-            if (name.Equals("netstandard", StringComparison.OrdinalIgnoreCase)) return true;
-            return false;
-        }
+            => AssemblyCatalog.IsFrameworkAssembly(name) || AssemblyCatalog.IsThirdPartyAssembly(name);
 
         private static bool IsTypeAvailable(Type type, HashSet<string> availableTypeNames)
         {
@@ -1073,34 +977,22 @@ namespace Nexus.Editor
             var availableTypeNames = new HashSet<string>(StringComparer.Ordinal);
             var scannedTypes = new List<Type>();
 
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                var name = assembly.GetName().Name;
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
                 if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (type.FullName != null)
                     {
-                        if (type.FullName != null)
-                        {
-                            availableTypeNames.Add(type.FullName);
-                            if (!type.IsAbstract && !type.IsInterface && !type.IsEnum && !type.IsValueType)
-                                scannedTypes.Add(type);
-                        }
+                        availableTypeNames.Add(type.FullName);
+                        if (!type.IsAbstract && !type.IsInterface && !type.IsEnum && !type.IsValueType)
+                            scannedTypes.Add(type);
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    LogTypeLoadWarning("DI binding", assembly, ex, ref warningCount);
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Nexus Warning] DI binding validation skipped assembly '{assembly.FullName}': {ex.Message}");
-                    warningCount++;
                 }
             }
 
@@ -1220,31 +1112,20 @@ namespace Nexus.Editor
         private static Dictionary<string, Type> BuildSignalTypeMap()
         {
             var map = new Dictionary<string, Type>(StringComparer.OrdinalIgnoreCase);
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
             {
-                var name = assembly.GetName().Name;
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (type.IsValueType && !type.IsEnum && !type.IsPrimitive)
                     {
-                        if (type.IsValueType && !type.IsEnum && !type.IsPrimitive)
-                        {
-                            map[type.Name] = type;
-                            map[type.FullName] = type;
-                            string cleanFullName = type.FullName.Replace("+", ".");
-                            map[cleanFullName] = type;
-                        }
+                        map[type.Name] = type;
+                        map[type.FullName] = type;
+                        string cleanFullName = type.FullName.Replace("+", ".");
+                        map[cleanFullName] = type;
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    Debug.LogWarning($"[Nexus Warning] Signal type map skipped assembly '{assembly.FullName}': {ex.Message}");
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Nexus Warning] Signal type map skipped assembly '{assembly.FullName}': {ex.Message}");
                 }
             }
             return map;

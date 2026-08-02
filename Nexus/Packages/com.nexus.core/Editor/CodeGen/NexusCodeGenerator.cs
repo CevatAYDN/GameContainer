@@ -30,33 +30,24 @@ namespace Nexus.Editor
             {
                 // Quick-check: scan non-system assemblies for types with [Inject] attributes
                 // without generating the full binder (avoids triggering asset database refresh).
-                foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+                // HasInjectableTypes must match the same assembly filters used by GenerateBinder
+                // (test and editor assemblies excluded) so the Dashboard AOT warning is not a
+                // false positive triggered by test-fixture [Inject] attributes.
+                foreach (var assembly in AssemblyCatalog.RuntimeAssemblies())
                 {
-                    var name = assembly.GetName().Name;
-            if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono"))
-                continue;
-            // HasInjectableTypes must match the same assembly filters used by GenerateBinder
-            // (test and editor assemblies excluded) so the Dashboard AOT warning is not a
-            // false positive triggered by test-fixture [Inject] attributes.
-            if (name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-            if (name.IndexOf(".Editor", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                    try
+                    foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                     {
-                        foreach (var type in assembly.GetTypes())
+                        if (type.IsClass && !type.IsAbstract)
                         {
-                            if (type.IsClass && !type.IsAbstract)
-                            {
-                                var fields = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                foreach (var f in fields)
-                                    if (f.GetCustomAttribute<InjectAttribute>() != null) return true;
+                            var fields = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            foreach (var f in fields)
+                                if (f.GetCustomAttribute<InjectAttribute>() != null) return true;
 
-                                var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                                foreach (var p in properties)
-                                    if (p.GetCustomAttribute<InjectAttribute>() != null) return true;
-                            }
+                            var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            foreach (var p in properties)
+                                if (p.GetCustomAttribute<InjectAttribute>() != null) return true;
                         }
                     }
-                    catch (ReflectionTypeLoadException) { }
                 }
                 return false;
             }
@@ -100,69 +91,61 @@ namespace Nexus.Editor
             var networkSignalTypes = new List<Type>();
             
             // Gather all types containing [Inject] and all INetworkSignal implementations
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.RuntimeAssemblies())
             {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("Microsoft") || name.StartsWith("mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0 || name.IndexOf(".Editor", StringComparison.OrdinalIgnoreCase) >= 0)
-                    continue;
-
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (type.IsValueType && typeof(Nexus.Netcode.INetworkSignal).IsAssignableFrom(type))
                     {
-                        if (type.IsValueType && typeof(Nexus.Netcode.INetworkSignal).IsAssignableFrom(type))
+                        networkSignalTypes.Add(type);
+                    }
+
+                    if (type.IsClass && !type.IsAbstract)
+                    {
+                        bool hasInject = false;
+
+                        var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        foreach (var f in fields)
                         {
-                            networkSignalTypes.Add(type);
+                            if (f.GetCustomAttribute<InjectAttribute>() != null)
+                            {
+                                hasInject = true;
+                                break;
+                            }
                         }
 
-                        if (type.IsClass && !type.IsAbstract)
+                        if (!hasInject)
                         {
-                            bool hasInject = false;
-                            
-                            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                            foreach (var f in fields)
+                            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            foreach (var p in properties)
                             {
-                                if (f.GetCustomAttribute<InjectAttribute>() != null)
+                                if (p.GetCustomAttribute<InjectAttribute>() != null)
                                 {
                                     hasInject = true;
                                     break;
                                 }
                             }
+                        }
 
-                            if (!hasInject)
+                        if (!hasInject)
+                        {
+                            var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            foreach (var m in methods)
                             {
-                                var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                                foreach (var p in properties)
+                                if (m.GetCustomAttribute<InjectAttribute>() != null)
                                 {
-                                    if (p.GetCustomAttribute<InjectAttribute>() != null)
-                                    {
-                                        hasInject = true;
-                                        break;
-                                    }
+                                    hasInject = true;
+                                    break;
                                 }
                             }
+                        }
 
-                            if (!hasInject)
-                            {
-                                var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                                foreach (var m in methods)
-                                {
-                                    if (m.GetCustomAttribute<InjectAttribute>() != null)
-                                    {
-                                        hasInject = true;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if (hasInject)
-                            {
-                                injectTypes.Add(type);
-                            }
+                        if (hasInject)
+                        {
+                            injectTypes.Add(type);
                         }
                     }
                 }
-                catch (ReflectionTypeLoadException) { }
             }
 
             var cacheSb = new StringBuilder();
