@@ -55,6 +55,11 @@ namespace Nexus.Core
         private static readonly object s_addLock = new();
         private static int s_nextId = 1;
         private static int s_maxErrors = 1000;
+        // A10 fix: s_errorGrouping previously grew unboundedly — every unique
+        // "category:message" key stayed in memory forever even after its bag entries were
+        // pruned, so a long session with dynamic error messages (URLs, ids, filenames)
+        // leaked memory. Cap it and rebuild from the retained bag when exceeded.
+        private const int MaxGroupingKeys = 4096;
         private static bool s_enabled = true;
 
         public static event Action<ErrorEntry> OnErrorAdded;
@@ -73,6 +78,9 @@ namespace Nexus.Core
         }
 
         public static int TotalErrorCount => s_errors.Count;
+
+        /// <summary>Current unique grouping keys retained (A10 testability accessor).</summary>
+        internal static int GroupingKeyCount => s_errorGrouping.Count;
 
         public static void Collect(ErrorSeverity severity, ErrorCategory category, string message, string stackTrace = null, string context = null, string relatedType = null, bool logToConsole = true)
         {
@@ -114,6 +122,19 @@ namespace Nexus.Core
                 while (s_errors.Count > s_maxErrors)
                 {
                     s_errors.TryTake(out _);
+                }
+
+                // A10 fix: bound the grouping counters. When the unique-key cap is hit,
+                // rebuild the counters from the retained bag so the dictionary cannot grow
+                // without bound while Count semantics stay consistent with what is retained.
+                if (s_errorGrouping.Count > MaxGroupingKeys)
+                {
+                    s_errorGrouping.Clear();
+                    foreach (var retained in s_errors)
+                    {
+                        var retainedKey = $"{retained.Category}:{retained.Message}";
+                        s_errorGrouping[retainedKey] = s_errorGrouping.TryGetValue(retainedKey, out var cnt) ? cnt + 1 : 1;
+                    }
                 }
             }
 

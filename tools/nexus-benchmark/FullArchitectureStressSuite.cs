@@ -229,6 +229,12 @@ namespace NexusBench
         private static int _failures = 0;
         private static int _testCount = 0;
 
+        // A10: captured BEFORE this suite opts out of startup DI validation, so test 32b can
+        // assert the framework's default (ValidateOnStartup == true) even though the harness
+        // itself deliberately late-binds (services bound after Configure, resolved via
+        // ReInjectAll) and therefore runs with the documented opt-out enabled.
+        private static bool s_a10DefaultValidateOnStartup = true;
+
         private static void Report(string name, bool ok, string detail)
         {
             Console.WriteLine($"[Nexus Architecture Stress] {(ok ? "PASS" : "FAIL")}  {name}: {detail}");
@@ -241,6 +247,12 @@ namespace NexusBench
         {
             _failures = 0;
             _testCount = 0;
+            // A10: this suite intentionally late-binds many services (bound after Configure,
+            // resolved via ReInjectAll) — exactly the scenario ContextBuilder.ValidateOnStartup
+            // documents as opt-out. Capture the framework default for test 32b, then opt out so
+            // the stress suite's own binding order does not flood the log with validation noise.
+            s_a10DefaultValidateOnStartup = ContextBuilder.ValidateOnStartup;
+            ContextBuilder.ValidateOnStartup = false;
             Console.WriteLine();
             Console.WriteLine("===============================================================================");
             Console.WriteLine("[Nexus Architecture Stress] STARTING FULL ARCHITECTURE ADVERSARIAL STRESS SUITE");
@@ -281,6 +293,7 @@ namespace NexusBench
             TraceRegistry("after 25");
             Test_NetworkMonitor_Events_Latency_Pruning();
             Test_NetworkMonitor_Concurrent_Access();
+            Test_ErrorCollection_Grouping_Bounded();
             Test_PluginTraceSink_Auth_And_TracingContract();
             Test_EncryptedStorage_RoundTrip_TamperDetection();
             Test_Storage_SaveThrottler_OfflineTime_GameSave();
@@ -288,6 +301,7 @@ namespace NexusBench
             
             Test_Economy_And_Progression_Persistence_Integrity();
             Test_ContextBuilder_Validate_StrictInjection();
+            Test_DIValidation_AllBuilds_DefaultOn();
 
             Test_Async_SequentialOrdering_NoOverlap().GetAwaiter().GetResult();
             Test_Async_Overflow_Throws_AllBuilds().GetAwaiter().GetResult();
@@ -2219,6 +2233,42 @@ namespace NexusBench
             Report("26b. NetworkMonitor_Concurrent_Access", ok, detail);
         }
 
+        // ── 26c. ErrorCollection grouping counter bounded (A10 regression) ───────
+
+        private static void Test_ErrorCollection_Grouping_Bounded()
+        {
+            ErrorCollection.Clear();
+            ErrorCollection.Enabled = true;
+            int savedMax = ErrorCollection.MaxErrors;
+            bool ok = false;
+            string detail;
+            try
+            {
+                ErrorCollection.MaxErrors = 1000;
+                // A10: s_errorGrouping previously kept every unique "category:message" key
+                // forever, even after the bag pruned the entries — a long session with
+                // dynamic messages leaked memory. Push far more unique errors than the
+                // 4096-key cap and assert both the bag AND the grouping stay bounded.
+                for (int i = 0; i < 8000; i++)
+                {
+                    ErrorCollection.Collect(ErrorCollection.ErrorSeverity.Error, ErrorCollection.ErrorCategory.General,
+                        $"A10 Unique Error #{i}", stackTrace: null, context: null, relatedType: null, logToConsole: false);
+                }
+                int groupingKeys = ErrorCollection.GroupingKeyCount;
+                int bagCount = ErrorCollection.TotalErrorCount;
+                ok = groupingKeys <= 4096 && bagCount <= 1000;
+                detail = $"groupingKeys={groupingKeys} (cap 4096) bag={bagCount} (cap 1000)";
+            }
+            finally
+            {
+                ErrorCollection.Clear();
+                ErrorCollection.MaxErrors = savedMax;
+            }
+
+            Console.WriteLine($"[Nexus Architecture Stress] ErrorCollection grouping bounded: {ok}");
+            Report("26c. ErrorCollection_Grouping_Bounded", ok, detail);
+        }
+
         // ── 27. Plugin trace sink auth + tracing contract ───────────────────────
 
         private static void Test_PluginTraceSink_Auth_And_TracingContract()
@@ -2542,6 +2592,70 @@ namespace NexusBench
             Console.WriteLine($"[Nexus Architecture Stress] Builder validation: strict={ok}");
             Report("32. ContextBuilder_Validate_StrictInjection", ok,
                 "missing [Inject] field flagged, missing ctor param flagged, LazyInjection not flagged, [OptionalInject] not flagged, strict injection throws on unsatisfiable resolve");
+        }
+
+        // ── 32b. DI validation runs in ALL builds by default (A10 regression) ────
+
+        private static void Test_DIValidation_AllBuilds_DefaultOn()
+        {
+            bool saved = ContextBuilder.ValidateOnStartup;
+            bool ok = false;
+            string detail;
+            try
+            {
+                // A10: the Configure-time Validate() call was previously compiled out under
+                // UNITY_EDITOR — production builds ran zero DI validation and silently left
+                // [Inject] fields null. This harness IS a release build (no UNITY_EDITOR),
+                // so the default flag value and a working Validate() prove the gate is gone.
+                bool defaultOn = s_a10DefaultValidateOnStartup; // captured before suite opt-out
+                ContextBuilder.ValidateOnStartup = true;
+
+                var ctx = ContextFactory.Create();
+                try
+                {
+                    var lifecycle = new ValidationLifecycle();
+                    ctx.Configure(new[] { lifecycle });
+
+                    // The deliberately-broken host must surface a missing [Inject] field
+                    // through the SAME path Configure() now invokes in every build.
+                    var issues = lifecycle.Builder.Validate();
+                    bool missingField = issues.Exists(i => i.SourceType == typeof(ValidatedHost)
+                        && i.IssueType == DiValidationIssueType.MissingFieldDependency);
+
+                    // Opt-out must not break startup either. Computed explicitly so a throw
+                    // here fails the test instead of crashing the suite (reviewer finding).
+                    bool optOutOk = false;
+                    ContextBuilder.ValidateOnStartup = false;
+                    var ctx2 = ContextFactory.Create();
+                    try
+                    {
+                        ctx2.Configure(new[] { new ValidationLifecycle() });
+                        optOutOk = true;
+                    }
+                    finally
+                    {
+                        ctx2.Dispose();
+                    }
+
+                    ok = defaultOn && missingField && optOutOk;
+                    detail = $"defaultValidateOnStartup={defaultOn} missingFieldFlagged={missingField} optOutConfiguredOk={optOutOk}";
+                }
+                finally
+                {
+                    ctx.Dispose();
+                }
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                ContextBuilder.ValidateOnStartup = saved;
+            }
+
+            Console.WriteLine($"[Nexus Architecture Stress] DI validation all-builds: {ok}");
+            Report("32b. DIValidation_AllBuilds_DefaultOn", ok, detail);
         }
     }
 }

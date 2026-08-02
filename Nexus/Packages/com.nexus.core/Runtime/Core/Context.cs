@@ -228,20 +228,26 @@ namespace Nexus.Core
 
             ScanAssembliesAndRegister(_builder);
 
-#if UNITY_EDITOR
-            var issues = _builder.Validate();
-            if (issues.Count > 0)
+            // A10 fix: DI validation (missing dependencies, constructor explosion, captive
+            // dependencies) must run in ALL build targets, not just the editor — production
+            // builds previously ran zero validation and silently left [Inject] fields null
+            // with no diagnostic. Validate() only logs (it never throws), and games that do
+            // intentional late binding can opt out via ContextBuilder.ValidateOnStartup.
+            if (ContextBuilder.ValidateOnStartup)
             {
-                foreach (var issue in issues)
+                var issues = _builder.Validate();
+                if (issues.Count > 0)
                 {
-                    var message = $"[Nexus] DI Validation: {issue.Message}";
-                    if (NexusRuntime.Logger != null)
-                        NexusRuntime.Logger.LogError(message);
-                    else
-                        UnityEngine.Debug.LogError(message);
+                    foreach (var issue in issues)
+                    {
+                        var message = $"[Nexus] DI Validation: {issue.Message}";
+                        if (NexusRuntime.Logger != null)
+                            NexusRuntime.Logger.LogError(message);
+                        else
+                            UnityEngine.Debug.LogError(message);
+                    }
                 }
             }
-#endif
         }
 
         internal async ValueTask InitializeReactiveModelsAsync(CancellationToken ct)

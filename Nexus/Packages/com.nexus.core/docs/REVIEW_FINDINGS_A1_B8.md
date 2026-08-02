@@ -284,6 +284,24 @@ state thread-safety, per-frame allocation'lar ve event leak'leri.
 
 ---
 
+## 🛡️ Derin Hata & Refaktör Turu — 2026-08-02 (A10)
+
+**Kapsam:** `main` üzerinde derin hata avı — build-varyant davranış farkları, statik state sızıntıları,
+editor-only denetim boşlukları. `Context.Configure` → `Validate()` çağrısı `#if UNITY_EDITOR` içindeydi;
+`ErrorCollection.s_errorGrouping` sınırsız büyüyordu.
+**Kanıt:** `tools/nexus-benchmark` — **211/211 PASS, 0 FAIL, 0 uyarı** (Release).
+
+| Bulgu | Kök Neden | Çözüm | Kanıt |
+|---|---|---|---|
+| DI doğrulaması yalnızca editor'de çalışıyordu | `#if UNITY_EDITOR`; production'da A8 captive-dependency + eksik bağımlılık + constructor patlaması kontrolleri hiç koşmuyordu; `[Inject]` alanlar sessizce null kalıyordu | `Validate()` tüm build'lerde çalışıyor (yalnızca loglar, fırlatmaz); late-binding yapan projeler için `ContextBuilder.ValidateOnStartup` (varsayılan `true`) opt-out flag'i eklendi | `Context.cs:230–247`, `ContextBuilder.cs` |
+| `ErrorCollection.s_errorGrouping` sınırsız büyüyor | Bag `s_maxErrors` ile sınırlıyken grouping sözlüğü (eşsiz `category:message` key'leri) asla temizlenmiyordu — dinamik mesajlı uzun oturumlarda bellek sızıntısı | Eşsiz key sayısı 4096'yı aşınca grouping, eldeki bag'den yeniden kuruluyor (`s_addLock` altında; ConcurrentBag sayımı lock gerektirmez); `Count` artık "tutulan girdiler içindeki tekrar" anlamına geliyor | `ErrorCollection.cs:114–132` |
+
+**Notlar:**
+- `ValidateOnStartup` opt-out'u, Configure'dan sonra bağımlılık bağlayan (ReInjectAll/RecordPendingField deseni) projeler içindir; harness da bu yüzden kendi late-binding stress context'lerinde opt-out kullanır (varsayılan değer 32b testinde ayrıca doğrulanır).
+- Harness regresyon testleri: `26c. ErrorCollection_Grouping_Bounded` (8000 eşsiz hata → groupingKeys=1806 ≤ 4096, bag=1000 ≤ 1000) ve `32b. DIValidation_AllBuilds_DefaultOn` (varsayılan flag `true`, eksik `[Inject]` alan `Validate()` ile yüzeye çıkıyor, opt-out Configure'u kırmıyor).
+
+---
+
 ## 📌 Sonuç
 
 `cf66e9e` (ve çevresindeki sertleştirme commit'leri) storage/DI/UI/netcode alanlarındaki

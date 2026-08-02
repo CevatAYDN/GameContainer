@@ -14,6 +14,15 @@ namespace Nexus.Core
         private readonly List<Type> _reactiveModelTypes = new();
         private readonly List<Type> _serviceTypes = new();
 
+        /// <summary>
+        /// When true (default), <see cref="Context.Configure"/> runs DI validation in ALL
+        /// build targets — missing dependencies, constructor explosion, and captive
+        /// dependencies are surfaced as logged issues at startup. Previously this ran only
+        /// under <c>UNITY_EDITOR</c>, so production builds silently skipped every check.
+        /// Set to false for projects that intentionally defer bindings past Configure.
+        /// </summary>
+        public static bool ValidateOnStartup { get; set; } = true;
+
         public ContextBuilder(NexusDI container, SignalBus signalBus)
         {
             _container = container;
