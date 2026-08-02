@@ -156,7 +156,7 @@ aynı. `PostContexts` benzeri "tüm bağlamlar hazır olunca" global faz için
 
 Strange'in `Bind(anything).To(anything)` genelliği, Nexus'un tipe-özel
 `BindService`/`BindReactiveModel`/`BindMultiple` API'lerinden daha serbesttir.
-Nexus bu genelliği `NexusBinder<TKey,TValue>` (süit 7.1–7.8) ile geri kazanmıştır:
+Nexus bu genelliği `NexusBinder<TKey,TValue>` (`BinderSuite` B1–B8) ile geri kazanmıştır:
 MVCS dışı kataloglar, config tabloları, entity tanımları bu binder'da yaşar;
 MVCS içi bağlamalar tipe-özel, denetimli API'lerle kalır.
 
@@ -174,9 +174,9 @@ MVCS içi = tipe-özel API) korunuyor.
 - **Havuzlama + telemetri:** mediator/subscription havuzları, sızıntı uyarıları,
   `Metrics` (sinyal/komut oranları).
 - **Fault tolerance:** recovery engine, interceptor'lar, error collection.
-- **Harness ile kanıt:** `tools/nexus-benchmark` — 8 suite, tam mimarinin
-  çalışır kanıtı (benchmarks, stress, fuzz, cross-thread, services, binder,
-  registry, concurrent-diff).
+- **Harness ile kanıt:** `tools/nexus-benchmark` — 9 doğrulama süiti + benchmark grubu, tam mimarinin
+  çalışır kanıtı (benchmarks, recovery, stress, fuzz, cross-thread, game-session,
+  services, binder, registry, concurrent-diff).
 
 ---
 

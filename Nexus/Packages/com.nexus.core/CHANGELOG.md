@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **StrangeIoC-style binder & named injection** — `NexusBinder<TKey,TValue>` / `IBinder<TKey,TValue>` general-purpose fluent binder for non-MVCS catalogs (`Bind(key).To/.ToName/.ToFactory/.To<T>()`); named DI (`[Inject(Name=...)]` + `Bind<T>(name)`/`Resolve<T>(name)`, strict no-fallback — an unregistered name throws instead of silently using the default); lifecycle hooks (`[PostConstruct(Order)]`, `[Deconstruct(Order)]`, `[Construct]` alias); polymorphic shared-singleton binding (`BindMultiple<T1,T2[,T3],TImpl>()`); and race-safe one-shot commands (`BindCommandOnce`/`BindAsyncCommandOnce`/`.Once()`). Proven by `tools/nexus-benchmark` `BinderSuite` (B1–B8, DI1–DI6, P1–P3, DC1, CT1, ON1–ON3, ONC1–ONC2, PM1–PM3) and `Tests/Editor/StrangeStyleCapabilitiesTests.cs`.
+- **CommandExecutor & RecoveryEngine** — extracted from `SignalBus` so dispatch execution and recovery strategies live in testable modules (the old `CommandExecutionPipeline` orphan was dropped).
+- **UICanvasSystem** — canvas root creation, per-layer transforms, and modal interactivity policy moved into a dedicated module, making `WindowManager` a pure window-lifecycle orchestrator (ADR-0001).
+- **CompiledAccessorEmitter** — shared IL emitter for compiled field/property setter/getter delegates with reflection fallback (AOT/IL2CPP-safe); backs `NexusDI` injection/clearing.
+- **Shared observer core** — `ObservableProperty`/`ObservableList` observer machinery merged into one core (`SecureObservableCore`) with registration dedupe; supports the zero-GC observer contract.
+- **docs/REVIEW_FINDINGS_A1_B8.md** — permanent record of the 2026-08-01 review findings (A1–A6 + B1–B8) with per-finding fix evidence, closing the gap where the findings list previously existed only in a commit message.
 - **docs/INTEGRATION.md** — integration guide covering UPM (Git URL), npm (not applicable), and git submodule integration paths, including consumer-project verification steps.
 - **package.json** — declared `com.unity.ugui` (2.0.0) in `dependencies` (runtime asmdef references `UnityEngine.UI`; previously undeclared, which could break consumers without UGUI).
 - **IFloatingTextService & FloatingTextService** — 0-GC pooled floating text manager for World-Space to Screen UI numbers (`+$500`, `+$1.2M`, `-25 HP`).
@@ -25,6 +31,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **EncryptedStorageService** — HMAC-SHA256 output is now stored in **full 32 bytes** (previously truncated to 16, reducing effective security). New on-disk format (v2): `[VERSION:1] [IV:16] [HMAC:32] [ciphertext:N]`. Legacy v1 files (16-byte HMAC) are detected and migrated to v2 on first read. Format version byte enables forward migration.
 
 ### Fixed
+- **EncryptedStorageService** — replaced `File.Move(src, dst, overwrite)` (`.NET Core 3.0+`-only, absent from Unity's .NET Standard 2.1 reference profile) with `File.Replace` for atomic overwrite; first-save path falls back to `File.Move` when the destination does not exist (no `FileNotFoundException` on first write).
+- **EncryptedStorageService** — `SaveKeyToDisk` retry backoff now uses `Thread.Yield()` instead of `Thread.Sleep(10)` (no main-thread stall); `ExportEncryptedSaveData` file I/O moved outside the shared lock (B1 parity).
+- **Storage restore marshaling** — `GameSaveManager.LoadAsync` restores model state through the captured main-thread `SynchronizationContext` (null-safe fallback), so a save restore can never touch Unity APIs from a worker thread.
+- **SignalBus.Dispose** — added a `_disposed` guard preventing double-dispose through the `Context.Dispose → Container.Dispose` chain.
+- **WindowManager.Dispose** — clears `_pendingOpenWindows` so async openers stuck in the instantiation await cannot leave orphaned pending entries.
+- **NexusDI** — concurrent singleton construction now waits for the in-progress builder (10 s deadline, exception-safe marker cleanup) instead of throwing a spurious "circular dependency"; `_disposed`/`Binding.Instance` are `volatile`.
+- **EconomyService** — `Spend`/`Earn`/`SetBalance` release the `_balances` lock before `SaveBalance` and network validation (I/O and async calls cannot stall the main thread); `GetObservableBalance` is lock-free for existing entries.
+- **Root.IsInitialized / LazyInjection** — cross-thread fields are now `volatile` for correct visibility on the ARM memory model; sync-in-async dispatch respects `CancellationToken`.
+- **TracerPlugin** — `_selectedEventId` is reset in `OnDisable` (matching the `ClearTraces` contract); **FSMPlugin** silent catch in `OnStateChanged` unsubscribe now logs via `NexusRuntime.Logger.LogWarning`.
+- **NexusWindow.SwitchToPlugin** — now calls `OnEnable` on the target plugin (previously only called `OnDisable` on the old one); **NexusSetupWizard** logs a warning instead of silently creating an EventSystem without an InputModule; **Dashboard/GraphPlugin** scheduled items are paused/nullified on disable.
+- **BuildValidation / CodeGenerator** — protected `link.xml` from accidental overwrite; `BuildTypeScriptCache` scans nested types so `[SignalHandler]` commands defined as inner classes are findable by the async-call-graph cycle detector; remaining silent `ReflectionTypeLoadException` catches replaced with warnings.
 - **Context.Dispose** — resolved `INexusService` singletons are now disposed even when no `ContextBuilder` was configured (bare test contexts that bind services directly through the container previously orphaned them). Service lifecycle is Context-owned per the `NexusDI.Dispose` contract, so a missing builder no longer skips cleanup.
 - **PerformanceMonitor** — removed dead `s_lastFrameTime`/`s_frameCount` fields.
 - **AdService** — `ShowInterstitial` no longer invokes `onComplete` callback inside the `_lock`, preventing potential deadlock when the callback re-enters the service (e.g. showing another ad). Critical path restructured to `lock → check → unlock → callback`.

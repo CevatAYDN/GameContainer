@@ -88,6 +88,7 @@ When reviewing or self-auditing a PR, validate every check item:
 - 📖 [README.md](../README.md) — Framework index, decision flows, and file map
 - 📖 [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) — Plugin development & edge cases
 - 📜 [CHANGELOG.md](../CHANGELOG.md) — Release notes and changelog
+- 📋 [REVIEW_FINDINGS_A1_B8.md](REVIEW_FINDINGS_A1_B8.md) — 2026-08-01 review findings (A1–A6 + B1–B8) with per-finding fix evidence; consult it before re-flagging hardening items as new findings
 
 ---
 

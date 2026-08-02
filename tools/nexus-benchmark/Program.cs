@@ -409,17 +409,25 @@ namespace NexusBench
                 if (pinCore < Environment.ProcessorCount)
                 {
                     var proc = Process.GetCurrentProcess();
-                    try
+                    // ProcessorAffinity is only supported on Windows and Linux (CA1416);
+                    // on macOS the priority boost still applies.
+                    if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
                     {
-                        proc.ProcessorAffinity = (IntPtr)(1L << pinCore);
-                    }
-                    catch
-                    {
-                        Console.WriteLine($"[Nexus Benchmark] WARN: could not set ProcessorAffinity to core {pinCore}");
+                        try
+                        {
+                            proc.ProcessorAffinity = (IntPtr)(1L << pinCore);
+                        }
+                        catch
+                        {
+                            Console.WriteLine($"[Nexus Benchmark] WARN: could not set ProcessorAffinity to core {pinCore}");
+                        }
                     }
                     proc.PriorityClass = ProcessPriorityClass.High;
                     Thread.CurrentThread.Priority = ThreadPriority.Highest;
-                    Console.WriteLine($"[Nexus Benchmark] Pinned to core {pinCore} (affinity=0x{proc.ProcessorAffinity.ToInt64():X}, priority=High)");
+                    if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
+                        Console.WriteLine($"[Nexus Benchmark] Pinned to core {pinCore} (affinity=0x{proc.ProcessorAffinity.ToInt64():X}, priority=High)");
+                    else
+                        Console.WriteLine($"[Nexus Benchmark] Pinned to core {pinCore} (affinity=n/a — unsupported on this OS, priority=High)");
                 }
                 else
                 {
