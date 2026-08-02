@@ -112,11 +112,6 @@ namespace Nexus.Editor
             quickBar.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gm_refresh_all"), () => { RefreshSnapshot(); RenderActiveSection(); }, NexusEditorStyles.BtnGray));
             _root.Add(quickBar);
 
-            if (!_subscribedToPlayMode)
-            {
-                EditorApplication.playModeStateChanged += OnPlayModeChange;
-                _subscribedToPlayMode = true;
-            }
 
             RefreshSnapshot();
             RenderActiveSection();

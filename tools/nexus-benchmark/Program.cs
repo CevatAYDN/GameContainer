@@ -1,15 +1,3 @@
-// Standalone benchmark harness for the Nexus runtime — replicates every assertion in
-// Nexus/Packages/com.nexus.core/Tests/Runtime/PerformanceTests.cs (dispatch timing,
-// hot-path ns limits, steady-state zero-GC, pool reuse, and the
-// CommandPoolManager Get/Return zero-alloc regression) so the same numbers can be
-// produced on plain .NET when the Unity editor (6000.5) is unavailable.
-//
-// Run: dotnet run -c Release            (benchmarks + recovery regression)
-//      dotnet run -c Release -- --alloc-diag   (allocation-source diagnostics)
-//      dotnet run -c Release -- --pool-split   (pool round-trip split diagnostics)
-//      dotnet run -c Release -- --soak [N]     (repeat the full pipeline N times and
-//                                               watch heap/thread/static-cache growth)
-
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -92,7 +80,6 @@ namespace NexusBench
         private static void Dispatch1000Signals_CompletesUnderTime()
         {
             const int count = 1000;
-            // Warmup JIT
             for (int i = 0; i < 10; i++) _signalBus.Fire(new PerfSignal(i));
             _counter.Value = 0;
 
@@ -129,13 +116,9 @@ namespace NexusBench
 
         private static void CommandPoolManager_GetReturn_SteadyState_DoesNotAllocate()
         {
-            // Replicates CommandPoolManager_GetReturn_SteadyState_DoesNotAllocate in
-            // Tests/Runtime/PerformanceTests.cs: a fresh manager on the bound container,
-            // warmed up, then 5000 Get/Return round-trips measured for allocations.
             var manager = new CommandPoolManager(_container);
             var cmdType = typeof(PerfCommand);
 
-            // Warm up: JIT + pool growth + HashSet capacity + compiled clear setters.
             for (int i = 0; i < 100; i++)
             {
                 var cmd = manager.GetCommand(cmdType);
@@ -247,7 +230,6 @@ namespace NexusBench
             fsm.RegisterState(new BenchStateA());
             fsm.RegisterState(new BenchStateB());
 
-            // Warmup
             for (int i = 0; i < 50; i++)
             {
                 fsm.ChangeStateAsync<BenchStateA>().GetAwaiter().GetResult();
@@ -273,7 +255,6 @@ namespace NexusBench
             var bus = new SignalBus(new NexusDI(), new CommandPoolManager(new NexusDI()), new MockContext());
             var queue = new HybridQueue(bus);
 
-            // Warmup steady-state queue operations
             for (int b = 0; b < 10; b++)
             {
                 for (int i = 0; i < 10; i++) queue.EnqueueThreadSafe(new PerfSignal(i));
@@ -305,7 +286,6 @@ namespace NexusBench
             var poolManager = new CommandPoolManager(container);
             var bus = new SignalBus(container, poolManager, new MockContext());
 
-            // Warmup steady-state history operations
             for (int c = 0; c < 50; c++)
             {
                 for (int t = 0; t < 5; t++) history.Add(c * 5 + t, new NetcodePerfSignal(c * 5 + t));
@@ -322,13 +302,9 @@ namespace NexusBench
             const int cycles = 1000;
             for (int c = 50; c < 50 + cycles; c++)
             {
-                // Simulate 5 ticks of network signals
                 for (int t = 0; t < 5; t++) history.Add(c * 5 + t, new NetcodePerfSignal(c * 5 + t));
-                // Simulate rollback replay of 3 ticks
                 history.ReplaySignals(c * 5 + 2, bus);
-                // Simulate rollback compaction
                 history.RemoveSignalsAfter(c * 5 + 3);
-                // Prune confirmed ticks
                 history.Prune(c * 5 + 1);
             }
             long allocated = GC.GetAllocatedBytesForCurrentThread() - start;
@@ -409,8 +385,6 @@ namespace NexusBench
                 if (pinCore < Environment.ProcessorCount)
                 {
                     var proc = Process.GetCurrentProcess();
-                    // ProcessorAffinity is only supported on Windows and Linux (CA1416);
-                    // on macOS the priority boost still applies.
                     if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux())
                     {
                         try
@@ -475,7 +449,6 @@ namespace NexusBench
             Console.WriteLine(ResultSink.ToJson());
         }
 
-        /// <summary>Full pipeline: benchmarks + recovery regression + architecture stress suite.</summary>
         public static int RunAll()
         {
             _failures = 0;
@@ -502,6 +475,8 @@ namespace NexusBench
             _failures += RegistrySuite.Run();
             _failures += ConcurrentDiffSuite.Run();
             _failures += CapabilitiesSuite.Run();
+            _failures += LifecycleSuite.Run();
+            _failures += EvidenceSuite.Run();
             return _failures;
         }
     }

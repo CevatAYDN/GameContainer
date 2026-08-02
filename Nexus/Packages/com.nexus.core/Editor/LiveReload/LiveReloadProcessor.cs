@@ -21,6 +21,8 @@ namespace Nexus.Editor
         private static readonly ConcurrentDictionary<Type, MemberInfo[]> s_modelDataMembersCache = new();
         private static readonly ConcurrentDictionary<Type, bool> s_classLiveReloadCache = new();
         private static readonly ConcurrentDictionary<Type, MethodInfo> s_reloadMethodCache = new();
+        private static readonly HashSet<int> s_liveReloadInFlight = new();
+        private static readonly object s_liveReloadLock = new();
 
         private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
@@ -45,12 +47,31 @@ namespace Nexus.Editor
 
         internal static void TriggerLiveReload(ModelData modelData)
         {
-            var contexts = new List<IContext>(NexusRuntime.ActiveContexts);
-            foreach (var context in contexts)
+            if (modelData == null) return;
+
+            var modelId = modelData.GetInstanceID();
+            lock (s_liveReloadLock)
             {
-                if (context is Context ctx)
+                if (!s_liveReloadInFlight.Add(modelId))
+                    return;
+            }
+
+            try
+            {
+                var contexts = new List<IContext>(NexusRuntime.ActiveContexts);
+                foreach (var context in contexts)
                 {
-                    ProcessContainer(ctx.Container, modelData);
+                    if (context is Context ctx)
+                    {
+                        ProcessContainer(ctx.Container, modelData);
+                    }
+                }
+            }
+            finally
+            {
+                lock (s_liveReloadLock)
+                {
+                    s_liveReloadInFlight.Remove(modelId);
                 }
             }
         }

@@ -165,6 +165,12 @@ namespace Nexus.Core
             {
                 if (plan.FallbackType != null)
                 {
+                    if (!IsSyncCapableFallbackType(plan.FallbackType, signal))
+                    {
+                        _fireFailedSync(plan.FailedSignal);
+                        return RecoveryAction.Skip;
+                    }
+
                     _executor.Execute(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, 0, false), signal);
                 }
                 return RecoveryAction.Fallback;

@@ -1221,17 +1221,17 @@ namespace Nexus.Core
                     // Strange-style [Deconstruct] cleanup hooks run before IDisposable.Dispose.
                     RunDeconstructs(instance);
 
-                    if (instance is IDisposable disposable) disposable.Dispose();
-                    else if (instance is IAsyncDisposable asyncDisposable)
+                    if (instance is IAsyncDisposable asyncDisposable)
                     {
-                        // A8 fix: never block the calling thread on async disposal during
-                        // synchronous teardown. A blocking GetAwaiter().GetResult() on the
-                        // Unity main thread can sync-over-async deadlock when the async
-                        // dispose awaits work that needs the main thread. The async dispose
-                        // is scheduled on the thread pool with error capture; callers that
-                        // need deterministic teardown use Container.DisposeAsync() (reached
-                        // via Context.DisposeAsync()).
-                        _ = DisposeAsyncInBackground(asyncDisposable);
+                        // Deterministic teardown path: callers that need async cleanup should
+                        // use Container.DisposeAsync() (reached via Context.DisposeAsync()).
+                        // The sync path intentionally avoids fire-and-forget so disposal state
+                        // stays observable and teardown remains ordered.
+                        asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                    }
+                    else if (instance is IDisposable disposable)
+                    {
+                        disposable.Dispose();
                     }
                 }
                 catch (Exception ex)

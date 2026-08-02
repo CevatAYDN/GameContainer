@@ -82,9 +82,7 @@ namespace Nexus.Editor
         /// <summary>
         /// The canonical "game-relevant" assembly universe: everything that is not a
         /// framework or third-party assembly and is not a test assembly (unless
-        /// <paramref name="includeTests"/>). Editor-only assemblies are included — they
-        /// are part of the user's codebase and many tools (validation, plugin discovery,
-        /// inspection) legitimately look at them.
+        /// <paramref name="includeTests"/>).
         /// </summary>
         public static IEnumerable<Assembly> GameAssemblies(bool includeTests = false)
         {
@@ -94,17 +92,17 @@ namespace Nexus.Editor
                 var name = GetSimpleName(assembly);
                 if (IsFrameworkAssembly(name) || IsThirdPartyAssembly(name)) continue;
                 if (!includeTests && IsTestAssembly(name)) continue;
+                if (IsEditorAssembly(name)) continue;
                 yield return assembly;
             }
         }
 
         /// <summary>
-        /// Game assemblies excluding editor-only assemblies. This is the set used by
-        /// runtime-binder style scans (e.g. AOT codegen) that must never reference
-        /// editor-only types.
+        /// Runtime-only assembly set used by binder/codegen paths. Editor-only assemblies
+        /// are excluded so runtime generation never references editor types.
         /// </summary>
         public static IEnumerable<Assembly> RuntimeAssemblies(bool includeTests = false)
-            => GameAssemblies(includeTests).Where(a => !IsEditorAssembly(GetSimpleName(a)));
+            => GameAssemblies(includeTests);
 
         /// <summary>
         /// Safely enumerates a loaded assembly's types. On a <see cref="ReflectionTypeLoadException"/>

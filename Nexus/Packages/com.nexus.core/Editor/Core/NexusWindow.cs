@@ -491,6 +491,8 @@ namespace Nexus.Editor
         {
             EditorPrefs.SetString("Nexus_Locale", locale);
             NexusLang.LoadLocale(locale);
+            _uiCallbacksRegistered = false;
+            rootVisualElement.Clear();
             CreateGUI();
         }
     }

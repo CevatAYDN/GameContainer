@@ -153,7 +153,10 @@ namespace Nexus.Core
 
         public static MetricSample[] GetRecentSamples(int count = 100)
         {
-            return s_samples.TakeLast(count).ToArray();
+            lock (s_metricsLock)
+            {
+                return s_samples.TakeLast(count).ToArray();
+            }
         }
 
         public static void ClearHistory()

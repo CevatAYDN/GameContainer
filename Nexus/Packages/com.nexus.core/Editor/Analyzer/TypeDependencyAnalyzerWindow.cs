@@ -22,14 +22,17 @@ namespace Nexus.Editor
 
         private void CreateGUI()
         {
+            _plugin?.OnDisable();
             _plugin = new TypeAnalyzerPlugin();
             _plugin.Initialize(null); // No main window shell required for standalone mode
+            rootVisualElement.Clear();
             rootVisualElement.Add(_plugin.CreateView());
         }
 
         private void OnDisable()
         {
             _plugin?.OnDisable();
+            _plugin = null;
         }
     }
 }
