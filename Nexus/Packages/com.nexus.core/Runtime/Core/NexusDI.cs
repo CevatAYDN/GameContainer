@@ -28,6 +28,9 @@ namespace Nexus.Core
         internal readonly ConcurrentQueue<INexusService> _lazyServicesPendingInit = new();
         private readonly NexusDI _parent;
         private readonly ConcurrentDictionary<Type, Binding> _bindings = new();
+        // Named bindings (Strange-style named injection): key = (type, name).
+        // Resolution falls back to the default binding when a name is not registered.
+        private readonly ConcurrentDictionary<(Type Type, string Name), Binding> _namedBindings = new();
         private readonly HashSet<object> _resolvedSingletons = new();
         private volatile bool _disposed;
 
@@ -61,6 +64,8 @@ namespace Nexus.Core
             public Type Type { get; set; }
             public bool IsOptional { get; set; }
             public bool IsLazy { get; set; }
+            /// <summary>Optional named-binding discriminator ([Inject(Name = ...)]). Null = default binding.</summary>
+            public string Name { get; set; }
             /// <summary>Compiled setter delegate (fallback to reflection if null).</summary>
             public Action<object, object> Setter { get; set; }
             /// <summary>Compiled getter delegate (fallback to reflection if null).</summary>
@@ -71,6 +76,8 @@ namespace Nexus.Core
             public PropertyInfo Property { get; set; }
             public Type Type { get; set; }
             public bool IsOptional { get; set; }
+            /// <summary>Optional named-binding discriminator ([Inject(Name = ...)]). Null = default binding.</summary>
+            public string Name { get; set; }
             /// <summary>Compiled setter delegate (fallback to reflection if null).</summary>
             public Action<object, object> Setter { get; set; }
         }
@@ -79,14 +86,22 @@ namespace Nexus.Core
             public MethodInfo Method { get; set; }
             public Type[] ParameterTypes { get; set; }
             public bool[] OptionalParameterMask { get; set; }
+            /// <summary>Post-construct ordering when the method is [PostConstruct]-tagged.</summary>
+            public int PostConstructOrder { get; set; }
+            public bool IsPostConstruct { get; set; }
         }
         internal class InjectableMetadata
         {
             public InjectableField[] Fields { get; set; }
             public InjectableProperty[] Properties { get; set; }
             public InjectableMethod[] Methods { get; set; }
+            public InjectableMethod[] PostConstructMethods { get; set; }
+            /// <summary>Parameterless [Deconstruct]-tagged cleanup methods, ascending Order.</summary>
+            public InjectableMethod[] DeconstructMethods { get; set; }
             public ConstructorInfo Constructor { get; set; }
             public Type[] ConstructorParameterTypes { get; set; }
+            /// <summary>Per-parameter binding names for the injected constructor (null = default).</summary>
+            public string[] ConstructorParameterNames { get; set; }
         }
         private class ClearableMetadata
         {
@@ -117,7 +132,8 @@ namespace Nexus.Core
                     var fieldList = new List<InjectableField>();
                     foreach (var field in fields)
                     {
-                        if (field.GetCustomAttribute<InjectAttribute>() != null)
+                        var injectAttr = field.GetCustomAttribute<InjectAttribute>();
+                        if (injectAttr != null)
                         {
                             if (field.FieldType.IsValueType)
                                 throw new InvalidOperationException($"Cannot inject value type field {t.FullName}.{field.Name}. Nexus DI only supports reference-type dependencies.");
@@ -126,6 +142,7 @@ namespace Nexus.Core
                                 Field = field,
                                 Type = field.FieldType,
                                 IsOptional = field.GetCustomAttribute<OptionalInjectAttribute>() != null,
+                                Name = injectAttr.Name,
                                 IsLazy = field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(LazyInjection<>),
                                 Setter = CompiledAccessorEmitter.CompileFieldSetter(t, field),
                                 Getter = CompiledAccessorEmitter.CompileFieldGetter(t, field)
@@ -137,7 +154,8 @@ namespace Nexus.Core
                     var propList = new List<InjectableProperty>();
                     foreach (var prop in properties)
                     {
-                        if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite)
+                        var injectAttr = prop.GetCustomAttribute<InjectAttribute>();
+                        if (injectAttr != null && prop.CanWrite)
                         {
                             if (prop.PropertyType.IsValueType)
                                 throw new InvalidOperationException($"Cannot inject value type property {t.FullName}.{prop.Name}. Nexus DI only supports reference-type dependencies.");
@@ -146,6 +164,7 @@ namespace Nexus.Core
                                 Property = prop,
                                 Type = prop.PropertyType,
                                 IsOptional = prop.GetCustomAttribute<OptionalInjectAttribute>() != null,
+                                Name = injectAttr.Name,
                                 Setter = CompiledAccessorEmitter.CompilePropertySetter(t, prop)
                             });
                         }
@@ -153,9 +172,14 @@ namespace Nexus.Core
 
                     var methods = t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     var methodList = new List<InjectableMethod>();
+                    var postConstructList = new List<InjectableMethod>();
+                    var deconstructList = new List<InjectableMethod>();
                     foreach (var method in methods)
                     {
-                        if (method.GetCustomAttribute<InjectAttribute>() != null)
+                        var injectAttr = method.GetCustomAttribute<InjectAttribute>();
+                        var postAttr = method.GetCustomAttribute<PostConstructAttribute>();
+                        var deconstructAttr = method.GetCustomAttribute<DeconstructAttribute>();
+                        if (injectAttr != null)
                         {
                             var parameters = method.GetParameters();
                             var paramTypes = new Type[parameters.Length];
@@ -169,7 +193,37 @@ namespace Nexus.Core
                             }
                             methodList.Add(new InjectableMethod { Method = method, ParameterTypes = paramTypes, OptionalParameterMask = optionalMask });
                         }
+                        if (postAttr != null)
+                        {
+                            var parameters = method.GetParameters();
+                            if (parameters.Length != 0)
+                                throw new InvalidOperationException($"[PostConstruct] method {t.FullName}.{method.Name} must be parameterless.");
+                            postConstructList.Add(new InjectableMethod
+                            {
+                                Method = method,
+                                ParameterTypes = Array.Empty<Type>(),
+                                OptionalParameterMask = Array.Empty<bool>(),
+                                PostConstructOrder = postAttr.Order,
+                                IsPostConstruct = true
+                            });
+                        }
+                        if (deconstructAttr != null)
+                        {
+                            var parameters = method.GetParameters();
+                            if (parameters.Length != 0)
+                                throw new InvalidOperationException($"[Deconstruct] method {t.FullName}.{method.Name} must be parameterless.");
+                            deconstructList.Add(new InjectableMethod
+                            {
+                                Method = method,
+                                ParameterTypes = Array.Empty<Type>(),
+                                OptionalParameterMask = Array.Empty<bool>(),
+                                PostConstructOrder = deconstructAttr.Order,
+                                IsPostConstruct = false
+                            });
+                        }
                     }
+                    postConstructList.Sort((a, b) => a.PostConstructOrder.CompareTo(b.PostConstructOrder));
+                    deconstructList.Sort((a, b) => a.PostConstructOrder.CompareTo(b.PostConstructOrder));
 
                     ConstructorInfo targetCtor = null;
                     var constructors = t.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
@@ -177,10 +231,14 @@ namespace Nexus.Core
                     {
                         foreach (var ctor in constructors)
                         {
-                            if (ctor.GetCustomAttribute<InjectAttribute>() != null)
+                            // Accept both Strange-style [Construct] and Nexus-style [Inject]
+                            // spellings for the preferred constructor.
+                            bool marked = ctor.GetCustomAttribute<InjectAttribute>() != null
+                                || ctor.GetCustomAttribute<ConstructAttribute>() != null;
+                            if (marked)
                             {
                                 if (targetCtor != null)
-                                    throw new InvalidOperationException($"Multiple constructors marked with [Inject] in {t.FullName}. Only one injected constructor is allowed.");
+                                    throw new InvalidOperationException($"Multiple constructors marked with [Inject]/[Construct] in {t.FullName}. Only one injected constructor is allowed.");
                                 targetCtor = ctor;
                             }
                         }
@@ -204,22 +262,26 @@ namespace Nexus.Core
 
                                 if (targetCtor == null)
                                 {
-                                    throw new InvalidOperationException($"No suitable constructor found for type {t.FullName}. A type must either have a parameterless constructor or a constructor decorated with [Inject].");
+                                    throw new InvalidOperationException($"No suitable constructor found for type {t.FullName}. A type must either have a parameterless constructor or a constructor decorated with [Inject]/[Construct].");
                                 }
                             }
                         }
                     }
 
                     Type[] ctorParamTypes = null;
+                    string[] ctorParamNames = null;
                     if (targetCtor != null)
                     {
                         var parameters = targetCtor.GetParameters();
                         ctorParamTypes = new Type[parameters.Length];
+                        ctorParamNames = new string[parameters.Length];
                         for (int i = 0; i < parameters.Length; i++)
                         {
                             if (parameters[i].ParameterType.IsValueType)
                                 throw new InvalidOperationException($"Cannot inject value type constructor parameter {t.FullName}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
                             ctorParamTypes[i] = parameters[i].ParameterType;
+                            var paramInject = parameters[i].GetCustomAttribute<InjectAttribute>();
+                            if (paramInject != null) ctorParamNames[i] = paramInject.Name;
                         }
                     }
 
@@ -228,8 +290,11 @@ namespace Nexus.Core
                         Fields = fieldList.ToArray(),
                         Properties = propList.ToArray(),
                         Methods = methodList.ToArray(),
+                        PostConstructMethods = postConstructList.Count > 0 ? postConstructList.ToArray() : null,
+                        DeconstructMethods = deconstructList.Count > 0 ? deconstructList.ToArray() : null,
                         Constructor = targetCtor,
-                        ConstructorParameterTypes = ctorParamTypes
+                        ConstructorParameterTypes = ctorParamTypes,
+                        ConstructorParameterNames = ctorParamNames
                     };
                 });
             }
@@ -299,10 +364,13 @@ namespace Nexus.Core
                     return Activator.CreateInstance(type, true);
 
                 var paramTypes = meta.ConstructorParameterTypes;
+                var paramNames = meta.ConstructorParameterNames;
                 var args = new object[paramTypes.Length];
                 for (int i = 0; i < paramTypes.Length; i++)
                 {
-                    args[i] = _di.TryResolve(paramTypes[i]);
+                    args[i] = string.IsNullOrEmpty(paramNames?[i])
+                        ? _di.TryResolve(paramTypes[i])
+                        : _di.TryResolve(paramTypes[i], paramNames[i]);
                     if (args[i] == null && _di.StrictInjection)
                     {
                         throw new InvalidOperationException(
@@ -340,6 +408,46 @@ namespace Nexus.Core
                 InjectFields(instance, type, meta);
                 InjectProperties(instance, type, meta);
                 InjectMethods(instance, type, meta);
+                RunPostConstructs(instance, meta);
+            }
+
+            /// <summary>
+            /// Invokes every [PostConstruct]-tagged method in ascending Order after all
+            /// injections are applied. Dependencies are guaranteed non-null here.
+            /// </summary>
+            private void RunPostConstructs(object instance, InjectableMetadata meta)
+            {
+                if (meta.PostConstructMethods == null) return;
+                for (int i = 0; i < meta.PostConstructMethods.Length; i++)
+                {
+                    try { meta.PostConstructMethods[i].Method.Invoke(instance, null); }
+                    catch (TargetInvocationException ex)
+                    {
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex.InnerException).Throw();
+                        throw;
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Invokes every [Deconstruct]-tagged method in ascending Order BEFORE the instance
+            /// is disposed by the container. Dependencies are still non-null here.
+            /// </summary>
+            internal void RunDeconstructs(object instance, InjectableMetadata meta)
+            {
+                if (meta.DeconstructMethods == null) return;
+                for (int i = 0; i < meta.DeconstructMethods.Length; i++)
+                {
+                    try { meta.DeconstructMethods[i].Method.Invoke(instance, null); }
+                    catch (TargetInvocationException ex)
+                    {
+                        NexusRuntime.Logger?.LogError($"[Nexus] [Deconstruct] method {instance.GetType().FullName}.{meta.DeconstructMethods[i].Method.Name} threw: {ex.InnerException?.Message}");
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogError($"[Nexus] [Deconstruct] method {instance.GetType().FullName}.{meta.DeconstructMethods[i].Method.Name} threw: {ex.Message}");
+                    }
+                }
             }
 
             private void InjectFields(object instance, Type type, InjectableMetadata meta)
@@ -362,7 +470,9 @@ namespace Nexus.Core
                         continue;
                     }
 
-                    var resolvedValue = _di.TryResolve(f.Type);
+                    var resolvedValue = string.IsNullOrEmpty(f.Name)
+                        ? _di.TryResolve(f.Type)
+                        : _di.TryResolve(f.Type, f.Name);
                     if (resolvedValue != null)
                     {
                         MetadataCache.ApplyFieldSetter(f, instance, resolvedValue);
@@ -371,7 +481,7 @@ namespace Nexus.Core
                     else if (_di.StrictInjection)
                     {
                         throw new InvalidOperationException(
-                            $"Strict injection failed: [Inject] field '{type.FullName}.{f.Field.Name}' of type '{f.Type.FullName}' is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                            $"Strict injection failed: [Inject] field '{type.FullName}.{f.Field.Name}' of type '{f.Type.FullName}'{(string.IsNullOrEmpty(f.Name) ? "" : $" (name '{f.Name}')")} is not registered. Mark with [OptionalInject] if this dependency is optional.");
                     }
                     else
                     {
@@ -388,7 +498,9 @@ namespace Nexus.Core
                 for (int i = 0; i < meta.Properties.Length; i++)
                 {
                     var p = meta.Properties[i];
-                    var resolvedValue = _di.TryResolve(p.Type);
+                    var resolvedValue = string.IsNullOrEmpty(p.Name)
+                        ? _di.TryResolve(p.Type)
+                        : _di.TryResolve(p.Type, p.Name);
                     if (resolvedValue != null)
                     {
                         MetadataCache.ApplyPropertySetter(p, instance, resolvedValue);
@@ -397,7 +509,7 @@ namespace Nexus.Core
                     else if (_di.StrictInjection)
                     {
                         throw new InvalidOperationException(
-                            $"Strict injection failed: [Inject] property '{type.FullName}.{p.Property.Name}' of type '{p.Type.FullName}' is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                            $"Strict injection failed: [Inject] property '{type.FullName}.{p.Property.Name}' of type '{p.Type.FullName}'{(string.IsNullOrEmpty(p.Name) ? "" : $" (name '{p.Name}')")} is not registered. Mark with [OptionalInject] if this dependency is optional.");
                     }
                     else
                     {
@@ -512,6 +624,52 @@ namespace Nexus.Core
             _bindings[type] = new Binding { ConcreteType = type, IsSingleton = isSingleton };
         }
 
+        /// <summary>Binds a named implementation (Strange-style). Resolves only against [Inject(Name=...)].</summary>
+        public void Bind<TInterface, TImplementation>(string name, bool isSingleton = true) where TImplementation : class, TInterface
+        {
+            if (string.IsNullOrEmpty(name)) { Bind<TInterface, TImplementation>(isSingleton); return; }
+            _namedBindings[(typeof(TInterface), name)] = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
+        }
+
+        /// <summary>Binds a named self-referencing type.</summary>
+        public void Bind<T>(string name, bool isSingleton = true) where T : class
+        {
+            if (string.IsNullOrEmpty(name)) { Bind<T>(isSingleton); return; }
+            _namedBindings[(typeof(T), name)] = new Binding { ConcreteType = typeof(T), IsSingleton = isSingleton };
+        }
+
+        /// <summary>Binds a named type (reflection-form).</summary>
+        public void Bind(Type type, string name, bool isSingleton = true)
+        {
+            if (string.IsNullOrEmpty(name)) { Bind(type, isSingleton); return; }
+            _namedBindings[(type, name)] = new Binding { ConcreteType = type, IsSingleton = isSingleton };
+        }
+
+        /// <summary>
+        /// Binds a single concrete implementation under MULTIPLE interfaces (Strange-style
+        /// polymorphic binding: <c>Bind&lt;IHittable&gt;().Bind&lt;IUpdateable&gt;().To&lt;Romulan&gt;()</c>).
+        /// All keys share ONE <see cref="Binding"/> object, so a singleton resolves to the same
+        /// instance through every interface; a transient binding produces a fresh instance per
+        /// resolve, also shared across all interfaces for that single resolve.
+        /// </summary>
+        public void BindMultiple<TInterface1, TInterface2, TImplementation>(bool isSingleton = true)
+            where TImplementation : class, TInterface1, TInterface2
+        {
+            var shared = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
+            _bindings[typeof(TInterface1)] = shared;
+            _bindings[typeof(TInterface2)] = shared;
+        }
+
+        /// <summary>Three-interface polymorphic binding (see the two-interface overload).</summary>
+        public void BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>(bool isSingleton = true)
+            where TImplementation : class, TInterface1, TInterface2, TInterface3
+        {
+            var shared = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
+            _bindings[typeof(TInterface1)] = shared;
+            _bindings[typeof(TInterface2)] = shared;
+            _bindings[typeof(TInterface3)] = shared;
+        }
+
         public void BindInstance<T>(T instance) where T : class
         {
             BindInstance(instance, disposeWithContainer: true);
@@ -527,15 +685,61 @@ namespace Nexus.Core
             }
         }
 
+        /// <summary>Binds a named instance value.</summary>
+        public void BindInstance<T>(string name, T instance) where T : class
+        {
+            if (string.IsNullOrEmpty(name)) { BindInstance(instance); return; }
+            _namedBindings[(typeof(T), name)] = new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true };
+            lock (_singletonLock)
+                _resolvedSingletons.Add(instance);
+        }
+
         public void BindFactory<T>(Func<T> factory) where T : class
         {
             _bindings[typeof(T)] = new Binding { ConcreteType = typeof(T), Factory = factory, IsSingleton = false };
+        }
+
+        /// <summary>Binds a named factory (a fresh instance per resolve).</summary>
+        public void BindFactory<T>(string name, Func<T> factory) where T : class
+        {
+            if (string.IsNullOrEmpty(name)) { BindFactory(factory); return; }
+            _namedBindings[(typeof(T), name)] = new Binding { ConcreteType = typeof(T), Factory = factory, IsSingleton = false };
         }
 
         // ─── Public API: Resolve ───
         public T Resolve<T>() where T : class => (T)Resolve(typeof(T));
         public T TryResolve<T>() where T : class => IsRegistered(typeof(T)) ? Resolve<T>() : null;
         public object TryResolve(Type type) => (type != null && IsRegistered(type)) ? Resolve(type) : null;
+
+        /// <summary>
+        /// Resolves a named binding. An explicitly requested but unregistered name throws —
+        /// it never silently falls back to the default binding (that would mask typos).
+        /// An empty name delegates to the default path.
+        /// </summary>
+        public T Resolve<T>(string name) where T : class
+            => string.IsNullOrEmpty(name) ? Resolve<T>() : (T)Resolve(typeof(T), name);
+
+        /// <summary>Resolves a named binding (reflection-form). Throws when the name is explicitly requested but unregistered.</summary>
+        public object Resolve(Type type, string name)
+        {
+            if (string.IsNullOrEmpty(name)) return Resolve(type);
+            if (_namedBindings.TryGetValue((type, name), out var named))
+                return ResolveBinding(type, named);
+            if (_parent != null && _parent.IsRegistered(type, name))
+                return _parent.Resolve(type, name);
+            throw new InvalidOperationException($"Dependency of type {type.FullName} named '{name}' is not registered.");
+        }
+
+        /// <summary>
+        /// Attempts to resolve a named binding; returns null when the name is not registered
+        /// (never falls back to the default binding). Empty name delegates to the default path.
+        /// </summary>
+        public object TryResolve(Type type, string name)
+        {
+            if (type == null) return null;
+            if (string.IsNullOrEmpty(name)) return TryResolve(type);
+            return IsRegistered(type, name) ? Resolve(type, name) : null;
+        }
 
         public object Resolve(Type type)
         {
@@ -544,91 +748,110 @@ namespace Nexus.Core
                 return ExternalAdapter.Resolve(type);
 
             if (_bindings.TryGetValue(type, out var binding))
-            {
-                if (binding.Instance != null) return binding.Instance;
-                if (binding.Factory != null) return binding.Factory();
-
-                s_resolutionStack ??= new HashSet<Type>();
-                if (!s_resolutionStack.Add(type))
-                    throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}. Resolution chain forms a cycle.");
-
-                bool addedToConstructing = false;
-                try
-                {
-                    if (binding.IsSingleton)
-                    {
-                        object singletonInstance = binding.Instance;
-                        if (singletonInstance != null) return singletonInstance;
-
-                        // B2: same-thread cycles are caught by the thread-local
-                        // s_resolutionStack above, so a failed Add here can only mean
-                        // ANOTHER thread is mid-construction of this singleton. Wait for
-                        // the builder instead of throwing a spurious "circular dependency"
-                        // on a perfectly valid concurrent first-resolve.
-                        var constructionDeadline = DateTime.UtcNow.AddSeconds(10);
-                        while (true)
-                        {
-                            lock (_singletonLock)
-                            {
-                                if (_disposed)
-                                    throw new ObjectDisposedException(nameof(NexusDI), $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
-
-                                if (binding.Instance != null) return binding.Instance;
-                                if (_constructingSingletons.Add(type))
-                                {
-                                    addedToConstructing = true;
-                                    break;
-                                }
-                            }
-
-                            // Another thread is building this singleton right now. Yield
-                            // briefly and retry — the builder publishes binding.Instance
-                            // (volatile) and removes the construction marker on exit.
-                            if (DateTime.UtcNow > constructionDeadline)
-                                throw new InvalidOperationException($"Timed out waiting for concurrent construction of singleton {type.FullName}.");
-                            Thread.Yield();
-                        }
-
-                        try
-                        {
-                            singletonInstance = _injector.CreateInstance(binding.ConcreteType);
-                            _injector.Inject(singletonInstance);
-                            lock (_singletonLock)
-                            {
-                                binding.Instance = singletonInstance;
-                                _resolvedSingletons.Add(singletonInstance);
-                            }
-                        }
-                        finally
-                        {
-                            lock (_singletonLock)
-                            {
-                                _constructingSingletons.Remove(type);
-                            }
-                            addedToConstructing = false;
-                        }
-                        return singletonInstance;
-                    }
-
-                    var transientInstance = _injector.CreateInstance(binding.ConcreteType);
-                    _injector.Inject(transientInstance);
-                    return transientInstance;
-                }
-                finally
-                {
-                    s_resolutionStack.Remove(type);
-                    if (addedToConstructing) _constructingSingletons.Remove(type);
-                }
-            }
+                return ResolveBinding(type, binding);
 
             if (_parent != null) return _parent.Resolve(type);
             throw new InvalidOperationException($"Dependency of type {type.FullName} is not registered.");
+        }
+
+        /// <summary>
+        /// Shared resolve core for both default and named bindings: singleton construction
+        /// with cross-thread waiting, factory mapping, and transient instantiation.
+        /// </summary>
+        private object ResolveBinding(Type type, Binding binding)
+        {
+            if (binding.Instance != null) return binding.Instance;
+            if (binding.Factory != null) return binding.Factory();
+
+            s_resolutionStack ??= new HashSet<Type>();
+            if (!s_resolutionStack.Add(type))
+                throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}. Resolution chain forms a cycle.");
+
+            bool addedToConstructing = false;
+            try
+            {
+                if (binding.IsSingleton)
+                {
+                    object singletonInstance = binding.Instance;
+                    if (singletonInstance != null) return singletonInstance;
+
+                    // B2: same-thread cycles are caught by the thread-local
+                    // s_resolutionStack above, so a failed Add here can only mean
+                    // ANOTHER thread is mid-construction of this singleton. Wait for
+                    // the builder instead of throwing a spurious "circular dependency"
+                    // on a perfectly valid concurrent first-resolve.
+                    var constructionDeadline = DateTime.UtcNow.AddSeconds(10);
+                    while (true)
+                    {
+                        lock (_singletonLock)
+                        {
+                            if (_disposed)
+                                throw new ObjectDisposedException(nameof(NexusDI), $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
+
+                            if (binding.Instance != null) return binding.Instance;
+                            if (_constructingSingletons.Add(type))
+                            {
+                                addedToConstructing = true;
+                                break;
+                            }
+                        }
+
+                        // Another thread is building this singleton right now. Yield
+                        // briefly and retry — the builder publishes binding.Instance
+                        // (volatile) and removes the construction marker on exit.
+                        if (DateTime.UtcNow > constructionDeadline)
+                            throw new InvalidOperationException($"Timed out waiting for concurrent construction of singleton {type.FullName}.");
+                        Thread.Yield();
+                    }
+
+                    try
+                    {
+                        singletonInstance = _injector.CreateInstance(binding.ConcreteType);
+                        _injector.Inject(singletonInstance);
+                        lock (_singletonLock)
+                        {
+                            binding.Instance = singletonInstance;
+                            _resolvedSingletons.Add(singletonInstance);
+                        }
+                    }
+                    finally
+                    {
+                        lock (_singletonLock)
+                        {
+                            _constructingSingletons.Remove(type);
+                        }
+                        addedToConstructing = false;
+                    }
+                    return singletonInstance;
+                }
+
+                var transientInstance = _injector.CreateInstance(binding.ConcreteType);
+                _injector.Inject(transientInstance);
+                return transientInstance;
+            }
+            finally
+            {
+                s_resolutionStack.Remove(type);
+                if (addedToConstructing) _constructingSingletons.Remove(type);
+            }
         }
 
         // ─── Public API: Inject (delegates to Injector) ───
         public void Inject(object instance)
         {
             _injector.Inject(instance);
+        }
+
+        /// <summary>
+        /// Runs every <c>[Deconstruct]</c>-tagged cleanup method on the instance (ascending
+        /// Order). Invoked automatically for container-owned singletons during Dispose;
+        /// exposed publicly so the Context can run cleanup for services it disposes.
+        /// </summary>
+        public void RunDeconstructs(object instance)
+        {
+            if (instance == null) return;
+            var meta = MetadataCache.GetOrCreateInjectMetadata(instance.GetType());
+            _injector.RunDeconstructs(instance, meta);
         }
 
         // ─── Public API: ReInject (pending tracking) ───
@@ -643,7 +866,7 @@ namespace Nexus.Core
             for (int i = pending.Fields.Count - 1; i >= 0; i--)
             {
                 var f = pending.Fields[i];
-                var resolvedValue = TryResolve(f.Type);
+                var resolvedValue = string.IsNullOrEmpty(f.Name) ? TryResolve(f.Type) : TryResolve(f.Type, f.Name);
                 if (resolvedValue != null) { MetadataCache.ApplyFieldSetter(f, instance, resolvedValue); pending.Fields.RemoveAt(i); }
                 else { allSucceeded = false; }
             }
@@ -651,7 +874,7 @@ namespace Nexus.Core
             for (int i = pending.Properties.Count - 1; i >= 0; i--)
             {
                 var p = pending.Properties[i];
-                var resolvedValue = TryResolve(p.Type);
+                var resolvedValue = string.IsNullOrEmpty(p.Name) ? TryResolve(p.Type) : TryResolve(p.Type, p.Name);
                 if (resolvedValue != null) { MetadataCache.ApplyPropertySetter(p, instance, resolvedValue); pending.Properties.RemoveAt(i); }
                 else { allSucceeded = false; }
             }
@@ -750,9 +973,24 @@ namespace Nexus.Core
             return _parent != null && _parent.IsRegistered(type);
         }
 
+        /// <summary>
+        /// Returns true only when a NAMED binding exists for the type+name (strict — no
+        /// fallback to the default registration). This lets strict injection catch a
+        /// misspelled <c>[Inject(Name = "...")]</c> instead of silently injecting the default.
+        /// </summary>
+        public bool IsRegistered(Type type, string name)
+        {
+            if (type == null) return false;
+            if (string.IsNullOrEmpty(name)) return IsRegistered(type);
+            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type)) return true;
+            if (_namedBindings.ContainsKey((type, name))) return true;
+            return _parent != null && _parent.IsRegistered(type, name);
+        }
+
         internal HashSet<Type> GetAllRegisteredTypes()
         {
             var types = new HashSet<Type>(_bindings.Keys);
+            foreach (var kvp in _namedBindings) types.Add(kvp.Key.Type);
             types.Add(typeof(NexusDI));
             types.Add(typeof(IContext));
             types.Add(typeof(ISignalBus));
@@ -871,6 +1109,10 @@ namespace Nexus.Core
                     // Context, which disposes services in reverse registration order. Skipping
                     // them here prevents double-dispose (NexusService<T>.OnDispose → Dispose()).
                     if (instance is INexusService) continue;
+
+                    // Strange-style [Deconstruct] cleanup hooks run before IDisposable.Dispose.
+                    RunDeconstructs(instance);
+
                     if (instance is IDisposable disposable) disposable.Dispose();
                     else if (instance is IAsyncDisposable asyncDisposable)
                     {
@@ -889,6 +1131,7 @@ namespace Nexus.Core
                 }
             }
             _bindings.Clear();
+            _namedBindings.Clear();
         }
 
         public async ValueTask DisposeAsync()
@@ -913,6 +1156,10 @@ namespace Nexus.Core
                         // Same contract as Dispose(): INexusService lifecycle is owned by the
                         // owning Context, so skip here to avoid double-dispose.
                         if (instance is INexusService) continue;
+
+                        // Strange-style [Deconstruct] cleanup hooks run before disposal.
+                        RunDeconstructs(instance);
+
                         if (instance is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
                         else if (instance is IDisposable disposable) disposable.Dispose();
                     }
@@ -923,6 +1170,7 @@ namespace Nexus.Core
                 }
             }
             _bindings.Clear();
+            _namedBindings.Clear();
         }
 
         public static void ClearCaches()

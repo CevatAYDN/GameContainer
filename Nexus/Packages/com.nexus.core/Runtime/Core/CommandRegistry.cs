@@ -71,7 +71,8 @@ namespace Nexus.Core
         }
 
         /// <summary>Registers a synchronous or async command for a signal type.</summary>
-        public void RegisterCommand(Type signalType, Type commandType, ExecutionMode mode, int priority, bool isAsync)
+        /// <param name="oneShot">When true the handler fires once then is unregistered.</param>
+        public void RegisterCommand(Type signalType, Type commandType, ExecutionMode mode, int priority, bool isAsync, bool oneShot = false)
         {
             var genericSyncType = typeof(ICommand<>).MakeGenericType(signalType);
             var genericAsyncType = typeof(IAsyncCommand<>).MakeGenericType(signalType);
@@ -124,7 +125,7 @@ namespace Nexus.Core
                     }
                 }
 
-                list.Add(new CommandHandlerInfo(commandType, mode, priority, isAsync, timeoutMs));
+                list.Add(new CommandHandlerInfo(commandType, mode, priority, isAsync, timeoutMs, oneShot));
                 _handlersSnapshotDirty = true;
 
                 if (isAsync)
@@ -148,6 +149,77 @@ namespace Nexus.Core
             }
 
             _container.Bind(commandType, isSingleton: false);
+        }
+
+        /// <summary>
+        /// Removes a previously registered command handler (used by one-shot commands after
+        /// their single execution). Rebuilds the lock-free read copy so subsequent fires no
+        /// longer see the handler. No-op when the handler is not registered.
+        /// </summary>
+        public void UnregisterCommand(Type signalType, Type commandType)
+        {
+            lock (_handlerReadLock)
+            {
+                if (!_commandHandlers.TryGetValue(signalType, out var list))
+                    return;
+
+                int removed = list.RemoveAll(h => h.CommandType == commandType);
+                if (removed == 0) return;
+
+                RebuildHandlerReadCopies(signalType, list);
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds the volatile read-copy snapshots after a handler-list mutation under
+        /// <see cref="_handlerReadLock"/>. Removes the signal entirely when its list is empty,
+        /// otherwise recomputes the async flag for the remaining handlers.
+        /// </summary>
+        private void RebuildHandlerReadCopies(Type signalType, List<CommandHandlerInfo> list)
+        {
+            if (list.Count == 0)
+            {
+                _commandHandlers.Remove(signalType);
+                _hasAsyncHandler.Remove(signalType);
+            }
+            else
+            {
+                // Recompute the async flag for the remaining handlers.
+                bool anyAsync = false;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (list[i].IsAsync) { anyAsync = true; break; }
+                }
+                _hasAsyncHandler[signalType] = anyAsync;
+            }
+
+            _handlersSnapshotDirty = true;
+            _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers.Count);
+            foreach (var kvp in _commandHandlers)
+                _commandHandlersReadCopy[kvp.Key] = new List<CommandHandlerInfo>(kvp.Value);
+            _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>(_hasAsyncHandler);
+        }
+
+        /// <summary>
+        /// Atomically claims a one-shot command handler so it can fire at most once even under
+        /// concurrent Fire calls. Returns true only to the fire that wins the claim (that caller
+        /// must execute the command); false means the handler was already claimed by a concurrent
+        /// fire, is not registered as one-shot, or is not registered at all.
+        /// </summary>
+        public bool TryClaimOneShot(Type signalType, Type commandType)
+        {
+            lock (_handlerReadLock)
+            {
+                if (!_commandHandlers.TryGetValue(signalType, out var list))
+                    return false;
+
+                // Only one-shot handlers are claimable; persistent handlers are untouched.
+                int removed = list.RemoveAll(h => h.CommandType == commandType && h.IsOneShot);
+                if (removed == 0) return false;
+
+                RebuildHandlerReadCopies(signalType, list);
+                return true;
+            }
         }
 
         /// <summary>Registers a composite command that triggers on multiple signals.</summary>

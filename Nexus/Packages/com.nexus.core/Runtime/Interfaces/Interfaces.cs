@@ -123,6 +123,8 @@ namespace Nexus.Core
     {
         ICommandBindingBuilder<TSignal> To<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class;
         ICommandBindingBuilder<TSignal> ToAsync<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class;
+        /// <summary>Marks the next To/ToAsync as one-shot: it fires once then is unregistered.</summary>
+        ICommandBindingBuilder<TSignal> Once();
     }
 
     public interface IContextBuilder
@@ -176,11 +178,42 @@ namespace Nexus.Core
         void Bind<T>() where T : class;
         void BindInstance<T>(T instance) where T : class;
 
+        /// <summary>Binds a named implementation (Strange-style named injection).</summary>
+        void Bind<TInterface, TImplementation>(string name) where TImplementation : class, TInterface;
+        /// <summary>Binds a named self-referencing type.</summary>
+        void Bind<T>(string name) where T : class;
+        /// <summary>Binds a named instance value.</summary>
+        void BindInstance<T>(string name, T instance) where T : class;
+
+        /// <summary>
+        /// Creates and registers a general-purpose <see cref="NexusBinder{TKey,TValue}"/> as a
+        /// singleton so it can be injected anywhere (Strange-style generic binder).
+        /// <c>TKey</c> may be any reference or value type (enums are the canonical catalog key).
+        /// </summary>
+        void BindBinder<TKey, TValue>() where TKey : notnull;
+
+        /// <summary>
+        /// Binds one concrete implementation under MULTIPLE interfaces (Strange-style
+        /// polymorphic binding). All keys share a single singleton instance.
+        /// </summary>
+        void BindMultiple<TInterface1, TInterface2, TImplementation>()
+            where TImplementation : class, TInterface1, TInterface2;
+        /// <summary>Three-interface polymorphic binding (see the two-interface overload).</summary>
+        void BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>()
+            where TImplementation : class, TInterface1, TInterface2, TInterface3;
+
         void EnableStrictInjection();
         
         void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class where TSignal : struct;
         void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
+            where TCommand : class where TSignal : struct;
+
+        /// <summary>Registers a one-shot command: it fires once then is unregistered (Strange-style <c>.Once()</c>).</summary>
+        void BindCommandOnce<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0)
+            where TCommand : class where TSignal : struct;
+        /// <summary>Registers a one-shot async command: it fires once then is unregistered.</summary>
+        void BindAsyncCommandOnce<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0)
             where TCommand : class where TSignal : struct;
 
         ICommandBindingBuilder<TSignal> BindSignal<TSignal>() where TSignal : struct;
@@ -255,6 +288,11 @@ namespace Nexus.Core
 
         ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct;
         ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct;
+
+        /// <summary>Returns true when at least one command handler is registered for the signal type.</summary>
+        bool HasCommandHandler(Type signalType);
+        /// <summary>Generic form of <see cref="HasCommandHandler(Type)"/>.</summary>
+        bool HasCommandHandler<TSignal>() where TSignal : struct;
     }
 
     public interface ISignalSubscription : IDisposable

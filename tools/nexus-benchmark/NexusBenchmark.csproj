@@ -35,6 +35,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ITickable.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Interfaces/**/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Attributes/**/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Binding/Binder.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Recovery/**/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Queue/HybridQueue.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Plugins/PluginSystem.cs" />
@@ -97,6 +98,9 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ResourcesUIAssetProvider.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/WindowManager.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/UICanvasSystem.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ScreenView.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ScreenMediator.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/UIManager.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapService.cs" />
     <!-- Fully guarded/UI-only files: NexusDOTSBridge is #if UNITY_COLLECTIONS (empty

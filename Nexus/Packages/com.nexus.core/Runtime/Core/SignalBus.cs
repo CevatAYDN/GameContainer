@@ -152,12 +152,20 @@ namespace Nexus.Core
             return false;
         }
 
-        public void RegisterCommand(Type signalType, Type commandType, ExecutionMode mode, int priority, bool isAsync)
+        public void RegisterCommand(Type signalType, Type commandType, ExecutionMode mode, int priority, bool isAsync, bool oneShot = false)
         {
             // Registration, validation, snapshot rebuild, async-handler tracking, and DI binding
             // all live in the CommandRegistry — SignalBus only dispatches against the registry.
-            _commandRegistry.RegisterCommand(signalType, commandType, mode, priority, isAsync);
+            _commandRegistry.RegisterCommand(signalType, commandType, mode, priority, isAsync, oneShot);
         }
+
+        /// <summary>Returns true when at least one command handler is registered for the signal type.</summary>
+        public bool HasCommandHandler(Type signalType)
+            => _commandRegistry.TryGetHandlers(signalType, out var handlers) && handlers.Count > 0;
+
+        /// <summary>Generic form of <see cref="HasCommandHandler(Type)"/>.</summary>
+        public bool HasCommandHandler<TSignal>() where TSignal : struct
+            => HasCommandHandler(typeof(TSignal));
 
         public void RegisterCompositeCommand(Type[] signalTypes, Type commandType, bool oneShot, int priority, bool isAsync)
         {
@@ -348,8 +356,13 @@ namespace Nexus.Core
                 // Phase 1: Process commands (mutate state)
                 if (_commandRegistry.TryGetHandlers(type, out var handlers))
                 {
+                    // One-shot handlers are claimed atomically BEFORE execution: the winning
+                    // fire executes, concurrent fires that observe the same read-copy snapshot
+                    // lose the claim and skip — guaranteeing exactly-once even under races.
                     foreach (var handler in handlers)
                     {
+                        if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
+                            continue; // another fire already claimed this one-shot handler
                         _commandExecutor.Execute(handler, signal);
                     }
                 }
@@ -504,8 +517,33 @@ namespace Nexus.Core
                 {
                     if (handlers.Count > 0 && handlers[0].Mode == ExecutionMode.Concurrent)
                     {
+                        // One-shot handlers are claimed atomically BEFORE any task starts so a
+                        // concurrent fire can never double-execute them. Claiming first also
+                        // guarantees the async one-shot is consumed synchronously before the
+                        // first await, closing the race where a second fire slips in while the
+                        // first command is still pending.
+                        var toRun = handlers;
+                        bool anyOneShot = false;
+                        for (int i = 0; i < handlers.Count && !anyOneShot; i++)
+                            anyOneShot = handlers[i].IsOneShot;
+
+                        if (anyOneShot)
+                        {
+                            // Build a fresh runnable list: a one-shot that a concurrent fire
+                            // already claimed must be dropped, so falling back to the original
+                            // snapshot (which still contains it) would double-execute.
+                            toRun = new List<CommandHandlerInfo>(handlers.Count);
+                            for (int i = 0; i < handlers.Count; i++)
+                            {
+                                var handler = handlers[i];
+                                if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
+                                    continue; // already claimed by a concurrent fire — skip
+                                toRun.Add(handler);
+                            }
+                        }
+
                         // Run concurrently
-                        int taskCount = handlers.Count;
+                        int taskCount = toRun.Count;
                         var tasks = System.Buffers.ArrayPool<ValueTask>.Shared.Rent(taskCount);
                         int started = 0;
                         try
@@ -516,7 +554,7 @@ namespace Nexus.Core
                             // unobserved and their work is silently lost).
                             for (; started < taskCount; started++)
                             {
-                                tasks[started] = _commandExecutor.ExecuteAsync(handlers[started], signal, commandCt);
+                                tasks[started] = _commandExecutor.ExecuteAsync(toRun[started], signal, commandCt);
                             }
 
                             for (int i = 0; i < started; i++)
@@ -544,9 +582,13 @@ namespace Nexus.Core
                     }
                     else
                     {
-                        // Run sequentially
+                        // Run sequentially. One-shot handlers are claimed atomically BEFORE their
+                        // single run so concurrent fires can never double-execute them; the async
+                        // one-shot is consumed synchronously before its first await.
                         foreach (var handler in handlers)
                         {
+                            if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
+                                continue; // another fire already claimed this one-shot handler
                             if (handler.IsAsync)
                             {
                                 await _commandExecutor.ExecuteAsync(handler, signal, commandCt);

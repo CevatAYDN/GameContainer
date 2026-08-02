@@ -30,6 +30,13 @@ namespace Nexus.Core
         /// </summary>
         public int TimeoutMs { get; }
 
+        /// <summary>
+        /// When true, the handler fires ONCE then is unregistered (Strange-style
+        /// <c>Bind(...).To&lt;TCommand&gt;().Once()</c>). The command still receives a fresh
+        /// pooled instance for its single execution.
+        /// </summary>
+        public bool IsOneShot { get; }
+
         /// <summary>Cached trace label ("  └ CommandName") so hot-path tracing does not allocate.</summary>
         internal string TraceLabel { get; }
 
@@ -39,13 +46,15 @@ namespace Nexus.Core
         /// <param name="priority">Execution priority (<b>higher runs first</b>, sorted descending).</param>
         /// <param name="isAsync">Whether the command is asynchronous (<see cref="IAsyncCommand"/>).</param>
         /// <param name="timeoutMs">Execution timeout in milliseconds (0 = no timeout).</param>
-        public CommandHandlerInfo(Type commandType, ExecutionMode mode, int priority, bool isAsync, int timeoutMs = 0)
+        /// <param name="isOneShot">When true the handler fires once then is unregistered.</param>
+        public CommandHandlerInfo(Type commandType, ExecutionMode mode, int priority, bool isAsync, int timeoutMs = 0, bool isOneShot = false)
         {
             CommandType = commandType;
             Mode = mode;
             Priority = priority;
             IsAsync = isAsync;
             TimeoutMs = timeoutMs;
+            IsOneShot = isOneShot;
             TraceLabel = "  └ " + commandType.Name;
         }
     }

@@ -96,10 +96,66 @@ namespace Nexus.Core
 
     /// <summary>
     /// Marks a constructor, field, property, or method for dependency injection by the Nexus DI container.
+    /// Supports an optional binding name (Strange-style named injection) so multiple
+    /// implementations of the same interface can coexist:
+    /// <code>[Inject(Name = "primary")] public IStorage Storage { get; set; }</code>
     /// </summary>
     [AttributeUsage(AttributeTargets.Constructor | AttributeTargets.Field | AttributeTargets.Property | AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
     [Preserve]
     public sealed class InjectAttribute : Attribute
+    {
+        /// <summary>
+        /// Optional binding name discriminating between multiple registrations of the
+        /// same type (see <c>NexusDI.Bind(name)</c> / <c>IContextBuilder.Bind(name)</c>).
+        /// Null/empty = the default (unnamed) binding.
+        /// </summary>
+        public string Name { get; set; }
+
+        public InjectAttribute() { }
+
+        /// <param name="name">Binding name this dependency resolves against.</param>
+        public InjectAttribute(string name)
+        {
+            Name = name;
+        }
+    }
+
+    /// <summary>
+    /// Marks a parameterless method to run once, immediately after all injections for the
+    /// instance have been applied (Strange-style <c>[PostConstruct]</c>). Dependencies are
+    /// guaranteed non-null here. Methods run in ascending <see cref="Order"/>.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
+    [Preserve]
+    public sealed class PostConstructAttribute : Attribute
+    {
+        /// <summary>Execution order; lower values run first. Defaults to 0.</summary>
+        public int Order { get; set; } = 0;
+    }
+
+    /// <summary>
+    /// Marks a parameterless method to run when the owning <see cref="NexusDI"/> container
+    /// disposes the instance (Strange-style <c>[Deconstruct]</c>). Dependencies are still
+    /// non-null here. Methods run in ascending <see cref="Order"/> and are invoked BEFORE
+    /// the instance's <see cref="IDisposable.Dispose"/>.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
+    [Preserve]
+    public sealed class DeconstructAttribute : Attribute
+    {
+        /// <summary>Execution order; lower values run first. Defaults to 0.</summary>
+        public int Order { get; set; } = 0;
+    }
+
+    /// <summary>
+    /// Marks the preferred constructor for dependency injection (Strange-style
+    /// <c>[Construct]</c> alias). Nexus also accepts <c>[Inject]</c> on constructors; both
+    /// spellings select the constructor explicitly. When neither is present, the
+    /// parameterless constructor is used when available.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Constructor, AllowMultiple = false, Inherited = true)]
+    [Preserve]
+    public sealed class ConstructAttribute : Attribute
     {
     }
 

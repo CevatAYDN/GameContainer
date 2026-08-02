@@ -64,6 +64,48 @@ namespace Nexus.Core
             _container.BindInstance(instance);
         }
 
+        /// <summary>Binds a named implementation (Strange-style named injection).</summary>
+        public void Bind<TInterface, TImplementation>(string name) where TImplementation : class, TInterface
+        {
+            _container.Bind<TInterface, TImplementation>(name, isSingleton: true);
+        }
+
+        /// <summary>Binds a named self-referencing type.</summary>
+        public void Bind<T>(string name) where T : class
+        {
+            _container.Bind<T>(name, isSingleton: true);
+        }
+
+        /// <summary>Binds a named instance value.</summary>
+        public void BindInstance<T>(string name, T instance) where T : class
+        {
+            _container.BindInstance(name, instance);
+        }
+
+        /// <summary>
+        /// Creates and registers a general-purpose <see cref="NexusBinder{TKey,TValue}"/> as a
+        /// singleton so it can be injected anywhere (Strange-style generic binder):
+        /// <code>[Inject] public IBinder&lt;UnitType, UnitDefinition&gt; Units { get; set; }</code>
+        /// </summary>
+        public void BindBinder<TKey, TValue>() where TKey : notnull
+        {
+            _container.BindInstance<IBinder<TKey, TValue>>(new NexusBinder<TKey, TValue>(_container));
+        }
+
+        /// <summary>Polymorphic binding: one concrete class under multiple interfaces, shared singleton.</summary>
+        public void BindMultiple<TInterface1, TInterface2, TImplementation>()
+            where TImplementation : class, TInterface1, TInterface2
+        {
+            _container.BindMultiple<TInterface1, TInterface2, TImplementation>(isSingleton: true);
+        }
+
+        /// <summary>Three-interface polymorphic binding (see the two-interface overload).</summary>
+        public void BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>()
+            where TImplementation : class, TInterface1, TInterface2, TInterface3
+        {
+            _container.BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>(isSingleton: true);
+        }
+
         public void EnableStrictInjection()
         {
             _container.StrictInjection = true;
@@ -155,6 +197,38 @@ namespace Nexus.Core
 
             _container.Bind<TCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TSignal), typeof(TCommand), mode, priority, isAsync: true);
+        }
+
+        /// <summary>Registers a one-shot command (Strange-style <c>.Once()</c>): fires once then unregisters.</summary>
+        public void BindCommandOnce<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0)
+            where TCommand : class where TSignal : struct
+        {
+            if (mode == ExecutionMode.Composite)
+                throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindCommandOnce. Use the [CompositeSignalHandler] attribute instead.", nameof(mode));
+
+            bool isGeneric = typeof(ICommand<TSignal>).IsAssignableFrom(typeof(TCommand));
+            bool isNormal = typeof(ICommand).IsAssignableFrom(typeof(TCommand));
+            if (!isGeneric && !isNormal)
+                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement either ICommand or ICommand<{typeof(TSignal).Name}>");
+
+            _container.Bind<TCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(TSignal), typeof(TCommand), mode, priority, isAsync: false, oneShot: true);
+        }
+
+        /// <summary>Registers a one-shot async command: fires once then unregisters.</summary>
+        public void BindAsyncCommandOnce<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0)
+            where TCommand : class where TSignal : struct
+        {
+            if (mode == ExecutionMode.Composite)
+                throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindAsyncCommandOnce. Use the [CompositeSignalHandler] attribute instead.", nameof(mode));
+
+            bool isGeneric = typeof(IAsyncCommand<TSignal>).IsAssignableFrom(typeof(TCommand));
+            bool isNormal = typeof(IAsyncCommand).IsAssignableFrom(typeof(TCommand));
+            if (!isGeneric && !isNormal)
+                throw new ArgumentException($"Command type {typeof(TCommand).Name} must implement either IAsyncCommand or IAsyncCommand<{typeof(TSignal).Name}>");
+
+            _container.Bind<TCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(TSignal), typeof(TCommand), mode, priority, isAsync: true, oneShot: true);
         }
 
         public ICommandBindingBuilder<TSignal> BindSignal<TSignal>() where TSignal : struct
@@ -308,15 +382,25 @@ namespace Nexus.Core
             _builder = builder;
         }
 
+        private bool _oneShot;
+
+        public ICommandBindingBuilder<TSignal> Once()
+        {
+            _oneShot = true;
+            return this;
+        }
+
         public ICommandBindingBuilder<TSignal> To<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class
         {
-            _builder.BindCommand<TSignal, TCommand>(mode, priority);
+            if (_oneShot) { _oneShot = false; _builder.BindCommandOnce<TSignal, TCommand>(mode, priority); }
+            else { _builder.BindCommand<TSignal, TCommand>(mode, priority); }
             return this;
         }
 
         public ICommandBindingBuilder<TSignal> ToAsync<TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) where TCommand : class
         {
-            _builder.BindAsyncCommand<TSignal, TCommand>(mode, priority);
+            if (_oneShot) { _oneShot = false; _builder.BindAsyncCommandOnce<TSignal, TCommand>(mode, priority); }
+            else { _builder.BindAsyncCommand<TSignal, TCommand>(mode, priority); }
             return this;
         }
     }
