@@ -20,6 +20,8 @@ namespace Nexus.Core
         public void UnregisterView(IView view) { }
         public T Resolve<T>() where T : class => null;
         public T TryResolve<T>() where T : class => null;
+        public T TryResolve<T>(string name) where T : class => null;
+        public T ResolveCrossBoundary<T>() where T : class => null;
         public void RegisterPlugin(INexusPlugin plugin) { }
         public void RemovePlugin(INexusPlugin plugin) { }
         public void Dispose() { }

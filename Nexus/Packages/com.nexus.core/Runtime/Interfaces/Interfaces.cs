@@ -186,6 +186,17 @@ namespace Nexus.Core
         void BindInstance<T>(string name, T instance) where T : class;
 
         /// <summary>
+        /// Binds an implementation as cross-boundary — visible to descendant (child/grandchild)
+        /// contexts through explicit <see cref="IContext.ResolveCrossBoundary{T}"/> resolution
+        /// (StrangeIoC-style <c>crossContextInjectionBinder</c>). Registered as a singleton in
+        /// the current context AND marked for parent-chain resolution in descendant contexts.
+        /// </summary>
+        void BindCrossBoundary<TInterface, TImplementation>()
+            where TImplementation : class, TInterface;
+        /// <summary>Binds a self-referencing type as cross-boundary.</summary>
+        void BindCrossBoundary<T>() where T : class;
+
+        /// <summary>
         /// Creates and registers a general-purpose <see cref="NexusBinder{TKey,TValue}"/> as a
         /// singleton so it can be injected anywhere (Strange-style generic binder).
         /// <c>TKey</c> may be any reference or value type (enums are the canonical catalog key).
@@ -240,6 +251,29 @@ namespace Nexus.Core
         void OnDispose();
     }
 
+    /// <summary>
+    /// Optional extension to <see cref="IContextLifecycle"/> for cross-context wiring.
+    /// <see cref="OnPostContext"/> is called once ALL contexts in the application have completed
+    /// their standard lifecycle (OnConfigure → OnInitializeAsync → OnStartAsync).
+    /// Use this for wiring that spans multiple contexts — e.g. sharing a model reference
+    /// from a parent context into a child context's view, or synchronizing state across
+    /// sibling contexts (StrangeIoC-style PostContexts).
+    ///
+    /// Implement this interface on the same class as <see cref="IContextLifecycle"/>.
+    /// The framework detects the interface and calls <see cref="OnPostContext"/> after
+    /// all contexts have finished their startup lifecycle.
+    /// </summary>
+    public interface IPostContextLifecycle
+    {
+        /// <summary>
+        /// Called after ALL contexts have been configured and initialized.
+        /// The <paramref name="builder"/> provides the same binding API as
+        /// <see cref="IContextLifecycle.OnConfigure"/>, enabling late-binding
+        /// of cross-context references.
+        /// </summary>
+        void OnPostContext(IContextBuilder builder);
+    }
+
     public interface IContext : IDisposable
     {
         ISignalBus SignalBus { get; }
@@ -249,7 +283,18 @@ namespace Nexus.Core
         void UnregisterView(IView view);
         T Resolve<T>() where T : class;
         T TryResolve<T>() where T : class;
+        /// <summary>Safely resolves a named binding, or null if not registered.</summary>
+        T TryResolve<T>(string name) where T : class;
         IContext Parent { get; }
+
+        /// <summary>
+        /// Resolves a dependency by walking UP the parent-context chain.
+        /// Searches the current context first, then parent, then grandparent, etc.
+        /// This is the explicit opt-in equivalent of StrangeIoC's <c>crossContextInjectionBinder</c>.
+        /// Types must be registered via <see cref="IContextBuilder.BindCrossBoundary{TInterface,TImplementation}"/>
+        /// in the owning context.
+        /// </summary>
+        T ResolveCrossBoundary<T>() where T : class;
         void RegisterPlugin(INexusPlugin plugin);
         void RemovePlugin(INexusPlugin plugin);
     }

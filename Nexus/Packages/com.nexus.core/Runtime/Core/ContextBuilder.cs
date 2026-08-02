@@ -111,6 +111,19 @@ namespace Nexus.Core
             _container.StrictInjection = true;
         }
 
+        // ─── Cross-Boundary Binding ───
+
+        public void BindCrossBoundary<TInterface, TImplementation>()
+            where TImplementation : class, TInterface
+        {
+            _container.BindCrossBoundary<TInterface, TImplementation>();
+        }
+
+        public void BindCrossBoundary<T>() where T : class
+        {
+            _container.BindCrossBoundary<T>();
+        }
+
         public void BindService<TInterface, TImplementation>()
             where TImplementation : class, TInterface, INexusService
         {

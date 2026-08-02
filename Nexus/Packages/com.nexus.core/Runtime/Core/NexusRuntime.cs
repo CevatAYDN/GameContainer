@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core.Services;
 using UnityEngine;
@@ -154,6 +155,42 @@ namespace Nexus.Core
             await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, context.LifetimeToken);
 
             return context;
+        }
+
+        /// <summary>
+        /// Finalizes initialization across ALL registered contexts by running the PostContext
+        /// lifecycle phase. Call this after all contexts have been created, configured, and
+        /// initialized (OnConfigure → OnInitializeAsync → OnStartAsync).
+        ///
+        /// Each context's <see cref="IPostContextLifecycle.OnPostContext"/> is invoked in
+        /// registration order, enabling cross-context wiring (StrangeIoC-style PostContexts).
+        /// </summary>
+        /// <param name="ct">Cancellation token.</param>
+        public static async System.Threading.Tasks.Task FinalizeInitializationAsync(CancellationToken ct = default)
+        {
+            IReadOnlyList<IContext> snapshot;
+            lock (s_lock)
+            {
+                // Use the current snapshot of all registered contexts
+                snapshot = new List<IContext>(s_activeContexts);
+            }
+
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                if (ct.IsCancellationRequested) break;
+                if (snapshot[i] is Context nexusCtx && nexusCtx.HasPostContextLifecycle)
+                {
+                    try
+                    {
+                        await nexusCtx.RunPostContextAsync(ct);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        NexusLog.Error(nameof(NexusRuntime), nameof(FinalizeInitializationAsync),
+                            $"PostContext failed for context '{nexusCtx.ScopeTag}'", ex);
+                    }
+                }
+            }
         }
 
         /// <summary>Disposes all active contexts and clears the registry. Called automatically on domain reload.</summary>

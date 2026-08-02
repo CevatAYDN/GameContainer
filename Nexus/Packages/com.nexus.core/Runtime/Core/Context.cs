@@ -45,8 +45,12 @@ namespace Nexus.Core
         private volatile bool _disposed;
 
         private IContextLifecycle[] _configuredLifecycles = Array.Empty<IContextLifecycle>();
+        private List<IPostContextLifecycle> _postContextLifecycles = new();
 
         internal IReadOnlyList<IContextLifecycle> ConfiguredLifecycles => _configuredLifecycles;
+        internal IReadOnlyList<IPostContextLifecycle> PostContextLifecycles => _postContextLifecycles;
+        internal bool HasPostContextLifecycle => _postContextLifecycles.Count > 0;
+        internal bool IsConfigured => _builder != null;
         internal ContextBuilder Builder => _builder;
         public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
 
@@ -144,8 +148,21 @@ namespace Nexus.Core
 
         public void Configure(IContextLifecycle[] lifecycles = null)
         {
+            if (_disposed) return;
+
+            // Guard against double-Configure: if _builder already exists, merging state from
+            // a second call would lose the first builder's reactive model and service type
+            // registrations. Prevent accidental double-call by returning early.
+            if (_builder != null)
+            {
+                NexusRuntime.Logger?.LogWarning(
+                    $"[Nexus] Context '{ScopeTag}' Configure() called more than once. Subsequent calls are ignored.");
+                return;
+            }
+
             _builder = new ContextBuilder(Container, SignalBusInternal);
 
+            // ... rest stays the same until after assemblies scan ...
             var allLifecycles = new List<IContextLifecycle>();
             if (lifecycles != null) allLifecycles.AddRange(lifecycles);
 
@@ -183,6 +200,14 @@ namespace Nexus.Core
             }
 
             _configuredLifecycles = allLifecycles.ToArray();
+
+            // Detect IPostContextLifecycle implementations among the registered lifecycles
+            _postContextLifecycles.Clear();
+            for (int i = 0; i < allLifecycles.Count; i++)
+            {
+                if (allLifecycles[i] is IPostContextLifecycle postCtx)
+                    _postContextLifecycles.Add(postCtx);
+            }
 
             foreach (var lifecycle in allLifecycles)
                 lifecycle.OnConfigure(_builder);
@@ -240,6 +265,46 @@ namespace Nexus.Core
             // Previously the single drain ran before OnStartAsync, so a lazy service resolved
             // during startup would never receive InitializeAsync.
             await InitializeLazyServicesAsync(ct);
+        }
+
+        /// <summary>
+        /// Runs the PostContext phase for all lifecycles that implement <see cref="IPostContextLifecycle"/>.
+        /// Called by <see cref="NexusRuntime.FinalizeInitializationAsync"/> after ALL contexts have
+        /// completed their standard lifecycle (OnConfigure → OnInitializeAsync → OnStartAsync).
+        /// </summary>
+        internal async ValueTask RunPostContextAsync(CancellationToken ct)
+        {
+            if (_postContextLifecycles.Count == 0) return;
+
+            // Ensure the builder is available (it may be a separate instance from the original
+            // Configure builder — we create a fresh builder for PostContext so lifecycles can
+            // make late bindings without affecting the configured binding set).
+            ContextBuilder postBuilder;
+            if (_builder != null)
+            {
+                // Use the existing bindings so PostContext can resolve them
+                postBuilder = new ContextBuilder(Container, SignalBusInternal);
+            }
+            else
+            {
+                NexusRuntime.Logger?.LogWarning(
+                    $"[Nexus] Context '{ScopeTag}': RunPostContextAsync skipped because context was never configured.");
+                return;
+            }
+
+            for (int i = 0; i < _postContextLifecycles.Count; i++)
+            {
+                if (ct.IsCancellationRequested) break;
+                try
+                {
+                    _postContextLifecycles[i].OnPostContext(postBuilder);
+                }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogError(
+                        $"[Nexus] PostContext lifecycle '{_postContextLifecycles[i].GetType().Name}' failed in context '{ScopeTag}': {ex.Message}");
+                }
+            }
         }
 
         internal async ValueTask InitializeLazyServicesAsync(CancellationToken ct)
@@ -426,6 +491,19 @@ namespace Nexus.Core
 
         public T Resolve<T>() where T : class => Container.Resolve<T>();
         public T TryResolve<T>() where T : class => Container.TryResolve<T>();
+        public T TryResolve<T>(string name) where T : class => Container.TryResolve<T>(name);
+        public T ResolveCrossBoundary<T>() where T : class
+        {
+            try
+            {
+                return (T)Container.ResolveCrossBoundary(typeof(T));
+            }
+            catch (InvalidCastException ex)
+            {
+                throw new InvalidOperationException(
+                    $"Cross-boundary resolve for '{typeof(T).Name}' failed: resolved instance could not be cast to the requested type.", ex);
+            }
+        }
         public void RegisterView(IView view) => _viewBinder.RegisterView(view);
         public void UnregisterView(IView view) => _viewBinder.UnregisterView(view);
 

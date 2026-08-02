@@ -172,18 +172,56 @@ namespace Nexus.Core
     /// <summary>
     /// Associates a <see cref="View"/>-derived class with its <see cref="Mediator{TView}"/> type.
     /// When a View with this attribute is bound, the mediator is automatically created and wired.
+    ///
+    /// Optional <see cref="Abstraction"/> enables interface-based mediator resolution (StrangeIoC-style
+    /// <c>ToAbstraction&lt;IMediator&gt;()</c>): when set, the mediator is resolved through the
+    /// specified interface/abstract type instead of the concrete <paramref name="mediatorType"/>.
+    /// The abstraction must be registered in DI (e.g. <c>builder.Bind&lt;IMediator, ConcreteMediator&gt;()</c>).
+    /// Pooling still keys off the concrete <paramref name="mediatorType"/>.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public sealed class MediatorAttribute : Attribute
     {
-        /// <summary>The mediator type that handles this view.</summary>
+        /// <summary>The concrete mediator type that handles this view.</summary>
         public Type MediatorType { get; }
 
-        /// <summary>Associates a view with its mediator.</summary>
+        /// <summary>
+        /// Optional abstraction type (interface or abstract class) for DI resolution.
+        /// When set, the mediator is resolved through this type — the concrete
+        /// <see cref="MediatorType"/> must be registered in DI under this abstraction.
+        /// When null (default), the mediator is bound and resolved by concrete type.
+        /// </summary>
+        public Type Abstraction { get; }
+
+        /// <summary>Associates a view with its mediator by concrete type.</summary>
         /// <param name="mediatorType">The <see cref="Mediator{TView}"/> type.</param>
         public MediatorAttribute(Type mediatorType)
         {
             MediatorType = mediatorType;
+            Abstraction = null;
+        }
+
+        /// <summary>
+        /// Associates a view with its mediator by concrete type AND abstraction interface.
+        /// The mediator is resolved through <paramref name="abstractionType"/> in DI, enabling
+        /// interface-based binding (StrangeIoC-style <c>ToAbstraction&lt;IMediator&gt;()</c>).
+        /// Pooling still keys off the concrete <paramref name="mediatorType"/>.
+        /// </summary>
+        /// <param name="mediatorType">The concrete <see cref="Mediator{TView}"/> type.</param>
+        /// <param name="abstractionType">
+        /// The abstraction type (interface or abstract class) to resolve the mediator through.
+        /// Must be registered in DI, e.g. <c>builder.Bind&lt;TAbstraction, TConcrete&gt;()</c>.
+        /// </param>
+        public MediatorAttribute(Type mediatorType, Type abstractionType)
+        {
+            if (abstractionType == null)
+                throw new ArgumentNullException(nameof(abstractionType));
+            if (!abstractionType.IsAssignableFrom(mediatorType))
+                throw new ArgumentException(
+                    $"Mediator type '{mediatorType.Name}' must implement or extend abstraction type '{abstractionType.Name}'.");
+
+            MediatorType = mediatorType;
+            Abstraction = abstractionType;
         }
     }
 

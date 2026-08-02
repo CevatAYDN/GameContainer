@@ -27,6 +27,7 @@ namespace Nexus.Core
         public bool StrictInjection { get; set; }
         internal readonly ConcurrentQueue<INexusService> _lazyServicesPendingInit = new();
         private readonly NexusDI _parent;
+        private readonly ConcurrentDictionary<Type, bool> _crossBoundaryTypes = new();
         private readonly ConcurrentDictionary<Type, Binding> _bindings = new();
         // Named bindings (Strange-style named injection): key = (type, name).
         // Resolution falls back to the default binding when a name is not registered.
@@ -670,6 +671,58 @@ namespace Nexus.Core
             _bindings[typeof(TInterface3)] = shared;
         }
 
+        // ─── Cross-Boundary Binding (StrangeIoC-style cross-context injection) ───
+
+        /// <summary>
+        /// Binds an implementation as cross-boundary — registered as a singleton in the current
+        /// container AND marked for parent-chain resolution in descendant containers. Descendant
+        /// contexts resolve marked types via <see cref="ResolveCrossBoundary"/>.
+        /// </summary>
+        public void BindCrossBoundary<TInterface, TImplementation>()
+            where TImplementation : class, TInterface
+        {
+            _bindings[typeof(TInterface)] = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = true };
+            _crossBoundaryTypes[typeof(TInterface)] = true;
+        }
+
+        /// <summary>Binds a self-referencing type as cross-boundary.</summary>
+        public void BindCrossBoundary<T>() where T : class
+        {
+            _bindings[typeof(T)] = new Binding { ConcreteType = typeof(T), IsSingleton = true };
+            _crossBoundaryTypes[typeof(T)] = true;
+        }
+
+        /// <summary>
+        /// Resolves a dependency by walking UP the parent-container chain, but only for types
+        /// that were explicitly marked as cross-boundary via <see cref="BindCrossBoundary{TInterface,TImplementation}"/>.
+        /// Searches the current container first, then parent, then grandparent, etc.
+        /// Returns the resolved instance from the owning container, or throws if not found at any level.
+        /// This is the explicit opt-in equivalent of StrangeIoC's crossContextInjectionBinder.
+        /// </summary>
+        public object ResolveCrossBoundary(Type type)
+        {
+            // Check current container first — if the type is registered here and marked cross-boundary, resolve it
+            if (_crossBoundaryTypes.ContainsKey(type))
+            {
+                if (_bindings.TryGetValue(type, out var binding))
+                    return ResolveBinding(type, binding);
+            }
+
+            // Walk the parent chain, looking for cross-boundary-marked types
+            var current = _parent;
+            while (current != null)
+            {
+                if (current._crossBoundaryTypes.ContainsKey(type))
+                {
+                    if (current._bindings.TryGetValue(type, out var binding))
+                        return current.ResolveBinding(type, binding);
+                }
+                current = current._parent;
+            }
+
+            throw new InvalidOperationException($"Cross-boundary dependency of type {type.FullName} is not registered in any ancestor context. Use BindCrossBoundary<TInterface, TImplementation>() in the owning context to expose it.");
+        }
+
         public void BindInstance<T>(T instance) where T : class
         {
             BindInstance(instance, disposeWithContainer: true);
@@ -709,6 +762,8 @@ namespace Nexus.Core
         // ─── Public API: Resolve ───
         public T Resolve<T>() where T : class => (T)Resolve(typeof(T));
         public T TryResolve<T>() where T : class => IsRegistered(typeof(T)) ? Resolve<T>() : null;
+        /// <summary>Safely resolves a named binding; returns null when the name is not registered.</summary>
+        public T TryResolve<T>(string name) where T : class => TryResolve(typeof(T), name) as T;
         public object TryResolve(Type type) => (type != null && IsRegistered(type)) ? Resolve(type) : null;
 
         /// <summary>

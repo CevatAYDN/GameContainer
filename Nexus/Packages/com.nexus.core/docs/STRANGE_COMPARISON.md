@@ -17,6 +17,9 @@ ve "not" bulunur.
 | `[Construct]` ctor işaretleme | `[Construct]` (alias, `[Inject]` ile birlikte sayılır) | ✅ Kapalı (`BinderSuite` CT1) |
 | `Bind(X).To<Cmd>().Once()` | `BindCommandOnce` / `BindAsyncCommandOnce` / `.Once()` | ✅ Kapalı (`BinderSuite` ON1–ON3, ONC1–ONC2) |
 | Polimorfik binding (`Bind<A>().Bind<B>().To<Impl>()`) | `BindMultiple<T1,T2[,T3],TImpl>()` (paylaşılan singleton) | ✅ Kapalı (`BinderSuite` PM1–PM3) |
+| `crossContextInjectionBinder` | `BindCrossBoundary<TInterface,TImpl>()` + `ResolveCrossBoundary<T>()` | ✅ Kapalı (CB1–CB8) |
+| `ToAbstraction<IMediator>()` | `[Mediator(typeof(Concrete), typeof(IMediator))]` | ✅ Kapalı (MA1–MA8) |
+| `PostContexts` (tüm bağlamlar hazır olunca) | `IPostContextLifecycle` + `NexusRuntime.FinalizeInitializationAsync()` | ✅ Kapalı (PC1–PC5) |
 
 Aşağıdaki bölümler Strange'in **hâlâ farklı** olduğu alanları ve Nexus'un bu
 alanlardaki mevcut karşılıklarını inceler. Bu alanların hiçbiri "eksik" değildir;
@@ -83,10 +86,10 @@ vs `OnRegister`/`OnRemove`), ama sözleşme aynı: view bağlanınca hook, çöz
 temizlik. Nexus'un **fazlası**: havuzlama + sızıntı telemetrisi + view
 geçerlilik koruması (`IsViewValid`).
 
-> **Not:** Strange'in `ToAbstraction` (interface üzerinden mediator bağlama)
+> ~~**Not:** Strange'in `ToAbstraction` (interface üzerinden mediator bağlama)
 > karşılığı Nexus'ta yok — mediator'ler concrete tiplerle bağlanır. Gerçek
 > ihtiyaç hâlinde `[Mediator(typeof(...))]`'a interface desteği eklenebilir,
-> ama mevcut kullanımda concrete yeterlidir.
+> ama mevcut kullanımda concrete yeterlidir.~~
 
 ---
 
@@ -128,8 +131,12 @@ dependency'ler canlı).
   üzerinden çalışır.
 
 **Durum:** ✅ İşlevsel karşılık mevcut. Faz adları farklı ama sıralama sözleşmesi
-aynı. `PostContexts` benzeri "tüm bağlamlar hazır olunca" global faz için
-`NexusRuntime.OnContextRegistered` event'i kullanılabilir.
+aynı. `PostContexts` için **Phase 3 — `IPostContextLifecycle`**: `IContextLifecycle`'dan ayrı
+bir `IPostContextLifecycle` interface'i tanımlanmıştır (`OnPostContext(builder)`). `Context.Configure()`
+içinde tüm `IContextLifecycle` örnekleri `IPostContextLifecycle`'a cast edilip ayrı bir listede
+saklanır. `NexusRuntime.FinalizeInitializationAsync()` tüm aktif bağlamları dolaşır ve her birinin
+`RunPostContextAsync()`'ini çağırır. Standart lifecycle tamamlandıktan sonra (OnConfigure →
+OnInitialize → OnStart), PostContext fazı ateşlenir. **5 harness testi ile kanıtlandı (PC1–PC5)**. (MA1–MA8).
 
 ---
 
@@ -191,9 +198,10 @@ MVCS içi = tipe-özel API) korunuyor.
 | `[Construct]` | var | var (alias) | ✅ Kapalı |
 | `.Once()` | var | var (race-safe) | ✅ Kapalı |
 | Polimorfik binding | var | var (paylaşılan singleton) | ✅ Kapalı |
-| Cross-context | binder + dispatcher | `[CrossContext]` + scope tag | ✅ Farklı tasarım |
-| Mediator lifecycle | OnRegister/OnRemove | OnBind/OnUnbind + pooling | ✅ Kapalı + güçlü |
+| Cross-context | binder + dispatcher | `[CrossContext]` + scope tag / `BindCrossBoundary<T>` + `ResolveCrossBoundary<T>` | ✅ Kapalı |
+| Mediator lifecycle | OnRegister/OnRemove / ToAbstraction | OnBind/OnUnbind + pooling / `[Mediator(TMediator, TIAbstraction)]` | ✅ Kapalı + güçlü |
 | Signal | sınıf bazlı | struct bazlı (GC'siz) | ✅ Farklı tasarım |
+| PostContexts | tüm bağlamlar hazır olunca global faz | `IPostContextLifecycle` + `NexusRuntime.FinalizeInitializationAsync()` | ✅ Kapalı (PC1–PC5) |
 | Async | sınırlı | first-class | ✅ Nexus üstün |
 | Havuzlama/telemetri | yok | kapsamlı | ✅ Nexus üstün |
 

@@ -165,7 +165,16 @@ namespace Nexus.Core
             view.Bind(_context);
 
             var mediatorType = mediatorAttr.MediatorType;
-            var mediator = GetMediator(mediatorType);
+            var abstractionType = mediatorAttr.Abstraction;
+            var mediator = GetMediator(mediatorType, abstractionType);
+
+            if (mediator == null)
+            {
+                NexusRuntime.Logger?.LogError(
+                    $"[Nexus] RegisterView failed: GetMediator returned null for type '{mediatorType?.Name}'. " +
+                    $"View '{view.GetType().Name}' will not have a mediator attached.");
+                return;
+            }
 
             _activeMediators[view] = mediator;
             _activeMediatorSet.Add(mediator);
@@ -189,7 +198,13 @@ namespace Nexus.Core
             }
         }
 
-        private IMediator GetMediator(Type mediatorType)
+        /// <summary>
+        /// Gets or creates a mediator instance for the given concrete type.
+        /// When <paramref name="abstractionType"/> is provided, the mediator is resolved through
+        /// DI using the abstraction (StrangeIoC-style <c>ToAbstraction&lt;IMediator&gt;()</c>),
+        /// but pooling still keys off the concrete <paramref name="mediatorType"/>.
+        /// </summary>
+        private IMediator GetMediator(Type mediatorType, Type abstractionType = null)
         {
             if (!_mediatorPools.TryGetValue(mediatorType, out var pool))
             {
@@ -201,12 +216,6 @@ namespace Nexus.Core
             {
                 var mediator = pool.Pop();
                 _poolPopCount++;
-                // Reset BEFORE injecting: a mediator that implements IResettable is reset
-                // when returned to the pool (ClearInjectedReferences), but defensive hygiene
-                // demands the object handed out is guaranteed clean — regardless of which
-                // path put it into the pool (or if the pool was seeded externally). Calling
-                // Reset() again here is idempotent and cheap, and covers private (non-
-                // [Inject]) state that ClearInjectedReferences does not touch.
                 if (mediator is IResettable resettable)
                 {
                     resettable.Reset();
@@ -216,13 +225,21 @@ namespace Nexus.Core
                 return mediator;
             }
 
-            // Bind mediator dynamically as transient if not registered
-            if (!_container.IsRegistered(mediatorType))
+            // Determine the DI key — use abstraction when provided, concrete type otherwise
+            var resolveType = abstractionType ?? mediatorType;
+
+            // When resolving through an abstraction, the user must have registered the binding.
+            // Do NOT auto-bind dynamically for abstraction resolution.
+            if (abstractionType == null)
             {
-                _container.Bind(mediatorType, isSingleton: false);
+                // Bind mediator dynamically as transient if not registered
+                if (!_container.IsRegistered(mediatorType))
+                {
+                    _container.Bind(mediatorType, isSingleton: false);
+                }
             }
 
-            return (IMediator)_container.Resolve(mediatorType);
+            return (IMediator)_container.Resolve(resolveType);
         }
 
         private void ReturnMediator(IMediator mediator)

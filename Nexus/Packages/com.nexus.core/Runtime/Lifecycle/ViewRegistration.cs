@@ -47,8 +47,16 @@ namespace Nexus.Core
             }
             else if (roots.Length > 1)
             {
-                NexusRuntime.Logger?.LogError($"[Nexus] View '{mb.gameObject.name}' OnEnable: Multiple Root instances found. " +
-                    "Auto-binding is ambiguous; keep a single active Root per scene.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] View '{mb.gameObject.name}' OnEnable: Multiple Root instances found. " +
+                    "Registering with the first discovered Root.");
+                var firstRoot = roots[0];
+                if (firstRoot.Context != null)
+                    firstRoot.Context.RegisterView(view);
+                else
+                {
+                    pendingRoot = firstRoot;
+                    firstRoot.RegisterPendingView(view);
+                }
             }
             else
             {
