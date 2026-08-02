@@ -149,6 +149,10 @@ namespace Nexus.Core
                 var iface = allInterfaces[i];
                 if (iface == typeof(IDisposable) || iface == typeof(IAsyncDisposable))
                     continue;
+                if (iface == typeof(IStartable) || iface == typeof(IAsyncStartable) || iface == typeof(IStoppable) || iface == typeof(IAsyncStoppable))
+                    continue;
+                if (iface == typeof(INexusService) || iface == typeof(IReactiveModel) || iface == typeof(IContextLifecycle) || iface == typeof(IPostContextLifecycle))
+                    continue;
                 if (iface.Namespace != null && (iface.Namespace.StartsWith("System") || iface.Namespace.StartsWith("UnityEngine")))
                     continue;
                 result.Add(iface);

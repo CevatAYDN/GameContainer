@@ -55,6 +55,7 @@ namespace Nexus.Core.Lifecycle
             foreach (var inst in instances)
             {
                 if (ct.IsCancellationRequested) break;
+                if (inst == null) continue;
                 if (inst is IAsyncStartable asyncStartable)
                 {
                     try { await asyncStartable.StartAsync(ct); }
@@ -77,8 +78,11 @@ namespace Nexus.Core.Lifecycle
         public async ValueTask ExecuteStoppableLifecyclesAsync(IEnumerable<object> instances, CancellationToken ct)
         {
             if (instances == null) return;
-            foreach (var inst in instances)
+            var list = new List<object>(instances);
+            for (int i = list.Count - 1; i >= 0; i--)
             {
+                var inst = list[i];
+                if (inst == null) continue;
                 if (inst is IAsyncStoppable asyncStoppable)
                 {
                     try { await asyncStoppable.StopAsync(ct); }

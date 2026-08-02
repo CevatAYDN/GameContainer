@@ -65,6 +65,11 @@ namespace Nexus.Core.Components
             }
         }
 
+        private void OnDestroy()
+        {
+            NexusRuntime.OnContextRegistered -= OnContextRegistered;
+        }
+
         /// <summary>
         /// Manually triggers dependency injection on target components.
         /// Safe to call multiple times (injection is executed once).
@@ -76,10 +81,25 @@ namespace Nexus.Core.Components
             IContext context = FindActiveContext();
             if (context == null)
             {
-                NexusRuntime.Logger?.LogWarning($"[NexusBinding] Failed to resolve active IContext for GameObject '{gameObject.name}'. Injection skipped.");
+                // Fall back to waiting for a context to register if scene initialization order varies
+                NexusRuntime.OnContextRegistered -= OnContextRegistered;
+                NexusRuntime.OnContextRegistered += OnContextRegistered;
                 return;
             }
 
+            PerformInjection(context);
+        }
+
+        private void OnContextRegistered(IContext context)
+        {
+            if (_hasInjected) return;
+            NexusRuntime.OnContextRegistered -= OnContextRegistered;
+            PerformInjection(context);
+        }
+
+        private void PerformInjection(IContext context)
+        {
+            if (_hasInjected || context == null) return;
             var container = context.Container;
             if (container == null) return;
 

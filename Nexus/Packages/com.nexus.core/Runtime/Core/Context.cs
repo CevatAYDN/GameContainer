@@ -574,6 +574,16 @@ namespace Nexus.Core
             _disposed = true;
             _cts.Cancel();
 
+            // Execute IAsyncStoppable and IStoppable domain lifecycles before container teardown
+            try
+            {
+                _orchestrator.ExecuteStoppableLifecyclesAsync(Container.GetActiveSingletons(), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] Exception during ExecuteStoppableLifecyclesAsync: {ex.Message}");
+            }
+
             if (_configuredLifecycles.Length > 0)
             {
                 for (int i = _configuredLifecycles.Length - 1; i >= 0; i--)
