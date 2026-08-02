@@ -501,6 +501,7 @@ namespace NexusBench
             _failures += BinderSuite.Run();
             _failures += RegistrySuite.Run();
             _failures += ConcurrentDiffSuite.Run();
+            _failures += CapabilitiesSuite.Run();
             return _failures;
         }
     }

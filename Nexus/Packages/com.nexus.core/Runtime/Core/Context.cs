@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core.Lifecycle;
 using Nexus.Core.Services;
 using UnityEngine.Scripting;
 
@@ -44,6 +45,7 @@ namespace Nexus.Core
         private ContextBuilder _builder;
         private volatile bool _disposed;
 
+        private readonly ContextLifecycleOrchestrator _orchestrator = new();
         private IContextLifecycle[] _configuredLifecycles = Array.Empty<IContextLifecycle>();
         private List<IPostContextLifecycle> _postContextLifecycles = new();
 
@@ -261,6 +263,9 @@ namespace Nexus.Core
                     await lifecycles[i].OnStartAsync(ct);
             }
 
+            // Execute IAsyncStartable and IStartable domain lifecycles
+            await _orchestrator.ExecuteStartableLifecyclesAsync(Container.GetActiveSingletons(), ct);
+
             // Drain lazy services first resolved during OnStartAsync (e.g. by views/mediators).
             // Previously the single drain ran before OnStartAsync, so a lazy service resolved
             // during startup would never receive InitializeAsync.
@@ -272,9 +277,9 @@ namespace Nexus.Core
         /// Called by <see cref="NexusRuntime.FinalizeInitializationAsync"/> after ALL contexts have
         /// completed their standard lifecycle (OnConfigure → OnInitializeAsync → OnStartAsync).
         /// </summary>
-        internal async ValueTask RunPostContextAsync(CancellationToken ct)
+        internal ValueTask RunPostContextAsync(CancellationToken ct)
         {
-            if (_postContextLifecycles.Count == 0) return;
+            if (_postContextLifecycles.Count == 0) return default;
 
             // Ensure the builder is available (it may be a separate instance from the original
             // Configure builder — we create a fresh builder for PostContext so lifecycles can
@@ -289,7 +294,7 @@ namespace Nexus.Core
             {
                 NexusRuntime.Logger?.LogWarning(
                     $"[Nexus] Context '{ScopeTag}': RunPostContextAsync skipped because context was never configured.");
-                return;
+                return default;
             }
 
             for (int i = 0; i < _postContextLifecycles.Count; i++)
@@ -305,6 +310,7 @@ namespace Nexus.Core
                         $"[Nexus] PostContext lifecycle '{_postContextLifecycles[i].GetType().Name}' failed in context '{ScopeTag}': {ex.Message}");
                 }
             }
+            return default;
         }
 
         internal async ValueTask InitializeLazyServicesAsync(CancellationToken ct)
@@ -369,11 +375,27 @@ namespace Nexus.Core
                                     if (data == null) data = new ScannedHandlerData(type);
                                     data.Handlers.Add(attr);
                                 }
+                                var regCmdAttrs = type.GetCustomAttributes<RegisterCommandAttribute>();
+                                foreach (var attr in regCmdAttrs)
+                                {
+                                    if (data == null) data = new ScannedHandlerData(type);
+                                    data.Handlers.Add(new SignalHandlerAttribute(attr.SignalType) { Mode = attr.Mode, Priority = attr.Priority });
+                                }
                                 var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
                                 if (compositeAttr != null)
                                 {
                                     if (data == null) data = new ScannedHandlerData(type);
                                     data.CompositeHandler = compositeAttr;
+                                }
+                                var regCompositeAttr = type.GetCustomAttribute<RegisterCompositeCommandAttribute>();
+                                if (regCompositeAttr != null)
+                                {
+                                    if (data == null) data = new ScannedHandlerData(type);
+                                    data.CompositeHandler = new CompositeSignalHandlerAttribute(regCompositeAttr.SignalTypes)
+                                    {
+                                        OneShot = regCompositeAttr.OneShot,
+                                        Priority = regCompositeAttr.Priority
+                                    };
                                 }
                                 if (data != null) cachedData.Add(data);
                             }

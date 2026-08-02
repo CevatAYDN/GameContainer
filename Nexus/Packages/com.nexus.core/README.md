@@ -27,6 +27,18 @@
 
 ---
 
+## ⭐ Strategic Architecture Features
+
+Nexus Core includes 5 strategic architectural capabilities:
+
+1. **Attribute-Based Command Auto-Discovery (`[RegisterCommand]`)**: Decorate command classes with `[RegisterCommand(typeof(MySignal))]` for automatic signal binding.
+2. **Convention-Based Binding (`BindInterfacesAndSelfTo<T>()`)**: Automatically bind concrete classes under all user interfaces AND their concrete type sharing one singleton.
+3. **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Provide startup and teardown lifecycle hooks for non-service domain objects.
+4. **Scene & Prefab Auto-Injection (`NexusBinding`)**: Attach `NexusBinding` MonoBehaviour to GameObjects or Prefabs for zero-code scene injection.
+5. **Zero-GC Hot Paths**: All capabilities execute with zero-GC steady-state allocation guarantees.
+
+---
+
 ## 📖 Glossary
 
 | Term | Definition | Concrete Example |

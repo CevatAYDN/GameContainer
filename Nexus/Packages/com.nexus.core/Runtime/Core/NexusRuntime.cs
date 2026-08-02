@@ -68,6 +68,9 @@ namespace Nexus.Core
             }
         }
 
+        /// <summary>Alias for <see cref="CurrentContext"/>.</summary>
+        public static IContext GetDefaultContext() => CurrentContext;
+
         /// <summary>
         /// Returns the currently active context for the given scope tag.
         /// If scopeTag is null or empty, returns the first matching active context.

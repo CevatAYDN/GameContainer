@@ -103,7 +103,7 @@ namespace Nexus.Core.Services
             try
             {
                 _lastSaveAction.Invoke();
-                _lastSaveTime = Time.realtimeSinceStartup;
+                _lastSaveTime = TimeProvider?.Now ?? Time.realtimeSinceStartup;
                 _pendingSave = false;
             }
             catch (Exception ex)

@@ -100,6 +100,7 @@ namespace Nexus.Core.FSM
 
         // Fixed-size transition history ring buffer. No per-transition allocation.
         private readonly StateTransitionRecord[] _transitionHistory = new StateTransitionRecord[TransitionHistoryCapacity];
+        private readonly object _historyLock = new();
         private int _transitionHead;   // next write slot
         private int _transitionCount;  // records written so far (capped at capacity)
 
@@ -120,13 +121,16 @@ namespace Nexus.Core.FSM
         /// <summary>Recent transitions in chronological order (allocates a list; editor/testing only).</summary>
         public IReadOnlyList<StateTransitionRecord> GetRecentTransitions()
         {
-            var result = new List<StateTransitionRecord>(_transitionCount);
-            for (int i = 0; i < _transitionCount; i++)
+            lock (_historyLock)
             {
-                int idx = (_transitionHead - _transitionCount + i + TransitionHistoryCapacity) % TransitionHistoryCapacity;
-                result.Add(_transitionHistory[idx]);
+                var result = new List<StateTransitionRecord>(_transitionCount);
+                for (int i = 0; i < _transitionCount; i++)
+                {
+                    int idx = (_transitionHead - _transitionCount + i + TransitionHistoryCapacity) % TransitionHistoryCapacity;
+                    result.Add(_transitionHistory[idx]);
+                }
+                return result;
             }
-            return result;
         }
 
         public void RegisterState<TState>(TState state) where TState : class, IGameState
@@ -174,7 +178,7 @@ namespace Nexus.Core.FSM
             _stateCts = null;
             superseded?.Cancel();
 
-            long mySequence = ++_transitionSequence;
+            long mySequence = System.Threading.Interlocked.Increment(ref _transitionSequence);
             var myCts = ct != CancellationToken.None
                 ? CancellationTokenSource.CreateLinkedTokenSource(ct)
                 : new CancellationTokenSource();
@@ -304,9 +308,12 @@ namespace Nexus.Core.FSM
             double now = UnityEngine.Time.realtimeSinceStartupAsDouble;
             var record = new StateTransitionRecord(now, fromName, toName, argsSummary, status, (now - startTime) * 1000.0);
 
-            _transitionHistory[_transitionHead] = record;
-            _transitionHead = (_transitionHead + 1) % TransitionHistoryCapacity;
-            if (_transitionCount < TransitionHistoryCapacity) _transitionCount++;
+            lock (_historyLock)
+            {
+                _transitionHistory[_transitionHead] = record;
+                _transitionHead = (_transitionHead + 1) % TransitionHistoryCapacity;
+                if (_transitionCount < TransitionHistoryCapacity) _transitionCount++;
+            }
 
             // BUG-14 fix: NexusTrace calls are now wrapped in the same NEXUS_DEBUG guard
             // used by every other trace site in the framework. Without the guard, every
@@ -330,7 +337,7 @@ namespace Nexus.Core.FSM
 
         public void Dispose()
         {
-            _transitionSequence++;
+            System.Threading.Interlocked.Increment(ref _transitionSequence);
             var cts = Interlocked.Exchange(ref _stateCts, null);
             cts?.Cancel();
             cts?.Dispose();

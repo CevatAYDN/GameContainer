@@ -337,25 +337,32 @@ namespace Nexus.Core.Services
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
-            AssetProvider.ReleaseWindow(go);
-
+            bool isSameObject = false;
             // Only remove if still the same GameObject — a concurrent OpenWindowAsync
             // may have reopened the same name while callbacks ran outside the lock.
-            if (!await TryAcquireWindowLockAsync()) return;
-            try
+            if (await TryAcquireWindowLockAsync())
             {
-                if (_activeWindows.TryGetValue(windowName, out var current) && current == go)
+                try
                 {
-                    _activeWindows.Remove(windowName);
-                    _windowHistory.Remove(windowName);
-                    SignalPendingChanged();
-                    RefreshReadSnapshot();
-                    _canvas.UpdateLayerInteractivity(_activeWindows);
+                    if (_activeWindows.TryGetValue(windowName, out var current) && current == go)
+                    {
+                        _activeWindows.Remove(windowName);
+                        _windowHistory.Remove(windowName);
+                        SignalPendingChanged();
+                        RefreshReadSnapshot();
+                        _canvas.UpdateLayerInteractivity(_activeWindows);
+                        isSameObject = true;
+                    }
+                }
+                finally
+                {
+                    _windowLock.Release();
                 }
             }
-            finally
+
+            if (isSameObject)
             {
-                _windowLock.Release();
+                AssetProvider.ReleaseWindow(go);
             }
         }
 

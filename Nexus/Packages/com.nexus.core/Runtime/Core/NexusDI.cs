@@ -23,7 +23,14 @@ namespace Nexus.Core
     {
         // ─── Public surface: Bind, Resolve, IsRegistered ───
         public IDependencyAdapter ExternalAdapter { get; set; }
-        public int ActiveSingletonsCount => _resolvedSingletons.Count;
+        public int ActiveSingletonsCount
+        {
+            get
+            {
+                lock (_singletonLock)
+                    return _resolvedSingletons.Count;
+            }
+        }
         public bool StrictInjection { get; set; }
         internal readonly ConcurrentQueue<INexusService> _lazyServicesPendingInit = new();
         private readonly NexusDI _parent;
@@ -625,6 +632,11 @@ namespace Nexus.Core
             _bindings[type] = new Binding { ConcreteType = type, IsSingleton = isSingleton };
         }
 
+        public void Bind(Type interfaceType, Type implementationType, bool isSingleton = true)
+        {
+            _bindings[interfaceType] = new Binding { ConcreteType = implementationType, IsSingleton = isSingleton };
+        }
+
         /// <summary>Binds a named implementation (Strange-style). Resolves only against [Inject(Name=...)].</summary>
         public void Bind<TInterface, TImplementation>(string name, bool isSingleton = true) where TImplementation : class, TInterface
         {
@@ -669,6 +681,21 @@ namespace Nexus.Core
             _bindings[typeof(TInterface1)] = shared;
             _bindings[typeof(TInterface2)] = shared;
             _bindings[typeof(TInterface3)] = shared;
+            _bindings[typeof(TImplementation)] = shared;
+        }
+
+        /// <summary>Reflection-form polymorphic binding sharing ONE Binding instance across all interfaces and concrete type.</summary>
+        public void BindMultiple(Type[] interfaceTypes, Type concreteType, bool isSingleton = true)
+        {
+            var shared = new Binding { ConcreteType = concreteType, IsSingleton = isSingleton };
+            if (interfaceTypes != null)
+            {
+                for (int i = 0; i < interfaceTypes.Length; i++)
+                {
+                    _bindings[interfaceTypes[i]] = shared;
+                }
+            }
+            _bindings[concreteType] = shared;
         }
 
         // ─── Cross-Boundary Binding (StrangeIoC-style cross-context injection) ───

@@ -48,5 +48,54 @@ namespace Nexus.Core.Lifecycle
                 }
             }
         }
+
+        public async ValueTask ExecuteStartableLifecyclesAsync(IEnumerable<object> instances, CancellationToken ct)
+        {
+            if (instances == null) return;
+            foreach (var inst in instances)
+            {
+                if (ct.IsCancellationRequested) break;
+                if (inst is IAsyncStartable asyncStartable)
+                {
+                    try { await asyncStartable.StartAsync(ct); }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[Nexus] Exception in IAsyncStartable.StartAsync ({inst.GetType().FullName}): {ex.Message}");
+                    }
+                }
+                if (inst is IStartable startable)
+                {
+                    try { startable.Start(); }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[Nexus] Exception in IStartable.Start ({inst.GetType().FullName}): {ex.Message}");
+                    }
+                }
+            }
+        }
+
+        public async ValueTask ExecuteStoppableLifecyclesAsync(IEnumerable<object> instances, CancellationToken ct)
+        {
+            if (instances == null) return;
+            foreach (var inst in instances)
+            {
+                if (inst is IAsyncStoppable asyncStoppable)
+                {
+                    try { await asyncStoppable.StopAsync(ct); }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[Nexus] Exception in IAsyncStoppable.StopAsync ({inst.GetType().FullName}): {ex.Message}");
+                    }
+                }
+                if (inst is IStoppable stoppable)
+                {
+                    try { stoppable.Stop(); }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
+                    }
+                }
+            }
+        }
     }
 }

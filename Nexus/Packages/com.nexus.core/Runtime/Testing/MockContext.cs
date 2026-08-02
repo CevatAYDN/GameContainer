@@ -10,6 +10,7 @@ namespace Nexus.Core
     public class MockContext : IContext
     {
         public ISignalBus SignalBus { get; set; }
+        public NexusDI Container { get; set; }
         public CancellationToken LifetimeToken => CancellationToken.None;
         public string ScopeTag { get; set; }
         public IContext Parent { get; set; }

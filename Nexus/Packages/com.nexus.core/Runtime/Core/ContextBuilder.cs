@@ -106,6 +106,56 @@ namespace Nexus.Core
             _container.BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>(isSingleton: true);
         }
 
+        /// <summary>
+        /// Automatically binds a concrete implementation class under all of its implemented interfaces
+        /// (excluding system/framework interfaces) AND under its own concrete type as a shared singleton.
+        /// </summary>
+        public void BindInterfacesAndSelfTo<TImplementation>(bool isSingleton = true) where TImplementation : class
+        {
+            BindInterfacesAndSelfTo(typeof(TImplementation), isSingleton);
+        }
+
+        /// <summary>
+        /// Scans an assembly and automatically binds matching concrete types using the specified predicate.
+        /// </summary>
+        public void BindAllClassesMatching(System.Reflection.Assembly assembly, Func<Type, bool> predicate, bool isSingleton = true)
+        {
+            if (assembly == null) throw new ArgumentNullException(nameof(assembly));
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+
+            var types = Services.AssemblyScanService.GetCachedTypes(assembly);
+            for (int i = 0; i < types.Length; i++)
+            {
+                var t = types[i];
+                if (t.IsClass && !t.IsAbstract && predicate(t))
+                {
+                    BindInterfacesAndSelfTo(t, isSingleton);
+                }
+            }
+        }
+
+        private void BindInterfacesAndSelfTo(Type implType, bool isSingleton)
+        {
+            var interfaces = GetUserDefinedInterfaces(implType);
+            _container.BindMultiple(interfaces.ToArray(), implType, isSingleton);
+        }
+
+        private static List<Type> GetUserDefinedInterfaces(Type type)
+        {
+            var result = new List<Type>();
+            var allInterfaces = type.GetInterfaces();
+            for (int i = 0; i < allInterfaces.Length; i++)
+            {
+                var iface = allInterfaces[i];
+                if (iface == typeof(IDisposable) || iface == typeof(IAsyncDisposable))
+                    continue;
+                if (iface.Namespace != null && (iface.Namespace.StartsWith("System") || iface.Namespace.StartsWith("UnityEngine")))
+                    continue;
+                result.Add(iface);
+            }
+            return result;
+        }
+
         public void EnableStrictInjection()
         {
             _container.StrictInjection = true;

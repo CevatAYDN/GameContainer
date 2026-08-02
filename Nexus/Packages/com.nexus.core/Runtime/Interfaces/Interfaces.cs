@@ -277,6 +277,7 @@ namespace Nexus.Core
     public interface IContext : IDisposable
     {
         ISignalBus SignalBus { get; }
+        NexusDI Container { get; }
         CancellationToken LifetimeToken { get; }
         string ScopeTag { get; }
         void RegisterView(IView view);

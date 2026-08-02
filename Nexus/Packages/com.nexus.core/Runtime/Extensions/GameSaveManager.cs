@@ -67,7 +67,7 @@ namespace Nexus.Core.Extensions
     [Preserve]
     public sealed class GameSaveManager : IGameSaveManager, IDisposable
     {
-        private static readonly string SaveDirectory = Application.persistentDataPath + "/saves/";
+        private static string SaveDirectory => Path.Combine(Application.persistentDataPath, "saves");
 
         // Only one active model can participate in save/load.
         // For composite saves, register an aggregate root model.
@@ -91,8 +91,9 @@ namespace Nexus.Core.Extensions
 
             ct.ThrowIfCancellationRequested();
 
-            if (!Directory.Exists(SaveDirectory))
-                Directory.CreateDirectory(SaveDirectory);
+            string dir = SaveDirectory;
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
 
             var data = new GameSaveData
             {
@@ -101,14 +102,21 @@ namespace Nexus.Core.Extensions
                 ModelData = _model.CaptureSaveData()
             };
 
-            string path = SaveDirectory + SanitizeSlotName(slotName) + ".sav";
+            string sanitized = SanitizeSlotName(slotName);
+            string path = Path.Combine(dir, sanitized + ".sav");
+            string tempPath = Path.Combine(dir, sanitized + ".sav.tmp");
 
-            // Write asynchronously to avoid main-thread stutter.
+            // Write atomically via temporary file to prevent save corruption on crash.
             return Task.Run(() =>
             {
                 ct.ThrowIfCancellationRequested();
                 string json = JsonUtility.ToJson(data);
-                File.WriteAllText(path, json);
+                File.WriteAllText(tempPath, json);
+                if (File.Exists(path))
+                {
+                    File.Delete(path);
+                }
+                File.Move(tempPath, path);
             }, ct);
         }
 
@@ -121,7 +129,7 @@ namespace Nexus.Core.Extensions
                 return Task.FromResult(false);
             }
 
-            string path = SaveDirectory + SanitizeSlotName(slotName) + ".sav";
+            string path = Path.Combine(SaveDirectory, SanitizeSlotName(slotName) + ".sav");
             if (!File.Exists(path))
                 return Task.FromResult(false);
 
@@ -152,20 +160,21 @@ namespace Nexus.Core.Extensions
         public bool SaveExists(string slotName)
         {
             ValidateSlotName(slotName);
-            string path = SaveDirectory + SanitizeSlotName(slotName) + ".sav";
+            string path = Path.Combine(SaveDirectory, SanitizeSlotName(slotName) + ".sav");
             return File.Exists(path);
         }
 
         public void DeleteSave(string slotName)
         {
             ValidateSlotName(slotName);
-            string path = SaveDirectory + SanitizeSlotName(slotName) + ".sav";
+            string path = Path.Combine(SaveDirectory, SanitizeSlotName(slotName) + ".sav");
             if (File.Exists(path))
                 File.Delete(path);
         }
 
         private static string SanitizeSlotName(string slotName)
         {
+            slotName = Path.GetFileName(slotName);
             foreach (char c in Path.GetInvalidFileNameChars())
                 slotName = slotName.Replace(c, '_');
             return slotName;
@@ -173,8 +182,8 @@ namespace Nexus.Core.Extensions
 
         private static void ValidateSlotName(string slotName)
         {
-            if (string.IsNullOrWhiteSpace(slotName) || slotName == "." || slotName == "..")
-                throw new ArgumentException("Save slot name must be a non-empty filename and cannot be '.' or '..'.", nameof(slotName));
+            if (string.IsNullOrWhiteSpace(slotName) || slotName == "." || slotName == ".." || slotName.Contains("/") || slotName.Contains("\\"))
+                throw new ArgumentException("Save slot name must be a non-empty filename without path characters.", nameof(slotName));
         }
 
         private static Task RunOnCapturedContextAsync(Action action, SynchronizationContext synchronizationContext, CancellationToken ct)

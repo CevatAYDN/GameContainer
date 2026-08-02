@@ -49,6 +49,9 @@ namespace UnityEngine
         }
     }
 
+    [AttributeUsage(AttributeTargets.Class, Inherited = false)]
+    public class DisallowMultipleComponentAttribute : Attribute {}
+
     /// <summary>Unity device info — a fixed identity outside Unity.</summary>
     public static class SystemInfo
     {
@@ -496,6 +499,7 @@ namespace UnityEngine
         public Transform transform => gameObject.transform;
         public T GetComponent<T>() => gameObject.GetComponent<T>();
         public T[] GetComponents<T>() => gameObject.GetComponents<T>();
+        public T[] GetComponentsInChildren<T>(bool includeInactive = false) => gameObject.GetComponentsInChildren<T>(includeInactive);
         public T GetComponentInParent<T>() => gameObject.GetComponentInParent<T>();
     }
 
@@ -552,6 +556,29 @@ namespace UnityEngine
                 if (list[i] is T typed) result.Add(typed);
             }
             return result.ToArray();
+        }
+
+        public T[] GetComponentsInChildren<T>(bool includeInactive = false)
+        {
+            var list = new List<T>();
+            CollectComponentsInChildren(this, list, includeInactive);
+            return list.ToArray();
+        }
+
+        private static void CollectComponentsInChildren<T>(GameObject go, List<T> result, bool includeInactive)
+        {
+            if (go == null) return;
+            if (!includeInactive && !go.IsActive) return;
+            var comps = go.GetComponents<T>();
+            for (int i = 0; i < comps.Length; i++) result.Add(comps[i]);
+            var tx = go.transform;
+            if (tx != null)
+            {
+                foreach (var child in tx.ChildrenSnapshot())
+                {
+                    if (child.gameObject != null) CollectComponentsInChildren(child.gameObject, result, includeInactive);
+                }
+            }
         }
 
         public T GetComponentInParent<T>()

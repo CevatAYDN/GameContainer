@@ -245,11 +245,11 @@ namespace Nexus.Core.Services
                 }
                 catch
                 {
-                    // Fallback: GetInstanceID may fail on AOT/IL2CPP platforms where
-                    // Delegate.CreateDelegate for non-static generic methods is restricted.
+                    var targetMethod = method;
+                    return obj => obj != null ? (int)targetMethod.Invoke(obj, null) : 0;
                 }
             }
-            return obj => obj.GetHashCode();
+            return obj => obj != null ? obj.GetHashCode() : 0;
         }
 
         private static int GetId(UnityEngine.Object obj)

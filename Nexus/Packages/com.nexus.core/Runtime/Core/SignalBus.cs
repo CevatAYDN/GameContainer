@@ -546,6 +546,7 @@ namespace Nexus.Core
                         int taskCount = toRun.Count;
                         var tasks = System.Buffers.ArrayPool<ValueTask>.Shared.Rent(taskCount);
                         int started = 0;
+                        int lastCompletedIndex = -1;
                         try
                         {
                             // A5: track how many tasks actually started. If ExecuteAsync throws
@@ -560,14 +561,15 @@ namespace Nexus.Core
                             for (int i = 0; i < started; i++)
                             {
                                 await tasks[i];
+                                lastCompletedIndex = i;
                             }
                         }
                         catch (Exception ex)
                         {
-                            // Drain the tasks that were started before the failure so none is
-                            // abandoned; swallow their individual errors (the original exception
+                            // Drain only the tasks that were started but not yet awaited before the failure
+                            // so none is abandoned; swallow their individual errors (the original exception
                             // below is the one that propagates to recovery/error handling).
-                            for (int i = 0; i < started; i++)
+                            for (int i = lastCompletedIndex + 1; i < started; i++)
                             {
                                 try { await tasks[i]; }
                                 catch { /* original error wins */ }
