@@ -324,7 +324,7 @@ namespace Nexus.Core.Services
                     s_activeDriverCount--;
                     if (s_activeDriverCount <= 0 && s_sharedDriverObject != null)
                     {
-                        UnityEngine.Object.Destroy(s_sharedDriverObject);
+                        SafeDestroyUtility.SafeDestroy(s_sharedDriverObject);
                         s_sharedDriverObject = null;
                         s_sharedDriver = null;
                     }

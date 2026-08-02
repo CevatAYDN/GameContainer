@@ -135,7 +135,7 @@ namespace Nexus.Core.Services
         {
             if (_canvasObject != null)
             {
-                UnityEngine.Object.Destroy(_canvasObject);
+                SafeDestroyUtility.SafeDestroy(_canvasObject);
                 _canvasObject = null;
             }
             _layerRoots.Clear();

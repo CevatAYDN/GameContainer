@@ -42,7 +42,7 @@ namespace Nexus.Core.Services
         {
             if (windowInstance != null)
             {
-                UnityEngine.Object.Destroy(windowInstance);
+                SafeDestroyUtility.SafeDestroy(windowInstance);
             }
         }
     }

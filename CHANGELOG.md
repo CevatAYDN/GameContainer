@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-08-02
+
+### Added
+- **Attribute-Based Command Auto-Discovery (`[RegisterCommand]`)**: Decorate command classes with `[RegisterCommand(typeof(MySignal))]` for automatic signal binding during assembly scanning.
+- **Convention-Based Binding (`BindInterfacesAndSelfTo<T>()`)**: Automatically bind concrete classes under all user interfaces AND their concrete type sharing one singleton `Binding` instance.
+- **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Provide startup and teardown lifecycle hooks for non-service domain objects.
+- **Scene & Prefab Auto-Injection (`NexusBinding`)**: Attach `NexusBinding` MonoBehaviour to GameObjects or Prefabs for zero-code scene injection with event fallback listening.
+- **SafeDestroy Helper**: Safe EditMode (`DestroyImmediate`) and PlayMode (`Destroy`) object destruction across `UIManager` and `ObjectPoolService`.
+- **EditMode Test Suite (`StrategicCapabilitiesEditModeTests.cs`)**: NUnit EditMode test coverage for all strategic capabilities passing 100% in Unity TestRunner (174/174 Passed).
+
 ## [0.2.0] - 2026-06-28
 
 ### Added

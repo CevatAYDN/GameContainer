@@ -30,6 +30,7 @@ namespace UnityEngine
     /// <summary>Unity application surface used by the runtime outside Unity.</summary>
     public static class Application
     {
+        public static bool isPlaying => false;
 #pragma warning disable 0067 // events mirror the Unity surface; nothing raises them in the harness
         public static event LogCallback logMessageReceivedThreaded;
         public static event Action<bool> focusChanged;
@@ -406,6 +407,7 @@ namespace UnityEngine
         internal bool IsDestroyed => _destroyed;
 
         public static void DontDestroyOnLoad(Object target) { }
+        public static void DestroyImmediate(Object target) => Destroy(target);
 
         /// <summary>Unity-style truthiness: a destroyed object is falsy.</summary>
         public static implicit operator bool(Object o) => o != null && !o._destroyed;

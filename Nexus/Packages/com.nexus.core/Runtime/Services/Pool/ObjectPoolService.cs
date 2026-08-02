@@ -133,7 +133,7 @@ namespace Nexus.Core.Services
             if (!_poolsByInstanceId.TryGetValue(instanceId, out var pool))
             {
                 _spawnGenerations.Remove(instanceId);
-                UnityEngine.Object.Destroy(instance);
+                SafeDestroyUtility.SafeDestroy(instance);
                 return;
             }
 
@@ -205,7 +205,7 @@ namespace Nexus.Core.Services
                 while (pool.Inactive.Count > 0)
                 {
                     var inst = pool.Inactive.Pop();
-                    if (inst != null) UnityEngine.Object.Destroy(inst);
+                    if (inst != null) SafeDestroyUtility.SafeDestroy(inst);
                 }
                 foreach (var active in pool.Active)
                 {
@@ -220,11 +220,11 @@ namespace Nexus.Core.Services
                             try { poolables[i].OnDespawned(); }
                             catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                         }
-                        UnityEngine.Object.Destroy(active);
+                        SafeDestroyUtility.SafeDestroy(active);
                     }
                 }
                 pool.Active.Clear();
-                if (pool.RootTransform != null) UnityEngine.Object.Destroy(pool.RootTransform.gameObject);
+                if (pool.RootTransform != null) SafeDestroyUtility.SafeDestroy(pool.RootTransform.gameObject);
                 _poolsByPrefabId.Remove(prefabId);
             }
         }
@@ -249,7 +249,7 @@ namespace Nexus.Core.Services
                 while (pool.Inactive.Count > 0)
                 {
                     var inst = pool.Inactive.Pop();
-                    if (inst != null) UnityEngine.Object.Destroy(inst);
+                    if (inst != null) SafeDestroyUtility.SafeDestroy(inst);
                 }
                 foreach (var active in pool.Active)
                 {
@@ -261,10 +261,10 @@ namespace Nexus.Core.Services
                             try { poolables[i].OnDespawned(); }
                             catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                         }
-                        UnityEngine.Object.Destroy(active);
+                        SafeDestroyUtility.SafeDestroy(active);
                     }
                 }
-                if (pool.RootTransform != null) UnityEngine.Object.Destroy(pool.RootTransform.gameObject);
+                if (pool.RootTransform != null) SafeDestroyUtility.SafeDestroy(pool.RootTransform.gameObject);
             }
             _poolsByPrefabId.Clear();
             _poolsByInstanceId.Clear();
@@ -276,7 +276,7 @@ namespace Nexus.Core.Services
             ClearAllPools();
             if (_masterRootObject != null)
             {
-                UnityEngine.Object.Destroy(_masterRootObject);
+                SafeDestroyUtility.SafeDestroy(_masterRootObject);
                 _masterRootObject = null;
             }
         }

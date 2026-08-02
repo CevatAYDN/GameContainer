@@ -267,7 +267,7 @@ namespace Nexus.Core.Services
             {
                 if (AudioRootProvider is DefaultAudioRootProvider)
                 {
-                    UnityEngine.Object.Destroy(_audioRoot);
+                    SafeDestroyUtility.SafeDestroy(_audioRoot);
                 }
                 _audioRoot = null;
             }

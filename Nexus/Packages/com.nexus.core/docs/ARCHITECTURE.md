@@ -102,6 +102,12 @@ Both recovery paths dispatch fallback commands through object-based `ExecuteComm
 ### 7. DI Validation Scope
 `ContextBuilder.Validate()` validates the *concrete* implementations of interface bindings (`Bind<TInterface, TImplementation>`) — not just the interface keys — so missing constructor/`[Inject]` dependencies are reported for the types that are actually constructed. `LazyInjection<T>` fields are excluded (the injector constructs them directly).
 
+### 8. Strategic Capabilities (v0.5.0)
+- **Attribute-Based Auto-Discovery (`[RegisterCommand]`)**: Commands decorated with `[RegisterCommand(typeof(TSignal))]` are auto-bound during assembly scanning.
+- **Convention-Based Binding (`BindInterfacesAndSelfTo<T>`)**: Polymorphic binding where all user-defined interfaces and the concrete type share ONE `Binding` instance.
+- **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Domain presenters and controllers receive lifecycle callbacks without implementing `INexusService`.
+- **Scene Auto-Injection (`NexusBinding`)**: Scene component auto-injection with `Awake`/`Start` triggers and event-driven registration fallbacks.
+
 ---
 
 ## 🚫 Architectural Anti-Patterns

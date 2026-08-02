@@ -243,7 +243,7 @@ namespace Nexus.Core.Services
                 // Phase 3: register under lock (atomic add + pending removal)
                 if (!await TryAcquireWindowLockAsync())
                 {
-                    if (inst != null) UnityEngine.Object.Destroy(inst);
+                    if (inst != null) SafeDestroyUtility.SafeDestroy(inst);
                     return null;
                 }
                 try
@@ -274,7 +274,7 @@ namespace Nexus.Core.Services
                 NexusRuntime.Logger?.LogError($"[WindowManager] Failed to open window '{windowName}': {ex.Message}");
                 if (inst != null)
                 {
-                    UnityEngine.Object.Destroy(inst);
+                    SafeDestroyUtility.SafeDestroy(inst);
                 }
                 if (await TryAcquireWindowLockAsync())
                 {
@@ -487,7 +487,7 @@ namespace Nexus.Core.Services
             foreach (var kvp in _activeWindows)
             {
                 if (kvp.Value != null)
-                    UnityEngine.Object.Destroy(kvp.Value);
+                    SafeDestroyUtility.SafeDestroy(kvp.Value);
             }
             _activeWindows.Clear();
             _windowHistory.Clear();
