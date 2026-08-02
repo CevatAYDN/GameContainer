@@ -62,7 +62,10 @@ namespace Nexus.Editor.Tests
                 _uiManager.Dispose();
             if (_manualCanvas != null)
                 Object.DestroyImmediate(_manualCanvas);
+            if (_prefab != null)
+                Object.DestroyImmediate(_prefab);
             _manualCanvas = null;
+            _prefab = null;
         }
 
         [Test]

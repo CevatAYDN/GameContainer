@@ -227,7 +227,7 @@ namespace Nexus.Core.Services
                         // Defensive: reservation should prevent this, but if a pool was
                         // reused while an instance is active, destroy the duplicate.
                         NexusRuntime.Logger?.LogWarning($"[UIManager] Screen '{key}' already active; discarding duplicate instance.");
-                        UnityEngine.Object.Destroy(screen.gameObject);
+                        SafeDestroy(screen.gameObject);
                         return _activeScreens[key] as TScreen;
                     }
                 }
@@ -284,7 +284,7 @@ namespace Nexus.Core.Services
             if (screen == null)
             {
                 NexusRuntime.Logger?.LogError($"[UIManager] Prefab for '{key}' has no {typeof(TScreen).Name} component.");
-                UnityEngine.Object.Destroy(instance);
+                SafeDestroy(instance);
                 return null;
             }
             return screen;
@@ -371,7 +371,7 @@ namespace Nexus.Core.Services
             }
             else
             {
-                UnityEngine.Object.Destroy(screen.gameObject);
+                SafeDestroy(screen.gameObject);
             }
 
             _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
@@ -417,6 +417,15 @@ namespace Nexus.Core.Services
             return typeof(TScreen).Name;
         }
 
+        private static void SafeDestroy(UnityEngine.Object obj)
+        {
+            if (obj == null) return;
+            if (Application.isPlaying)
+                UnityEngine.Object.Destroy(obj);
+            else
+                UnityEngine.Object.DestroyImmediate(obj);
+        }
+
         public override void Dispose()
         {
             if (_disposed) return;
@@ -438,7 +447,7 @@ namespace Nexus.Core.Services
             foreach (var screen in toDestroy)
             {
                 if (screen != null)
-                    UnityEngine.Object.Destroy(screen.gameObject);
+                    SafeDestroy(screen.gameObject);
             }
 
             // NOTE: do not destroy the shared [Nexus_UICanvas] here. It is a DontDestroyOnLoad

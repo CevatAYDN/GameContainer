@@ -36,7 +36,12 @@ namespace Nexus.Core
         /// </param>
         public static NexusTestContext CreateContext(Action<IContextBuilder> configure, bool autoInitialize = false)
         {
-            var context = new Context(parent: null, contextData: null);
+            return CreateContext(null, configure, autoInitialize);
+        }
+
+        public static NexusTestContext CreateContext(ContextData contextData, Action<IContextBuilder> configure, bool autoInitialize = false)
+        {
+            var context = new Context(parent: null, contextData: contextData);
             var builder = new ContextBuilder(context.Container, context.SignalBusInternal);
             configure?.Invoke(builder);
             context.Configure();

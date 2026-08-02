@@ -229,33 +229,16 @@ namespace Nexus.Core.Services
             }
         }
 
-        private static readonly Func<UnityEngine.Object, int> s_getIdDelegate = CreateGetIdDelegate();
-
-        private static Func<UnityEngine.Object, int> CreateGetIdDelegate()
-        {
-            var type = typeof(UnityEngine.Object);
-            var method = type.GetMethod("GetEntityId", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
-                      ?? type.GetMethod("GetInstanceID", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-
-            if (method != null)
-            {
-                try
-                {
-                    return (Func<UnityEngine.Object, int>)Delegate.CreateDelegate(typeof(Func<UnityEngine.Object, int>), null, method);
-                }
-                catch
-                {
-                    var targetMethod = method;
-                    return obj => obj != null ? (int)targetMethod.Invoke(obj, null) : 0;
-                }
-            }
-            return obj => obj != null ? obj.GetHashCode() : 0;
-        }
+        private static readonly System.Reflection.MethodInfo s_getInstanceIdMethod = typeof(UnityEngine.Object).GetMethod("GetInstanceID", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
 
         private static int GetId(UnityEngine.Object obj)
         {
             if (obj == null) return 0;
-            return s_getIdDelegate(obj);
+            if (s_getInstanceIdMethod != null)
+            {
+                return (int)s_getInstanceIdMethod.Invoke(obj, null);
+            }
+            return obj.GetHashCode();
         }
 
         public void ClearAllPools()

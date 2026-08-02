@@ -213,6 +213,17 @@ namespace Nexus.Core
         void BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>()
             where TImplementation : class, TInterface1, TInterface2, TInterface3;
 
+        /// <summary>
+        /// Automatically binds a concrete implementation class under all of its implemented interfaces
+        /// (excluding system/framework interfaces) AND under its own concrete type as a shared singleton.
+        /// </summary>
+        void BindInterfacesAndSelfTo<TImplementation>(bool isSingleton = true) where TImplementation : class;
+
+        /// <summary>
+        /// Scans an assembly and automatically binds matching concrete types using the specified predicate.
+        /// </summary>
+        void BindAllClassesMatching(System.Reflection.Assembly assembly, Func<Type, bool> predicate, bool isSingleton = true);
+
         void EnableStrictInjection();
         
         void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
