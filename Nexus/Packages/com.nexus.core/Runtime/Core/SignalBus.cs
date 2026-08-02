@@ -347,12 +347,11 @@ namespace Nexus.Core
                 // their finally blocks, which would drift the counter negative). This branch
                 // runs before this frame's try/finally, so undo only this frame's increment.
                 s_stackDepth--;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                // A8 fix: reentrancy protection must throw in ALL build targets. Silently
+                // returning in Release builds hid the state corruption that a runaway
+                // signal chain would cause — the guard now aborts the chain everywhere so
+                // recovery (RecoveryEngine triage) and tests see the same behavior.
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
-#else
-                NexusRuntime.Logger?.LogError($"[Nexus] Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
-                return;
-#endif
             }
 
 #if NEXUS_DEBUG
@@ -506,12 +505,9 @@ namespace Nexus.Core
                 // their finally blocks, which would drift the counter negative). This branch
                 // runs before this frame's try/finally, so undo only this frame's increment.
                 s_asyncStackDepth.Value--;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                // A8 fix: same as the sync path — always throw, never return silently in
+                // Release builds (silent return masked runaway async chains).
                 throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
-#else
-                NexusRuntime.Logger?.LogError($"[Nexus] Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
-                return;
-#endif
             }
 
 #if NEXUS_DEBUG

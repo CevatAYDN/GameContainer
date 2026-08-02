@@ -39,7 +39,7 @@ namespace Nexus.Core.Components
     {
         [SerializeField] private InjectionScope _scope = InjectionScope.Self;
         [SerializeField] private InjectionTime _time = InjectionTime.Awake;
-        [SerializeField] private MonoBehaviour[] _customTargets;
+        [SerializeField] private MonoBehaviour[] _customTargets = System.Array.Empty<MonoBehaviour>();
 
         private bool _hasInjected;
 

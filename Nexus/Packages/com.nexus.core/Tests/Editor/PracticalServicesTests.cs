@@ -75,7 +75,16 @@ namespace Nexus.Editor.Tests
             long tamperedOfflineSec = OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600);
             Assert.AreEqual(0, tamperedOfflineSec, "Tampered future timestamp must return 0 offline seconds.");
 
+            // A8: a monotonic hardware tick is stored alongside the wall clock; a clock
+            // pushed FORWARD (wall diff inflated but monotonic diff ~0) must be clamped
+            // to the real elapsed time instead of granting inflated offline rewards.
+            long realElapsedMs = Environment.TickCount64 - storage.GetLong("NT_LastQuitMonotonicMs", 0L);
+            long forwardCheatSec = OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600);
+            Assert.LessOrEqual(forwardCheatSec, Math.Max(0, realElapsedMs / 1000L) + 1,
+                "Forward clock manipulation must not inflate offline progress beyond real elapsed time.");
+
             storage.DeleteKey("NT_LastQuitTimestamp");
+            storage.DeleteKey("NT_LastQuitMonotonicMs");
         }
 
         [Test]

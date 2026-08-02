@@ -32,7 +32,7 @@ namespace Nexus.Core
     }
 
     [Preserve]
-    public class Context : IContext
+    public class Context : IContext, IAsyncDisposable
     {
         private readonly Context _parent;
         private readonly ContextData _contextData;
@@ -569,6 +569,36 @@ namespace Nexus.Core
             _disposed = true;
             _cts.Cancel();
 
+            DisposeShared();
+
+            // A8 fix: the sync teardown path never blocks on IAsyncDisposable singletons
+            // (NexusDI.Dispose schedules their DisposeAsync on a background task). Callers
+            // that can await must use DisposeAsync() for deterministic async teardown.
+            Container.Dispose();
+            _cts.Dispose();
+        }
+
+        /// <summary>
+        /// A8 fix: deterministic async teardown. Awaits every IAsyncDisposable singleton's
+        /// <c>DisposeAsync</c> (via <see cref="NexusDI.DisposeAsync"/>) instead of blocking
+        /// the calling thread — eliminates the sync-over-async deadlock risk on the Unity
+        /// main thread during teardown.
+        /// </summary>
+        public async ValueTask DisposeAsync()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _cts.Cancel();
+
+            DisposeShared();
+
+            await Container.DisposeAsync();
+            _cts.Dispose();
+        }
+
+        /// <summary>Shared teardown for <see cref="Dispose"/> and <see cref="DisposeAsync"/>.</summary>
+        private void DisposeShared()
+        {
             // Execute IStoppable domain lifecycles before container teardown
             try
             {
@@ -645,8 +675,6 @@ namespace Nexus.Core
             SignalBusInternal.Dispose();
             HybridQueue.Clear();
             PoolManager.Clear();
-            Container.Dispose();
-            _cts.Dispose();
         }
 
         public static void ClearAssemblyScanCache()

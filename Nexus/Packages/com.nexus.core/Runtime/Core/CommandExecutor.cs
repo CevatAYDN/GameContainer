@@ -30,6 +30,26 @@ namespace Nexus.Core
         /// <summary>Number of async commands currently in flight (for dispose diagnostics).</summary>
         public int InFlightAsyncCommands => Volatile.Read(ref _inFlightAsyncCommands);
 
+        /// <summary>
+        /// Enters the async in-flight guard. Throws <see cref="NexusAsyncOverflowException"/>
+        /// (in ALL build targets) when the concurrent async command cap is exceeded. The
+        /// pre-A9 Release branch logged and silently dropped the command while the caller's
+        /// async chain completed "successfully" — the same silent state-corruption class the
+        /// A8 reentrancy fix eliminated. Overflow is unrecoverable here: throwing everywhere
+        /// lets RecoveryEngine triage and tests observe identical behavior.
+        /// A successful call MUST be paired with an <see cref="Interlocked.Decrement"/> when
+        /// the command finishes (the caller's finally does this via inFlightIncremented).
+        /// </summary>
+        private void EnterAsyncInFlight()
+        {
+            var count = Interlocked.Increment(ref _inFlightAsyncCommands);
+            if (count > MaxInFlightAsyncCommands)
+            {
+                Interlocked.Decrement(ref _inFlightAsyncCommands);
+                throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
+            }
+        }
+
 #if NEXUS_DEBUG
         private static readonly ProfilerMarker s_CommandMarker = new ProfilerMarker("Nexus.Command.Execute");
 #endif
@@ -211,18 +231,7 @@ namespace Nexus.Core
                 bool inFlightIncremented = false;
                 try
                 {
-                    var count = Interlocked.Increment(ref _inFlightAsyncCommands);
-                    if (count > MaxInFlightAsyncCommands)
-                    {
-                        Interlocked.Decrement(ref _inFlightAsyncCommands);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                        throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
-#else
-                        NexusRuntime.Logger?.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
-                        shouldRun = false;
-                        break;
-#endif
-                    }
+                    EnterAsyncInFlight();
                     inFlightIncremented = true;
 
                     command = _poolManager.GetCommand(handler.CommandType);
@@ -322,18 +331,7 @@ namespace Nexus.Core
                 bool inFlightIncremented = false;
                 try
                 {
-                    var count = Interlocked.Increment(ref _inFlightAsyncCommands);
-                    if (count > MaxInFlightAsyncCommands)
-                    {
-                        Interlocked.Decrement(ref _inFlightAsyncCommands);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                        throw new NexusAsyncOverflowException($"Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
-#else
-                        NexusRuntime.Logger?.LogError($"[Nexus] Async execution overflow. Max in-flight async commands limit of {MaxInFlightAsyncCommands} exceeded.");
-                        shouldRun = false;
-                        break;
-#endif
-                    }
+                    EnterAsyncInFlight();
                     inFlightIncremented = true;
 
                     command = _poolManager.GetCommand(handler.CommandType);
@@ -520,7 +518,9 @@ namespace Nexus.Core
                     else if (command is IAsyncCompositeCommand asyncCompCmd)
                     {
                         var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        Interlocked.Increment(ref _inFlightAsyncCommands);
+                        // A9 fix: composite async commands share the same in-flight cap as
+                        // regular async commands — overflow aborts the pipeline everywhere.
+                        EnterAsyncInFlight();
                         inFlightIncremented = true;
                         try
                         {
@@ -545,7 +545,9 @@ namespace Nexus.Core
                     else if (command is IAsyncCommand asyncCmd)
                     {
                         var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        Interlocked.Increment(ref _inFlightAsyncCommands);
+                        // A9 fix: composite async commands share the same in-flight cap as
+                        // regular async commands — overflow aborts the pipeline everywhere.
+                        EnterAsyncInFlight();
                         inFlightIncremented = true;
                         try
                         {

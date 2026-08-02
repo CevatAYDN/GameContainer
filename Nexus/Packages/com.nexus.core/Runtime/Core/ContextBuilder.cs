@@ -413,6 +413,55 @@ namespace Nexus.Core
                 }
             }
 
+            // A8: captive-dependency prevention — a singleton service must not capture a
+            // transient (non-singleton, non-factory) dependency in its constructor or
+            // [Inject] members, or the transient silently becomes a long-lived shared
+            // instance with an unclear lifetime.
+            // Polymorphic bindings (BindMultiple / BindInterfacesAndSelfTo) share ONE
+            // Binding across several interface keys, so dedupe by concrete type to avoid
+            // reporting the same captive dependency once per interface.
+            var captiveReportedConcretes = new HashSet<Type>();
+            foreach (var (interfaceKey, concrete) in _container.GetEditorTypeMappings())
+            {
+                if (concrete == null || concrete.IsInterface || concrete.IsAbstract) continue;
+                if (!_container.IsSingletonBinding(interfaceKey)) continue;
+                if (!captiveReportedConcretes.Add(concrete)) continue;
+
+                NexusDI.InjectableMetadata captiveMeta;
+                try { captiveMeta = NexusDI.GetOrCreateInjectMetadata(concrete); }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogWarning($"[Nexus] DI validation skipped type '{concrete.Name}': {ex.Message}");
+                    continue;
+                }
+
+                void ReportCaptive(Type depType, string memberDesc)
+                {
+                    if (depType == null) return;
+                    if (depType.IsGenericType && depType.GetGenericTypeDefinition() == typeof(LazyInjection<>)) return;
+                    if (!allRegisteredTypes.Contains(depType)) return; // missing deps are already reported above
+                    if (_container.IsSingletonBinding(depType) || _container.IsFactoryBinding(depType)) return;
+                    issues.Add(new DiValidationIssue(
+                        concrete, depType,
+                        DiValidationIssueType.CaptiveDependency,
+                        $"[CaptiveDependency] Singleton '{concrete.Name}' ({interfaceKey.Name}) captures transient dependency '{depType.Name}' via {memberDesc}. Bind it as a singleton or through a factory."
+                    ));
+                }
+
+                if (captiveMeta.ConstructorParameterTypes != null)
+                {
+                    for (int i = 0; i < captiveMeta.ConstructorParameterTypes.Length; i++)
+                        ReportCaptive(captiveMeta.ConstructorParameterTypes[i], $"constructor parameter {i}");
+                }
+                foreach (var f in captiveMeta.Fields) ReportCaptive(f.Type, $"[Inject] field '{f.Field.Name}'");
+                foreach (var p in captiveMeta.Properties) ReportCaptive(p.Type, $"[Inject] property '{p.Property.Name}'");
+                foreach (var m in captiveMeta.Methods)
+                {
+                    for (int i = 0; i < m.ParameterTypes.Length; i++)
+                        ReportCaptive(m.ParameterTypes[i], $"[Inject] method '{m.Method.Name}' parameter {i}");
+                }
+            }
+
             return issues;
         }
 

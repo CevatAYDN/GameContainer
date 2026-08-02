@@ -1,5 +1,3 @@
-#pragma warning disable 0619
-
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -34,8 +32,6 @@ namespace Nexus.Core.Services
     [Preserve]
     public class ObjectPoolService : NexusService<IObjectPoolService>, IObjectPoolService
     {
-#pragma warning disable CS0619
-#pragma warning disable 0619
         private class PoolData
         {
             public GameObject Prefab { get; }
@@ -229,16 +225,14 @@ namespace Nexus.Core.Services
             }
         }
 
-        private static readonly System.Reflection.MethodInfo s_getInstanceIdMethod = typeof(UnityEngine.Object).GetMethod("GetInstanceID", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
         private static int GetId(UnityEngine.Object obj)
         {
             if (obj == null) return 0;
-            if (s_getInstanceIdMethod != null)
-            {
-                return (int)s_getInstanceIdMethod.Invoke(obj, null);
-            }
-            return obj.GetHashCode();
+            // A8 fix: use the modern Unity 6 GetEntityId() instead of the legacy
+            // GetInstanceID() reflection hack — GetInstanceID is obsolete (CS0619)
+            // in Unity 6.5+, and GetEntityId() is its supported replacement. The
+            // .GetHashCode() keeps the key a plain int for the pool dictionaries.
+            return obj.GetEntityId().GetHashCode();
         }
 
         public void ClearAllPools()

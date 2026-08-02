@@ -112,11 +112,18 @@ namespace Nexus.Core.Extensions
                 ct.ThrowIfCancellationRequested();
                 string json = JsonUtility.ToJson(data);
                 File.WriteAllText(tempPath, json);
+                // A8 fix: single overwrite-rename, never Delete-then-Move. The old
+                // Delete + Move pair left a crash window where the only good save was
+                // already deleted but the new one not yet in place (the exact
+                // data-loss pattern EncryptedStorageService documents and avoids).
                 if (File.Exists(path))
                 {
-                    File.Delete(path);
+                    File.Replace(tempPath, path, null);
                 }
-                File.Move(tempPath, path);
+                else
+                {
+                    File.Move(tempPath, path);
+                }
             }, ct);
         }
 

@@ -1080,6 +1080,32 @@ namespace Nexus.Core
             return types;
         }
 
+        /// <summary>
+        /// A8: returns whether the type is bound as a singleton in this container or any
+        /// ancestor. Used by DI validation to detect captive dependencies (a singleton
+        /// service capturing a transient dependency).
+        /// </summary>
+        internal bool IsSingletonBinding(Type key)
+        {
+            if (key == null) return false;
+            if (_bindings.TryGetValue(key, out var b)) return b.IsSingleton;
+            // Named bindings redirect empty names to the default binding at registration,
+            // so a (key, null) named entry never exists — only the default map is checked.
+            return _parent != null && _parent.IsSingletonBinding(key);
+        }
+
+        /// <summary>
+        /// A8: returns whether the type is bound via a factory (BindFactory) in this
+        /// container or any ancestor. Factory-managed dependencies are explicitly exempt
+        /// from captive-dependency validation.
+        /// </summary>
+        internal bool IsFactoryBinding(Type key)
+        {
+            if (key == null) return false;
+            if (_bindings.TryGetValue(key, out var b)) return b.Factory != null;
+            return _parent != null && _parent.IsFactoryBinding(key);
+        }
+
         /// <summary>Safe editor snapshot of resolved singleton instances.</summary>
         internal List<(Type InterfaceType, object Instance)> GetEditorSingletonSnapshot()
         {
@@ -1198,13 +1224,14 @@ namespace Nexus.Core
                     if (instance is IDisposable disposable) disposable.Dispose();
                     else if (instance is IAsyncDisposable asyncDisposable)
                     {
-                        // Block on async dispose in synchronous Dispose() so the resource
-                        // is released before _bindings.Clear() runs below.
-                        try { asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult(); }
-                        catch (Exception ex)
-                        {
-                            NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {instance.GetType().FullName}: {ex.Message}");
-                        }
+                        // A8 fix: never block the calling thread on async disposal during
+                        // synchronous teardown. A blocking GetAwaiter().GetResult() on the
+                        // Unity main thread can sync-over-async deadlock when the async
+                        // dispose awaits work that needs the main thread. The async dispose
+                        // is scheduled on the thread pool with error capture; callers that
+                        // need deterministic teardown use Container.DisposeAsync() (reached
+                        // via Context.DisposeAsync()).
+                        _ = DisposeAsyncInBackground(asyncDisposable);
                     }
                 }
                 catch (Exception ex)
@@ -1214,6 +1241,21 @@ namespace Nexus.Core
             }
             _bindings.Clear();
             _namedBindings.Clear();
+        }
+
+        /// <summary>
+        /// Runs an IAsyncDisposable's DisposeAsync on the thread pool with error capture.
+        /// Used by the synchronous <see cref="Dispose()"/> path so teardown never blocks
+        /// the calling (Unity main) thread — the deterministic async path is
+        /// <see cref="DisposeAsync()"/>.
+        /// </summary>
+        private static async System.Threading.Tasks.Task DisposeAsyncInBackground(IAsyncDisposable asyncDisposable)
+        {
+            try { await asyncDisposable.DisposeAsync(); }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {asyncDisposable.GetType().FullName}: {ex.Message}");
+            }
         }
 
         public async ValueTask DisposeAsync()

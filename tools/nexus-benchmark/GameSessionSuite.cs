@@ -440,9 +440,13 @@ namespace NexusBench
             string detail;
             try
             {
-                // Player was away 2 hours (quit timestamp moved back in time).
+                // Player was away 2 hours. A real 2h gap advances BOTH the wall clock AND the
+                // hardware monotonic tick, so the simulation must move them consistently —
+                // otherwise the A8 monotonic anti-cheat clamps the reward to the real elapsed
+                // time (~0) and correctly reports tampering.
                 long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 prefs.SetLong("NT_LastQuitTimestamp", now - 7200);
+                prefs.SetLong("NT_LastQuitMonotonicMs", Environment.TickCount64 - (7200L * 1000L));
 
                 long offlineSeconds = OfflineTimeCalculator.CalculateOfflineSeconds(prefs);
                 long offlineGold = offlineSeconds * OfflineGoldRatePerSecond;

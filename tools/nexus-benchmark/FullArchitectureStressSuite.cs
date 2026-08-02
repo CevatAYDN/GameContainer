@@ -280,6 +280,7 @@ namespace NexusBench
             Test_NexusRuntime_Registry_ContextLookup_Metrics();
             TraceRegistry("after 25");
             Test_NetworkMonitor_Events_Latency_Pruning();
+            Test_NetworkMonitor_Concurrent_Access();
             Test_PluginTraceSink_Auth_And_TracingContract();
             Test_EncryptedStorage_RoundTrip_TamperDetection();
             Test_Storage_SaveThrottler_OfflineTime_GameSave();
@@ -289,6 +290,7 @@ namespace NexusBench
             Test_ContextBuilder_Validate_StrictInjection();
 
             Test_Async_SequentialOrdering_NoOverlap().GetAwaiter().GetResult();
+            Test_Async_Overflow_Throws_AllBuilds().GetAwaiter().GetResult();
             Test_Async_Timeout_Cancellation().GetAwaiter().GetResult();
             Test_Subscription_AutoDispose_OnContextDispose();
             Test_DoubleDispose_And_FireAfterDispose();
@@ -1499,6 +1501,69 @@ namespace NexusBench
             Report("33. FireAsync_SequentialOrdering_NoOverlap", ok, detail);
         }
 
+        // ── 34b. Async overflow guard throws in ALL builds (A9 regression) ────────
+
+        private struct OverflowSignal { public int Id; }
+
+        private sealed class OverflowCommand : IAsyncCommand<OverflowSignal>
+        {
+            public static TaskCompletionSource<bool> Gate;
+            public async ValueTask ExecuteAsync(OverflowSignal signal, CancellationToken ct)
+            {
+                var gate = Gate;
+                if (gate != null) await gate.Task;
+            }
+        }
+
+        private static async Task Test_Async_Overflow_Throws_AllBuilds()
+        {
+            var ctx = ContextFactory.Create();
+            bool ok = false;
+            string detail;
+            try
+            {
+                OverflowCommand.Gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                ctx.Resolve<SignalBus>().RegisterCommand(typeof(OverflowSignal), typeof(OverflowCommand), ExecutionMode.Sequential, 0, isAsync: true);
+
+                // Fire 101 async commands without awaiting: the first 100 block on the gate
+                // and hold the in-flight counter at MaxInFlightAsyncCommands=100; the 101st
+                // MUST fault with NexusAsyncOverflowException — in every build target. The
+                // pre-A9 Release branch silently logged and dropped the command instead.
+                var fires = new Task[101];
+                for (int i = 0; i < fires.Length; i++)
+                {
+                    fires[i] = ctx.SignalBus.FireAsync(new OverflowSignal { Id = i }).AsTask();
+                }
+
+                await Task.Delay(50); // let every fire task reach the gate
+                OverflowCommand.Gate.TrySetResult(true);
+
+                int overflowFaults = 0;
+                int unexpectedFaults = 0;
+                foreach (var fire in fires)
+                {
+                    try { await fire; }
+                    catch (NexusAsyncOverflowException) { overflowFaults++; }
+                    catch (Exception) { unexpectedFaults++; }
+                }
+
+                ok = overflowFaults >= 1 && unexpectedFaults == 0;
+                detail = $"overflowFaults={overflowFaults} unexpectedFaults={unexpectedFaults} (101 concurrent, max=100)";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                OverflowCommand.Gate?.TrySetResult(true);
+                ctx.Dispose();
+            }
+
+            Console.WriteLine($"[Nexus Architecture Stress] Async overflow guard: {ok}");
+            Report("34b. Async_Overflow_Throws_AllBuilds", ok, detail);
+        }
+
         private static async Task Test_Async_Timeout_Cancellation()
         {
             var ctx = ContextFactory.Create();
@@ -2085,6 +2150,73 @@ namespace NexusBench
             Console.WriteLine($"[Nexus Architecture Stress] NetworkMonitor: pruned={ok}");
             Report("26. NetworkMonitor_Events_Latency_Pruning", ok,
                 "150 sent (pruned to 100), 30 received latency avg=14.5 max=29, failed+timeout=2, disabled flag stops recording, connection status update");
+        }
+
+        // ── 26b. NetworkMonitor concurrent access (A9 regression) ─────────────────
+
+        private static void Test_NetworkMonitor_Concurrent_Access()
+        {
+            NetworkMonitor.Enabled = true;
+            NetworkMonitor.ClearHistory();
+            bool ok = false;
+            string detail;
+            try
+            {
+                const int writers = 8;
+                const int perWriter = 400;
+                var threads = new Thread[writers];
+                var errors = new System.Collections.Concurrent.ConcurrentQueue<Exception>();
+
+                // Writers model network/background threads mutating latency history while
+                // the game/editor thread reads. Before the A9 fix the plain Dictionary raced
+                // (ArgumentException / silent corruption); all access is now lock-guarded.
+                for (int t = 0; t < writers; t++)
+                {
+                    int id = t;
+                    threads[t] = new Thread(() =>
+                    {
+                        try
+                        {
+                            for (int i = 0; i < perWriter; i++)
+                            {
+                                NetworkMonitor.RecordSignalReceived($"Peer{id}", latencyMs: i % 100, bytes: 16, source: "thread");
+                            }
+                        }
+                        catch (Exception ex) { errors.Enqueue(ex); }
+                    });
+                    threads[t].Start();
+                }
+
+                for (int r = 0; r < 200; r++)
+                {
+                    NetworkMonitor.GetAverageLatency($"Peer{r % writers}");
+                    NetworkMonitor.GetMaxLatency($"Peer{r % writers}");
+                    NetworkMonitor.GetSignalCounts();
+                    _ = NetworkMonitor.CurrentStatus.IsConnected;
+                }
+
+                for (int t = 0; t < writers; t++) threads[t].Join();
+
+                bool noErrors = errors.IsEmpty;
+                bool maxes = true;
+                for (int t = 0; t < writers; t++)
+                {
+                    if (NetworkMonitor.GetMaxLatency($"Peer{t}") != 99f) maxes = false;
+                }
+                NetworkMonitor.UpdateConnectionStatus(true, "cellular");
+                var statusSnapshot = NetworkMonitor.CurrentStatus;
+                bool snapshotOk = statusSnapshot.IsConnected && statusSnapshot.ConnectionType == "cellular";
+
+                ok = noErrors && maxes && snapshotOk;
+                detail = $"noErrors={noErrors} maxes={maxes} snapshotOk={snapshotOk}";
+            }
+            finally
+            {
+                NetworkMonitor.ClearHistory();
+            }
+
+            Console.WriteLine($"[Nexus Architecture Stress] NetworkMonitor concurrent: {ok}");
+            Report("26b. NetworkMonitor_Concurrent_Access", ok, detail);
         }
 
         // ── 27. Plugin trace sink auth + tracing contract ───────────────────────

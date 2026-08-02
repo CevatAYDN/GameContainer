@@ -10,6 +10,9 @@ namespace Nexus.Core
         MissingMethodDependency,
         CircularDependency,
         UnregisteredViewMediator,
+        // A8: a singleton service capturing a transient (non-singleton, non-factory)
+        // dependency in its constructor or [Inject] members.
+        CaptiveDependency,
     }
 
     public class DiValidationIssue

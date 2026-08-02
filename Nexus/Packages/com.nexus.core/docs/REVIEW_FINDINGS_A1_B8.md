@@ -243,6 +243,47 @@ hizmet eden `name` değişkenleri kaldırıldı; `NexusTestContext`'teki gereksi
 
 ---
 
+## 🛡️ Güvenlik & Sağlamlık Denetimi — 2026-08-02 (A8)
+
+**Kapsam:** `com.nexus.core` runtime'ın 12 maddelik Unity/MVCS denetim skill'i ile taranması.
+**Kanıt:** `tools/nexus-benchmark` — **207/207 PASS, 0 FAIL, 0 uyarı** (Release).
+
+| Bulgu | Kök Neden | Çözüm | Kanıt |
+|---|---|---|---|
+| Reentrancy guard Release'de sessizce dönüyor | `#if UNITY_EDITOR || DEVELOPMENT_BUILD` yalnızca editor/dev'de fırlatıyor, Release'de log+return ile durum bozulmasını gizliyordu | Guard artık **tüm build'lerde** `NexusReentrancyException` fırlatıyor (sync + async her iki yol) | `SignalBus.cs` (sync ~:351, async ~:510) |
+| GameSaveManager atomik olmayan yazma | delete-then-move çökme penceresinde tek iyi save'i de siliyordu | `File.Replace` / overwrite-rename (EncryptedStorageService ile aynı desen) | `GameSaveManager.cs:110–121` |
+| Context.Dispose sync-over-async | Senkron teardown `DisposeAsync().AsTask().GetAwaiter().GetResult()` ile main thread'i blokluyordu | `Context` artık `IAsyncDisposable` (`DisposeAsync()`); senkron yol thread pool'a non-blocking erteletiyor | `Context.cs`, `NexusDI.cs:1200–1212` |
+| OfflineTimeCalculator yalnızca wall-clock | Saat ileri alınınca tavan (28800s) kadar haksız offline ödül | `Environment.TickCount64` monotonic tick kaydı + gerçek elaps'a clamp (reboot'ta wall-clock fallback) | `OfflineTimeCalculator.cs` |
+| CS0619 susturmaları (ObjectPoolService) | Unity 6.5+'ta obsolete `GetInstanceID()` reflection hack + 3 pragma disable | Modern `Object.GetEntityId()` API'si; tüm pragmalar kaldırıldı | `ObjectPoolService.cs:232–240` |
+| Captive dependency doğrulaması yok | Singleton'ın transient bağımlılık yakalaması sessizce yaşam süresi sızıntısı yaratıyordu | `Validate()` artık `CaptiveDependency` raporluyor (polimorfik binding'lerde dedupe) | `ContextBuilder.cs:410–460`, `DiValidationIssue.cs` |
+| CS0649 uyarısı (NexusBinding) | Inspector-atanan `_customTargets` derleyicide uyarı üretiyordu | Varsayılan `Array.Empty` başlatıcı | `NexusBinding.cs:42` |
+| walkthrough.md yok | Skill'in zorunlu doküman listesinde eksikti | `walkthrough.md` oluşturuldu (kurulum→sertleştirme turu) | `walkthrough.md` |
+
+**Not:** Harness'teki GS5 offline testi, gerçek 2 saatlik yokluğun hem wall-clock hem monotonic tick'i
+ilerletmesi gerektiği için iki saati de tutarlı simüle edecek şekilde güncellendi.
+
+---
+
+## 🛡️ Mimari Kusursuzluk Turu — 2026-08-02 (A9)
+
+**Kapsam:** `com.nexus.core` runtime + `tools/nexus-benchmark` harness'ında kalan mimari açıkların
+taranması: async fire-and-forget güvenliği, `#if` build-varyant davranış farkları, static mutable
+state thread-safety, per-frame allocation'lar ve event leak'leri.
+**Kanıt:** `tools/nexus-benchmark` — **209/209 PASS, 0 FAIL, 0 uyarı** (Release).
+
+| Bulgu | Kök Neden | Çözüm | Kanıt |
+|---|---|---|---|
+| NetworkMonitor latency verisi data race | `s_latencyHistory` (plain `Dictionary`) network/arka plan thread'lerinden lock'suz yazılıyor, game/editor thread'i okuyordu — `PerformanceMonitor`'un BUG-17'de düzelttiği sınıfın aynısı burada eksikti; ayrıca paylaşılan `ConnectionStatus` nesnesi yarışıyordu | Adanmış `s_historyLock` tüm okuma/yazma/clear erişimini koruyor; `CurrentStatus` + `OnConnectionStatusChanged` payload'ı tek `SnapshotStatus()` helper'ı ile savunmacı kopya veriyor | `NetworkMonitor.cs` |
+| Async overflow Release'de sessizce komut düşürüyor | `#if UNITY_EDITOR || DEVELOPMENT_BUILD` / `#else` ayrımı: Release'de log+drop, editor/dev'de fırlatma — A8 reentrancy fix'inin kapatıp yasakladığı sınıfın birebir aynısı | Overflow artık **tüm build'lerde** `NexusAsyncOverflowException` fırlatıyor; guard tek `EnterAsyncInFlight()` helper'ına alındı ve kompozit async yollarına da uygulandı (önceden 100-komut limitini tamamen bypass ediyorlardı) | `CommandExecutor.cs:43–56, 234, 334, 523, 550` |
+
+**Yeni harness regresyon testleri:**
+- `26b. NetworkMonitor_Concurrent_Access` — 8 yazıcı thread + 200 eşzamanlı okuma; exception yok, her peer için max latency == 99, status snapshot doğru.
+- `34b. Async_Overflow_Throws_AllBuilds` — gate'te bloklanan 101 eşzamanlı async komut; en az 1 `NexusAsyncOverflowException` fault'u, 0 beklenmedik fault.
+
+**Taranıp temiz çıkan alanlar:** fire-and-forget task'ler (`EconomyService`, `UIManager`, `WindowManager`, `SafeAsyncRunner`) dahili try/catch'li ve exception-safe; `NexusBinding` static event'i `OnDestroy`'de unsubscribe ediyor; kalan `#if UNITY_EDITOR || DEVELOPMENT_BUILD` bölgeleri yalnızca debug diyagnostikleri (davranış aynı); `Context.s_assemblyScanCache`, `CausalTracing.s_sinks`, `NexusRuntime` registry tamamen lock korumalı ve `Reset()` tüm statik cache'leri temizliyor.
+
+---
+
 ## 📌 Sonuç
 
 `cf66e9e` (ve çevresindeki sertleştirme commit'leri) storage/DI/UI/netcode alanlarındaki
