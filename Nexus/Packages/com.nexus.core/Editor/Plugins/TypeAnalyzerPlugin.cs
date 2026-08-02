@@ -121,26 +121,9 @@ namespace Nexus.Editor
             if (!s_analysisCache.TryGetValue(cacheKey, out var cached))
             {
                 Type targetType = null;
-                var assemblies = UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies();
-                foreach (var assembly in assemblies)
+                foreach (var assembly in AssemblyCatalog.GameAssemblies())
                 {
-                    var assemblyName = assembly.GetName().Name;
-                    if (assemblyName.StartsWith("System") || assemblyName.StartsWith("mscorlib") || assemblyName.StartsWith("Mono") ||
-                        assemblyName.StartsWith("UnityEngine") || assemblyName.StartsWith("UnityEditor") || assemblyName.StartsWith("Unity.") ||
-                        assemblyName.StartsWith("Microsoft.") || assemblyName.StartsWith("nunit"))
-                        continue;
-
-                    Type[] types;
-                    try
-                    {
-                        types = assembly.GetTypes();
-                    }
-                    catch (ReflectionTypeLoadException ex)
-                    {
-                        types = ex.Types;
-                    }
-
-                    foreach (var t in types)
+                    foreach (var t in AssemblyCatalog.GetTypesSafe(assembly))
                     {
                         if (t != null && (t.Name.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase) || (t.FullName != null && t.FullName.Equals(_searchedTypeName, StringComparison.OrdinalIgnoreCase))))
                         {
@@ -200,64 +183,40 @@ namespace Nexus.Editor
             s_assemblyCacheDirty = false;
             s_injectTargetIndex.Clear();
 
-            var assemblies = UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies();
-            foreach (var assembly in assemblies)
+            foreach (var assembly in AssemblyCatalog.GameAssemblies())
             {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || 
-                    name.StartsWith("UnityEngine") || name.StartsWith("UnityEditor") || name.StartsWith("Unity.") ||
-                    name.StartsWith("Microsoft.") || name.StartsWith("nunit"))
-                    continue;
-
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    Type[] types;
-                    try
+                    if (type == null) continue;
+                    // Scan [Inject] fields
+                    var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    foreach (var f in fields)
                     {
-                        types = assembly.GetTypes();
-                    }
-                    catch (ReflectionTypeLoadException ex)
-                    {
-                        types = ex.Types;
-                    }
-
-                    foreach (var type in types)
-                    {
-                        if (type == null) continue;
-                        // Scan [Inject] fields
-                        var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                        foreach (var f in fields)
+                        if (f.GetCustomAttribute<InjectAttribute>() != null)
                         {
-                            if (f.GetCustomAttribute<InjectAttribute>() != null)
-                            {
-                                AddToIndex(type, f.FieldType, $"Field: {f.Name}");
-                            }
-                        }
-
-                        // Scan [Inject] properties
-                        var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                        foreach (var p in properties)
-                        {
-                            if (p.GetCustomAttribute<InjectAttribute>() != null)
-                            {
-                                AddToIndex(type, p.PropertyType, $"Property: {p.Name}");
-                            }
-                        }
-
-                        // Scan constructor parameters
-                        var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
-                        foreach (var ctor in ctors)
-                        {
-                            foreach (var p in ctor.GetParameters())
-                            {
-                                AddToIndex(type, p.ParameterType, $"Constructor: {p.Name}");
-                            }
+                            AddToIndex(type, f.FieldType, $"Field: {f.Name}");
                         }
                     }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Nexus] Failed to scan assembly '{assembly.GetName().Name}' for dependency analysis: {ex.Message}");
+
+                    // Scan [Inject] properties
+                    var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    foreach (var p in properties)
+                    {
+                        if (p.GetCustomAttribute<InjectAttribute>() != null)
+                        {
+                            AddToIndex(type, p.PropertyType, $"Property: {p.Name}");
+                        }
+                    }
+
+                    // Scan constructor parameters
+                    var ctors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+                    foreach (var ctor in ctors)
+                    {
+                        foreach (var p in ctor.GetParameters())
+                        {
+                            AddToIndex(type, p.ParameterType, $"Constructor: {p.Name}");
+                        }
+                    }
                 }
             }
         }

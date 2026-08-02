@@ -334,23 +334,14 @@ namespace Nexus.Editor
                 s_cachedSignalTypes = new List<Type>();
 
                 var seenSignals = new HashSet<string>();
-                var assemblies = UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies();
                 var uniqueAssemblies = new HashSet<string>();
 
-                foreach (var assembly in assemblies)
+                foreach (var assembly in AssemblyCatalog.GameAssemblies())
                 {
-                    var assemblyName = assembly.GetName().Name;
-                    if (assemblyName.StartsWith("System") || assemblyName.StartsWith("mscorlib") || assemblyName.StartsWith("Mono") || 
-                        assemblyName.StartsWith("UnityEngine") || 
-                        (assemblyName.StartsWith("UnityEditor") && !assemblyName.Contains("com.nexus")))
-                    {
-                        continue;
-                    }
+                    var assemblyName = AssemblyCatalog.GetSimpleName(assembly);
 
-                    try
-                    {
-                        bool hasHandlers = false;
-                        foreach (var type in assembly.GetTypes())
+                    bool hasHandlers = false;
+                    foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                         {
                             if (type.IsClass && !type.IsAbstract)
                             {
@@ -400,8 +391,6 @@ namespace Nexus.Editor
                         {
                             uniqueAssemblies.Add(assemblyName);
                         }
-                    }
-                    catch (ReflectionTypeLoadException) { }
                 }
 
                 s_cachedMappings.Sort((a, b) => string.Compare(a.SignalName, b.SignalName, StringComparison.OrdinalIgnoreCase));
@@ -701,64 +690,11 @@ namespace Nexus.Editor
 
         private VisualElement CreateSignalFieldUI(FieldInfo field, Type type, Func<object> getter, Action<object> setter)
         {
+            var element = NexusFieldInspector.CreateField(field.Name, type, getter, setter);
+            if (element != null) return element;
+
             object initialValue = null;
             try { initialValue = getter(); } catch { }
-
-            if (type == typeof(int))
-            {
-                var ui = new IntegerField(field.Name) { value = (int)(initialValue ?? 0) };
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-            if (type == typeof(float))
-            {
-                var ui = new FloatField(field.Name) { value = (float)(initialValue ?? 0f) };
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-            if (type == typeof(double))
-            {
-                var ui = new DoubleField(field.Name) { value = (double)(initialValue ?? 0.0) };
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-            if (type == typeof(bool))
-            {
-                var ui = new Toggle(field.Name) { value = (bool)(initialValue ?? false) };
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-            if (type == typeof(string))
-            {
-                var ui = new TextField(field.Name) { value = (string)initialValue ?? "" };
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-            if (type == typeof(Vector2))
-            {
-                var ui = new Vector2Field(field.Name) { value = (Vector2)(initialValue ?? Vector2.zero) };
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-            if (type == typeof(Vector3))
-            {
-                var ui = new Vector3Field(field.Name) { value = (Vector3)(initialValue ?? Vector3.zero) };
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-            if (type == typeof(Color))
-            {
-                var ui = new ColorField(field.Name) { value = (Color)(initialValue ?? Color.white) };
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-            if (type.IsEnum)
-            {
-                var ui = new EnumField(field.Name, (Enum)(initialValue ?? Enum.GetValues(type).GetValue(0)));
-                ui.RegisterValueChangedCallback(evt => setter(evt.newValue));
-                return ui;
-            }
-
             return new Label(string.Format(NexusLang.Get("explorer_unsupported_type"), field.Name, initialValue ?? "null"));
         }
 

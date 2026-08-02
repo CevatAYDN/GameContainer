@@ -221,6 +221,28 @@ sinyaller için garanti edilir; async katılımda sıralama garantisi daraltıl�
 
 ---
 
+## 🏗️ Mimari Derinleştirme — 2026-08-02 (C1–C5)
+
+A1–B8 bulguları çözüldükten sonra yapılan **mimari derinleştirme turu** (sığ modülleri
+derinleştirme, arayüz = test yüzeyi) beş adayı uygulandı. Harness 214/214 PASS'ta kaldı.
+
+| ID | Modül | Sorun | Çözüm | Kanıt |
+|---|---|---|---|---|
+| C1 | `AssemblyCatalog` | `GetLoadedAssemblies()` → filtre → `GetTypes()` döngüsü 11 editor dosyasında ~24 kez, **4 farklı filtre yüklemiyle** yeniden yazılmıştı; araçlar hangi kodu görebilecekleri konusunda çelişiyordu | Tek derin modül: yineleme + yüklemler (framework/third-party/test/editor) + güvenli `GetTypesSafe` (kısmi yük → uyarı + parsiyel tipler). 11 çağrı sitesi de buradan geçer | `Editor/Core/AssemblyCatalog.cs`; dönüştürülen: NexusWindow, BuildValidation ×10, NexusEditorDataProvider, NexusCodeGenerator ×2, Dashboard/Explorer/GameManager/Graph/TypeAnalyzer/Wizard |
+| C2 | `NexusFieldInspector` | `ExplorerPlugin.CreateSignalFieldUI` ve `HierarchyPlugin.CreateFieldUI` neredeyse aynı tip→UI Toolkit switch ağaçlarıydı ve çoktan ayrışmıştı (read-only, undo, fallback) | Tek modül: `CreateField` + `EnumerateMembers`. Host'lar kendi undo/fallback'lerini callback ile korur | `Editor/Core/NexusFieldInspector.cs` |
+| C3 | `RecoveryEngine` | ~70 satırlık karar ağacı `HandleErrorWithDecision` / `…Async` ikizlerinde kopyalanmıştı | Tek `BuildPlan` + iki ince giriş noktası | `Runtime/Core/RecoveryEngine.cs`; `RecoveryRegression` suite'i PASS |
+| C4 | Test harness | `NexusTestContext` paralel bir `Bind` yüzeyi ve `[SignalHandler]` yeniden ayrıştırması tutuyordu — üretimle sürüklenme riski | Üretim `IContextBuilder`'ı expose edildi; kayıt `SignalBus.RegisterCommandType` ortak yolu üzerinden (Context taramasıyla aynı) | `Runtime/Testing/NexusTestContext.cs`, `Runtime/Core/SignalBus.cs`, `Runtime/Core/Context.cs` |
+| C5 | `DashboardSections` | Tek adaptörlü dikiş: modül yalnızca Dashboard arkasında; Dashboard'da ayrıca sığ passthrough vardı | Modül korundu (silme testini geçiyor), passthrough kaldırıldı, çağrılar doğrudan modüle | `Editor/Plugins/Dashboard/DashboardSections.cs`, `Editor/Plugins/DashboardPlugin.cs` |
+
+**İnceleme sonrası düzeltmeler:** inceleyici bulgularına göre `GetTypesSafe` hiç throw etmediği
+için kalan per-site try/catch blokları (BuildValidation ×10, NexusWindow, ExplorerPlugin,
+DashboardPlugin, GameManagerPlugin, NexusCodeGenerator.GenerateBinder) ve yalnızca o catch'lere
+hizmet eden `name` değişkenleri kaldırıldı; `NexusTestContext`'teki gereksiz ön-bind'ler silindi
+(kayıt defteri komut tipini kendisi bind ediyor); NexusCodeGenerator'daki yorum-satırı birleşmesi
+(foreach'i yorumlayan kritik hata) düzeltildi.
+
+---
+
 ## 📌 Sonuç
 
 `cf66e9e` (ve çevresindeki sertleştirme commit'leri) storage/DI/UI/netcode alanlarındaki

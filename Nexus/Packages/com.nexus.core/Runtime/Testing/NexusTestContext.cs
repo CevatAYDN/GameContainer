@@ -18,6 +18,13 @@ namespace Nexus.Core
         /// <summary>The underlying Nexus context.</summary>
         public Context Context { get; }
 
+        /// <summary>
+        /// The production <see cref="IContextBuilder"/> for the wrapped context (lazily
+        /// created when the context was never Configure'd). Test bindings route through
+        /// this surface so tests exercise the same registration path as production code.
+        /// </summary>
+        public IContextBuilder Builder => Context.GetOrCreateBuilder();
+
         /// <summary>Wraps a <see cref="Context"/> for test use.</summary>
         /// <param name="context">The context to wrap.</param>
         public NexusTestContext(Context context)
@@ -65,44 +72,17 @@ namespace Nexus.Core
             }
             else if (type.IsClass)
             {
-                // Bind class in container
-                bool isCommand = typeof(ICommand).IsAssignableFrom(type) || ImplementsGenericInterface(type, typeof(ICommand<>));
-                bool isAsyncCommand = typeof(IAsyncCommand).IsAssignableFrom(type) || ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
-                // Composite payload support: pure composite commands implement only
-                // ICompositeCommand/IAsyncCompositeCommand and must still be discovered.
-                bool isCompositeCommand = typeof(ICompositeCommand).IsAssignableFrom(type) || typeof(IAsyncCompositeCommand).IsAssignableFrom(type);
-                if (isCommand || isAsyncCommand || isCompositeCommand)
+                // Commands (sync/async/composite) bind transient and register their
+                // [SignalHandler]/[CompositeSignalHandler] attributes through the shared
+                // production path (SignalBus.RegisterCommandType) — the same routine the
+                // runtime assembly scan uses, so tests can never drift from production.
+                if (SignalBus.IsCommandType(type))
                 {
-                    Context.Container.Bind(type, isSingleton: false);
-
-                    var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                    bool hasAttr = false;
-                    foreach (var attr in handlerAttrs)
-                    {
-                        hasAttr = true;
-                        Context.SignalBusInternal.RegisterCommand(
-                            attr.SignalType, 
-                            type, 
-                            attr.Mode, 
-                            attr.Priority, 
-                            isAsync: isAsyncCommand
-                        );
-                    }
-
-                    var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-                    if (compositeAttr != null)
-                    {
-                        hasAttr = true;
-                        Context.SignalBusInternal.RegisterCompositeCommand(
-                            compositeAttr.SignalTypes, 
-                            type, 
-                            compositeAttr.OneShot, 
-                            compositeAttr.Priority, 
-                            isAsync: typeof(IAsyncCommand).IsAssignableFrom(type)
-                        );
-                    }
-
-                    if (!hasAttr)
+                    // CommandRegistry binds the command type itself during RegisterCommandType.
+                    if (!Context.SignalBusInternal.RegisterCommandType(
+                            type,
+                            type.GetCustomAttributes<SignalHandlerAttribute>(),
+                            type.GetCustomAttribute<CompositeSignalHandlerAttribute>()))
                     {
                         throw new InvalidOperationException($"Command type {type.Name} does not have any [SignalHandler] or [CompositeSignalHandler] attributes.");
                     }
@@ -120,36 +100,13 @@ namespace Nexus.Core
         public void RegisterCommand<TCommand>() where TCommand : class
         {
             var type = typeof(TCommand);
-            Context.Container.Bind(type, isSingleton: false);
 
-            var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-            bool hasAttr = false;
-            foreach (var attr in handlerAttrs)
-            {
-                hasAttr = true;
-                Context.SignalBusInternal.RegisterCommand(
-                    attr.SignalType, 
-                    type, 
-                    attr.Mode, 
-                    attr.Priority, 
-                    isAsync: false
-                );
-            }
-
-            var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-            if (compositeAttr != null)
-            {
-                hasAttr = true;
-                Context.SignalBusInternal.RegisterCompositeCommand(
-                    compositeAttr.SignalTypes, 
-                    type, 
-                    compositeAttr.OneShot, 
-                    compositeAttr.Priority, 
-                    isAsync: false
-                );
-            }
-
-            if (!hasAttr)
+            // CommandRegistry binds the command type itself during RegisterCommandType.
+            if (!Context.SignalBusInternal.RegisterCommandType(
+                    type,
+                    type.GetCustomAttributes<SignalHandlerAttribute>(),
+                    type.GetCustomAttribute<CompositeSignalHandlerAttribute>(),
+                    forceAsync: false))
             {
                 throw new InvalidOperationException($"Command type {type.Name} does not have any [SignalHandler] or [CompositeSignalHandler] attributes.");
             }
@@ -160,36 +117,12 @@ namespace Nexus.Core
         public void RegisterAsyncCommand<TCommand>() where TCommand : class
         {
             var type = typeof(TCommand);
-            Context.Container.Bind(type, isSingleton: false);
 
-            var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-            bool hasAttr = false;
-            foreach (var attr in handlerAttrs)
-            {
-                hasAttr = true;
-                Context.SignalBusInternal.RegisterCommand(
-                    attr.SignalType, 
-                    type, 
-                    attr.Mode, 
-                    attr.Priority, 
-                    isAsync: true
-                );
-            }
-
-            var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-            if (compositeAttr != null)
-            {
-                hasAttr = true;
-                Context.SignalBusInternal.RegisterCompositeCommand(
-                    compositeAttr.SignalTypes, 
-                    type, 
-                    compositeAttr.OneShot, 
-                    compositeAttr.Priority, 
-                    isAsync: true
-                );
-            }
-
-            if (!hasAttr)
+            if (!Context.SignalBusInternal.RegisterCommandType(
+                    type,
+                    type.GetCustomAttributes<SignalHandlerAttribute>(),
+                    type.GetCustomAttribute<CompositeSignalHandlerAttribute>(),
+                    forceAsync: true))
             {
                 throw new InvalidOperationException($"Command type {type.Name} does not have any [SignalHandler] or [CompositeSignalHandler] attributes.");
             }

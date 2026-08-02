@@ -53,59 +53,41 @@ namespace Nexus.Editor
             int mc = 0, sc = 0, cc = 0, vc = 0;
             var catalog = new List<(Type type, string category, Color color)>();
 
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.GameAssemblies())
             {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.IndexOf("Tests", StringComparison.OrdinalIgnoreCase) >= 0)
-                    continue;
-
-                try
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in assembly.GetTypes())
+                    if (!type.IsClass || type.IsAbstract) continue;
+
+                    string category = "CLASS";
+                    Color color = NexusEditorStyles.TextSecondary;
+
+                    if (typeof(IReactiveModel).IsAssignableFrom(type))
                     {
-                        if (!type.IsClass || type.IsAbstract) continue;
-
-                        string category = "CLASS";
-                        Color color = NexusEditorStyles.TextSecondary;
-
-                        if (typeof(IReactiveModel).IsAssignableFrom(type))
-                        {
-                            mc++;
-                            category = "MODEL";
-                            color = NexusEditorStyles.AccentYellow;
-                        }
-                        else if (typeof(INexusService).IsAssignableFrom(type))
-                        {
-                            sc++;
-                            category = "SERVICE";
-                            color = NexusEditorStyles.AccentGreen;
-                        }
-                        else if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type))
-                        {
-                            cc++;
-                            category = "COMMAND";
-                            color = NexusEditorStyles.AccentOrange;
-                        }
-                        else if (typeof(View).IsAssignableFrom(type))
-                        {
-                            vc++;
-                            category = "VIEW";
-                            color = NexusEditorStyles.AccentBlue;
-                        }
-
-                        catalog.Add((type, category, color));
+                        mc++;
+                        category = "MODEL";
+                        color = NexusEditorStyles.AccentYellow;
                     }
-                }
-                catch (ReflectionTypeLoadException ex)
-                {
-                    foreach (var le in ex.LoaderExceptions)
+                    else if (typeof(INexusService).IsAssignableFrom(type))
                     {
-                        if (le != null) Debug.LogWarning($"[Nexus Dashboard] Type load warning in {name}: {le.Message}");
+                        sc++;
+                        category = "SERVICE";
+                        color = NexusEditorStyles.AccentGreen;
                     }
-                }
-                catch (Exception ex)
-                {
-                    Debug.LogWarning($"[Nexus Dashboard] Assembly scan warning for {name}: {ex.Message}");
+                    else if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type))
+                    {
+                        cc++;
+                        category = "COMMAND";
+                        color = NexusEditorStyles.AccentOrange;
+                    }
+                    else if (typeof(View).IsAssignableFrom(type))
+                    {
+                        vc++;
+                        category = "VIEW";
+                        color = NexusEditorStyles.AccentBlue;
+                    }
+
+                    catalog.Add((type, category, color));
                 }
             }
 
@@ -263,7 +245,7 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBg);
             card.style.marginTop = 12;
 
-            card.Add(CreateSectionTitle(NexusLang.Get("db_quick_find"), NexusEditorStyles.AccentBlue));
+            card.Add(DashboardSections.CreateSectionTitle(NexusLang.Get("db_quick_find"), NexusEditorStyles.AccentBlue));
             card.Add(CreateQuickFindRow());
 
             _quickFindResultsContainer = new VisualElement { style = { marginTop = 8 } };
@@ -277,8 +259,6 @@ namespace Nexus.Editor
             }
         }
 
-        private VisualElement CreateSectionTitle(string titleText, Color accentColor)
-            => DashboardSections.CreateSectionTitle(titleText, accentColor);
 
         private VisualElement CreateQuickFindRow()
         {
@@ -395,7 +375,7 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
             card.style.marginTop = 12;
 
-            card.Add(CreateSectionTitle(NexusLang.Get("project_overview"), NexusEditorStyles.AccentYellow));
+            card.Add(DashboardSections.CreateSectionTitle(NexusLang.Get("project_overview"), NexusEditorStyles.AccentYellow));
 
             if (!s_overviewCacheValid) RefreshOverviewCache();
             int modelCount = s_cachedModelCount, serviceCount = s_cachedServiceCount, commandCount = s_cachedCommandCount, viewCount = s_cachedViewCount;
@@ -426,7 +406,7 @@ namespace Nexus.Editor
             var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
             card.style.marginTop = 8;
 
-            card.Add(CreateSectionTitle(NexusLang.Get("runtime_metrics"), NexusEditorStyles.AccentGreen));
+            card.Add(DashboardSections.CreateSectionTitle(NexusLang.Get("runtime_metrics"), NexusEditorStyles.AccentGreen));
 
             var statRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
             _perfStat = CreateStatBox(statRow, $"{NexusRuntime.Metrics.SignalsPerSecond:F1}/s", NexusLang.Get("perf_signals"), NexusEditorStyles.AccentBlue);
@@ -584,7 +564,7 @@ namespace Nexus.Editor
         {
             var titleRow = new VisualElement();
             titleRow.AddToClassList("nexus-status-card-top");
-            titleRow.Add(CreateSectionTitle(NexusLang.Get("build_validation"), NexusEditorStyles.AccentOrange));
+            titleRow.Add(DashboardSections.CreateSectionTitle(NexusLang.Get("build_validation"), NexusEditorStyles.AccentOrange));
 
             if (BuildValidation.HasRun)
             {

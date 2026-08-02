@@ -148,18 +148,9 @@ namespace Nexus.Editor
         private static Dictionary<Type, List<Type>> CollectAttributeMappings()
         {
             var mappings = new Dictionary<Type, List<Type>>();
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.GameAssemblies())
             {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") ||
-                    name.StartsWith("UnityEngine") || (name.StartsWith("UnityEditor") && !name.Contains("com.nexus")))
-                    continue;
-
-                Type[] types;
-                try { types = assembly.GetTypes(); }
-                catch (System.Reflection.ReflectionTypeLoadException ex) { types = ex.Types; }
-
-                foreach (var type in types)
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
                     if (type != null && type.IsClass && !type.IsAbstract)
                     {

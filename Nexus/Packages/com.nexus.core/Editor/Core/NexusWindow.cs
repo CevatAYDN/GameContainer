@@ -263,47 +263,22 @@ namespace Nexus.Editor
                 var pluginType = typeof(INexusEditorPlugin);
                 var foundPlugins = new List<INexusEditorPlugin>();
 
-                foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+                foreach (var assembly in AssemblyCatalog.GameAssemblies())
                 {
-                    var name = assembly.GetName().Name;
-                    if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("UnityEngine"))
-                        continue;
-
-                    try
+                    foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                     {
-                        foreach (var type in assembly.GetTypes())
+                        if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
                         {
-                            if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
+                            var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
+                            if (HiddenPluginIds.Contains(plugin.Id))
+                                continue;
+                            plugin.Initialize(this);
+                            foundPlugins.Add(plugin);
+
+                            if (plugin is HierarchyPlugin hp)
                             {
-                                var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
-                                if (HiddenPluginIds.Contains(plugin.Id))
-                                    continue;
-                                plugin.Initialize(this);
-                                foundPlugins.Add(plugin);
-
-                                if (plugin is HierarchyPlugin hp)
-                                {
-                                    _hierarchyPlugin = hp;
-                                }
+                                _hierarchyPlugin = hp;
                             }
-                        }
-                    }
-                    catch (ReflectionTypeLoadException ex)
-                    {
-                        _discoveryFailed = true;
-                        var failedTypes = ex.LoaderExceptions
-                            .Where(e => e != null)
-                            .Select(e => e.Message)
-                            .Distinct()
-                            .ToList();
-
-                        _discoveryError = failedTypes.Count > 0
-                            ? string.Join("\n", failedTypes)
-                            : ex.Message;
-
-                        foreach (var msg in failedTypes)
-                        {
-                            Debug.LogWarning($"[Nexus] Plugin discovery type load failed: {msg}");
                         }
                     }
                 }

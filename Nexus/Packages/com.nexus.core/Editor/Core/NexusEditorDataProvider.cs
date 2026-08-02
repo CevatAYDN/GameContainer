@@ -37,14 +37,11 @@ namespace Nexus.Editor
             s_cachedMappings = new List<HandlerMapping>();
             s_cachedHandlerCount = 0;
 
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.GameAssemblies())
             {
-                string name = assembly.FullName;
-                if (name.StartsWith("System") || name.StartsWith("Microsoft") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("nunit"))
-                    continue;
                 try
                 {
-                    foreach (var type in assembly.GetTypes())
+                    foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                     {
                         if (!type.IsClass || type.IsAbstract) continue;
 

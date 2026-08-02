@@ -285,61 +285,43 @@ namespace Nexus.Editor
                 s_cachedViews = new HashSet<string>();
                 s_cachedServices = new HashSet<string>();
 
-                foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+                foreach (var assembly in AssemblyCatalog.GameAssemblies())
                 {
-                    var name = assembly.GetName().Name;
-                    if (name.StartsWith("System") || name.StartsWith("Unity") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || name.StartsWith("nunit"))
-                        continue;
-
-                    try
+                    foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                     {
-                        foreach (var type in assembly.GetTypes())
+                        if (type.IsValueType && !type.IsPrimitive && !type.IsEnum && type.Name.EndsWith("Signal"))
+                            s_cachedSignals.Add(type.Name);
+
+                        if (type.IsClass && !type.IsAbstract)
                         {
-                            if (type.IsValueType && !type.IsPrimitive && !type.IsEnum && type.Name.EndsWith("Signal"))
-                                s_cachedSignals.Add(type.Name);
+                            var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                            foreach (var attr in attrs)
+                                s_cachedCommands.Add((type.Name, attr.SignalType.Name, attr.Mode.ToString()));
 
-                            if (type.IsClass && !type.IsAbstract)
+                            var compAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                            if (compAttr != null)
                             {
-                                var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                                foreach (var attr in attrs)
-                                    s_cachedCommands.Add((type.Name, attr.SignalType.Name, attr.Mode.ToString()));
+                                var sigs = string.Join("+", compAttr.SignalTypes.Select(t => t.Name));
+                                s_cachedCommands.Add((type.Name, sigs, "Composite"));
+                            }
 
-                                var compAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-                                if (compAttr != null)
-                                {
-                                    var sigs = string.Join("+", compAttr.SignalTypes.Select(t => t.Name));
-                                    s_cachedCommands.Add((type.Name, sigs, "Composite"));
-                                }
+                            if (typeof(IReactiveModel).IsAssignableFrom(type))
+                                s_cachedModels.Add(type.Name);
 
-                                if (typeof(IReactiveModel).IsAssignableFrom(type))
-                                    s_cachedModels.Add(type.Name);
+                            if (typeof(View).IsAssignableFrom(type))
+                            {
+                                var mediatorAttr = type.GetCustomAttribute<MediatorAttribute>();
+                                string mediatorName = mediatorAttr?.MediatorType?.Name ?? "—";
+                                s_cachedViews.Add($"{type.Name} → {mediatorName}");
+                            }
 
-                                if (typeof(View).IsAssignableFrom(type))
-                                {
-                                    var mediatorAttr = type.GetCustomAttribute<MediatorAttribute>();
-                                    string mediatorName = mediatorAttr?.MediatorType?.Name ?? "—";
-                                    s_cachedViews.Add($"{type.Name} → {mediatorName}");
-                                }
-
-                                if (typeof(INexusService).IsAssignableFrom(type))
-                                {
-                                    var ifaces = type.GetInterfaces().Where(i => i != typeof(INexusService) && typeof(INexusService).IsAssignableFrom(i));
-                                    string ifaceName = ifaces.FirstOrDefault()?.Name ?? "—";
-                                    s_cachedServices.Add($"{type.Name}  :  {ifaceName}");
-                                }
+                            if (typeof(INexusService).IsAssignableFrom(type))
+                            {
+                                var ifaces = type.GetInterfaces().Where(i => i != typeof(INexusService) && typeof(INexusService).IsAssignableFrom(i));
+                                string ifaceName = ifaces.FirstOrDefault()?.Name ?? "—";
+                                s_cachedServices.Add($"{type.Name}  :  {ifaceName}");
                             }
                         }
-                    }
-                    catch (ReflectionTypeLoadException ex)
-                    {
-                        foreach (var le in ex.LoaderExceptions)
-                        {
-                            if (le != null) Debug.LogWarning($"[Nexus GameManager] Type load warning in {name}: {le.Message}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.LogWarning($"[Nexus GameManager] Assembly scan warning for {name}: {ex.Message}");
                     }
                 }
                 s_staticScanValid = true;

@@ -458,37 +458,33 @@ namespace Nexus.Editor
             _bindingTrackers.RemoveAll(t => t.Instance == instance);
 
             Type type = instance.GetType();
-            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var members = NexusFieldInspector.EnumerateMembers(type).ToList();
 
-            if (fields.Length == 0 && properties.Length == 0)
+            if (members.Count == 0)
             {
                 container.Add(new Label(NexusLang.Get("hierarchy_no_fields")) { style = { color = Color.gray, fontSize = 9, unityFontStyleAndWeight = FontStyle.Italic } });
                 return;
             }
 
             // Fields section
-                            var fieldsHeader = new Label(NexusLang.Get("hierarchy_fields")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginTop = 4 } };
+            var fieldsHeader = new Label(NexusLang.Get("hierarchy_fields")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginTop = 4 } };
             container.Add(fieldsHeader);
 
-            foreach (var field in fields)
+            foreach (var (member, memberType) in members)
             {
-                if (field.Name.Contains("<") && field.Name.Contains(">")) // Skip auto-property backing fields
-                    continue;
-
-                var row = CreateFieldUI(instance, field, field.FieldType, () => field.GetValue(instance), val => field.SetValue(instance, val));
+                if (!(member is FieldInfo field)) continue;
+                var row = CreateFieldUI(instance, field, memberType, () => field.GetValue(instance), val => field.SetValue(instance, val));
                 if (row != null) container.Add(row);
             }
 
             // Properties section
-                            var propsHeader = new Label(NexusLang.Get("hierarchy_properties")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginTop = 8 } };
+            var propsHeader = new Label(NexusLang.Get("hierarchy_properties")) { style = { fontSize = 10, unityFontStyleAndWeight = FontStyle.Bold, color = NexusEditorStyles.TextSecondary, marginTop = 8 } };
             container.Add(propsHeader);
 
-            foreach (var prop in properties)
+            foreach (var (member, memberType) in members)
             {
-                if (prop.GetIndexParameters().Length > 0) continue; // Skip indexers
-
-                var row = CreateFieldUI(instance, prop, prop.PropertyType,
+                if (!(member is PropertyInfo prop)) continue;
+                var row = CreateFieldUI(instance, prop, memberType,
                     () => prop.GetValue(instance),
                     prop.CanWrite && prop.GetSetMethod(true) != null ? val => prop.SetValue(instance, val) : (Action<object>)null);
                 if (row != null) container.Add(row);
@@ -497,80 +493,14 @@ namespace Nexus.Editor
 
         private VisualElement CreateFieldUI(object instance, MemberInfo member, Type type, Func<object> getter, Action<object> setter)
         {
-            VisualElement element = null;
             object initialValue = null;
             try { initialValue = getter(); } catch { }
 
-            bool isReadOnly = setter == null;
-
-            if (type == typeof(int))
-            {
-                var field = new IntegerField(member.Name) { value = (int)(initialValue ?? 0) };
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else if (type == typeof(float))
-            {
-                var field = new FloatField(member.Name) { value = (float)(initialValue ?? 0f) };
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else if (type == typeof(double))
-            {
-                var field = new DoubleField(member.Name) { value = (double)(initialValue ?? 0.0) };
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else if (type == typeof(bool))
-            {
-                var field = new Toggle(member.Name) { value = (bool)(initialValue ?? false) };
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else if (type == typeof(string))
-            {
-                var field = new TextField(member.Name) { value = (string)initialValue ?? "" };
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else if (type == typeof(Vector2))
-            {
-                var field = new Vector2Field(member.Name) { value = (Vector2)(initialValue ?? Vector2.zero) };
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else if (type == typeof(Vector3))
-            {
-                var field = new Vector3Field(member.Name) { value = (Vector3)(initialValue ?? Vector3.zero) };
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else if (type == typeof(Color))
-            {
-                var field = new ColorField(member.Name) { value = (Color)(initialValue ?? Color.white) };
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else if (type.IsEnum)
-            {
-                var field = new EnumField(member.Name, (Enum)(initialValue ?? Enum.GetValues(type).GetValue(0)));
-                if (!isReadOnly) field.RegisterValueChangedCallback(evt => { UndoRecord(instance); setter(evt.newValue); });
-                else field.SetEnabled(false);
-                element = field;
-            }
-            else
+            var element = NexusFieldInspector.CreateField(member.Name, type, getter, setter, newValue => UndoRecord(instance));
+            if (element == null)
             {
                 // Fallback for custom objects / classes
-                var label = new Label($"{member.Name}: {initialValue ?? NexusLang.Get("hier_null_value")}") { style = { color = Color.white, fontSize = 10 } };
-                return label;
+                return new Label($"{member.Name}: {initialValue ?? NexusLang.Get("hier_null_value")}") { style = { color = Color.white, fontSize = 10 } };
             }
 
             if (element is BindableElement bindable)

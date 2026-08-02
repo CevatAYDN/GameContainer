@@ -54,6 +54,18 @@ namespace Nexus.Core
         internal bool HasPostContextLifecycle => _postContextLifecycles.Count > 0;
         internal bool IsConfigured => _builder != null;
         internal ContextBuilder Builder => _builder;
+
+        /// <summary>
+        /// Returns the context's builder, creating it lazily when the context was never
+        /// <see cref="Configure"/>'d (the test-harness path). Bind calls made through the
+        /// harness route through the production builder, so the test surface can never
+        /// drift from the runtime's registration surface.
+        /// </summary>
+        internal ContextBuilder GetOrCreateBuilder()
+        {
+            if (_builder == null) _builder = new ContextBuilder(Container, SignalBusInternal);
+            return _builder;
+        }
         public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
 
         public bool HasInterceptors => System.Threading.Volatile.Read(ref _interceptorsCount) > 0;
@@ -409,28 +421,11 @@ namespace Nexus.Core
                     var data = cachedData[i];
                     var type = data.Type;
 
-                    bool isSync = typeof(ICommand).IsAssignableFrom(type)
-                        || global::Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(ICommand<>));
-                    bool isAsync = typeof(IAsyncCommand).IsAssignableFrom(type)
-                        || global::Nexus.Core.SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
-                    bool isCompositeSync = typeof(ICompositeCommand).IsAssignableFrom(type);
-                    bool isCompositeAsync = typeof(IAsyncCompositeCommand).IsAssignableFrom(type);
-
-                    if (isSync || isAsync || isCompositeSync || isCompositeAsync)
-                    {
-                        Container.Bind(type, isSingleton: false);
-                        for (int j = 0; j < data.Handlers.Count; j++)
-                        {
-                            var attr = data.Handlers[j];
-                            SignalBusInternal.RegisterCommand(attr.SignalType, type, attr.Mode, attr.Priority, isAsync: isAsync && !isSync);
-                        }
-                        if (data.CompositeHandler != null)
-                        {
-                            bool compositeIsAsync = (isCompositeAsync && !isCompositeSync) || (isAsync && !isSync);
-                            SignalBusInternal.RegisterCompositeCommand(data.CompositeHandler.SignalTypes, type, data.CompositeHandler.OneShot, data.CompositeHandler.Priority, compositeIsAsync);
-                        }
-                    }
-                    else
+                    // Registration and sync/async classification share ONE path with the
+                    // test harness (SignalBus.RegisterCommandType), so attribute parsing
+                    // can never drift between the production scan and tests. The registry
+                    // binds the command type itself as non-singleton.
+                    if (!SignalBusInternal.RegisterCommandType(type, data.Handlers, data.CompositeHandler))
                     {
                         NexusRuntime.Logger?.LogError($"[Nexus] [SignalHandler] type '{type.FullName}' does not implement ICommand/IAsyncCommand.");
                     }

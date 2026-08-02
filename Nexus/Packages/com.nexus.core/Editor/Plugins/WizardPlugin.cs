@@ -231,15 +231,9 @@ namespace Nexus.Editor
         private void PopulateAvailableAssemblies()
         {
             _wizardAvailableAssemblies.Clear();
-            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
+            foreach (var assembly in AssemblyCatalog.GameAssemblies())
             {
-                var name = assembly.GetName().Name;
-                if (name.StartsWith("System") || name.StartsWith("mscorlib") || name.StartsWith("Mono") || 
-                    name.StartsWith("UnityEngine") || name.StartsWith("UnityEditor") || name.StartsWith("nunit") || 
-                    name.Contains("PlayerLoop") || name.Contains("JetBrains"))
-                {
-                    continue;
-                }
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (!_wizardAvailableAssemblies.Contains(name))
                     _wizardAvailableAssemblies.Add(name);
             }
