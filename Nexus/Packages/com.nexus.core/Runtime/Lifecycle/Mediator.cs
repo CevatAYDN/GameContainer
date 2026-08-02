@@ -71,6 +71,43 @@ namespace Nexus.Core
             SignalBus = null;
         }
 
+        /// <summary>Subscribes to an ObservableProperty and tracks the subscription for automatic unbind cleanup.</summary>
+        protected IDisposable TrackObservable<T>(ObservableProperty<T> property, Action<T, T> handler)
+        {
+            if (property == null) throw new ArgumentNullException(nameof(property));
+            if (handler == null) throw new ArgumentNullException(nameof(handler));
+
+            property.OnChanged(handler);
+            var sub = new ObservableSubscription<T>(property, handler);
+            _subscriptions.Add(sub);
+            return sub;
+        }
+
+        private sealed class ObservableSubscription<T> : ISignalSubscription
+        {
+            private ObservableProperty<T> _property;
+            private Action<T, T> _handler;
+
+            public bool IsActive => _property != null;
+            public CancellationToken Lifetime => CancellationToken.None;
+
+            public ObservableSubscription(ObservableProperty<T> property, Action<T, T> handler)
+            {
+                _property = property;
+                _handler = handler;
+            }
+
+            public void Dispose()
+            {
+                if (_property != null && _handler != null)
+                {
+                    _property.RemoveOnChanged(_handler);
+                    _property = null;
+                    _handler = null;
+                }
+            }
+        }
+
         /// <summary>Override to perform custom logic when the mediator is bound to a view.</summary>
         protected virtual void OnBind() { }
         /// <summary>Override to perform custom cleanup when the mediator is unbound.</summary>

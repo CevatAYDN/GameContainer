@@ -101,5 +101,24 @@ namespace Nexus.Core.Lifecycle
                 }
             }
         }
+
+        public void ExecuteStoppableLifecyclesSync(IEnumerable<object> instances)
+        {
+            if (instances == null) return;
+            var list = new List<object>(instances);
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var inst = list[i];
+                if (inst == null) continue;
+                if (inst is IStoppable stoppable)
+                {
+                    try { stoppable.Stop(); }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
+                    }
+                }
+            }
+        }
     }
 }

@@ -243,6 +243,7 @@ namespace Nexus.Core
         void Fire<T>(T signal) where T : struct;
     }
 
+    [UnityEngine.Scripting.Preserve]
     public interface IContextLifecycle
     {
         /// <summary>

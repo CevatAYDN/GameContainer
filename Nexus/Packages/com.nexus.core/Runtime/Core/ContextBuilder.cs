@@ -341,6 +341,15 @@ namespace Nexus.Core
                 // Check constructor parameters
                 if (meta.ConstructorParameterTypes != null)
                 {
+                    if (meta.ConstructorParameterTypes.Length > 6)
+                    {
+                        issues.Add(new DiValidationIssue(
+                            type, type,
+                            DiValidationIssueType.MissingConstructorDependency,
+                            $"[ConstructorExplosion] Constructor of '{type.Name}' has {meta.ConstructorParameterTypes.Length} parameters (> 6 limit), indicating high coupling risk."
+                        ));
+                    }
+
                     foreach (var paramType in meta.ConstructorParameterTypes)
                     {
                         if (!allRegisteredTypes.Contains(paramType))

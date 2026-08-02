@@ -24,7 +24,7 @@ namespace Nexus.Core
         {
             try
             {
-                await func().ConfigureAwait(false);
+                await func();
             }
             catch (Exception ex)
             {

@@ -574,14 +574,14 @@ namespace Nexus.Core
             _disposed = true;
             _cts.Cancel();
 
-            // Execute IAsyncStoppable and IStoppable domain lifecycles before container teardown
+            // Execute IStoppable domain lifecycles before container teardown
             try
             {
-                _orchestrator.ExecuteStoppableLifecyclesAsync(Container.GetActiveSingletons(), CancellationToken.None).AsTask().GetAwaiter().GetResult();
+                _orchestrator.ExecuteStoppableLifecyclesSync(Container.GetActiveSingletons());
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogError($"[Nexus] Exception during ExecuteStoppableLifecyclesAsync: {ex.Message}");
+                NexusRuntime.Logger?.LogError($"[Nexus] Exception during ExecuteStoppableLifecyclesSync: {ex.Message}");
             }
 
             if (_configuredLifecycles.Length > 0)
