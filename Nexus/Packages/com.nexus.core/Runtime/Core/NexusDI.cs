@@ -42,8 +42,15 @@ namespace Nexus.Core
         private readonly HashSet<object> _resolvedSingletons = new();
         private volatile bool _disposed;
 
-        // Editor accessor properties — avoid fragile reflection in NexusEditorDataProvider / ExplorerPlugin.
-        internal HashSet<object> EditorResolvedSingletons => _resolvedSingletons;
+        /// <summary>Safe editor snapshot of resolved singleton instances (thread-safe copy, no raw reference leak).</summary>
+        internal IReadOnlyList<object> EditorResolvedSingletons
+        {
+            get
+            {
+                lock (_singletonLock)
+                    return new List<object>(_resolvedSingletons);
+            }
+        }
 
         private static readonly ConcurrentDictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
         private static readonly ConcurrentDictionary<Type, Action<object>> s_customClearers = new();

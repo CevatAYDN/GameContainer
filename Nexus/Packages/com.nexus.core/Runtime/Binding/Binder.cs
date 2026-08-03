@@ -74,6 +74,8 @@ namespace Nexus.Core
     /// <summary>
     /// Default <see cref="IBinder{TKey,TValue}"/> implementation. Reads are dictionary
     /// lookups keyed by a struct — steady-state Get/TryGet allocate nothing.
+    /// Thread-safe: all mutations take a reader-writer lock so concurrent reads are
+    /// lock-free while writes are exclusive.
     /// </summary>
     [Preserve]
     public sealed class NexusBinder<TKey, TValue> : IBinder<TKey, TValue>
@@ -107,9 +109,9 @@ namespace Nexus.Core
             }
         }
 
-        private enum EntryKind { Value, Factory, Type }
+        internal enum EntryKind { Value, Factory, Type }
 
-        private sealed class BinderEntry
+        internal sealed class BinderEntry
         {
             public EntryKind Kind;
             public TValue Value;
@@ -118,6 +120,7 @@ namespace Nexus.Core
         }
 
         private readonly Dictionary<BinderKey, BinderEntry> _entries = new();
+        private readonly System.Threading.ReaderWriterLockSlim _rwLock = new(System.Threading.LockRecursionPolicy.NoRecursion);
         private readonly NexusDI _container;
 
         /// <summary>Creates a standalone binder. Pass a container to enable .To&lt;T&gt;() type mappings.</summary>
@@ -126,7 +129,15 @@ namespace Nexus.Core
             _container = container;
         }
 
-        public int Count => _entries.Count;
+        public int Count
+        {
+            get
+            {
+                _rwLock.EnterReadLock();
+                try { return _entries.Count; }
+                finally { _rwLock.ExitReadLock(); }
+            }
+        }
 
         public IBinderBindingBuilder<TKey, TValue> Bind(TKey key)
         {
@@ -134,8 +145,19 @@ namespace Nexus.Core
             return new BinderBindingBuilder(this, key);
         }
 
-        public bool Has(TKey key) => _entries.ContainsKey(new BinderKey(key, null));
-        public bool Has(TKey key, string name) => _entries.ContainsKey(new BinderKey(key, name));
+        public bool Has(TKey key)
+        {
+            _rwLock.EnterReadLock();
+            try { return _entries.ContainsKey(new BinderKey(key, null)); }
+            finally { _rwLock.ExitReadLock(); }
+        }
+
+        public bool Has(TKey key, string name)
+        {
+            _rwLock.EnterReadLock();
+            try { return _entries.ContainsKey(new BinderKey(key, name)); }
+            finally { _rwLock.ExitReadLock(); }
+        }
 
         public TValue Get(TKey key)
         {
@@ -153,7 +175,13 @@ namespace Nexus.Core
 
         public bool TryGet(TKey key, string name, out TValue value)
         {
-            if (_entries.TryGetValue(new BinderKey(key, name), out var entry))
+            _rwLock.EnterReadLock();
+            BinderEntry entry;
+            bool found;
+            try { found = _entries.TryGetValue(new BinderKey(key, name), out entry); }
+            finally { _rwLock.ExitReadLock(); }
+
+            if (found)
             {
                 value = ResolveEntry(entry);
                 return true;
@@ -164,14 +192,18 @@ namespace Nexus.Core
 
         public void Unbind(TKey key)
         {
-            // Remove every name for this key.
-            var keysToRemove = new List<BinderKey>();
-            foreach (var kvp in _entries)
+            _rwLock.EnterWriteLock();
+            try
             {
-                if (EqualityComparer<TKey>.Default.Equals(kvp.Key.Key, key))
-                    keysToRemove.Add(kvp.Key);
+                var keysToRemove = new List<BinderKey>();
+                foreach (var kvp in _entries)
+                {
+                    if (EqualityComparer<TKey>.Default.Equals(kvp.Key.Key, key))
+                        keysToRemove.Add(kvp.Key);
+                }
+                for (int i = 0; i < keysToRemove.Count; i++) _entries.Remove(keysToRemove[i]);
             }
-            for (int i = 0; i < keysToRemove.Count; i++) _entries.Remove(keysToRemove[i]);
+            finally { _rwLock.ExitWriteLock(); }
         }
 
         private TValue ResolveEntry(BinderEntry entry)
@@ -191,6 +223,14 @@ namespace Nexus.Core
                 default:
                     return default;
             }
+        }
+
+        // Internal write method used by the fluent builder — takes write lock.
+        internal void CommitEntry(TKey key, string name, BinderEntry entry)
+        {
+            _rwLock.EnterWriteLock();
+            try { _entries[new BinderKey(key, name)] = entry; }
+            finally { _rwLock.ExitWriteLock(); }
         }
 
         // ─── Fluent builder ──────────────────────────────────────────────────
@@ -246,7 +286,7 @@ namespace Nexus.Core
 
             private void Commit()
             {
-                _owner._entries[new BinderKey(_key, _name)] = _entry;
+                _owner.CommitEntry(_key, _name, _entry);
                 _committed = true;
             }
         }

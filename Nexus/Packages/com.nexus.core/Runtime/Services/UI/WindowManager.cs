@@ -287,7 +287,7 @@ namespace Nexus.Core.Services
 
         public void OpenWindow(string windowName, object args = null)
         {
-            _ = OpenWindowAsync(windowName, UILayer.Screen, args);
+            _ = SafeFireAndForget(OpenWindowAsync(windowName, UILayer.Screen, args), $"OpenWindow '{windowName}'");
         }
 
         public async Task CloseWindowAsync(string windowName)
@@ -368,7 +368,7 @@ namespace Nexus.Core.Services
 
         public void CloseWindow(string windowName)
         {
-            _ = CloseWindowAsync(windowName);
+            _ = SafeFireAndForget(CloseWindowAsync(windowName), $"CloseWindow '{windowName}'");
         }
 
         public async Task CloseTopWindowAsync()
@@ -382,7 +382,7 @@ namespace Nexus.Core.Services
 
         public void CloseTopWindow()
         {
-            _ = CloseTopWindowAsync();
+            _ = SafeFireAndForget(CloseTopWindowAsync(), "CloseTopWindow");
         }
 
         public async Task CloseAllAsync()
@@ -406,7 +406,22 @@ namespace Nexus.Core.Services
 
         public void CloseAll()
         {
-            _ = CloseAllAsync();
+            _ = SafeFireAndForget(CloseAllAsync(), "CloseAll");
+        }
+
+        /// <summary>
+        /// Fire-and-forget helper that logs any exception which escapes the task.
+        /// Replaces bare "_ = task" discards so exceptions are never silently swallowed.
+        /// OperationCanceledException is suppressed — it is expected during context teardown.
+        /// </summary>
+        private static async System.Threading.Tasks.Task SafeFireAndForget(System.Threading.Tasks.Task task, string context)
+        {
+            try { await task; }
+            catch (OperationCanceledException) { /* expected during context teardown */ }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[WindowManager] {context} failed: {ex.Message}\n{ex.StackTrace}");
+            }
         }
 
         // A4b: lock-free reads from the volatile snapshot — never take the semaphore, so

@@ -29,10 +29,15 @@ namespace Nexus.Core
     [Preserve]
     public abstract class NexusService<T> : INexusService, IDisposable where T : class
     {
-        /// <summary>The owning Nexus context. Automatically injected.</summary>
+        /// <summary>
+        /// The owning Nexus context. Injected by the DI container — do not set manually.
+        /// </summary>
         [Inject] public IContext Context { get; protected set; }
 
-        /// <summary>The context's signal bus for firing/dispatching signals.</summary>
+        /// <summary>
+        /// The context's signal bus for firing/dispatching signals.
+        /// Injected by the DI container — do not set manually.
+        /// </summary>
         [Inject] public ISignalBus SignalBus { get; protected set; }
 
         public virtual ValueTask InitializeAsync(CancellationToken ct) => default;

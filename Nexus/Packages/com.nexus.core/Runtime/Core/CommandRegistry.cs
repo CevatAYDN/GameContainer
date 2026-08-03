@@ -311,8 +311,7 @@ namespace Nexus.Core
         /// <summary>
         /// Returns a cached dispatcher that invokes <see cref="ICommand{TSignal}"/>.Execute on a
         /// generic-only command, or null if the command type does not implement that interface.
-        /// Mirrors SignalBus's cached dispatcher creation (TryGetValue/TryAdd because null cannot
-        /// be stored in the cache — a GetOrAdd factory would infinitely recurse on itself).
+        /// Uses Expression-compiled delegates to avoid per-call object[] allocation on the hot path.
         /// </summary>
         public Action<object, object> GetGenericSyncDispatcher(Type commandType, Type signalType)
         {
@@ -321,8 +320,19 @@ namespace Nexus.Core
 
             var genericInterface = typeof(ICommand<>).MakeGenericType(signalType);
             if (!genericInterface.IsAssignableFrom(commandType)) return null;
+
             var method = genericInterface.GetMethod("Execute");
-            Action<object, object> dispatcher = (cmd, sig) => method.Invoke(cmd, new[] { sig });
+
+            // Compile an Expression-tree delegate: (object cmd, object sig) => ((ICommand<T>)cmd).Execute((T)sig)
+            // This eliminates the object[] allocation that method.Invoke(cmd, new[] { sig }) causes on every dispatch.
+            var cmdParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "cmd");
+            var sigParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "sig");
+            var castCmd  = System.Linq.Expressions.Expression.Convert(cmdParam, genericInterface);
+            var castSig  = System.Linq.Expressions.Expression.Convert(sigParam, signalType);
+            var call     = System.Linq.Expressions.Expression.Call(castCmd, method, castSig);
+            var lambda   = System.Linq.Expressions.Expression.Lambda<Action<object, object>>(call, cmdParam, sigParam);
+            Action<object, object> dispatcher = lambda.Compile();
+
             s_genericSyncDispatchCache.TryAdd(key, dispatcher);
             return dispatcher;
         }
@@ -330,7 +340,7 @@ namespace Nexus.Core
         /// <summary>
         /// Returns a cached dispatcher that invokes <see cref="IAsyncCommand{TSignal}"/>.ExecuteAsync on
         /// a generic-only async command, or null if the command type does not implement that interface.
-        /// Mirrors SignalBus's cached async dispatcher creation.
+        /// Uses Expression-compiled delegates to avoid per-call object[] allocation on the hot path.
         /// </summary>
         public Func<object, object, CancellationToken, ValueTask> GetGenericAsyncDispatcher(Type commandType, Type signalType)
         {
@@ -339,12 +349,19 @@ namespace Nexus.Core
 
             var genericInterface = typeof(IAsyncCommand<>).MakeGenericType(signalType);
             if (!genericInterface.IsAssignableFrom(commandType)) return null;
+
             var method = genericInterface.GetMethod("ExecuteAsync");
-            Func<object, object, CancellationToken, ValueTask> dispatcher = (cmd, sig, ct) =>
-            {
-                var result = method.Invoke(cmd, new[] { sig, ct });
-                return (ValueTask)result;
-            };
+
+            // Compile: (object cmd, object sig, CancellationToken ct) => ((IAsyncCommand<T>)cmd).ExecuteAsync((T)sig, ct)
+            var cmdParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "cmd");
+            var sigParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "sig");
+            var ctParam  = System.Linq.Expressions.Expression.Parameter(typeof(CancellationToken), "ct");
+            var castCmd  = System.Linq.Expressions.Expression.Convert(cmdParam, genericInterface);
+            var castSig  = System.Linq.Expressions.Expression.Convert(sigParam, signalType);
+            var call     = System.Linq.Expressions.Expression.Call(castCmd, method, castSig, ctParam);
+            var lambda   = System.Linq.Expressions.Expression.Lambda<Func<object, object, CancellationToken, ValueTask>>(call, cmdParam, sigParam, ctParam);
+            Func<object, object, CancellationToken, ValueTask> dispatcher = lambda.Compile();
+
             s_genericAsyncDispatchCache.TryAdd(key, dispatcher);
             return dispatcher;
         }
@@ -424,8 +441,29 @@ namespace Nexus.Core
 
             if (foundMember != null)
             {
-                if (foundMember is FieldInfo f) newSetter = (target, val) => f.SetValue(target, val);
-                else if (foundMember is PropertyInfo p) newSetter = (target, val) => p.SetValue(target, val);
+                try
+                {
+                    var targetParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "target");
+                    var valParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "val");
+                    var castTarget = System.Linq.Expressions.Expression.Convert(targetParam, cmdType);
+
+                    System.Linq.Expressions.MemberExpression memberExpr = foundMember is FieldInfo fInfo
+                        ? System.Linq.Expressions.Expression.Field(castTarget, fInfo)
+                        : System.Linq.Expressions.Expression.Property(castTarget, (PropertyInfo)foundMember);
+
+                    var memberType = foundMember is FieldInfo fi ? fi.FieldType : ((PropertyInfo)foundMember).PropertyType;
+                    var castVal = System.Linq.Expressions.Expression.Convert(valParam, memberType);
+                    var assign = System.Linq.Expressions.Expression.Assign(memberExpr, castVal);
+
+                    var lambda = System.Linq.Expressions.Expression.Lambda<Action<object, object>>(assign, targetParam, valParam);
+                    newSetter = lambda.Compile();
+                }
+                catch
+                {
+                    // Fallback to reflection if Expression compilation is restricted on certain AOT platforms
+                    if (foundMember is FieldInfo f) newSetter = (target, val) => f.SetValue(target, val);
+                    else if (foundMember is PropertyInfo p) newSetter = (target, val) => p.SetValue(target, val);
+                }
             }
             else
             {

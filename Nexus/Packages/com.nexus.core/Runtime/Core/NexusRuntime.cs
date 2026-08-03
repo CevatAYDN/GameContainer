@@ -125,9 +125,23 @@ namespace Nexus.Core
 
         /// <summary>
         /// Null-safe accessor for the registered <see cref="Services.ILoggerService"/> from <see cref="CurrentContext"/>.
+        /// Cached per-context to avoid a DI lookup on every log call. Invalidated on context register/unregister.
         /// Returns null if no context or logger service is registered.
         /// </summary>
-        public static Services.ILoggerService Logger => CurrentContext?.TryResolve<Services.ILoggerService>();
+        public static Services.ILoggerService Logger
+        {
+            get
+            {
+                var cached = System.Threading.Volatile.Read(ref s_cachedLogger);
+                if (cached != null) return cached;
+                var resolved = CurrentContext?.TryResolve<Services.ILoggerService>();
+                if (resolved != null)
+                    System.Threading.Volatile.Write(ref s_cachedLogger, resolved);
+                return resolved;
+            }
+        }
+
+        private static Services.ILoggerService s_cachedLogger;
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void InitializeOnLoad()
@@ -208,6 +222,7 @@ namespace Nexus.Core
                 s_activeContextsReadOnlyCache = new List<IContext>();
                 s_activeContextsCacheDirty = false;
                 s_activeContextCount = 0;
+                System.Threading.Volatile.Write(ref s_cachedLogger, null);
             }
 
             for (int i = snapshot.Length - 1; i >= 0; i--)
@@ -229,6 +244,7 @@ namespace Nexus.Core
             QueuedSignalPoolRegistry.ClearAll();
             Root.ClearRegistry();
             CommandPoolStatics.ClearStateLeakWarnings();
+            Services.AssemblyScanService.ClearCache();
             NexusLog.Reset();
         }
 
@@ -334,6 +350,8 @@ namespace Nexus.Core
                     s_activeContextCount = s_activeContexts.Count;
                     s_activeContextsCacheDirty = true;
                     added = true;
+                    // Invalidate logger cache — a new context may provide a logger
+                    System.Threading.Volatile.Write(ref s_cachedLogger, null);
                 }
             }
             if (added)
@@ -378,6 +396,8 @@ namespace Nexus.Core
                     s_activeContextsReadOnlyCache = new List<IContext>(s_activeContexts);
                     s_activeContextsCacheDirty = false;
                     removed = true;
+                    // Invalidate logger cache — removed context may have been providing the logger
+                    System.Threading.Volatile.Write(ref s_cachedLogger, null);
                 }
             }
             if (removed)

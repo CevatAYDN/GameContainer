@@ -223,6 +223,14 @@ namespace Nexus.Core.FSM
                     return;
                 }
 
+                // Check for cancellation before starting OnEnterAsync — a state that ignores
+                // the token could run for an arbitrarily long time after being superseded.
+                if (token.IsCancellationRequested)
+                {
+                    RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
+                    return;
+                }
+
                 try
                 {
                     await nextState.OnEnterAsync(args, token);
@@ -326,7 +334,21 @@ namespace Nexus.Core.FSM
                 status == StateTransitionStatus.Failed ? TraceStatus.Failed : TraceStatus.Cancelled);
 #endif
 
-            OnStateChanged?.Invoke(record);
+            // Subscriber exceptions must not propagate up into ChangeStateAsync and cause
+            // a spurious StateTransitionStatus.Failed. Log them independently.
+            if (OnStateChanged != null)
+            {
+                var handlers = OnStateChanged.GetInvocationList();
+                for (int i = 0; i < handlers.Length; i++)
+                {
+                    try { ((Action<StateTransitionRecord>)handlers[i])(record); }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogError(
+                            $"[GameStateMachine] OnStateChanged subscriber '{handlers[i].Method?.Name}' threw: {ex.Message}\n{ex.StackTrace}");
+                    }
+                }
+            }
         }
 
         public void Tick(float deltaTime)

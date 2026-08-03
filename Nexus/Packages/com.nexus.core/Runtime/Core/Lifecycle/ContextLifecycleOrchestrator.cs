@@ -56,6 +56,10 @@ namespace Nexus.Core.Lifecycle
             {
                 if (ct.IsCancellationRequested) break;
                 if (inst == null) continue;
+
+                // A type may implement BOTH IAsyncStartable and IStartable (unusual but valid).
+                // Prefer the async path; only fall through to sync if async is absent so the
+                // startup sequence is not executed twice for the same instance.
                 if (inst is IAsyncStartable asyncStartable)
                 {
                     try { await asyncStartable.StartAsync(ct); }
@@ -83,6 +87,7 @@ namespace Nexus.Core.Lifecycle
             {
                 var inst = list[i];
                 if (inst == null) continue;
+
                 if (inst is IAsyncStoppable asyncStoppable)
                 {
                     try { await asyncStoppable.StopAsync(ct); }

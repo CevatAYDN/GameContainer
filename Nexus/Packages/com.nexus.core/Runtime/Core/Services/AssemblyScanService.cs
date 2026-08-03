@@ -8,6 +8,9 @@ namespace Nexus.Core.Services
     /// <summary>
     /// Manages static assembly reflection caching and type discovery.
     /// Decouples type scanning from the Context container.
+    /// Cache is cleared automatically by <see cref="NexusRuntime.Reset"/> on domain reload
+    /// and play-mode transitions to prevent stale type arrays from being returned after scripts
+    /// are recompiled (e.g. Enter Play Mode with domain reload disabled).
     /// </summary>
     public sealed class AssemblyScanService
     {
@@ -39,6 +42,10 @@ namespace Nexus.Core.Services
             });
         }
 
+        /// <summary>
+        /// Clears the type cache. Called by <see cref="NexusRuntime.Reset"/> to ensure
+        /// domain-reload-safe behaviour when Enter Play Mode Options has domain reload disabled.
+        /// </summary>
         public static void ClearCache()
         {
             s_typeCache.Clear();

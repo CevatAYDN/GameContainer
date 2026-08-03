@@ -126,115 +126,134 @@ namespace Nexus.Core
         private readonly SnapshotDelegateSet<Action<int, T>> _onRemoved = new();
         private readonly SnapshotDelegateSet<Action> _onCleared = new();
 
-        // E-10 fix: snapshot + lock pattern (like ObservableProperty) for reentrancy safety
+        // Fix: _isNotifying must be volatile so cross-thread visibility is guaranteed,
+        // and all reads/writes stay within the same lock scope to prevent races between
+        // concurrent Add/Remove calls on multiple threads.
         private readonly object _eventLock = new();
-        private bool _isNotifying;
+        private volatile bool _isNotifying;
 
         // ── Access ─────────────────────────────────────────────
-        public int Count => _items.Count;
+        public int Count { get { lock (_eventLock) return _items.Count; } }
         public T this[int index]
         {
-            get => _items[index];
-            set => _items[index] = value;
+            get { lock (_eventLock) return _items[index]; }
+            set { lock (_eventLock) _items[index] = value; }
         }
 
-        public ReadOnlyListWrapper<T> AsReadOnly() => new(_items);
+        public ReadOnlyListWrapper<T> AsReadOnly()
+        {
+            lock (_eventLock)
+                return new ReadOnlyListWrapper<T>(new List<T>(_items));
+        }
 
         // ── Mutation ───────────────────────────────────────────
         public void Add(T item)
         {
-            Action<int, T>[] addedSnapshot = null;
             int index;
+            Action<int, T>[] addedSnapshot;
             lock (_eventLock)
             {
                 index = _items.Count;
                 _items.Add(item);
-                if (!_isNotifying)
-                    addedSnapshot = _onAdded.GetSnapshot();
+                // Capture snapshot inside the lock so handler set cannot change mid-dispatch
+                addedSnapshot = _isNotifying ? null : _onAdded.GetSnapshot();
+                if (addedSnapshot != null) _isNotifying = true;
             }
+
             if (addedSnapshot != null)
             {
-                _isNotifying = true;
                 try
                 {
                     for (int i = 0; i < addedSnapshot.Length; i++)
                         addedSnapshot[i]?.Invoke(index, item);
                 }
-                finally { _isNotifying = false; }
+                finally
+                {
+                    lock (_eventLock) _isNotifying = false;
+                }
             }
         }
 
         public bool Remove(T item)
         {
-            Action<int, T>[] removedSnapshot = null;
             int index;
+            Action<int, T>[] removedSnapshot;
             lock (_eventLock)
             {
                 index = _items.IndexOf(item);
                 if (index < 0) return false;
                 _items.RemoveAt(index);
-                if (!_isNotifying)
-                    removedSnapshot = _onRemoved.GetSnapshot();
+                removedSnapshot = _isNotifying ? null : _onRemoved.GetSnapshot();
+                if (removedSnapshot != null) _isNotifying = true;
             }
+
             if (removedSnapshot != null)
             {
-                _isNotifying = true;
                 try
                 {
                     for (int i = 0; i < removedSnapshot.Length; i++)
                         removedSnapshot[i]?.Invoke(index, item);
                 }
-                finally { _isNotifying = false; }
+                finally
+                {
+                    lock (_eventLock) _isNotifying = false;
+                }
             }
             return true;
         }
 
         public void RemoveAt(int index)
         {
-            Action<int, T>[] removedSnapshot = null;
             T item;
+            Action<int, T>[] removedSnapshot;
             lock (_eventLock)
             {
                 item = _items[index];
                 _items.RemoveAt(index);
-                if (!_isNotifying)
-                    removedSnapshot = _onRemoved.GetSnapshot();
+                removedSnapshot = _isNotifying ? null : _onRemoved.GetSnapshot();
+                if (removedSnapshot != null) _isNotifying = true;
             }
+
             if (removedSnapshot != null)
             {
-                _isNotifying = true;
                 try
                 {
                     for (int i = 0; i < removedSnapshot.Length; i++)
                         removedSnapshot[i]?.Invoke(index, item);
                 }
-                finally { _isNotifying = false; }
+                finally
+                {
+                    lock (_eventLock) _isNotifying = false;
+                }
             }
         }
 
         public void Clear()
         {
-            Action[] clearedSnapshot = null;
+            Action[] clearedSnapshot;
             lock (_eventLock)
             {
                 _items.Clear();
-                if (!_isNotifying)
-                    clearedSnapshot = _onCleared.GetSnapshot();
+                clearedSnapshot = _isNotifying ? null : _onCleared.GetSnapshot();
+                if (clearedSnapshot != null) _isNotifying = true;
             }
+
             if (clearedSnapshot != null)
             {
-                _isNotifying = true;
                 try
                 {
                     for (int i = 0; i < clearedSnapshot.Length; i++)
                         clearedSnapshot[i]?.Invoke();
                 }
-                finally { _isNotifying = false; }
+                finally
+                {
+                    lock (_eventLock) _isNotifying = false;
+                }
             }
         }
 
-        public bool Contains(T item) => _items.Contains(item);
-        public int IndexOf(T item) => _items.IndexOf(item);
+        public bool Contains(T item) { lock (_eventLock) return _items.Contains(item); }
+        public int IndexOf(T item) { lock (_eventLock) return _items.IndexOf(item); }
 
         // ── Observation ────────────────────────────────────────
         // B4 fix preserved: registration dedupes via the shared core — registering the

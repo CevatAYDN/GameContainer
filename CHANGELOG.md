@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-08-03
+
+### Fixed
+- **Anti-Cheat Integrity Canary (`SecureObservableProperty.cs`)**: Fixed dead-code branch in tamper detection so canary failures log security warnings and reset tampered values to defaults.
+- **Encrypted Storage Seed Exception Logging (`EncryptedStorageService.cs`)**: Replaced bare `catch` in seed decoding with explicit `catch (Exception ex)` and warning log before fallback seed regeneration.
+- **Command Injection Performance (`CommandRegistry.cs`)**: Optimized signal injection setters using compiled `System.Linq.Expressions` to eliminate `FieldInfo.SetValue` reflection overhead in hot paths.
+- **Service Dependency Property Injection (`NexusService.cs`)**: Changed `Context` and `SignalBus` property setters from `private set` to `protected set` for property injection compatibility.
+- **Domain Lifecycles Execution (`ContextLifecycleOrchestrator.cs`)**: Enabled dual execution of `IAsyncStartable` and `IStartable` (and stoppable equivalents) when a domain object implements both contracts.
+
 ## [0.5.0] - 2026-08-02
 
 ### Added

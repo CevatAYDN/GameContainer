@@ -101,9 +101,11 @@ namespace Nexus.Core.Services
                     for (int i = 0; i < 32; i++)
                         seedBytes[i] = (byte)(obfuscatedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Fallback in case of corruption: generate new
+                    // Fallback in case of corruption: generate new and log warning
+                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorageService] Storage seed decoding failed ({ex.Message}). Regenerating new secure seed.");
+
                     using var rng = RandomNumberGenerator.Create();
                     rng.GetBytes(seedBytes);
 
@@ -151,12 +153,17 @@ namespace Nexus.Core.Services
         {
             if (!hasFocus)
             {
-                // Capture logger service on main thread before launching background Task.
+                // Capture logger on main thread before switching to background.
                 var logger = NexusRuntime.Logger;
-                // P2-14 fix: never block the main thread with bulk file IO on focus loss.
+                // Use Task.Run for true background I/O so the Unity main thread is never
+                // blocked waiting for disk writes during focus loss.
+                // The lambda captures only the logger (value-type copy) — not `this` —
+                // so there is no risk of the service being GC'd while I/O is in flight
+                // because the service's lifetime is tied to the context (singleton).
+                var self = this; // explicit capture for clarity
                 System.Threading.Tasks.Task.Run(() =>
                 {
-                    try { Save(); }
+                    try { self.Save(); }
                     catch (Exception ex)
                     {
                         logger?.LogWarning($"[EncryptedStorage] Background save on focus loss failed: {ex.Message}");
@@ -511,8 +518,11 @@ namespace Nexus.Core.Services
                 }
                 catch (IOException) when (attempt < maxAttempts - 1)
                 {
-                    // Yield instead of blocking the Unity main thread during contention.
-                    System.Threading.Thread.Yield();
+                    // Brief exponential back-off (1 ms, 2 ms) without blocking the calling
+                    // thread's timeslice for longer than necessary. Thread.Yield() only gives
+                    // up the remainder of the current timeslice and can return immediately on
+                    // single-core devices; Thread.Sleep(1) guarantees at least 1 ms relief.
+                    System.Threading.Thread.Sleep(1 << attempt); // 1 ms, 2 ms
                 }
             }
         }

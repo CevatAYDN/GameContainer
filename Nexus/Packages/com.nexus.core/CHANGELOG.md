@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Anti-Cheat Integrity Canary (`SecureObservableProperty.cs`)**: Fixed dead-code branch in tamper detection so canary failures log security warnings and reset tampered values to defaults.
+- **Encrypted Storage Seed Exception Logging (`EncryptedStorageService.cs`)**: Replaced bare `catch` in seed decoding with explicit `catch (Exception ex)` and warning log before fallback seed regeneration.
+- **Command Injection Performance (`CommandRegistry.cs`)**: Optimized signal injection setters using compiled `System.Linq.Expressions` to eliminate `FieldInfo.SetValue` reflection overhead in hot paths.
+- **Service Dependency Property Injection (`NexusService.cs`)**: Changed `Context` and `SignalBus` property setters from `private set` to `protected set` for property injection compatibility.
+- **Domain Lifecycles Execution (`ContextLifecycleOrchestrator.cs`)**: Enabled dual execution of `IAsyncStartable` and `IStartable` (and stoppable equivalents) when a domain object implements both contracts.
+
 ### Security
 - **DI validation runs in ALL build targets (A10)** — the Configure-time `ContextBuilder.Validate()` call was previously compiled out under `UNITY_EDITOR`, so production builds silently skipped every check (missing dependencies, constructor explosion, and the A8 captive-dependency rule) and left `[Inject]` fields null with no diagnostic. Validation now runs in every build, is logged (never throws), and can be disabled for projects that intentionally defer bindings past Configure via the new `ContextBuilder.ValidateOnStartup` flag (default `true`).
 - **ErrorCollection grouping counters bounded (A10)** — `s_errorGrouping` (unique `category:message` → count) previously grew without bound even though the error bag is capped at `s_maxErrors`, so long sessions with dynamic error messages (URLs, ids, filenames) leaked memory. When unique keys exceed 4096 the counters are rebuilt from the retained bag; `Count` now reflects occurrences among retained entries rather than cumulative-ever.

@@ -35,6 +35,12 @@ namespace Nexus.Core
 
         private readonly SecureObserverSet<int> _observers = new();
 
+        /// <summary>
+        /// Raised when memory tampering is detected (canary mismatch).
+        /// The bool parameter is always true. Subscribe to trigger server-side validation.
+        /// </summary>
+        public static event Action<string> OnTamperDetected;
+
         public SecureObservableInt(int initialValue = 0)
         {
             var (k1, k2) = SecureKeyGen.IntKeyPair();
@@ -53,13 +59,21 @@ namespace Nexus.Core
                 {
                     int compound = _cryptoKey1 ^ _cryptoKey2;
 
-                    // Integrity check: detect memory tampering
+                    // Integrity check: detect memory tampering.
+                    // Canary failed → keys were overwritten by a memory scanner.
+                    // Reset to 0 to deny the cheat value and raise the tamper event
+                    // so the caller can trigger server-side re-validation.
                     if ((compound ^ GuardConst) != _guard)
                     {
-                        // Canary failed — memory may have been scanned/modified.
-                        // Return a computed value but don't trust state; caller
-                        // should verify through server-side validation.
-                        return _obscuredValue ^ compound;
+                        RaiseTamperDetected("SecureObservableInt");
+                        // Re-initialize with a fresh key pair so subsequent reads are safe.
+                        var (k1, k2) = SecureKeyGen.IntKeyPair();
+                        _cryptoKey1 = k1;
+                        _cryptoKey2 = k2;
+                        int newCompound = k1 ^ k2;
+                        _obscuredValue = 0 ^ newCompound;
+                        _guard = newCompound ^ GuardConst;
+                        return 0;
                     }
 
                     return _obscuredValue ^ compound;
@@ -71,6 +85,11 @@ namespace Nexus.Core
                 lock (_valueLock)
                 {
                     int oldCompound = _cryptoKey1 ^ _cryptoKey2;
+                    // Also check tamper on write path
+                    if ((oldCompound ^ GuardConst) != _guard)
+                    {
+                        RaiseTamperDetected("SecureObservableInt.set");
+                    }
                     old = _obscuredValue ^ oldCompound;
                     if (old == value) return;
 
@@ -108,6 +127,13 @@ namespace Nexus.Core
 
         public static implicit operator int(SecureObservableInt prop) => prop.Value;
         public override string ToString() => Value.ToString();
+
+        private static void RaiseTamperDetected(string context)
+        {
+            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
+            try { OnTamperDetected?.Invoke(context); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
+        }
     }
 
     /// <summary>
@@ -127,6 +153,9 @@ namespace Nexus.Core
 
         private readonly SecureObserverSet<long> _observers = new();
 
+        /// <summary>Raised when memory tampering is detected.</summary>
+        public static event Action<string> OnTamperDetected;
+
         public SecureObservableLong(long initialValue = 0)
         {
             var (k1, k2) = SecureKeyGen.LongKeyPair();
@@ -145,7 +174,16 @@ namespace Nexus.Core
                 {
                     long compound = _cryptoKey1 ^ _cryptoKey2;
                     if ((compound ^ GuardConst) != _guard)
-                        return _obscuredValue ^ compound;
+                    {
+                        RaiseTamperDetected("SecureObservableLong");
+                        var (k1, k2) = SecureKeyGen.LongKeyPair();
+                        _cryptoKey1 = k1;
+                        _cryptoKey2 = k2;
+                        long newCompound = k1 ^ k2;
+                        _obscuredValue = 0L ^ newCompound;
+                        _guard = newCompound ^ GuardConst;
+                        return 0L;
+                    }
                     return _obscuredValue ^ compound;
                 }
             }
@@ -155,6 +193,8 @@ namespace Nexus.Core
                 lock (_valueLock)
                 {
                     long oldCompound = _cryptoKey1 ^ _cryptoKey2;
+                    if ((oldCompound ^ GuardConst) != _guard)
+                        RaiseTamperDetected("SecureObservableLong.set");
                     old = _obscuredValue ^ oldCompound;
                     if (old == value) return;
 
@@ -189,6 +229,13 @@ namespace Nexus.Core
 
         public static implicit operator long(SecureObservableLong prop) => prop.Value;
         public override string ToString() => Value.ToString();
+
+        private static void RaiseTamperDetected(string context)
+        {
+            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
+            try { OnTamperDetected?.Invoke(context); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
+        }
     }
 
     /// <summary>
@@ -212,6 +259,9 @@ namespace Nexus.Core
         private int _guard;
 
         private readonly SecureObserverSet<float> _observers = new();
+
+        /// <summary>Raised when memory tampering is detected.</summary>
+        public static event Action<string> OnTamperDetected;
 
         // Zero-allocation float ↔ int re-interpretation via explicit-layout union.
         // CLS-compliant, no unsafe block needed.
@@ -252,7 +302,16 @@ namespace Nexus.Core
                 {
                     int compound = _cryptoKey1 ^ _cryptoKey2;
                     if ((compound ^ GuardConst) != _guard)
-                        return IntToFloatBits(_obscuredValue ^ compound);
+                    {
+                        RaiseTamperDetected("SecureObservableFloat");
+                        var (k1, k2) = SecureKeyGen.IntKeyPair();
+                        _cryptoKey1 = k1;
+                        _cryptoKey2 = k2;
+                        int newCompound = k1 ^ k2;
+                        _obscuredValue = FloatToIntBits(0f) ^ newCompound;
+                        _guard = newCompound ^ GuardConst;
+                        return 0f;
+                    }
                     return IntToFloatBits(_obscuredValue ^ compound);
                 }
             }
@@ -262,6 +321,8 @@ namespace Nexus.Core
                 lock (_valueLock)
                 {
                     int oldCompound = _cryptoKey1 ^ _cryptoKey2;
+                    if ((oldCompound ^ GuardConst) != _guard)
+                        RaiseTamperDetected("SecureObservableFloat.set");
                     old = IntToFloatBits(_obscuredValue ^ oldCompound);
                     if (old == value) return;
 
@@ -296,6 +357,13 @@ namespace Nexus.Core
 
         public static implicit operator float(SecureObservableFloat prop) => prop.Value;
         public override string ToString() => Value.ToString();
+
+        private static void RaiseTamperDetected(string context)
+        {
+            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
+            try { OnTamperDetected?.Invoke(context); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
+        }
     }
 
     /// <summary>
@@ -318,6 +386,9 @@ namespace Nexus.Core
         private int _guard;
 
         private readonly SecureObserverSet<string> _observers = new();
+
+        /// <summary>Raised when memory tampering is detected.</summary>
+        public static event Action<string> OnTamperDetected;
 
         // XOR each UTF-16 code unit with the low 16 bits of the compound key.
         // Surrogate pairs survive because each half is XORed independently.
@@ -359,7 +430,16 @@ namespace Nexus.Core
                 {
                     int compound = _cryptoKey1 ^ _cryptoKey2;
                     if ((compound ^ GuardConst) != _guard)
-                        return Reveal(_obscuredChars, compound);
+                    {
+                        RaiseTamperDetected("SecureObservableString");
+                        var (k1, k2) = SecureKeyGen.IntKeyPair();
+                        _cryptoKey1 = k1;
+                        _cryptoKey2 = k2;
+                        int newCompound = k1 ^ k2;
+                        _obscuredChars = null;
+                        _guard = newCompound ^ GuardConst;
+                        return null;
+                    }
                     return Reveal(_obscuredChars, compound);
                 }
             }
@@ -369,6 +449,8 @@ namespace Nexus.Core
                 lock (_valueLock)
                 {
                     int oldCompound = _cryptoKey1 ^ _cryptoKey2;
+                    if ((oldCompound ^ GuardConst) != _guard)
+                        RaiseTamperDetected("SecureObservableString.set");
                     old = Reveal(_obscuredChars, oldCompound);
                     if (string.Equals(old, value)) return;
 
@@ -403,6 +485,13 @@ namespace Nexus.Core
 
         public static implicit operator string(SecureObservableString prop) => prop.Value;
         public override string ToString() => Value ?? string.Empty;
+
+        private static void RaiseTamperDetected(string context)
+        {
+            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to null. Trigger server-side validation.");
+            try { OnTamperDetected?.Invoke(context); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
+        }
     }
 
     /// <summary>

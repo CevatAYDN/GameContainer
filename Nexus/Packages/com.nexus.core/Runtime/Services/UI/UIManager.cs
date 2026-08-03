@@ -148,9 +148,11 @@ namespace Nexus.Core.Services
             string key = ScreenKey<TScreen>();
             Transform layerRoot = _canvas.GetLayerRoot(layer);
 
-            // 1. Already open → bring to front, refresh, return existing instance.
+            // Atomically check active, pending, and reserve — all under a single lock
+            // acquisition so no concurrent OpenScreenAsync can slip between the two checks.
             lock (_lock)
             {
+                // 1. Already open → bring to front, refresh, return existing instance.
                 if (_activeScreens.TryGetValue(key, out var existing) && existing != null)
                 {
                     existing.transform.SetAsLastSibling();
@@ -158,17 +160,15 @@ namespace Nexus.Core.Services
                     _history.Add(key);
                     return (TScreen)existing;
                 }
-            }
 
-            // 1b. Reserve the key while we instantiate so a concurrent OpenScreenAsync of
-            //     the same type cannot double-instantiate. Released at the end of this call.
-            lock (_lock)
-            {
+                // 2. Another call is already opening this screen — reject the duplicate.
                 if (_pendingOpens.Contains(key))
                 {
                     NexusRuntime.Logger?.LogWarning($"[UIManager] Screen '{key}' is already being opened; ignoring duplicate request.");
                     return null;
                 }
+
+                // 3. Reserve the key so concurrent calls cannot double-instantiate.
                 _pendingOpens.Add(key);
             }
 
@@ -248,7 +248,7 @@ namespace Nexus.Core.Services
 
         public void OpenScreen<TScreen>(object args = null, UILayer layer = UILayer.Screen) where TScreen : ScreenView
         {
-            _ = OpenScreenAsync<TScreen>(args, layer);
+            _ = SafeFireAndForget(OpenScreenAsync<TScreen>(args, layer), $"OpenScreen<{typeof(TScreen).Name}>");
         }
 
         private async Task<ScreenView> InstantiateScreenAsync<TScreen>(string key, Transform layerRoot) where TScreen : ScreenView
@@ -300,7 +300,7 @@ namespace Nexus.Core.Services
 
         public void CloseScreen<TScreen>() where TScreen : ScreenView
         {
-            _ = CloseScreenAsync<TScreen>();
+            _ = SafeFireAndForget(CloseScreenAsync<TScreen>(), $"CloseScreen<{typeof(TScreen).Name}>");
         }
 
         public async Task CloseTopScreenAsync()
@@ -397,6 +397,21 @@ namespace Nexus.Core.Services
         }
 
         // ── Internals ─────────────────────────────────────────────────
+
+        /// <summary>
+        /// Fire-and-forget helper that logs any exception which escapes the task.
+        /// Replaces bare "_ = task" discards so exceptions are never silently swallowed.
+        /// OperationCanceledException is suppressed — it is expected during context teardown.
+        /// </summary>
+        private static async System.Threading.Tasks.Task SafeFireAndForget(System.Threading.Tasks.Task task, string context)
+        {
+            try { await task; }
+            catch (OperationCanceledException) { /* expected during context teardown */ }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[UIManager] {context} failed: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
 
         /// <summary>Builds the GameObject view of active screens for layer interactivity.</summary>
         private Dictionary<string, GameObject> GetActiveGameObjects()

@@ -48,17 +48,21 @@ namespace Nexus.Core
             public Dictionary<string, string> Metadata { get; set; } = new();
         }
 
-        private static readonly ConcurrentBag<ErrorEntry> s_errors = new();
+        // ConcurrentQueue guarantees FIFO ordering: when the cap is exceeded the OLDEST
+        // entries are evicted first (TryDequeue), which is the semantically correct behaviour
+        // for a rolling error buffer. ConcurrentBag had random eviction order (LIFO-biased)
+        // so recent errors were silently discarded while old ones were kept.
+        private static readonly ConcurrentQueue<ErrorEntry> s_errors = new();
         private static readonly Dictionary<string, int> s_errorGrouping = new();
-        // Guards both s_errorGrouping mutations and the s_errors.Add call so that
-        // grouping counters and the bag stay in sync even under concurrent writers.
+        // Guards both s_errorGrouping mutations and the s_errors enqueue call so that
+        // grouping counters and the queue stay in sync even under concurrent writers.
         private static readonly object s_addLock = new();
         private static int s_nextId = 1;
         private static int s_maxErrors = 1000;
         // A10 fix: s_errorGrouping previously grew unboundedly — every unique
-        // "category:message" key stayed in memory forever even after its bag entries were
+        // "category:message" key stayed in memory forever even after its entries were
         // pruned, so a long session with dynamic error messages (URLs, ids, filenames)
-        // leaked memory. Cap it and rebuild from the retained bag when exceeded.
+        // leaked memory. Cap it and rebuild from the retained queue when exceeded.
         private const int MaxGroupingKeys = 4096;
         private static bool s_enabled = true;
 
@@ -98,8 +102,8 @@ namespace Nexus.Core
                 RelatedType = relatedType
             };
 
-            // BUG-16 fix: group update and bag.Add are now atomic under s_addLock so that
-            // grouping counters and the bag always stay consistent even under concurrent writers.
+            // BUG-16 fix: group update and queue.Enqueue are now atomic under s_addLock so that
+            // grouping counters and the queue always stay consistent even under concurrent writers.
             var key = $"{category}:{message}";
             lock (s_addLock)
             {
@@ -114,18 +118,17 @@ namespace Nexus.Core
                     s_errorGrouping[key] = 1;
                 }
 
-                s_errors.Add(entry);
+                s_errors.Enqueue(entry);
 
-                // Prune old errors if over limit.
-                // ConcurrentBag.TryTake() removes an unspecified element — that is acceptable
-                // here because we only need to cap size, not maintain ordering during pruning.
+                // Prune OLDEST errors when over limit (ConcurrentQueue.TryDequeue removes
+                // the front/oldest element — semantically correct for a rolling buffer).
                 while (s_errors.Count > s_maxErrors)
                 {
-                    s_errors.TryTake(out _);
+                    s_errors.TryDequeue(out _);
                 }
 
                 // A10 fix: bound the grouping counters. When the unique-key cap is hit,
-                // rebuild the counters from the retained bag so the dictionary cannot grow
+                // rebuild the counters from the retained queue so the dictionary cannot grow
                 // without bound while Count semantics stay consistent with what is retained.
                 if (s_errorGrouping.Count > MaxGroupingKeys)
                 {
@@ -227,7 +230,8 @@ namespace Nexus.Core
         {
             lock (s_addLock)
             {
-                s_errors.Clear();
+                // ConcurrentQueue has no Clear() in .NET Standard 2.0; drain it manually.
+                while (s_errors.TryDequeue(out _)) { }
                 s_errorGrouping.Clear();
             }
             OnErrorCountChanged?.Invoke(0, s_maxErrors);
@@ -243,38 +247,54 @@ namespace Nexus.Core
             Application.logMessageReceivedThreaded += OnUnityLogReceived;
         }
 
+        // Re-entrancy guard: Unity's logMessageReceivedThreaded can be called recursively
+        // if an OnErrorAdded subscriber calls Debug.Log/LogError. ThreadStatic ensures
+        // each thread tracks its own depth independently — thread A logging cannot block
+        // thread B's callback, and a subscriber exception on thread A does not corrupt B's guard.
+        [System.ThreadStatic]
+        private static bool s_inLogCallback;
+
         private static void OnUnityLogReceived(string condition, string stackTrace, LogType type)
         {
             if (!s_enabled) return;
-
-            ErrorSeverity severity = type switch
+            // Guard against infinite loop: if a subscriber of OnErrorAdded calls Debug.Log,
+            // that re-enters this callback. Without the guard, the call stack grows until
+            // a StackOverflowException crashes the process.
+            if (s_inLogCallback) return;
+            s_inLogCallback = true;
+            try
             {
-                LogType.Log => ErrorSeverity.Info,
-                LogType.Warning => ErrorSeverity.Warning,
-                LogType.Error => ErrorSeverity.Error,
-                LogType.Assert => ErrorSeverity.Error,
-                LogType.Exception => ErrorSeverity.Critical,
-                _ => ErrorSeverity.Info
-            };
+                ErrorSeverity severity = type switch
+                {
+                    LogType.Log => ErrorSeverity.Info,
+                    LogType.Warning => ErrorSeverity.Warning,
+                    LogType.Error => ErrorSeverity.Error,
+                    LogType.Assert => ErrorSeverity.Error,
+                    LogType.Exception => ErrorSeverity.Critical,
+                    _ => ErrorSeverity.Info
+                };
 
-            // Avoid loop: logToConsole MUST be false when capturing from Unity Log
-            Collect(severity, ErrorCategory.Unity, condition, stackTrace, "Unity Log", null, logToConsole: false);
+                // Avoid loop: logToConsole MUST be false when capturing from Unity Log
+                Collect(severity, ErrorCategory.Unity, condition, stackTrace, "Unity Log", null, logToConsole: false);
+            }
+            finally
+            {
+                s_inLogCallback = false;
+            }
         }
 
         public static void ClearBefore(DateTime timestamp)
         {
-            // CRITICAL-3 fix: ConcurrentBag.TryTake() removes an *unspecified* element,
-            // so the old loop deleted random entries instead of old ones.
-            // We now rebuild the bag atomically under s_addLock, keeping only entries
+            // Rebuild the queue atomically under s_addLock, keeping only entries
             // that are not older than the cutoff timestamp.
             lock (s_addLock)
             {
-                var toKeep = s_errors.Where(e => e.Timestamp >= timestamp).ToList();
-                s_errors.Clear();
+                var toKeep = s_errors.ToArray().Where(e => e.Timestamp >= timestamp).ToList();
+                while (s_errors.TryDequeue(out _)) { }
                 s_errorGrouping.Clear();
                 foreach (var entry in toKeep)
                 {
-                    s_errors.Add(entry);
+                    s_errors.Enqueue(entry);
                     var key = $"{entry.Category}:{entry.Message}";
                     s_errorGrouping[key] = s_errorGrouping.TryGetValue(key, out var cnt) ? cnt + 1 : 1;
                 }

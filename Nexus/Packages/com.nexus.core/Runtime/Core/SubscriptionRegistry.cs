@@ -37,6 +37,7 @@ namespace Nexus.Core
     {
         private static readonly Stack<SubscriptionNode> s_pool = new();
         private static readonly object s_lock = new();
+        private const int MaxPoolSize = 512;
 
         public static SubscriptionNode Rent(object handler, object rawSub, bool isAsync)
         {
@@ -59,7 +60,13 @@ namespace Nexus.Core
         public static void Return(SubscriptionNode node)
         {
             node.Reset();
-            lock (s_lock) { s_pool.Push(node); }
+            lock (s_lock)
+            {
+                if (s_pool.Count < MaxPoolSize)
+                    s_pool.Push(node);
+                // If pool is full, simply drop the node — GC will collect it.
+                // This bounds memory usage on scenes with many subscribe/unsubscribe cycles.
+            }
         }
 
         public static void Clear() { lock (s_lock) { s_pool.Clear(); } }

@@ -224,11 +224,19 @@ namespace Nexus.Netcode
 
         /// <summary>
         /// Fires a signal immediately and registers it in the tick history.
+        /// Uses FireQueued to avoid NexusSyncAsyncMismatchException when the signal
+        /// has async handlers registered on the local bus.
         /// </summary>
         public void Fire<T>(T signal) where T : struct, INetworkSignal
         {
             GetOrCreateHistory<T>().Add(_currentTick, signal);
-            _localSignalBus.Fire(signal);
+            // Always route through FireQueued: if the signal has async handlers,
+            // Fire() would throw NexusSyncAsyncMismatchException. FireQueued is
+            // async-safe and guarantees delivery on the next main-thread drain.
+            if (_localSignalBus is SignalBus concreteBus)
+                concreteBus.FireQueued(signal);
+            else
+                _localSignalBus.Fire(signal);
         }
 
     /// <summary>

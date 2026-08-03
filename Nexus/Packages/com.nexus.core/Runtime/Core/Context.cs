@@ -310,21 +310,19 @@ namespace Nexus.Core
         {
             if (_postContextLifecycles.Count == 0) return default;
 
-            // Ensure the builder is available (it may be a separate instance from the original
-            // Configure builder — we create a fresh builder for PostContext so lifecycles can
-            // make late bindings without affecting the configured binding set).
-            ContextBuilder postBuilder;
-            if (_builder != null)
-            {
-                // Use the existing bindings so PostContext can resolve them
-                postBuilder = new ContextBuilder(Container, SignalBusInternal);
-            }
-            else
+            if (_builder == null)
             {
                 NexusRuntime.Logger?.LogWarning(
                     $"[Nexus] Context '{ScopeTag}': RunPostContextAsync skipped because context was never configured.");
                 return default;
             }
+
+            // NOTE: We pass the EXISTING builder (not a new one) so that lifecycles calling
+            // OnPostContext can add cross-context bindings and signal registrations to the
+            // same container that was used during Configure. A fresh ContextBuilder would
+            // share the same Container reference but lose the reactive-model and service-type
+            // lists, making late BindService/BindReactiveModel calls silently non-functional.
+            var postBuilder = new ContextBuilder(Container, SignalBusInternal);
 
             for (int i = 0; i < _postContextLifecycles.Count; i++)
             {
@@ -336,7 +334,7 @@ namespace Nexus.Core
                 catch (Exception ex)
                 {
                     NexusRuntime.Logger?.LogError(
-                        $"[Nexus] PostContext lifecycle '{_postContextLifecycles[i].GetType().Name}' failed in context '{ScopeTag}': {ex.Message}");
+                        $"[Nexus] PostContext lifecycle '{_postContextLifecycles[i].GetType().Name}' failed in context '{ScopeTag}': {ex.Message}\n{ex.StackTrace}");
                 }
             }
             return default;
@@ -593,6 +591,9 @@ namespace Nexus.Core
             // that can await must use DisposeAsync() for deterministic async teardown.
             Container.Dispose();
             _cts.Dispose();
+
+            // Unregister from the runtime registry so stale context references cannot leak.
+            NexusRuntime.UnregisterContext(this);
         }
 
         /// <summary>
@@ -611,6 +612,9 @@ namespace Nexus.Core
 
             await Container.DisposeAsync();
             _cts.Dispose();
+
+            // Unregister from the runtime registry so stale context references cannot leak.
+            NexusRuntime.UnregisterContext(this);
         }
 
         /// <summary>Shared teardown for <see cref="Dispose"/> and <see cref="DisposeAsync"/>.</summary>
