@@ -180,10 +180,8 @@ namespace Nexus.Core
             get
             {
                 if (View == null) return false;
-                if (View is UnityEngine.Object obj)
-                {
-                    return obj != null;
-                }
+                if (View is IView iview) return iview.IsAlive;
+                if (View is UnityEngine.Object obj) return obj != null;
                 return true;
             }
         }

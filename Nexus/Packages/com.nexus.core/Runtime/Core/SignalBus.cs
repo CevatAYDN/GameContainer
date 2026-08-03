@@ -362,14 +362,19 @@ namespace Nexus.Core
             try
             {
                 // Run plugins' SignalInterceptors
+                // P0-CR fix: defer boxing until we find a non-empty interceptor list.
+                // When no interceptors are registered (the common case), the struct is
+                // never copied to the heap, eliminating the per-Fire() GC allocation.
                 bool interceptorCancelled = false;
                 if (_context is Context ctx && ctx.HasInterceptors)
                 {
-                    object boxedSignal = signal;
+                    object boxedSignal = null;
                     var plugins = ctx.PluginsReadOnlyCopy;
                     for (int i = 0; i < plugins.Count; i++)
                     {
                         var interceptors = plugins[i].context.Interceptors;
+                        if (interceptors.Count == 0) continue;
+                        boxedSignal ??= (object)signal; // box only on first actual interceptor
                         for (int j = 0; j < interceptors.Count; j++)
                         {
                             if (!interceptors[j].Intercept(ref boxedSignal))
@@ -380,7 +385,8 @@ namespace Nexus.Core
                         }
                         if (interceptorCancelled) break;
                     }
-                    signal = (T)boxedSignal;
+                    if (boxedSignal != null)
+                        signal = (T)boxedSignal;
                 }
 
                 if (interceptorCancelled)
@@ -519,14 +525,17 @@ namespace Nexus.Core
                 var type = typeof(T);
 
                 // Run plugins' SignalInterceptors
+                // P0-CR fix: defer boxing until we find a non-empty interceptor list (async path).
                 bool interceptorCancelled = false;
                 if (_context is Context ctx && ctx.HasInterceptors)
                 {
-                    object boxedSignal = signal;
+                    object boxedSignal = null;
                     var plugins = ctx.PluginsReadOnlyCopy;
                     for (int i = 0; i < plugins.Count; i++)
                     {
                         var interceptors = plugins[i].context.Interceptors;
+                        if (interceptors.Count == 0) continue;
+                        boxedSignal ??= (object)signal;
                         for (int j = 0; j < interceptors.Count; j++)
                         {
                             if (!interceptors[j].Intercept(ref boxedSignal))
@@ -537,7 +546,8 @@ namespace Nexus.Core
                         }
                         if (interceptorCancelled) break;
                     }
-                    signal = (T)boxedSignal;
+                    if (boxedSignal != null)
+                        signal = (T)boxedSignal;
                 }
 
                 if (interceptorCancelled)
@@ -702,12 +712,17 @@ namespace Nexus.Core
             }
         }
 
+        // P0-CR fix: thread-static pooled list for composite trigger dispatch — eliminates
+        // per-Fire() heap allocation when composite triggers complete.
+        [ThreadStatic] private static List<(CompositeTriggerState trigger, CompositeContext context)> s_dueTriggerBuffer;
+
         private void ProcessCompositeTriggers<T>(T signal) where T : struct
         {
             // P1-14 fix: collect due triggers under the registry's composite lock (snapshot copy),
             // then execute them OUTSIDE any lock so user command code never runs while holding one.
             var signalType = typeof(T);
-            List<(CompositeTriggerState trigger, CompositeContext context)> dueTriggers = null;
+            s_dueTriggerBuffer ??= new List<(CompositeTriggerState, CompositeContext)>();
+            s_dueTriggerBuffer.Clear();
             // Composite payload support: box the signal at most once, and only when it actually
             // feeds a registered composite trigger. Non-composite signals never allocate here.
             object boxedSignal = null;
@@ -733,8 +748,7 @@ namespace Nexus.Core
                             // Snapshot payloads INSIDE the lock so a concurrent fire that resets a
                             // repeatable trigger cannot corrupt the context handed to the command.
                             var context = new CompositeContext(trigger.RequiredSignals, trigger.SnapshotPayloads());
-                            dueTriggers ??= new List<(CompositeTriggerState, CompositeContext)>();
-                            dueTriggers.Add((trigger, context));
+                            s_dueTriggerBuffer.Add((trigger, context));
 
                             if (trigger.OneShot)
                             {
@@ -750,12 +764,9 @@ namespace Nexus.Core
                 }
             }
 
-            if (dueTriggers != null)
+            for (int i = 0; i < s_dueTriggerBuffer.Count; i++)
             {
-                for (int i = 0; i < dueTriggers.Count; i++)
-                {
-                    _commandExecutor.ExecuteComposite(dueTriggers[i].trigger, dueTriggers[i].context);
-                }
+                _commandExecutor.ExecuteComposite(s_dueTriggerBuffer[i].trigger, s_dueTriggerBuffer[i].context);
             }
         }
 

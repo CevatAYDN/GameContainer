@@ -15,6 +15,9 @@ namespace Nexus.Core
     [Preserve]
     public abstract class View : MonoBehaviour, IView
     {
+        /// <summary>True if the underlying Unity GameObject is alive and not destroyed.</summary>
+        public virtual bool IsAlive => this != null;
+
         /// <summary>The context this view is bound to. Set after <see cref="Bind"/> is called.</summary>
         protected IContext Context { get; private set; }
         private bool _isBound;

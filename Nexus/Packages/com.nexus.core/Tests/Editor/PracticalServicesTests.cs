@@ -1,3 +1,4 @@
+using System;
 using NUnit.Framework;
 using Nexus.Core;
 using Nexus.Core.Services;
@@ -78,7 +79,8 @@ namespace Nexus.Editor.Tests
             // A8: a monotonic hardware tick is stored alongside the wall clock; a clock
             // pushed FORWARD (wall diff inflated but monotonic diff ~0) must be clamped
             // to the real elapsed time instead of granting inflated offline rewards.
-            long realElapsedMs = Environment.TickCount64 - storage.GetLong("NT_LastQuitMonotonicMs", 0L);
+            long monoMs = System.Diagnostics.Stopwatch.GetTimestamp() * 1000L / System.Diagnostics.Stopwatch.Frequency;
+            long realElapsedMs = monoMs - storage.GetLong("NT_LastQuitMonotonicMs", 0L);
             long forwardCheatSec = OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600);
             Assert.LessOrEqual(forwardCheatSec, Math.Max(0, realElapsedMs / 1000L) + 1,
                 "Forward clock manipulation must not inflate offline progress beyond real elapsed time.");

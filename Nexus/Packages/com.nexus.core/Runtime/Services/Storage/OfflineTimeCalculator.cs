@@ -25,6 +25,11 @@ namespace Nexus.Core.Services
         private const string DefaultTimestampKey = "NT_LastQuitTimestamp";
         private const string DefaultMonotonicKey = "NT_LastQuitMonotonicMs";
 
+        private static long GetMonotonicMs()
+        {
+            return System.Diagnostics.Stopwatch.GetTimestamp() * 1000L / System.Diagnostics.Stopwatch.Frequency;
+        }
+
         /// <summary>
         /// Saves the current UTC timestamp and hardware monotonic tick into storage.
         /// Call in OnApplicationPause / OnApplicationQuit.
@@ -34,7 +39,7 @@ namespace Nexus.Core.Services
             if (storage == null) return;
             long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             storage.SetLong(key, now);
-            storage.SetLong(DefaultMonotonicKey, Environment.TickCount64);
+            storage.SetLong(DefaultMonotonicKey, GetMonotonicMs());
             storage.Save();
         }
 
@@ -66,7 +71,7 @@ namespace Nexus.Core.Services
             long lastMonotonic = storage.GetLong(DefaultMonotonicKey, 0L);
             if (lastMonotonic > 0)
             {
-                long monoDiffMs = Environment.TickCount64 - lastMonotonic;
+                long monoDiffMs = GetMonotonicMs() - lastMonotonic;
                 if (monoDiffMs >= 0)
                 {
                     // Same boot session — hardware-validated. Bound the reward by real elapsed time.

@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Linq;
+
 using UnityEngine;
 
 namespace Nexus.Core
@@ -37,6 +37,22 @@ namespace Nexus.Core
         public static event Action<MetricSample> OnMetricRecorded;
         public static event Action OnRecordingStarted;
         public static event Action OnRecordingStopped;
+
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnDomainReload()
+        {
+            OnMetricRecorded = null;
+            OnRecordingStarted = null;
+            OnRecordingStopped = null;
+            s_recording = false;
+            s_lastFrameMetricFrame = -1;
+            lock (s_metricsLock)
+            {
+                s_metricHistory.Clear();
+                s_currentValues.Clear();
+            }
+            while (s_samples.TryDequeue(out _)) { }
+        }
 
         public static bool Enabled
         {
@@ -120,43 +136,65 @@ namespace Nexus.Core
 
         public static float GetMetricAverage(string name, int sampleCount = 60)
         {
-            float[] recent;
             lock (s_metricsLock)
             {
-                if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
-                recent = history.TakeLast(sampleCount).ToArray();
+                if (!s_metricHistory.TryGetValue(name, out var history) || history.Count == 0) return 0f;
+                float sum = 0f;
+                int count = 0;
+                int skip = Math.Max(0, history.Count - sampleCount);
+                int i = 0;
+                foreach (var v in history)
+                {
+                    if (i >= skip) { sum += v; count++; }
+                    i++;
+                }
+                return count > 0 ? sum / count : 0f;
             }
-            return recent.Length > 0 ? recent.Average() : 0f;
         }
 
         public static float GetMetricMax(string name, int sampleCount = 60)
         {
-            float[] recent;
             lock (s_metricsLock)
             {
-                if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
-                recent = history.TakeLast(sampleCount).ToArray();
+                if (!s_metricHistory.TryGetValue(name, out var history) || history.Count == 0) return 0f;
+                float max = float.MinValue;
+                int skip = Math.Max(0, history.Count - sampleCount);
+                int i = 0;
+                foreach (var v in history)
+                {
+                    if (i >= skip && v > max) max = v;
+                    i++;
+                }
+                return max;
             }
-            return recent.Length > 0 ? recent.Max() : 0f;
         }
 
         public static float GetMetricMin(string name, int sampleCount = 60)
         {
-            float[] recent;
             lock (s_metricsLock)
             {
-                if (!s_metricHistory.TryGetValue(name, out var history)) return 0f;
-                recent = history.TakeLast(sampleCount).ToArray();
+                if (!s_metricHistory.TryGetValue(name, out var history) || history.Count == 0) return 0f;
+                float min = float.MaxValue;
+                int skip = Math.Max(0, history.Count - sampleCount);
+                int i = 0;
+                foreach (var v in history)
+                {
+                    if (i >= skip && v < min) min = v;
+                    i++;
+                }
+                return min;
             }
-            return recent.Length > 0 ? recent.Min() : 0f;
         }
 
         public static MetricSample[] GetRecentSamples(int count = 100)
         {
-            lock (s_metricsLock)
-            {
-                return s_samples.TakeLast(count).ToArray();
-            }
+            // Snapshot the queue without LINQ — ConcurrentQueue.ToArray is O(N) but avoids
+            // the intermediate IEnumerable + TakeLast iterator allocations.
+            var snapshot = s_samples.ToArray();
+            if (snapshot.Length <= count) return snapshot;
+            var result = new MetricSample[count];
+            Array.Copy(snapshot, snapshot.Length - count, result, 0, count);
+            return result;
         }
 
         public static void ClearHistory()
@@ -249,7 +287,11 @@ namespace Nexus.Core
         public static string[] GetAvailableMetrics()
         {
             lock (s_metricsLock)
-                return s_metricHistory.Keys.ToArray();
+            {
+                var keys = new string[s_metricHistory.Count];
+                s_metricHistory.Keys.CopyTo(keys, 0);
+                return keys;
+            }
         }
     }
 }

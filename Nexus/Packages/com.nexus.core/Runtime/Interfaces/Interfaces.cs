@@ -363,6 +363,8 @@ namespace Nexus.Core
     {
         void Bind(IContext context);
         void Unbind();
+        /// <summary>True if the view instance is valid and alive. Allows non-Unity views to mock validity.</summary>
+        bool IsAlive => true;
     }
 
     public interface IRecoveryStrategy
@@ -389,5 +391,15 @@ namespace Nexus.Core
     public class NexusSyncAsyncMismatchException : Exception
     {
         public NexusSyncAsyncMismatchException(string message) : base(message) { }
+    }
+
+    /// <summary>
+    /// Thrown at startup when <see cref="ContextData.FailOnValidationErrors"/> is enabled and
+    /// DI validation discovers issues (missing bindings, captive dependencies, constructor explosion).
+    /// The <see cref="Exception.Message"/> lists every validation issue for triage.
+    /// </summary>
+    public class NexusDiValidationException : Exception
+    {
+        public NexusDiValidationException(string message) : base(message) { }
     }
 }

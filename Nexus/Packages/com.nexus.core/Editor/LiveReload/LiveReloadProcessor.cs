@@ -49,7 +49,7 @@ namespace Nexus.Editor
         {
             if (modelData == null) return;
 
-            var modelId = modelData.GetInstanceID();
+            var modelId = modelData.GetEntityId().GetHashCode();
             lock (s_liveReloadLock)
             {
                 if (!s_liveReloadInFlight.Add(modelId))

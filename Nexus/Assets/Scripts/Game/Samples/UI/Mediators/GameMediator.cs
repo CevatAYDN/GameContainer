@@ -17,14 +17,13 @@ namespace Game
 
         protected override void OnBind()
         {
-            _model.Counter.OnChanged(_counterChangedHandler);
+            TrackObservable(_model.Counter, _counterChangedHandler);
             View.UpdateDisplay(_model.Counter.Value);
             View.OnIncrementClicked += _incrementClickedHandler;
         }
 
         protected override void OnUnbind()
         {
-            _model.Counter.RemoveOnChanged(_counterChangedHandler);
             if (View != null)
             {
                 View.OnIncrementClicked -= _incrementClickedHandler;

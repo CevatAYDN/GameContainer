@@ -30,6 +30,9 @@ namespace Nexus.Core
         [Tooltip("When enabled, Inject() throws InvalidOperationException on unresolved [Inject] dependencies instead of logging and leaving null. Use [OptionalInject] to exempt specific members.")]
         public bool EnableStrictInjection;
 
+        [Tooltip("When enabled, DI validation errors (missing bindings, captive dependencies, constructor explosion) throw NexusDiValidationException at startup instead of only logging. Recommended for development builds.")]
+        public bool FailOnValidationErrors;
+
         [Header("Performance")]
         public int CommandPoolInitialSize = 4;
         public int CommandPoolMaxSize = 64;

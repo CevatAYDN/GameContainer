@@ -238,6 +238,7 @@ namespace Nexus.Core
                 var issues = _builder.Validate();
                 if (issues.Count > 0)
                 {
+                    var sb = new System.Text.StringBuilder();
                     foreach (var issue in issues)
                     {
                         var message = $"[Nexus] DI Validation: {issue.Message}";
@@ -245,6 +246,16 @@ namespace Nexus.Core
                             NexusRuntime.Logger.LogError(message);
                         else
                             UnityEngine.Debug.LogError(message);
+                        sb.AppendLine(issue.Message);
+                    }
+
+                    // P0-CR fix: opt-in fail-fast — teams that enable FailOnValidationErrors
+                    // in their ContextData get a hard exception at startup so DI misconfigurations
+                    // cannot silently pass through to production.
+                    if (_contextData != null && _contextData.FailOnValidationErrors)
+                    {
+                        throw new NexusDiValidationException(
+                            $"DI validation failed with {issues.Count} issue(s):\n{sb}");
                     }
                 }
             }

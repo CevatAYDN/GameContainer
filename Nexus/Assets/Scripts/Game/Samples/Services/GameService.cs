@@ -8,7 +8,7 @@ namespace Game
     {
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
-            return ValueTask.CompletedTask;
+            return default;
         }
 
         public override void OnDispose()

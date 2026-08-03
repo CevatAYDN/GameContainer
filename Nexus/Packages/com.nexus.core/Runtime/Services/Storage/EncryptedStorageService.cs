@@ -151,13 +151,15 @@ namespace Nexus.Core.Services
         {
             if (!hasFocus)
             {
+                // Capture logger service on main thread before launching background Task.
+                var logger = NexusRuntime.Logger;
                 // P2-14 fix: never block the main thread with bulk file IO on focus loss.
                 System.Threading.Tasks.Task.Run(() =>
                 {
                     try { Save(); }
                     catch (Exception ex)
                     {
-                        NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Background save on focus loss failed: {ex.Message}");
+                        logger?.LogWarning($"[EncryptedStorage] Background save on focus loss failed: {ex.Message}");
                     }
                 });
             }
@@ -493,6 +495,7 @@ namespace Nexus.Core.Services
         private static void WriteRawDataAtomically(string filePath, byte[] rawData)
         {
             string tempPath = filePath + ".tmp";
+            string backupPath = filePath + ".bak";
             File.WriteAllBytes(tempPath, rawData);
 
             const int maxAttempts = 3;
@@ -501,7 +504,7 @@ namespace Nexus.Core.Services
                 try
                 {
                     if (File.Exists(filePath))
-                        File.Replace(tempPath, filePath, null);
+                        File.Replace(tempPath, filePath, backupPath);
                     else
                         File.Move(tempPath, filePath);
                     break;
