@@ -122,7 +122,11 @@ namespace Nexus.Editor
                     else if (member is PropertyInfo prop)
                     {
                         try { rawValue = prop.GetValue(instance); }
-                        catch { continue; }
+                        catch (Exception ex)
+                        {
+                            Debug.LogWarning($"[Nexus] LiveReload property read failed on {type.Name}.{prop.Name}: {ex.Message}");
+                            continue;
+                        }
                     }
                     else continue;
 

@@ -147,6 +147,7 @@ namespace Nexus.Core
 
             lock (_poolLock)
             {
+                Cleanup(command);
                 // Double-return guard: an instance already in the pool must not be pooled again
                 // (and must not be re-cleaned, which would clobber the state of the instance
                 // another consumer may have just retrieved).
@@ -155,8 +156,6 @@ namespace Nexus.Core
                     System.Threading.Interlocked.Increment(ref _totalDiscarded);
                     return;
                 }
-
-                Cleanup(command);
 
                 if (_pool.Count < _maxSize)
                 {

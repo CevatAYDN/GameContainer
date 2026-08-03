@@ -694,7 +694,11 @@ namespace Nexus.Editor
             if (element != null) return element;
 
             object initialValue = null;
-            try { initialValue = getter(); } catch { }
+            try { initialValue = getter(); }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Explorer] Signal field read failed for {field.Name}: {ex.Message}");
+            }
             return new Label(string.Format(NexusLang.Get("explorer_unsupported_type"), field.Name, initialValue ?? "null"));
         }
 

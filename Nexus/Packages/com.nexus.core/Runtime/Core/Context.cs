@@ -582,9 +582,9 @@ namespace Nexus.Core
         {
             if (_disposed) return;
             _disposed = true;
-            _cts.Cancel();
-
             DisposeShared();
+
+            _cts.Cancel();
 
             // A8 fix: the sync teardown path never blocks on IAsyncDisposable singletons
             // (NexusDI.Dispose schedules their DisposeAsync on a background task). Callers
@@ -606,9 +606,9 @@ namespace Nexus.Core
         {
             if (_disposed) return;
             _disposed = true;
-            _cts.Cancel();
-
             DisposeShared();
+
+            _cts.Cancel();
 
             await Container.DisposeAsync();
             _cts.Dispose();

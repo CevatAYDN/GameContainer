@@ -262,13 +262,7 @@ namespace Nexus.Core
 
         private void Drain(QueuedSignalRingBuffer queue, object queueLock)
         {
-            int max;
-            lock (queueLock)
-            {
-                max = queue.Count;
-            }
-
-            for (int i = 0; i < max; i++)
+            while (true)
             {
                 IQueuedSignal queuedSignal = null;
                 lock (queueLock)

@@ -79,7 +79,14 @@ namespace Nexus.Core.Services
             {
                 var instance = CreateInstance(pool);
                 instance.SetActive(false);
-                pool.Inactive.Push(instance);
+                if (pool.Inactive.Count < MaxInactivePerPool)
+                {
+                    pool.Inactive.Push(instance);
+                }
+                else
+                {
+                    SafeDestroyUtility.SafeDestroy(instance);
+                }
             }
         }
 

@@ -650,7 +650,10 @@ namespace Nexus.Editor
                         if (valStr.Length > 60) valStr = valStr[..57] + "...";
                         card.Add(NexusVisualization.CreateStatRow($"  .{prop.Name}", valStr));
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        Debug.LogWarning($"[Nexus ContextInspector] Property read failed for {prop.Name}: {ex.Message}");
+                    }
                 }
 
                 _content.Add(card);

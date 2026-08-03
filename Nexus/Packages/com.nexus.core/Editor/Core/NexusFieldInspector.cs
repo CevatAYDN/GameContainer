@@ -55,7 +55,11 @@ namespace Nexus.Editor
             Action<object> setter, BeforeWriteHandler beforeWrite = null)
         {
             object initialValue = null;
-            try { initialValue = getter(); } catch { }
+            try { initialValue = getter(); }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus] Field inspector failed to read '{label}': {ex.Message}");
+            }
 
             if (type == typeof(int))
                 return Wire(new IntegerField(label) { value = (int)(initialValue ?? 0) }, setter, beforeWrite);

@@ -482,7 +482,9 @@ namespace Nexus.Core
         {
             if (signal == null) return;
 
-            _commandRegistry.GetSignalSetter(command.GetType(), signal.GetType())(command, signal);
+            var setter = _commandRegistry.GetSignalSetter(command.GetType(), signal.GetType());
+            if (setter == null) return;
+            setter(command, signal);
         }
 
         // ─── Composite execution ───────────────────────────────────────────────
@@ -671,10 +673,18 @@ namespace Nexus.Core
                     else if (command is IAsyncCompositeCommand || command is IAsyncCommand)
                     {
                         var cmdForAsync = command;
-                        command = null; // Prevent finally from returning it; async method owns it now
-                        ExecuteCompositeCommandAsync(trigger, cmdForAsync, context);
-                        shouldRun = false;
-                        return;
+                        try
+                        {
+                            ExecuteCompositeCommandAsync(trigger, cmdForAsync, context);
+                            command = null; // Prevent finally from returning it; async method owns it now
+                            shouldRun = false;
+                            return;
+                        }
+                        catch
+                        {
+                            _poolManager.ReturnCommand(trigger.CommandType, cmdForAsync);
+                            throw;
+                        }
                     }
                     shouldRun = false;
 #if NEXUS_DEBUG

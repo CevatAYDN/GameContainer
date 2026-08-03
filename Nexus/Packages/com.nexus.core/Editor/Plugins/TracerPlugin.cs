@@ -40,9 +40,11 @@ namespace Nexus.Editor
         private readonly ConcurrentQueue<TraceEvent> _incomingEvents = new();
         private readonly List<TraceEvent> _allEvents = new();
         private readonly List<TraceEvent> _filteredSnapshot = new();
+        private readonly List<TraceEvent> _filteredWorkingSet = new();
         private readonly Dictionary<int, List<TraceEvent>> _childrenCache = new();
         private readonly Dictionary<int, TraceEvent> _parentCache = new();
         private readonly Dictionary<int, int> _depthsCache = new();
+        private readonly Dictionary<int, TraceEvent> _eventByIdCache = new();
 
         public override VisualElement CreateView()
         {
@@ -308,9 +310,9 @@ namespace Nexus.Editor
         {
             _childrenCache.Clear();
             _parentCache.Clear();
-            var eventById = new Dictionary<int, TraceEvent>();
+            _eventByIdCache.Clear();
             foreach (var ev in _allEvents)
-                eventById[ev.Id] = ev;
+                _eventByIdCache[ev.Id] = ev;
 
             foreach (var ev in _allEvents)
             {
@@ -322,7 +324,7 @@ namespace Nexus.Editor
                         _childrenCache[ev.ParentId] = list;
                     }
                     list.Add(ev);
-                    if (eventById.TryGetValue(ev.ParentId, out var parent))
+                    if (_eventByIdCache.TryGetValue(ev.ParentId, out var parent))
                         _parentCache[ev.Id] = parent;
                 }
             }
@@ -371,7 +373,7 @@ namespace Nexus.Editor
 
         private List<TraceEvent> GetFilteredEvents()
         {
-            var result = new List<TraceEvent>(_allEvents.Count);
+            _filteredWorkingSet.Clear();
             foreach (var ev in _allEvents)
             {
                 // Type Filter
@@ -391,9 +393,9 @@ namespace Nexus.Editor
                         continue;
                 }
 
-                result.Add(ev);
+                _filteredWorkingSet.Add(ev);
             }
-            return result;
+            return _filteredWorkingSet;
         }
 
         private Button MakeFilterButton(string label, Action onClick, Func<bool> isActive, Color? activeColor = null)

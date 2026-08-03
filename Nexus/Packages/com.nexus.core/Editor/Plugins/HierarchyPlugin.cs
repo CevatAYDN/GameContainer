@@ -494,7 +494,11 @@ namespace Nexus.Editor
         private VisualElement CreateFieldUI(object instance, MemberInfo member, Type type, Func<object> getter, Action<object> setter)
         {
             object initialValue = null;
-            try { initialValue = getter(); } catch { }
+            try { initialValue = getter(); }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus Hierarchy] Initial value read failed for '{member.Name}': {ex.Message}");
+            }
 
             var element = NexusFieldInspector.CreateField(member.Name, type, getter, setter, newValue => UndoRecord(instance));
             if (element == null)
@@ -605,7 +609,10 @@ namespace Nexus.Editor
                         if (!Equals(enumField.value, val)) enumField.SetValueWithoutNotify(val);
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus Hierarchy] Tracker update failed for '{tracker.Member.Name}': {ex.Message}");
+                }
             }
         }
     }

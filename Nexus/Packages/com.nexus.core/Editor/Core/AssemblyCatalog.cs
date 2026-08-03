@@ -76,7 +76,11 @@ namespace Nexus.Editor
         {
             if (assembly == null || assembly.IsDynamic) return null;
             try { return assembly.GetName().Name; }
-            catch { return null; }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus] Failed to read assembly name: {ex.Message}");
+                return null;
+            }
         }
 
         /// <summary>

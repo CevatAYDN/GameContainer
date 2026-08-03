@@ -906,6 +906,10 @@ namespace Nexus.Core
                         _injector.Inject(singletonInstance);
                         lock (_singletonLock)
                         {
+                            if (_disposed)
+                            {
+                                throw new ObjectDisposedException(nameof(NexusDI), $"Cannot publish singleton '{type.FullName}': the container has been disposed.");
+                            }
                             binding.Instance = singletonInstance;
                             _resolvedSingletons.Add(singletonInstance);
                         }

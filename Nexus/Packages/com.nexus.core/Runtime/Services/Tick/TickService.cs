@@ -58,6 +58,7 @@ namespace Nexus.Core.Services
         private readonly object _lock = new();
         private TickDriver _driver;
         private GameObject _driverObject;
+        private volatile bool _isPaused;
 
         // Zero-allocation profiler markers (same pattern as SignalBus). ProfilerMarker is a
         // cheap struct no-op when the profiler is not attached, so these are unconditional —
@@ -72,7 +73,11 @@ namespace Nexus.Core.Services
             set => Time.timeScale = Mathf.Max(0f, value);
         }
 
-        public bool IsPaused { get; set; }
+        public bool IsPaused
+        {
+            get => _isPaused;
+            set => _isPaused = value;
+        }
 
         private static GameObject s_sharedDriverObject;
         private static TickDriver s_sharedDriver;

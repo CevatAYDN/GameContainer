@@ -314,7 +314,10 @@ namespace Nexus.Core.Services
             lock (_lock)
             {
                 if (_history.Count > 0)
+                {
                     top = _history[_history.Count - 1];
+                    _history.Remove(top);
+                }
             }
             if (top == null) return;
             await CloseScreenCoreAsync(top);

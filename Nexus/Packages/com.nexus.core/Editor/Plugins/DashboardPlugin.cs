@@ -306,7 +306,7 @@ namespace Nexus.Editor
 
             if (string.IsNullOrWhiteSpace(_quickSearchQuery)) return;
 
-            string query = _quickSearchQuery.Trim().ToLowerInvariant();
+            string query = _quickSearchQuery.Trim();
 
             if (!s_catalogValid || s_typedCatalog == null)
             {
@@ -318,7 +318,7 @@ namespace Nexus.Editor
             {
                 if (matchCount >= 10) break;
 
-                if (type.Name.ToLowerInvariant().Contains(query))
+                if (type.Name.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     var resultRow = new VisualElement();
                     resultRow.AddToClassList(NexusEditorStyles.ClassQfRow);
@@ -457,7 +457,10 @@ namespace Nexus.Editor
                                         { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), marginLeft = 5 } });
                                     props++;
                                 }
-                                catch { }
+                                catch (Exception ex)
+                                {
+                                    Debug.LogWarning($"[Nexus Dashboard] Property read failed for {prop.Name}: {ex.Message}");
+                                }
                             }
                             modelCard.Add(row);
                             shownTotal++;

@@ -629,13 +629,18 @@ namespace Nexus.Core
                             // Drain only the tasks that were started but not yet awaited before the failure
                             // so none is abandoned; swallow their individual errors (the original exception
                             // below is the one that propagates to recovery/error handling).
-                            for (int i = lastCompletedIndex + 1; i < started; i++)
+                        for (int i = lastCompletedIndex + 1; i < started; i++)
+                        {
+                            try { await tasks[i]; }
+                            catch (Exception drainedEx)
                             {
-                                try { await tasks[i]; }
-                                catch { /* original error wins */ }
+                                ErrorCollection.CollectException(drainedEx, ErrorCollection.ErrorCategory.Signal,
+                                    $"Concurrent signal handler drain failed for {typeof(T).FullName} at index {i}", logToConsole: true);
+                                NexusRuntime.Logger?.LogError($"[Nexus] Concurrent signal handler drain failed for '{typeof(T).FullName}' at index {i}: {drainedEx.Message}\n{drainedEx.StackTrace}");
                             }
-                            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
-                            throw; // unreachable — keeps the compiler happy
+                        }
+                        System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(ex).Throw();
+                        throw; // unreachable — keeps the compiler happy
                         }
                         finally
                         {

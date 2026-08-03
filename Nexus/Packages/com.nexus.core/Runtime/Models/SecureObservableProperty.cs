@@ -396,9 +396,11 @@ namespace Nexus.Core
         {
             if (value == null) return null;
             var chars = new char[value.Length];
-            int k = key & 0xFFFF;
             for (int i = 0; i < value.Length; i++)
+            {
+                int k = (key ^ unchecked((int)(i * 0x9E3779B9u))) & 0xFFFF;
                 chars[i] = (char)(value[i] ^ k);
+            }
             return chars;
         }
 
@@ -406,9 +408,11 @@ namespace Nexus.Core
         {
             if (obscured == null) return null;
             var chars = new char[obscured.Length];
-            int k = key & 0xFFFF;
             for (int i = 0; i < obscured.Length; i++)
+            {
+                int k = (key ^ unchecked((int)(i * 0x9E3779B9u))) & 0xFFFF;
                 chars[i] = (char)(obscured[i] ^ k);
+            }
             return new string(chars);
         }
 

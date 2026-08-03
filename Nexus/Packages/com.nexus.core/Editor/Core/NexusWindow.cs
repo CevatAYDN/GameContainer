@@ -263,7 +263,7 @@ namespace Nexus.Editor
                 var pluginType = typeof(INexusEditorPlugin);
                 var foundPlugins = new List<INexusEditorPlugin>();
 
-                foreach (var assembly in AssemblyCatalog.GameAssemblies())
+                foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
                 {
                     foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                     {

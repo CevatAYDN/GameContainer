@@ -59,6 +59,8 @@ namespace Nexus.Core.Services
         private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
         private readonly HashSet<string> _dirtyKeys = new(StringComparer.Ordinal);
         private readonly object _lock = new();
+        private volatile bool _disposed;
+
         // T3 fix: serializes the atomic-write critical section (stage-to-temp + rename).
         // AutoSave writes and Save() batches can otherwise race on the SAME fixed temp
         // path (filePath + ".tmp"), interleaving File.WriteAllBytes and producing a
@@ -160,6 +162,7 @@ namespace Nexus.Core.Services
         {
             if (!hasFocus)
             {
+                if (_disposed) return;
                 // Capture logger on main thread before switching to background.
                 var logger = NexusRuntime.Logger;
                 // Use Task.Run for true background I/O so the Unity main thread is never
@@ -187,6 +190,7 @@ namespace Nexus.Core.Services
 
         public void Dispose()
         {
+            _disposed = true;
             Application.focusChanged -= OnFocusChanged;
             Application.quitting -= OnQuitting;
             Save();
@@ -249,6 +253,7 @@ namespace Nexus.Core.Services
         /// </summary>
         public string GetString(string key, string defaultValue = "")
         {
+            if (_disposed) return defaultValue;
             if (string.IsNullOrEmpty(key)) return defaultValue;
 
             string filePath;
@@ -387,14 +392,20 @@ namespace Nexus.Core.Services
                 value = Encoding.UTF8.GetString(plainBytes);
                 return true;
             }
-            catch
+            catch (CryptographicException)
             {
+                return false;
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException)
+            {
+                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Legacy decode failed: {ex.Message}");
                 return false;
             }
         }
 
         public void SetString(string key, string value)
         {
+            if (_disposed) return;
             if (string.IsNullOrEmpty(key)) return;
 
             bool autoSave;
@@ -605,6 +616,7 @@ namespace Nexus.Core.Services
 
         public void Save()
         {
+            if (_disposed) return;
             string[] keysToWrite;
             lock (_lock)
             {

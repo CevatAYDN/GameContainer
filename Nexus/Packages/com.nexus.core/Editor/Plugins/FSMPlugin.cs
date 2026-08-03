@@ -163,7 +163,10 @@ namespace Nexus.Editor
             {
                 IGameStateMachine machine = null;
                 try { machine = ctx.TryResolve<IGameStateMachine>(); }
-                catch { /* resolution may throw during teardown; ignore */ }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogWarning($"[Nexus FSM] Machine resolution failed during collect for context '{ctx?.ScopeTag}': {ex.Message}");
+                }
 
                 if (machine == null || !seen.Add(machine)) continue;
                 result.Add((ctx.ScopeTag ?? NexusLang.Get("fsm_fallback_context"), machine));

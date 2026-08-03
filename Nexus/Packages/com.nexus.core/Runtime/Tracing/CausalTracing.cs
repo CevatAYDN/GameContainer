@@ -151,6 +151,10 @@ namespace Nexus.Core
             s_totalEventsWritten = 0;
             s_overflowWarningLogged = 0;
 #endif
+            lock (s_lock)
+            {
+                s_sinks.Clear();
+            }
         }
 
         /// <summary>Registers an external trace sink to receive all trace events.</summary>

@@ -504,7 +504,10 @@ namespace Nexus.Editor
                     var t = asm.GetType(fullTypeName);
                     if (t != null) return t;
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus] Failed to inspect assembly '{asm.GetName().Name}' for GameView: {ex.Message}");
+                }
             }
             return null;
         }
@@ -532,7 +535,10 @@ namespace Nexus.Editor
                         break;
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus] Failed to inspect assembly '{asm.GetName().Name}' for input system: {ex.Message}");
+                }
             }
 
             if (hasInputSystem)

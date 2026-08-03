@@ -160,12 +160,14 @@ namespace Nexus.Core.Services
 
             if (!approved)
             {
+                long restoredAmount;
                 lock (_balances)
                 {
                     var prop = GetObservableBalance(currencyId);
                     prop.Value = Math.Min(prop.Value + amount, long.MaxValue);
-                    SaveBalance(currencyId, prop.Value);
+                    restoredAmount = prop.Value;
                 }
+                SaveBalance(currencyId, restoredAmount);
                 NexusRuntime.Logger?.LogWarning($"[Economy] Server rejected spend of {amount} '{currencyId}' — balance restored.");
             }
         }

@@ -330,47 +330,7 @@ namespace Nexus.Core.Services
             }
 
             if (go == null) return;
-
-            var lifecycles = go.GetComponents<IUIWindowLifecycle>();
-            for (int i = 0; i < lifecycles.Length; i++)
-            {
-                try { await lifecycles[i].OnClosingAsync(LifetimeToken); }
-                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
-            }
-
-            for (int i = 0; i < lifecycles.Length; i++)
-            {
-                try { await lifecycles[i].OnClosedAsync(LifetimeToken); }
-                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
-            }
-
-            bool isSameObject = false;
-            // Only remove if still the same GameObject — a concurrent OpenWindowAsync
-            // may have reopened the same name while callbacks ran outside the lock.
-            if (await TryAcquireWindowLockAsync())
-            {
-                try
-                {
-                    if (_activeWindows.TryGetValue(windowName, out var current) && current == go)
-                    {
-                        _activeWindows.Remove(windowName);
-                        _windowHistory.Remove(windowName);
-                        SignalPendingChanged();
-                        RefreshReadSnapshot();
-                        _canvas.UpdateLayerInteractivity(_activeWindows);
-                        isSameObject = true;
-                    }
-                }
-                finally
-                {
-                    _windowLock.Release();
-                }
-            }
-
-            if (isSameObject)
-            {
-                AssetProvider.ReleaseWindow(go);
-            }
+            await FinalizeClosedWindowAsync(windowName, go, alreadyRemoved: false);
         }
 
         public void CloseWindow(string windowName)
@@ -380,11 +340,29 @@ namespace Nexus.Core.Services
 
         public async Task CloseTopWindowAsync()
         {
-            if (_windowHistory.Count > 0)
+            if (!await TryAcquireWindowLockAsync()) return;
+            string top = null;
+            GameObject go = null;
+            try
             {
-                var top = _windowHistory[_windowHistory.Count - 1];
-                await CloseWindowAsync(top);
+                if (_windowHistory.Count == 0) return;
+                top = _windowHistory[_windowHistory.Count - 1];
+                _windowHistory.RemoveAt(_windowHistory.Count - 1);
+                if (_activeWindows.TryGetValue(top, out go) && go != null)
+                {
+                    _activeWindows.Remove(top);
+                    SignalPendingChanged();
+                    RefreshReadSnapshot();
+                    _canvas.UpdateLayerInteractivity(_activeWindows);
+                }
             }
+            finally
+            {
+                _windowLock.Release();
+            }
+
+            if (go == null) return;
+            await FinalizeClosedWindowAsync(top, go, alreadyRemoved: true);
         }
 
         public void CloseTopWindow()
@@ -428,6 +406,48 @@ namespace Nexus.Core.Services
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogError($"[WindowManager] {context} failed: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
+        private async Task FinalizeClosedWindowAsync(string windowName, GameObject go, bool alreadyRemoved)
+        {
+            var lifecycles = go.GetComponents<IUIWindowLifecycle>();
+            for (int i = 0; i < lifecycles.Length; i++)
+            {
+                try { await lifecycles[i].OnClosingAsync(LifetimeToken); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+            }
+
+            for (int i = 0; i < lifecycles.Length; i++)
+            {
+                try { await lifecycles[i].OnClosedAsync(LifetimeToken); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+            }
+
+            bool isSameObject = alreadyRemoved;
+            if (!alreadyRemoved && await TryAcquireWindowLockAsync())
+            {
+                try
+                {
+                    if (_activeWindows.TryGetValue(windowName, out var current) && current == go)
+                    {
+                        _activeWindows.Remove(windowName);
+                        _windowHistory.Remove(windowName);
+                        SignalPendingChanged();
+                        RefreshReadSnapshot();
+                        _canvas.UpdateLayerInteractivity(_activeWindows);
+                        isSameObject = true;
+                    }
+                }
+                finally
+                {
+                    _windowLock.Release();
+                }
+            }
+
+            if (isSameObject)
+            {
+                AssetProvider.ReleaseWindow(go);
             }
         }
 
