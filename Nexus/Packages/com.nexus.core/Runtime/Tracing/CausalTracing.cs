@@ -223,10 +223,9 @@ namespace Nexus.Core
             var timestamp = UnityEngine.Time.realtimeSinceStartupAsDouble;
             var traceEvent = new TraceEvent(eventId, parentId, type, timestamp, typeName, TraceStatus.OK, mode);
 
-            s_ringBuffer[index] = traceEvent;
-
             lock (s_lock)
             {
+                s_ringBuffer[index] = traceEvent;
                 for (int i = 0; i < s_sinks.Count; i++)
                 {
                     // M7 fix: a throwing sink must not break the trace path (which runs
@@ -235,7 +234,7 @@ namespace Nexus.Core
                     try { s_sinks[i].Write(traceEvent); }
                     catch (Exception ex)
                     {
-                        UnityEngine.Debug.LogError($"[NexusTrace] Sink '{s_sinks[i].GetType().Name}' threw: {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[NexusTrace] Custom sink threw exception: {ex.Message}");
                     }
                 }
             }

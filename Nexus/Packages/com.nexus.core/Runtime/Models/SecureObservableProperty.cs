@@ -139,7 +139,7 @@ namespace Nexus.Core
         {
             NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
             try { OnTamperDetected?.Invoke(context); }
-            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
         }
     }
 

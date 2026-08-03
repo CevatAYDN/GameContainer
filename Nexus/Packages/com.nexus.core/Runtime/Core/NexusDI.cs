@@ -48,7 +48,13 @@ namespace Nexus.Core
             get
             {
                 lock (_singletonLock)
-                    return new List<object>(_resolvedSingletons);
+                {
+                    if (_resolvedSingletons.Count == 0)
+                        return Array.Empty<object>();
+                    var array = new object[_resolvedSingletons.Count];
+                    _resolvedSingletons.CopyTo(array);
+                    return array;
+                }
             }
         }
 

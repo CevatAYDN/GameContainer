@@ -50,7 +50,15 @@ namespace Nexus.Core
     /// </summary>
     public static class QueuedSignalPool<T> where T : struct
     {
+        private class ReferenceComparer : IEqualityComparer<QueuedSignalWrapper<T>>
+        {
+            public static readonly ReferenceComparer Instance = new();
+            public bool Equals(QueuedSignalWrapper<T> x, QueuedSignalWrapper<T> y) => ReferenceEquals(x, y);
+            public int GetHashCode(QueuedSignalWrapper<T> obj) => System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+        }
+
         private static readonly Stack<QueuedSignalWrapper<T>> s_pool = new();
+        private static readonly HashSet<QueuedSignalWrapper<T>> s_pooledInstances = new(ReferenceComparer.Instance);
         private static readonly object s_poolLock = new();
 
         // P1-15 fix: bound the pool and register clearing with NexusRuntime.Reset.
@@ -70,6 +78,7 @@ namespace Nexus.Core
                 if (s_pool.Count > 0)
                 {
                     wrapper = s_pool.Pop();
+                    s_pooledInstances.Remove(wrapper);
                 }
             }
             if (wrapper == null)
@@ -83,13 +92,23 @@ namespace Nexus.Core
         /// <summary>Returns the wrapper to the pool and resets its payload.</summary>
         public static void Return(QueuedSignalWrapper<T> wrapper)
         {
+            if (wrapper == null) return;
             wrapper.Signal = default;
             lock (s_poolLock)
             {
+                // Double-return guard: an instance already in the pool must not be pooled again
+                if (!s_pooledInstances.Add(wrapper))
+                {
+                    return;
+                }
+
                 if (s_pool.Count < MaxPoolSize)
                 {
                     s_pool.Push(wrapper);
+                    return;
                 }
+
+                s_pooledInstances.Remove(wrapper);
             }
         }
 
@@ -99,6 +118,7 @@ namespace Nexus.Core
             lock (s_poolLock)
             {
                 s_pool.Clear();
+                s_pooledInstances.Clear();
             }
         }
     }
