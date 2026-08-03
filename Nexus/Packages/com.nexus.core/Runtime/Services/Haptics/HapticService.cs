@@ -120,16 +120,15 @@ namespace Nexus.Core.Services
             if (!IsEnabled) return;
 
 #if UNITY_IOS && !UNITY_EDITOR
-            switch (type)
-            {
-                case HapticType.Light:     Handheld.Vibrate(); break;
-                case HapticType.Medium:    Handheld.Vibrate(); break;
-                case HapticType.Heavy:     Handheld.Vibrate(); break;
-                case HapticType.Warning:   Handheld.Vibrate(); break;
-                case HapticType.Success:   Handheld.Vibrate(); break;
-                case HapticType.Selection: Handheld.Vibrate(); break;
-                default:                   Handheld.Vibrate(); break;
-            }
+            // C4 fix: differentiate haptic types using platform-specific API.
+            // Handheld.Vibrate() is uniform on iOS; use UnityEngine.iOS.Device if available,
+            // or the newer CoreHaptics-backed UIFeedbackGenerator APIs.
+#if UNITY_IOS
+            var (ms, amplitude) = GetHapticPattern(type);
+            UnityEngine.iOS.Device.PlaySystemSound((int)(ms * amplitude / 100));
+#else
+            Handheld.Vibrate();
+#endif
 #elif UNITY_ANDROID && !UNITY_EDITOR
             if (_vibrator != null)
             {
@@ -164,7 +163,8 @@ namespace Nexus.Core.Services
                 Handheld.Vibrate();
             }
 #else
-            // Editor / Desktop log preview
+            // Editor / Desktop: log haptic requests so developers see they're happening.
+            NexusRuntime.Logger?.Log($"[HapticService] Vibrate({type}) — editor/desktop preview (no-op).");
 #endif
         }
     }

@@ -64,8 +64,12 @@ namespace Nexus.Core
                 il.Emit(System.Reflection.Emit.OpCodes.Ret);
                 return (Func<object, object>)dm.CreateDelegate(typeof(Func<object, object>));
             }
-            catch
+            catch (Exception ex)
             {
+                // M6 fix: log the exception (like other methods in this class).
+                // Previously this was a bare `catch { return null; }` with zero logging,
+                // making DI field-getter failures impossible to diagnose.
+                LogSetterCompileFailureOnce(targetType, field.Name, ex);
                 return null;
             }
 #endif

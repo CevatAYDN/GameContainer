@@ -122,7 +122,8 @@ namespace Nexus.Core
             }
         }
 
-        /// <summary>Retrieves a command instance from the pool, or creates a new one if the pool is empty.</summary>
+        /// <summary>Retrieves a command instance from the pool, or creates a new one if the pool is empty.
+        /// Calls IResettable.Reset() on pooled instances that implement it before returning.</summary>
         public object Get()
         {
             System.Threading.Interlocked.Increment(ref _totalGets);
@@ -132,6 +133,11 @@ namespace Nexus.Core
                 {
                     var instance = _pool.Pop();
                     _pooledInstances.Remove(instance);
+                    // T6 fix: call IResettable.Reset() on pop to mirror ViewBinder's
+                    // defensive reset pattern. Return() only clears [Inject] fields via
+                    // ClearInjectedReferences — non-injected mutable state leaks otherwise.
+                    if (instance is IResettable resettable)
+                        resettable.Reset();
                     return instance;
                 }
             }

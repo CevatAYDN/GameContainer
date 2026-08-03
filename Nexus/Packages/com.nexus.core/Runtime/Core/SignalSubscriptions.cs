@@ -18,6 +18,7 @@ namespace Nexus.Core
         /// <summary>The cancellation token that controls this subscription's lifetime.</summary>
         public CancellationToken Lifetime { get; }
         private CancellationTokenRegistration _registration;
+        private int _disposedFlag;
 
         /// <summary>Creates a new synchronous signal subscription.</summary>
         /// <param name="handler">The handler to invoke when the signal is fired.</param>
@@ -44,10 +45,15 @@ namespace Nexus.Core
         /// <summary>Disposes the subscription, unregistering from the cancellation token.</summary>
         public void Dispose()
         {
-            if (!IsActive) return;
-            IsActive = false;
-            _registration.Dispose();
-            _onDispose?.Invoke();
+            // T1 fix: atomic check-and-set using Interlocked.Exchange on int (0/1) to prevent
+            // double-invocation of _onDispose when two threads call Dispose() concurrently.
+            // NOTE: bool cannot be used with Interlocked.Exchange in .NET Standard 2.0.
+            if (System.Threading.Interlocked.Exchange(ref _disposedFlag, 1) == 0)
+            {
+                IsActive = false;
+                _registration.Dispose();
+                _onDispose?.Invoke();
+            }
         }
     }
 
@@ -65,6 +71,7 @@ namespace Nexus.Core
         /// <summary>The cancellation token that controls this subscription's lifetime.</summary>
         public CancellationToken Lifetime { get; }
         private CancellationTokenRegistration _registration;
+        private int _disposedFlag;
 
         /// <summary>Creates a new asynchronous signal subscription.</summary>
         /// <param name="handler">The async handler to invoke when the signal is fired.</param>
@@ -92,10 +99,13 @@ namespace Nexus.Core
         /// <summary>Disposes the subscription, unregistering from the cancellation token.</summary>
         public void Dispose()
         {
-            if (!IsActive) return;
-            IsActive = false;
-            _registration.Dispose();
-            _onDispose?.Invoke();
+            // T1 fix: atomic check-and-set for AsyncSignalSubscription too.
+            if (System.Threading.Interlocked.Exchange(ref _disposedFlag, 1) == 0)
+            {
+                IsActive = false;
+                _registration.Dispose();
+                _onDispose?.Invoke();
+            }
         }
     }
 }

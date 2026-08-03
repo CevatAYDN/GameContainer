@@ -312,6 +312,7 @@ namespace Nexus.Core
         /// Returns a cached dispatcher that invokes <see cref="ICommand{TSignal}"/>.Execute on a
         /// generic-only command, or null if the command type does not implement that interface.
         /// Uses Expression-compiled delegates to avoid per-call object[] allocation on the hot path.
+        /// Falls back to reflection on IL2CPP/AOT platforms where Expression.Compile() is unavailable.
         /// </summary>
         public Action<object, object> GetGenericSyncDispatcher(Type commandType, Type signalType)
         {
@@ -322,7 +323,14 @@ namespace Nexus.Core
             if (!genericInterface.IsAssignableFrom(commandType)) return null;
 
             var method = genericInterface.GetMethod("Execute");
+            if (method == null) return null;
 
+#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
+            // IL2CPP/AOT: Expression.Compile() uses System.Reflection.Emit.DynamicMethod which is
+            // unavailable on these platforms (throws NotSupportedException). Fall back to reflection.
+            // This allocates an object[] per call but avoids the crash.
+            Action<object, object> dispatcher = (cmd, sig) => method.Invoke(cmd, new object[] { sig });
+#else
             // Compile an Expression-tree delegate: (object cmd, object sig) => ((ICommand<T>)cmd).Execute((T)sig)
             // This eliminates the object[] allocation that method.Invoke(cmd, new[] { sig }) causes on every dispatch.
             var cmdParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "cmd");
@@ -332,6 +340,7 @@ namespace Nexus.Core
             var call     = System.Linq.Expressions.Expression.Call(castCmd, method, castSig);
             var lambda   = System.Linq.Expressions.Expression.Lambda<Action<object, object>>(call, cmdParam, sigParam);
             Action<object, object> dispatcher = lambda.Compile();
+#endif
 
             s_genericSyncDispatchCache.TryAdd(key, dispatcher);
             return dispatcher;
@@ -341,6 +350,7 @@ namespace Nexus.Core
         /// Returns a cached dispatcher that invokes <see cref="IAsyncCommand{TSignal}"/>.ExecuteAsync on
         /// a generic-only async command, or null if the command type does not implement that interface.
         /// Uses Expression-compiled delegates to avoid per-call object[] allocation on the hot path.
+        /// Falls back to reflection on IL2CPP/AOT platforms where Expression.Compile() is unavailable.
         /// </summary>
         public Func<object, object, CancellationToken, ValueTask> GetGenericAsyncDispatcher(Type commandType, Type signalType)
         {
@@ -351,7 +361,16 @@ namespace Nexus.Core
             if (!genericInterface.IsAssignableFrom(commandType)) return null;
 
             var method = genericInterface.GetMethod("ExecuteAsync");
+            if (method == null) return null;
 
+#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
+            // IL2CPP/AOT: reflection fallback (see GetGenericSyncDispatcher for rationale)
+            Func<object, object, CancellationToken, ValueTask> dispatcher = (cmd, sig, ct) =>
+            {
+                var result = method.Invoke(cmd, new object[] { sig, ct });
+                return result is ValueTask vt ? vt : default;
+            };
+#else
             // Compile: (object cmd, object sig, CancellationToken ct) => ((IAsyncCommand<T>)cmd).ExecuteAsync((T)sig, ct)
             var cmdParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "cmd");
             var sigParam = System.Linq.Expressions.Expression.Parameter(typeof(object), "sig");
@@ -361,6 +380,7 @@ namespace Nexus.Core
             var call     = System.Linq.Expressions.Expression.Call(castCmd, method, castSig, ctParam);
             var lambda   = System.Linq.Expressions.Expression.Lambda<Func<object, object, CancellationToken, ValueTask>>(call, cmdParam, sigParam, ctParam);
             Func<object, object, CancellationToken, ValueTask> dispatcher = lambda.Compile();
+#endif
 
             s_genericAsyncDispatchCache.TryAdd(key, dispatcher);
             return dispatcher;

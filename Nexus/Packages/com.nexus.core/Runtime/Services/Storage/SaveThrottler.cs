@@ -86,13 +86,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        public void Tick()
-        {
-            if (_pendingSave && SecondsSinceLastSave >= _throttleSeconds)
-            {
-                Flush();
-            }
-        }
+        // M7 fix: removed dead parameterless Tick() — no interface defines it and it's never called.
 
         private void FlushPending()
         {

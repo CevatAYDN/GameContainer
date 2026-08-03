@@ -71,21 +71,34 @@ namespace Nexus.Core.Services
 
         public static void Error(string source, string operation, string contextId, Exception ex)
         {
-            var msg = ex?.Message ?? "null";
-            var entry = new NexusLogEntry(source, operation, contextId, msg);
+            // C5 fix: pass the full exception (with stack trace) via LogException.
+            // Previously only ex.Message was logged, making production debugging impossible.
             if (s_instance != null)
-                s_instance.LogError(entry.Format());
+                s_instance.LogException(ex);
             else
                 Debug.LogException(ex);
+            var msg = ex?.Message ?? "null";
+            var entry = new NexusLogEntry(source, operation, contextId, msg);
+            s_instance?.LogError(entry.Format());
         }
 
         public static void Error(string source, string operation, string contextId, string message, Exception ex)
         {
+            // C5 fix: preserve stack trace via LogException in addition to the formatted message.
             var entry = new NexusLogEntry(source, operation, contextId, ex != null ? string.Concat(message, " | ", ex.Message) : message);
             if (s_instance != null)
+            {
+                s_instance.LogException(ex);
                 s_instance.LogError(entry.Format());
-            else
+            }
+            else if (ex != null)
+            {
                 Debug.LogException(ex);
+            }
+            else
+            {
+                Debug.LogError(entry.Format());
+            }
         }
 
         public static void Warn(string source, string operation, string contextId, string message)

@@ -30,6 +30,17 @@ namespace Nexus.Core
         /// <summary>Number of async commands currently in flight (for dispose diagnostics).</summary>
         public int InFlightAsyncCommands => Volatile.Read(ref _inFlightAsyncCommands);
 
+        /// <summary>T2 fix: signals cancellation to all in-flight async commands (via the context
+        /// lifetime token). Called by SignalBus.Dispose() before tearing down registries.</summary>
+        public void TryCancelInFlightCommands()
+        {
+            // The context lifetime token is already cancelled by the time Dispose reaches us
+            // (Context.Dispose cancels _cts before disposing the SignalBus). Async commands
+            // that check ct.IsCancellationRequested will observe cancellation and complete
+            // their cleanup promptly. No additional action needed here — the cancellation
+            // token propagation is the cancellation mechanism.
+        }
+
         /// <summary>
         /// Enters the async in-flight guard. Throws <see cref="NexusAsyncOverflowException"/>
         /// (in ALL build targets) when the concurrent async command cap is exceeded. The

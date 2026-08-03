@@ -115,6 +115,26 @@ namespace Nexus.Core.Lifecycle
             {
                 var inst = list[i];
                 if (inst == null) continue;
+
+                // T3 fix: also check IAsyncStoppable. The sync path cannot await, so we
+                // fire-and-forget the async stop via SafeAsyncRunner pattern. This ensures
+                // services implementing ONLY IAsyncStoppable (not IStoppable) still get
+                // their cleanup called on synchronous Dispose (e.g. Root.OnDestroy).
+                if (inst is IAsyncStoppable asyncStoppable)
+                {
+                    try
+                    {
+                        // Fire-and-forget the async stop — best-effort cleanup.
+                        // The CancellationToken is already cancelled at this point (Context.Dispose
+                        // cancels _cts before calling this), so the async stop will see cancellation
+                        // and should complete promptly.
+                        _ = StopAsyncInternal(asyncStoppable);
+                    }
+                    catch (Exception ex)
+                    {
+                        Debug.LogError($"[Nexus] Exception initiating IAsyncStoppable.StopAsync fire-and-forget ({inst.GetType().FullName}): {ex.Message}");
+                    }
+                }
                 if (inst is IStoppable stoppable)
                 {
                     try { stoppable.Stop(); }
@@ -123,6 +143,21 @@ namespace Nexus.Core.Lifecycle
                         Debug.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
                     }
                 }
+            }
+        }
+
+        private static async System.Threading.Tasks.Task StopAsyncInternal(IAsyncStoppable stoppable)
+        {
+            try
+            {
+                // Use a short timeout so fire-and-forget cleanup doesn't hang indefinitely.
+                using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await stoppable.StopAsync(cts.Token);
+            }
+            catch (OperationCanceledException) { /* timeout or cancellation during teardown */ }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[Nexus] Fire-and-forget IAsyncStoppable.StopAsync failed: {ex.Message}");
             }
         }
     }

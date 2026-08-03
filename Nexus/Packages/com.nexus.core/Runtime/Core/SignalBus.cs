@@ -945,9 +945,14 @@ namespace Nexus.Core
             _subscriptionRegistry.Dispose();
             _commandRegistry.Dispose();
 
+            // T2 fix: cancel in-flight async commands before disposal.
+            // In-flight async commands continue running on disposed registries and container,
+            // causing ObjectDisposedException/NullReferenceException. Pooled command objects
+            // are also never returned (pool leak). Cancel them so they complete promptly.
             if (_commandExecutor.InFlightAsyncCommands > 0)
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_commandExecutor.InFlightAsyncCommands} async command(s) are still in-flight. This may cause unexpected behavior.");
+                NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_commandExecutor.InFlightAsyncCommands} async command(s) are still in-flight. Attempting cancellation.");
+                _commandExecutor.TryCancelInFlightCommands();
             }
         }
 

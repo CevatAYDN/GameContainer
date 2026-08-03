@@ -41,6 +41,7 @@ namespace Nexus.Core
         private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
         private volatile List<(INexusPlugin plugin, PluginContext context)> _pluginsReadOnlyCopy = new();
         private readonly object _pluginsLock = new();
+        private readonly object _configureLock = new();
         private int _interceptorsCount;
         private ContextBuilder _builder;
         private volatile bool _disposed;
@@ -164,17 +165,23 @@ namespace Nexus.Core
         {
             if (_disposed) return;
 
-            // Guard against double-Configure: if _builder already exists, merging state from
-            // a second call would lose the first builder's reactive model and service type
-            // registrations. Prevent accidental double-call by returning early.
-            if (_builder != null)
+            // C2 fix: synchronize with _configureLock to prevent two threads from entering
+            // Configure() simultaneously, which would cause duplicate ContextBuilder creation,
+            // duplicate assembly scans, and state corruption.
+            lock (_configureLock)
             {
-                NexusRuntime.Logger?.LogWarning(
-                    $"[Nexus] Context '{ScopeTag}' Configure() called more than once. Subsequent calls are ignored.");
-                return;
-            }
+                // Guard against double-Configure: if _builder already exists, merging state from
+                // a second call would lose the first builder's reactive model and service type
+                // registrations. Prevent accidental double-call by returning early.
+                if (_builder != null)
+                {
+                    NexusRuntime.Logger?.LogWarning(
+                        $"[Nexus] Context '{ScopeTag}' Configure() called more than once. Subsequent calls are ignored.");
+                    return;
+                }
 
-            _builder = new ContextBuilder(Container, SignalBusInternal);
+                _builder = new ContextBuilder(Container, SignalBusInternal);
+            }
 
             // ... rest stays the same until after assemblies scan ...
             var allLifecycles = new List<IContextLifecycle>();

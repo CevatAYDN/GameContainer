@@ -80,7 +80,7 @@ namespace Nexus.Core.Services
                 if (Time.realtimeSinceStartup - _lastInterstitialTime.Value < _interstitialCooldownSeconds.Value)
                     return false;
 
-                return _adapter != null ? _adapter.IsInterstitialReady(placement) : true;
+                return _adapter != null && _adapter.IsInterstitialReady(placement);
             }
         }
 
@@ -88,7 +88,7 @@ namespace Nexus.Core.Services
         {
             lock (_lock)
             {
-                return _adapter != null ? _adapter.IsRewardedReady(placement) : true;
+                return _adapter != null && _adapter.IsRewardedReady(placement);
             }
         }
 

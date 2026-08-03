@@ -20,14 +20,14 @@ namespace Nexus.Core
         /// <summary>Execution priority; higher values run first.</summary>
         public int Priority { get; }
 
-        /// <summary>Bitmask of signals received so far.</summary>
-        public ulong CurrentMask { get; set; }
+        /// <summary>Bitmask of signals received so far. Only set by SignalBus internals.</summary>
+        public ulong CurrentMask { get; internal set; }
 
         /// <summary>Bitmask of all required signals (all bits set).</summary>
         public ulong TargetMask { get; }
 
-        /// <summary>True once all required signals have been received.</summary>
-        public bool IsCompleted { get; set; }
+        /// <summary>True once all required signals have been received. Only set by SignalBus internals.</summary>
+        public bool IsCompleted { get; internal set; }
 
         /// <summary>
         /// Most recent boxed payload captured per required signal (indexed identically to

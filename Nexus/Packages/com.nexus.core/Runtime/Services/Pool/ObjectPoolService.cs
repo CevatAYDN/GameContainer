@@ -190,9 +190,18 @@ namespace Nexus.Core.Services
             }
         }
 
+        // M3 fix: cache WaitForSeconds instances per unique delay value to avoid per-call heap allocation.
+        private static readonly Dictionary<float, WaitForSeconds> s_waitForSecondsCache = new();
+
         private IEnumerator DespawnCoroutine(GameObject instance, int instanceId, long generation, float delay)
         {
-            yield return new WaitForSeconds(delay);
+            // M3 fix: reuse cached WaitForSeconds instead of allocating a new one per call.
+            if (!s_waitForSecondsCache.TryGetValue(delay, out var wait))
+            {
+                wait = new WaitForSeconds(delay);
+                s_waitForSecondsCache[delay] = wait;
+            }
+            yield return wait;
             // Only despawn if the instance is still in the SAME spawn session. If it was
             // manually despawned and re-spawned while the timer was pending, the generation
             // has advanced — despawning would kill the live re-spawned object.

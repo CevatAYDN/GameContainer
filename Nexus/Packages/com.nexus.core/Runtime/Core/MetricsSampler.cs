@@ -11,8 +11,11 @@ namespace Nexus.Core
     [Preserve]
     public class MetricsSampler : MonoBehaviour
     {
-        private static int s_lastFrameMetricsFrame = -1;
-        private static int s_lastMemoryMetricsFrame = -1;
+        // M9 fix: add volatile to prevent stale reads under IL2CPP on ARM.
+        // Multiple MetricsSampler instances (one per Root) write to these static fields;
+        // without volatile, a write by one instance may not be visible to another.
+        private static volatile int s_lastFrameMetricsFrame = -1;
+        private static volatile int s_lastMemoryMetricsFrame = -1;
 
         private void Update()
         {

@@ -215,7 +215,32 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
+                    // M4 fix: lifecycle failure must roll back the screen and NOT register it
+                    // as active. Previously the screen was registered as active anyway, leaving
+                    // a broken screen in _activeScreens.
                     NexusRuntime.Logger?.LogException(ex);
+                    if (instantiated)
+                    {
+                        SafeDestroy(screen.gameObject);
+                    }
+                    else
+                    {
+                        // Return pooled instance back to pool (avoid leak).
+                        screen.gameObject.SetActive(false);
+                        lock (_lock)
+                        {
+                            if (!_pools.TryGetValue(key, out var pool))
+                            {
+                                pool = new Stack<ScreenView>();
+                                _pools[key] = pool;
+                            }
+                            if (pool.Count < MaxPooledPerScreenKey)
+                                pool.Push(screen);
+                            else
+                                SafeDestroy(screen.gameObject);
+                        }
+                    }
+                    return null;
                 }
 
                 // 5. Register as active.
