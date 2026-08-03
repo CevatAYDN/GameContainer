@@ -126,7 +126,15 @@ namespace Nexus.Core
                                     ? $"[Nexus] Fallback command '{decision.FallbackCommandType.Name}' implements no supported command interface for signal '{signal?.GetType().Name ?? "unknown"}'. Treating as Skip."
                                     : $"[Nexus] Fallback command '{decision.FallbackCommandType.Name}' cannot execute synchronously for signal '{signal?.GetType().Name ?? "unknown"}'. Treating as Skip.");
                         }
-                        return RecoveryPlan.FallbackPlan(failedSignal, null, false);
+
+                        // T6 fix: a rejected (or absent) fallback must still surface the
+                        // failure. Returning a Fallback plan with a null type made
+                        // ExecuteSyncPlan/ExecuteAsyncPlan take the "nominal Fallback" path
+                        // WITHOUT dispatching the CommandFailedSignal — the error was logged
+                        // and then silently dropped. Routing through the Skip plan guarantees
+                        // the failed signal is dispatched (observable, recoverable) while the
+                        // log message above explains why the fallback was not run.
+                        return RecoveryPlan.SkipPlan(failedSignal);
                     }
                     if (decision.Action == RecoveryAction.Retry)
                     {
@@ -140,10 +148,17 @@ namespace Nexus.Core
                 }
                 catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
                 {
+                    // T6 fix: strategy failures were only written to the console; the
+                    // diagnostics layer (ErrorCollection) never saw them, so editor tooling
+                    // and ErrorCollection subscribers could not react. Surface the strategy
+                    // error through the same collection pipeline the original command error
+                    // uses — never silently swallowed.
                     NexusRuntime.Logger?.LogError(
                         asyncContext
                             ? $"[Nexus] Error recovery strategy failed: {strategyEx.Message}"
                             : $"[Nexus] Error recovery strategy failed: {strategyEx.Message}\nOriginal command exception: {ex.Message}");
+                    ErrorCollection.CollectException(strategyEx, ErrorCollection.ErrorCategory.Command,
+                        $"Recovery strategy '{strategyEx.TargetSite?.DeclaringType?.Name ?? strategyEx.GetType().Name}' failed while handling command {commandType.Name}");
                 }
             }
 
@@ -204,6 +219,15 @@ namespace Nexus.Core
                     {
                         _executor.Execute(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, 0, false), signal);
                     }
+                }
+                else
+                {
+                    // T6 fix (defensive): BuildPlan now routes rejected fallbacks through
+                    // SkipPlan, so a null fallback type here means a plan constructed by a
+                    // path that bypassed BuildPlan. Fire the failed signal rather than
+                    // returning a nominal Fallback that would silently drop the error.
+                    await _fireFailedAsync(plan.FailedSignal);
+                    return RecoveryAction.Skip;
                 }
                 return RecoveryAction.Fallback;
             }

@@ -58,8 +58,13 @@ namespace Nexus.Core
         /// <summary>Unbinds the mediator, disposing all signal subscriptions.</summary>
         public void Unbind()
         {
-            OnUnbind();
-            
+            // Exception safety: a throwing OnUnbind override must not leak the tracked
+            // subscriptions (the old code ran OnUnbind() first, so a throw skipped the
+            // dispose loop and the mediator kept dangling subscription handles). The
+            // user hook is isolated so cleanup ALWAYS runs, then the error is logged.
+            try { OnUnbind(); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+
             // Auto dispose all subscriptions registered in this mediator
             for (int i = 0; i < _subscriptions.Count; i++)
             {
@@ -134,7 +139,11 @@ namespace Nexus.Core
             _subscriptions.Clear();
             View = null;
             SignalBus = null;
-            OnReset();
+            // Exception safety: a throwing OnReset override must not abort the reset — the
+            // mediator is already in a clean unbound state at this point, so the error is
+            // logged and pooled reuse proceeds.
+            try { OnReset(); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
         }
 
         /// <summary>

@@ -850,8 +850,13 @@ namespace Nexus.Core
         private object ResolveBinding(Type type, Binding binding)
         {
             if (binding.Instance != null) return binding.Instance;
-            if (binding.Factory != null) return binding.Factory();
 
+            // T1 fix: cycle detection must also guard factory-produced instances. Previously
+            // the factory check ran BEFORE the resolution-stack push, so a factory that
+            // resolved back to its own key (directly or transitively) recursed until
+            // StackOverflowException — an uncatchable process crash. Moving the factory
+            // call inside the guarded block turns that into a clear, catchable
+            // InvalidOperationException naming the offending type.
             s_resolutionStack ??= new HashSet<Type>();
             if (!s_resolutionStack.Add(type))
                 throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}. Resolution chain forms a cycle.");
@@ -859,6 +864,8 @@ namespace Nexus.Core
             bool addedToConstructing = false;
             try
             {
+                if (binding.Factory != null) return binding.Factory();
+
                 if (binding.IsSingleton)
                 {
                     object singletonInstance = binding.Instance;
@@ -1230,11 +1237,16 @@ namespace Nexus.Core
 
                     if (instance is IAsyncDisposable asyncDisposable)
                     {
-                        // Deterministic teardown path: callers that need async cleanup should
-                        // use Container.DisposeAsync() (reached via Context.DisposeAsync()).
-                        // The sync path intentionally avoids fire-and-forget so disposal state
-                        // stays observable and teardown remains ordered.
-                        asyncDisposable.DisposeAsync().AsTask().GetAwaiter().GetResult();
+                        // C2 fix: never block the calling thread on async teardown.
+                        // The previous sync-over-async call
+                        // (DisposeAsync().AsTask().GetAwaiter().GetResult()) deadlocks on the
+                        // Unity main thread whenever DisposeAsync's continuations must marshal
+                        // back to a captured SynchronizationContext. Schedule the async
+                        // disposal on a background task instead — DisposeAsyncInBackground
+                        // captures and logs any failure, so errors are never silent.
+                        // Callers that need deterministic, ordered async teardown use
+                        // Container.DisposeAsync() (reached via Context.DisposeAsync()).
+                        _ = DisposeAsyncInBackground(asyncDisposable);
                     }
                     else if (instance is IDisposable disposable)
                     {

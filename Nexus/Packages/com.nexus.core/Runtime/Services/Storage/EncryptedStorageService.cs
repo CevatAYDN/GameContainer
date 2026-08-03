@@ -59,6 +59,13 @@ namespace Nexus.Core.Services
         private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
         private readonly HashSet<string> _dirtyKeys = new(StringComparer.Ordinal);
         private readonly object _lock = new();
+        // T3 fix: serializes the atomic-write critical section (stage-to-temp + rename).
+        // AutoSave writes and Save() batches can otherwise race on the SAME fixed temp
+        // path (filePath + ".tmp"), interleaving File.WriteAllBytes and producing a
+        // corrupt file that fails HMAC verification on the next read. A dedicated lock
+        // (not _lock) keeps slow file I/O out of the cache/dirty-set critical section
+        // (the B1 invariant) while making concurrent writes to one key atomic.
+        private readonly object _writeLock = new();
 
         public EncryptedStorageService(string customSalt = "Nexus_Secure_Salt_2026")
         {
@@ -160,6 +167,10 @@ namespace Nexus.Core.Services
                 // The lambda captures only the logger (value-type copy) — not `this` —
                 // so there is no risk of the service being GC'd while I/O is in flight
                 // because the service's lifetime is tied to the context (singleton).
+                // NOTE: the lambda intentionally captures `this` (via self) so the service
+                // cannot be garbage-collected while background I/O is in flight — its
+                // lifetime is tied to the owning context singleton anyway, but the explicit
+                // capture makes the retention intentional and self-documenting.
                 var self = this; // explicit capture for clarity
                 System.Threading.Tasks.Task.Run(() =>
                 {
@@ -403,8 +414,13 @@ namespace Nexus.Core.Services
             }
 
             // I/O outside lock: AutoSave writes each value immediately.
-            if (autoSave)
-                SaveKeyToDisk(key, value);
+            if (autoSave && !SaveKeyToDisk(key, value))
+            {
+                // T3 fix: a failed AutoSave write must never be silently dropped. Mark the
+                // key dirty so the next Save() (focus loss / quit / explicit call) retries
+                // the write instead of losing the value until the process exits.
+                lock (_lock) { _dirtyKeys.Add(key); }
+            }
         }
 
         /// <summary>
@@ -499,30 +515,39 @@ namespace Nexus.Core.Services
             }
         }
 
-        private static void WriteRawDataAtomically(string filePath, byte[] rawData)
+        private void WriteRawDataAtomically(string filePath, byte[] rawData)
         {
-            string tempPath = filePath + ".tmp";
-            string backupPath = filePath + ".bak";
-            File.WriteAllBytes(tempPath, rawData);
-
-            const int maxAttempts = 3;
-            for (int attempt = 0; ; attempt++)
+            // T3 fix: the whole stage-to-temp + replace sequence is one critical section.
+            // Without this, concurrent callers (AutoSave on a worker thread + Save() on
+            // focus loss) both wrote the SAME "filePath.tmp" and raced the rename — a
+            // torn file that HMAC verification then rejects on the next load. Serializing
+            // under _writeLock restores atomicity for the shared temp-name scheme while
+            // keeping the fast cache path (_lock) independent.
+            lock (_writeLock)
             {
-                try
+                string tempPath = filePath + ".tmp";
+                string backupPath = filePath + ".bak";
+                File.WriteAllBytes(tempPath, rawData);
+
+                const int maxAttempts = 3;
+                for (int attempt = 0; ; attempt++)
                 {
-                    if (File.Exists(filePath))
-                        File.Replace(tempPath, filePath, backupPath);
-                    else
-                        File.Move(tempPath, filePath);
-                    break;
-                }
-                catch (IOException) when (attempt < maxAttempts - 1)
-                {
-                    // Brief exponential back-off (1 ms, 2 ms) without blocking the calling
-                    // thread's timeslice for longer than necessary. Thread.Yield() only gives
-                    // up the remainder of the current timeslice and can return immediately on
-                    // single-core devices; Thread.Sleep(1) guarantees at least 1 ms relief.
-                    System.Threading.Thread.Sleep(1 << attempt); // 1 ms, 2 ms
+                    try
+                    {
+                        if (File.Exists(filePath))
+                            File.Replace(tempPath, filePath, backupPath);
+                        else
+                            File.Move(tempPath, filePath);
+                        break;
+                    }
+                    catch (IOException) when (attempt < maxAttempts - 1)
+                    {
+                        // Brief exponential back-off (1 ms, 2 ms) without blocking the calling
+                        // thread's timeslice for longer than necessary. Thread.Yield() only gives
+                        // up the remainder of the current timeslice and can return immediately on
+                        // single-core devices; Thread.Sleep(1) guarantees at least 1 ms relief.
+                        System.Threading.Thread.Sleep(1 << attempt); // 1 ms, 2 ms
+                    }
                 }
             }
         }
@@ -588,7 +613,7 @@ namespace Nexus.Core.Services
                 _dirtyKeys.CopyTo(keysToWrite);
             }
 
-            var failedKeys = new List<string>();
+            var failedKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var key in keysToWrite)
             {
                 string val;
@@ -606,9 +631,9 @@ namespace Nexus.Core.Services
             {
                 foreach (var key in keysToWrite)
                 {
-                    if (failedKeys.Contains(key))
-                        continue;
-                    _dirtyKeys.Remove(key);
+                    // Failed keys stay dirty so the next Save() retries them (no silent loss).
+                    if (!failedKeys.Contains(key))
+                        _dirtyKeys.Remove(key);
                 }
             }
         }

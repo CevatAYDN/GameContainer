@@ -27,12 +27,21 @@ namespace Nexus.Core.Services
         private float _lastSaveTime = -999f;
         private bool _pendingSave;
 
+        // M1: consecutive-failure accounting. A failing save must back off (the throttle
+        // window gates the next retry) instead of retrying on every request in a tight
+        // loop, and must give up after a bound so a permanently broken disk cannot keep
+        // the pending flag alive forever.
+        private int _consecutiveFailures;
+        private const int MaxConsecutiveSaveFailures = 5;
+
         public SaveThrottler()
         {
             _throttleSeconds = 2f;
         }
 
-        public SaveThrottler(IPlayerPrefsService prefs, ITickService tickService, TimeSpan throttleTime)
+        // M8: the IPlayerPrefsService parameter was never used — a dead parameter that
+        // implied a dependency this throttler does not have. Removed.
+        public SaveThrottler(ITickService tickService, TimeSpan throttleTime)
         {
             TickService = tickService;
             _throttleSeconds = (float)throttleTime.TotalSeconds;
@@ -105,10 +114,20 @@ namespace Nexus.Core.Services
                 _lastSaveAction.Invoke();
                 _lastSaveTime = TimeProvider?.Now ?? Time.realtimeSinceStartup;
                 _pendingSave = false;
+                _consecutiveFailures = 0;
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[SaveThrottler] Save execution failed: {ex.Message}");
+                // M1: back off after a failed save. Treating the failed attempt as a save
+                // moment makes the throttle window gate the next retry (no tight loop), and
+                // the retry cap clears the pending flag after repeated failures so a broken
+                // disk cannot keep retrying forever. The failure is always logged — never
+                // silent.
+                _consecutiveFailures++;
+                _lastSaveTime = TimeProvider?.Now ?? Time.realtimeSinceStartup;
+                _pendingSave = _consecutiveFailures < MaxConsecutiveSaveFailures;
+                NexusRuntime.Logger?.LogWarning(
+                    $"[SaveThrottler] Save execution failed ({_consecutiveFailures}/{MaxConsecutiveSaveFailures} consecutive): {ex.Message}");
             }
         }
     }

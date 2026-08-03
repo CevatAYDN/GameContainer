@@ -579,7 +579,22 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
                     NexusTrace.EndEvent(traceId, TraceStatus.Failed);
 #endif
-                    var action = _recovery.HandleErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
+                    RecoveryAction action;
+                    try
+                    {
+                        action = _recovery.HandleErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
+                    }
+                    catch
+                    {
+                        // M2 fix: HandleErrorWithDecision can THROW (strategy Abort, retry-limit
+                        // reached, or ExceptionDispatchInfo rethrow of OCE/Reentrancy). When it
+                        // does, shouldRun stays true and the finally below would skip the
+                        // ReturnCommand, leaking the pooled command and leaving the pool entry
+                        // stuck. Mark the loop as exiting so the command is returned to the
+                        // pool before the recovery exception propagates to the caller.
+                        shouldRun = false;
+                        throw;
+                    }
                     if (action == RecoveryAction.Retry)
                     {
                         retryCount++;
@@ -595,6 +610,9 @@ namespace Nexus.Core
                     {
                         Interlocked.Decrement(ref _inFlightAsyncCommands);
                     }
+                    // M2 fix: return the pooled command on EVERY exit path — success,
+                    // skip/abort action, AND recovery rethrow (shouldRun set false in the
+                    // catch above). Only the Retry loop iteration keeps it rented.
                     if (command != null && !shouldRun)
                     {
                         _poolManager.ReturnCommand(trigger.CommandType, command);

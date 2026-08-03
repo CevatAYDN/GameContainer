@@ -95,7 +95,7 @@ namespace Nexus.Core
 
             s_events.Enqueue(evt);
             IncrementSignalCount(signalName);
-            OnNetworkEvent?.Invoke(evt);
+            RaiseNetworkEvent(evt);
 
             PruneOldEvents();
         }
@@ -117,7 +117,7 @@ namespace Nexus.Core
 
             s_events.Enqueue(evt);
             RecordLatency(signalName, latencyMs);
-            OnNetworkEvent?.Invoke(evt);
+            RaiseNetworkEvent(evt);
 
             // Update status with latest latency under the lock; invoke the event with a
             // snapshot so subscribers never read a partially-updated status object.
@@ -128,7 +128,7 @@ namespace Nexus.Core
                 s_currentStatus.LastUpdate = DateTime.Now;
                 snapshot = SnapshotStatus();
             }
-            OnConnectionStatusChanged?.Invoke(snapshot);
+            RaiseStatusChanged(snapshot);
 
             PruneOldEvents();
         }
@@ -148,7 +148,7 @@ namespace Nexus.Core
             };
 
             s_events.Enqueue(evt);
-            OnNetworkEvent?.Invoke(evt);
+            RaiseNetworkEvent(evt);
 
             PruneOldEvents();
         }
@@ -169,7 +169,7 @@ namespace Nexus.Core
             };
 
             s_events.Enqueue(evt);
-            OnNetworkEvent?.Invoke(evt);
+            RaiseNetworkEvent(evt);
 
             PruneOldEvents();
         }
@@ -186,7 +186,7 @@ namespace Nexus.Core
                 s_currentStatus.LastUpdate = DateTime.Now;
                 snapshot = SnapshotStatus();
             }
-            OnConnectionStatusChanged?.Invoke(snapshot);
+            RaiseStatusChanged(snapshot);
         }
 
         /// <summary>
@@ -315,6 +315,40 @@ namespace Nexus.Core
         public static int GetFailedEventCount()
         {
             return s_events.Count(e => e.EventType == "Failed" || e.EventType == "Timeout");
+        }
+
+        // ── Safe event raising (M7) ────────────────────────────────────────────
+        // Subscribers are third-party code; a throwing subscriber must not propagate out of
+        // the record/update methods (which run on network/background threads inside signal
+        // paths) nor prevent other subscribers from receiving the event. Each subscriber
+        // runs in its own try/catch and failures are logged — never silent, never fatal.
+
+        private static void RaiseNetworkEvent(NetworkEvent evt)
+        {
+            var handler = OnNetworkEvent;
+            if (handler == null) return;
+            foreach (Action<NetworkEvent> subscriber in handler.GetInvocationList())
+            {
+                try { subscriber(evt); }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[Nexus] OnNetworkEvent subscriber threw: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+        }
+
+        private static void RaiseStatusChanged(ConnectionStatus status)
+        {
+            var handler = OnConnectionStatusChanged;
+            if (handler == null) return;
+            foreach (Action<ConnectionStatus> subscriber in handler.GetInvocationList())
+            {
+                try { subscriber(status); }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[Nexus] OnConnectionStatusChanged subscriber threw: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
         }
     }
 }

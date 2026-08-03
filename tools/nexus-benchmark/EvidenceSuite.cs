@@ -114,7 +114,7 @@ namespace NexusBench
         {
             var prefs = new TestPlayerPrefsService();
             var tickService = new MockTickService();
-            var throttler = new SaveThrottler(prefs, tickService, TimeSpan.FromMilliseconds(1));
+            var throttler = new SaveThrottler(tickService, TimeSpan.FromMilliseconds(1));
             try
             {
                 throttler.TryRequestSave(() => prefs.Save());

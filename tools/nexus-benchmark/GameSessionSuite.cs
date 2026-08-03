@@ -374,7 +374,7 @@ namespace NexusBench
             string detail;
             try
             {
-                var throttler = new SaveThrottler(prefs, null, TimeSpan.FromSeconds(2));
+                var throttler = new SaveThrottler(null, TimeSpan.FromSeconds(2));
                 var time = new FakeSessionTimeProvider { Now = 0f };
                 throttler.TimeProvider = time;
 

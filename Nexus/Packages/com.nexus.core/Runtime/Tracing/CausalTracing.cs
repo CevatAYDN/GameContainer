@@ -225,7 +225,14 @@ namespace Nexus.Core
             {
                 for (int i = 0; i < s_sinks.Count; i++)
                 {
-                    s_sinks[i].Write(traceEvent);
+                    // M7 fix: a throwing sink must not break the trace path (which runs
+                    // inside signal dispatch). Each sink is isolated and failures are
+                    // logged — never silently swallowed, never propagated.
+                    try { s_sinks[i].Write(traceEvent); }
+                    catch (Exception ex)
+                    {
+                        UnityEngine.Debug.LogError($"[NexusTrace] Sink '{s_sinks[i].GetType().Name}' threw: {ex.Message}");
+                    }
                 }
             }
 

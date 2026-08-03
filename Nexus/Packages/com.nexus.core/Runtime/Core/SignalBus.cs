@@ -713,16 +713,30 @@ namespace Nexus.Core
         }
 
         // P0-CR fix: thread-static pooled list for composite trigger dispatch — eliminates
-        // per-Fire() heap allocation when composite triggers complete.
+        // per-Fire() heap allocation when composite triggers complete. Re-entrancy-safe:
+        // a composite command that fires another signal completing another trigger on the
+        // SAME thread must not clobber the outer call's pending buffer (C-1 fix), so the
+        // nested call uses a fresh local list keyed off s_compositeDepth instead.
         [ThreadStatic] private static List<(CompositeTriggerState trigger, CompositeContext context)> s_dueTriggerBuffer;
+        [ThreadStatic] private static int s_compositeDepth;
 
         private void ProcessCompositeTriggers<T>(T signal) where T : struct
         {
             // P1-14 fix: collect due triggers under the registry's composite lock (snapshot copy),
             // then execute them OUTSIDE any lock so user command code never runs while holding one.
             var signalType = typeof(T);
-            s_dueTriggerBuffer ??= new List<(CompositeTriggerState, CompositeContext)>();
-            s_dueTriggerBuffer.Clear();
+
+            // C-1 fix: when already processing composites on this thread (a composite command
+            // fired another signal that completed another trigger), the shared ThreadStatic
+            // buffer is the OUTER frame's list. The nested call must not Clear() it (that would
+            // lose the outer pending triggers) nor append into it (that would double-execute
+            // the nested entries from the outer loop). Use a per-frame local list instead.
+            bool isNested = s_compositeDepth > 0;
+            var buffer = isNested
+                ? new List<(CompositeTriggerState trigger, CompositeContext context)>()
+                : (s_dueTriggerBuffer ??= new List<(CompositeTriggerState trigger, CompositeContext context)>());
+            if (!isNested) buffer.Clear();
+
             // Composite payload support: box the signal at most once, and only when it actually
             // feeds a registered composite trigger. Non-composite signals never allocate here.
             object boxedSignal = null;
@@ -748,7 +762,7 @@ namespace Nexus.Core
                             // Snapshot payloads INSIDE the lock so a concurrent fire that resets a
                             // repeatable trigger cannot corrupt the context handed to the command.
                             var context = new CompositeContext(trigger.RequiredSignals, trigger.SnapshotPayloads());
-                            s_dueTriggerBuffer.Add((trigger, context));
+                            buffer.Add((trigger, context));
 
                             if (trigger.OneShot)
                             {
@@ -764,9 +778,18 @@ namespace Nexus.Core
                 }
             }
 
-            for (int i = 0; i < s_dueTriggerBuffer.Count; i++)
+            if (buffer.Count == 0) return;
+            s_compositeDepth++;
+            try
             {
-                _commandExecutor.ExecuteComposite(s_dueTriggerBuffer[i].trigger, s_dueTriggerBuffer[i].context);
+                for (int i = 0; i < buffer.Count; i++)
+                {
+                    _commandExecutor.ExecuteComposite(buffer[i].trigger, buffer[i].context);
+                }
+            }
+            finally
+            {
+                s_compositeDepth--;
             }
         }
 
@@ -781,24 +804,37 @@ namespace Nexus.Core
                 // BUG-5 fix: use OrdinalIgnoreCase to match NexusRuntime.GetContext()
                 // behaviour. The previous == comparison was case-sensitive, so a ScopeTag
                 // mismatch like "Gameplay" vs "gameplay" would silently skip the target.
-                if (!string.IsNullOrEmpty(scopeTag))
+                if (!string.IsNullOrEmpty(scopeTag) &&
+                    !string.Equals(targetCtx.ScopeTag, scopeTag, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (string.Equals(targetCtx.ScopeTag, scopeTag, StringComparison.OrdinalIgnoreCase) &&
-                        targetCtx.SignalBus is SignalBus concreteBus)
+                    continue;
+                }
+
+                if (targetCtx.SignalBus is SignalBus concreteBus)
+                {
+                    // T7 fix: the TARGET bus may have async handlers/subscriptions for this
+                    // signal. The sync FireCrossContext would throw
+                    // NexusSyncAsyncMismatchException and break the broadcasting dispatch.
+                    // Route through the async fire-and-forget path (with error capture) when
+                    // the target has async handlers, mirroring FireFailedSignalSafe.
+                    // NOTE: the async lambda lives in a separate [NoInlining] method
+                    // (RunCrossContextAsyncDispatch) so the lambda's closure/string cannot
+                    // disturb JIT tiering on this hot path — the ZeroGC cross-context test
+                    // measures exactly 0 bytes with this shape.
+                    bool targetHasAsync = concreteBus._commandRegistry.HasAsyncCommandHandlers(typeof(T))
+                        || concreteBus._subscriptionRegistry.HasAsyncSubscriptions(typeof(T));
+                    if (targetHasAsync)
+                    {
+                        concreteBus.RunCrossContextAsyncDispatch(signal);
+                    }
+                    else
                     {
                         concreteBus.FireCrossContext(signal);
                     }
                 }
-                else
+                else if (string.IsNullOrEmpty(scopeTag))
                 {
-                    if (targetCtx.SignalBus is SignalBus concreteBus)
-                    {
-                        concreteBus.FireCrossContext(signal);
-                    }
-                    else
-                    {
-                        NexusRuntime.Logger?.LogWarning($"[Nexus] Cross-context broadcast failed: target context '{targetCtx.GetType().Name}' does not use a SignalBus-backed ISignalBus. Broadcast skipped.");
-                    }
+                    NexusRuntime.Logger?.LogWarning($"[Nexus] Cross-context broadcast failed: target context '{targetCtx.GetType().Name}' does not use a SignalBus-backed ISignalBus. Broadcast skipped.");
                 }
             }
         }
@@ -819,6 +855,20 @@ namespace Nexus.Core
         {
             SafeAsyncRunner.Run(() => FireInternalAsync(signal, isCrossContextSource: false),
                 $"Queued async dispatch failed for signal '{typeof(T).FullName}'");
+        }
+
+        /// <summary>
+        /// T7: fire-and-forget async dispatch used by <see cref="BroadcastCrossContext"/> when
+        /// the TARGET bus has async handlers/subscriptions for the broadcast signal. Kept in a
+        /// separate [NoInlining] method so the lambda closure and interpolated error string live
+        /// off the cross-context hot path (which must stay allocation-free — the ZeroGC harness
+        /// test measures 0 bytes per broadcast).
+        /// </summary>
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void RunCrossContextAsyncDispatch<T>(T signal) where T : struct
+        {
+            SafeAsyncRunner.Run(() => FireInternalAsync(signal, isCrossContextSource: true),
+                $"Cross-context async dispatch failed for signal '{typeof(T).FullName}'");
         }
 
         /// <summary>

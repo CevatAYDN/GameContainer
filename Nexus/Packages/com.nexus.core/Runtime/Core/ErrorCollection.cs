@@ -141,8 +141,13 @@ namespace Nexus.Core
                 }
             }
 
-            OnErrorAdded?.Invoke(entry);
-            OnErrorCountChanged?.Invoke(s_errors.Count, s_maxErrors);
+            // T5 fix: a throwing event subscriber must never break error collection itself
+            // (an exception here would propagate into signal dispatch / recovery handling,
+            // masking the original error). Raise each subscriber individually so one bad
+            // handler cannot prevent the others from running, and log — never swallow
+            // silently.
+            RaiseErrorAdded(entry);
+            RaiseErrorCountChanged(s_errors.Count, s_maxErrors);
 
             // Log to Unity console for backward compatibility (unless disabled)
             if (logToConsole)
@@ -234,7 +239,7 @@ namespace Nexus.Core
                 while (s_errors.TryDequeue(out _)) { }
                 s_errorGrouping.Clear();
             }
-            OnErrorCountChanged?.Invoke(0, s_maxErrors);
+            RaiseErrorCountChanged(0, s_maxErrors);
         }
 
 #if UNITY_EDITOR
@@ -309,6 +314,40 @@ namespace Nexus.Core
                            .OrderByDescending(e => e.Count)
                            .Take(limit)
                            .ToArray();
+        }
+
+        // ── Safe event raising (T5) ────────────────────────────────────────
+        // Event subscribers are third-party code; a throwing subscriber must not propagate
+        // out of Collect()/Clear() (which run inside error/recovery/signal paths) nor prevent
+        // other subscribers from receiving the event. Each subscriber runs in its own
+        // try/catch and failures are logged to the Unity console.
+
+        private static void RaiseErrorAdded(ErrorEntry entry)
+        {
+            var handler = OnErrorAdded;
+            if (handler == null) return;
+            foreach (Action<ErrorEntry> subscriber in handler.GetInvocationList())
+            {
+                try { subscriber(entry); }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[Nexus] OnErrorAdded subscriber threw: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+        }
+
+        private static void RaiseErrorCountChanged(int current, int max)
+        {
+            var handler = OnErrorCountChanged;
+            if (handler == null) return;
+            foreach (Action<int, int> subscriber in handler.GetInvocationList())
+            {
+                try { subscriber(current, max); }
+                catch (Exception ex)
+                {
+                    Debug.LogError($"[Nexus] OnErrorCountChanged subscriber threw: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
         }
     }
 }

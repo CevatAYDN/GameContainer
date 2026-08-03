@@ -466,6 +466,7 @@ namespace NexusBench
             Run("ErrorCollection_Concurrent_StressTest", ErrorCollection_Concurrent_StressTest);
 
             _failures += RecoveryRegression.Run();
+            _failures += AuditFixRegression.Run();
             _failures += FullArchitectureStressSuite.Run();
             _failures += FuzzSuite.Run();
             _failures += CrossThreadSuite.Run();

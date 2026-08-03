@@ -59,7 +59,7 @@ namespace Nexus.Tests
             var prefs = new TestPlayerPrefsService();
             var tickService = new TestTickService();
             var timeProvider = new TestTimeProvider();
-            var throttler = new SaveThrottler(prefs, tickService, TimeSpan.FromMilliseconds(1))
+            var throttler = new SaveThrottler(tickService, TimeSpan.FromMilliseconds(1))
             {
                 TimeProvider = timeProvider
             };

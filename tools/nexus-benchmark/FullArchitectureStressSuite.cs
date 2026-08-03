@@ -2365,7 +2365,7 @@ namespace NexusBench
             try
             {
                 var timeProvider = new FakeTimeProvider { Now = 0f };
-                var throttler = new SaveThrottler(null, null, TimeSpan.FromSeconds(2));
+                var throttler = new SaveThrottler(null, TimeSpan.FromSeconds(2));
                 throttler.TimeProvider = timeProvider;
 
                 int saves = 0;

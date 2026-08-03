@@ -253,7 +253,13 @@ namespace Nexus.Netcode
         
         if (tick == _currentTick && !_isResimulating)
         {
-            _localSignalBus.Fire(signal);
+            // T4 fix: route through FireQueued exactly like Fire() so a signal with async
+            // handlers/subscriptions on the local bus never throws
+            // NexusSyncAsyncMismatchException (which would abort the caller's tick loop).
+            if (_localSignalBus is SignalBus concreteBus)
+                concreteBus.FireQueued(signal);
+            else
+                _localSignalBus.Fire(signal);
         }
     }
 

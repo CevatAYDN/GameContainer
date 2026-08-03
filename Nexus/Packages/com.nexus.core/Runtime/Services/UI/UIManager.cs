@@ -93,6 +93,11 @@ namespace Nexus.Core.Services
         private readonly Dictionary<string, GameObject> _registeredPrefabs = new();
         private readonly Dictionary<string, Stack<ScreenView>> _pools = new();
         private readonly List<string> _history = new();
+
+        // M3: per-screen cap on pooled (closed-but-retained) instances. Prevents a
+        // screen toggled open/closed thousands of times from retaining one deactivated
+        // instance per toggle.
+        private const int MaxPooledPerScreenKey = 16;
         // Keys mid-open (awaiting instantiation) so concurrent opens of the same screen
         // cannot double-instantiate. Guarded by _lock.
         private readonly HashSet<string> _pendingOpens = new();
@@ -359,6 +364,7 @@ namespace Nexus.Core.Services
             if (!_disposed)
             {
                 screen.gameObject.SetActive(false);
+                bool pooled = false;
                 lock (_lock)
                 {
                     if (!_pools.TryGetValue(key, out var pool))
@@ -366,7 +372,16 @@ namespace Nexus.Core.Services
                         pool = new Stack<ScreenView>();
                         _pools[key] = pool;
                     }
-                    pool.Push(screen);
+                    // M3: bound pool growth — overflow instances are destroyed, not retained.
+                    if (pool.Count < MaxPooledPerScreenKey)
+                    {
+                        pool.Push(screen);
+                        pooled = true;
+                    }
+                }
+                if (!pooled)
+                {
+                    SafeDestroy(screen.gameObject);
                 }
             }
             else

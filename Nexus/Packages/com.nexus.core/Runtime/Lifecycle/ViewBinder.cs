@@ -183,7 +183,25 @@ namespace Nexus.Core
             _activeMediatorSet.Add(mediator);
             
             // Mediator attaches after the view is already bound to the context.
-            mediator.Bind(view, _context.SignalBus);
+            // Exception safety: a throwing Bind (bad view cast, OnBind failure) must not
+            // leave a half-attached mediator tracked in the active maps — the old code
+            // propagated the exception and the mediator stayed registered, so a later
+            // UnregisterView/dispose would double-unbind a never-bound mediator.
+            try
+            {
+                mediator.Bind(view, _context.SignalBus);
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogException(ex);
+                _activeMediators.Remove(view);
+                _activeMediatorSet.Remove(mediator);
+                ReturnMediator(mediator);
+                NexusRuntime.Logger?.LogError(
+                    $"[Nexus] RegisterView failed for '{view.GetType().Name}': mediator {mediatorType?.Name} could not bind. " +
+                    $"{ex.Message}");
+                return;
+            }
         }
 
         /// <summary>Unregisters a view, unbinds its mediator, and returns the mediator to the pool.</summary>

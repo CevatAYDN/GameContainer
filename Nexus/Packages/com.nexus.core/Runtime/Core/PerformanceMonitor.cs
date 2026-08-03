@@ -31,8 +31,12 @@ namespace Nexus.Core
         private static readonly Dictionary<string, float> s_currentValues = new();
         private static readonly object s_metricsLock = new();
         private static int s_maxHistorySize = 300; // 5 seconds at 60fps
-        private static bool s_enabled = true;
-        private static bool s_recording = false;
+        // Volatile: s_enabled/s_recording are toggled by StartRecording/StopRecording/Enabled
+        // (any thread) while RecordMetric and UpdateFrameMetrics read them on the hot path
+        // (game or monitoring thread). A plain bool could be cached in a register and never
+        // observe the toggle, silently continuing/stopping recording.
+        private static volatile bool s_enabled = true;
+        private static volatile bool s_recording = false;
 
         public static event Action<MetricSample> OnMetricRecorded;
         public static event Action OnRecordingStarted;
@@ -72,14 +76,18 @@ namespace Nexus.Core
         {
             if (s_recording) return;
             s_recording = true;
-            OnRecordingStarted?.Invoke();
+            // M7 fix: a throwing subscriber must not corrupt the recording state machine.
+            try { OnRecordingStarted?.Invoke(); }
+            catch (Exception ex) { Debug.LogError($"[Nexus] OnRecordingStarted subscriber threw: {ex.Message}"); }
         }
 
         public static void StopRecording()
         {
             if (!s_recording) return;
             s_recording = false;
-            OnRecordingStopped?.Invoke();
+            // M7 fix: a throwing subscriber must not corrupt the recording state machine.
+            try { OnRecordingStopped?.Invoke(); }
+            catch (Exception ex) { Debug.LogError($"[Nexus] OnRecordingStopped subscriber threw: {ex.Message}"); }
         }
 
         public static void RecordMetric(string name, float value, string unit = "", string category = "Custom")
@@ -119,7 +127,20 @@ namespace Nexus.Core
             while (s_samples.Count > MaxSampleQueueSize)
                 s_samples.TryDequeue(out _);
 
-            OnMetricRecorded?.Invoke(sample);
+            // M7 fix: a throwing subscriber must not break the metrics hot path (called from
+            // frame/memory/GC metric updates) nor the recording loop, AND must not prevent
+            // the OTHER subscribers from receiving the event (a multicast delegate stops at
+            // the first throw, so each subscriber runs in its own try/catch). Failures are
+            // logged — never silent, never propagated.
+            var handler = OnMetricRecorded;
+            if (handler != null)
+            {
+                foreach (Action<MetricSample> subscriber in handler.GetInvocationList())
+                {
+                    try { subscriber(sample); }
+                    catch (Exception ex) { Debug.LogError($"[Nexus] OnMetricRecorded subscriber threw: {ex.Message}"); }
+                }
+            }
         }
 
         public static float GetMetric(string name)

@@ -98,10 +98,23 @@ namespace Nexus.Core
         /// </summary>
         public static IReadOnlyList<IContext> GetContexts(string scopeTag)
         {
+            // M5 fix: no longer re-enters the ActiveContexts property getter (which takes
+            // s_lock again). Monitor locks are reentrant on the same thread so this was not
+            // a deadlock, but a nested acquisition inside an already-held lock is fragile:
+            // if the cache-invalidation logic ever moves off-lock or the getter is changed
+            // to a different lock, this silently becomes a deadlock or a stale read. Inline
+            // the (dirty → rebuild) path under the single acquisition instead.
             lock (s_lock)
             {
                 if (string.IsNullOrEmpty(scopeTag))
-                    return ActiveContexts;
+                {
+                    if (s_activeContextsCacheDirty)
+                    {
+                        s_activeContextsReadOnlyCache = new List<IContext>(s_activeContexts);
+                        s_activeContextsCacheDirty = false;
+                    }
+                    return s_activeContextsReadOnlyCache;
+                }
 
                 var matches = new List<IContext>();
                 for (int i = 0; i < s_activeContexts.Count; i++)

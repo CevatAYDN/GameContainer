@@ -32,6 +32,11 @@ namespace Nexus.Core.Services
     [Preserve]
     public class ObjectPoolService : NexusService<IObjectPoolService>, IObjectPoolService
     {
+        // M3: hard cap on how many inactive instances a single prefab pool may retain.
+        // Guards against unbounded memory growth under high allocation bursts (e.g. a
+        // projectile barrage despawning thousands of objects that are never re-spawned).
+        private const int MaxInactivePerPool = 128;
+
         private class PoolData
         {
             public GameObject Prefab { get; }
@@ -144,7 +149,17 @@ namespace Nexus.Core.Services
 
             instance.SetActive(false);
             instance.transform.SetParent(pool.RootTransform, false);
-            pool.Inactive.Push(instance);
+            // M3: bound inactive retention per pool so a burst of Despawn calls cannot
+            // grow the pool without limit. Overflow instances are destroyed — memory is
+            // reclaimed instead of retained forever.
+            if (pool.Inactive.Count < MaxInactivePerPool)
+            {
+                pool.Inactive.Push(instance);
+            }
+            else
+            {
+                SafeDestroyUtility.SafeDestroy(instance);
+            }
             _poolsByInstanceId.Remove(instanceId);
             _spawnGenerations.Remove(instanceId);
         }

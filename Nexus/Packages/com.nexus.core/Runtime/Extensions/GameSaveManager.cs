@@ -74,6 +74,13 @@ namespace Nexus.Core.Extensions
         private ISaveDataProvider _model;
         private readonly SynchronizationContext _mainThreadContext = SynchronizationContext.Current;
 
+        // M6 fix: serializes the atomic-write critical section. Two concurrent SaveAsync
+        // calls for the SAME slot both stage to the shared "slot.sav.tmp" path and both
+        // rename it — interleaved File.WriteAllText/File.Replace pairs produce a torn
+        // save that fails to deserialize on load. A per-instance lock makes the
+        // stage+rename sequence atomic across concurrent savers.
+        private readonly object _saveLock = new();
+
         /// <summary>Registers the model that provides save data.</summary>
         public void RegisterModel(ISaveDataProvider model)
         {
@@ -111,18 +118,22 @@ namespace Nexus.Core.Extensions
             {
                 ct.ThrowIfCancellationRequested();
                 string json = JsonUtility.ToJson(data);
-                File.WriteAllText(tempPath, json);
-                // A8 fix: single overwrite-rename, never Delete-then-Move. The old
-                // Delete + Move pair left a crash window where the only good save was
-                // already deleted but the new one not yet in place (the exact
-                // data-loss pattern EncryptedStorageService documents and avoids).
-                if (File.Exists(path))
+                lock (_saveLock)
                 {
-                    File.Replace(tempPath, path, null);
-                }
-                else
-                {
-                    File.Move(tempPath, path);
+                    // M6 fix: stage + rename must be one critical section (see _saveLock).
+                    File.WriteAllText(tempPath, json);
+                    // A8 fix: single overwrite-rename, never Delete-then-Move. The old
+                    // Delete + Move pair left a crash window where the only good save was
+                    // already deleted but the new one not yet in place (the exact
+                    // data-loss pattern EncryptedStorageService documents and avoids).
+                    if (File.Exists(path))
+                    {
+                        File.Replace(tempPath, path, null);
+                    }
+                    else
+                    {
+                        File.Move(tempPath, path);
+                    }
                 }
             }, ct);
         }

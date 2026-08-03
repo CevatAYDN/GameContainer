@@ -27,7 +27,10 @@ namespace Nexus.Core
         // N1: handler list, zero-GC snapshot cache, dirty flag and handler lock now
         // live once in the shared SecureObserverSet<T> core instead of being copied here.
         private readonly SecureObserverSet<T> _observers = new();
-        private bool _isNotifying; // P2-3 fix: reentrancy guard
+        // M4: volatile for cross-thread visibility parity with ObservableList<T> — the
+        // guard is read on the notifying thread and observed from any thread performing a
+        // reentrant write, so a plain bool could allow a stale read and a dropped event.
+        private volatile bool _isNotifying; // P2-3 fix: reentrancy guard
         private bool _hasPendingReentrantValue;
         private T _pendingReentrantValue;
 
@@ -132,6 +135,31 @@ namespace Nexus.Core
         private readonly object _eventLock = new();
         private volatile bool _isNotifying;
 
+        // M4: structural changes that arrived while a notification dispatch was in progress
+        // (reentrant Add/Remove/Clear, same or other thread). Previously such nested
+        // mutations silently SKIPPED their callbacks — handlers were never told the list
+        // changed, so views could keep stale data while the backing list moved on. Changes
+        // are now queued under _eventLock and dispatched once the outer notification loop
+        // finishes (DrainPendingChanges), so every structural change is observed exactly
+        // once. The queue only grows while a dispatch is active and is drained in the same
+        // call stack, so steady state stays zero-alloc.
+        private readonly List<PendingChange> _pendingChanges = new();
+
+        private enum PendingChangeOp : byte { Add = 0, Remove = 1, Clear = 2 }
+
+        private readonly struct PendingChange
+        {
+            public readonly PendingChangeOp Op;
+            public readonly int Index;
+            public readonly T Item;
+            public PendingChange(PendingChangeOp op, int index, T item)
+            {
+                Op = op;
+                Index = index;
+                Item = item;
+            }
+        }
+
         // ── Access ─────────────────────────────────────────────
         public int Count { get { lock (_eventLock) return _items.Count; } }
         public T this[int index]
@@ -155,8 +183,14 @@ namespace Nexus.Core
             {
                 index = _items.Count;
                 _items.Add(item);
+                // M4: reentrant Add during an in-flight notification is QUEUED, not dropped.
+                if (_isNotifying)
+                {
+                    _pendingChanges.Add(new PendingChange(PendingChangeOp.Add, index, item));
+                    return;
+                }
                 // Capture snapshot inside the lock so handler set cannot change mid-dispatch
-                addedSnapshot = _isNotifying ? null : _onAdded.GetSnapshot();
+                addedSnapshot = _onAdded.GetSnapshot();
                 if (addedSnapshot != null) _isNotifying = true;
             }
 
@@ -171,6 +205,7 @@ namespace Nexus.Core
                 {
                     lock (_eventLock) _isNotifying = false;
                 }
+                DrainPendingChanges();
             }
         }
 
@@ -183,7 +218,13 @@ namespace Nexus.Core
                 index = _items.IndexOf(item);
                 if (index < 0) return false;
                 _items.RemoveAt(index);
-                removedSnapshot = _isNotifying ? null : _onRemoved.GetSnapshot();
+                // M4: reentrant Remove during an in-flight notification is QUEUED, not dropped.
+                if (_isNotifying)
+                {
+                    _pendingChanges.Add(new PendingChange(PendingChangeOp.Remove, index, item));
+                    return true;
+                }
+                removedSnapshot = _onRemoved.GetSnapshot();
                 if (removedSnapshot != null) _isNotifying = true;
             }
 
@@ -198,6 +239,7 @@ namespace Nexus.Core
                 {
                     lock (_eventLock) _isNotifying = false;
                 }
+                DrainPendingChanges();
             }
             return true;
         }
@@ -210,7 +252,13 @@ namespace Nexus.Core
             {
                 item = _items[index];
                 _items.RemoveAt(index);
-                removedSnapshot = _isNotifying ? null : _onRemoved.GetSnapshot();
+                // M4: reentrant RemoveAt during an in-flight notification is QUEUED, not dropped.
+                if (_isNotifying)
+                {
+                    _pendingChanges.Add(new PendingChange(PendingChangeOp.Remove, index, item));
+                    return;
+                }
+                removedSnapshot = _onRemoved.GetSnapshot();
                 if (removedSnapshot != null) _isNotifying = true;
             }
 
@@ -225,6 +273,7 @@ namespace Nexus.Core
                 {
                     lock (_eventLock) _isNotifying = false;
                 }
+                DrainPendingChanges();
             }
         }
 
@@ -234,7 +283,13 @@ namespace Nexus.Core
             lock (_eventLock)
             {
                 _items.Clear();
-                clearedSnapshot = _isNotifying ? null : _onCleared.GetSnapshot();
+                // M4: reentrant Clear during an in-flight notification is QUEUED, not dropped.
+                if (_isNotifying)
+                {
+                    _pendingChanges.Add(new PendingChange(PendingChangeOp.Clear, -1, default));
+                    return;
+                }
+                clearedSnapshot = _onCleared.GetSnapshot();
                 if (clearedSnapshot != null) _isNotifying = true;
             }
 
@@ -249,6 +304,105 @@ namespace Nexus.Core
                 {
                     lock (_eventLock) _isNotifying = false;
                 }
+                DrainPendingChanges();
+            }
+        }
+
+        // ── M4: reentrant-notification drain ───────────────────
+        /// <summary>
+        /// Dispatches structural changes that arrived while an earlier notification was
+        /// in flight. Runs after the outer dispatch unwinds; drains to empty so changes
+        /// queued DURING this drain (deeper reentrancy) are also delivered. Each queued
+        /// change is dispatched with the same snapshot-under-lock discipline as the
+        /// primary mutations, so handler sets cannot change mid-dispatch.
+        /// </summary>
+        private void DrainPendingChanges()
+        {
+            while (true)
+            {
+                PendingChange[] pending;
+                lock (_eventLock)
+                {
+                    if (_pendingChanges.Count == 0) return;
+                    pending = _pendingChanges.ToArray();
+                    _pendingChanges.Clear();
+                }
+
+                for (int i = 0; i < pending.Length; i++)
+                {
+                    switch (pending[i].Op)
+                    {
+                        case PendingChangeOp.Add:
+                            DispatchPendingAdded(pending[i].Index, pending[i].Item);
+                            break;
+                        case PendingChangeOp.Remove:
+                            DispatchPendingRemoved(pending[i].Index, pending[i].Item);
+                            break;
+                        case PendingChangeOp.Clear:
+                            DispatchPendingCleared();
+                            break;
+                    }
+                }
+            }
+        }
+
+        private void DispatchPendingAdded(int index, T item)
+        {
+            Action<int, T>[] snapshot;
+            lock (_eventLock)
+            {
+                snapshot = _onAdded.GetSnapshot();
+                if (snapshot == null || snapshot.Length == 0) return;
+                _isNotifying = true;
+            }
+            try
+            {
+                for (int i = 0; i < snapshot.Length; i++)
+                    snapshot[i]?.Invoke(index, item);
+            }
+            finally
+            {
+                lock (_eventLock) _isNotifying = false;
+            }
+        }
+
+        private void DispatchPendingRemoved(int index, T item)
+        {
+            Action<int, T>[] snapshot;
+            lock (_eventLock)
+            {
+                snapshot = _onRemoved.GetSnapshot();
+                if (snapshot == null || snapshot.Length == 0) return;
+                _isNotifying = true;
+            }
+            try
+            {
+                for (int i = 0; i < snapshot.Length; i++)
+                    snapshot[i]?.Invoke(index, item);
+            }
+            finally
+            {
+                lock (_eventLock) _isNotifying = false;
+            }
+        }
+
+        private void DispatchPendingCleared()
+        {
+            Action[] snapshot;
+            lock (_eventLock)
+            {
+                snapshot = _onCleared.GetSnapshot();
+                if (snapshot == null || snapshot.Length == 0) return;
+                _isNotifying = true;
+            }
+            try
+            {
+                for (int i = 0; i < snapshot.Length; i++)
+                    snapshot[i]?.Invoke();
+            }
+            finally
+            {
+                lock (_eventLock) _isNotifying = false;
             }
         }
 

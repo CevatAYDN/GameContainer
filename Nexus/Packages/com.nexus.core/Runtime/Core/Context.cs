@@ -591,9 +591,9 @@ namespace Nexus.Core
             // that can await must use DisposeAsync() for deterministic async teardown.
             Container.Dispose();
             _cts.Dispose();
-
-            // Unregister from the runtime registry so stale context references cannot leak.
-            NexusRuntime.UnregisterContext(this);
+            // M5 fix: UnregisterContext is owned by DisposeShared (exactly once, after the
+            // signal bus and pools are torn down) — the old trailing call here was a
+            // redundant second unregister that could double-fire the unregister event path.
         }
 
         /// <summary>
@@ -612,9 +612,9 @@ namespace Nexus.Core
 
             await Container.DisposeAsync();
             _cts.Dispose();
-
-            // Unregister from the runtime registry so stale context references cannot leak.
-            NexusRuntime.UnregisterContext(this);
+            // M5 fix: UnregisterContext is owned by DisposeShared (exactly once, after the
+            // signal bus and pools are torn down) — the old trailing call here was a
+            // redundant second unregister that could double-fire the unregister event path.
         }
 
         /// <summary>Shared teardown for <see cref="Dispose"/> and <see cref="DisposeAsync"/>.</summary>
@@ -692,10 +692,16 @@ namespace Nexus.Core
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
-            NexusRuntime.UnregisterContext(this);
             SignalBusInternal.Dispose();
             HybridQueue.Clear();
             PoolManager.Clear();
+
+            // M5 fix: unregister EXACTLY ONCE, and LAST — after the signal bus, hybrid
+            // queue, and pool manager are fully torn down. OnContextUnregistered
+            // subscribers then observe a fully-disposed context instead of one whose bus
+            // is still alive (the old order unregistered mid-teardown and the entry points
+            // unregistered a second time).
+            NexusRuntime.UnregisterContext(this);
         }
 
         public static void ClearAssemblyScanCache()

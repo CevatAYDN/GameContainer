@@ -173,10 +173,17 @@ namespace Nexus.Core.Services
                 var pendingWait = System.Diagnostics.Stopwatch.StartNew();
                 while (_pendingOpenWindows.Contains(windowName))
                 {
+                    // T2 fix: capture the completion signal UNDER the lock. SignalPendingChanged()
+                    // only ever runs while holding _windowLock, so reading _pendingChanged here
+                    // cannot race a concurrent completion. Previously the TCS was read AFTER
+                    // releasing the lock — a completion that landed between the release and the
+                    // read had already swapped _pendingChanged, so this waiter grabbed the NEW
+                    // (unsignaled) TCS and slept the full 30 s timeout even though the window
+                    // was already open (a spurious "timed out" error for a completed open).
+                    var signal = _pendingChanged.Task;
                     _windowLock.Release();
                     lockHeld = false;
 
-                    var signal = _pendingChanged.Task;
                     int remainingMs = maxPendingWaitMs - (int)pendingWait.ElapsedMilliseconds;
                     if (remainingMs <= 0)
                     {
