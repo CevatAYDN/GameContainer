@@ -63,6 +63,8 @@ namespace Nexus.Core.Services
         private Transform _masterPoolRoot;
         private GameObject _masterRootObject;
 
+        private readonly List<IPoolable> _poolableBuffer = new(8);
+
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
             _masterRootObject = new GameObject("[Nexus_ObjectPool]");
@@ -117,11 +119,13 @@ namespace Nexus.Core.Services
             _poolsByInstanceId[spawnedId] = pool;
             _spawnGenerations[spawnedId] = ++_generationCounter;
 
-            var poolables = instance.GetComponents<IPoolable>();
-            for (int i = 0; i < poolables.Length; i++)
+            _poolableBuffer.Clear();
+            instance.GetComponents(_poolableBuffer);
+            for (int i = 0; i < _poolableBuffer.Count; i++)
             {
-                poolables[i].OnSpawned();
+                _poolableBuffer[i].OnSpawned();
             }
+            _poolableBuffer.Clear();
 
             return instance;
         }
@@ -147,12 +151,14 @@ namespace Nexus.Core.Services
 
             if (!pool.Active.Remove(instance)) return;
 
-            var poolables = instance.GetComponents<IPoolable>();
-            for (int i = 0; i < poolables.Length; i++)
+            _poolableBuffer.Clear();
+            instance.GetComponents(_poolableBuffer);
+            for (int i = 0; i < _poolableBuffer.Count; i++)
             {
-                try { poolables[i].OnDespawned(); }
+                try { _poolableBuffer[i].OnDespawned(); }
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
+            _poolableBuffer.Clear();
 
             instance.SetActive(false);
             instance.transform.SetParent(pool.RootTransform, false);

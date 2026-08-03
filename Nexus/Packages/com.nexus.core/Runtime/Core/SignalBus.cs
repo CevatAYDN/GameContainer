@@ -24,7 +24,19 @@ namespace Nexus.Core
         {
             try
             {
-                await func();
+                ValueTask task;
+                try
+                {
+                    task = func();
+                }
+                catch (Exception ex)
+                {
+                    SignalBus.RaiseUnhandledException(ex, errorContext);
+                    NexusRuntime.Logger?.LogError($"[Nexus] {errorContext} (sync throw): {ex.Message}\n{ex.StackTrace}");
+                    return;
+                }
+
+                await task;
             }
             catch (Exception ex)
             {

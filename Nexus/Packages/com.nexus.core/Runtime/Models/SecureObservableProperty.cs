@@ -89,6 +89,13 @@ namespace Nexus.Core
                     if ((oldCompound ^ GuardConst) != _guard)
                     {
                         RaiseTamperDetected("SecureObservableInt.set");
+                        var (rk1, rk2) = SecureKeyGen.IntKeyPair();
+                        _cryptoKey1 = rk1;
+                        _cryptoKey2 = rk2;
+                        int resetCompound = rk1 ^ rk2;
+                        _obscuredValue = 0 ^ resetCompound;
+                        _guard = resetCompound ^ GuardConst;
+                        return;
                     }
                     old = _obscuredValue ^ oldCompound;
                     if (old == value) return;
@@ -194,7 +201,16 @@ namespace Nexus.Core
                 {
                     long oldCompound = _cryptoKey1 ^ _cryptoKey2;
                     if ((oldCompound ^ GuardConst) != _guard)
+                    {
                         RaiseTamperDetected("SecureObservableLong.set");
+                        var (rk1, rk2) = SecureKeyGen.LongKeyPair();
+                        _cryptoKey1 = rk1;
+                        _cryptoKey2 = rk2;
+                        long resetCompound = rk1 ^ rk2;
+                        _obscuredValue = 0L ^ resetCompound;
+                        _guard = resetCompound ^ GuardConst;
+                        return;
+                    }
                     old = _obscuredValue ^ oldCompound;
                     if (old == value) return;
 
@@ -322,7 +338,16 @@ namespace Nexus.Core
                 {
                     int oldCompound = _cryptoKey1 ^ _cryptoKey2;
                     if ((oldCompound ^ GuardConst) != _guard)
+                    {
                         RaiseTamperDetected("SecureObservableFloat.set");
+                        var (rk1, rk2) = SecureKeyGen.IntKeyPair();
+                        _cryptoKey1 = rk1;
+                        _cryptoKey2 = rk2;
+                        int resetCompound = rk1 ^ rk2;
+                        _obscuredValue = FloatToIntBits(0f) ^ resetCompound;
+                        _guard = resetCompound ^ GuardConst;
+                        return;
+                    }
                     old = IntToFloatBits(_obscuredValue ^ oldCompound);
                     if (old == value) return;
 
@@ -454,7 +479,16 @@ namespace Nexus.Core
                 {
                     int oldCompound = _cryptoKey1 ^ _cryptoKey2;
                     if ((oldCompound ^ GuardConst) != _guard)
+                    {
                         RaiseTamperDetected("SecureObservableString.set");
+                        var (rk1, rk2) = SecureKeyGen.IntKeyPair();
+                        _cryptoKey1 = rk1;
+                        _cryptoKey2 = rk2;
+                        int resetCompound = rk1 ^ rk2;
+                        _obscuredChars = null;
+                        _guard = resetCompound ^ GuardConst;
+                        return;
+                    }
                     old = Reveal(_obscuredChars, oldCompound);
                     if (string.Equals(old, value)) return;
 
