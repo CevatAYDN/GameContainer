@@ -25,9 +25,12 @@ namespace Nexus.Core.Services
             Message = message ?? "";
         }
 
+        [ThreadStatic] private static StringBuilder s_formatBuilder;
+
         public string Format()
         {
-            var sb = new StringBuilder();
+            var sb = s_formatBuilder ??= new StringBuilder(128);
+            sb.Clear();
             sb.Append("[Nexus]");
             sb.Append('[').Append(Source).Append(']');
             sb.Append('[').Append(Operation).Append(']');
@@ -78,8 +81,7 @@ namespace Nexus.Core.Services
 
         public static void Error(string source, string operation, string contextId, string message, Exception ex)
         {
-            var combined = $"{message} | {ex?.Message}";
-            var entry = new NexusLogEntry(source, operation, contextId, combined);
+            var entry = new NexusLogEntry(source, operation, contextId, ex != null ? string.Concat(message, " | ", ex.Message) : message);
             if (s_instance != null)
                 s_instance.LogError(entry.Format());
             else

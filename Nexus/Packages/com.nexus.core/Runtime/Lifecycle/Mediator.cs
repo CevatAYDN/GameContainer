@@ -88,10 +88,10 @@ namespace Nexus.Core
             return sub;
         }
 
-        private readonly struct ObservableSubscription<T> : ISignalSubscription
+        private sealed class ObservableSubscription<T> : ISignalSubscription
         {
-            private readonly ObservableProperty<T> _property;
-            private readonly Action<T, T> _handler;
+            private ObservableProperty<T> _property;
+            private Action<T, T> _handler;
 
             public bool IsActive => _property != null;
             public CancellationToken Lifetime => CancellationToken.None;
@@ -107,6 +107,8 @@ namespace Nexus.Core
                 if (_property != null && _handler != null)
                 {
                     _property.RemoveOnChanged(_handler);
+                    _property = null;
+                    _handler = null;
                 }
             }
         }

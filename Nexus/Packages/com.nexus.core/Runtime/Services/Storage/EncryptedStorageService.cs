@@ -314,13 +314,28 @@ namespace Nexus.Core.Services
                     TryDeleteLegacyFile(key);
                 }
 
-                lock (_lock) { _cache[key] = val; }
+                lock (_lock)
+                {
+                    // Guard against TOCTOU race: if SetString was called concurrently while reading from disk,
+                    // keep the fresher dirty cache value instead of overwriting with disk bytes.
+                    if (_dirtyKeys.Contains(key) && _cache.TryGetValue(key, out string currentVal) && currentVal != null)
+                    {
+                        return currentVal;
+                    }
+                    _cache[key] = val;
+                }
                 return val;
             }
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
-                lock (_lock) { _cache[key] = null; }
+                lock (_lock)
+                {
+                    if (!_dirtyKeys.Contains(key))
+                    {
+                        _cache[key] = null;
+                    }
+                }
                 return defaultValue;
             }
         }
@@ -571,15 +586,16 @@ namespace Nexus.Core.Services
             {
                 if (_cache.TryGetValue(key, out string cachedVal))
                     return cachedVal != null;
-
-                // A6: a key written by an older build may still live under its legacy
-                // MD5-derived filename — report it as present so migration can run.
-                string newPath = GetFilePath(key);
-                if (File.Exists(newPath)) return true;
-
-                string legacyPath = GetLegacyFilePath(key);
-                return legacyPath != null && File.Exists(legacyPath);
             }
+
+            // B1 invariant: file I/O outside the shared lock so slow disk access doesn't stall other operations
+            // A6: a key written by an older build may still live under its legacy
+            // MD5-derived filename — report it as present so migration can run.
+            string newPath = GetFilePath(key);
+            if (File.Exists(newPath)) return true;
+
+            string legacyPath = GetLegacyFilePath(key);
+            return legacyPath != null && File.Exists(legacyPath);
         }
 
         public void DeleteKey(string key)
