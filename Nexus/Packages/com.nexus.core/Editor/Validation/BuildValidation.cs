@@ -129,30 +129,32 @@ namespace Nexus.Editor
         private static void ValidateHandlers(ref int errorCount, ref int warningCount)
         {
             var signalHandlers = new Dictionary<Type, List<(Type CommandType, SignalHandlerAttribute Attr)>>();
-            
+            var loadedAssemblies = AssemblyCatalog.LoadedAssemblies;
+            var isTestAssemblyAllowed = IncludeTestAssemblies;
+
             // Scan all loaded assemblies
-            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
+            foreach (var assembly in loadedAssemblies)
             {
-                    var name = AssemblyCatalog.GetSimpleName(assembly);
+                var name = AssemblyCatalog.GetSimpleName(assembly);
                 if (IsAssemblyExcluded(name))
                     continue;
-                if (!IncludeTestAssemblies && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (!isTestAssemblyAllowed && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0)
                     continue;
 
                 foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    if (type.IsClass && !type.IsAbstract)
+                    if (!type.IsClass || type.IsAbstract)
+                        continue;
+
+                    var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
+                    foreach (var attr in attrs)
                     {
-                        var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                        foreach (var attr in attrs)
+                        if (!signalHandlers.TryGetValue(attr.SignalType, out var list))
                         {
-                            if (!signalHandlers.TryGetValue(attr.SignalType, out var list))
-                            {
-                                list = new List<(Type, SignalHandlerAttribute)>();
-                                signalHandlers[attr.SignalType] = list;
-                            }
-                            list.Add((type, attr));
+                            list = new List<(Type, SignalHandlerAttribute)>();
+                            signalHandlers[attr.SignalType] = list;
                         }
+                        list.Add((type, attr));
                     }
                 }
             }

@@ -24,6 +24,7 @@ namespace Nexus.Core
 
         private bool _isVisible;
         private readonly List<string> _logLines = new();
+        private readonly List<string> _logLinesSnapshot = new();
         private int _frameCount;
         private float _fps;
         private float _fpsTimer;
@@ -131,14 +132,22 @@ namespace Nexus.Core
 
             GUILayout.Space(4);
 
-            GUILayout.Label($"<color=#88ccff>\u25a0 Recent ({_logLines.Count} lines)</color>", _labelStyle);
+            List<string> snapshot;
             lock (_logLines)
             {
+                _logLinesSnapshot.Clear();
                 int start = Math.Max(0, _logLines.Count - maxLogLines);
                 for (int i = start; i < _logLines.Count; i++)
                 {
-                    GUILayout.Label(_logLines[i], _labelStyle);
+                    _logLinesSnapshot.Add(_logLines[i]);
                 }
+                snapshot = _logLinesSnapshot;
+            }
+
+            GUILayout.Label($"<color=#88ccff>\u25a0 Recent ({snapshot.Count} lines)</color>", _labelStyle);
+            for (int i = 0; i < snapshot.Count; i++)
+            {
+                GUILayout.Label(snapshot[i], _labelStyle);
             }
 
             GUILayout.EndVertical();

@@ -195,13 +195,35 @@ namespace Nexus.Core
             _rwLock.EnterWriteLock();
             try
             {
-                var keysToRemove = new List<BinderKey>();
+                BinderKey? firstToRemove = null;
+                List<BinderKey> keysToRemove = null;
                 foreach (var kvp in _entries)
                 {
-                    if (EqualityComparer<TKey>.Default.Equals(kvp.Key.Key, key))
+                    if (!EqualityComparer<TKey>.Default.Equals(kvp.Key.Key, key))
+                        continue;
+
+                    if (firstToRemove == null)
+                    {
+                        firstToRemove = kvp.Key;
+                    }
+                    else
+                    {
+                        keysToRemove ??= new List<BinderKey>(4);
+                        if (keysToRemove.Count == 0)
+                            keysToRemove.Add(firstToRemove.Value);
                         keysToRemove.Add(kvp.Key);
+                    }
                 }
-                for (int i = 0; i < keysToRemove.Count; i++) _entries.Remove(keysToRemove[i]);
+
+                if (firstToRemove == null)
+                    return;
+
+                _entries.Remove(firstToRemove.Value);
+                if (keysToRemove != null)
+                {
+                    for (int i = 1; i < keysToRemove.Count; i++)
+                        _entries.Remove(keysToRemove[i]);
+                }
             }
             finally { _rwLock.ExitWriteLock(); }
         }

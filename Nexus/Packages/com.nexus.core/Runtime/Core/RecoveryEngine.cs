@@ -160,17 +160,24 @@ namespace Nexus.Core
                     // and ErrorCollection subscribers could not react. Surface the strategy
                     // error through the same collection pipeline the original command error
                     // uses — never silently swallowed.
+                    // PRESERVE ORIGINAL EXCEPTION: Collect both the strategy failure AND the original command exception
                     NexusRuntime.Logger?.LogError(
                         asyncContext
-                            ? $"[Nexus] Error recovery strategy failed: {strategyEx.Message}"
-                            : $"[Nexus] Error recovery strategy failed: {strategyEx.Message}\nOriginal command exception: {ex.Message}");
+                            ? $"[Nexus] Error recovery strategy failed: {strategyEx.Message}\nOriginal command exception: {ex.Message}"
+                            : $"[Nexus] Error recovery strategy failed: {strategyEx.Message}\nOriginal command exception: {ex.Message}\n{ex.StackTrace}");
                     ErrorCollection.CollectException(strategyEx, ErrorCollection.ErrorCategory.Command,
                         $"Recovery strategy '{strategyEx.TargetSite?.DeclaringType?.Name ?? strategyEx.GetType().Name}' failed while handling command {commandType.Name}");
+                    // Also collect the original exception to ensure it's not lost
+                    ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Command,
+                        $"Original command failure that triggered recovery strategy: {commandType.Name}");
                 }
             }
 
             return RecoveryPlan.SkipPlan(failedSignal);
         }
+
+        private int _fallbackDepth = 0;
+        private const int MaxFallbackDepth = 3;
 
         private RecoveryAction ExecuteSyncPlan(RecoveryPlan plan, object signal)
         {
@@ -185,6 +192,11 @@ namespace Nexus.Core
             }
             if (plan.Action == RecoveryAction.Fallback)
             {
+                if (_fallbackDepth >= MaxFallbackDepth)
+                {
+                    NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded. Aborting.");
+                    return RecoveryAction.Abort;
+                }
                 if (plan.FallbackType != null)
                 {
                     if (!IsSyncCapableFallbackType(plan.FallbackType, signal))
@@ -193,7 +205,16 @@ namespace Nexus.Core
                         return RecoveryAction.Skip;
                     }
 
-                    _executor.Execute(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, 0, false), signal);
+                    _fallbackDepth++;
+                    try
+                    {
+                        // Use negative priority to ensure fallbacks run after normal handlers
+                        _executor.Execute(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, false), signal);
+                    }
+                    finally
+                    {
+                        _fallbackDepth--;
+                    }
                 }
                 return RecoveryAction.Fallback;
             }
@@ -215,16 +236,29 @@ namespace Nexus.Core
             }
             if (plan.Action == RecoveryAction.Fallback)
             {
+                if (_fallbackDepth >= MaxFallbackDepth)
+                {
+                    NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded. Aborting.");
+                    return RecoveryAction.Abort;
+                }
                 if (plan.FallbackType != null)
                 {
-                    if (plan.FallbackIsAsync)
+                    _fallbackDepth++;
+                    try
                     {
-                        // E-4/P0-1-aligned: recognize generic-only async fallback commands too.
-                        await _executor.ExecuteAsync(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, 0, true), signal, ct);
+                        if (plan.FallbackIsAsync)
+                        {
+                            // E-4/P0-1-aligned: recognize generic-only async fallback commands too.
+                            await _executor.ExecuteAsync(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, true), signal, ct);
+                        }
+                        else
+                        {
+                            await _executor.ExecuteAsync(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, false), signal, ct);
+                        }
                     }
-                    else
+                    finally
                     {
-                        _executor.Execute(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, 0, false), signal);
+                        _fallbackDepth--;
                     }
                 }
                 else

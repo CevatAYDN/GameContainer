@@ -65,6 +65,9 @@ namespace Nexus.Core
         private readonly object _pendingInjectionsLock = new();
         private readonly HashSet<Type> _constructingSingletons = new();
         private readonly object _singletonLock = new();
+        // Per-type wait handles for singleton construction synchronization
+        private readonly Dictionary<Type, ManualResetEventSlim> _constructionWaitHandles = new();
+        private readonly object _constructionWaitLock = new();
         private readonly Injector _injector;
 
         [ThreadStatic]
@@ -498,11 +501,21 @@ namespace Nexus.Core
                         {
                             // P1 fix: forward the [Inject(Name=...)] discriminator so named
                             // bindings are honored on first access instead of being dropped.
+                            // Thread-safe: create lazy instance, then atomically set if still null.
                             var lazyInstance = Activator.CreateInstance(f.Type,
                                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
                                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.CreateInstance,
                                 null, new object[] { _di, f.Name }, null);
-                            MetadataCache.ApplyFieldSetter(f, instance, lazyInstance);
+                            // Double-check: another thread might have set it while we were creating
+                            var currentValue = f.Getter != null ? f.Getter(instance) : f.Field.GetValue(instance);
+                            if (currentValue == null)
+                            {
+                                MetadataCache.ApplyFieldSetter(f, instance, lazyInstance);
+                            }
+                            else
+                            {
+                                lazyInstance = currentValue; // Use the one created by the other thread
+                            }
                         }
                         continue;
                     }
@@ -545,7 +558,16 @@ namespace Nexus.Core
                                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
                                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.CreateInstance,
                                 null, new object[] { _di, p.Name }, null);
-                            MetadataCache.ApplyPropertySetter(p, instance, lazyInstance);
+                            // Double-check: another thread might have set it while we were creating
+                            var currentValue = p.Property.GetValue(instance);
+                            if (currentValue == null)
+                            {
+                                MetadataCache.ApplyPropertySetter(p, instance, lazyInstance);
+                            }
+                            else
+                            {
+                                lazyInstance = currentValue;
+                            }
                         }
                         continue;
                     }
@@ -899,6 +921,7 @@ namespace Nexus.Core
                 throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}. Resolution chain forms a cycle.");
 
             bool addedToConstructing = false;
+            ManualResetEventSlim waitHandle = null;
             try
             {
                 if (binding.Factory != null) return binding.Factory();
@@ -913,7 +936,6 @@ namespace Nexus.Core
                     // ANOTHER thread is mid-construction of this singleton. Wait for
                     // the builder instead of throwing a spurious "circular dependency"
                     // on a perfectly valid concurrent first-resolve.
-                    var constructionDeadline = DateTime.UtcNow.AddSeconds(10);
                     while (true)
                     {
                         lock (_singletonLock)
@@ -927,14 +949,21 @@ namespace Nexus.Core
                                 addedToConstructing = true;
                                 break;
                             }
+
+                            // Another thread is constructing this singleton.
+                            // Get or create a wait handle for this type.
+                            if (!_constructionWaitHandles.TryGetValue(type, out waitHandle))
+                            {
+                                waitHandle = new ManualResetEventSlim(false);
+                                _constructionWaitHandles[type] = waitHandle;
+                            }
                         }
 
-                        // Another thread is building this singleton right now. Yield
-                        // briefly and retry — the builder publishes binding.Instance
-                        // (volatile) and removes the construction marker on exit.
-                        if (DateTime.UtcNow > constructionDeadline)
+                        // Wait for the constructing thread to signal completion.
+                        // Use a timeout to detect deadlocks.
+                        if (!waitHandle.Wait(TimeSpan.FromSeconds(10)))
                             throw new InvalidOperationException($"Timed out waiting for concurrent construction of singleton {type.FullName}.");
-                        Thread.Yield();
+                        // Loop again to check if instance is now published.
                     }
 
                     try
@@ -956,6 +985,12 @@ namespace Nexus.Core
                         lock (_singletonLock)
                         {
                             _constructingSingletons.Remove(type);
+                            // Signal all waiting threads that construction is complete.
+                            if (_constructionWaitHandles.TryGetValue(type, out var wh))
+                            {
+                                wh.Set();
+                                _constructionWaitHandles.Remove(type);
+                            }
                         }
                         addedToConstructing = false;
                     }
@@ -969,7 +1004,18 @@ namespace Nexus.Core
             finally
             {
                 s_resolutionStack.Remove(type);
-                if (addedToConstructing) _constructingSingletons.Remove(type);
+                if (addedToConstructing) 
+                {
+                    lock (_singletonLock)
+                    {
+                        _constructingSingletons.Remove(type);
+                        if (_constructionWaitHandles.TryGetValue(type, out var wh))
+                        {
+                            wh.Set();
+                            _constructionWaitHandles.Remove(type);
+                        }
+                    }
+                }
             }
         }
 

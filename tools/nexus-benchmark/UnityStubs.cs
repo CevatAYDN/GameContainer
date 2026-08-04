@@ -806,20 +806,26 @@ namespace UnityEngine
         public bool interactable = true;
         public bool blocksRaycasts = true;
         public float alpha = 1f;
-    }
-
-    /// <summary>Unity async asset request — a no-op null result outside Unity.</summary>
-    public class ResourceRequest
-    {
-        public bool isDone { get; set; }
-        public Object asset { get; set; }
-    }
-
-    /// <summary>Unity Resources — always-miss outside Unity (harness injects mock providers).</summary>
-    public static class Resources
-    {
-        public static ResourceRequest LoadAsync<T>(string path) where T : Object => new ResourceRequest { isDone = false, asset = null };
-        public static T Load<T>(string path) where T : Object => null;
+    }    /// <summary>Unity async asset request — a no-op null result outside Unity.</summary>
+    public class ResourceRequest
+    {
+        public bool isDone { get; set; }
+        public Object asset { get; set; }
+        // Mirrors UnityEngine.AsyncOperation.completed (2020.1+) so the runtime's
+        // ResourcesUIAssetProvider can bridge the load through a TaskCompletionSource.
+        public event Action<ResourceRequest> completed;
+        internal void SimulateComplete()
+        {
+            isDone = true;
+            completed?.Invoke(this);
+        }
+    }
+
+    /// <summary>Unity Resources — always-miss outside Unity (harness injects mock providers).</summary>
+    public static class Resources
+    {
+        public static ResourceRequest LoadAsync<T>(string path) where T : Object => new ResourceRequest { isDone = false, asset = null };
+        public static T Load<T>(string path) where T : Object => null;
     }
 
     // ── Debug HUD support (NexusDebugHUD.cs) — onGUI surface, no-op outside Unity ──

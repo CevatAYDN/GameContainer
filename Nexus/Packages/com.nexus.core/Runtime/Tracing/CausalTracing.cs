@@ -288,7 +288,6 @@ namespace Nexus.Core
         public static TraceEvent[] GetRecentEvents(out int count)
         {
 #if NEXUS_DEBUG
-            var events = new List<TraceEvent>();
             if (s_totalEventsWritten == 0)
             {
                 count = 0;
@@ -296,6 +295,8 @@ namespace Nexus.Core
             }
 
             int available = Math.Min(s_totalEventsWritten, MaxEvents);
+            var events = new TraceEvent[available];
+            int written = 0;
             int start = s_ringBufferIndex - available + 1;
             if (start < 0) start += MaxEvents;
 
@@ -304,12 +305,19 @@ namespace Nexus.Core
                 int idx = (start + i) % MaxEvents;
                 if (s_ringBuffer[idx].Id > 0)
                 {
-                    events.Add(s_ringBuffer[idx]);
+                    events[written++] = s_ringBuffer[idx];
                 }
             }
 
-            count = events.Count;
-            return events.ToArray();
+            count = written;
+            if (written == events.Length)
+            {
+                return events;
+            }
+
+            var trimmed = new TraceEvent[written];
+            Array.Copy(events, trimmed, written);
+            return trimmed;
 #else
             count = 0;
             return Array.Empty<TraceEvent>();

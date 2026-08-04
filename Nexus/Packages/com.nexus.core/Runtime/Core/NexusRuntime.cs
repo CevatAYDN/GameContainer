@@ -145,16 +145,19 @@ namespace Nexus.Core
         {
             get
             {
-                var cached = System.Threading.Volatile.Read(ref s_cachedLogger);
-                if (cached != null) return cached;
-                var resolved = CurrentContext?.TryResolve<Services.ILoggerService>();
-                if (resolved != null)
-                    System.Threading.Volatile.Write(ref s_cachedLogger, resolved);
-                return resolved;
+                lock (s_loggerCacheLock)
+                {
+                    if (s_cachedLogger != null) return s_cachedLogger;
+                    var resolved = CurrentContext?.TryResolve<Services.ILoggerService>();
+                    if (resolved != null)
+                        s_cachedLogger = resolved;
+                    return resolved;
+                }
             }
         }
 
         private static Services.ILoggerService s_cachedLogger;
+        private static readonly object s_loggerCacheLock = new();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void InitializeOnLoad()
@@ -469,7 +472,8 @@ namespace Nexus.Core
                 // Metrics are not a hot path so lock overhead is acceptable.
                 lock (_rateLock)
                 {
-                    float delta = now - _lastSampleTime;
+                    float lastSample = _lastSampleTime; // Read inside lock for atomicity
+                    float delta = now - lastSample;
                     if (delta > 0.5f)
                     {
                         long currSignals = System.Threading.Interlocked.Read(ref s_totalSignalsDispatched);

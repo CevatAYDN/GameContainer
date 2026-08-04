@@ -49,6 +49,12 @@ namespace NexusBench
     {
         private static readonly AsyncLocal<int> s_asyncLocalDepth = new();
 
+        // Boxed-holder variant: the production SignalBus guard stores its async depth in a
+        // mutable box (AsyncLocal<AsyncStackDepthBox>) so the decrement is a plain field
+        // write and nested dispatches never touch AsyncLocal at all.
+        private sealed class Box { public int Value; }
+        private static readonly AsyncLocal<Box> s_asyncLocalBox = new();
+
         [ThreadStatic]
         private static int s_threadStaticDepth;
 
@@ -116,6 +122,13 @@ namespace NexusBench
             Console.WriteLine("[Nexus Benchmark] === DIAG: fire with no-[Inject] command ===");
             failures += MeasureFireNoInjectCommand();
 
+            // (m) Async dispatch of a SYNC command — the ExecuteAsync<TSignal> sync-command
+            // branch previously created an inline lambda capturing 'signal' on every dispatch
+            // (closure display-class hoisted to method entry). Must be 0 bytes after the fix.
+            Console.WriteLine();
+            Console.WriteLine("[Nexus Benchmark] === DIAG: FireAsync with sync command (5000) ===");
+            failures += MeasureFireAsyncSyncCommand().GetAwaiter().GetResult();
+
             Console.WriteLine();
             Console.WriteLine(failures == 0
                 ? "[Nexus Benchmark] DIAGNOSTICS DONE"
@@ -179,6 +192,17 @@ namespace NexusBench
             }
             long asyncAlloc = GC.GetAllocatedBytesForCurrentThread() - asyncStart;
 
+            // Boxed holder: entry get-or-create + field ++/-- (mirrors SignalBus's guard).
+            long boxStart = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 5000; i++)
+            {
+                var box = s_asyncLocalBox.Value;
+                if (box == null) { box = new Box(); s_asyncLocalBox.Value = box; }
+                box.Value++;
+                box.Value--;
+            }
+            long boxAlloc = GC.GetAllocatedBytesForCurrentThread() - boxStart;
+
             long tsStart = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 5000; i++)
             {
@@ -188,6 +212,7 @@ namespace NexusBench
             long tsAlloc = GC.GetAllocatedBytesForCurrentThread() - tsStart;
 
             Console.WriteLine($"[Nexus Benchmark] AsyncLocal<int> ++/--: {asyncAlloc} bytes for 5000 ({asyncAlloc / 5000} bytes/op)");
+            Console.WriteLine($"[Nexus Benchmark] AsyncLocal<boxed> ++/--: {boxAlloc} bytes for 5000 ({boxAlloc / 5000} bytes/op)");
             Console.WriteLine($"[Nexus Benchmark] ThreadStatic int ++/--: {tsAlloc} bytes for 5000 ({tsAlloc / 5000} bytes/op)");
             return 0;
         }
@@ -596,6 +621,54 @@ namespace NexusBench
                 long perDispatch = allocated / 5000;
                 Console.WriteLine($"[Nexus Benchmark] fire-with-no-inject-command: allocated={allocated} bytes for 5000 ({perDispatch} bytes/dispatch) executions={NoInjectCommand.Executions}");
                 return 0;
+            }
+            finally
+            {
+                bus.Dispose();
+                poolManager.Clear();
+                container.Dispose();
+            }
+        }
+
+        private static async System.Threading.Tasks.Task<int> MeasureFireAsyncSyncCommand()
+        {
+            var container = new NexusDI();
+            container.Bind<NoInjectCommand>(isSingleton: false);
+            var poolManager = new CommandPoolManager(container);
+            var bus = new SignalBus(container, poolManager, new MockContext());
+            // Registered as ASYNC so FireAsync routes through ExecuteAsync<TSignal>'s
+            // sync-command branch (the path whose inline lambda previously allocated a
+            // closure per dispatch). NoInjectCommand implements only ICommand<TSignal>,
+            // so it hits that branch even though it executes synchronously.
+            bus.RegisterCommand(typeof(CmdSignal), typeof(NoInjectCommand), ExecutionMode.Sequential, 0, isAsync: true);
+
+            try
+            {
+                // Warm up (async state machines, pool, registry caches).
+                for (int i = 0; i < 100; i++) await bus.FireAsync(new CmdSignal(i));
+
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+
+                long start = GC.GetAllocatedBytesForCurrentThread();
+                for (int i = 0; i < 5000; i++) await bus.FireAsync(new CmdSignal(i));
+                long allocated = GC.GetAllocatedBytesForCurrentThread() - start;
+
+                long perDispatch = allocated / 5000;
+                // Threshold rationale (calibrated on net10 x64 reference): the async depth
+                // guard now uses a mutable boxed holder (AsyncLocal<AsyncStackDepthBox>), so
+                // the previous 96 B/op of AsyncLocal<int> boxing is gone — measured 192
+                // B/dispatch (down from 288 with AsyncLocal<int>, and from 408 at HEAD before
+                // the [NoInlining] closure fix). The residual 192 B is the async-path
+                // baseline (state-machine/ExecutionContext machinery that remains even with
+                // zero AsyncLocal traffic and zero closures). Limit 280 gives 88 B headroom
+                // while still failing a regression to either prior shape: AsyncLocal<int>
+                // reintroduced → ~288, closure hoisting reintroduced → ~312.
+                Console.WriteLine($"[Nexus Benchmark] fire-async-with-sync-command: allocated={allocated} bytes for 5000 ({perDispatch} bytes/dispatch)");
+                bool ok = perDispatch <= 280;
+                Console.WriteLine($"[Nexus Benchmark] {(ok ? "PASS" : "FAIL")}  FireAsync sync-command allocation (limit <=280: fixed=192, AsyncLocal<int>=288, HEAD=408)");
+                return ok ? 0 : 1;
             }
             finally
             {

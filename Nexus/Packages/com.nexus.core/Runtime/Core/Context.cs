@@ -44,6 +44,9 @@ namespace Nexus.Core
         private readonly object _configureLock = new();
         private int _interceptorsCount;
         private ContextBuilder _builder;
+        // The builder that was actually used for configuration (Configure/ConfigureWithBuilder).
+        // Separate from _builder which may be created lazily by GetOrCreateBuilder for the harness.
+        private ContextBuilder _configuredBuilder;
         // Set once the Configure pipeline actually ran (lifecycles + scan + validation).
         // Distinct from _builder != null: the harness path (GetOrCreateBuilder) creates the
         // builder WITHOUT configuring, so guarding on _builder would silently skip Configure.
@@ -219,6 +222,7 @@ namespace Nexus.Core
                         $"[Nexus] Context '{ScopeTag}' ConfigureWithBuilder: a builder already exists (GetOrCreateBuilder); the prebuilt builder's bindings were not merged.");
                 }
                 _configured = true;
+                _configuredBuilder = _builder; // Capture the builder used for configuration
             }
 
             // ... rest stays the same until after assemblies scan ...
@@ -360,24 +364,23 @@ namespace Nexus.Core
         {
             if (_postContextLifecycles.Count == 0) return default;
 
-            if (_builder == null)
+            if (_configuredBuilder == null)
             {
                 NexusRuntime.Logger?.LogWarning(
                     $"[Nexus] Context '{ScopeTag}': RunPostContextAsync skipped because context was never configured.");
                 return default;
             }
 
-            // NOTE: We pass the EXISTING builder so that lifecycles calling OnPostContext can
-            // add cross-context bindings and signal registrations to the same container that
-            // was used during Configure. A fresh ContextBuilder would share the same Container
-            // reference but lose the reactive-model and service-type lists, making late
-            // BindService/BindReactiveModel calls silently non-functional.
+            // NOTE: We pass the CONFIGURED builder (the one used during Configure) so that
+            // lifecycles calling OnPostContext can add cross-context bindings and signal
+            // registrations to the same container that was used during Configure.
+            var builder = _configuredBuilder;
             for (int i = 0; i < _postContextLifecycles.Count; i++)
             {
                 if (ct.IsCancellationRequested) break;
                 try
                 {
-                    _postContextLifecycles[i].OnPostContext(_builder);
+                    _postContextLifecycles[i].OnPostContext(builder);
                 }
                 catch (Exception ex)
                 {

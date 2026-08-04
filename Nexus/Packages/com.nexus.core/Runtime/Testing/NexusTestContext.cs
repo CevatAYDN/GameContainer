@@ -41,9 +41,9 @@ namespace Nexus.Core
                 {
                     _subscriptions[i]?.Dispose();
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // Subscription was already disposed by a prior teardown step.
+                    NexusRuntime.Logger?.LogError($"[NexusTestContext] Subscription dispose failed: {ex.GetType().Name}: {ex.Message}");
                 }
             }
 
@@ -62,13 +62,8 @@ namespace Nexus.Core
             var type = typeof(T);
             if (type.IsValueType)
             {
-                // Register signal: subscribe to it and store dispatched instances
-                var method = GetType().GetMethod(nameof(RegisterSignalInternal), BindingFlags.NonPublic | BindingFlags.Instance);
-                if (method != null)
-                {
-                    var genericMethod = method.MakeGenericMethod(type);
-                    genericMethod.Invoke(this, null);
-                }
+                // Register signal: subscribe to it and store dispatched instances.
+                RegisterSignalDynamic(type);
             }
             else if (type.IsClass)
             {
@@ -136,6 +131,13 @@ namespace Nexus.Core
                 _dispatchedSignals[typeof(TSignal)] = list;
                 _subscriptions.Add(Context.SignalBus.Subscribe<TSignal>(sig => list.Add(sig)));
             }
+        }
+
+        private void RegisterSignalDynamic(Type signalType)
+        {
+            var method = typeof(NexusTestContext).GetMethod(nameof(RegisterSignalInternal), BindingFlags.NonPublic | BindingFlags.Instance);
+            var genericMethod = method?.MakeGenericMethod(signalType);
+            genericMethod?.Invoke(this, null);
         }
 
         /// <summary>Fires a signal synchronously for test purposes.</summary>

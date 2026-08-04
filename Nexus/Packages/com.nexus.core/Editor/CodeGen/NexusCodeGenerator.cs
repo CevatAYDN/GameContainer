@@ -28,37 +28,60 @@ namespace Nexus.Editor
         {
             get
             {
-                // Quick-check: scan non-system assemblies for types with [Inject] attributes
-                // without generating the full binder (avoids triggering asset database refresh).
-                // HasInjectableTypes must match the same assembly filters used by GenerateBinder
-                // (test and editor assemblies excluded) so the Dashboard AOT warning is not a
-                // false positive triggered by test-fixture [Inject] attributes.
-                foreach (var assembly in AssemblyCatalog.RuntimeAssemblies())
+                return ScanForInjectables(AssemblyCatalog.RuntimeAssemblies(), stopOnFirstMatch: true);
+            }
+        }
+
+
+        private static bool ScanForInjectables(IEnumerable<Assembly> assemblies, bool stopOnFirstMatch)
+        {
+            bool found = false;
+            foreach (var assembly in assemblies)
+            {
+                foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
-                    foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
+                    if (!type.IsClass || type.IsAbstract)
+                        continue;
+
+                    if (HasInjectableMembers(type, stopOnFirstMatch))
                     {
-                        if (type.IsClass && !type.IsAbstract)
-                        {
-                            var fields = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                            foreach (var f in fields)
-                                if (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null) return true;
-
-                            var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                            foreach (var p in properties)
-                                if (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null) return true;
-
-                            // Method-level [Inject] is a valid injection site (GenerateBinder scans
-                            // methods too); without this check HasInjectableTypes would return false
-                            // for a type that only injects via methods, producing a false Dashboard
-                            // AOT warning even though the generator would emit for it.
-                            var methods = type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                            foreach (var m in methods)
-                                if (m.GetCustomAttribute<InjectAttribute>() != null) return true;
-                        }
+                        if (stopOnFirstMatch)
+                            return true;
+                        found = true;
                     }
                 }
-                return false;
             }
+
+            return found;
+        }
+
+        private static bool HasInjectableMembers(Type type, bool stopOnFirstMatch)
+        {
+            var fields = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            foreach (var f in fields)
+            {
+                if (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null)
+                    return true;
+            }
+
+            var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            foreach (var p in properties)
+            {
+                if (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null)
+                    return true;
+            }
+
+            if (!stopOnFirstMatch)
+            {
+                var methods = type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                foreach (var m in methods)
+                {
+                    if (m.GetCustomAttribute<InjectAttribute>() != null)
+                        return true;
+                }
+            }
+
+            return false;
         }
 
         [MenuItem("Nexus/Auto-Generate AOT on Script Reload")]
@@ -302,6 +325,7 @@ namespace Nexus.Editor
                             string cacheMethodName = $"s_m_{typeSafeName}_{m.Name}";
                             var paramTypesString = string.Join(", ", m.GetParameters().Select(param => $"typeof({param.ParameterType.FullName.Replace("+", ".")})"));
                             cacheSb.AppendLine($"        private static readonly System.Reflection.MethodInfo {cacheMethodName} = typeof({fullName}).GetMethod(\"{m.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, null, new System.Type[] {{ {paramTypesString} }}, null);");
+                            initSb.AppendLine($"                if ({cacheMethodName} == null) throw new InvalidOperationException(\"[Nexus CodeGen] Failed to bind private injector method {fullName}.{m.Name}.\");");
                             initSb.AppendLine($"                {cacheMethodName}.Invoke(instance, new object[] {{ {string.Join(", ", paramList)} }});");
                         }
                     }

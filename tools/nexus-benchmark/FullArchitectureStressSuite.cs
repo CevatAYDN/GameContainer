@@ -143,6 +143,51 @@ namespace NexusBench
         public void OnPluginRemoved() {}
     }
 
+    /// <summary>Records before/after wrap events so the decorator EXECUTION ORDER (not just count) can be asserted.</summary>
+    public class OrderLoggingDecorator : ICommandDecorator
+    {
+        public static readonly List<string> Log = new List<string>();
+        public readonly string Name;
+        public OrderLoggingDecorator(string name) => Name = name;
+        public void DecorateExecute(object command, Action next)
+        {
+            Log.Add(Name + "-before");
+            next();
+            Log.Add(Name + "-after");
+        }
+        public ValueTask DecorateExecuteAsync(object command, Func<ValueTask> next)
+        {
+            Log.Add(Name + "-before");
+            var result = next();
+            Log.Add(Name + "-after");
+            return result;
+        }
+    }
+
+    public class OrderPluginA : INexusPlugin
+    {
+        public NexusPluginManifest Manifest => new NexusPluginManifest("OrderPluginA", "1.0", PluginCapabilities.CommandDecorator);
+        public void OnPluginRegistered(IPluginContext context)
+        {
+            context.RegisterCommandDecorator(new OrderLoggingDecorator("A1"));
+            context.RegisterCommandDecorator(new OrderLoggingDecorator("A2"));
+        }
+        public void OnPluginRemoved() {}
+    }
+
+    public class OrderPluginB : INexusPlugin
+    {
+        public static IPluginContext LastContext;
+        public NexusPluginManifest Manifest => new NexusPluginManifest("OrderPluginB", "1.0", PluginCapabilities.CommandDecorator);
+        public void OnPluginRegistered(IPluginContext context)
+        {
+            LastContext = context;
+            context.RegisterCommandDecorator(new OrderLoggingDecorator("B1"));
+            context.RegisterCommandDecorator(new OrderLoggingDecorator("B2"));
+        }
+        public void OnPluginRemoved() {}
+    }
+
     public class DependencyLeaf { public int Value = 42; }
     public class DependencyNode
     {
@@ -283,6 +328,7 @@ namespace NexusBench
             Test_GameStateMachine_10k_AsyncTransitions_Stress();
             Test_HybridQueue_MultiThreaded_8Workers_Stress();
             Test_PluginSystem_DecoratorChain_Interceptor_Stress();
+            Test_DecoratorChain_Order_And_CacheInvalidation();
             Test_Netcode_Rollback_Replay_HighJitter_ZeroGC();
             Test_ErrorCollection_And_PerfMonitor_Concurrent_Stress();
             Test_CompositeCommand_Trigger_ZeroGC();
@@ -873,6 +919,68 @@ namespace NexusBench
             Console.WriteLine($"[Nexus Architecture Stress] Plugin Pipeline: {count} dispatches in {sw.ElapsedMilliseconds} ms (intercepts={SampleInterceptor.InterceptCount}, decorates={SampleDecorator.DecorateCount}, fired={BenchPluginCmd.FiredCount})");
             Report("8. PluginSystem_DecoratorChain_Interceptor_Stress", ok,
                 $"elapsed={sw.ElapsedMilliseconds}ms for {count} dispatches (limit <500ms), intercepts={SampleInterceptor.InterceptCount} decorates={SampleDecorator.DecorateCount} fired={BenchPluginCmd.FiredCount} (each expected={count})");
+        }
+
+        // ---------------------------------------------------------------------
+        // 8b. Decorator chain EXECUTION ORDER + runtime cache invalidation.
+        //     The cached flattened chain (execution order, outermost first) and the
+        //     pooled closure-free runner must reproduce the exact nested composition
+        //     order — plugins registered A (A1,A2) then B (B1,B2) → outermost is the
+        //     last plugin's last decorator: B2, B1, A2, A1, then the command, then
+        //     unwrap in reverse. The second half proves the reference-validated cache:
+        //     a decorator registered AFTER the first dispatch (which rebuilt the
+        //     context's plugin snapshot before OnPluginRegistered ran) must invalidate
+        //     the cached chain and appear on the next dispatch.
+        // ---------------------------------------------------------------------
+        private static void Test_DecoratorChain_Order_And_CacheInvalidation()
+        {
+            OrderLoggingDecorator.Log.Clear();
+            OrderPluginB.LastContext = null;
+
+            var context = new Context();
+            context.RegisterPlugin(new OrderPluginA());
+            context.RegisterPlugin(new OrderPluginB());
+
+            var di = new NexusDI();
+            di.Bind<BenchPluginCmd>(isSingleton: false);
+            var pool = new CommandPoolManager(di);
+            var bus = new SignalBus(di, pool, context);
+            bus.RegisterCommand(typeof(BenchPluginSignal), typeof(BenchPluginCmd), ExecutionMode.Sequential, 0, false);
+
+            BenchPluginCmd.FiredCount = 0;
+            bus.Fire(new BenchPluginSignal { Val = 1 });
+
+            string[] expected = {
+                "B2-before", "B1-before", "A2-before", "A1-before",
+                "A1-after", "A2-after", "B1-after", "B2-after"
+            };
+            bool orderOk = OrderLoggingDecorator.Log.Count == expected.Length;
+            for (int i = 0; orderOk && i < expected.Length; i++)
+                orderOk = OrderLoggingDecorator.Log[i] == expected[i];
+
+            // ── Cache invalidation: register B3 mid-run via the context captured in
+            //    OnPluginRegistered (which ran after the context's plugin snapshot was
+            //    rebuilt). The executor's cached chain must detect the swapped decorator
+            //    snapshot by reference and rebuild on the next dispatch. ──
+            bool lateRegistered = OrderPluginB.LastContext != null;
+            if (lateRegistered)
+                OrderPluginB.LastContext.RegisterCommandDecorator(new OrderLoggingDecorator("B3"));
+
+            bool firedBeforeLate = BenchPluginCmd.FiredCount == 1;
+            OrderLoggingDecorator.Log.Clear();
+            bus.Fire(new BenchPluginSignal { Val = 2 });
+
+            string[] expectedLate = {
+                "B3-before", "B2-before", "B1-before", "A2-before", "A1-before",
+                "A1-after", "A2-after", "B1-after", "B2-after", "B3-after"
+            };
+            bool lateOrderOk = OrderLoggingDecorator.Log.Count == expectedLate.Length;
+            for (int i = 0; lateOrderOk && i < expectedLate.Length; i++)
+                lateOrderOk = OrderLoggingDecorator.Log[i] == expectedLate[i];
+
+            context.Dispose();
+            Report("8b. DecoratorChain_Order_And_CacheInvalidation", orderOk && lateRegistered && lateOrderOk && firedBeforeLate,
+                $"order={orderOk} ({string.Join(",", expected)}), lateRegistered={lateRegistered}, lateOrder={lateOrderOk} ({string.Join(",", expectedLate)}), fired={BenchPluginCmd.FiredCount}");
         }
 
         // ---------------------------------------------------------------------

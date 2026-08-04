@@ -189,7 +189,11 @@ namespace NexusBench
             {
                 if (ctx != null)
                 {
-                    try { ctx.Dispose(); } catch { }
+                    try { ctx.Dispose(); }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Nexus Lifecycle] Dispose during teardown failed: {ex.GetType().Name}: {ex.Message}");
+                    }
                 }
             }
 
@@ -222,7 +226,11 @@ namespace NexusBench
             {
                 if (ctx != null)
                 {
-                    try { ctx.Dispose(); } catch { }
+                    try { ctx.Dispose(); }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Nexus Lifecycle] Dispose during teardown failed: {ex.GetType().Name}: {ex.Message}");
+                    }
                 }
                 // Capture AFTER dispose: the teardown phase must still run even though
                 // start threw (fail-fast aborts init, but cleanup is unconditional).

@@ -114,7 +114,11 @@ namespace Nexus.Core.Services
             }
             if (_disposed)
             {
-                try { _windowLock.Release(); } catch (ObjectDisposedException) { /* Ignored: Semaphore was disposed during context teardown */ }
+                try { _windowLock.Release(); }
+                catch (ObjectDisposedException ex)
+                {
+                    NexusRuntime.Logger?.LogWarning($"[WindowManager] Semaphore release failed during teardown: {ex.Message}");
+                }
                 return false;
             }
             return true;

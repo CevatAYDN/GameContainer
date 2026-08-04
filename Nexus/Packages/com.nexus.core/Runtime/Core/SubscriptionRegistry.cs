@@ -20,13 +20,15 @@ namespace Nexus.Core
         public SubscriptionNode Next;
 
         /// <summary>Resets every field so the node can be returned to the pool.</summary>
+        /// <remarks>Next is NOT cleared here — it's preserved so that in-flight dispatch iterations
+        /// can safely traverse the linked list. Rent() sets Next = null before reuse.</remarks>
         public void Reset()
         {
             Handler = null;
             RawSubscription = null;
             IsActive = true;
             IsAsync = false;
-            Next = null;
+            // Next is intentionally NOT cleared — see remarks.
         }
     }
 

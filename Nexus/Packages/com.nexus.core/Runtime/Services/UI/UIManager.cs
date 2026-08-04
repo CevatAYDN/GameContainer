@@ -163,6 +163,7 @@ namespace Nexus.Core.Services
                     existing.transform.SetAsLastSibling();
                     _history.Remove(key);
                     _history.Add(key);
+                    _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
                     return (TScreen)existing;
                 }
 
@@ -215,9 +216,6 @@ namespace Nexus.Core.Services
                 }
                 catch (Exception ex)
                 {
-                    // M4 fix: lifecycle failure must roll back the screen and NOT register it
-                    // as active. Previously the screen was registered as active anyway, leaving
-                    // a broken screen in _activeScreens.
                     NexusRuntime.Logger?.LogException(ex);
                     if (instantiated)
                     {
@@ -225,20 +223,7 @@ namespace Nexus.Core.Services
                     }
                     else
                     {
-                        // Return pooled instance back to pool (avoid leak).
-                        screen.gameObject.SetActive(false);
-                        lock (_lock)
-                        {
-                            if (!_pools.TryGetValue(key, out var pool))
-                            {
-                                pool = new Stack<ScreenView>();
-                                _pools[key] = pool;
-                            }
-                            if (pool.Count < MaxPooledPerScreenKey)
-                                pool.Push(screen);
-                            else
-                                SafeDestroy(screen.gameObject);
-                        }
+                        ReturnToPool(key, screen);
                     }
                     return null;
                 }
@@ -318,6 +303,23 @@ namespace Nexus.Core.Services
                 return null;
             }
             return screen;
+        }
+
+        private void ReturnToPool(string key, ScreenView screen)
+        {
+            screen.gameObject.SetActive(false);
+            lock (_lock)
+            {
+                if (!_pools.TryGetValue(key, out var pool))
+                {
+                    pool = new Stack<ScreenView>();
+                    _pools[key] = pool;
+                }
+                if (pool.Count < MaxPooledPerScreenKey)
+                    pool.Push(screen);
+                else
+                    SafeDestroy(screen.gameObject);
+            }
         }
 
         // ── Close ─────────────────────────────────────────────────────

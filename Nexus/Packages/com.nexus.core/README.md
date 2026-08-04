@@ -222,6 +222,43 @@ Access all tools via **Window > Nexus > Dashboard** (`Ctrl+Shift+N` / `Cmd+Shift
 
 ---
 
+---
+
+## 🛡️ Security & Adversarial Audit Fixes (v0.4.1+)
+
+Nexus Core underwent a comprehensive adversarial code audit (2026) following the **Zero-Complacency Adversarial Audit Protocol**. All critical and high-severity findings were resolved:
+
+### Critical Fixes
+- **Reentrancy Counter Drift** (`SignalBus.cs`): `enteredDepth` flag prevents negative counter drift on overflow
+- **Singleton Construction Race** (`NexusDI.cs`): `ManualResetEventSlim` replaces spin-wait for atomic publication
+- **Unsubscribe-Dispatch TOCTOU** (`SubscriptionRegistry.cs`): `SubscriptionNode.Reset()` preserves `Next` for safe iteration
+- **Exception Loss in Recovery** (`RecoveryEngine.cs`): Both strategy + original exceptions collected in `ErrorCollection`
+- **PostContext Builder Mismatch** (`Context.cs`): `_configuredBuilder` tracks exact builder used during `Configure()`
+- **Metrics Rate Race** (`NexusRuntime.cs`): `_lastSampleTime` read inside lock for ARM weak memory safety
+- **Logger Cache Race** (`NexusRuntime.cs`): Lock-based cache replaces `Volatile.Read/Write`
+- **Decorator Allocation** (`CommandExecutor.cs`): generic-sync dispatch keeps the zero-closure call pattern — an inline lambda there hoists a closure display class (~56 B/dispatch, proven by the harness + IL dump); decorator chains compose on demand
+- **LazyInjection Race** (`NexusDI.cs`): Double-checked locking for thread-safe lazy instance creation
+- **Composite Payload Sharing** (`SignalBus.cs`): Per-trigger boxing eliminates shared reference risk
+- **Fallback Infinite Loop** (`RecoveryEngine.cs`): `_fallbackDepth` counter (max 3) + negative priority
+- **One-Shot Lost Retry** (`CommandRegistry.cs`): Claim marks handler but keeps in list until success
+- **Trace Buffer Resize Race** (`NexusRuntime.cs`): Versioned buffer swap with `Volatile` for lock-free readers
+
+### Security Hardening
+- **DI Validation in ALL Builds**: `ContextBuilder.Validate()` runs in production (not just editor)
+- **Captive Dependency Detection**: `DiValidationIssueType.CaptiveDependency` reported for singleton→transient capture
+- **Reentrancy Guard Throws Everywhere**: `NexusReentrancyException` on stack overflow in Debug + Release
+- **Async Overflow Guard Throws Everywhere**: `NexusAsyncOverflowException` unified in `EnterAsyncInFlight()`
+- **Atomic Save Writes**: `EncryptedStorageService` uses `File.Replace` for crash-safe saves
+- **Hardware-Tick Anti-Cheat**: `OfflineTimeCalculator` clamps to a hardware monotonic tick (`Stopwatch.GetTimestamp()`-derived ms since boot)
+
+### Zero-GC Improvements
+- **Decorator Chain Composition**: per-plugin decorator lists flattened into one reversed chain preserving execution order (still composed per execution when decorators are present)
+- **Logger Cache Locking**: Thread-safe logger access during context lifecycle changes
+- **LazyInjection Double-Check**: Double-checked locking for lazy instance creation
+- **Fallback Depth Limit**: `MaxFallbackDepth = 3` prevents infinite fallback recursion
+
+---
+
 ## 🔗 Related Documentation
 - 📖 [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) — Writing editor plugins and lifecycle rules
 - 🏛️ [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Core runtime architecture & diagrams

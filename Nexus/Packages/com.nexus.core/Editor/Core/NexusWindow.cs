@@ -290,6 +290,7 @@ namespace Nexus.Editor
             {
                 _discoveryFailed = true;
                 _discoveryError = ex.Message;
+                Debug.LogError($"[NexusWindow] Plugin discovery failed: {ex.Message}\n{ex.StackTrace}");
                 _plugins.Clear();
             }
         }

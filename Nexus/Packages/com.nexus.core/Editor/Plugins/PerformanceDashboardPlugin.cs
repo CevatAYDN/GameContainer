@@ -307,9 +307,20 @@ namespace Nexus.Editor
             if (elapsed < _sampleInterval - 0.05) return;
             _lastSampleTime = now;
 
-            // Frame metrics
-            float fps = 1f / Mathf.Max(Time.deltaTime, 0.0001f);
-            _fpsBuffer.Push(fps);
+            // Frame metrics. FPS is read from the GAME-recorded metric (MetricsSampler →
+            // PerformanceMonitor.UpdateFrameMetrics, running in the real Update loop), NOT
+            // computed from Time.deltaTime here. An editor window callback's
+            // Time.deltaTime is the time since the last RENDERED game frame, which
+            // balloons whenever the Game view is occluded by this window or the editor is
+            // busy repainting — producing bogus 1-4 FPS readings (and false "FPS below
+            // threshold" alarms) even when the game runs at 60. The recorded metric is
+            // refreshed ~10x/sec by the game loop and read thread-safely via GetMetric.
+            float fps = PerformanceMonitor.GetMetric("FPS");
+            // Only push real samples: a 0.0 reading means "not sampled yet" (no
+            // MetricsSampler in the scene, or recording just started) — pushing it would
+            // drag the sparkline and the avg/min stat rows to 0 and re-create the bogus
+            // low-FPS display this fix removes.
+            if (fps > 0f) _fpsBuffer.Push(fps);
 
             // Memory
             float monoMb = UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong() / (1024f * 1024f);
@@ -333,8 +344,9 @@ namespace Nexus.Editor
 
         private void RefreshUI(float fps, float monoMb, float sigRate, float cmdRate)
         {
-            // Labels
-            _fpsLabel.text  = $"{fps:F1}";
+            // Labels. fps <= 0 means no game sample yet — show the placeholder rather
+            // than a misleading 0.0 (the old bogus low-FPS display).
+            _fpsLabel.text  = fps > 0f ? $"{fps:F1}" : NexusLang.Get("pd_value_placeholder");
             _memLabel.text  = $"{monoMb:F1}{NexusLang.Get("pd_unit_mb")}";
             _gcLabel.text   = string.Format(NexusLang.Get("pd_gc_gen0"), _gcGen0Buffer.Last());
             _sigLabel.text  = $"{sigRate:F1}/s";
@@ -347,8 +359,10 @@ namespace Nexus.Editor
             NexusVisualization.UpdateSparkline(_sigSparkline,    _signalRateBuffer.ToArray(), 500f, NexusEditorStyles.AccentPurple, 120f, 32f);
             NexusVisualization.UpdateSparkline(_cmdSparkline,    _commandRateBuffer.ToArray(), 200f, NexusEditorStyles.AccentOrange, 120f, 32f);
 
-            // Label colors based on alarms
-            _fpsLabel.style.color = new StyleColor(fps < _fpsAlarm && _alarmsEnabled
+            // Label colors based on alarms. fps <= 0 means the game metric has not been
+            // sampled yet (no MetricsSampler in the scene, or recording just started) —
+            // do NOT paint that as an alarm, that would be the old bogus 0-4 FPS display.
+            _fpsLabel.style.color = new StyleColor(fps > 0f && fps < _fpsAlarm && _alarmsEnabled
                 ? NexusEditorStyles.AccentRed : NexusEditorStyles.AccentGreen);
             _memLabel.style.color = new StyleColor(monoMb > _memAlarmMb && _alarmsEnabled
                 ? NexusEditorStyles.AccentRed : NexusEditorStyles.AccentBlue);
@@ -362,7 +376,9 @@ namespace Nexus.Editor
             if (_fpsBuffer.Count == 0) return;
 
             float lastFps = _fpsBuffer.Last();
-            bool fpsAlarm = lastFps < _fpsAlarm && _alarmsEnabled && Application.isPlaying;
+            // Guard fps > 0: a 0.0 reading means "not sampled yet" (no MetricsSampler
+            // component in the scene, or recording just started), not a real 0 FPS.
+            bool fpsAlarm = lastFps > 0f && lastFps < _fpsAlarm && _alarmsEnabled && Application.isPlaying;
             _fpsAlarmLabel.text = fpsAlarm ? string.Format(NexusLang.Get("pd_fps_below"), lastFps.ToString("F1"), _fpsAlarm.ToString("F0")) : "";
             _fpsAlarmLabel.style.display = fpsAlarm ? DisplayStyle.Flex : DisplayStyle.None;
 

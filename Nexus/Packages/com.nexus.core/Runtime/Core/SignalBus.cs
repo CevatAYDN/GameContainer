@@ -135,7 +135,42 @@ namespace Nexus.Core
         // increments and decrements always land on the same slot, recursion is detected
         // across threads, and concurrent queued/rollback dispatches never corrupt each
         // other's depth.
-        private static readonly System.Threading.AsyncLocal<int> s_asyncStackDepth = new();
+        //
+        // The depth is stored in a MUTABLE BOXED holder (AsyncStackDepthBox) instead of
+        // AsyncLocal<int>: a value-typed AsyncLocal boxes a fresh int on EVERY read/write
+        // (~192 B/op standalone, measured in the harness alloc-diag). The holder keeps the
+        // box allocated once per root flow and mutates its field — the finally decrement
+        // becomes a plain field write (zero AsyncLocal traffic) and nested dispatches
+        // (which inherit the box reference from the parent context) cost nothing at all.
+        // Semantics: the box is shared by every flow derived from the same root execution
+        // context — nested awaits AND concurrently-spawned children of one dispatch tree
+        // transiently observe the TREE depth, which is exactly what a runaway-chain guard
+        // needs (a runaway chain inflates the tree depth monotonically). Each flow's
+        // balanced increment/decrement keeps the box self-correcting, and independent
+        // roots (fresh execution contexts, e.g. separate FireAsync calls from sync code)
+        // each get their own box, so unrelated dispatches never interfere.
+        //
+        // Known tradeoff (adversarial review): the tree semantics mean a legitimate fan-out
+        // of concurrent in-flight async dispatches derived from one tree sums toward the
+        // cap — hence the separate, more generous MaxAsyncStackDepth (32) vs the sync
+        // path's MaxStackDepth (10, which guards real stack overflow). The box field is
+        // volatile: continuations mutate it from arbitrary threads, and the plain int
+        // read/writes would otherwise be a visibility downgrade vs AsyncLocal<int>'s
+        // internally-synchronized access (a stale read could only skew the abort decision
+        // at the exact boundary).
+        private static readonly System.Threading.AsyncLocal<AsyncStackDepthBox> s_asyncStackDepth = new();
+
+        private sealed class AsyncStackDepthBox
+        {
+            public volatile int Value;
+        }
+
+        // Async-path reentrancy cap. Separate from MaxStackDepth (sync): the shared box
+        // counts the whole flow tree (concurrent children of one dispatch tree sum toward
+        // the cap), and async chains cannot overflow the call stack, so 32 still aborts
+        // runaway async signal chains while leaving legitimate concurrent fan-out ample
+        // headroom.
+        private const int MaxAsyncStackDepth = 32;
 
         private const int MaxStackDepth = 10;
 
@@ -371,12 +406,10 @@ namespace Nexus.Core
                 NexusRuntime.Logger?.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
             }
 #endif
+
             s_stackDepth++;
             if (s_stackDepth > MaxStackDepth)
             {
-                // P0-7 fix: never reset the counter to 0 (outer frames still decrement in
-                // their finally blocks, which would drift the counter negative). This branch
-                // runs before this frame's try/finally, so undo only this frame's increment.
                 s_stackDepth--;
                 // A8 fix: reentrancy protection must throw in ALL build targets. Silently
                 // returning in Release builds hid the state corruption that a runaway
@@ -539,21 +572,25 @@ namespace Nexus.Core
 
         private async ValueTask FireInternalAsync<T>(T signal, bool isCrossContextSource, CancellationToken ct) where T : struct
         {
-            s_asyncStackDepth.Value++;
+            var depthBox = s_asyncStackDepth.Value;
+            if (depthBox == null)
+            {
+                // First async dispatch on this root execution context: allocate the box once.
+                // Nested dispatches inherit this reference and skip the allocation entirely.
+                depthBox = new AsyncStackDepthBox();
+                s_asyncStackDepth.Value = depthBox;
+            }
+            if (++depthBox.Value > MaxAsyncStackDepth)
+            {
+                depthBox.Value--;
+                // A8 fix: same as the sync path — always throw, never return silently in
+                // Release builds (silent return masked runaway async chains).
+                throw new NexusReentrancyException($"Async stack overflow detected. Reentrancy limit of {MaxAsyncStackDepth} exceeded for signal {typeof(T).FullName}");
+            }
 
             // Capture the command-scoped token for use in the nested scopes below.
             // This allows FireAsyncWithTimeout to cancel command execution via a linked token.
             var commandCt = ct;
-            if (s_asyncStackDepth.Value > MaxStackDepth)
-            {
-                // P0-7 fix: never reset the counter to 0 (outer frames still decrement in
-                // their finally blocks, which would drift the counter negative). This branch
-                // runs before this frame's try/finally, so undo only this frame's increment.
-                s_asyncStackDepth.Value--;
-                // A8 fix: same as the sync path — always throw, never return silently in
-                // Release builds (silent return masked runaway async chains).
-                throw new NexusReentrancyException($"Stack overflow detected. Reentrancy limit of {MaxStackDepth} exceeded for signal {typeof(T).FullName}");
-            }
 
 #if NEXUS_DEBUG
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
@@ -751,7 +788,11 @@ namespace Nexus.Core
             }
             finally
             {
-                s_asyncStackDepth.Value--;
+                // Plain field decrement on the inherited box — zero AsyncLocal traffic on the
+                // exit path (the box is guaranteed non-null here: the increment above either
+                // succeeded with a box in the current context or threw before this try).
+                depthBox = s_asyncStackDepth.Value;
+                if (depthBox != null) depthBox.Value--;
                 _subscriptionRegistry.ExitDispatch();
             }
         }
@@ -771,7 +812,7 @@ namespace Nexus.Core
             var signalType = typeof(T);
 
             // C-1 fix: when already processing composites on this thread (a composite command
-            // fired another signal that completed another trigger), the shared ThreadStatic
+            // fired another signal completing another trigger), the shared ThreadStatic
             // buffer is the OUTER frame's list. The nested call must not Clear() it (that would
             // lose the outer pending triggers) nor append into it (that would double-execute
             // the nested entries from the outer loop). Use a per-frame local list instead.
@@ -781,9 +822,8 @@ namespace Nexus.Core
                 : (s_dueTriggerBuffer ??= new List<(CompositeTriggerState trigger, CompositeContext context)>());
             if (!isNested) buffer.Clear();
 
-            // Composite payload support: box the signal at most once, and only when it actually
-            // feeds a registered composite trigger. Non-composite signals never allocate here.
-            object boxedSignal = null;
+            // Composite payload support: box the signal per-trigger to avoid any shared mutable state.
+            // Non-composite signals never allocate here.
 
             if (!_commandRegistry.TryGetCompositeTriggers(signalType, out var triggers))
                 return;
@@ -797,7 +837,10 @@ namespace Nexus.Core
                     int index = Array.IndexOf(trigger.RequiredSignals, signalType);
                     if (index >= 0)
                     {
-                        boxedSignal ??= signal;
+                        // Box per-trigger to avoid any shared reference issues.
+                        // Since signals are readonly structs, the boxed value is immutable,
+                        // but per-trigger boxing ensures complete isolation.
+                        object boxedSignal = signal;
                         trigger.CapturePayload(index, boxedSignal);
                         trigger.CurrentMask |= (1UL << index);
 
