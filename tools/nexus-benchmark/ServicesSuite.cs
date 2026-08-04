@@ -930,7 +930,11 @@ namespace NexusBench
                 ctx.Context.Container.Bind<AdService>(isSingleton: true);
                 var ads = ctx.Context.Resolve<AdService>();
 
-                // D1: no adapter → mock shows + cooldown enforced against the clock.
+                // D1: cooldown enforced against the clock through a bound adapter.
+                // (The harness IS a release build — with no adapter, mock ads are denied,
+                // so cooldown can only be observed via an adapter; see D2.)
+                var cooldownAdapter = new SvcRecordingAdAdapter();
+                ads.SetNetworkAdapter(cooldownAdapter);
                 Time.realtimeSinceStartup = 100f;
                 ads.SetInterstitialCooldown(30f);
                 bool availableBefore = ads.IsInterstitialAvailable("default");
@@ -939,13 +943,15 @@ namespace NexusBench
                 bool blockedOnCooldown = !ads.IsInterstitialAvailable("default");
                 Time.realtimeSinceStartup = 131f;
                 bool availableAfterElapse = ads.IsInterstitialAvailable("default");
-                Check("D1. Interstitial_Cooldown_Enforced_No_Adapter", availableBefore && closed && blockedOnCooldown && availableAfterElapse,
+                Check("D1. Interstitial_Cooldown_Enforced", availableBefore && closed && blockedOnCooldown && availableAfterElapse,
                     $"available={availableBefore} closed={closed} blocked={blockedOnCooldown} after31s={availableAfterElapse}");
 
-                // D2: rewarded mock path without adapter completes successfully.
-                bool rewarded = false;
+                // D2: release build without an adapter must DENY the mock reward —
+                // granting free currency without an impression would be a revenue cheat.
+                ads.SetNetworkAdapter(null);
+                bool rewarded = true;
                 ads.ShowRewarded("reward1", ok => rewarded = ok);
-                Check("D2. Rewarded_Mock_Path_Completes", rewarded,
+                Check("D2. Mock_Reward_Denied_In_Release_Harness", !rewarded,
                     $"rewarded={rewarded}");
 
                 // D3: with an adapter bound, every call delegates to it.

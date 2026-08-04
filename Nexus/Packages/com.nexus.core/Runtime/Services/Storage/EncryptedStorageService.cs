@@ -69,7 +69,16 @@ namespace Nexus.Core.Services
         // (the B1 invariant) while making concurrent writes to one key atomic.
         private readonly object _writeLock = new();
 
-        public EncryptedStorageService(string customSalt = "Nexus_Secure_Salt_2026")
+        /// <summary>
+        /// DI-friendly parameterless constructor. Nexus DI requires a parameterless ctor
+        /// (or an [Inject]/[Construct]-decorated one) to construct a type — the sole
+        /// optional-string ctor made strict injection fail on the unresolved 'System.String'
+        /// parameter ('{type} is not registered'), which broke every container that bound
+        /// this service. Equivalent to the default salt.
+        /// </summary>
+        public EncryptedStorageService() : this("Nexus_Secure_Salt_2026") { }
+
+        public EncryptedStorageService(string customSalt)
         {
             if (string.IsNullOrEmpty(customSalt))
                 customSalt = "Nexus_Secure_Salt_2026";

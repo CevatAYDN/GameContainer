@@ -245,13 +245,30 @@ namespace NexusBench
 
         public static int Run()
         {
+            // Capture BEFORE opting out so the restore below always has the true framework
+            // default (independent of the static field initializer) even if a test throws.
+            s_a10DefaultValidateOnStartup = ContextBuilder.ValidateOnStartup;
+            try
+            {
+                return RunInternal();
+            }
+            finally
+            {
+                // P-leak fix: restore the static opt-out so every later suite (Services, Registry,
+                // ConcurrentDiff, GameSession, DemoCompatibility, ...) runs with the framework
+                // default ValidateOnStartup == true again instead of inheriting this suite's false.
+                ContextBuilder.ValidateOnStartup = s_a10DefaultValidateOnStartup;
+            }
+        }
+
+        private static int RunInternal()
+        {
             _failures = 0;
             _testCount = 0;
             // A10: this suite intentionally late-binds many services (bound after Configure,
             // resolved via ReInjectAll) — exactly the scenario ContextBuilder.ValidateOnStartup
-            // documents as opt-out. Capture the framework default for test 32b, then opt out so
-            // the stress suite's own binding order does not flood the log with validation noise.
-            s_a10DefaultValidateOnStartup = ContextBuilder.ValidateOnStartup;
+            // documents as opt-out. Opt out so the stress suite's own binding order does not
+            // flood the log with validation noise. The framework default was captured in Run().
             ContextBuilder.ValidateOnStartup = false;
             Console.WriteLine();
             Console.WriteLine("===============================================================================");
@@ -312,7 +329,12 @@ namespace NexusBench
             Test_CrossContext_RealPath_ScopedBroadcast();
             Test_ContextLifecycleOrchestrator_Phases_Isolation();
             TraceRegistry("after 39");
-            
+            Test_TraceRingBuffer_ResizeRace_NoOOB();
+            Test_SaveThrottler_MultiOwner_NoCrossClobber();
+            Test_ContextDependsOn_PostContextOrdering();
+            Test_NamedLazyInjection_ResolvesNamedBinding();
+            Test_Root_SetUp_RegisterLifecycle_Programmatic();
+            TraceRegistry("after 41");
 
             Console.WriteLine("===============================================================================");
             Console.WriteLine(_failures == 0
@@ -328,6 +350,187 @@ namespace NexusBench
             catch { /* already gone */ }
 
             return _failures;
+        }
+
+        // ---------------------------------------------------------------------
+        // 40. Trace ring buffer: concurrent RecordTrace + ApplyTraceBufferSize + reader
+        //     must never throw (regression for the stale-buffer/size race that could
+        //     index past the old array → IndexOutOfRangeException on the SignalBus hot
+        //     path). Best-effort stress: the historical bug window is small, so this is
+        //     a repeat-run regression test, not a proof.
+        // ---------------------------------------------------------------------
+        private static void Test_TraceRingBuffer_ResizeRace_NoOOB()
+        {
+            // Deterministic baseline regardless of any earlier suite's buffer state.
+            NexusRuntime.Metrics.ResetTraceBuffer();
+            bool ok = false;
+            string detail;
+            try
+            {
+                // ── Deterministic copy-preservation: entries recorded before a resize
+                //    must survive it (chronological, newest last) for BOTH grow and shrink.
+                //    The concurrent section below can only catch the race probabilistically,
+                //    so this direct assertion regression-tests the copy logic itself.
+                for (int i = 0; i < 10; i++) NexusRuntime.Metrics.RecordTrace("keep-" + i);
+                NexusRuntime.Metrics.ApplyTraceBufferSize(512);
+                var grown = NexusRuntime.Metrics.GetRecentTraces(out int grownCount);
+                NexusRuntime.Metrics.ApplyTraceBufferSize(64);
+                var shrunk = NexusRuntime.Metrics.GetRecentTraces(out int shrunkCount);
+                bool preserved = grownCount == 10 && shrunkCount == 10;
+                if (preserved)
+                {
+                    for (int i = 0; i < 10; i++)
+                    {
+                        if (grown[i] != "keep-" + i || shrunk[i] != "keep-" + i) { preserved = false; break; }
+                    }
+                }
+                // Clean slate for the concurrent section below.
+                NexusRuntime.Metrics.ResetTraceBuffer();
+
+                const int writers = 4;
+                const int writesPerWriter = 5000;
+                var threads = new Thread[writers];
+                int writerErrors = 0;
+
+                for (int w = 0; w < writers; w++)
+                {
+                    threads[w] = new Thread(() =>
+                    {
+                        for (int i = 0; i < writesPerWriter; i++)
+                        {
+                            try
+                            {
+                                NexusRuntime.Metrics.RecordTrace("race-" + i);
+                                // Interleave grow/shrink resizes with the hot writes so
+                                // the array swap races the lock-free readers/writers.
+                                if ((i & 1023) == 0)
+                                    NexusRuntime.Metrics.ApplyTraceBufferSize(64 + ((i >> 10) % 8) * 250);
+                            }
+                            catch (Exception)
+                            {
+                                Interlocked.Increment(ref writerErrors);
+                            }
+                        }
+                    });
+                    threads[w].Start();
+                }
+
+                // Concurrent reader hammering GetRecentTraces while writers resize/write.
+                int readerStop = 0;
+                int readerErrors = 0;
+                var reader = new Thread(() =>
+                {
+                    while (Volatile.Read(ref readerStop) == 0)
+                    {
+                        try
+                        {
+                            var traces = NexusRuntime.Metrics.GetRecentTraces(out int n);
+                            if (n < 0 || n > 4096 || traces.Length != n)
+                                throw new InvalidOperationException($"inconsistent trace read: count={n}, len={traces.Length}");
+                        }
+                        catch (Exception)
+                        {
+                            Interlocked.Increment(ref readerErrors);
+                        }
+                    }
+                });
+                reader.Start();
+
+                for (int w = 0; w < writers; w++) threads[w].Join();
+                Volatile.Write(ref readerStop, 1);
+                reader.Join();
+
+                // Ring must remain readable and internally consistent after all churn.
+                var final = NexusRuntime.Metrics.GetRecentTraces(out int finalCount);
+                bool readable = finalCount >= 0 && final.Length == finalCount && finalCount <= 2048;
+
+                ok = preserved && writerErrors == 0 && readerErrors == 0 && readable;
+                detail = $"preserved={preserved} writers={writers}x{writesPerWriter} writerErrors={writerErrors} readerErrors={readerErrors} finalCount={finalCount} readable={readable}";
+            }
+            finally
+            {
+                // Restore the default ring so later assertions (test 25's 200-cap flood)
+                // keep their expected values on repeat runs.
+                NexusRuntime.Metrics.ResetTraceBuffer();
+            }
+
+            Report("40. TraceRingBuffer_ResizeRace_NoOOB", ok, detail);
+        }
+
+        // ---------------------------------------------------------------------
+        // 41. SaveThrottler multi-owner: per-owner pending slots must never clobber each
+        //     other (regression for the single-slot design where the last TryRequestSave
+        //     silently dropped the earlier owner's pending write — real data loss once
+        //     EconomyService and ProgressionService share one throttler singleton), and a
+        //     permanently-failing owner's retry cap must not clear a healthy owner's
+        //     pending flag. Deterministic (single thread, fake clock).
+        // ---------------------------------------------------------------------
+        private static void Test_SaveThrottler_MultiOwner_NoCrossClobber()
+        {
+            var time = new FakeTimeProvider { Now = 0f };
+            var throttler = new SaveThrottler(null, TimeSpan.FromSeconds(1)) { TimeProvider = time };
+
+            int savesA = 0, savesB = 0;
+
+            // t=0: fresh slots → both flush immediately (window open).
+            throttler.TryRequestSave("a", () => savesA++);
+            throttler.TryRequestSave("b", () => savesB++);
+            bool bothImmediate = savesA == 1 && savesB == 1;
+
+            // t=0.5: within the window → BOTH pending. Pre-multi-owner: the second request
+            // overwrote the single shared action slot → owner A's pending save was lost.
+            time.Now = 0.5f;
+            throttler.TryRequestSave("a", () => savesA++);
+            throttler.TryRequestSave("b", () => savesB++);
+            bool bothPending = savesA == 1 && savesB == 1;
+
+            // Window expires → BOTH flush on the same tick. Pre-fix: only B's action
+            // existed, so A stayed at 1 (silent data loss).
+            time.Now = 2f;
+            throttler.Tick(0.016f);
+            bool bothFlushedOnTick = savesA == 2 && savesB == 2;
+
+            // ── Failure isolation: a permanently-failing owner must not block a healthy one ──
+            time.Now = 10f;
+            int failCount = 0, healthyCount = 0;
+            throttler.TryRequestSave("failing", () => { failCount++; throw new System.IO.IOException("disk full"); });
+            bool failingArmed = failCount == 1; // immediate flush → fails → retry armed per-owner
+
+            throttler.TryRequestSave("healthy", () => healthyCount++);
+            bool healthyImmediate = healthyCount == 1; // healthy slot independent of failing's failure
+
+            // Healthy requests again INSIDE the window → pending, exactly like a throttled
+            // save from ProgressionService while Economy's failing slot retries.
+            time.Now = 10.5f;
+            throttler.TryRequestSave("healthy", () => healthyCount++);
+            bool healthyPending = healthyCount == 1;
+
+            time.Now = 11f;
+            throttler.Tick(0.016f);
+            bool failingRetried = failCount == 2;
+            bool healthySurvives = healthyCount == 2; // failing's failures never touch healthy
+
+            // ── Flush() persists every owner (nothing dropped) ──
+            throttler.TryRequestSave("healthy", () => healthyCount++); // pending (t=11, within window)
+            throttler.Flush(); // re-runs the last action for EVERY owner
+            bool flushAllOwners = healthyCount == 3 && savesA == 3 && savesB == 3 && failCount == 3;
+
+            // ── ForceSave(owner) is scoped: only that owner's action runs ──
+            throttler.ForceSave("healthy", () => healthyCount++);
+            bool forceScoped = healthyCount == 4 && failCount == 3; // failing NOT re-run by ForceSave("healthy")
+
+            // ── Per-owner retry cap: failing gives up after 5; healthy is untouched ──
+            for (int i = 0; i < 10; i++) { time.Now += 1f; throttler.Tick(0.016f); }
+            bool capped = failCount == 5;
+            bool healthyStillFine = healthyCount == 4;
+
+            bool ok = bothImmediate && bothPending && bothFlushedOnTick
+                && failingArmed && healthyImmediate && healthyPending && failingRetried && healthySurvives
+                && flushAllOwners && forceScoped && capped && healthyStillFine;
+
+            Console.WriteLine($"[Nexus Architecture Stress] SaveThrottler multi-owner: clobber={!bothFlushedOnTick} isolated={healthySurvives}");
+            Report("41. SaveThrottler_MultiOwner_NoCrossClobber", ok,
+                $"bothImmediate={bothImmediate}, bothPending={bothPending}, bothFlushedOnTick={bothFlushedOnTick}, failingArmed={failingArmed}, healthyPending={healthyPending}, healthySurvives={healthySurvives}, flushAll={flushAllOwners}, forceScoped={forceScoped}, capped={capped}, healthyStillFine={healthyStillFine}");
         }
 
         // ---------------------------------------------------------------------
@@ -2656,6 +2859,257 @@ namespace NexusBench
 
             Console.WriteLine($"[Nexus Architecture Stress] DI validation all-builds: {ok}");
             Report("32b. DIValidation_AllBuilds_DefaultOn", ok, detail);
+        }
+
+        // =========================================================================
+        // 42. ContextData.DependsOn → PostContext dependency ordering
+        // =========================================================================
+
+        /// <summary>Records the OnPostContext order across contexts (static: shared by all instances).</summary>
+        private sealed class DependsOnRecorder : IContextLifecycle, IPostContextLifecycle
+        {
+            public readonly string Tag;
+            public static readonly List<string> Order = new();
+            public DependsOnRecorder(string tag) { Tag = tag; }
+            public void OnConfigure(IContextBuilder builder)
+            {
+                // Harness-only accommodation (same as DemoCompatibilitySuite): the unconditional
+                // assembly scan auto-registers other suites' commands (SvcCounterCommand→TestCounter,
+                // CapCommandA→CapTracker); bind their deps before Validate() so the harness log
+                // stays clean now that ValidateOnStartup defaults to true.
+                builder.BindInstance(new CapTracker());
+                builder.BindInstance(new TestCounter());
+            }
+            public ValueTask OnInitializeAsync(CancellationToken ct) => default;
+            public ValueTask OnStartAsync(CancellationToken ct) => default;
+            public void OnPostContext(IContextBuilder builder) { Order.Add(Tag); }
+            public void OnDispose() { }
+        }
+
+        private static ContextData CreateDependsOnData(string scopeTag, string[] dependsOn)
+        {
+            var data = ScriptableObject.CreateInstance<ContextData>();
+            data.name = scopeTag + "Data";
+            data.ScopeTag = scopeTag;
+            data.EnableAutoDiscovery = false;
+            data.DependsOn = dependsOn;
+            return data;
+        }
+
+        private static void Test_ContextDependsOn_PostContextOrdering()
+        {
+            bool ok = false;
+            string detail;
+            var contexts = new List<Context>();
+            try
+            {
+                // ── Phase 1: chain B→A, C→B, registered in the WRONG order (C, B, A).
+                //    PostContext must run dependency-first: A, B, C. ──
+                DependsOnRecorder.Order.Clear();
+                var ctxC = new Context(null, CreateDependsOnData("DepC", null));
+                contexts.Add(ctxC);
+                ctxC.Configure(new[] { new DependsOnRecorder("DepC") });
+                var ctxB = new Context(null, CreateDependsOnData("DepB", new[] { "DepA" }));
+                contexts.Add(ctxB);
+                ctxB.Configure(new[] { new DependsOnRecorder("DepB") });
+                var ctxA = new Context(null, CreateDependsOnData("DepA", null));
+                contexts.Add(ctxA);
+                ctxA.Configure(new[] { new DependsOnRecorder("DepA") });
+
+                NexusRuntime.FinalizeInitializationAsync(CancellationToken.None).GetAwaiter().GetResult();
+                string chain = string.Join(",", DependsOnRecorder.Order);
+                // The dependency contract is ORDER-INVARIANT, not a specific topological
+                // permutation: B's OnPostContext must run AFTER its dependency A (so B
+                // observes A fully wired); C (no deps) may be anywhere. The DFS visits in
+                // registration order and hoists dependencies, so [C,A,B] is valid too.
+                int idxA = DependsOnRecorder.Order.IndexOf("DepA");
+                int idxB = DependsOnRecorder.Order.IndexOf("DepB");
+                bool chainOk = DependsOnRecorder.Order.Count == 3
+                    && idxA >= 0 && idxB >= 0 && idxB > idxA
+                    && DependsOnRecorder.Order.IndexOf("DepC") >= 0;
+                for (int i = contexts.Count - 1; i >= 0; i--) contexts[i].Dispose();
+                contexts.Clear();
+                NexusRuntime.Reset();
+
+                // ── Phase 2: cycle X↔Y → fallback to registration order, no exception. ──
+                DependsOnRecorder.Order.Clear();
+                var ctxX = new Context(null, CreateDependsOnData("DepX", new[] { "DepY" }));
+                contexts.Add(ctxX);
+                ctxX.Configure(new[] { new DependsOnRecorder("DepX") });
+                var ctxY = new Context(null, CreateDependsOnData("DepY", new[] { "DepX" }));
+                contexts.Add(ctxY);
+                ctxY.Configure(new[] { new DependsOnRecorder("DepY") });
+
+                NexusRuntime.FinalizeInitializationAsync(CancellationToken.None).GetAwaiter().GetResult();
+                string cycle = string.Join(",", DependsOnRecorder.Order);
+                bool cycleOk = cycle == "DepX,DepY"; // registration order (X before Y)
+                for (int i = contexts.Count - 1; i >= 0; i--) contexts[i].Dispose();
+                contexts.Clear();
+                NexusRuntime.Reset();
+
+                // ── Phase 3: unknown dependency is ignored; dependent still runs. ──
+                DependsOnRecorder.Order.Clear();
+                var ctxZ = new Context(null, CreateDependsOnData("DepZ", new[] { "NoSuchContext" }));
+                contexts.Add(ctxZ);
+                ctxZ.Configure(new[] { new DependsOnRecorder("DepZ") });
+
+                NexusRuntime.FinalizeInitializationAsync(CancellationToken.None).GetAwaiter().GetResult();
+                string unknown = string.Join(",", DependsOnRecorder.Order);
+                bool unknownOk = unknown == "DepZ";
+
+                ok = chainOk && cycleOk && unknownOk;
+                detail = $"chain=[{chain}] cycle=[{cycle}] unknownDep=[{unknown}]";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                DependsOnRecorder.Order.Clear();
+                for (int i = contexts.Count - 1; i >= 0; i--)
+                {
+                    try { contexts[i].Dispose(); } catch { /* best-effort */ }
+                }
+                NexusRuntime.Reset();
+            }
+            Report("42. ContextDependsOn_PostContextOrdering", ok, detail);
+        }
+
+        // =========================================================================
+        // 43. Named LazyInjection: [Inject(Name = "...")] LazyInjection<T> must resolve
+        //     the NAMED binding (P1 fix) — field and property paths.
+        // =========================================================================
+
+        public interface ILazyNamedThing { string Id { get; } }
+
+        public sealed class LazyNamedThing : ILazyNamedThing
+        {
+            public string Id { get; set; }
+        }
+
+        public sealed class LazyNamedHost
+        {
+            [Inject(Name = "red")] public LazyInjection<ILazyNamedThing> RedField;
+            [Inject] public LazyInjection<ILazyNamedThing> DefaultField;
+            [Inject(Name = "blue")] public LazyInjection<ILazyNamedThing> BlueProp { get; set; }
+        }
+
+        private static void Test_NamedLazyInjection_ResolvesNamedBinding()
+        {
+            bool ok = false;
+            string detail;
+            var ctx = new Context();
+            try
+            {
+                var red = new LazyNamedThing { Id = "red" };
+                var def = new LazyNamedThing { Id = "default" };
+                var blue = new LazyNamedThing { Id = "blue" };
+                ctx.Container.BindInstance<ILazyNamedThing>("red", red);
+                ctx.Container.BindInstance<ILazyNamedThing>(def);
+                ctx.Container.BindInstance<ILazyNamedThing>("blue", blue);
+                ctx.Container.Bind<LazyNamedHost>(isSingleton: false);
+
+                var host = ctx.Resolve<LazyNamedHost>();
+
+                // Without the P1 name-forwarding fix, the named LazyInjection would resolve
+                // the DEFAULT binding on first access — the assertions below have teeth.
+                bool namedField = host.RedField != null && ReferenceEquals(host.RedField.Value, red);
+                bool namedProp = host.BlueProp != null && ReferenceEquals(host.BlueProp.Value, blue);
+                bool defaultBinding = host.DefaultField != null && ReferenceEquals(host.DefaultField.Value, def);
+                bool resolveOnce = ReferenceEquals(host.RedField.Value, host.RedField.Value);
+
+                ok = namedField && namedProp && defaultBinding && resolveOnce;
+                detail = $"namedField={namedField} namedProp={namedProp} defaultBinding={defaultBinding} resolveOnce={resolveOnce}";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                ctx.Dispose();
+                NexusRuntime.Reset();
+            }
+            Report("43. NamedLazyInjection_ResolvesNamedBinding", ok, detail);
+        }
+
+        // =========================================================================
+        // 44. Root.SetUp + RegisterLifecycle programmatic path (no Inspector/scene
+        //     serialization) and the post-Awake guards.
+        // =========================================================================
+
+        private sealed class RootProgRecorder : IContextLifecycle
+        {
+            public bool Configured;
+            public void OnConfigure(IContextBuilder builder)
+            {
+                Configured = true;
+                // Harness-only accommodation: keep Validate() quiet about other suites'
+                // auto-scanned commands (see DependsOnRecorder.OnConfigure).
+                builder.BindInstance(new CapTracker());
+                builder.BindInstance(new TestCounter());
+            }
+            public ValueTask OnInitializeAsync(CancellationToken ct) => default;
+            public ValueTask OnStartAsync(CancellationToken ct) => default;
+            public void OnDispose() { }
+        }
+
+        private static void Test_Root_SetUp_RegisterLifecycle_Programmatic()
+        {
+            bool ok = false;
+            string detail;
+            var go = new GameObject("ProgRoot");
+            try
+            {
+                var root = go.AddComponent<Root>();
+                var data = ScriptableObject.CreateInstance<ContextData>();
+                data.name = "ProgRootData";
+                data.ScopeTag = "ProgScope";
+                data.EnableAutoDiscovery = false;
+
+                var recorder = new RootProgRecorder();
+                root.SetUp(data, null, 7);
+                root.RegisterLifecycle(recorder);
+
+                InvokePrivate(root, "Awake");
+
+                // SetUp must drive Awake: correct ScopeTag, priority, and the registered
+                // lifecycle must run OnConfigure through the real Configure path.
+                bool ctxOk = root.Context != null
+                    && root.Context.ScopeTag == "ProgScope"
+                    && root.InitializationPriority == 7;
+                bool lifecycleConfigured = recorder.Configured;
+
+                // Guards: after Awake created the context, SetUp/RegisterLifecycle must
+                // throw (before the guard they silently no-op'd — config lost).
+                bool setUpAfterInitThrows = false;
+                try { root.SetUp(data); }
+                catch (InvalidOperationException) { setUpAfterInitThrows = true; }
+                bool registerAfterInitThrows = false;
+                try { root.RegisterLifecycle(new RootProgRecorder()); }
+                catch (InvalidOperationException) { registerAfterInitThrows = true; }
+
+                ok = ctxOk && lifecycleConfigured && setUpAfterInitThrows && registerAfterInitThrows;
+                detail = $"ctxOk={ctxOk} lifecycleConfigured={lifecycleConfigured} " +
+                    $"setUpAfterInitThrows={setUpAfterInitThrows} registerAfterInitThrows={registerAfterInitThrows}";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try
+                {
+                    var root = go.GetComponent<Root>();
+                    if (root != null) InvokePrivate(root, "OnDestroy");
+                }
+                catch { /* best-effort */ }
+                UnityEngine.Object.Destroy(go);
+                NexusRuntime.Reset();
+            }
+            Report("44. Root_SetUp_RegisterLifecycle_Programmatic", ok, detail);
         }
     }
 }

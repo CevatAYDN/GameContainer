@@ -44,6 +44,11 @@ namespace Nexus.Core.Services
     [StubService("Replace with Unity IAP / RevenueCat adapter before release")]
     public class IapService : IIapService, INexusService
     {
+        // Guards adapter swap and read-use hand-off. The catalog has its own lock;
+        // the adapter is a separate mutable reference that SetStoreAdapter/Purchase/
+        // Restore/Ownership/OnDispose touch from potentially different threads, so it
+        // needs its own discipline (mirrors AdService's _lock pattern).
+        private readonly object _adapterLock = new();
         private IIapStoreAdapter _adapter;
         private readonly Dictionary<string, ProductDefinition> _catalog = new();
         private readonly HashSet<string> _mockOwnedProducts = new();
@@ -93,19 +98,24 @@ namespace Nexus.Core.Services
 
         public void SetStoreAdapter(IIapStoreAdapter adapter)
         {
-            _adapter = adapter;
+            IIapStoreAdapter toInitialize;
             List<ProductDefinition> productList;
             lock (_catalog)
             {
                 productList = new List<ProductDefinition>(_catalog.Values);
             }
-            if (_adapter != null)
+            lock (_adapterLock)
             {
-                _adapter.Initialize(productList, (success) =>
-                {
-                    NexusRuntime.Logger?.Log($"[IapService] Store adapter initialized: {success}");
-                });
+                _adapter = adapter;
+                toInitialize = adapter;
             }
+            // Initialize OUTSIDE the lock: store SDKs may block or re-enter this service
+            // (e.g. invoke the callback synchronously), and holding the lock across that
+            // would deadlock any other caller.
+            toInitialize?.Initialize(productList, (success) =>
+            {
+                NexusRuntime.Logger?.Log($"[IapService] Store adapter initialized: {success}");
+            });
         }
 
         public void RegisterProducts(params ProductDefinition[] products)
@@ -178,9 +188,11 @@ namespace Nexus.Core.Services
 
         public void PurchaseProduct(string productId, Action<bool, string> onComplete)
         {
-            if (_adapter != null)
+            IIapStoreAdapter adapter;
+            lock (_adapterLock) { adapter = _adapter; }
+            if (adapter != null)
             {
-                _adapter.Purchase(productId, onComplete);
+                adapter.Purchase(productId, onComplete);
                 return;
             }
 
@@ -191,10 +203,10 @@ namespace Nexus.Core.Services
             var logger = NexusRuntime.Logger;
             if (logger != null)
             {
-                logger.LogException(new InvalidOperationException(
+                logger.LogWarning(
                     $"[IapService] PurchaseProduct('{productId}') called without an IStoreAdapter bound. " +
                     "The Real Store Adapter is owned by the platform bootstrapper; if this is a release build, " +
-                    "verify that GameplayLifecycle registers the adapter before any UI can trigger a purchase."));
+                    "verify that GameplayLifecycle registers the adapter before any UI can trigger a purchase.");
             }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -228,9 +240,11 @@ namespace Nexus.Core.Services
 
         public void RestorePurchases(Action<bool> onComplete)
         {
-            if (_adapter != null)
+            IIapStoreAdapter adapter;
+            lock (_adapterLock) { adapter = _adapter; }
+            if (adapter != null)
             {
-                _adapter.Restore(onComplete);
+                adapter.Restore(onComplete);
                 return;
             }
 
@@ -238,8 +252,7 @@ namespace Nexus.Core.Services
             var logger = NexusRuntime.Logger;
             if (logger != null)
             {
-                logger.LogException(new InvalidOperationException(
-                    "[IapService] RestorePurchases called without an IStoreAdapter bound."));
+                logger.LogWarning("[IapService] RestorePurchases called without an IStoreAdapter bound.");
             }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -258,7 +271,9 @@ namespace Nexus.Core.Services
 
         public bool IsProductOwned(string productId)
         {
-            if (_adapter != null) return _adapter.IsOwned(productId);
+            IIapStoreAdapter adapter;
+            lock (_adapterLock) { adapter = _adapter; }
+            if (adapter != null) return adapter.IsOwned(productId);
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             lock (_catalog)
             {
@@ -282,6 +297,22 @@ namespace Nexus.Core.Services
             }
         }
 
-        public void OnDispose() { }
+        public void OnDispose()
+        {
+            // Release the platform adapter so its native handles (billing connections) are
+            // torn down deterministically instead of leaking until process exit. Swap under
+            // the lock so a concurrent Purchase/Restore/Ownership either captures the
+            // adapter before disposal or observes null (graceful "store unavailable" path).
+            IIapStoreAdapter adapter;
+            lock (_adapterLock)
+            {
+                adapter = _adapter;
+                _adapter = null;
+            }
+            if (adapter is IDisposable disposable)
+            {
+                disposable.Dispose();
+            }
+        }
     }
 }

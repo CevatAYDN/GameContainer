@@ -161,6 +161,15 @@ namespace Nexus.Core
             where TImplementation : class, INexusService;
 
         /// <summary>
+        /// Binds an INexusService under all of its user-defined interfaces AND its concrete
+        /// type as ONE shared singleton, and registers it for eager initialization during
+        /// InitializeServicesAsync. Use for services whose InitializeAsync must run at
+        /// startup and that are consumed both by interface and by concrete type.
+        /// </summary>
+        void BindServiceInterfacesAndSelfTo<TImplementation>()
+            where TImplementation : class, INexusService;
+
+        /// <summary>
         /// Binds a lazy service interface to its implementation. Unlike BindService, the service
         /// is NOT eagerly constructed during InitializeServicesAsync — it is resolved on first access
         /// via LazyInjection&lt;T&gt; or direct Resolve&lt;T&gt; call. Implements INexusService for lifecycle

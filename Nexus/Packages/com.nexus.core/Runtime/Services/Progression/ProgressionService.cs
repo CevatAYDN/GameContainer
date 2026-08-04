@@ -29,9 +29,17 @@ namespace Nexus.Core.Services
     public class ProgressionService : NexusService<IProgressionService>, IProgressionService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
+        // Optional write-coalescer: without it, every level change triggers a synchronous
+        // PlayerPrefs.Save() (frame hitches on mobile). Mirrors EconomyService's pattern.
+        [OptionalInject] public SaveThrottler SaveThrottler { get; set; }
 
         private const string KeyCurrentLevel = "NT_Prog_CurrentLevel";
         private const string KeyMaxLevel = "NT_Prog_MaxLevel";
+
+        // Owner id for the shared SaveThrottler (see EconomyService.SaveOwner): the
+        // progression pending save must live in its own slot so economy writes cannot
+        // clobber it and vice versa.
+        private const string SaveOwner = "progression";
 
         public SecureObservableInt CurrentLevel { get; } = new(1);
         public SecureObservableInt MaxUnlockedLevel { get; } = new(1);
@@ -44,10 +52,24 @@ namespace Nexus.Core.Services
                 MaxUnlockedLevel.Value = PlayerPrefsService.GetInt(KeyMaxLevel, 1);
             }
 
-            CurrentLevel.OnChanged((oldVal, newVal) => PlayerPrefsService?.SetInt(KeyCurrentLevel, newVal));
-            MaxUnlockedLevel.OnChanged((oldVal, newVal) => PlayerPrefsService?.SetInt(KeyMaxLevel, newVal));
+            CurrentLevel.OnChanged((oldVal, newVal) => SchedulePersist());
+            MaxUnlockedLevel.OnChanged((oldVal, newVal) => SchedulePersist());
 
             return default;
+        }
+
+        /// <summary>Batch-persists both level keys, throttled when a SaveThrottler is bound.</summary>
+        private void SchedulePersist()
+        {
+            if (SaveThrottler != null) SaveThrottler.TryRequestSave(SaveOwner, PersistNow);
+            else PersistNow();
+        }
+
+        private void PersistNow()
+        {
+            if (PlayerPrefsService == null) return;
+            PlayerPrefsService.SetInt(KeyCurrentLevel, CurrentLevel.Value);
+            PlayerPrefsService.SetInt(KeyMaxLevel, MaxUnlockedLevel.Value);
         }
 
         public void CompleteCurrentLevel()

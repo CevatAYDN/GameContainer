@@ -44,6 +44,10 @@ namespace Nexus.Core
         private readonly object _configureLock = new();
         private int _interceptorsCount;
         private ContextBuilder _builder;
+        // Set once the Configure pipeline actually ran (lifecycles + scan + validation).
+        // Distinct from _builder != null: the harness path (GetOrCreateBuilder) creates the
+        // builder WITHOUT configuring, so guarding on _builder would silently skip Configure.
+        private bool _configured;
         private volatile bool _disposed;
 
         private readonly ContextLifecycleOrchestrator _orchestrator = new();
@@ -53,7 +57,7 @@ namespace Nexus.Core
         internal IReadOnlyList<IContextLifecycle> ConfiguredLifecycles => _configuredLifecycles;
         internal IReadOnlyList<IPostContextLifecycle> PostContextLifecycles => _postContextLifecycles;
         internal bool HasPostContextLifecycle => _postContextLifecycles.Count > 0;
-        internal bool IsConfigured => _builder != null;
+        internal bool IsConfigured => _configured;
         internal ContextBuilder Builder => _builder;
 
         /// <summary>
@@ -64,8 +68,13 @@ namespace Nexus.Core
         /// </summary>
         internal ContextBuilder GetOrCreateBuilder()
         {
-            if (_builder == null) _builder = new ContextBuilder(Container, SignalBusInternal);
-            return _builder;
+            // Locked: two threads racing the first call would otherwise create two
+            // builders and one silently win while the other's bindings are dropped.
+            lock (_configureLock)
+            {
+                if (_builder == null) _builder = new ContextBuilder(Container, SignalBusInternal);
+                return _builder;
+            }
         }
         public IReadOnlyList<(INexusPlugin plugin, PluginContext context)> PluginsReadOnlyCopy => _pluginsReadOnlyCopy;
 
@@ -163,6 +172,22 @@ namespace Nexus.Core
 
         public void Configure(IContextLifecycle[] lifecycles = null)
         {
+            ConfigureInternal(null, lifecycles);
+        }
+
+        /// <summary>
+        /// Configures this context reusing a caller-provided builder instead of creating a new one.
+        /// Required by <see cref="NexusTestHarness"/>, which must register bindings on a builder
+        /// BEFORE Configure() runs validation/scanning — otherwise those bindings are silently dropped
+        /// because Configure() would construct its own empty builder.
+        /// </summary>
+        internal void ConfigureWithBuilder(ContextBuilder builder, IContextLifecycle[] lifecycles = null)
+        {
+            ConfigureInternal(builder, lifecycles);
+        }
+
+        private void ConfigureInternal(ContextBuilder prebuiltBuilder, IContextLifecycle[] lifecycles)
+        {
             if (_disposed) return;
 
             // C2 fix: synchronize with _configureLock to prevent two threads from entering
@@ -170,17 +195,30 @@ namespace Nexus.Core
             // duplicate assembly scans, and state corruption.
             lock (_configureLock)
             {
-                // Guard against double-Configure: if _builder already exists, merging state from
-                // a second call would lose the first builder's reactive model and service type
-                // registrations. Prevent accidental double-call by returning early.
-                if (_builder != null)
+                // Guard against double-Configure (keyed on _configured, NOT _builder != null):
+                // GetOrCreateBuilder (the NexusTestContext harness path) creates _builder without
+                // configuring, so a _builder-based guard would make a later Configure() silently
+                // skip validation/scanning/lifecycle discovery. Merging state from a second real
+                // Configure would lose the first builder's reactive model and service type lists.
+                if (_configured)
                 {
                     NexusRuntime.Logger?.LogWarning(
                         $"[Nexus] Context '{ScopeTag}' Configure() called more than once. Subsequent calls are ignored.");
                     return;
                 }
 
-                _builder = new ContextBuilder(Container, SignalBusInternal);
+                if (_builder == null)
+                {
+                    _builder = prebuiltBuilder ?? new ContextBuilder(Container, SignalBusInternal);
+                }
+                else if (prebuiltBuilder != null && prebuiltBuilder != _builder)
+                {
+                    // A harness-created builder already exists; keep it (it holds the harness's
+                    // bindings) and do not silently merge the prebuilt one.
+                    NexusRuntime.Logger?.LogWarning(
+                        $"[Nexus] Context '{ScopeTag}' ConfigureWithBuilder: a builder already exists (GetOrCreateBuilder); the prebuilt builder's bindings were not merged.");
+                }
+                _configured = true;
             }
 
             // ... rest stays the same until after assemblies scan ...
@@ -280,6 +318,11 @@ namespace Nexus.Core
 
         internal async ValueTask InitializeLifecycleAsync(IReadOnlyList<IContextLifecycle> lifecycles, CancellationToken ct)
         {
+            // Apply the app's configured trace-ring capacity so ContextData.TracerRingBufferSize
+            // takes effect instead of being dead configuration.
+            if (_contextData != null && _contextData.TracerRingBufferSize > 0)
+                NexusRuntime.Metrics.ApplyTraceBufferSize(_contextData.TracerRingBufferSize);
+
             await InitializeReactiveModelsAsync(ct);
             await InitializeServicesAsync(ct);
             Container.ReInjectAll();
@@ -324,19 +367,17 @@ namespace Nexus.Core
                 return default;
             }
 
-            // NOTE: We pass the EXISTING builder (not a new one) so that lifecycles calling
-            // OnPostContext can add cross-context bindings and signal registrations to the
-            // same container that was used during Configure. A fresh ContextBuilder would
-            // share the same Container reference but lose the reactive-model and service-type
-            // lists, making late BindService/BindReactiveModel calls silently non-functional.
-            var postBuilder = new ContextBuilder(Container, SignalBusInternal);
-
+            // NOTE: We pass the EXISTING builder so that lifecycles calling OnPostContext can
+            // add cross-context bindings and signal registrations to the same container that
+            // was used during Configure. A fresh ContextBuilder would share the same Container
+            // reference but lose the reactive-model and service-type lists, making late
+            // BindService/BindReactiveModel calls silently non-functional.
             for (int i = 0; i < _postContextLifecycles.Count; i++)
             {
                 if (ct.IsCancellationRequested) break;
                 try
                 {
-                    _postContextLifecycles[i].OnPostContext(postBuilder);
+                    _postContextLifecycles[i].OnPostContext(_builder);
                 }
                 catch (Exception ex)
                 {
@@ -371,7 +412,7 @@ namespace Nexus.Core
             string targetName2 = $"{scopeTag}ContextLifecycle";
             foreach (var assembly in assemblies)
             {
-                foreach (var type in GetTypesSafely(assembly))
+                foreach (var type in Services.AssemblyScanService.GetCachedTypes(assembly))
                 {
                     if (type.IsClass && !type.IsAbstract && typeof(IContextLifecycle).IsAssignableFrom(type))
                     {
@@ -398,7 +439,7 @@ namespace Nexus.Core
                     if (!s_assemblyScanCache.TryGetValue(assembly, out cachedData))
                     {
                         cachedData = new List<ScannedHandlerData>();
-                        foreach (var type in GetTypesSafely(assembly))
+                        foreach (var type in Services.AssemblyScanService.GetCachedTypes(assembly))
                         {
                             if (type.IsClass && !type.IsAbstract)
                             {
@@ -515,17 +556,6 @@ namespace Nexus.Core
             if (string.IsNullOrEmpty(name)) return true;
             var lowerName = name.ToLowerInvariant();
             return lowerName.Contains(".tests") || lowerName.EndsWith(".editor");
-        }
-
-        private static IEnumerable<Type> GetTypesSafely(Assembly assembly)
-        {
-            try { return assembly.GetTypes(); }
-            catch (ReflectionTypeLoadException ex)
-            {
-                var types = new List<Type>();
-                foreach (var type in ex.Types) { if (type != null) types.Add(type); }
-                return types;
-            }
         }
 
         public T Resolve<T>() where T : class => Container.Resolve<T>();

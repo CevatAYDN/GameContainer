@@ -10,7 +10,9 @@ namespace Nexus.Core.Services
     public class LocalizationService : ILocalizationService, INexusService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
-        [Inject] public ILocalizationTableProvider TableProvider { get; set; }
+        // Optional: built-in "en"/"tr" tables work without it; LoadExternalTables()
+        // null-checks. A missing binding must not fail strict injection / validation.
+        [OptionalInject] public ILocalizationTableProvider TableProvider { get; set; }
 
         public string CurrentLanguage { get; private set; } = "en";
         public event Action<string> OnLanguageChanged;

@@ -1,5 +1,5 @@
 using System;
-using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -27,12 +27,28 @@ namespace Nexus.Core.Services
     public class EconomyService : NexusService<IEconomyService>, IEconomyService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
-        [Inject] public INetworkEconomyValidator NetworkValidator { get; set; }
+        // Optional capability: every use is null-checked and fire-and-forget, so a game
+        // without a backend must not fail strict injection / startup validation over it.
+        [OptionalInject] public INetworkEconomyValidator NetworkValidator { get; set; }
+        // Optional write-coalescer: when bound, balance persistence is throttled to one
+        // batched flush per window instead of a synchronous PlayerPrefs.Save() per
+        // Earn/Spend (frame hitching on mobile). Without a binding, saves are immediate
+        // (previous behavior, preserved for tests and bare containers).
+        [OptionalInject] public SaveThrottler SaveThrottler { get; set; }
+
+        // Owner id for the shared SaveThrottler: EconomyService and ProgressionService may
+        // share ONE throttler singleton, so each must use its own slot — otherwise one's
+        // pending write silently clobbers the other's (the pre-multi-owner data-loss bug).
+        private const string SaveOwner = "economy";
 
         // Anti-cheat: balances are XOR-masked in RAM (SecureObservableLong), matching the
         // project's SecureObservableInt story for the most valuable (currency) data. This
         // defeats GameGuardian / CheatEngine memory scans on the balance dictionary itself.
-        private readonly Dictionary<string, SecureObservableLong> _balances = new();
+        // ConcurrentDictionary so the lock-free TryGetValue fast path in
+        // GetObservableBalance is actually safe: a plain Dictionary can tear/corrupt on
+        // concurrent read/write even for different keys (rehash), and Dispose() mutates
+        // it — the previous comment claiming lock-free reads were safe was wrong.
+        private readonly ConcurrentDictionary<string, SecureObservableLong> _balances = new();
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
@@ -65,7 +81,7 @@ namespace Nexus.Core.Services
 
             // I/O and network calls outside the lock so slow storage or a
             // fire-and-forget network validation never stalls other balance operations.
-            SaveBalance(currencyId, prop.Value);
+            SchedulePersist();
 
             if (NetworkValidator != null)
             {
@@ -85,7 +101,7 @@ namespace Nexus.Core.Services
                 prop.Value = amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount;
             }
 
-            SaveBalance(currencyId, prop.Value);
+            SchedulePersist();
 
             if (NetworkValidator != null)
             {
@@ -101,12 +117,12 @@ namespace Nexus.Core.Services
                 prop = LazyLoadBalance(currencyId);
                 prop.Value = Math.Max(0L, amount);
             }
-            SaveBalance(currencyId, prop.Value);
+            SchedulePersist();
         }
 
-        // Lock-free lookup: the balance dictionary is only mutated under _balances lock,
-        // but once a SecureObservableLong is registered it is never removed, so reading
-        // the reference outside the lock is safe for existing entries.
+        // Lock-free lookup: ConcurrentDictionary reads are thread-safe; the explicit
+        // lock only serializes the lazy-registration create path (so two racing callers
+        // of a brand-new currency cannot create two SecureObservableLong wrappers).
         public SecureObservableLong GetObservableBalance(string currencyId)
         {
             if (string.IsNullOrEmpty(currencyId)) return null;
@@ -133,9 +149,34 @@ namespace Nexus.Core.Services
             return prop;
         }
 
-        private void SaveBalance(string currencyId, long amount)
+        /// <summary>
+        /// Schedules a balance persist. With a <see cref="SaveThrottler"/> bound, per-mutation
+        /// writes coalesce into one batched flush every throttle window (the action always
+        /// saves ALL currencies, so a single batched flush can never drop a currency).
+        /// Without one, persists immediately (previous behavior).
+        /// </summary>
+        private void SchedulePersist()
         {
-            PlayerPrefsService?.SetLong($"NT_Eco_{currencyId}", amount);
+            if (SaveThrottler != null)
+            {
+                SaveThrottler.TryRequestSave(SaveOwner, PersistAllBalancesNow);
+            }
+            else
+            {
+                PersistAllBalancesNow();
+            }
+        }
+
+        private void PersistAllBalancesNow()
+        {
+            if (PlayerPrefsService == null) return;
+            lock (_balances)
+            {
+                foreach (var kvp in _balances)
+                {
+                    PlayerPrefsService.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
+                }
+            }
         }
 
         /// <summary>
@@ -160,14 +201,14 @@ namespace Nexus.Core.Services
 
             if (!approved)
             {
-                long restoredAmount;
                 lock (_balances)
                 {
                     var prop = GetObservableBalance(currencyId);
                     prop.Value = Math.Min(prop.Value + amount, long.MaxValue);
-                    restoredAmount = prop.Value;
                 }
-                SaveBalance(currencyId, restoredAmount);
+                // Server-rejection restore is important enough to flush immediately.
+                if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
+                else PersistAllBalancesNow();
                 NexusRuntime.Logger?.LogWarning($"[Economy] Server rejected spend of {amount} '{currencyId}' — balance restored.");
             }
         }
@@ -187,6 +228,14 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
+            // Flush any pending throttled save BEFORE clearing balances so the final
+            // balance survives teardown even if SaveThrottler disposes after this service.
+            if (SaveThrottler != null)
+            {
+                try { SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Final persist failed on dispose: {ex.Message}"); }
+            }
+
             lock (_balances)
             {
                 foreach (var kvp in _balances)

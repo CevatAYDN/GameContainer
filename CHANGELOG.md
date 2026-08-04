@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **`Root.SetUp`/`RegisterLifecycle` silent no-op after Awake (`Root.cs`)**: both now throw `InvalidOperationException` when called after the context was already created — previously the configuration was silently dropped (the demo's boot path calls them before `SetActive(true)`, so it is unaffected).
+- **`Context` double-Configure guard conflated harness builder (`Context.cs`)**: the guard keyed on `_builder != null`, which is also set by `GetOrCreateBuilder()` (the `NexusTestContext.Builder` harness path) — so binding through the harness and then calling `Configure()` silently skipped validation/scanning/lifecycle discovery. The guard now keys on a dedicated `_configured` flag; a pre-built harness builder is reused when present.
+- **SaveThrottler Multi-Owner (`SaveThrottler.cs`)**: Replaced the single pending-slot design with per-owner slots (`TryRequestSave(owner, ...)` / `ForceSave(owner, ...)`). Previously, when two services (Economy + Progression) shared one throttler singleton, the last `TryRequestSave` silently dropped the other service's pending write — real data loss. Failure backoff/retry-cap is now isolated per owner, and `Flush()` persists every owner.
+- **`[OptionalInject]` Never Injected (`NexusDI.cs`)**: `OptionalInjectAttribute` does not derive from `InjectAttribute`, so members decorated only with `[OptionalInject]` were absent from the injectable metadata and were never injected — even when a binding existed (e.g. `EconomyService.SaveThrottler` stayed null, silently disabling write-coalescing). Injectable and clearable metadata now accept both attributes; missing optionals are still skipped by validation and strict injection.
+- **EncryptedStorageService DI Construction (`EncryptedStorageService.cs`)**: Added a parameterless constructor delegating to the default salt. The sole optional-string constructor made strict injection fail on the unresolved `System.String` parameter, breaking any container that bound the service.
+- **Harness `ValidateOnStartup` leak (`FullArchitectureStressSuite.cs`)**: the stress suite opted out of startup DI validation for its own late-binding tests but never restored the static flag, so every later suite silently ran with validation disabled. `Run()` now restores the framework default in a `finally` block.
+- **AOT Dashboard false warning (`NexusCodeGenerator.cs`)**: `HasInjectableTypes` scanned fields/properties but not method-level `[Inject]`, so a type injecting only via methods produced a false "AOT generation disabled" Dashboard warning.
+- **AOT Binder Generator (`NexusCodeGenerator.cs`)**: mirrors the `[OptionalInject]` metadata fix for the AOT/IL2CPP path — optional-only members were previously excluded from the generated injectors (never injected even when bound) and `di.Resolve<T>()` was emitted for them (throwing at boot when unbound, e.g. `INetworkEconomyValidator`/`ILocalizationTableProvider` in the demo). Optional members/params now emit `di.TryResolve<T>()` (null when unbound). `NexusGeneratedBinder.g.cs` was hand-synced to the fixed output — **regenerate it in the Unity editor** (`Nexus → Generate AOT Binder`) so the AOT path matches.
+
+### Added
+- **Harness tests 42–44 (`FullArchitectureStressSuite.cs`)**: `ContextData.DependsOn` PostContext ordering (chain invariant + cycle fallback + unknown dep), named `LazyInjection` resolving `[Inject(Name=...)]` bindings on field and property paths, and the `Root.SetUp`+`RegisterLifecycle` programmatic path incl. the new guards. Stress suite count is now 49.
+- **DemoCompatibilitySuite (`tools/nexus-benchmark/DemoCompatibilitySuite.cs`)**: Replicates the Unity demo's binding graph in the harness and proves it validates with zero DI issues, boots under strict injection, resolves every demo service, shares one `SaveThrottler` singleton between economy and progression, and wires signal→command bindings.
+- **Harness test 41 (`SaveThrottler_MultiOwner_NoCrossClobber`)**: deterministic cross-owner pending-slot, failure-isolation, flush-all, scoped `ForceSave`, and per-owner retry-cap regression test.
+- **Harness AOT drift guard (`BinderSuite.cs`)**: conditional `AOT1. Binder_OptionalInject_TryResolveEmit` test — when `NexusGeneratedBinder.g.cs` exists it asserts the generated injectors use `TryResolve` for optional deps and inject `SaveThrottler` into Economy/Progression, failing on binder↔runtime drift.
+- **AOT binder generator compile guard (`tools/nexus-benchmark`)**: the editor-only `NexusCodeGenerator.cs` is now compiled in the harness (with small UnityEditor stubs in `GeneratorStubs.cs`) so a codegen typo that would break the `Nexus.Editor` assembly inside Unity fails the harness build.
+
 ## [0.5.1] - 2026-08-03
 
 ### Fixed

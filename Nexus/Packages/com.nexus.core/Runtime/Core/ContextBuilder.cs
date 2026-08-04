@@ -201,6 +201,22 @@ namespace Nexus.Core
             _serviceTypes.Add(typeof(TImplementation));
         }
 
+        /// <summary>
+        /// Binds an <see cref="INexusService"/> under ALL of its user-defined interfaces AND its
+        /// concrete type as ONE shared singleton, and registers it for eager initialization during
+        /// <c>InitializeServicesAsync</c>. This is the combination <see cref="BindService{TInterface,TImplementation}"/>
+        /// (eager but interface-key only) and <see cref="BindInterfacesAndSelfTo{TImplementation}"/>
+        /// (shared keys but lazy) each miss: services whose <c>InitializeAsync</c> must run at startup
+        /// (TickService's driver, AudioService's sources, WindowManager's canvas, SaveThrottler's
+        /// tick registration) AND that are consumed both by interface and by concrete type.
+        /// </summary>
+        public void BindServiceInterfacesAndSelfTo<TImplementation>()
+            where TImplementation : class, INexusService
+        {
+            BindInterfacesAndSelfTo(typeof(TImplementation), isSingleton: true);
+            _serviceTypes.Add(typeof(TImplementation));
+        }
+
         public void BindLazyService<TInterface, TImplementation>()
             where TImplementation : class, TInterface, INexusService
         {

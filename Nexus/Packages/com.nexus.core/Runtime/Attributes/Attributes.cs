@@ -161,7 +161,12 @@ namespace Nexus.Core
 
     /// <summary>
     /// Marks an [Inject] field, property, or method parameter as optional.
-    /// When strict injection mode is enabled, optional members are silently skipped if the dependency is not registered (no exception thrown).
+    /// When strict injection mode is enabled, optional members are silently skipped if the
+    /// dependency is not registered (no exception thrown). When the dependency IS registered,
+    /// optional members are injected exactly like [Inject] members — so a singleton service
+    /// must still not capture a transient (non-singleton) optional dependency: captive-
+    /// dependency validation reports it, because a bound optional is indistinguishable from
+    /// a required dependency at runtime.
     /// </summary>
     [AttributeUsage(AttributeTargets.Field | AttributeTargets.Property | AttributeTargets.Parameter, AllowMultiple = false, Inherited = true)]
     [Preserve]

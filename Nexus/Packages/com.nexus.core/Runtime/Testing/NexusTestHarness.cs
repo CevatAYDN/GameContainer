@@ -44,7 +44,7 @@ namespace Nexus.Core
             var context = new Context(parent: null, contextData: contextData);
             var builder = new ContextBuilder(context.Container, context.SignalBusInternal);
             configure?.Invoke(builder);
-            context.Configure();
+            context.ConfigureWithBuilder(builder);
 
             if (autoInitialize)
             {

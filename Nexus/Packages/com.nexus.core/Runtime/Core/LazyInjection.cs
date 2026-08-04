@@ -14,13 +14,15 @@ namespace Nexus.Core
     public class LazyInjection<T> where T : class
     {
         private readonly NexusDI _container;
+        private readonly string _name;
         private volatile T _value;
         private volatile bool _resolved;
         private readonly object _lock = new();
 
-        internal LazyInjection(NexusDI container)
+        internal LazyInjection(NexusDI container, string name = null)
         {
             _container = container ?? throw new ArgumentNullException(nameof(container));
+            _name = name;
         }
 
         /// <summary>
@@ -39,7 +41,9 @@ namespace Nexus.Core
                     {
                         if (!_resolved)
                         {
-                            _value = _container.Resolve<T>();
+                            _value = string.IsNullOrEmpty(_name)
+                                ? _container.Resolve<T>()
+                                : _container.Resolve<T>(_name);
                             _resolved = true;
                             _container.NotifyLazyServiceResolved(typeof(T), _value);
                         }

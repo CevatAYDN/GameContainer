@@ -103,6 +103,7 @@ namespace NexusBench
 
             Test_StartupValidation_DefaultOn_And_OptOutSafe();
             Test_ContextLifecycle_Phases_And_Dispose();
+            Test_Lifecycle_OnStart_Throw_FailsBootFast();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -193,6 +194,45 @@ namespace NexusBench
             }
 
             Report("L2. ContextLifecycle_Phases_And_Dispose", ok, detail);
+        }
+
+        private static void Test_Lifecycle_OnStart_Throw_FailsBootFast()
+        {
+            // L3: a boot lifecycle whose OnStartAsync throws must fail the boot lifecycle
+            // FAST (Context.InitializeLifecycleAsync propagates the exception; Root.Start
+            // catches it, disposes the context and clears IsInitialized). This is the
+            // documented fail-fast contract for boot lifecycles — deliberately distinct
+            // from ContextLifecycleOrchestrator, which isolates IStartable singletons.
+            var lifecycle = new StartProbeLifecycle { ThrowOnStart = true };
+            var ctx = ContextFactory.Create();
+            bool threw = false;
+            string phases = "";
+            try
+            {
+                ctx.Configure(new[] { lifecycle });
+                var initMethod = typeof(Context).GetMethod("InitializeLifecycleAsync", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                var vt = (ValueTask)initMethod.Invoke(ctx, new object[] { new IContextLifecycle[] { lifecycle }, ctx.LifetimeToken });
+                vt.GetAwaiter().GetResult();
+            }
+            catch (Exception)
+            {
+                threw = true;
+            }
+            finally
+            {
+                if (ctx != null)
+                {
+                    try { ctx.Dispose(); } catch { }
+                }
+                // Capture AFTER dispose: the teardown phase must still run even though
+                // start threw (fail-fast aborts init, but cleanup is unconditional).
+                phases = string.Join(",", lifecycle.Log);
+            }
+
+            // configure + init ran, start ran and threw (init aborted), dispose still ran.
+            bool ok = threw && phases == "configure,init,start,dispose";
+            Report("L3. Lifecycle_OnStart_Throw_FailsBootFast", ok,
+                $"threw={threw} phases=[{phases}] (expected configure,init,start + throw, then dispose)");
         }
     }
 }

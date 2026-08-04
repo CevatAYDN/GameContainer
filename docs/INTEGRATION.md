@@ -154,7 +154,247 @@ entegrasyonlarda en sürdürülebilir çözümdür.
 
 ---
 
-## 5. Sürüm ve Bakım Notları
+## 5. Adapter Entegrasyonu (Ads / IAP)
+
+`com.nexus.core` paketi **gerçek SDK bağımlılığı taşımamaz** — tüm monetizasyon servisleri
+**adapter pattern** ile soyutlanmıştır. Tüketici projesinde gerçek adapter'ları kaydetmeniz gerekir.
+
+### 5.1 Ads Adapter Kayıtı
+
+```csharp
+using Nexus.Core.Services;
+using UnityEngine;
+
+public class AdsBootstrap : MonoBehaviour
+{
+    private async void Awake()
+    {
+        // Context initialize olana kadar bekle
+        var root = FindObjectOfType<Nexus.Core.Root>();
+        if (root == null) return;
+
+        await WaitForContext(root);
+
+        var factory = root.Context.TryResolve<AdAdapterFactory>();
+        if (factory == null) return;
+
+        // Seçenek A: Built-in mock (development/test)
+        // factory.CreateAdapter("mock"); // Zaten varsayılan olarak kayıtlı
+
+        // Seçenek B: AdMob (Google Mobile Ads Unity Plugin gerekli)
+        // factory.RegisterProvider("admob", () => new AdMobAdapter());
+
+        // Seçenek C: AppLovin MAX (AppLovin MAX Unity Plugin gerekli)
+        // factory.RegisterProvider("applovin", () => new AppLovinMaxAdapter());
+
+        // Seçenek D: IronSource LevelPlay (IronSource Unity Plugin gerekli)
+        // factory.RegisterProvider("ironsource", () => new IronSourceAdapter());
+
+        // AdService'e bağla
+        var adService = root.Context.TryResolve<AdService>();
+        var adapter = factory.CreateAdapter("admob"); // veya "applovin", "ironsource", "mock"
+        if (adapter != null && adService != null)
+        {
+            adService.SetNetworkAdapter(adapter);
+            Debug.Log("[AdsBootstrap] Ad adapter registered successfully.");
+        }
+    }
+
+    private System.Threading.Tasks.Task WaitForContext(Nexus.Core.Root root)
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+        System.Action check = null;
+        check = () =>
+        {
+            if (root.IsInitialized)
+            {
+                tcs.TrySetResult(true);
+            }
+            else
+            {
+                System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => check());
+            }
+        };
+        check();
+        return tcs.Task;
+    }
+}
+```
+
+**AdMob Adapter Örneği** (consumer projesinde implement edilir):
+
+```csharp
+using GoogleMobileAds.Api;
+using Nexus.Core.Services;
+using System;
+using UnityEngine;
+
+public sealed class AdMobAdapter : IAdNetworkAdapter
+{
+    private bool _initialized;
+    private readonly System.Collections.Generic.Dictionary<string, InterstitialAd> _interstitials = new();
+    private readonly System.Collections.Generic.Dictionary<string, RewardedAd> _rewardeds = new();
+
+    public void Initialize(Action onInitialized)
+    {
+        MobileAds.Initialize(initStatus =>
+        {
+            _initialized = true;
+            onInitialized?.Invoke();
+        });
+    }
+
+    public bool IsInterstitialReady(string placement)
+    {
+        return _interstitials.TryGetValue(placement, out var ad) && ad.CanShowAd();
+    }
+
+    public void ShowInterstitial(string placement, Action onClosed)
+    {
+        if (!_interstitials.TryGetValue(placement, out var ad) || !ad.CanShowAd())
+        {
+            onClosed?.Invoke();
+            return;
+        }
+
+        ad.OnAdFullScreenContentClosed += () =>
+        {
+            onClosed?.Invoke();
+            LoadInterstitial(placement); // Preload next
+        };
+        ad.Show();
+    }
+
+    public bool IsRewardedReady(string placement)
+    {
+        return _rewardeds.TryGetValue(placement, out var ad) && ad.CanShowAd();
+    }
+
+    public void ShowRewarded(string placement, Action<bool> onCompleted)
+    {
+        if (!_rewardeds.TryGetValue(placement, out var ad) || !ad.CanShowAd())
+        {
+            onCompleted?.Invoke(false);
+            return;
+        }
+
+        ad.OnUserEarnedReward += reward => onCompleted?.Invoke(true);
+        ad.OnAdFullScreenContentClosed += () => onCompleted?.Invoke(false);
+        ad.OnAdFullScreenContentFailed += error => onCompleted?.Invoke(false);
+        ad.Show();
+    }
+
+    public void ShowBanner(string placement, string position)
+    {
+        // Banner implementation with AdSize.Banner, position handling
+    }
+
+    public void HideBanner()
+    {
+        // Hide banner
+    }
+
+    private void LoadInterstitial(string placement)
+    {
+        var request = new AdRequest();
+        InterstitialAd.Load(GetAdUnitId(placement), request, (ad, error) =>
+        {
+            if (error == null) _interstitials[placement] = ad;
+        });
+    }
+
+    private string GetAdUnitId(string placement) => placement switch
+    {
+        "default" => "ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY",
+        "gameover" => "ca-app-pub-XXXXXXXXXXXXXXXX/ZZZZZZZZZZ",
+        _ => "ca-app-pub-XXXXXXXXXXXXXXXX/YYYYYYYYYY"
+    };
+}
+```
+
+### 5.2 IAP Adapter Kayıtı
+
+```csharp
+using Nexus.Core.Services;
+using UnityEngine;
+
+public class IapBootstrap : MonoBehaviour
+{
+    private async void Awake()
+    {
+        var root = FindObjectOfType<Nexus.Core.Root>();
+        if (root == null) return;
+
+        await WaitForContext(root);
+
+        var factory = root.Context.TryResolve<IapAdapterFactory>();
+        if (factory == null) return;
+
+        // Seçenek A: Built-in mock (development/test)
+        // factory.CreateAdapter("mock"); // Zaten varsayılan olarak kayıtlı
+
+        // Seçenek B: Unity IAP (com.unity.purchasing gerekli)
+        // factory.RegisterProvider("unityiap", () => new UnityIapAdapter());
+
+        // Seçenek C: RevenueCat (RevenueCat Unity SDK gerekli)
+        // factory.RegisterProvider("revenuecat", () => new RevenueCatAdapter());
+
+        var iapService = root.Context.TryResolve<IapService>();
+        var adapter = factory.CreateAdapter("unityiap"); // veya "revenuecat", "mock"
+        if (adapter != null && iapService != null)
+        {
+            iapService.SetStoreAdapter(adapter);
+            Debug.Log("[IapBootstrap] IAP adapter registered successfully.");
+        }
+    }
+
+    private System.Threading.Tasks.Task WaitForContext(Nexus.Core.Root root)
+    {
+        var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>();
+        System.Action check = null;
+        check = () =>
+        {
+            if (root.IsInitialized)
+            {
+                tcs.TrySetResult(true);
+            }
+            else
+            {
+                System.Threading.Tasks.Task.Delay(100).ContinueWith(_ => check());
+            }
+        };
+        check();
+        return tcs.Task;
+    }
+}
+```
+
+### 5.3 Package.json Bağımlılıkları
+
+Gerçek SDK kullanıyorsanız tüketici projenizin `Packages/manifest.json`'una ekleyin:
+
+```json
+{
+  "dependencies": {
+    "com.nexus.core": "https://github.com/CevatAYDN/GameContainer.git?path=Nexus/Packages/com.nexus.core",
+    
+    // Ads (birini seçin)
+    "com.google.ads.mobile": "8.13.0",           // AdMob
+    "com.applovin.mediation.unity": "7.2.0",     // AppLovin MAX
+    "com.ironsource.mediation": "7.5.0",         // IronSource LevelPlay
+    
+    // IAP (birini seçin)
+    "com.unity.purchasing": "4.9.0",             // Unity IAP
+    "com.revenuecat.purchases": "6.0.0"          // RevenueCat
+  }
+}
+```
+
+> **Not:** Bu bağımlılıklar `com.nexus.core` paketinde **yoktur** — sürüm çakışmasını önlemek ve consumer'ın kendi SDK sürümünü kontrol edebilmesi için.
+
+---
+
+## 6. Sürüm ve Bakım Notları
 
 - Paket sürümü `package.json` → `0.4.0`; değişiklikler `CHANGELOG.md`'de (paket içi)
   işlenir (NEXUS_READY Kapı 9 — sürüm disiplini).

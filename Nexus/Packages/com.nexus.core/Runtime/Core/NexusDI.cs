@@ -97,6 +97,7 @@ namespace Nexus.Core
             public PropertyInfo Property { get; set; }
             public Type Type { get; set; }
             public bool IsOptional { get; set; }
+            public bool IsLazy { get; set; }
             /// <summary>Optional named-binding discriminator ([Inject(Name = ...)]). Null = default binding.</summary>
             public string Name { get; set; }
             /// <summary>Compiled setter delegate (fallback to reflection if null).</summary>
@@ -154,7 +155,12 @@ namespace Nexus.Core
                     foreach (var field in fields)
                     {
                         var injectAttr = field.GetCustomAttribute<InjectAttribute>();
-                        if (injectAttr != null)
+                        var optionalAttr = field.GetCustomAttribute<OptionalInjectAttribute>();
+                        // P-fix: OptionalInjectAttribute does NOT derive from InjectAttribute, so
+                        // [OptionalInject]-only members were never added here — they were silently
+                        // NEVER INJECTED even when a binding existed (e.g. EconomyService's
+                        // throttler stayed null → write-coalescing silently dead). Include both.
+                        if (injectAttr != null || optionalAttr != null)
                         {
                             if (field.FieldType.IsValueType)
                                 throw new InvalidOperationException($"Cannot inject value type field {t.FullName}.{field.Name}. Nexus DI only supports reference-type dependencies.");
@@ -162,8 +168,8 @@ namespace Nexus.Core
                             {
                                 Field = field,
                                 Type = field.FieldType,
-                                IsOptional = field.GetCustomAttribute<OptionalInjectAttribute>() != null,
-                                Name = injectAttr.Name,
+                                IsOptional = optionalAttr != null,
+                                Name = injectAttr?.Name,
                                 IsLazy = field.FieldType.IsGenericType && field.FieldType.GetGenericTypeDefinition() == typeof(LazyInjection<>),
                                 Setter = CompiledAccessorEmitter.CompileFieldSetter(t, field),
                                 Getter = CompiledAccessorEmitter.CompileFieldGetter(t, field)
@@ -176,7 +182,9 @@ namespace Nexus.Core
                     foreach (var prop in properties)
                     {
                         var injectAttr = prop.GetCustomAttribute<InjectAttribute>();
-                        if (injectAttr != null && prop.CanWrite)
+                        var optionalAttr = prop.GetCustomAttribute<OptionalInjectAttribute>();
+                        // P-fix: accept [OptionalInject]-only properties (see field comment).
+                        if ((injectAttr != null || optionalAttr != null) && prop.CanWrite)
                         {
                             if (prop.PropertyType.IsValueType)
                                 throw new InvalidOperationException($"Cannot inject value type property {t.FullName}.{prop.Name}. Nexus DI only supports reference-type dependencies.");
@@ -184,8 +192,9 @@ namespace Nexus.Core
                             {
                                 Property = prop,
                                 Type = prop.PropertyType,
-                                IsOptional = prop.GetCustomAttribute<OptionalInjectAttribute>() != null,
-                                Name = injectAttr.Name,
+                                IsOptional = optionalAttr != null,
+                                IsLazy = prop.PropertyType.IsGenericType && prop.PropertyType.GetGenericTypeDefinition() == typeof(LazyInjection<>),
+                                Name = injectAttr?.Name,
                                 Setter = CompiledAccessorEmitter.CompilePropertySetter(t, prop)
                             });
                         }
@@ -328,7 +337,10 @@ namespace Nexus.Core
                     var fieldList = new List<FieldInfo>();
                     foreach (var field in fields)
                     {
-                        if (field.GetCustomAttribute<InjectAttribute>() != null && !field.FieldType.IsValueType)
+                        // P-fix parity: [OptionalInject]-only members must also be clearable.
+                        if ((field.GetCustomAttribute<InjectAttribute>() != null
+                                || field.GetCustomAttribute<OptionalInjectAttribute>() != null)
+                            && !field.FieldType.IsValueType)
                             fieldList.Add(field);
                     }
 
@@ -336,7 +348,9 @@ namespace Nexus.Core
                     var propList = new List<PropertyInfo>();
                     foreach (var prop in properties)
                     {
-                        if (prop.GetCustomAttribute<InjectAttribute>() != null && prop.CanWrite && !prop.PropertyType.IsValueType)
+                        if ((prop.GetCustomAttribute<InjectAttribute>() != null
+                                || prop.GetCustomAttribute<OptionalInjectAttribute>() != null)
+                            && prop.CanWrite && !prop.PropertyType.IsValueType)
                             propList.Add(prop);
                     }
 
@@ -482,10 +496,12 @@ namespace Nexus.Core
                         var existingLazy = f.Getter != null ? f.Getter(instance) : f.Field.GetValue(instance);
                         if (existingLazy == null)
                         {
+                            // P1 fix: forward the [Inject(Name=...)] discriminator so named
+                            // bindings are honored on first access instead of being dropped.
                             var lazyInstance = Activator.CreateInstance(f.Type,
                                 System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
                                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.CreateInstance,
-                                null, new object[] { _di }, null);
+                                null, new object[] { _di, f.Name }, null);
                             MetadataCache.ApplyFieldSetter(f, instance, lazyInstance);
                         }
                         continue;
@@ -519,6 +535,21 @@ namespace Nexus.Core
                 for (int i = 0; i < meta.Properties.Length; i++)
                 {
                     var p = meta.Properties[i];
+
+                    if (p.IsLazy)
+                    {
+                        var existingLazy = p.Property.GetValue(instance);
+                        if (existingLazy == null)
+                        {
+                            var lazyInstance = Activator.CreateInstance(p.Type,
+                                System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public |
+                                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.CreateInstance,
+                                null, new object[] { _di, p.Name }, null);
+                            MetadataCache.ApplyPropertySetter(p, instance, lazyInstance);
+                        }
+                        continue;
+                    }
+
                     var resolvedValue = string.IsNullOrEmpty(p.Name)
                         ? _di.TryResolve(p.Type)
                         : _di.TryResolve(p.Type, p.Name);

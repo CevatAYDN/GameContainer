@@ -42,6 +42,10 @@ namespace Nexus.Core
         // which would overwrite all but the last lifecycle.
         private IContextLifecycle[] _lifecycles = Array.Empty<IContextLifecycle>();
 
+        // Lifecycles registered programmatically via RegisterLifecycle (instead of being
+        // attached as components to this GameObject). Immutable after InitializeContext runs.
+        private readonly List<IContextLifecycle> _registeredLifecycles = new();
+
         // Reusable list for sibling wait collection to avoid per-Start allocation.
         private readonly List<Root> _siblingsToWait = new();
 
@@ -126,6 +130,45 @@ namespace Nexus.Core
 #endif
         }
 
+        /// <summary>
+        /// Runtime configuration entry point. MUST be called before the GameObject is
+        /// activated (Awake) — the typical pattern is: create the GameObject inactive,
+        /// AddComponent&lt;Root&gt;(), call SetUp(), then SetActive(true). Not needed when
+        /// the serialized fields are assigned in the Inspector.
+        /// </summary>
+        public void SetUp(ContextData data, Root parent = null, int priority = 0)
+        {
+            if (Context != null)
+            {
+                throw new InvalidOperationException(
+                    "[Nexus] Root.SetUp() called after Awake already created the context. " +
+                    "Call SetUp() BEFORE activating the GameObject (SetActive(true)); " +
+                    "otherwise the configuration is silently ignored.");
+            }
+            contextData = data;
+            parentRoot = parent;
+            initializationPriority = priority;
+        }
+
+        /// <summary>
+        /// Registers a lifecycle instance programmatically (alternative to attaching an
+        /// <see cref="IContextLifecycle"/> component to this GameObject). Must be called
+        /// before the GameObject is activated, alongside <see cref="SetUp"/>. Supports
+        /// multiple lifecycles: they run in registration order.
+        /// </summary>
+        public void RegisterLifecycle(IContextLifecycle lifecycle)
+        {
+            if (lifecycle == null) throw new ArgumentNullException(nameof(lifecycle));
+            if (Context != null)
+            {
+                throw new InvalidOperationException(
+                    "[Nexus] Root.RegisterLifecycle() called after Awake already consumed the " +
+                    "registered lifecycles. Register lifecycles BEFORE activating the GameObject " +
+                    "(SetActive(true)); otherwise the lifecycle is silently dropped.");
+            }
+            _registeredLifecycles.Add(lifecycle);
+        }
+
         private void Awake()
         {
             _mainThreadId = Thread.CurrentThread.ManagedThreadId;
@@ -147,7 +190,16 @@ namespace Nexus.Core
             // Register any IContextLifecycle component on this GameObject
             // Also cache locally because NexusDI's Dictionary<Type, Binding> only stores one
             // binding per key — BindInstance<IContextLifecycle> would overwrite earlier entries.
-            _lifecycles = GetComponents<IContextLifecycle>();
+            var componentLifecycles = GetComponents<IContextLifecycle>();
+            if (componentLifecycles.Length > 0 || _registeredLifecycles.Count > 0)
+            {
+                _lifecycles = new IContextLifecycle[componentLifecycles.Length + _registeredLifecycles.Count];
+                Array.Copy(componentLifecycles, _lifecycles, componentLifecycles.Length);
+                for (int i = 0; i < _registeredLifecycles.Count; i++)
+                    _lifecycles[componentLifecycles.Length + i] = _registeredLifecycles[i];
+                _registeredLifecycles.Clear();
+            }
+
             for (int i = 0; i < _lifecycles.Length; i++)
             {
                 Context.Container.BindInstance(_lifecycles[i]);

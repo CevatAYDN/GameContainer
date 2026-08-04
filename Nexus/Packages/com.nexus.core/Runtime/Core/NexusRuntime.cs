@@ -205,10 +205,15 @@ namespace Nexus.Core
                 snapshot = new List<IContext>(s_activeContexts);
             }
 
-            for (int i = 0; i < snapshot.Count; i++)
+            // Honor ContextData.DependsOn: run PostContext in dependency order so a
+            // dependent context's OnPostContext observes its dependencies fully wired.
+            // Contexts without dependencies keep registration order (stable sort).
+            var ordered = OrderContextsByDependencies(snapshot);
+
+            for (int i = 0; i < ordered.Count; i++)
             {
                 if (ct.IsCancellationRequested) break;
-                if (snapshot[i] is Context nexusCtx && nexusCtx.HasPostContextLifecycle)
+                if (ordered[i] is Context nexusCtx && nexusCtx.HasPostContextLifecycle)
                 {
                     try
                     {
@@ -221,6 +226,71 @@ namespace Nexus.Core
                     }
                 }
             }
+        }
+
+        /// <summary>
+        /// Orders contexts so that dependencies listed in <see cref="ContextData.DependsOn"/> are
+        /// processed before their dependents. Mirrors the editor-time matching rules (scope tag or
+        /// asset name). Falls back to registration order when a cycle is detected.
+        /// </summary>
+        private static List<IContext> OrderContextsByDependencies(IReadOnlyList<IContext> contexts)
+        {
+            var byName = new Dictionary<string, IContext>(StringComparer.OrdinalIgnoreCase);
+            foreach (var ctx in contexts)
+            {
+                if (!string.IsNullOrEmpty(ctx.ScopeTag))
+                    byName[ctx.ScopeTag] = ctx;
+                var data = (ctx as Context)?.ContextData;
+                if (data != null && !string.IsNullOrEmpty(data.name))
+                    byName[data.name] = ctx;
+            }
+
+            var result = new List<IContext>(contexts.Count);
+            var visited = new HashSet<IContext>();
+            var visiting = new HashSet<IContext>();
+            bool cycle = false;
+
+            void Visit(IContext ctx)
+            {
+                if (cycle) return;
+                if (!visiting.Add(ctx))
+                {
+                    cycle = true;
+                    return;
+                }
+                if (!visited.Add(ctx))
+                {
+                    visiting.Remove(ctx);
+                    return;
+                }
+
+                var data = (ctx as Context)?.ContextData;
+                if (data?.DependsOn != null)
+                {
+                    for (int d = 0; d < data.DependsOn.Length; d++)
+                    {
+                        string dep = data.DependsOn[d];
+                        if (string.IsNullOrEmpty(dep)) continue;
+                        if (byName.TryGetValue(dep, out var depCtx) && depCtx != ctx)
+                            Visit(depCtx);
+                    }
+                }
+
+                visiting.Remove(ctx);
+                result.Add(ctx);
+            }
+
+            for (int i = 0; i < contexts.Count; i++)
+                Visit(contexts[i]);
+
+            if (cycle)
+            {
+                NexusRuntime.Logger?.LogWarning(
+                    "[Nexus] FinalizeInitializationAsync: ContextData.DependsOn contains a dependency cycle; falling back to registration order.");
+                return new List<IContext>(contexts);
+            }
+
+            return result;
         }
 
         /// <summary>Disposes all active contexts and clears the registry. Called automatically on domain reload.</summary>
@@ -258,6 +328,7 @@ namespace Nexus.Core
             Root.ClearRegistry();
             CommandPoolStatics.ClearStateLeakWarnings();
             Services.AssemblyScanService.ClearCache();
+            Metrics.ResetTraceBuffer();
             NexusLog.Reset();
         }
 
@@ -299,32 +370,93 @@ namespace Nexus.Core
 
             // Production tracing ring buffer — always active, no NEXUS_DEBUG needed.
             // TracerPlugin reads this when causal tracing is compiled out.
-            private const int TraceBufferSize = 200;
-            private static readonly string[] s_traceBuffer = new string[TraceBufferSize];
+            // Capacity is configurable per-app via ContextData.TracerRingBufferSize;
+            // each context applies its setting when it initializes (last one wins).
+            private const int DefaultTraceBufferSize = 200;
+            private const int MinTraceBufferSize = 64;
+            // The buffer reference is the single source of truth: readers derive the
+            // size from buffer.Length, so a reader can never observe a buffer/size
+            // mismatch while ApplyTraceBufferSize swaps the array (the previous
+            // separate s_traceBufferSize field could be read against a stale buffer,
+            // indexing past the old array → IndexOutOfRangeException on the hot path).
+            // Not declared volatile on purpose: every lock-free access goes through
+            // Volatile.Read/Volatile.Write (declaring it volatile too would raise CS0420
+            // on the ref-based Volatile calls). The in-lock reads/writes are serialized
+            // by s_traceLock.
+            private static string[] s_traceBuffer = new string[DefaultTraceBufferSize];
             private static int s_traceIndex = -1;
             private static int s_traceCount;
+            private static readonly object s_traceLock = new();
+
+            internal static void ApplyTraceBufferSize(int size)
+            {
+                if (size < MinTraceBufferSize) return;
+                lock (s_traceLock)
+                {
+                    string[] current = s_traceBuffer;
+                    if (size == current.Length) return;
+                    var resized = new string[size];
+                    int count = Math.Min(s_traceCount, size);
+                    if (count > 0)
+                    {
+                        int start = ((s_traceIndex - count + 1) % current.Length + current.Length) % current.Length;
+                        for (int i = 0; i < count; i++)
+                            resized[i] = current[(start + i) % current.Length] ?? "";
+                    }
+                    // Single atomic publish point: after this volatile write the new
+                    // array (and its Length) is what every lock-free reader sees.
+                    System.Threading.Volatile.Write(ref s_traceBuffer, resized);
+                    s_traceCount = count;
+                    s_traceIndex = count - 1;
+                }
+            }
+
+            internal static void ResetTraceBuffer()
+            {
+                lock (s_traceLock)
+                {
+                    // Volatile.Write for the same publish point as ApplyTraceBufferSize:
+                    // lock-free readers observe the fresh array via Volatile.Read.
+                    System.Threading.Volatile.Write(ref s_traceBuffer, new string[DefaultTraceBufferSize]);
+                    s_traceIndex = -1;
+                    s_traceCount = 0;
+                }
+            }
 
             internal static void RecordTrace(string entry)
             {
+                string[] buffer = System.Threading.Volatile.Read(ref s_traceBuffer);
+                // Size comes from the buffer itself, so buffer and size always agree
+                // even when a concurrent ApplyTraceBufferSize swaps the array between
+                // this read and the indexing below.
+                int size = buffer.Length;
                 int rawIndex = System.Threading.Interlocked.Increment(ref s_traceIndex);
-                // P2-9 fix: use unsigned modulo to handle negative overflow properly
-                int idx = rawIndex >= 0
-                    ? rawIndex % TraceBufferSize
-                    : (TraceBufferSize - 1 - ((-rawIndex - 1) % TraceBufferSize));
-                s_traceBuffer[idx] = entry;
+                // Wrap-around-safe mapping: the unsigned cast yields a stable [0, size)
+                // index for both positive and negative rawIndex (Interlocked.Increment
+                // wraps to negative at 2^31), and it cannot overflow in checked mode
+                // like -rawIndex could at int.MinValue.
+                int idx = (int)((uint)rawIndex % (uint)size);
+                buffer[idx] = entry;
                 int currentCount = System.Threading.Volatile.Read(ref s_traceCount);
-                if (currentCount < TraceBufferSize)
+                if (currentCount < size)
                     System.Threading.Interlocked.CompareExchange(ref s_traceCount, currentCount + 1, currentCount);
             }
 
             public static string[] GetRecentTraces(out int count)
             {
-                count = s_traceCount;
+                string[] buffer = System.Threading.Volatile.Read(ref s_traceBuffer);
+                int size = buffer.Length;
+                // Clamp the read count to the buffer we actually hold: a torn snapshot
+                // taken while a resize swaps the array must not index past a stale
+                // (smaller) buffer.
+                count = Math.Min(System.Threading.Volatile.Read(ref s_traceCount), size);
                 if (count == 0) return System.Array.Empty<string>();
                 var result = new string[count];
-                int start = ((s_traceIndex - count + 1) % TraceBufferSize + TraceBufferSize) % TraceBufferSize;
+                // Volatile read for consistency with the writers' Interlocked updates on
+                // weak-memory (ARM) platforms — the rest of this block is equally careful.
+                int start = (int)((uint)(System.Threading.Volatile.Read(ref s_traceIndex) - count + 1) % (uint)size);
                 for (int i = 0; i < count; i++)
-                    result[i] = s_traceBuffer[(start + i) % TraceBufferSize] ?? "";
+                    result[i] = buffer[(start + i) % size] ?? "";
                 return result;
             }
 

@@ -41,11 +41,19 @@ namespace Nexus.Editor
                         {
                             var fields = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                             foreach (var f in fields)
-                                if (f.GetCustomAttribute<InjectAttribute>() != null) return true;
+                                if (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null) return true;
 
                             var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                             foreach (var p in properties)
-                                if (p.GetCustomAttribute<InjectAttribute>() != null) return true;
+                                if (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null) return true;
+
+                            // Method-level [Inject] is a valid injection site (GenerateBinder scans
+                            // methods too); without this check HasInjectableTypes would return false
+                            // for a type that only injects via methods, producing a false Dashboard
+                            // AOT warning even though the generator would emit for it.
+                            var methods = type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                            foreach (var m in methods)
+                                if (m.GetCustomAttribute<InjectAttribute>() != null) return true;
                         }
                     }
                 }
@@ -107,7 +115,11 @@ namespace Nexus.Editor
                         var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                         foreach (var f in fields)
                         {
-                            if (f.GetCustomAttribute<InjectAttribute>() != null)
+                            // OptionalInjectAttribute does NOT derive from InjectAttribute, so
+                            // [OptionalInject]-only members must be matched explicitly (P-fix,
+                            // mirrors the NexusDI reflection fix) or they are silently never
+                            // injected on the AOT path even when a binding exists.
+                            if (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null)
                             {
                                 hasInject = true;
                                 break;
@@ -119,7 +131,7 @@ namespace Nexus.Editor
                             var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                             foreach (var p in properties)
                             {
-                                if (p.GetCustomAttribute<InjectAttribute>() != null)
+                                if (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null)
                                 {
                                     hasInject = true;
                                     break;
@@ -129,6 +141,8 @@ namespace Nexus.Editor
 
                         if (!hasInject)
                         {
+                            // OptionalInjectAttribute's AttributeUsage is Field|Property|Parameter
+                            // (NOT Method), so method-level discovery only needs [Inject].
                             var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                             foreach (var m in methods)
                             {
@@ -158,18 +172,18 @@ namespace Nexus.Editor
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var f in fields)
                 {
-                    if (f.GetCustomAttribute<InjectAttribute>() != null && f.FieldType.IsValueType)
+                    if ((f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null) && f.FieldType.IsValueType)
                     {
-                        throw new InvalidOperationException($"[Nexus CodeGen Error] Field '{f.Name}' in type '{type.FullName}' has [Inject] attribute but is a value type ({f.FieldType.Name}). Injection on value types is not supported because value types are passed by value and injected values will be lost.");
+                        throw new InvalidOperationException($"[Nexus CodeGen Error] Field '{f.Name}' in type '{type.FullName}' has [Inject]/[OptionalInject] attribute but is a value type ({f.FieldType.Name}). Injection on value types is not supported because value types are passed by value and injected values will be lost.");
                     }
                 }
 
                 var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var p in properties)
                 {
-                    if (p.GetCustomAttribute<InjectAttribute>() != null && p.PropertyType.IsValueType)
+                    if ((p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null) && p.PropertyType.IsValueType)
                     {
-                        throw new InvalidOperationException($"[Nexus CodeGen Error] Property '{p.Name}' in type '{type.FullName}' has [Inject] attribute but is a value type ({p.PropertyType.Name}). Injection on value types is not supported because value types are passed by value and injected values will be lost.");
+                        throw new InvalidOperationException($"[Nexus CodeGen Error] Property '{p.Name}' in type '{type.FullName}' has [Inject]/[OptionalInject] attribute but is a value type ({p.PropertyType.Name}). Injection on value types is not supported because value types are passed by value and injected values will be lost.");
                     }
                 }
             }
@@ -206,17 +220,23 @@ namespace Nexus.Editor
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var f in fields)
                 {
-                    if (f.GetCustomAttribute<InjectAttribute>() != null && !f.FieldType.IsValueType)
+                    bool fOptional = f.GetCustomAttribute<OptionalInjectAttribute>() != null;
+                    if ((f.GetCustomAttribute<InjectAttribute>() != null || fOptional) && !f.FieldType.IsValueType)
                     {
+                        // Optional members resolve through TryResolve (null when unbound) so an
+                        // absent optional dependency never throws at boot on the AOT path.
+                        string fResolve = fOptional
+                            ? $"di.TryResolve<{f.FieldType.FullName.Replace("+", ".")}>()"
+                            : $"di.Resolve<{f.FieldType.FullName.Replace("+", ".")}>()";
                         if (f.IsPublic)
                         {
-                            initSb.AppendLine($"                instance.{f.Name} = di.Resolve<{f.FieldType.FullName.Replace("+", ".")}>();");
+                            initSb.AppendLine($"                instance.{f.Name} = {fResolve};");
                         }
                         else
                         {
                             string cacheFieldName = $"s_f_{typeSafeName}_{f.Name}";
                             cacheSb.AppendLine($"        private static readonly System.Reflection.FieldInfo {cacheFieldName} = typeof({fullName}).GetField(\"{f.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                            initSb.AppendLine($"                {cacheFieldName}.SetValue(instance, di.Resolve<{f.FieldType.FullName.Replace("+", ".")}>());");
+                            initSb.AppendLine($"                {cacheFieldName}.SetValue(instance, {fResolve});");
                         }
                     }
                 }
@@ -225,26 +245,31 @@ namespace Nexus.Editor
                 var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var p in properties)
                 {
-                    if (p.GetCustomAttribute<InjectAttribute>() != null && !p.PropertyType.IsValueType)
+                    bool pOptional = p.GetCustomAttribute<OptionalInjectAttribute>() != null;
+                    if ((p.GetCustomAttribute<InjectAttribute>() != null || pOptional) && !p.PropertyType.IsValueType)
                     {
                         var setMethod = p.GetSetMethod(true);
                         if (setMethod != null)
                         {
+                            string pResolve = pOptional
+                                ? $"di.TryResolve<{p.PropertyType.FullName.Replace("+", ".")}>()"
+                                : $"di.Resolve<{p.PropertyType.FullName.Replace("+", ".")}>()";
                             if (setMethod.IsPublic)
                             {
-                                initSb.AppendLine($"                instance.{p.Name} = di.Resolve<{p.PropertyType.FullName.Replace("+", ".")}>();");
+                                initSb.AppendLine($"                instance.{p.Name} = {pResolve};");
                             }
                             else
                             {
                                 string cachePropName = $"s_p_{typeSafeName}_{p.Name}";
                                 cacheSb.AppendLine($"        private static readonly System.Reflection.PropertyInfo {cachePropName} = typeof({fullName}).GetProperty(\"{p.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                                initSb.AppendLine($"                {cachePropName}.SetValue(instance, di.Resolve<{p.PropertyType.FullName.Replace("+", ".")}>());");
+                                initSb.AppendLine($"                {cachePropName}.SetValue(instance, {pResolve});");
                             }
                         }
                     }
                 }
 
-                // Inject Methods
+                // Inject Methods (method-level OptionalInject is impossible per AttributeUsage;
+                // per-PARAM [OptionalInject] below is the meaningful case → TryResolve).
                 var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var m in methods)
                 {
@@ -259,7 +284,11 @@ namespace Nexus.Editor
                                 hasValueTypeParams = true;
                                 break;
                             }
-                            paramList.Add($"di.Resolve<{param.ParameterType.FullName.Replace("+", ".")}>()");
+                            // [OptionalInject] on a parameter → TryResolve (null when unbound).
+                            bool paramOptional = param.GetCustomAttribute<OptionalInjectAttribute>() != null;
+                            paramList.Add(paramOptional
+                                ? $"di.TryResolve<{param.ParameterType.FullName.Replace("+", ".")}>()"
+                                : $"di.Resolve<{param.ParameterType.FullName.Replace("+", ".")}>()");
                         }
                         
                         if (hasValueTypeParams) continue;
@@ -281,8 +310,9 @@ namespace Nexus.Editor
                 initSb.AppendLine("            });");
 
                 // Generate AOT Clearers (0 GC Allocation optimization for pooling reuse)
-                var clearFields = fields.Where(f => f.GetCustomAttribute<InjectAttribute>() != null && !f.FieldType.IsValueType).ToList();
-                var clearProps = properties.Where(p => p.GetCustomAttribute<InjectAttribute>() != null && !p.PropertyType.IsValueType && p.GetSetMethod(true) != null).ToList();
+                // [OptionalInject]-only members are cleared too (they may hold a resolved value).
+                var clearFields = fields.Where(f => (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null) && !f.FieldType.IsValueType).ToList();
+                var clearProps = properties.Where(p => (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null) && !p.PropertyType.IsValueType && p.GetSetMethod(true) != null).ToList();
 
                 if (clearFields.Count > 0 || clearProps.Count > 0)
                 {
@@ -336,7 +366,7 @@ namespace Nexus.Editor
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var f in fields)
                 {
-                    if (f.GetCustomAttribute<InjectAttribute>() != null)
+                    if (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null)
                     {
                         if (f.IsPublic)
                             preserveSb.AppendLine($"                var _f_{typeSafeName}_{f.Name} = default({fullName}).{f.Name};");
@@ -348,7 +378,7 @@ namespace Nexus.Editor
                 var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var p in properties)
                 {
-                    if (p.GetCustomAttribute<InjectAttribute>() != null)
+                    if (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null)
                     {
                         if (p.GetMethod != null && p.GetMethod.IsPublic)
                         {

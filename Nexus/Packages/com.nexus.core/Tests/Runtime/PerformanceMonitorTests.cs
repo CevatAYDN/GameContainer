@@ -86,12 +86,15 @@ namespace Nexus.Tests
             PerformanceMonitor.StartRecording();
             PerformanceMonitor.RecordMetric("Persistent", 1f, "n", "Custom");
             PerformanceMonitor.StopRecording();
+
+            var samplesWhileStarted = PerformanceMonitor.GetRecentSamples(100).Length;
             PerformanceMonitor.RecordMetric("Persistent", 2f, "n", "Custom");
 
             var history = PerformanceMonitor.GetMetricHistory("Persistent");
             Assert.AreEqual(2, history.Length,
                 "Bounded history should keep updating while stopped (no leak, but no samples).");
-            Assert.AreEqual(0, PerformanceMonitor.GetRecentSamples(100).Length);
+            Assert.AreEqual(samplesWhileStarted, PerformanceMonitor.GetRecentSamples(100).Length,
+                "Recording while stopped must not enqueue new samples.");
         }
 
         [Test]
