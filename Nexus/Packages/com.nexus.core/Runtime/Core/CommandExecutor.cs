@@ -151,7 +151,14 @@ namespace Nexus.Core
 
         private async ValueTask ExecuteAsyncWithOptionalTimeout(IAsyncCommand asyncCmd, int timeoutMs, CancellationToken ct, bool useDecorators)
         {
-            if (timeoutMs > 0)
+            // Timeout semantics require a FRESH linked CTS + CancelAfter timer PER EXECUTION:
+            // concurrent in-flight commands of the same type share the context lifetime token
+            // and must not cancel each other, so the linked CTS cannot be cached per handler.
+            // The allocation is therefore only incurred when a [CommandTimeout] is configured
+            // (timeoutMs > 0); commands without one take the zero-allocation direct path below.
+            // An already-cancelled parent token also skips the linked CTS — the command observes
+            // the same cancellation either way (teardown floods allocate nothing).
+            if (timeoutMs > 0 && !ct.IsCancellationRequested)
             {
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(timeoutMs);
@@ -170,7 +177,9 @@ namespace Nexus.Core
 
         private async ValueTask ExecuteGenericAsyncWithOptionalTimeout<TSignal>(IAsyncCommand<TSignal> asyncCmd, TSignal signal, int timeoutMs, CancellationToken ct, bool useDecorators) where TSignal : struct
         {
-            if (timeoutMs > 0)
+            // Same fresh-per-execution linked CTS semantics as ExecuteAsyncWithOptionalTimeout
+            // (see the allocation note there); skipped when the parent token is already cancelled.
+            if (timeoutMs > 0 && !ct.IsCancellationRequested)
             {
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(timeoutMs);
@@ -189,7 +198,7 @@ namespace Nexus.Core
 
         private async ValueTask ExecuteAsyncDispatcherWithOptionalTimeout(object command, Func<object, object, CancellationToken, ValueTask> asyncDispatcher, object signal, int timeoutMs, CancellationToken ct, bool useDecorators)
         {
-            if (timeoutMs > 0)
+            if (timeoutMs > 0 && !ct.IsCancellationRequested)
             {
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
                 timeoutCts.CancelAfter(timeoutMs);
@@ -413,14 +422,10 @@ namespace Nexus.Core
                     if (command is IAsyncCommand asyncCmd)
                     {
                         // P0-5 fix: apply [CommandTimeout] via a linked, self-cancelling token.
-                        if (_context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
-                        {
-                            await ExecuteAsyncWithOptionalTimeout(asyncCmd, handler.TimeoutMs, ct, useDecorators: true);
-                        }
-                        else
-                        {
-                            await ExecuteAsyncWithOptionalTimeout(asyncCmd, handler.TimeoutMs, ct, useDecorators: false);
-                        }
+                        // useDecorators is computed once; the decorator lambda path is only
+                        // entered when decorators actually exist.
+                        await ExecuteAsyncWithOptionalTimeout(asyncCmd, handler.TimeoutMs, ct,
+                            useDecorators: _context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0);
                     }
                     else if (command is ICommand syncCmd)
                     {
@@ -446,16 +451,9 @@ namespace Nexus.Core
                             }
                             else
                             {
-                                if (handler.TimeoutMs > 0)
-                                {
-                                    using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                                    timeoutCts.CancelAfter(handler.TimeoutMs);
-                                    await asyncDispatcher(command, signal, timeoutCts.Token);
-                                }
-                                else
-                                {
-                                    await asyncDispatcher(command, signal, ct);
-                                }
+                                // Single timeout implementation — previously duplicated inline
+                                // here. Same fresh-linked-CTS semantics as the IAsyncCommand path.
+                                await ExecuteAsyncDispatcherWithOptionalTimeout(command, asyncDispatcher, signal, handler.TimeoutMs, ct, useDecorators: false);
                             }
                         }
                         else

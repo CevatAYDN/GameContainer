@@ -98,7 +98,6 @@ namespace Nexus.Core
                 Message = message,
                 StackTrace = stackTrace ?? UnityEngine.StackTraceUtility.ExtractStackTrace(),
                 Context = context,
-                Timestamp = DateTime.Now,
                 RelatedType = relatedType
             };
 
@@ -107,6 +106,11 @@ namespace Nexus.Core
             var key = $"{category}:{message}";
             lock (s_addLock)
             {
+                // Timestamp is assigned INSIDE the lock so enqueue order == timestamp order
+                // (previously it was set before the lock, so concurrent writers could enqueue
+                // out of chronological order). The FIFO queue then doubles as the chronological
+                // order for the backwards scans in GetErrors/GetRecentErrors — no sort needed.
+                entry.Timestamp = DateTime.Now;
                 if (s_errorGrouping.ContainsKey(key))
                 {
                     entry.Count = s_errorGrouping[key] + 1;
@@ -186,49 +190,80 @@ namespace Nexus.Core
 
         public static ErrorEntry[] GetErrors(ErrorSeverity? minSeverity = null, ErrorCategory? category = null, int limit = 100)
         {
-            // BUG-15 fix: take a thread-safe snapshot first so LINQ runs on stable data
+            // BUG-15 fix: take a thread-safe snapshot first so iteration runs on stable data
             // even if another thread calls Collect() concurrently.
+            // The queue is FIFO so entries are already in insertion (timestamp) order — the
+            // previous OrderByDescending(e => e.Timestamp) was a redundant full sort. Walk
+            // backwards (newest last) collecting matches with a plain loop: no LINQ iterators,
+            // no delegate allocs, one snapshot array + one result array.
             var snapshot = s_errors.ToArray();
-            var query = snapshot.AsEnumerable();
+            int capacity = Math.Min(limit, snapshot.Length);
+            if (capacity == 0) return Array.Empty<ErrorEntry>();
 
-            if (minSeverity.HasValue)
+            var result = new ErrorEntry[capacity];
+            int count = 0;
+            for (int i = snapshot.Length - 1; i >= 0 && count < limit; i--)
             {
-                query = query.Where(e => e.Severity >= minSeverity.Value);
+                var e = snapshot[i];
+                if (minSeverity.HasValue && e.Severity < minSeverity.Value) continue;
+                if (category.HasValue && e.Category != category.Value) continue;
+                result[count++] = e;
             }
 
-            if (category.HasValue)
-            {
-                query = query.Where(e => e.Category == category.Value);
-            }
-
-            return query.OrderByDescending(e => e.Timestamp).Take(limit).ToArray();
+            if (count == capacity) return result;
+            if (count == 0) return Array.Empty<ErrorEntry>();
+            var trimmed = new ErrorEntry[count];
+            Array.Copy(result, trimmed, count);
+            return trimmed;
         }
 
         public static ErrorEntry[] GetRecentErrors(int count = 20)
         {
-            // BUG-15 fix: snapshot before LINQ to avoid concurrent mutation.
-            return s_errors.ToArray().OrderByDescending(e => e.Timestamp).Take(count).ToArray();
+            // BUG-15 fix: snapshot before walking. FIFO order means the newest entries are at
+            // the tail — no sort needed, just a backwards bounded scan.
+            var snapshot = s_errors.ToArray();
+            int capacity = Math.Min(count, snapshot.Length);
+            if (capacity == 0) return Array.Empty<ErrorEntry>();
+            var result = new ErrorEntry[capacity];
+            for (int i = 0; i < capacity; i++)
+                result[i] = snapshot[snapshot.Length - 1 - i];
+            return result;
         }
 
         public static Dictionary<ErrorCategory, int> GetErrorCounts()
         {
             var snapshot = s_errors.ToArray();
-            return snapshot.GroupBy(e => e.Category)
-                           .ToDictionary(g => g.Key, g => g.Count());
+            var result = new Dictionary<ErrorCategory, int>(8);
+            foreach (var e in snapshot)
+            {
+                if (result.TryGetValue(e.Category, out var c)) result[e.Category] = c + 1;
+                else result[e.Category] = 1;
+            }
+            return result;
         }
 
         public static Dictionary<ErrorSeverity, int> GetSeverityCounts()
         {
             var snapshot = s_errors.ToArray();
-            return snapshot.GroupBy(e => e.Severity)
-                           .ToDictionary(g => g.Key, g => g.Count());
+            var result = new Dictionary<ErrorSeverity, int>(4);
+            foreach (var e in snapshot)
+            {
+                if (result.TryGetValue(e.Severity, out var c)) result[e.Severity] = c + 1;
+                else result[e.Severity] = 1;
+            }
+            return result;
         }
 
         public static Dictionary<ErrorCategory, int> GetCategoryCounts()
         {
             var snapshot = s_errors.ToArray();
-            return snapshot.GroupBy(e => e.Category)
-                           .ToDictionary(g => g.Key, g => g.Count());
+            var result = new Dictionary<ErrorCategory, int>(8);
+            foreach (var e in snapshot)
+            {
+                if (result.TryGetValue(e.Category, out var c)) result[e.Category] = c + 1;
+                else result[e.Category] = 1;
+            }
+            return result;
         }
 
         public static void Clear()
@@ -291,10 +326,15 @@ namespace Nexus.Core
         public static void ClearBefore(DateTime timestamp)
         {
             // Rebuild the queue atomically under s_addLock, keeping only entries
-            // that are not older than the cutoff timestamp.
+            // that are not older than the cutoff timestamp. Single pass over the queue
+            // (the previous ToArray+Where+ToList pipeline allocated an intermediate copy).
             lock (s_addLock)
             {
-                var toKeep = s_errors.ToArray().Where(e => e.Timestamp >= timestamp).ToList();
+                var toKeep = new List<ErrorEntry>(Math.Min(s_errors.Count, 64));
+                foreach (var e in s_errors)
+                {
+                    if (e.Timestamp >= timestamp) toKeep.Add(e);
+                }
                 while (s_errors.TryDequeue(out _)) { }
                 s_errorGrouping.Clear();
                 foreach (var entry in toKeep)
@@ -308,12 +348,18 @@ namespace Nexus.Core
 
         public static ErrorEntry[] GetFrequentErrors(int minCount = 3, int limit = 10)
         {
-            // BUG-15 fix: snapshot before LINQ.
-            return s_errors.ToArray()
-                           .Where(e => e.Count >= minCount)
-                           .OrderByDescending(e => e.Count)
-                           .Take(limit)
-                           .ToArray();
+            // BUG-15 fix: snapshot before filtering. Manual filter + sort instead of the
+            // LINQ Where/OrderByDescending/Take iterator chain (allocation-free apart from
+            // the snapshot, the match list, and the result array).
+            var snapshot = s_errors.ToArray();
+            var matches = new List<ErrorEntry>();
+            foreach (var e in snapshot)
+            {
+                if (e.Count >= minCount) matches.Add(e);
+            }
+            matches.Sort((a, b) => b.Count.CompareTo(a.Count));
+            if (matches.Count > limit) matches.RemoveRange(limit, matches.Count - limit);
+            return matches.ToArray();
         }
 
         // ── Safe event raising (T5) ────────────────────────────────────────

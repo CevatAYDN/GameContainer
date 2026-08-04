@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -27,8 +26,14 @@ namespace Nexus.Editor
         private int _lastGen0;
 
         // ── Nexus signal/command counters ─────────────────────────
-        private int _signalsSinceLastSample;
-        private int _commandsSinceLastSample;
+        // Deltas of NexusRuntime.Metrics' Interlocked totals, sampled per tick. The previous
+        // implementation subscribed to PerformanceMonitor.OnMetricRecorded and counted samples
+        // with Category "Signal"/"Command" — but nothing records metrics with those categories
+        // (MetricsSampler records Frame/Memory/GC only), so the signal/command rates always read
+        // 0.0, and the per-record subscription added GetInvocationList + delegate overhead to
+        // every recorded metric. The Interlocked totals are exact and allocation-free.
+        private long _lastTotalSignals;
+        private long _lastTotalCommands;
         private readonly RingBuffer<float> _signalRateBuffer  = new(BufferSize);
         private readonly RingBuffer<float> _commandRateBuffer = new(BufferSize);
 
@@ -36,6 +41,16 @@ namespace Nexus.Editor
         private float _fpsAlarm = 30f;
         private float _memAlarmMb = 512f;
         private bool _alarmsEnabled = true;
+
+        // Memory baseline: the ALARM measures GROWTH since recording started, never the
+        // absolute mono heap. In the Editor, GetMonoUsedSizeLong() includes the editor's own
+        // managed heap (routinely 500MB-1GB), so the old code displayed ~800MB at startup and
+        // tripped the 512MB alarm immediately. The absolute value is still shown in the big
+        // label and (when no runtime MetricsSampler exists) in the chart.
+        private float _memBaselineMb;
+        // Last session delta (monoMb - baseline) — the single source for the alarm and the
+        // Δ figure, independent of what the chart plots (delta vs. absolute fallback).
+        private float _memDeltaMb;
 
         // ── UI references ─────────────────────────────────────────
         private VisualElement _view;
@@ -51,12 +66,16 @@ namespace Nexus.Editor
         private double _sampleInterval = 0.5;
         private double _lastSampleTime;
 
-        // ── Subscription tracking ─────────────────────────────────
-        private bool _subscribed;
-
         // ─────────────────────────────────────────────────────────
         public override VisualElement CreateView()
         {
+            // Must be here: the window calls CreateView on every tab show, but OnEnable only
+            // once at window open. Entering Play Mode while this tab is open does NOT re-run
+            // CreateView, so without this subscription recording would never start (the panel
+            // would show "—" forever). Mirror the DashboardPlugin/ExplorerPlugin pattern.
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
+
             _view = new VisualElement { style = { flexGrow = 1 } };
 
             var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("pd_toolbar"));
@@ -77,7 +96,6 @@ namespace Nexus.Editor
             _view.Add(scroll);
 
             // Start recording by default when Play Mode is active
-            SubscribeToNexusEvents();
             if (Application.isPlaying) StartRecording();
 
             return _view;
@@ -85,17 +103,28 @@ namespace Nexus.Editor
 
         public override void OnDisable()
         {
-            UnsubscribeFromNexusEvents();
+            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
 
             // CONTRIBUTING: OnDisable() must reset all flags, queues, and debounces.
             // The stat-row cache holds rows belonging to the (now-detached) old container;
             // a later CreateView rebuilds _statsContainer, so the cache must be cleared to
             // avoid mutating stale rows and leaving the new summary card empty.
             _recording = false;
+            PerformanceMonitor.StopRecording();
             _statRowCache.Clear();
             _statsContainer = null;
 
             base.OnDisable();
+        }
+
+        private void OnPlayModeStateChanged(PlayModeStateChange state)
+        {
+            // Auto-start recording when entering Play Mode (with a fresh baseline) and stop
+            // on exit, so the panel works even when the tab was open before Play started.
+            if (state == PlayModeStateChange.ExitingPlayMode)
+                StopRecording();
+            else if (state == PlayModeStateChange.EnteredPlayMode)
+                StartRecording();
         }
 
         public override void OnUpdate()
@@ -316,28 +345,54 @@ namespace Nexus.Editor
             // threshold" alarms) even when the game runs at 60. The recorded metric is
             // refreshed ~10x/sec by the game loop and read thread-safely via GetMetric.
             float fps = PerformanceMonitor.GetMetric("FPS");
+            // Fall back to Time.deltaTime (the game frame time in play mode) when no
+            // recorded metric exists — a scene without a MetricsSampler. dt >= 1s is a
+            // freeze/hitch, not a 1 FPS signal, so it is skipped rather than plotted.
+            if (fps <= 0f)
+            {
+                float dt = Time.deltaTime;
+                if (dt > 0f && dt < 1f) fps = 1f / dt;
+            }
             // Only push real samples: a 0.0 reading means "not sampled yet" (no
-            // MetricsSampler in the scene, or recording just started) — pushing it would
-            // drag the sparkline and the avg/min stat rows to 0 and re-create the bogus
-            // low-FPS display this fix removes.
+            // MetricsSampler in the scene and no frame yet, or recording just started) —
+            // pushing it would drag the sparkline and the avg/min stat rows to 0.
             if (fps > 0f) _fpsBuffer.Push(fps);
 
-            // Memory
-            float monoMb = UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong() / (1024f * 1024f);
-            _memBuffer.Push(monoMb);
+            // Memory — the ALARM uses the session delta, never the absolute value: the
+            // absolute includes the editor's own managed heap (huge by default, which made
+            // the old code show ~800MB at startup and trip the 512MB alarm instantly). Prefer
+            // the runtime-recorded "MonoUsed" metric (sampled by MetricsSampler from the game
+            // loop — exact in builds); fall back to the editor-process Profiler read.
+            float monoMb = ReadMonoUsedMb(out bool fromRecordedMetric);
+            if (monoMb > 0f)
+            {
+                // First usable sample becomes the baseline (covers recording started before
+                // any game metric was sampled).
+                if (_memBaselineMb <= 0f) _memBaselineMb = monoMb;
+                _memDeltaMb = monoMb - _memBaselineMb;
+                // Chart: plot the session delta when a runtime sampler feeds the game heap;
+                // plot the ABSOLUTE value when we fell back to the Profiler read (no
+                // MetricsSampler in the scene) — a flat ~0 delta chart would read as broken.
+                _memBuffer.Push(fromRecordedMetric ? _memDeltaMb : monoMb);
+            }
 
             // GC Gen0
             int gen0 = GC.CollectionCount(0);
             _gcGen0Buffer.Push(gen0 - _lastGen0);
             _lastGen0 = gen0;
 
-            // Nexus rates
-            float sigRate = _signalsSinceLastSample / (float)elapsed;
-            float cmdRate = _commandsSinceLastSample / (float)elapsed;
+            // Nexus rates: delta of the exact Interlocked totals. A negative delta means the
+            // totals were reset (context teardown) — treat it as zero rather than a bogus rate.
+            long totalSignals = NexusRuntime.Metrics.TotalSignalsDispatched;
+            long totalCommands = NexusRuntime.Metrics.TotalCommandsExecuted;
+            long sigDelta = totalSignals - _lastTotalSignals;
+            long cmdDelta = totalCommands - _lastTotalCommands;
+            _lastTotalSignals = totalSignals;
+            _lastTotalCommands = totalCommands;
+            float sigRate = sigDelta > 0 ? sigDelta / (float)elapsed : 0f;
+            float cmdRate = cmdDelta > 0 ? cmdDelta / (float)elapsed : 0f;
             _signalRateBuffer.Push(sigRate);
             _commandRateBuffer.Push(cmdRate);
-            _signalsSinceLastSample = 0;
-            _commandsSinceLastSample = 0;
 
             RefreshUI(fps, monoMb, sigRate, cmdRate);
         }
@@ -347,46 +402,68 @@ namespace Nexus.Editor
             // Labels. fps <= 0 means no game sample yet — show the placeholder rather
             // than a misleading 0.0 (the old bogus low-FPS display).
             _fpsLabel.text  = fps > 0f ? $"{fps:F1}" : NexusLang.Get("pd_value_placeholder");
-            _memLabel.text  = $"{monoMb:F1}{NexusLang.Get("pd_unit_mb")}";
-            _gcLabel.text   = string.Format(NexusLang.Get("pd_gc_gen0"), _gcGen0Buffer.Last());
+            _memLabel.text  = monoMb > 0f ? $"{monoMb:F1}{NexusLang.Get("pd_unit_mb")}" : NexusLang.Get("pd_value_placeholder");
+            _gcLabel.text   = _gcGen0Buffer.Count > 0
+                ? string.Format(NexusLang.Get("pd_gc_gen0_value"), _gcGen0Buffer.Last())
+                : NexusLang.Get("pd_value_placeholder");
             _sigLabel.text  = $"{sigRate:F1}/s";
             _cmdLabel.text  = $"{cmdRate:F1}/s";
 
-            // Sparklines
-            NexusVisualization.UpdateSparkline(_fpsSparkline,    _fpsBuffer.ToArray(),    120f, NexusEditorStyles.AccentGreen,  120f, 32f);
-            NexusVisualization.UpdateSparkline(_memSparkline,    _memBuffer.ToArray(),    _memAlarmMb, NexusEditorStyles.AccentBlue,   120f, 32f);
-            NexusVisualization.UpdateSparkline(_gcSparkline,     _gcGen0Buffer.ToArray(), 20f,  NexusEditorStyles.AccentYellow, 120f, 32f);
-            NexusVisualization.UpdateSparkline(_sigSparkline,    _signalRateBuffer.ToArray(), 500f, NexusEditorStyles.AccentPurple, 120f, 32f);
-            NexusVisualization.UpdateSparkline(_cmdSparkline,    _commandRateBuffer.ToArray(), 200f, NexusEditorStyles.AccentOrange, 120f, 32f);
+            // Fetch each ring buffer ONCE per tick and share the arrays between the sparkline
+            // redraw and the stats summary (the previous code called ToArray() on the FPS
+            // buffer twice per tick plus LINQ Average/Min on top).
+            var fpsArr = _fpsBuffer.ToArray();
+            var memArr = _memBuffer.ToArray();
+            var gcArr  = _gcGen0Buffer.ToArray();
+            var sigArr = _signalRateBuffer.ToArray();
+            var cmdArr = _commandRateBuffer.ToArray();
+
+            // Memory chart max: the alarm threshold when plotting deltas; scale above the
+            // actual peak when plotting absolute values (no MetricsSampler) so a ~800MB heap
+            // does not saturate a chart capped at 512.
+            float memMax = _memAlarmMb;
+            for (int i = 0; i < memArr.Length; i++)
+                if (memArr[i] > memMax) memMax = memArr[i];
+            if (memMax > _memAlarmMb) memMax *= 1.15f;
+
+            NexusVisualization.UpdateSparkline(_fpsSparkline, fpsArr, 120f, NexusEditorStyles.AccentGreen,  120f, 32f);
+            NexusVisualization.UpdateSparkline(_memSparkline, memArr, memMax, NexusEditorStyles.AccentBlue, 120f, 32f);
+            NexusVisualization.UpdateSparkline(_gcSparkline,  gcArr,  20f,  NexusEditorStyles.AccentYellow, 120f, 32f);
+            NexusVisualization.UpdateSparkline(_sigSparkline, sigArr, 500f, NexusEditorStyles.AccentPurple, 120f, 32f);
+            NexusVisualization.UpdateSparkline(_cmdSparkline, cmdArr, 200f, NexusEditorStyles.AccentOrange, 120f, 32f);
 
             // Label colors based on alarms. fps <= 0 means the game metric has not been
             // sampled yet (no MetricsSampler in the scene, or recording just started) —
             // do NOT paint that as an alarm, that would be the old bogus 0-4 FPS display.
             _fpsLabel.style.color = new StyleColor(fps > 0f && fps < _fpsAlarm && _alarmsEnabled
                 ? NexusEditorStyles.AccentRed : NexusEditorStyles.AccentGreen);
-            _memLabel.style.color = new StyleColor(monoMb > _memAlarmMb && _alarmsEnabled
+            _memLabel.style.color = new StyleColor(_memBuffer.Count > 0 && _memDeltaMb > _memAlarmMb && _alarmsEnabled
                 ? NexusEditorStyles.AccentRed : NexusEditorStyles.AccentBlue);
 
             RefreshAlarmLabels();
-            RefreshStatsSummary(fps, monoMb, sigRate, cmdRate);
+            RefreshStatsSummary(fps, monoMb, sigRate, cmdRate, fpsArr);
         }
 
         private void RefreshAlarmLabels()
         {
-            if (_fpsBuffer.Count == 0) return;
-
-            float lastFps = _fpsBuffer.Last();
-            // Guard fps > 0: a 0.0 reading means "not sampled yet" (no MetricsSampler
-            // component in the scene, or recording just started), not a real 0 FPS.
-            bool fpsAlarm = lastFps > 0f && lastFps < _fpsAlarm && _alarmsEnabled && Application.isPlaying;
-            _fpsAlarmLabel.text = fpsAlarm ? string.Format(NexusLang.Get("pd_fps_below"), lastFps.ToString("F1"), _fpsAlarm.ToString("F0")) : "";
-            _fpsAlarmLabel.style.display = fpsAlarm ? DisplayStyle.Flex : DisplayStyle.None;
+            // The two alarms are evaluated independently: the old `if (_fpsBuffer.Count == 0)
+            // return;` also gated the memory block, so with no MetricsSampler in the scene the
+            // memory alarm never rendered even when the delta exceeded the threshold.
+            if (_fpsBuffer.Count > 0)
+            {
+                float lastFps = _fpsBuffer.Last();
+                // Guard fps > 0: a 0.0 reading means "not sampled yet" (no MetricsSampler
+                // component in the scene, or recording just started), not a real 0 FPS.
+                bool fpsAlarm = lastFps > 0f && lastFps < _fpsAlarm && _alarmsEnabled && Application.isPlaying;
+                _fpsAlarmLabel.text = fpsAlarm ? string.Format(NexusLang.Get("pd_fps_below"), lastFps.ToString("F1"), _fpsAlarm.ToString("F0")) : "";
+                _fpsAlarmLabel.style.display = fpsAlarm ? DisplayStyle.Flex : DisplayStyle.None;
+            }
 
             if (_memBuffer.Count > 0)
             {
-                float lastMem = _memBuffer.Last();
-                bool memAlarm = lastMem > _memAlarmMb && _alarmsEnabled && Application.isPlaying;
-                _memAlarmLabel.text = memAlarm ? string.Format(NexusLang.Get("pd_mem_above"), lastMem.ToString("F1"), _memAlarmMb.ToString("F0")) : "";
+                // Alarm on the session delta (never the absolute editor-inclusive heap).
+                bool memAlarm = _memDeltaMb > _memAlarmMb && _alarmsEnabled && Application.isPlaying;
+                _memAlarmLabel.text = memAlarm ? string.Format(NexusLang.Get("pd_mem_above"), _memDeltaMb.ToString("F1"), _memAlarmMb.ToString("F0")) : "";
                 _memAlarmLabel.style.display = memAlarm ? DisplayStyle.Flex : DisplayStyle.None;
             }
         }
@@ -413,51 +490,42 @@ namespace Nexus.Editor
             }
         }
 
-        private void RefreshStatsSummary(float fps, float monoMb, float sigRate, float cmdRate)
+        private void RefreshStatsSummary(float fps, float monoMb, float sigRate, float cmdRate, float[] fpsArr)
         {
             if (_statsContainer == null) return;
 
-            var fpsArr = _fpsBuffer.ToArray();
             if (fpsArr.Length > 0)
             {
+                // Manual single pass for avg + min — LINQ Average/Min create iterators and
+                // delegate allocs on every 0.5 s tick.
+                float sum = 0f, min = float.MaxValue;
+                for (int i = 0; i < fpsArr.Length; i++)
+                {
+                    sum += fpsArr[i];
+                    if (fpsArr[i] < min) min = fpsArr[i];
+                }
                 SetStatRow(0, NexusLang.Get("pd_fps_current"), $"{fps:F1}", ColorForFps(fps));
-                SetStatRow(1, NexusLang.Get("pd_fps_avg"), $"{fpsArr.Average():F1}", NexusEditorStyles.TextPrimary);
-                SetStatRow(2, NexusLang.Get("pd_fps_min"),  $"{fpsArr.Min():F1}", NexusEditorStyles.AccentOrange);
+                SetStatRow(1, NexusLang.Get("pd_fps_avg"), $"{sum / fpsArr.Length:F1}", NexusEditorStyles.TextPrimary);
+                SetStatRow(2, NexusLang.Get("pd_fps_min"),  $"{min:F1}", NexusEditorStyles.AccentOrange);
             }
-            SetStatRow(3, NexusLang.Get("pd_mono_heap_short"), $"{monoMb:F2} MB", NexusEditorStyles.AccentBlue);
+            SetStatRow(3, NexusLang.Get("pd_mono_heap_short"),
+                monoMb > 0f
+                    ? _memBuffer.Count > 0
+                        ? $"{monoMb:F1} MB  {NexusLang.Get("pd_mem_delta")} {_memDeltaMb:+0.0;-0.0} MB"
+                        : $"{monoMb:F1} MB"
+                    : NexusLang.Get("pd_value_placeholder"),
+                NexusEditorStyles.AccentBlue);
             SetStatRow(4, NexusLang.Get("pd_signals_current"), $"{sigRate:F1}", NexusEditorStyles.AccentPurple);
             SetStatRow(5, NexusLang.Get("pd_commands_current"), $"{cmdRate:F1}", NexusEditorStyles.AccentOrange);
-            SetStatRow(6, NexusLang.Get("pd_gc_delta"), $"{_gcGen0Buffer.Last():F0}", NexusEditorStyles.AccentYellow);
+            SetStatRow(6, NexusLang.Get("pd_gc_delta"),
+                _gcGen0Buffer.Count > 0 ? $"{_gcGen0Buffer.Last():F0}" : NexusLang.Get("pd_value_placeholder"),
+                NexusEditorStyles.AccentYellow);
         }
 
         private Color ColorForFps(float fps) =>
             fps >= _fpsAlarm * 2 ? NexusEditorStyles.AccentGreen
             : fps >= _fpsAlarm   ? NexusEditorStyles.AccentYellow
                                  : NexusEditorStyles.AccentRed;
-
-        // ── Nexus event hooks ─────────────────────────────────────
-
-        private void SubscribeToNexusEvents()
-        {
-            if (_subscribed) return;
-            _subscribed = true;
-            // Hook into SignalBus fire events to count signals/commands
-            // We use PerformanceMonitor.OnMetricRecorded as a proxy where available
-            PerformanceMonitor.OnMetricRecorded += OnNexusMetricRecorded;
-        }
-
-        private void UnsubscribeFromNexusEvents()
-        {
-            if (!_subscribed) return;
-            _subscribed = false;
-            PerformanceMonitor.OnMetricRecorded -= OnNexusMetricRecorded;
-        }
-
-        private void OnNexusMetricRecorded(PerformanceMonitor.MetricSample sample)
-        {
-            if (sample.Category == "Signal")   _signalsSinceLastSample++;
-            if (sample.Category == "Command")  _commandsSinceLastSample++;
-        }
 
         // ── Control actions ───────────────────────────────────────
 
@@ -466,6 +534,17 @@ namespace Nexus.Editor
             _recording = true;
             _lastGen0  = GC.CollectionCount(0);
             _lastSampleTime = EditorApplication.timeSinceStartup;
+            // Baseline the counters so the first tick reports a delta since recording start
+            // (not since app boot — a huge first-sample spike otherwise).
+            _lastTotalSignals = NexusRuntime.Metrics.TotalSignalsDispatched;
+            _lastTotalCommands = NexusRuntime.Metrics.TotalCommandsExecuted;
+            _memBaselineMb = ReadMonoUsedMb(out _);
+            _memDeltaMb = 0f;
+            // Drop the previous session's samples: auto-start on every EnteredPlayMode makes
+            // this the hot path, and without the clears the sparklines + avg/min/GC summary
+            // rows would keep plotting the last session's tail for up to ~60 s (120 × 0.5 s).
+            _fpsBuffer.Clear(); _memBuffer.Clear(); _gcGen0Buffer.Clear();
+            _signalRateBuffer.Clear(); _commandRateBuffer.Clear();
             PerformanceMonitor.StartRecording();
             Debug.Log("[Nexus] Performance recording started.");
         }
@@ -481,14 +560,30 @@ namespace Nexus.Editor
             _fpsBuffer.Clear(); _memBuffer.Clear();
             _gcGen0Buffer.Clear();
             _signalRateBuffer.Clear(); _commandRateBuffer.Clear();
-            _signalsSinceLastSample = _commandsSinceLastSample = 0;
+            _lastTotalSignals = NexusRuntime.Metrics.TotalSignalsDispatched;
+            _lastTotalCommands = NexusRuntime.Metrics.TotalCommandsExecuted;
+            _memBaselineMb = ReadMonoUsedMb(out _);
+            _memDeltaMb = 0f;
             PerformanceMonitor.ClearHistory();
+        }
+
+        // ── Memory read ─────────────────────────────────────────
+        private static float ReadMonoUsedMb(out bool fromRecordedMetric)
+        {
+            float recorded = PerformanceMonitor.GetMetric("MonoUsed");
+            if (recorded > 0f)
+            {
+                fromRecordedMetric = true;
+                return recorded;
+            }
+            fromRecordedMetric = false;
+            return UnityEngine.Profiling.Profiler.GetMonoUsedSizeLong() / (1024f * 1024f);
         }
 
         private void ExportCsv()
         {
             var sb = new StringBuilder();
-            sb.AppendLine("Index,FPS,MonoMB,GCGen0Delta,Signals/s,Commands/s");
+            sb.AppendLine("Index,FPS,MonoUsedMB,GCGen0Delta,Signals/s,Commands/s"); // MonoUsedMB: session delta (sampler present) or absolute (fallback)
             var fps  = _fpsBuffer.ToArray();
             var mem  = _memBuffer.ToArray();
             var gc   = _gcGen0Buffer.ToArray();

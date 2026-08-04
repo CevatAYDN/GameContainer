@@ -343,7 +343,10 @@ namespace Nexus.Editor
                     bool hasHandlers = false;
                     foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                         {
-                            if (type.IsClass && !type.IsAbstract)
+                            // IsDefined guard: GetCustomAttributes<T>() allocates an (empty) array
+                            // even for types without the attribute; checking IsDefined first is
+                            // allocation-free and skips the reflection array churn on the scan.
+                            if (type.IsClass && !type.IsAbstract && type.IsDefined(typeof(SignalHandlerAttribute), false))
                             {
                                 var attrs = type.GetCustomAttributes<SignalHandlerAttribute>();
                                 foreach (var attr in attrs)
@@ -366,7 +369,9 @@ namespace Nexus.Editor
                                     }
                                 }
 
-                                var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                                var compositeAttr = type.IsDefined(typeof(CompositeSignalHandlerAttribute), false)
+                                    ? type.GetCustomAttribute<CompositeSignalHandlerAttribute>()
+                                    : null;
                                 if (compositeAttr != null)
                                 {
                                     hasHandlers = true;

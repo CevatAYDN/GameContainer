@@ -120,6 +120,11 @@ namespace Nexus.Core
         }
 
         private readonly Dictionary<BinderKey, BinderEntry> _entries = new();
+        // Secondary key index (key -> its BinderKeys, default + all named variants) so
+        // Unbind is O(#bindings for the key) instead of an O(total entries) scan under
+        // the exclusive write lock (which blocked every concurrent reader/Get). Reads are
+        // untouched; only the rare write paths pay for the index.
+        private readonly Dictionary<TKey, List<BinderKey>> _keyIndex = new();
         private readonly System.Threading.ReaderWriterLockSlim _rwLock = new(System.Threading.LockRecursionPolicy.NoRecursion);
         private readonly NexusDI _container;
 
@@ -195,35 +200,15 @@ namespace Nexus.Core
             _rwLock.EnterWriteLock();
             try
             {
-                BinderKey? firstToRemove = null;
-                List<BinderKey> keysToRemove = null;
-                foreach (var kvp in _entries)
-                {
-                    if (!EqualityComparer<TKey>.Default.Equals(kvp.Key.Key, key))
-                        continue;
-
-                    if (firstToRemove == null)
-                    {
-                        firstToRemove = kvp.Key;
-                    }
-                    else
-                    {
-                        keysToRemove ??= new List<BinderKey>(4);
-                        if (keysToRemove.Count == 0)
-                            keysToRemove.Add(firstToRemove.Value);
-                        keysToRemove.Add(kvp.Key);
-                    }
-                }
-
-                if (firstToRemove == null)
+                // Index lookup replaces the previous O(n) full-table scan. Removing from
+                // _entries never touches _keyIndex, so iterating the key's own list while
+                // removing entries is safe (no dictionary-in-enumeration mutation).
+                if (!_keyIndex.TryGetValue(key, out var keysToRemove) || keysToRemove.Count == 0)
                     return;
 
-                _entries.Remove(firstToRemove.Value);
-                if (keysToRemove != null)
-                {
-                    for (int i = 1; i < keysToRemove.Count; i++)
-                        _entries.Remove(keysToRemove[i]);
-                }
+                for (int i = 0; i < keysToRemove.Count; i++)
+                    _entries.Remove(keysToRemove[i]);
+                _keyIndex.Remove(key);
             }
             finally { _rwLock.ExitWriteLock(); }
         }
@@ -251,7 +236,20 @@ namespace Nexus.Core
         internal void CommitEntry(TKey key, string name, BinderEntry entry)
         {
             _rwLock.EnterWriteLock();
-            try { _entries[new BinderKey(key, name)] = entry; }
+            try
+            {
+                var binderKey = new BinderKey(key, name);
+                _entries[binderKey] = entry;
+                if (!_keyIndex.TryGetValue(key, out var list))
+                {
+                    list = new List<BinderKey>(1);
+                    _keyIndex[key] = list;
+                }
+                // Re-binding the same (key, name) must not accumulate duplicate index entries
+                // (removal is idempotent, but the list would grow on every rebind).
+                if (!list.Contains(binderKey))
+                    list.Add(binderKey);
+            }
             finally { _rwLock.ExitWriteLock(); }
         }
 

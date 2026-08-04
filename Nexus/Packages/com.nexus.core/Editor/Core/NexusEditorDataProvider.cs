@@ -47,18 +47,25 @@ namespace Nexus.Editor
 
                         bool hasHandlers = false;
 
-                        foreach (var attr in type.GetCustomAttributes<SignalHandlerAttribute>())
+                        // IsDefined guards: GetCustomAttributes<T>() allocates even when the
+                        // type has no attribute — this scan visits every class in the project.
+                        if (type.IsDefined(typeof(SignalHandlerAttribute), false))
                         {
-                            hasHandlers = true;
-                            s_cachedMappings.Add(new HandlerMapping
+                            foreach (var attr in type.GetCustomAttributes<SignalHandlerAttribute>())
                             {
-                                SignalName = attr.SignalType.Name,
-                                CommandName = type.Name,
-                                Mode = attr.Mode.ToString()
-                            });
+                                hasHandlers = true;
+                                s_cachedMappings.Add(new HandlerMapping
+                                {
+                                    SignalName = attr.SignalType.Name,
+                                    CommandName = type.Name,
+                                    Mode = attr.Mode.ToString()
+                                });
+                            }
                         }
 
-                        var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+                        var compositeAttr = type.IsDefined(typeof(CompositeSignalHandlerAttribute), false)
+                            ? type.GetCustomAttribute<CompositeSignalHandlerAttribute>()
+                            : null;
                         if (compositeAttr != null)
                         {
                             hasHandlers = true;

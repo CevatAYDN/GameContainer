@@ -61,8 +61,6 @@ namespace Nexus.Core
         private readonly object _poolLock = new();
         private readonly int _maxSize;
         private static readonly HashSet<Type> s_stateLeakWarningIssued = new();
-        private static readonly HashSet<Type> s_injectableTypeCache = new();
-        private static readonly object s_injectableCacheLock = new();
 
         // Editor introspection (G-4): cumulative utilization counters.
         private long _totalGets;
@@ -95,31 +93,36 @@ namespace Nexus.Core
         {
             if (typeof(IResettable).IsAssignableFrom(type)) return;
 
-            // BUG-8 fix: collect ALL risky (mutable, non-injected, non-primitive) fields
-            // and report them together in a single warning instead of stopping at the first one.
+            // Claim the warning slot under the lock FIRST, then scan + emit OUTSIDE it:
+            // the reflection scan is slow and must not serialize every pool construction
+            // behind the global lock while it runs. A concurrent duplicate claim simply
+            // returns before scanning.
             lock (s_stateLeakWarningIssued)
             {
-                if (s_stateLeakWarningIssued.Contains(type)) return;
-
-                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                var riskyFields = new System.Text.StringBuilder();
-                foreach (var field in fields)
-                {
-                    if (field.IsInitOnly || field.IsLiteral) continue;
-                    if (field.GetCustomAttribute<InjectAttribute>() != null) continue;
-                    if (field.FieldType.IsPrimitive || field.FieldType.IsEnum) continue;
-
-                    if (riskyFields.Length > 0) riskyFields.Append(", ");
-                    riskyFields.Append(field.Name);
-                }
-
-                if (riskyFields.Length == 0) return;
-
-                s_stateLeakWarningIssued.Add(type);
-                NexusRuntime.Logger?.LogWarning(
-                    $"[Nexus] Command '{type.Name}' has mutable field(s) [{riskyFields}] but does not implement IResettable. " +
-                    "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
+                if (!s_stateLeakWarningIssued.Add(type)) return;
             }
+
+            // BUG-8 fix: collect ALL risky (mutable, non-injected, non-primitive) fields
+            // and report them together in a single warning instead of stopping at the first one.
+            var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+            var riskyFields = new System.Text.StringBuilder();
+            foreach (var field in fields)
+            {
+                if (field.IsInitOnly || field.IsLiteral) continue;
+                // IsDefined scans metadata only — no attribute instantiation (GetCustomAttribute
+                // allocates the attribute instance per member on this startup-time path).
+                if (field.IsDefined(typeof(InjectAttribute), false)) continue;
+                if (field.FieldType.IsPrimitive || field.FieldType.IsEnum) continue;
+
+                if (riskyFields.Length > 0) riskyFields.Append(", ");
+                riskyFields.Append(field.Name);
+            }
+
+            if (riskyFields.Length == 0) return;
+
+            NexusRuntime.Logger?.LogWarning(
+                $"[Nexus] Command '{type.Name}' has mutable field(s) [{riskyFields}] but does not implement IResettable. " +
+                "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
         }
 
         /// <summary>Retrieves a command instance from the pool, or creates a new one if the pool is empty.
@@ -186,17 +189,19 @@ namespace Nexus.Core
         {
             return s_hasInjectableMembersCache.GetOrAdd(type, static t =>
             {
+                // IsDefined avoids allocating the attribute instance per member (first-call
+                // per type only, but this runs once per command type at pool creation).
                 foreach (var field in t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 {
-                    if (field.GetCustomAttribute<InjectAttribute>() != null) return true;
+                    if (field.IsDefined(typeof(InjectAttribute), false)) return true;
                 }
                 foreach (var prop in t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 {
-                    if (prop.CanWrite && prop.GetCustomAttribute<InjectAttribute>() != null) return true;
+                    if (prop.CanWrite && prop.IsDefined(typeof(InjectAttribute), false)) return true;
                 }
                 foreach (var method in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
                 {
-                    if (method.GetCustomAttribute<InjectAttribute>() != null) return true;
+                    if (method.IsDefined(typeof(InjectAttribute), false)) return true;
                 }
                 return false;
             });
@@ -223,10 +228,6 @@ namespace Nexus.Core
             lock (s_stateLeakWarningIssued)
             {
                 s_stateLeakWarningIssued.Clear();
-            }
-            lock (s_injectableCacheLock)
-            {
-                s_injectableTypeCache.Clear();
             }
         }
 

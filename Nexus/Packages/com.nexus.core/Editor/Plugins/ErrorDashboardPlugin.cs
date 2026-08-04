@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -33,6 +32,19 @@ namespace Nexus.Editor
         private string _searchText = string.Empty;
         private bool _dirty = true;
 
+        // In-place filter-bar state: severity buttons are built once per CreateView and
+        // only re-styled on refresh (the old code rebuilt the whole bar — new Buttons +
+        // re-registration — on every refresh, i.e. once per error while the dashboard was open).
+        // CreateFilterButton's declared return type is VisualElement, so the cache holds
+        // VisualElement (only .style is touched on refresh).
+        private readonly List<(VisualElement Btn, ErrorCollection.ErrorSeverity? Severity)> _sevButtons = new();
+        // List rebuild throttle: the list is rebuilt only when the total error count or the
+        // active filters actually changed, not on every OnUpdate tick.
+        private int _lastBuiltTotal = -1;
+        private ErrorCollection.ErrorSeverity? _lastFilterSeverity;
+        private ErrorCollection.ErrorCategory? _lastFilterCategory;
+        private string _lastFilterSearch = string.Empty;
+
         public override VisualElement CreateView()
         {
             _view = new VisualElement { style = { flexGrow = 1 } };
@@ -62,6 +74,12 @@ namespace Nexus.Editor
             _statusBar = NexusEditorStyles.CreateStatusBar();
             _view.Add(_statusBar);
 
+            // Guard: CreateView can be re-invoked on the same plugin instance (tab re-click,
+            // play-mode refresh) without an intervening OnDisable. The old unconditional +=
+            // leaked one subscription per re-open, so a single collected error fired the
+            // handler N times (N = number of re-opens) — draining the refresh once per
+            // duplicate and growing the invocation list without bound.
+            ErrorCollection.OnErrorAdded -= OnErrorAdded;
             ErrorCollection.OnErrorAdded += OnErrorAdded;
 
             _dirty = true;
@@ -76,6 +94,8 @@ namespace Nexus.Editor
             _categoryFilter = null;
             _searchText = string.Empty;
             _dirty = false;
+            _lastBuiltTotal = -1;
+            _sevButtons.Clear();
             _summaryRow = null;
             _filterBar = null;
             _scrollView = null;
@@ -164,12 +184,14 @@ namespace Nexus.Editor
         {
             bool active = _minSeverity == severity;
             var color = active ? NexusEditorStyles.BtnBlue : NexusEditorStyles.BtnGray;
-            return NexusEditorStyles.CreateFilterButton(label, () =>
+            var btn = NexusEditorStyles.CreateFilterButton(label, () =>
             {
                 _minSeverity = severity;
                 _dirty = true;
                 RefreshUI();
             }, color);
+            _sevButtons.Add((btn, severity));
+            return btn;
         }
 
         // ─── Refresh ───
@@ -181,25 +203,57 @@ namespace Nexus.Editor
         private void RefreshUI()
         {
             _dirty = false;
-            RebuildSummary();
-            RebuildList();
-            RebuildFilterBarActiveState();
+
+            // Summary and list MUST come from the SAME filtered set: the old code counted
+            // severities over ALL errors (GetSeverityCounts) while the list showed only the
+            // filtered subset, so the pills disagreed with the rows whenever a severity,
+            // category, or search filter was active. Both now derive from one GetErrors call;
+            // an OnErrorAdded storm still rebuilds at most once per OnUpdate tick.
+            bool filtersChanged = _minSeverity != _lastFilterSeverity
+                || _categoryFilter != _lastFilterCategory
+                || _searchText != _lastFilterSearch;
+            bool dataChanged = ErrorCollection.TotalErrorCount != _lastBuiltTotal;
+
+            if (filtersChanged || dataChanged)
+            {
+                var errors = ErrorCollection.GetErrors(_minSeverity, _categoryFilter, DefaultLimit);
+                if (!string.IsNullOrWhiteSpace(_searchText))
+                    errors = ApplySearchFilter(errors);
+
+                RebuildSummary(errors);
+                RebuildList(errors);
+
+                _lastBuiltTotal = ErrorCollection.TotalErrorCount;
+                _lastFilterSeverity = _minSeverity;
+                _lastFilterCategory = _categoryFilter;
+                _lastFilterSearch = _searchText;
+            }
+
+            UpdateFilterBarActiveState();
         }
 
-        private void RebuildSummary()
+        private void RebuildSummary(ErrorCollection.ErrorEntry[] errors)
         {
             _summaryRow.Clear();
-            var counts = ErrorCollection.GetSeverityCounts();
 
-            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_total"), ErrorCollection.TotalErrorCount, NexusEditorStyles.CardBg, Color.white));
-            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_info"), GetCount(counts, ErrorCollection.ErrorSeverity.Info), NexusEditorStyles.CardBgBlue, NexusEditorStyles.AccentBlue));
-            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_warn"), GetCount(counts, ErrorCollection.ErrorSeverity.Warning), NexusEditorStyles.CardBgYellow, NexusEditorStyles.AccentYellow));
-            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_error"), GetCount(counts, ErrorCollection.ErrorSeverity.Error), NexusEditorStyles.CardBgRed, NexusEditorStyles.AccentRed));
-            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_critical"), GetCount(counts, ErrorCollection.ErrorSeverity.Critical), NexusEditorStyles.CardBgRed, NexusEditorStyles.AccentOrange));
+            int info = 0, warn = 0, err = 0, crit = 0;
+            for (int i = 0; i < errors.Length; i++)
+            {
+                switch (errors[i].Severity)
+                {
+                    case ErrorCollection.ErrorSeverity.Info: info++; break;
+                    case ErrorCollection.ErrorSeverity.Warning: warn++; break;
+                    case ErrorCollection.ErrorSeverity.Error: err++; break;
+                    case ErrorCollection.ErrorSeverity.Critical: crit++; break;
+                }
+            }
+
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_total"), errors.Length, NexusEditorStyles.CardBg, Color.white));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_info"), info, NexusEditorStyles.CardBgBlue, NexusEditorStyles.AccentBlue));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_warn"), warn, NexusEditorStyles.CardBgYellow, NexusEditorStyles.AccentYellow));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_error"), err, NexusEditorStyles.CardBgRed, NexusEditorStyles.AccentRed));
+            _summaryRow.Add(SummaryPill(NexusLang.Get("ed_critical"), crit, NexusEditorStyles.CardBgRed, NexusEditorStyles.AccentOrange));
         }
-
-        private static int GetCount(Dictionary<ErrorCollection.ErrorSeverity, int> counts, ErrorCollection.ErrorSeverity s)
-            => counts.TryGetValue(s, out var c) ? c : 0;
 
         private VisualElement SummaryPill(string label, int count, Color bg, Color accent)
         {
@@ -223,18 +277,24 @@ namespace Nexus.Editor
             return card;
         }
 
-        private void RebuildList()
+        private ErrorCollection.ErrorEntry[] ApplySearchFilter(ErrorCollection.ErrorEntry[] errors)
+        {
+            // Manual filter loop (no LINQ Where+ToArray iterator allocs).
+            var filtered = new System.Collections.Generic.List<ErrorCollection.ErrorEntry>(errors.Length);
+            foreach (var e in errors)
+            {
+                if ((e.Message != null && e.Message.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0) ||
+                    (e.RelatedType != null && e.RelatedType.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    filtered.Add(e);
+                }
+            }
+            return filtered.ToArray();
+        }
+
+        private void RebuildList(ErrorCollection.ErrorEntry[] errors)
         {
             _scrollView.Clear();
-
-            var errors = ErrorCollection.GetErrors(_minSeverity, _categoryFilter, DefaultLimit);
-            if (!string.IsNullOrWhiteSpace(_searchText))
-            {
-                errors = errors.Where(e =>
-                    (e.Message != null && e.Message.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0) ||
-                    (e.RelatedType != null && e.RelatedType.IndexOf(_searchText, StringComparison.OrdinalIgnoreCase) >= 0))
-                    .ToArray();
-            }
 
             foreach (var error in errors)
                 _scrollView.Add(BuildErrorRow(error));
@@ -323,16 +383,14 @@ namespace Nexus.Editor
             }
         }
 
-        private void RebuildFilterBarActiveState()
+        private void UpdateFilterBarActiveState()
         {
-            // Rebuild filter bar so severity buttons reflect the active selection color.
-            if (_view == null || _filterBar == null) return;
-            int index = _view.IndexOf(_filterBar);
-            if (index < 0) return;
-            var newBar = BuildFilterBar();
-            _view.Insert(index, newBar);
-            _filterBar.RemoveFromHierarchy();
-            _filterBar = newBar;
+            // Re-style the existing severity buttons in place — no UI churn, no re-registration.
+            foreach (var (btn, sev) in _sevButtons)
+            {
+                btn.style.backgroundColor = new StyleColor(sev == _minSeverity
+                    ? NexusEditorStyles.BtnBlue : NexusEditorStyles.BtnGray);
+            }
         }
 
         private void ExportCsv()

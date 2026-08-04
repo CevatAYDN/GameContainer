@@ -26,6 +26,18 @@ namespace Nexus.Editor
             "Wizard" // SetupWizard (Id: "SetupWizard") is the primary wizard.
         };
 
+        // Discovered plugin TYPES are cached across window open/close: the assembly-wide
+        // scan is the expensive part of discovery (it was re-run on every OnEnable). Fresh
+        // instances are still created per open so per-window plugin state stays clean.
+        // Invalidated on script reload (the type universe changes).
+        private static List<Type> s_discoveredPluginTypes;
+
+        [UnityEditor.Callbacks.DidReloadScripts]
+        private static void OnScriptsReloaded()
+        {
+            s_discoveredPluginTypes = null;
+        }
+
         private List<INexusEditorPlugin> _plugins = new();
         private INexusEditorPlugin _activePlugin;
         private bool _discoveryFailed;
@@ -261,25 +273,33 @@ namespace Nexus.Editor
             try
             {
                 var pluginType = typeof(INexusEditorPlugin);
-                var foundPlugins = new List<INexusEditorPlugin>();
 
-                foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
+                // Scan once per script-reload; reuse the cached type list on window reopens.
+                if (s_discoveredPluginTypes == null)
                 {
-                    foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
+                    s_discoveredPluginTypes = new List<Type>();
+                    foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
                     {
-                        if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
+                        foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                         {
-                            var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
-                            if (HiddenPluginIds.Contains(plugin.Id))
-                                continue;
-                            plugin.Initialize(this);
-                            foundPlugins.Add(plugin);
-
-                            if (plugin is HierarchyPlugin hp)
-                            {
-                                _hierarchyPlugin = hp;
-                            }
+                            if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
+                                s_discoveredPluginTypes.Add(type);
                         }
+                    }
+                }
+
+                var foundPlugins = new List<INexusEditorPlugin>();
+                foreach (var type in s_discoveredPluginTypes)
+                {
+                    var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
+                    if (HiddenPluginIds.Contains(plugin.Id))
+                        continue;
+                    plugin.Initialize(this);
+                    foundPlugins.Add(plugin);
+
+                    if (plugin is HierarchyPlugin hp)
+                    {
+                        _hierarchyPlugin = hp;
                     }
                 }
 
@@ -325,7 +345,12 @@ namespace Nexus.Editor
             if (targetPlugin == null) return;
             if (targetPlugin == _activePlugin)
             {
-                RefreshActivePlugin();
+                // Same tab re-clicked: do NOT recreate the view. The old RefreshActivePlugin()
+                // call here ran CreateView() without OnDisable() on the previous view,
+                // leaking event subscriptions (e.g. ErrorCollection.OnErrorAdded) and churning
+                // the whole UI on every click. Just refresh the action bar + status text.
+                UpdateContextActionBar();
+                UpdateStatusBarText();
                 return;
             }
 
@@ -477,15 +502,25 @@ namespace Nexus.Editor
         {
             if (_statusBar == null) return;
 
-            bool playing = Application.isPlaying;
-            int contextCount = NexusEditorDataProvider.GetActiveContextCount();
-            int handlerCount = NexusEditorDataProvider.GetHandlerCount();
-            var roots = NexusEditorDataProvider.GetSceneRoots();
-            int rootCount = roots?.Length ?? 0;
+            // This runs from the 200ms scheduled tick AND from play-mode/hierarchy/context
+            // callbacks. A throwing data-provider call (e.g. during scene teardown or domain
+            // reload) must not spam the console every 200ms and leave the window stuck.
+            try
+            {
+                bool playing = Application.isPlaying;
+                int contextCount = NexusEditorDataProvider.GetActiveContextCount();
+                int handlerCount = NexusEditorDataProvider.GetHandlerCount();
+                var roots = NexusEditorDataProvider.GetSceneRoots();
+                int rootCount = roots?.Length ?? 0;
 
-            _statusBar.text = playing
-                ? string.Format(NexusLang.Get("statusbar_play"), contextCount, handlerCount)
-                : string.Format(NexusLang.Get("statusbar_standby"), rootCount);
+                _statusBar.text = playing
+                    ? string.Format(NexusLang.Get("statusbar_play"), contextCount, handlerCount)
+                    : string.Format(NexusLang.Get("statusbar_standby"), rootCount);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus] Status bar update failed: {ex.Message}");
+            }
         }
 
         private void SetLocale(string locale)

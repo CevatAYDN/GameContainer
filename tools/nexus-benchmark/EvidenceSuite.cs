@@ -79,6 +79,7 @@ namespace NexusBench
             Test_SaveThrottler_Flushes_Pending_Save();
             Test_GameSaveManager_Save_And_Load();
             Test_PerformanceMonitor_GetRecentSamples_Bounded();
+            Test_PerformanceMonitor_BuiltinMetrics_WithoutRecording();
             Test_DebugStripping_NoDebugSymbol();
 
             Console.WriteLine();
@@ -157,6 +158,38 @@ namespace NexusBench
             var samples = PerformanceMonitor.GetRecentSamples(20);
             Report("E4. PerformanceMonitor_GetRecentSamples_Bounded", samples.Length <= 20,
                 $"samples={samples.Length}");
+        }
+
+        private static void Test_PerformanceMonitor_BuiltinMetrics_WithoutRecording()
+        {
+            // E6: the built-in frame/memory/GC metrics must be queryable via GetMetric even
+            // while recording is OFF (recording only gates the sample queue + events). The
+            // Performance Dashboard reads these on open — previously Update*Metrics
+            // early-returned on !s_recording, so FPS/Memory showed "—"/0 unless the
+            // dashboard's own StartRecording had run. FPS is real here (Time.deltaTime is
+            // stubbed to 0.0166), TotalMemory is real (System.GC).
+            bool wasEnabled = PerformanceMonitor.Enabled;
+            bool wasRecording = PerformanceMonitor.IsRecording;
+            try
+            {
+                PerformanceMonitor.Enabled = true;
+                PerformanceMonitor.StopRecording(); // recording MUST be off for this proof
+                PerformanceMonitor.ResetFrameThrottle();
+                PerformanceMonitor.UpdateFrameMetrics();
+                PerformanceMonitor.UpdateMemoryMetrics();
+                PerformanceMonitor.UpdateGCMetrics();
+
+                float fps = PerformanceMonitor.GetMetric("FPS");
+                float totalMemory = PerformanceMonitor.GetMetric("TotalMemory");
+                bool ok = fps > 0f && totalMemory > 0f;
+                Report("E6. PerformanceMonitor_BuiltinMetrics_WithoutRecording", ok,
+                    $"recording={PerformanceMonitor.IsRecording} fps={fps:F1} totalMemory={totalMemory:F1}MB");
+            }
+            finally
+            {
+                if (wasRecording) PerformanceMonitor.StartRecording();
+                PerformanceMonitor.Enabled = wasEnabled;
+            }
         }
 
         private static void Test_DebugStripping_NoDebugSymbol()

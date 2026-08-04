@@ -104,6 +104,7 @@ namespace NexusBench
             Test_StartupValidation_DefaultOn_And_OptOutSafe();
             Test_ContextLifecycle_Phases_And_Dispose();
             Test_Lifecycle_OnStart_Throw_FailsBootFast();
+            Test_Root_AutoAdds_SupportComponents();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -198,6 +199,57 @@ namespace NexusBench
             }
 
             Report("L2. ContextLifecycle_Phases_And_Dispose", ok, detail);
+        }
+
+        private static void Test_Root_AutoAdds_SupportComponents()
+        {
+            // L4: a Root created programmatically (Dashboard "Create Root",
+            // AddComponent<Root>(), wizard scenes) must auto-add QueueDrainer +
+            // MetricsSampler on Awake. Without QueueDrainer the HybridQueue never drains
+            // (queued signals silently never run); without MetricsSampler the game never
+            // records FPS/memory/GC, so the Performance Dashboard reads a flat 0.0.
+            var go = new UnityEngine.GameObject("ProgRootSupport");
+            var root = go.AddComponent<Root>();
+            var data = UnityEngine.ScriptableObject.CreateInstance<ContextData>();
+            data.name = "SupportProbeData";
+            data.ScopeTag = "SupportProbe";
+            root.SetUp(data);
+
+            bool ok = false;
+            string detail;
+            try
+            {
+                var awake = typeof(Root).GetMethod("Awake",
+                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                awake?.Invoke(root, null);
+
+                bool hasDrainer = go.GetComponent<QueueDrainer>() != null;
+                bool hasSampler = go.GetComponent<MetricsSampler>() != null;
+                ok = hasDrainer && hasSampler;
+                detail = $"queueDrainer={hasDrainer} metricsSampler={hasSampler}";
+
+                // Idempotent: a second Awake (double boot) must not double-add.
+                awake?.Invoke(root, null);
+                int drainerCount = go.GetComponents<QueueDrainer>().Length;
+                int samplerCount = go.GetComponents<MetricsSampler>().Length;
+                bool noDouble = drainerCount == 1 && samplerCount == 1;
+                ok = ok && noDouble;
+                detail += $" afterSecondAwake drainerCount={drainerCount} samplerCount={samplerCount}";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { UnityEngine.Object.Destroy(go); } catch { }
+                try { NexusRuntime.Reset(); } catch (Exception ex)
+                {
+                    Console.WriteLine($"[Nexus Lifecycle] Reset during teardown failed: {ex.GetType().Name}: {ex.Message}");
+                }
+            }
+
+            Report("L4. Root_AutoAdds_QueueDrainer_And_MetricsSampler", ok, detail);
         }
 
         private static void Test_Lifecycle_OnStart_Throw_FailsBootFast()

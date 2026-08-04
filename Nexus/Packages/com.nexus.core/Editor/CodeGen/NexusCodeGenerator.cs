@@ -60,14 +60,14 @@ namespace Nexus.Editor
             var fields = type.GetFields(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             foreach (var f in fields)
             {
-                if (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null)
+                if (f.IsDefined(typeof(InjectAttribute), false) || f.IsDefined(typeof(OptionalInjectAttribute), false))
                     return true;
             }
 
             var properties = type.GetProperties(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             foreach (var p in properties)
             {
-                if (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null)
+                if (p.IsDefined(typeof(InjectAttribute), false) || p.IsDefined(typeof(OptionalInjectAttribute), false))
                     return true;
             }
 
@@ -76,7 +76,7 @@ namespace Nexus.Editor
                 var methods = type.GetMethods(System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
                 foreach (var m in methods)
                 {
-                    if (m.GetCustomAttribute<InjectAttribute>() != null)
+                    if (m.IsDefined(typeof(InjectAttribute), false))
                         return true;
                 }
             }
@@ -114,12 +114,39 @@ namespace Nexus.Editor
             }
         }
 
+        /// <summary>Per-type reflection results shared across GenerateBinder's passes so
+        /// GetFields/GetProperties/GetMethods run ONCE per type instead of once per pass
+        /// (discovery, value-type check, injector gen, clearer gen, preserve gen).</summary>
+        private struct MemberSet
+        {
+            public FieldInfo[] Fields;
+            public PropertyInfo[] Properties;
+            public MethodInfo[] Methods;
+        }
+
+        private static MemberSet GetMemberSet(Type type, Dictionary<Type, MemberSet> cache)
+        {
+            if (!cache.TryGetValue(type, out var set))
+            {
+                set = new MemberSet
+                {
+                    Fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance),
+                    Properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance),
+                    Methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance)
+                };
+                cache[type] = set;
+            }
+            return set;
+        }
+
         [MenuItem("Nexus/Generate AOT Binder")]
         public static void GenerateBinder()
         {
             Debug.Log("[Nexus] Generating AOT Binder...");
             var injectTypes = new List<Type>();
             var networkSignalTypes = new List<Type>();
+            // Shared across all passes below so each type's members reflect exactly once.
+            var memberCache = new Dictionary<Type, MemberSet>();
             
             // Gather all types containing [Inject] and all INetworkSignal implementations
             foreach (var assembly in AssemblyCatalog.RuntimeAssemblies())
@@ -142,7 +169,8 @@ namespace Nexus.Editor
                             // [OptionalInject]-only members must be matched explicitly (P-fix,
                             // mirrors the NexusDI reflection fix) or they are silently never
                             // injected on the AOT path even when a binding exists.
-                            if (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null)
+                            // IsDefined scans metadata only — no attribute instance per member.
+                            if (f.IsDefined(typeof(InjectAttribute), false) || f.IsDefined(typeof(OptionalInjectAttribute), false))
                             {
                                 hasInject = true;
                                 break;
@@ -154,7 +182,7 @@ namespace Nexus.Editor
                             var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                             foreach (var p in properties)
                             {
-                                if (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null)
+                                if (p.IsDefined(typeof(InjectAttribute), false) || p.IsDefined(typeof(OptionalInjectAttribute), false))
                                 {
                                     hasInject = true;
                                     break;
@@ -169,7 +197,7 @@ namespace Nexus.Editor
                             var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                             foreach (var m in methods)
                             {
-                                if (m.GetCustomAttribute<InjectAttribute>() != null)
+                                if (m.IsDefined(typeof(InjectAttribute), false))
                                 {
                                     hasInject = true;
                                     break;
@@ -192,7 +220,7 @@ namespace Nexus.Editor
             // Check value types first (Issue 6)
             foreach (var type in injectTypes)
             {
-                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var fields = GetMemberSet(type, memberCache).Fields;
                 foreach (var f in fields)
                 {
                     if ((f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null) && f.FieldType.IsValueType)
@@ -201,7 +229,7 @@ namespace Nexus.Editor
                     }
                 }
 
-                var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var properties = GetMemberSet(type, memberCache).Properties;
                 foreach (var p in properties)
                 {
                     if ((p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null) && p.PropertyType.IsValueType)
@@ -240,7 +268,7 @@ namespace Nexus.Editor
                 initSb.AppendLine("            {");
 
                 // Inject Fields
-                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var fields = GetMemberSet(type, memberCache).Fields;
                 foreach (var f in fields)
                 {
                     bool fOptional = f.GetCustomAttribute<OptionalInjectAttribute>() != null;
@@ -265,7 +293,7 @@ namespace Nexus.Editor
                 }
 
                 // Inject Properties
-                var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var properties = GetMemberSet(type, memberCache).Properties;
                 foreach (var p in properties)
                 {
                     bool pOptional = p.GetCustomAttribute<OptionalInjectAttribute>() != null;
@@ -293,7 +321,7 @@ namespace Nexus.Editor
 
                 // Inject Methods (method-level OptionalInject is impossible per AttributeUsage;
                 // per-PARAM [OptionalInject] below is the meaningful case → TryResolve).
-                var methods = type.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var methods = GetMemberSet(type, memberCache).Methods;
                 foreach (var m in methods)
                 {
                     if (m.GetCustomAttribute<InjectAttribute>() != null)
@@ -387,7 +415,7 @@ namespace Nexus.Editor
                 string fullName = type.FullName.Replace("+", ".");
                 string typeSafeName = fullName.Replace(".", "_").Replace("+", "_");
                 
-                var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var fields = GetMemberSet(type, memberCache).Fields;
                 foreach (var f in fields)
                 {
                     if (f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null)
@@ -399,7 +427,7 @@ namespace Nexus.Editor
                     }
                 }
 
-                var properties = type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                var properties = GetMemberSet(type, memberCache).Properties;
                 foreach (var p in properties)
                 {
                     if (p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null)

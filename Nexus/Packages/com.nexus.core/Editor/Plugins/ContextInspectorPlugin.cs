@@ -623,24 +623,18 @@ namespace Nexus.Editor
 
                 card.Add(hdr);
 
-                // Show interfaces implemented
-                var interfaces = type.GetInterfaces()
-                    .Where(i => i.Namespace?.StartsWith("Nexus") == true || i.Namespace?.StartsWith("System") != true)
-                    .Select(i => i.Name)
-                    .Take(4)
-                    .ToList();
-                if (interfaces.Count > 0)
+                // Show interfaces implemented (metadata cached per type)
+                string interfaces = GetInterfaceSummary(type);
+                if (interfaces.Length > 0)
                 {
-                    card.Add(new Label(string.Format(NexusLang.Get("ci_implements"), string.Join(", ", interfaces)))
+                    card.Add(new Label(string.Format(NexusLang.Get("ci_implements"), interfaces))
                     {
                         style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.TextSecondary) }
                     });
                 }
 
-                // Show public property values (read-only)
-                var props = type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                    .Where(p => p.CanRead && p.GetIndexParameters().Length == 0)
-                    .Take(6);
+                // Show public property values (read-only) — metadata cached, values live
+                var props = GetReadableProps(type);
                 foreach (var prop in props)
                 {
                     try
@@ -941,6 +935,50 @@ namespace Nexus.Editor
         }
 
         // ── Helpers ───────────────────────────────────────────────
+
+        // Reflection metadata caches for the singletons tab: the interface summary string and
+        // the readable property list are type-stable (they never change at runtime), so the
+        // GetInterfaces/GetProperties/Select/Take/string.Join pipeline runs ONCE per type
+        // instead of on every 0.5 s refresh. Only prop.GetValue(singleton) stays live.
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, string> s_ifaceSummaryCache = new();
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, PropertyInfo[]> s_readablePropsCache = new();
+
+        private static string GetInterfaceSummary(Type type)
+        {
+            return s_ifaceSummaryCache.GetOrAdd(type, static t =>
+            {
+                var names = new List<string>(4);
+                foreach (var i in t.GetInterfaces())
+                {
+                    if (i.Namespace?.StartsWith("Nexus") == true || i.Namespace?.StartsWith("System") != true)
+                    {
+                        names.Add(i.Name);
+                        if (names.Count == 4) break;
+                    }
+                }
+                return names.Count > 0 ? string.Join(", ", names) : string.Empty;
+            });
+        }
+
+        private static PropertyInfo[] GetReadableProps(Type type)
+        {
+            return s_readablePropsCache.GetOrAdd(type, static t =>
+            {
+                var all = t.GetProperties(BindingFlags.Public | BindingFlags.Instance);
+                int count = 0;
+                for (int i = 0; i < all.Length && count < 6; i++)
+                {
+                    if (all[i].CanRead && all[i].GetIndexParameters().Length == 0) count++;
+                }
+                var result = new PropertyInfo[count];
+                int n = 0;
+                for (int i = 0; i < all.Length && n < count; i++)
+                {
+                    if (all[i].CanRead && all[i].GetIndexParameters().Length == 0) result[n++] = all[i];
+                }
+                return result;
+            });
+        }
 
         private List<Type> GetAvailableSignalTypes()
         {

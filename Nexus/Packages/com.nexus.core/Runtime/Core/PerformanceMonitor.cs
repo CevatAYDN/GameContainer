@@ -249,7 +249,14 @@ namespace Nexus.Core
 
         public static void UpdateFrameMetrics()
         {
-            if (!s_enabled || !s_recording) return;
+            // The built-in metrics are recorded whenever Enabled, regardless of recording
+            // state: RecordMetric already gates the expensive parts (sample queue alloc +
+            // OnMetricRecorded events) behind s_recording and keeps s_currentValues fresh
+            // either way. Previously the !s_recording gate here meant FPS/Memory/GC were
+            // only queryable via GetMetric while the dashboard was recording — a scene
+            // without the dashboard open (or before its StartRecording ran) showed flat
+            // 0.0/"—" in the Performance Dashboard even though a MetricsSampler existed.
+            if (!s_enabled) return;
 
             // Throttle to ~10 Hz (6-frame cadence at 60 fps). Per-frame sampling created
             // ~180 allocations/sec of GC churn that spiked FPS every few seconds.
@@ -271,7 +278,7 @@ namespace Nexus.Core
 
         public static void UpdateMemoryMetrics()
         {
-            if (!s_enabled || !s_recording) return;
+            if (!s_enabled) return; // same rationale as UpdateFrameMetrics: always queryable
 
             var totalMemory = System.GC.GetTotalMemory(false) / (1024f * 1024f); // MB
             var allocatedMemory = UnityEngine.Profiling.Profiler.GetTotalAllocatedMemoryLong() / (1024f * 1024f); // MB
@@ -288,7 +295,7 @@ namespace Nexus.Core
 
         public static void UpdateGCMetrics()
         {
-            if (!s_enabled || !s_recording) return;
+            if (!s_enabled) return; // same rationale as UpdateFrameMetrics: always queryable
 
             var gen0 = System.GC.CollectionCount(0);
             var gen1 = System.GC.CollectionCount(1);

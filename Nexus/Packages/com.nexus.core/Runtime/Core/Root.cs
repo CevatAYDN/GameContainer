@@ -172,7 +172,25 @@ namespace Nexus.Core
         private void Awake()
         {
             _mainThreadId = Thread.CurrentThread.ManagedThreadId;
+            EnsureSupportComponents();
             InitializeContext();
+        }
+
+        private void EnsureSupportComponents()
+        {
+            // QueueDrainer and MetricsSampler are documented as living on the Root's
+            // GameObject, but nothing ever added them for programmatically created Roots
+            // (Dashboard "Create Root", AddComponent<Root>(), wizard scenes without the
+            // hand-added components) — only the starter scene had them. Without
+            // QueueDrainer the HybridQueue never drains, so queued signals
+            // (FireThreadSafe/FireNextFrame) silently never run; without MetricsSampler
+            // the game never records FPS/memory/GC, so the Performance Dashboard reads a
+            // flat 0.0. Adding here covers every creation path at runtime; GetComponent
+            // guards against double-add when a scene already carries them.
+            if (GetComponent<QueueDrainer>() == null)
+                gameObject.AddComponent<QueueDrainer>();
+            if (GetComponent<MetricsSampler>() == null)
+                gameObject.AddComponent<MetricsSampler>();
         }
 
         private void InitializeContext()

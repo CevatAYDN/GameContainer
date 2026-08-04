@@ -25,9 +25,16 @@ namespace Nexus.Core
         private bool _isVisible;
         private readonly List<string> _logLines = new();
         private readonly List<string> _logLinesSnapshot = new();
+        private int _logVersion;          // bumped on every log write; gates the OnGUI snapshot copy
+        private int _renderedLogVersion;
         private int _frameCount;
         private float _fps;
         private float _fpsTimer;
+
+        // HTML color strings cached once (ColorUtility.ToHtmlStringRGB allocates per call).
+        private string _signalHtml;
+        private string _errorHtml;
+        private string _warningHtml;
 
         // Cached styles — created once, reused every frame (no GC)
         private GUIStyle _boxStyle;
@@ -132,17 +139,27 @@ namespace Nexus.Core
 
             GUILayout.Space(4);
 
+            // Rebuild the snapshot only when new log lines arrived since the last event;
+            // OnGUI runs for multiple events per frame (Layout/Repaint/input), so this avoids
+            // the lock + copy on every event under heavy log flow. The GUILayout pass itself
+            // still renders the cached snapshot strings on each event, as IMGUI requires.
             List<string> snapshot;
-            lock (_logLines)
+            int version;
+            lock (_logLines) { version = _logVersion; }
+            if (version != _renderedLogVersion)
             {
-                _logLinesSnapshot.Clear();
-                int start = Math.Max(0, _logLines.Count - maxLogLines);
-                for (int i = start; i < _logLines.Count; i++)
+                lock (_logLines)
                 {
-                    _logLinesSnapshot.Add(_logLines[i]);
+                    _logLinesSnapshot.Clear();
+                    int start = Math.Max(0, _logLines.Count - maxLogLines);
+                    for (int i = start; i < _logLines.Count; i++)
+                    {
+                        _logLinesSnapshot.Add(_logLines[i]);
+                    }
                 }
-                snapshot = _logLinesSnapshot;
+                _renderedLogVersion = version;
             }
+            snapshot = _logLinesSnapshot;
 
             GUILayout.Label($"<color=#88ccff>\u25a0 Recent ({snapshot.Count} lines)</color>", _labelStyle);
             for (int i = 0; i < snapshot.Count; i++)
@@ -159,29 +176,49 @@ namespace Nexus.Core
 
         public void LogSignal(string signalName, string message = "")
         {
+            // Hidden HUD must not allocate per log line: string interpolation + rich-text
+            // markup is the dominant GC cost of this component. When hidden, entries are
+            // not buffered (the HUD shows the recent tail when reopened).
+            if (!_isVisible) return;
+            EnsureColorCache();
             lock (_logLines)
             {
-                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(signalColor)}>\u25b8 {signalName}</color> {message}");
+                _logLines.Add($"<color=#{_signalHtml}>\u25b8 {signalName}</color> {message}");
+                _logVersion++;
                 TrimLog();
             }
         }
 
         public void LogError(string message)
         {
+            if (!_isVisible) return;
+            EnsureColorCache();
             lock (_logLines)
             {
-                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(errorColor)}>\u2716 ERR:</color> {message}");
+                _logLines.Add($"<color=#{_errorHtml}>\u2716 ERR:</color> {message}");
+                _logVersion++;
                 TrimLog();
             }
         }
 
         public void LogWarning(string message)
         {
+            if (!_isVisible) return;
+            EnsureColorCache();
             lock (_logLines)
             {
-                _logLines.Add($"<color=#{ColorUtility.ToHtmlStringRGB(warningColor)}>\u26a0 WARN:</color> {message}");
+                _logLines.Add($"<color=#{_warningHtml}>\u26a0 WARN:</color> {message}");
+                _logVersion++;
                 TrimLog();
             }
+        }
+
+        private void EnsureColorCache()
+        {
+            if (_signalHtml != null) return;
+            _signalHtml = ColorUtility.ToHtmlStringRGB(signalColor);
+            _errorHtml = ColorUtility.ToHtmlStringRGB(errorColor);
+            _warningHtml = ColorUtility.ToHtmlStringRGB(warningColor);
         }
 
         private void TrimLog()

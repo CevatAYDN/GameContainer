@@ -185,7 +185,8 @@ namespace Nexus.Editor
             // Performance Dashboard plugin
             s_strings["pd_value_placeholder"] = "—";
             s_strings["pd_unit_mb"] = " MB";
-            s_strings["pd_gc_gen0"] = "gen0 +{0:F0}";
+            // Value format for the big GC label (pd_gc_gen0 is the section title only).
+            s_strings["pd_gc_gen0_value"] = "gen0 +{0:F0}";
 
             // Network Dashboard plugin
             s_strings["nd_title"] = "🌐 NETWORK MONITOR";
@@ -465,17 +466,18 @@ namespace Nexus.Editor
             s_strings["pd_sec_throughput"] = "⚡ Nexus Throughput";
             s_strings["pd_signals_per_s"] = "Signals/s";
             s_strings["pd_commands_per_s"] = "Commands/s";
-            s_strings["pd_metrics_note"] = "Metrics collected via Nexus runtime event hooks.";
+            s_strings["pd_metrics_note"] = "Metrics are collected via the Nexus runtime. In the Editor, Mono Heap includes the editor's own managed memory (500MB-1GB is normal), so the memory chart and alarm measure growth since recording started (Δ). Exact values come from builds.";
             s_strings["pd_sec_alarms"] = "🔔 Alarm Thresholds";
             s_strings["pd_fps_alarm"] = "FPS Alarm (<)";
-            s_strings["pd_mem_alarm"] = "Memory Alarm (MB >)";
+            s_strings["pd_mem_alarm"] = "Memory Alarm (Δ MB >)";
             s_strings["pd_sec_summary"] = "📋 Summary (Last Sample)";
             s_strings["pd_fps_below"] = "⚠ FPS BELOW THRESHOLD ({0} < {1})";
-            s_strings["pd_mem_above"] = "⚠ MEMORY ABOVE THRESHOLD ({0} MB > {1} MB)";
+            s_strings["pd_mem_above"] = "⚠ MEMORY GREW ABOVE THRESHOLD (Δ {0} MB > {1} MB)";
             s_strings["pd_fps_current"] = "FPS (current)";
             s_strings["pd_fps_avg"] = "FPS (avg 60s)";
             s_strings["pd_fps_min"] = "FPS (min 60s)";
             s_strings["pd_mono_heap_short"] = "Mono Heap";
+            s_strings["pd_mem_delta"] = "Δ since start";
             s_strings["pd_signals_current"] = "Signals/s (current)";
             s_strings["pd_commands_current"] = "Commands/s (current)";
             s_strings["pd_gc_delta"] = "GC Gen0 (delta)";
