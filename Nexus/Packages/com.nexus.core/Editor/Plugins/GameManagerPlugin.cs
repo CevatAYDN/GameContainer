@@ -133,6 +133,17 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             UnsubscribePlayMode();
+            _searchQuery = string.Empty;
+            _lastRefreshTime = 0d;
+            _snapshot = new Snapshot();
+            _sectionButtons.Clear();
+            _breadcrumb = null;
+            _content = null;
+            _quickFindField = null;
+            _sigFill = null;
+            _cmdFill = null;
+            _sigRateLabel = null;
+            _cmdRateLabel = null;
             base.OnDisable();
         }
 

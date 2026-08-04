@@ -72,6 +72,15 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             ErrorCollection.OnErrorAdded -= OnErrorAdded;
+            _minSeverity = null;
+            _categoryFilter = null;
+            _searchText = string.Empty;
+            _dirty = false;
+            _summaryRow = null;
+            _filterBar = null;
+            _scrollView = null;
+            _statusBar = null;
+            _view = null;
             base.OnDisable();
         }
 

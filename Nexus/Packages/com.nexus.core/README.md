@@ -23,7 +23,7 @@
 |------------|----------|
 | [10-Minute Quickstart Guide](docs/10_MIN_QUICKSTART.md) | [10 Dakikada Hızlı Başlangıç](docs/10_MIN_QUICKSTART_TR.md) |
 
-**Prefer a hands-on demo?** Install the [Counter Sample](Samples~/Counter/README.md) via Package Manager → Nexus → Samples.
+**Prefer a hands-on example?** Install the [Counter Sample](Samples~/Counter/README.md) via Package Manager → Nexus → Samples. It is the canonical onboarding sample; `NexusStarter` is a scaffold template for greenfield bootstrapping.
 
 ---
 
@@ -104,7 +104,7 @@ Nexus Core includes 5 strategic architectural capabilities:
 3. **MUST** override `OnUpdate()` — **DO NOT** use `_view.schedule` or `EditorApplication.update`.
 4. **MUST** reset state in `OnDisable()` (flags, counters, queues).
 5. **MUST** use `NexusLang.Get(...)` for all user-facing text.
-6. **MUST** use `NexusEditorStyles.CreateStatTile(...)` for metric cards.
+6. **MUST** use the shared `NexusEditorStyles` stat helpers for metric cards and summary tiles, not bespoke stat components.
 7. **MUST** add NUnit lifecycle test in `Tests/Editor/PluginRefactorValidationTests.cs`.
 **Reference:** [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md)
 

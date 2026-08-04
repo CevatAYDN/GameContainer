@@ -61,7 +61,7 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] View '{gameObject.name}' failed to unbind on disable: {ex.Message}");
+                NexusRuntime.Logger?.LogException(ex);
             }
         }
 
@@ -165,7 +165,6 @@ namespace Nexus.Core
             // are available when OnBind() runs. TickableView.OnBind() needs TickService
             // to register for tick callbacks — if injected after Bind, it's null.
             _container.Inject(view);
-            view.Bind(_context);
 
             var mediatorType = mediatorAttr.MediatorType;
             var abstractionType = mediatorAttr.Abstraction;
@@ -178,10 +177,11 @@ namespace Nexus.Core
                     $"View '{view.GetType().Name}' will not have a mediator attached.");
                 return;
             }
+            view.Bind(_context);
 
             _activeMediators[view] = mediator;
             _activeMediatorSet.Add(mediator);
-            
+
             // Mediator attaches after the view is already bound to the context.
             // Exception safety: a throwing Bind (bad view cast, OnBind failure) must not
             // leave a half-attached mediator tracked in the active maps — the old code
@@ -194,6 +194,14 @@ namespace Nexus.Core
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogException(ex);
+                try
+                {
+                    view.Unbind();
+                }
+                catch (Exception unbindEx)
+                {
+                    NexusRuntime.Logger?.LogException(unbindEx);
+                }
                 _activeMediators.Remove(view);
                 _activeMediatorSet.Remove(mediator);
                 ReturnMediator(mediator);
@@ -209,13 +217,25 @@ namespace Nexus.Core
         public void UnregisterView(IView view)
         {
             if (view == null) return;
-            view.Unbind();
-
-            if (_activeMediators.Remove(view, out var mediator))
+            try
             {
-                _activeMediatorSet.Remove(mediator);
-                mediator.Unbind();
-                ReturnMediator(mediator);
+                if (_activeMediators.Remove(view, out var mediator))
+                {
+                    _activeMediatorSet.Remove(mediator);
+                    mediator.Unbind();
+                    ReturnMediator(mediator);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    view.Unbind();
+                }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogException(ex);
+                }
             }
         }
 

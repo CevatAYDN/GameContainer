@@ -73,20 +73,16 @@ namespace Nexus.Core.Extensions
     {
         private static string SaveDirectory => Path.Combine(Application.persistentDataPath, "saves");
 
-        // Only one active model can participate in save/load.
-        // For composite saves, register an aggregate root model.
         private ISaveDataProvider _model;
-        // İ2-fix: capture lazily on first use, not in the field initializer — a worker-thread
-        // construction would otherwise pin a null/wrong context for the manager's lifetime.
         private SynchronizationContext _mainThreadContext;
 
-        private SynchronizationContext MainThreadContext => _mainThreadContext ??= SynchronizationContext.Current;
+        public GameSaveManager()
+        {
+            _mainThreadContext = SynchronizationContext.Current;
+        }
 
-        // M6 fix: serializes the atomic-write critical section. Two concurrent SaveAsync
-        // calls for the SAME slot both stage to the shared "slot.sav.tmp" path and both
-        // rename it — interleaved File.WriteAllText/File.Replace pairs produce a torn
-        // save that fails to deserialize on load. A per-instance lock makes the
-        // stage+rename sequence atomic across concurrent savers.
+        private SynchronizationContext MainThreadContext => _mainThreadContext;
+
         private readonly object _saveLock = new();
 
         /// <summary>Registers the model that provides save data.</summary>

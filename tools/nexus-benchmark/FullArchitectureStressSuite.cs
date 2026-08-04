@@ -2551,7 +2551,10 @@ namespace NexusBench
             finally
             {
                 try { Directory.Delete(Path.Combine(Application.persistentDataPath, "SecureData"), true); }
-                catch { /* already gone */ }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[Nexus Architecture Stress] SecureData cleanup failed: {ex}");
+                }
                 UnityEngine.PlayerPrefs.ClearAll();
             }
 

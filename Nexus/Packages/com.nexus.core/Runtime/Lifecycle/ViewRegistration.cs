@@ -47,16 +47,8 @@ namespace Nexus.Core
             }
             else if (roots.Length > 1)
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] View '{mb.gameObject.name}' OnEnable: Multiple Root instances found. " +
-                    "Registering with the first discovered Root.");
-                var firstRoot = roots[0];
-                if (firstRoot.Context != null)
-                    firstRoot.Context.RegisterView(view);
-                else
-                {
-                    pendingRoot = firstRoot;
-                    firstRoot.RegisterPendingView(view);
-                }
+                NexusRuntime.Logger?.LogError($"[Nexus] View '{mb.gameObject.name}' OnEnable: Multiple Root instances found. " +
+                    "Registration aborted because the target context is ambiguous.");
             }
             else
             {

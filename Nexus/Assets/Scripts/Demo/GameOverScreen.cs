@@ -33,22 +33,29 @@ namespace Nexus.Demo
     {
         [Inject] private IDemoGameplayModel _gameplayModel;
 
+        private UnityEngine.Events.UnityAction _retryClickHandler;
+        private UnityEngine.Events.UnityAction _mainMenuClickHandler;
+        private UnityEngine.Events.UnityAction _watchAdClickHandler;
+
         protected override void OnBind()
         {
             base.OnBind();
 
             View.SetStats(_gameplayModel.CurrentLevel.Value, _gameplayModel.CoinsCollectedThisRun.Value, _gameplayModel.EnemiesKilled.Value);
 
-            View.RetryButton.onClick.AddListener(() => SignalBus.Fire(DemoGameplaySignal.GameStarted()));
-            View.MainMenuButton.onClick.AddListener(() => SignalBus.Fire(DemoUISignal.ShowMainMenu()));
-            View.WatchAdButton.onClick.AddListener(() => SignalBus.Fire(DemoUISignal.PlayAdRequested()));
+            _retryClickHandler ??= () => SignalBus.Fire(DemoGameplaySignal.GameStarted());
+            _mainMenuClickHandler ??= () => SignalBus.Fire(DemoUISignal.ShowMainMenu());
+            _watchAdClickHandler ??= () => SignalBus.Fire(DemoUISignal.PlayAdRequested());
+            View.RetryButton.onClick.AddListener(_retryClickHandler);
+            View.MainMenuButton.onClick.AddListener(_mainMenuClickHandler);
+            View.WatchAdButton.onClick.AddListener(_watchAdClickHandler);
         }
 
         protected override void OnUnbind()
         {
-            View.RetryButton.onClick.RemoveAllListeners();
-            View.MainMenuButton.onClick.RemoveAllListeners();
-            View.WatchAdButton.onClick.RemoveAllListeners();
+            if (_retryClickHandler != null) View.RetryButton.onClick.RemoveListener(_retryClickHandler);
+            if (_mainMenuClickHandler != null) View.MainMenuButton.onClick.RemoveListener(_mainMenuClickHandler);
+            if (_watchAdClickHandler != null) View.WatchAdButton.onClick.RemoveListener(_watchAdClickHandler);
             base.OnUnbind();
         }
     }

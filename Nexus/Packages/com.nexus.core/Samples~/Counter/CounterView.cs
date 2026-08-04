@@ -10,19 +10,24 @@ namespace Nexus.Samples.Counter
     {
         public event Action OnIncrementClicked;
 
+        private UnityEngine.Events.UnityAction _clickHandler;
+
         [SerializeField] private Button incrementButton;
         [SerializeField] private Text countText;
 
         protected override void OnBind(IContext context)
         {
-            if (incrementButton != null)
-                incrementButton.onClick.AddListener(() => OnIncrementClicked?.Invoke());
+            if (incrementButton == null)
+                return;
+
+            _clickHandler ??= () => OnIncrementClicked?.Invoke();
+            incrementButton.onClick.AddListener(_clickHandler);
         }
 
         protected override void OnUnbind()
         {
-            if (incrementButton != null)
-                incrementButton.onClick.RemoveAllListeners();
+            if (incrementButton != null && _clickHandler != null)
+                incrementButton.onClick.RemoveListener(_clickHandler);
         }
 
         public void UpdateDisplay(int count)

@@ -215,9 +215,16 @@ namespace Nexus.Core
             _pendingViews.Clear();
         }
 
-        private void Start()
+        private async void Start()
         {
-            _ = StartInternal();
+            try
+            {
+                await StartInternal();
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] Root startup failed: {ex.Message}\n{ex.StackTrace}");
+            }
         }
 
         private async Task StartInternal()

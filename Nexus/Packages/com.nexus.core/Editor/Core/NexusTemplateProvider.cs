@@ -143,20 +143,25 @@ namespace Nexus
     {{
         public event System.Action OnButtonClicked;
 
+        private UnityEngine.Events.UnityAction _clickHandler;
+
         [Header(""UI References"")]
         [SerializeField] private Button incrementButton;
         [SerializeField] private Text counterText;
 
         protected override void OnBind(IContext context)
         {{
-            if (incrementButton != null)
-                incrementButton.onClick.AddListener(() => OnButtonClicked?.Invoke());
+            if (incrementButton == null)
+                return;
+
+            _clickHandler ??= () => OnButtonClicked?.Invoke();
+            incrementButton.onClick.AddListener(_clickHandler);
         }}
 
         protected override void OnUnbind()
         {{
-            if (incrementButton != null)
-                incrementButton.onClick.RemoveAllListeners();
+            if (incrementButton != null && _clickHandler != null)
+                incrementButton.onClick.RemoveListener(_clickHandler);
         }}
 
         public void UpdateCounterText(int value)

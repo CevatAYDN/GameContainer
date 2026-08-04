@@ -191,15 +191,30 @@ namespace Nexus.Core.Services
         }
 
         // M3 fix: cache WaitForSeconds instances per unique delay value to avoid per-call heap allocation.
+        // M3b fix: cap at 64 entries to prevent unbounded growth when callers pass non-repeating
+        // float delays (e.g. computed values). The delay is rounded to the nearest 50 ms bucket
+        // so similar values share a cached instance (0-alloc in the steady-state common case).
         private static readonly Dictionary<float, WaitForSeconds> s_waitForSecondsCache = new();
+        private const int MaxWaitCacheEntries = 64;
+        private const float WaitBucketMs = 0.05f; // 50 ms rounding bucket
 
         private IEnumerator DespawnCoroutine(GameObject instance, int instanceId, long generation, float delay)
         {
-            // M3 fix: reuse cached WaitForSeconds instead of allocating a new one per call.
-            if (!s_waitForSecondsCache.TryGetValue(delay, out var wait))
+            // Round to the nearest bucket so nearby delays share a cached WaitForSeconds.
+            float key = (float)(Math.Round(delay / WaitBucketMs) * WaitBucketMs);
+            if (!s_waitForSecondsCache.TryGetValue(key, out var wait))
             {
-                wait = new WaitForSeconds(delay);
-                s_waitForSecondsCache[delay] = wait;
+                // M3b: evict one entry if at cap before adding new entry.
+                if (s_waitForSecondsCache.Count >= MaxWaitCacheEntries)
+                {
+                    // Remove the first (arbitrarily chosen) entry — keeps cache bounded.
+                    var enumerator = s_waitForSecondsCache.GetEnumerator();
+                    if (enumerator.MoveNext())
+                        s_waitForSecondsCache.Remove(enumerator.Current.Key);
+                    enumerator.Dispose();
+                }
+                wait = new WaitForSeconds(key);
+                s_waitForSecondsCache[key] = wait;
             }
             yield return wait;
             // Only despawn if the instance is still in the SAME spawn session. If it was

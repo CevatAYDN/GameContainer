@@ -660,19 +660,24 @@ namespace Game
     {
         public event System.Action OnIncrementClicked;
 
+        private UnityEngine.Events.UnityAction _clickHandler;
+
         [SerializeField] private Button _button;
         [SerializeField] private Text _counterText;
 
         protected override void OnBind(IContext context)
         {
-            if (_button != null)
-                _button.onClick.AddListener(() => OnIncrementClicked?.Invoke());
+            if (_button == null)
+                return;
+
+            _clickHandler ??= () => OnIncrementClicked?.Invoke();
+            _button.onClick.AddListener(_clickHandler);
         }
 
         protected override void OnUnbind()
         {
-            if (_button != null)
-                _button.onClick.RemoveAllListeners();
+            if (_button != null && _clickHandler != null)
+                _button.onClick.RemoveListener(_clickHandler);
         }
 
         public void UpdateDisplay(int value)

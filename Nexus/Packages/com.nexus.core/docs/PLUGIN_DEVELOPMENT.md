@@ -44,7 +44,7 @@ Before submitting a new plugin or refactor, verify:
 - [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** use `_view.schedule` or `EditorApplication.update`.
 - [ ] `OnDisable()` resets: instance fields, flags, counters, queues.
 - [ ] All user-facing text uses `NexusLang.Get("key")` — zero hardcoded English strings.
-- [ ] Stat displays use `NexusEditorStyles.CreateStatTile(...)` — no custom stat components.
+- [ ] Stat displays use shared `NexusEditorStyles` stat helpers — no bespoke stat components.
 - [ ] Reflection is cached (`MethodInfo` dictionary, static catalog with `[DidReloadScripts]`).
 - [ ] Empty `catch {}` blocks are NOT present (log `ReflectionTypeLoadException.LoaderExceptions`).
 - [ ] At least 1 NUnit test added under `Tests/Editor/PluginRefactorValidationTests.cs`.

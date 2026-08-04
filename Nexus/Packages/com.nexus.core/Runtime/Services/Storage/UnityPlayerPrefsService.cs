@@ -19,6 +19,7 @@ namespace Nexus.Core.Services
         public void SetInt(string key, int value)
         {
             PlayerPrefs.SetInt(key, value);
+            PlayerPrefs.Save();
         }
 
         public bool GetBool(string key, bool defaultValue = false)
@@ -29,6 +30,7 @@ namespace Nexus.Core.Services
         public void SetBool(string key, bool value)
         {
             PlayerPrefs.SetInt(key, value ? 1 : 0);
+            PlayerPrefs.Save();
         }
 
         public string GetString(string key, string defaultValue = "")
@@ -39,6 +41,7 @@ namespace Nexus.Core.Services
         public void SetString(string key, string value)
         {
             PlayerPrefs.SetString(key, value);
+            PlayerPrefs.Save();
         }
 
         public float GetFloat(string key, float defaultValue = 0f)
@@ -49,6 +52,7 @@ namespace Nexus.Core.Services
         public void SetFloat(string key, float value)
         {
             PlayerPrefs.SetFloat(key, value);
+            PlayerPrefs.Save();
         }
 
         public long GetLong(string key, long defaultValue = 0L)
@@ -64,6 +68,7 @@ namespace Nexus.Core.Services
         public void SetLong(string key, long value)
         {
             PlayerPrefs.SetString(key, value.ToString());
+            PlayerPrefs.Save();
         }
 
         public BigDouble GetBigDouble(string key, BigDouble defaultValue = default)
@@ -82,6 +87,7 @@ namespace Nexus.Core.Services
         public void SetBigDouble(string key, BigDouble value)
         {
             PlayerPrefs.SetString(key, $"{value.Mantissa.ToString(System.Globalization.CultureInfo.InvariantCulture)};{value.Exponent}");
+            PlayerPrefs.Save();
         }
 
         public bool HasKey(string key)

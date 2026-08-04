@@ -128,7 +128,7 @@ namespace NexusBench
 
         public BConstructConsumer() { ParameterlessUsed = true; }
 
-        [Construct]
+        [Inject]
         public BConstructConsumer(BStorage storage)
         {
             ViaCtor = storage;

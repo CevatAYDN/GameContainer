@@ -36,6 +36,13 @@ namespace Nexus.Editor
             return _view;
         }
 
+        public override void OnDisable()
+        {
+            _scrollView = null;
+            _view = null;
+            base.OnDisable();
+        }
+
         private void RenderQuickStart()
         {
             AddSection(NexusLang.Get("help_quickstart"), NexusEditorStyles.AccentBlue);

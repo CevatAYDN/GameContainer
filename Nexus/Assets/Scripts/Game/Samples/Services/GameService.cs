@@ -6,13 +6,7 @@ namespace Game
 {
     public class GameService : NexusService<IGameService>, IGameService
     {
-        public override ValueTask InitializeAsync(CancellationToken ct)
-        {
-            return default;
-        }
-
-        public override void OnDispose()
-        {
-        }
+        public override ValueTask InitializeAsync(CancellationToken ct) => default;
+        public override void OnDispose() { }
     }
 }

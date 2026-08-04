@@ -39,7 +39,8 @@ namespace Nexus.Editor
         private static bool s_catalogValid = false;
 
         private bool _subscribedPlayMode;
-        private IVisualElementScheduledItem _quickFindDebounce;
+        private bool _quickFindDirty;
+        private double _quickFindDirtyAt;
 
         [DidReloadScripts]
         private static void OnScriptsReloaded()
@@ -147,8 +148,8 @@ namespace Nexus.Editor
 
         public override void OnDisable()
         {
-            _quickFindDebounce?.Pause();
-            _quickFindDebounce = null;
+            _quickFindDirty = false;
+            _quickFindDirtyAt = 0d;
             if (_subscribedPlayMode)
             {
                 EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
@@ -161,6 +162,15 @@ namespace Nexus.Editor
         {
             base.OnUpdate();
             RefreshStats();
+
+            if (!_quickFindDirty || _quickFindResultsContainer == null)
+                return;
+
+            if (EditorApplication.timeSinceStartup - _quickFindDirtyAt < 0.2)
+                return;
+
+            _quickFindDirty = false;
+            UpdateQuickFindResults();
         }
 
         private void OnPlayModeStateChanged(PlayModeStateChange state)
@@ -274,7 +284,8 @@ namespace Nexus.Editor
             searchInput.RegisterValueChangedCallback(evt =>
             {
                 _quickSearchQuery = evt.newValue;
-                ScheduleQuickFindUpdate();
+                _quickFindDirty = true;
+                _quickFindDirtyAt = EditorApplication.timeSinceStartup;
             });
 
             searchRow.Add(searchInput);
@@ -283,20 +294,12 @@ namespace Nexus.Editor
             {
                 searchInput.value = "";
                 _quickSearchQuery = "";
+                _quickFindDirty = false;
                 UpdateQuickFindResults();
             }) { text = NexusLang.Get("clear") };
             clearBtn.AddToClassList("nexus-search-clear-btn");
             searchRow.Add(clearBtn);
             return searchRow;
-        }
-
-        private void ScheduleQuickFindUpdate()
-        {
-            _quickFindDebounce?.Pause();
-            if (_view != null)
-            {
-                _quickFindDebounce = _view.schedule.Execute(UpdateQuickFindResults).StartingIn(200);
-            }
         }
 
         private void UpdateQuickFindResults()

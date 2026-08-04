@@ -6,28 +6,16 @@ namespace Game
     {
         [Inject] private GameModel _model;
 
-        private readonly System.Action<int, int> _counterChangedHandler;
-        private System.Action _incrementClickedHandler;
-
-        public GameMediator()
-        {
-            _counterChangedHandler = (_, value) => View?.UpdateDisplay(value);
-            _incrementClickedHandler = () => SignalBus.Fire(new GameSignal(1));
-        }
-
         protected override void OnBind()
         {
-            TrackObservable(_model.Counter, _counterChangedHandler);
+            _model.Counter.OnChanged((o, n) => View.UpdateDisplay(n));
             View.UpdateDisplay(_model.Counter.Value);
-            View.OnIncrementClicked += _incrementClickedHandler;
+            View.OnIncrementClicked += () => SignalBus.Fire(new GameSignal(1));
         }
 
         protected override void OnUnbind()
         {
-            if (View != null)
-            {
-                View.OnIncrementClicked -= _incrementClickedHandler;
-            }
+            _model.Counter.ClearOnChanged();
         }
     }
 }

@@ -37,6 +37,9 @@ namespace Nexus.Demo
     {
         [Inject] private IDemoUIModel _uiModel;
 
+        private UnityEngine.Events.UnityAction _playClickHandler;
+        private UnityEngine.Events.UnityAction _shopClickHandler;
+
         protected override void OnBind()
         {
             base.OnBind();
@@ -51,14 +54,18 @@ namespace Nexus.Demo
             TrackObservable(_uiModel.HighScore, (_, v) => View.UpdateHighScore(v));
 
             // Button handlers fire signals; commands own the logic (single path).
-            View.PlayButton.onClick.AddListener(() => SignalBus.Fire(DemoGameplaySignal.GameStarted()));
-            View.ShopButton.onClick.AddListener(() => SignalBus.Fire(DemoUISignal.ShowShop()));
+            _playClickHandler ??= () => SignalBus.Fire(DemoGameplaySignal.GameStarted());
+            _shopClickHandler ??= () => SignalBus.Fire(DemoUISignal.ShowShop());
+            View.PlayButton.onClick.AddListener(_playClickHandler);
+            View.ShopButton.onClick.AddListener(_shopClickHandler);
         }
 
         protected override void OnUnbind()
         {
-            View.PlayButton.onClick.RemoveAllListeners();
-            View.ShopButton.onClick.RemoveAllListeners();
+            if (_playClickHandler != null)
+                View.PlayButton.onClick.RemoveListener(_playClickHandler);
+            if (_shopClickHandler != null)
+                View.ShopButton.onClick.RemoveListener(_shopClickHandler);
             // Note: SettingsButton currently has no listener (no settings screen yet) —
             // it stays wired for future use via its public getter.
             base.OnUnbind();

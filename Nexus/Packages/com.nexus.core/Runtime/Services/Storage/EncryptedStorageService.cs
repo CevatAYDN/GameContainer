@@ -507,13 +507,19 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(key)) return null;
 
+            // B1 fix: Save() performs multiple SaveKeyToDisk calls (each acquires _writeLock
+            // and does blocking file I/O) — running it inside _lock would stall every other
+            // cache/dirty-set operation for the full save duration. Flush outside the lock
+            // first, then read the path under a brief lock.
+            Save();
+
             string filePath;
             lock (_lock)
             {
-                Save();
                 filePath = GetFilePath(key);
-                if (!File.Exists(filePath)) return null;
             }
+
+            if (!File.Exists(filePath)) return null;
 
             // B1 parity: file I/O outside the shared lock so a slow read cannot stall
             // every other key operation.
@@ -533,11 +539,18 @@ namespace Nexus.Core.Services
                 // destroy a valid save already stored on the device.
                 if (!TryReadVersion2(rawData, out string value)) return false;
 
+                // B1 fix: WriteRawDataAtomically acquires _writeLock and performs blocking
+                // File.WriteAllBytes + File.Replace — running it inside _lock would stall
+                // every other cache/dirty-set operation for the full write duration.
+                // Resolve the path under a brief lock, then write outside.
                 string path;
+                lock (_lock) { path = GetFilePath(key); }
+
+                WriteRawDataAtomically(path, rawData);
+
+                // Update the cache and dirty set atomically after the write succeeds.
                 lock (_lock)
                 {
-                    path = GetFilePath(key);
-                    WriteRawDataAtomically(path, rawData);
                     _cache[key] = value;
                     _dirtyKeys.Remove(key);
                 }

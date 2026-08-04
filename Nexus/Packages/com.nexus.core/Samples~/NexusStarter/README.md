@@ -1,6 +1,8 @@
 # 🚀 Nexus Starter Template
 
-The minimal Nexus project to get you from zero to running in 5 minutes.
+The minimal scaffold template to get a fresh project running quickly.
+
+For the recommended onboarding sample, use [Nexus Counter Example](../Counter/README.md).
 
 ## What's included
 

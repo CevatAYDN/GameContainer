@@ -70,6 +70,7 @@ namespace Nexus.Core.Services
             if (PlayerPrefsService == null) return;
             PlayerPrefsService.SetInt(KeyCurrentLevel, CurrentLevel.Value);
             PlayerPrefsService.SetInt(KeyMaxLevel, MaxUnlockedLevel.Value);
+            PlayerPrefsService.Save();
         }
 
         public void CompleteCurrentLevel()
@@ -117,6 +118,14 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
+            // Flush any pending throttled save BEFORE clearing observers so the final
+            // level values survive teardown even if SaveThrottler disposes after this
+            // service. Mirrors EconomyService.Dispose() for the same reason.
+            if (SaveThrottler != null)
+            {
+                try { SaveThrottler.ForceSave(SaveOwner, PersistNow); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Progression] Final persist failed on dispose: {ex.Message}"); }
+            }
             CurrentLevel.ClearOnChanged();
             MaxUnlockedLevel.ClearOnChanged();
         }

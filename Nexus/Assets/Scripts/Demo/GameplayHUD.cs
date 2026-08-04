@@ -46,6 +46,12 @@ namespace Nexus.Demo
         [Inject] private IDemoGameplayModel _gameplayModel;
         [Inject] private IDemoUIModel _uiModel;
 
+        private UnityEngine.Events.UnityAction _killEnemyClickHandler;
+        private UnityEngine.Events.UnityAction _collectCoinClickHandler;
+        private UnityEngine.Events.UnityAction _completeLevelClickHandler;
+        private UnityEngine.Events.UnityAction _gameOverClickHandler;
+        private UnityEngine.Events.UnityAction _pauseClickHandler;
+
         protected override void OnBind()
         {
             base.OnBind();
@@ -61,20 +67,25 @@ namespace Nexus.Demo
             TrackObservable(_gameplayModel.EnemiesKilled, (_, v) => View.UpdateEnemiesKilled(v));
 
             // Test buttons fire signals; commands own the logic (single path).
-            View.KillEnemyButton.onClick.AddListener(() => SignalBus.Fire(DemoGameplaySignal.EnemyKilled(10)));
-            View.CollectCoinButton.onClick.AddListener(() => SignalBus.Fire(DemoGameplaySignal.CoinCollected(5)));
-            View.CompleteLevelButton.onClick.AddListener(() => SignalBus.Fire(DemoGameplaySignal.LevelCompleted(_gameplayModel.CurrentLevel.Value)));
-            View.GameOverButton.onClick.AddListener(() => SignalBus.Fire(DemoGameplaySignal.GameOver("test")));
-            View.PauseButton.onClick.AddListener(() => SignalBus.Fire(DemoUISignal.ShowMainMenu()));
+            _killEnemyClickHandler ??= () => SignalBus.Fire(DemoGameplaySignal.EnemyKilled(10));
+            _collectCoinClickHandler ??= () => SignalBus.Fire(DemoGameplaySignal.CoinCollected(5));
+            _completeLevelClickHandler ??= () => SignalBus.Fire(DemoGameplaySignal.LevelCompleted(_gameplayModel.CurrentLevel.Value));
+            _gameOverClickHandler ??= () => SignalBus.Fire(DemoGameplaySignal.GameOver("test"));
+            _pauseClickHandler ??= () => SignalBus.Fire(DemoUISignal.ShowMainMenu());
+            View.KillEnemyButton.onClick.AddListener(_killEnemyClickHandler);
+            View.CollectCoinButton.onClick.AddListener(_collectCoinClickHandler);
+            View.CompleteLevelButton.onClick.AddListener(_completeLevelClickHandler);
+            View.GameOverButton.onClick.AddListener(_gameOverClickHandler);
+            View.PauseButton.onClick.AddListener(_pauseClickHandler);
         }
 
         protected override void OnUnbind()
         {
-            View.KillEnemyButton.onClick.RemoveAllListeners();
-            View.CollectCoinButton.onClick.RemoveAllListeners();
-            View.CompleteLevelButton.onClick.RemoveAllListeners();
-            View.GameOverButton.onClick.RemoveAllListeners();
-            View.PauseButton.onClick.RemoveAllListeners();
+            if (_killEnemyClickHandler != null) View.KillEnemyButton.onClick.RemoveListener(_killEnemyClickHandler);
+            if (_collectCoinClickHandler != null) View.CollectCoinButton.onClick.RemoveListener(_collectCoinClickHandler);
+            if (_completeLevelClickHandler != null) View.CompleteLevelButton.onClick.RemoveListener(_completeLevelClickHandler);
+            if (_gameOverClickHandler != null) View.GameOverButton.onClick.RemoveListener(_gameOverClickHandler);
+            if (_pauseClickHandler != null) View.PauseButton.onClick.RemoveListener(_pauseClickHandler);
             base.OnUnbind();
         }
     }

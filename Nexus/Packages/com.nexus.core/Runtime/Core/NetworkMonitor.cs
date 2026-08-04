@@ -51,6 +51,31 @@ namespace Nexus.Core
         public static event Action<NetworkEvent> OnNetworkEvent;
         public static event Action<ConnectionStatus> OnConnectionStatusChanged;
 
+        /// <summary>
+        /// Domain-reload reset: clears static event subscribers so stale editor/instance
+        /// handlers from a previous Play Mode run cannot be invoked in the next run.
+        /// Mirrors the identical pattern in <see cref="PerformanceMonitor.ResetOnDomainReload"/>.
+        /// </summary>
+        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnDomainReload()
+        {
+            OnNetworkEvent = null;
+            OnConnectionStatusChanged = null;
+            s_enabled = true;
+            s_nextId = 1;
+            s_currentStatus = new ConnectionStatus { IsConnected = false, LastUpdate = DateTime.Now };
+            lock (s_historyLock)
+            {
+                s_latencyHistory.Clear();
+            }
+            lock (s_signalCounts)
+            {
+                s_signalCounts.Clear();
+            }
+            while (s_events.TryDequeue(out _)) { }
+        }
+
+
         public static bool Enabled
         {
             get => s_enabled;

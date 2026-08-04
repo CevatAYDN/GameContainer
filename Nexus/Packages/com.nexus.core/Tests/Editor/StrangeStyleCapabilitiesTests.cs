@@ -55,7 +55,7 @@ namespace Nexus.Editor.Tests
 
             public ETConstructConsumer() { ParameterlessUsed = true; }
 
-            [Construct]
+            [Inject]
             public ETConstructConsumer(ETStorage storage)
             {
                 ViaCtor = storage;
