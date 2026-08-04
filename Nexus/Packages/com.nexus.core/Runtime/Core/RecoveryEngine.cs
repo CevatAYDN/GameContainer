@@ -100,7 +100,11 @@ namespace Nexus.Core
                     }
                     if (decision.Action == RecoveryAction.Abort)
                     {
-                        throw new InvalidOperationException("Execution aborted by recovery strategy.", ex);
+                        // İ4-fix: throw the typed abort exception instead of a bare
+                        // InvalidOperationException. The strategy-failure catch filter below
+                        // matches on TYPE now, so it can no longer misfire when a strategy
+                        // wraps the original exception as InnerException for its own reasons.
+                        throw new NexusRecoveryAbortException("Execution aborted by recovery strategy.", ex);
                     }
                     if (decision.Action == RecoveryAction.Fallback)
                     {
@@ -141,12 +145,15 @@ namespace Nexus.Core
                         if (retryCount >= decision.MaxRetries)
                         {
                             NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
-                            throw new InvalidOperationException($"Retry limit reached for command {commandType.Name}.", ex);
+                            // İ4-fix: typed abort exception (see Abort path above) so the
+                            // strategy-failure filter below does not swallow it as a strategy
+                            // error via InnerException identity.
+                            throw new NexusRecoveryAbortException($"Retry limit reached for command {commandType.Name}.", ex);
                         }
                         return RecoveryPlan.RetryPlan(failedSignal);
                     }
                 }
-                catch (Exception strategyEx) when (!(strategyEx is InvalidOperationException && strategyEx.InnerException == ex))
+                catch (Exception strategyEx) when (!(strategyEx is NexusRecoveryAbortException))
                 {
                     // T6 fix: strategy failures were only written to the console; the
                     // diagnostics layer (ErrorCollection) never saw them, so editor tooling

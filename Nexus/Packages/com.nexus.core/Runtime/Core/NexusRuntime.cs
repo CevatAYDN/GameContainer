@@ -305,6 +305,8 @@ namespace Nexus.Core
                 s_activeContextsReadOnlyCache = new List<IContext>();
                 s_activeContextsCacheDirty = false;
                 s_activeContextCount = 0;
+                OnContextRegistered = null;
+                OnContextUnregistered = null;
                 System.Threading.Volatile.Write(ref s_cachedLogger, null);
             }
 
@@ -462,11 +464,11 @@ namespace Nexus.Core
 
             public static void UpdateRates()
             {
+                float now = UnityEngine.Time.time;
                 // Lock to make the rate calculation atomic across all fields.
                 // Metrics are not a hot path so lock overhead is acceptable.
                 lock (_rateLock)
                 {
-                    float now = UnityEngine.Time.time;
                     float delta = now - _lastSampleTime;
                     if (delta > 0.5f)
                     {

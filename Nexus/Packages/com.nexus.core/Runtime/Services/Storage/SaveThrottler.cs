@@ -63,11 +63,9 @@ namespace Nexus.Core.Services
             _throttleSeconds = 2f;
         }
 
-        // M8: the IPlayerPrefsService parameter was never used — a dead parameter that
-        // implied a dependency this throttler does not have. Removed.
-        public SaveThrottler(ITickService tickService, TimeSpan throttleTime)
+        public SaveThrottler(ITickService tickService, TimeSpan throttleTime) : this()
         {
-            TickService = tickService;
+            if (tickService != null) TickService = tickService;
             _throttleSeconds = (float)throttleTime.TotalSeconds;
         }
 

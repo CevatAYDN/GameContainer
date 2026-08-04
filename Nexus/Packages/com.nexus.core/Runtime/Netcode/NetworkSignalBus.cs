@@ -175,12 +175,12 @@ namespace Nexus.Netcode
         private readonly ISignalBus _localSignalBus;
         private readonly Dictionary<Type, INetworkSignalHistory> _histories = new();
         private readonly List<INetworkModelSnapshotHandler> _modelHandlers = new();
-        private int _currentTick;
+        private volatile int _currentTick;
 
         // B7: true while RollbackAndResimulate is driving the tick pointer. FireAtTick
         // records to history but suppresses the synchronous local fire during this
         // window so a signal cannot be applied twice (once by replay, once by the call).
-        private bool _isResimulating;
+        private volatile bool _isResimulating;
 
         public int CurrentTick => _currentTick;
         public IReadOnlyDictionary<Type, INetworkSignalHistory> Histories => _histories;

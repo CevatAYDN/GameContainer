@@ -19,6 +19,7 @@ namespace Nexus.Core.Services
         private AndroidJavaObject _vibrator;
         private AndroidJavaClass _vibrationEffectClass;
         private int _sdkVersion;
+        private bool _hasVibrator = true;
 
         // Pre-created immutable VibrationEffect per HapticType (SDK 26+). The old hot path
         // called createOneShot on EVERY Vibrate — allocating an AndroidJavaObject wrapper
@@ -55,6 +56,11 @@ namespace Nexus.Core.Services
                 using (var activity = unityPlayer.GetStatic<AndroidJavaObject>("currentActivity"))
                 {
                     _vibrator = activity.Call<AndroidJavaObject>("getSystemService", "vibrator");
+                }
+
+                if (_vibrator != null)
+                {
+                    _hasVibrator = _vibrator.Call<bool>("hasVibrator");
                 }
 
                 if (_sdkVersion >= 26)
@@ -130,7 +136,7 @@ namespace Nexus.Core.Services
             Handheld.Vibrate();
 #endif
 #elif UNITY_ANDROID && !UNITY_EDITOR
-            if (_vibrator != null)
+            if (_vibrator != null && _hasVibrator)
             {
                 try
                 {

@@ -109,13 +109,33 @@ namespace Nexus.Core
 
         public static BigDouble operator *(BigDouble a, BigDouble b)
         {
-            return new BigDouble(a.Mantissa * b.Mantissa, a.Exponent + b.Exponent);
+            if (a.Mantissa == 0.0 || b.Mantissa == 0.0) return Zero;
+            // B1-fix: saturate the exponent sum instead of overflowing long (MaxValue * anything
+            // would otherwise wrap to a negative exponent and silently corrupt the value).
+            return new BigDouble(a.Mantissa * b.Mantissa, SaturateAddExponent(a.Exponent, b.Exponent));
         }
 
         public static BigDouble operator /(BigDouble a, BigDouble b)
         {
             if (b.Mantissa == 0.0) throw new DivideByZeroException("Cannot divide BigDouble by Zero.");
-            return new BigDouble(a.Mantissa / b.Mantissa, a.Exponent - b.Exponent);
+            // B1-fix: saturate the exponent difference instead of underflowing long.
+            return new BigDouble(a.Mantissa / b.Mantissa, SaturateSubExponent(a.Exponent, b.Exponent));
+        }
+
+        /// <summary>clamped exponent addition; never overflows long.</summary>
+        private static long SaturateAddExponent(long a, long b)
+        {
+            if (b > 0 && a > long.MaxValue - b) return long.MaxValue;
+            if (b < 0 && a < long.MinValue - b) return long.MinValue;
+            return a + b;
+        }
+
+        /// <summary>clamped exponent subtraction (a - b); never overflows long.</summary>
+        private static long SaturateSubExponent(long a, long b)
+        {
+            if (b < 0 && a > long.MaxValue + b) return long.MaxValue; // a - (negative) → a + |b|
+            if (b > 0 && a < long.MinValue + b) return long.MinValue;
+            return a - b;
         }
 
         public static bool operator >(BigDouble a, BigDouble b) => a.CompareTo(b) > 0;
@@ -148,9 +168,17 @@ namespace Nexus.Core
             return Mantissa.CompareTo(other.Mantissa);
         }
 
+        // B1/B2-fix: Equals, GetHashCode and CompareTo now agree on a single exact
+        // equality predicate (same Exponent AND exactly equal Mantissa). The previous
+        // 1e-12 tolerance made Equals(a,b) true while GetHashCode(a) != GetHashCode(b),
+        // violating the .NET object contract and corrupting Dictionary/HashSet lookups;
+        // CompareTo also returned non-zero for values Equals considered equal, breaking
+        // SortedSet/binary-search invariants. Exact comparison is consistent with
+        // Normalize (mantissa always lands in [1,10)) and with the bit-exact
+        // BitConverter round-trip used by SecureObservableBigDouble.
         public bool Equals(BigDouble other)
         {
-            return Exponent == other.Exponent && Math.Abs(Mantissa - other.Mantissa) < 1e-12;
+            return Exponent == other.Exponent && Mantissa == other.Mantissa;
         }
 
         public override bool Equals(object obj)

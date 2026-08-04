@@ -154,6 +154,7 @@ namespace Nexus.Core
     /// parameterless constructor is used when available.
     /// </summary>
     [AttributeUsage(AttributeTargets.Constructor, AllowMultiple = false, Inherited = true)]
+    [Obsolete("Deprecated. Use [Inject] instead.")]
     [Preserve]
     public sealed class ConstructAttribute : Attribute
     {

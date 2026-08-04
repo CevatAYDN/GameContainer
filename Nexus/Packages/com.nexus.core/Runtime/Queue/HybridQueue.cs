@@ -80,12 +80,12 @@ namespace Nexus.Core
                     wrapper = s_pool.Pop();
                     s_pooledInstances.Remove(wrapper);
                 }
+                if (wrapper == null)
+                {
+                    wrapper = new QueuedSignalWrapper<T>();
+                }
+                wrapper.Signal = signal;
             }
-            if (wrapper == null)
-            {
-                wrapper = new QueuedSignalWrapper<T>();
-            }
-            wrapper.Signal = signal;
             return wrapper;
         }
 
@@ -93,9 +93,9 @@ namespace Nexus.Core
         public static void Return(QueuedSignalWrapper<T> wrapper)
         {
             if (wrapper == null) return;
-            wrapper.Signal = default;
             lock (s_poolLock)
             {
+                wrapper.Signal = default;
                 // Double-return guard: an instance already in the pool must not be pooled again
                 if (!s_pooledInstances.Add(wrapper))
                 {

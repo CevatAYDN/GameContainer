@@ -245,12 +245,13 @@ namespace Nexus.Core.Services
 
             if (_sfxPool.Count >= MaxSfxPoolSize)
             {
-                // Pool exhausted — steal the oldest channel instead of growing the pool
-                // forever on SFX-heavy scenes. Stop the victim first so the volume / pitch
-                // / spatialBlend / position set below do not distort the clip that was
-                // still playing on it.
-                _sfxPool[0].Stop();
-                return _sfxPool[0];
+                // Pool exhausted — steal the oldest channel (index 0) and rotate it to the back
+                // so subsequent steals cycle fairly (Round-Robin) instead of starving index 0.
+                var oldest = _sfxPool[0];
+                _sfxPool.RemoveAt(0);
+                _sfxPool.Add(oldest);
+                oldest.Stop();
+                return oldest;
             }
 
             var newSourceGo = new GameObject($"SFXSource_{_sfxPool.Count}");

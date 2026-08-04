@@ -135,12 +135,7 @@ namespace Nexus.Core
         public static implicit operator int(SecureObservableInt prop) => prop.Value;
         public override string ToString() => Value.ToString();
 
-        private static void RaiseTamperDetected(string context)
-        {
-            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
-            try { OnTamperDetected?.Invoke(context); }
-            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
-        }
+        private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
     }
 
     /// <summary>
@@ -246,12 +241,7 @@ namespace Nexus.Core
         public static implicit operator long(SecureObservableLong prop) => prop.Value;
         public override string ToString() => Value.ToString();
 
-        private static void RaiseTamperDetected(string context)
-        {
-            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
-            try { OnTamperDetected?.Invoke(context); }
-            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
-        }
+        private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
     }
 
     /// <summary>
@@ -383,12 +373,7 @@ namespace Nexus.Core
         public static implicit operator float(SecureObservableFloat prop) => prop.Value;
         public override string ToString() => Value.ToString();
 
-        private static void RaiseTamperDetected(string context)
-        {
-            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
-            try { OnTamperDetected?.Invoke(context); }
-            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
-        }
+        private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
     }
 
     /// <summary>
@@ -582,5 +567,16 @@ namespace Nexus.Core
 
         public static implicit operator BigDouble(SecureObservableBigDouble prop) => prop.Value;
         public override string ToString() => Value.ToString();
+    }
+
+    internal static class SecureObservableHelper
+    {
+        public static void RaiseTamper(Action<string> tamperEvent, string context)
+        {
+            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
+            if (tamperEvent == null) return;
+            try { tamperEvent.Invoke(context); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+        }
     }
 }

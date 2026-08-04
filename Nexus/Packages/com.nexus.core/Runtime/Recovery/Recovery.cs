@@ -18,6 +18,19 @@ namespace Nexus.Core
     }
 
     /// <summary>
+    /// Thrown by <see cref="RecoveryEngine"/> when a recovery strategy decides to Abort or
+    /// when the retry limit is exhausted. Subclasses <see cref="InvalidOperationException"/>
+    /// so existing catch/assert contract is preserved, but carries a distinct type so the
+    /// engine's strategy-failure handler can distinguish "deliberate abort control flow"
+    /// from "the strategy itself threw" WITHOUT relying on InnerException object identity.
+    /// </summary>
+    [Preserve]
+    public sealed class NexusRecoveryAbortException : InvalidOperationException
+    {
+        public NexusRecoveryAbortException(string message, Exception innerException) : base(message, innerException) { }
+    }
+
+    /// <summary>
     /// Represents a recovery decision made when a command fails.
     /// Created via static factory methods: <see cref="Skip"/>, <see cref="Retry"/>, <see cref="Abort"/>, <see cref="Fallback{T}"/>.
     /// </summary>

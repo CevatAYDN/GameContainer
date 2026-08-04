@@ -267,7 +267,12 @@ namespace Nexus.Core.FSM
                                 _currentState = errorState;
                             }
                         }
-                        catch (OperationCanceledException) { }
+                        catch (OperationCanceledException)
+                        {
+                            // Or1-fix: on cancelled recovery, reach the same terminal (null)
+                            // state as the innerEx path, so no stale failed-from state leaks.
+                            if (mySequence == _transitionSequence) _currentState = null;
+                        }
                         catch (Exception innerEx)
                         {
                             NexusRuntime.Logger?.LogException(innerEx);

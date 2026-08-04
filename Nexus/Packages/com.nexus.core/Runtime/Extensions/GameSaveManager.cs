@@ -54,9 +54,13 @@ namespace Nexus.Core.Extensions
         Task SaveAsync(string slotName, CancellationToken ct = default);
         /// <summary>Loads and restores model state from persistent storage.</summary>
         Task<bool> LoadAsync(string slotName, CancellationToken ct = default);
-        /// <summary>Returns true if a save exists for the given slot.</summary>
+        /// <summary>Returns true if a save exists for the given slot.
+        /// İ1 note: intentionally synchronous — File.Exists is a sub-millisecond metadata
+        /// call, not payload I/O; converting it would break this interface's sync contract
+        /// without a real main-thread blocking win.</summary>
         bool SaveExists(string slotName);
-        /// <summary>Deletes a save slot from persistent storage.</summary>
+        /// <summary>Deletes a save slot from persistent storage.
+        /// İ1 note: intentionally synchronous metadata operation (same rationale as SaveExists).</summary>
         void DeleteSave(string slotName);
     }
 
@@ -72,7 +76,11 @@ namespace Nexus.Core.Extensions
         // Only one active model can participate in save/load.
         // For composite saves, register an aggregate root model.
         private ISaveDataProvider _model;
-        private readonly SynchronizationContext _mainThreadContext = SynchronizationContext.Current;
+        // İ2-fix: capture lazily on first use, not in the field initializer — a worker-thread
+        // construction would otherwise pin a null/wrong context for the manager's lifetime.
+        private SynchronizationContext _mainThreadContext;
+
+        private SynchronizationContext MainThreadContext => _mainThreadContext ??= SynchronizationContext.Current;
 
         // M6 fix: serializes the atomic-write critical section. Two concurrent SaveAsync
         // calls for the SAME slot both stage to the shared "slot.sav.tmp" path and both
@@ -151,7 +159,7 @@ namespace Nexus.Core.Extensions
             if (!File.Exists(path))
                 return Task.FromResult(false);
 
-            return LoadAndRestoreAsync(path, _mainThreadContext ?? SynchronizationContext.Current, ct);
+            return LoadAndRestoreAsync(path, MainThreadContext, ct);
         }
 
         private async Task<bool> LoadAndRestoreAsync(string path, SynchronizationContext synchronizationContext, CancellationToken ct)

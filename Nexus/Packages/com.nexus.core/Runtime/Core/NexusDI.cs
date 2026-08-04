@@ -994,45 +994,50 @@ namespace Nexus.Core
         // ─── Public API: ReInject (pending tracking) ───
         public bool ReInject(object instance)
         {
-            if (instance == null || !_pendingInjections.TryGetValue(instance, out var pending))
-                return true;
+            if (instance == null) return true;
 
-            bool allSucceeded = true;
-            var type = instance.GetType();
-
-            for (int i = pending.Fields.Count - 1; i >= 0; i--)
+            lock (_pendingInjectionsLock)
             {
-                var f = pending.Fields[i];
-                var resolvedValue = string.IsNullOrEmpty(f.Name) ? TryResolve(f.Type) : TryResolve(f.Type, f.Name);
-                if (resolvedValue != null) { MetadataCache.ApplyFieldSetter(f, instance, resolvedValue); pending.Fields.RemoveAt(i); }
-                else { allSucceeded = false; }
-            }
+                if (!_pendingInjections.TryGetValue(instance, out var pending))
+                    return true;
 
-            for (int i = pending.Properties.Count - 1; i >= 0; i--)
-            {
-                var p = pending.Properties[i];
-                var resolvedValue = string.IsNullOrEmpty(p.Name) ? TryResolve(p.Type) : TryResolve(p.Type, p.Name);
-                if (resolvedValue != null) { MetadataCache.ApplyPropertySetter(p, instance, resolvedValue); pending.Properties.RemoveAt(i); }
-                else { allSucceeded = false; }
-            }
+                bool allSucceeded = true;
+                var type = instance.GetType();
 
-            for (int i = pending.Methods.Count - 1; i >= 0; i--)
-            {
-                var (method, paramIndices) = pending.Methods[i];
-                var args = new object[method.ParameterTypes.Length];
-                bool methodSucceeded = true;
-                for (int j = 0; j < method.ParameterTypes.Length; j++)
+                for (int i = pending.Fields.Count - 1; i >= 0; i--)
                 {
-                    args[j] = TryResolve(method.ParameterTypes[j]);
-                    if (args[j] == null && Array.IndexOf(paramIndices, j) >= 0)
-                        methodSucceeded = false;
+                    var f = pending.Fields[i];
+                    var resolvedValue = string.IsNullOrEmpty(f.Name) ? TryResolve(f.Type) : TryResolve(f.Type, f.Name);
+                    if (resolvedValue != null) { MetadataCache.ApplyFieldSetter(f, instance, resolvedValue); pending.Fields.RemoveAt(i); }
+                    else { allSucceeded = false; }
                 }
-                if (methodSucceeded) { method.Method.Invoke(instance, args); pending.Methods.RemoveAt(i); }
-                else { allSucceeded = false; }
-            }
 
-            if (allSucceeded) _pendingInjections.Remove(instance);
-            return allSucceeded;
+                for (int i = pending.Properties.Count - 1; i >= 0; i--)
+                {
+                    var p = pending.Properties[i];
+                    var resolvedValue = string.IsNullOrEmpty(p.Name) ? TryResolve(p.Type) : TryResolve(p.Type, p.Name);
+                    if (resolvedValue != null) { MetadataCache.ApplyPropertySetter(p, instance, resolvedValue); pending.Properties.RemoveAt(i); }
+                    else { allSucceeded = false; }
+                }
+
+                for (int i = pending.Methods.Count - 1; i >= 0; i--)
+                {
+                    var (method, paramIndices) = pending.Methods[i];
+                    var args = new object[method.ParameterTypes.Length];
+                    bool methodSucceeded = true;
+                    for (int j = 0; j < method.ParameterTypes.Length; j++)
+                    {
+                        args[j] = TryResolve(method.ParameterTypes[j]);
+                        if (args[j] == null && Array.IndexOf(paramIndices, j) >= 0)
+                            methodSucceeded = false;
+                    }
+                    if (methodSucceeded) { method.Method.Invoke(instance, args); pending.Methods.RemoveAt(i); }
+                    else { allSucceeded = false; }
+                }
+
+                if (allSucceeded) _pendingInjections.Remove(instance);
+                return allSucceeded;
+            }
         }
 
         public int ReInjectAll()
@@ -1263,6 +1268,7 @@ namespace Nexus.Core
                 _resolvedSingletons.Clear();
             }
 
+            var asyncDisposables = new List<IAsyncDisposable>();
             foreach (var instance in singletonsCopy)
             {
                 if (!alreadyDisposed.Add(instance)) continue;
@@ -1278,16 +1284,14 @@ namespace Nexus.Core
 
                     if (instance is IAsyncDisposable asyncDisposable)
                     {
-                        // C2 fix: never block the calling thread on async teardown.
-                        // The previous sync-over-async call
-                        // (DisposeAsync().AsTask().GetAwaiter().GetResult()) deadlocks on the
-                        // Unity main thread whenever DisposeAsync's continuations must marshal
-                        // back to a captured SynchronizationContext. Schedule the async
-                        // disposal on a background task instead — DisposeAsyncInBackground
-                        // captures and logs any failure, so errors are never silent.
-                        // Callers that need deterministic, ordered async teardown use
-                        // Container.DisposeAsync() (reached via Context.DisposeAsync()).
-                        _ = DisposeAsyncInBackground(asyncDisposable);
+                        // İ3-fix (C2 upgrade): never block the calling thread on async teardown,
+                        // but dispose async singletons in ONE ordered background chain instead of
+                        // one fire-and-forget task per instance. The old per-instance `_ =` fired
+                        // them in parallel with no ordering, so registration-dependency order was
+                        // lost. Collecting them and awaiting sequentially on the thread pool with
+                        // ConfigureAwait(false) preserves order AND prevents continuations from
+                        // re-capturing the Unity SynchronizationContext of the (disposing) caller.
+                        asyncDisposables.Add(asyncDisposable);
                     }
                     else if (instance is IDisposable disposable)
                     {
@@ -1299,22 +1303,29 @@ namespace Nexus.Core
                     NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
                 }
             }
+            if (asyncDisposables.Count > 0)
+                _ = DisposeAllAsyncInBackground(asyncDisposables);
             _bindings.Clear();
             _namedBindings.Clear();
         }
 
         /// <summary>
-        /// Runs an IAsyncDisposable's DisposeAsync on the thread pool with error capture.
+        /// Disposes IAsyncDisposable singletons sequentially on the thread pool with error capture.
         /// Used by the synchronous <see cref="Dispose()"/> path so teardown never blocks
         /// the calling (Unity main) thread — the deterministic async path is
-        /// <see cref="DisposeAsync()"/>.
+        /// <see cref="DisposeAsync()"/>. ConfigureAwait(false) keeps every continuation on the
+        /// thread pool rather than hopping back to the disposing thread's SynchronizationContext.
         /// </summary>
-        private static async System.Threading.Tasks.Task DisposeAsyncInBackground(IAsyncDisposable asyncDisposable)
+        private static async System.Threading.Tasks.Task DisposeAllAsyncInBackground(IReadOnlyList<IAsyncDisposable> asyncDisposables)
         {
-            try { await asyncDisposable.DisposeAsync(); }
-            catch (Exception ex)
+            for (int i = 0; i < asyncDisposables.Count; i++)
             {
-                NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {asyncDisposable.GetType().FullName}: {ex.Message}");
+                try { await asyncDisposables[i].DisposeAsync().ConfigureAwait(false); }
+                catch (OperationCanceledException) { /* Expected on context teardown */ }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {asyncDisposables[i].GetType().FullName}: {ex.Message}");
+                }
             }
         }
 

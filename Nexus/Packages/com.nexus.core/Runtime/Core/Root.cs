@@ -215,7 +215,12 @@ namespace Nexus.Core
             _pendingViews.Clear();
         }
 
-        private async void Start()
+        private void Start()
+        {
+            _ = StartInternal();
+        }
+
+        private async Task StartInternal()
         {
             if (Context == null)
             {

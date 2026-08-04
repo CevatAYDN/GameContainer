@@ -708,11 +708,7 @@ namespace Nexus.Core
                     NexusTrace.EndEvent(traceId, TraceStatus.Failed);
 #endif
                     var action = _recovery.HandleErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
-                    if (action == RecoveryAction.Retry)
-                    {
-                        retryCount++;
-                    }
-                    else
+                    if (action != RecoveryAction.Retry)
                     {
                         shouldRun = false;
                     }

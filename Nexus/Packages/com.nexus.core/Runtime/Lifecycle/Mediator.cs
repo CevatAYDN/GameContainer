@@ -88,6 +88,10 @@ namespace Nexus.Core
             return sub;
         }
 
+        /// <summary>
+        /// Wraps an <see cref="ObservableProperty{T}"/> subscription as an <see cref="ISignalSubscription"/>.
+        /// Note: <see cref="IsActive"/> checks property attachment (differs from SignalBus node lifetime).
+        /// </summary>
         private sealed class ObservableSubscription<T> : ISignalSubscription
         {
             private ObservableProperty<T> _property;

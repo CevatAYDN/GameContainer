@@ -17,26 +17,43 @@ namespace Nexus.Core
     {
         public static void Run(Func<ValueTask> func, string errorContext)
         {
-            _ = RunAsync(func, errorContext);
-        }
-
-        private static async Task RunAsync(Func<ValueTask> func, string errorContext)
-        {
             try
             {
-                ValueTask task;
-                try
+                ValueTask task = func();
+                if (task.IsCompleted)
                 {
-                    task = func();
+                    if (task.IsFaulted)
+                    {
+                        Exception ex = task.AsTask().Exception?.InnerException;
+                        if (ex != null && !(ex is OperationCanceledException))
+                        {
+                            SignalBus.RaiseUnhandledException(ex, errorContext);
+                            NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
+                        }
+                    }
+                    return;
                 }
-                catch (Exception ex)
+                _ = RunAsync(task, errorContext);
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is OperationCanceledException))
                 {
                     SignalBus.RaiseUnhandledException(ex, errorContext);
                     NexusRuntime.Logger?.LogError($"[Nexus] {errorContext} (sync throw): {ex.Message}\n{ex.StackTrace}");
-                    return;
                 }
+            }
+        }
 
+        private static async Task RunAsync(ValueTask task, string errorContext)
+        {
+            try
+            {
                 await task;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected during context cancellation
             }
             catch (Exception ex)
             {
@@ -149,7 +166,7 @@ namespace Nexus.Core
             // Recovery first (it needs the bus's failed-signal dispatch), then the executor
             // (it needs the recovery engine), then attach the executor to the engine so
             // fallback commands can execute through the real dispatch path.
-            _recoveryEngine = new RecoveryEngine(container, FireFailedSignalSafe, fs => FireAsyncAndForget(fs));
+            _recoveryEngine = new RecoveryEngine(container, FireFailedSignalSafe, async fs => await FireInternalAsync(fs, isCrossContextSource: false));
             _commandExecutor = new CommandExecutor(container, poolManager, context, _commandRegistry, _recoveryEngine);
             _recoveryEngine.AttachExecutor(_commandExecutor);
         }
@@ -298,11 +315,13 @@ namespace Nexus.Core
             {
                 if (onError != null)
                 {
-                    onError(ex);
+                    try { onError(ex); }
+                    catch (Exception handlerEx) { NexusRuntime.Logger?.LogException(handlerEx); }
                 }
                 else
                 {
-                    OnUnhandledException?.Invoke(ex, $"FireAsyncAndForget failed for signal '{typeof(T).FullName}'");
+                    try { OnUnhandledException?.Invoke(ex, $"FireAsyncAndForget failed for signal '{typeof(T).FullName}'"); }
+                    catch (Exception handlerEx) { NexusRuntime.Logger?.LogException(handlerEx); }
                     NexusRuntime.Logger?.LogError($"[Nexus] FireAsyncAndForget signal '{typeof(T).Name}' failed: {ex.Message}\n{ex.StackTrace}");
                 }
             }
@@ -500,7 +519,15 @@ namespace Nexus.Core
             }
             else
             {
-                _ = FireAsyncAndForget(failedSignal);
+                try
+                {
+                    FireInternal(failedSignal, isCrossContextSource: false);
+                }
+                catch (Exception ex)
+                {
+                    RaiseUnhandledException(ex, "CommandFailedSignal sync dispatch failed");
+                    NexusRuntime.Logger?.LogError($"[Nexus] CommandFailedSignal sync dispatch failed: {ex.Message}\n{ex.StackTrace}");
+                }
             }
         }
 

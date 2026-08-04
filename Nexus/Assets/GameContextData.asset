@@ -17,9 +17,10 @@ MonoBehaviour:
   - Assembly-CSharp
   EnableAutoDiscovery: 1
   DependsOn: []
-  EnableAnalytics: 0
-  EnableDebugSignals: 0
-  EnableStrictInjection: 0
+  EnableAnalytics: 1
+  EnableDebugSignals: 1
+  EnableStrictInjection: 1
+  FailOnValidationErrors: 1
   CommandPoolInitialSize: 4
   CommandPoolMaxSize: 64
   TracerRingBufferSize: 2000

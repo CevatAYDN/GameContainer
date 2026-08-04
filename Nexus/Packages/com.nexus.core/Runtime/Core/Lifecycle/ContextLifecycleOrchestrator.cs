@@ -152,7 +152,9 @@ namespace Nexus.Core.Lifecycle
             {
                 // Use a short timeout so fire-and-forget cleanup doesn't hang indefinitely.
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                await stoppable.StopAsync(cts.Token);
+                // İ3-fix: ConfigureAwait(false) prevents the continuation from hopping back to
+                // the (already torn-down) Unity SynchronizationContext during context dispose.
+                await stoppable.StopAsync(cts.Token).ConfigureAwait(false);
             }
             catch (OperationCanceledException) { /* timeout or cancellation during teardown */ }
             catch (Exception ex)

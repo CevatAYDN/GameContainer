@@ -611,30 +611,32 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(key)) return;
 
+            string path;
+            string legacyPath;
             lock (_lock)
             {
                 _cache[key] = null;
                 _dirtyKeys.Remove(key);
+                path = GetFilePath(key);
+                legacyPath = GetLegacyFilePath(key);
+            }
 
-                string path = GetFilePath(key);
-                if (File.Exists(path))
+            // B1 invariant: file I/O outside lock
+            if (File.Exists(path))
+            {
+                try { File.Delete(path); }
+                catch (Exception ex)
                 {
-                    try { File.Delete(path); }
-                    catch (Exception ex)
-                    {
-                        NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
-                    }
+                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
                 }
+            }
 
-                // A6: also remove the legacy MD5-named file if one exists.
-                string legacyPath = GetLegacyFilePath(key);
-                if (legacyPath != null && File.Exists(legacyPath))
+            if (legacyPath != null && File.Exists(legacyPath))
+            {
+                try { File.Delete(legacyPath); }
+                catch (Exception ex)
                 {
-                    try { File.Delete(legacyPath); }
-                    catch (Exception ex)
-                    {
-                        NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete (legacy) failed for key '{key}': {ex.Message}");
-                    }
+                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete (legacy) failed for key '{key}': {ex.Message}");
                 }
             }
         }
