@@ -29,18 +29,38 @@ namespace Nexus.Core
         private int _inFlightAsyncCommands;
         private const int MaxInFlightAsyncCommands = 100;
 
+        // Per-executor cancellation source so in-flight async commands can be cancelled
+        // independently of the context lifetime token. The context token is cancelled by
+        // Context.Dispose, but the executor may be disposed before the context (or the
+        // context may be disposed without cancelling in-flight work promptly). This CTS
+        // gives TryCancelInFlightCommands a real cancellation mechanism instead of a no-op.
+        private readonly CancellationTokenSource _executorCts = new();
+
+        /// <summary>Token that cancels when the executor is disposed or in-flight commands are cancelled.</summary>
+        internal CancellationToken ExecutorToken => _executorCts.Token;
+
         /// <summary>Number of async commands currently in flight (for dispose diagnostics).</summary>
         public int InFlightAsyncCommands => Volatile.Read(ref _inFlightAsyncCommands);
 
-        /// <summary>T2 fix: signals cancellation to all in-flight async commands (via the context
-        /// lifetime token). Called by SignalBus.Dispose() before tearing down registries.</summary>
+        /// <summary>
+        /// T2 fix: signals cancellation to all in-flight async commands. Previously a no-op
+        /// that relied on the context lifetime token being cancelled first — but if the
+        /// executor is disposed before the context (or the context token is never cancelled),
+        /// in-flight commands would keep running on disposed registries, causing
+        /// ObjectDisposedException/NullReferenceException and leaking pooled command objects.
+        /// This now cancels the executor's own CTS, which every async command observes via
+        /// the linked token chain (FireAsyncWithTimeout, ExecuteAsyncWithOptionalTimeout).
+        /// </summary>
         public void TryCancelInFlightCommands()
         {
-            // The context lifetime token is already cancelled by the time Dispose reaches us
-            // (Context.Dispose cancels _cts before disposing the SignalBus). Async commands
-            // that check ct.IsCancellationRequested will observe cancellation and complete
-            // their cleanup promptly. No additional action needed here — the cancellation
-            // token propagation is the cancellation mechanism.
+            try
+            {
+                _executorCts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Already disposed — nothing to cancel.
+            }
         }
 
         /// <summary>

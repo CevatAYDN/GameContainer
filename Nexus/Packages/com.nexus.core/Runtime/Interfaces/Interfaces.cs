@@ -348,10 +348,12 @@ namespace Nexus.Core
         ValueTask FireAsyncWithTimeout<T>(T signal, int timeoutMilliseconds) where T : struct;
 
         /// <summary>
-        /// Fires a signal asynchronously without awaiting the result. Errors are logged by default;
-        /// provide an <paramref name="onError"/> callback for custom error handling.
+        /// Fires a signal asynchronously without awaiting the result — true fire-and-forget.
+        /// Returns immediately; the async dispatch continues on the thread pool. Errors are
+        /// routed to <paramref name="onError"/> (or the global unhandled-exception handler
+        /// when null) and never crash the process.
         /// </summary>
-        ValueTask FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct;
+        void FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct;
 
         ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct;
         ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct;

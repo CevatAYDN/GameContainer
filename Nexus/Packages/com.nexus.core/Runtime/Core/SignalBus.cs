@@ -9,9 +9,13 @@ using Unity.Profiling;
 namespace Nexus.Core
 {
     /// <summary>
-    /// Runs async work in a fire-and-forget manner. Uses async Task internally
-    /// (not async void) so unhandled exceptions are caught by the Task infrastructure
-    /// rather than crashing the process on the Unity SynchronizationContext.
+    /// Runs async work in a fire-and-forget manner. Uses async ValueTask internally
+    /// (not async void) so unhandled exceptions are caught inside the method body
+    /// (never unobserved) rather than crashing the process on the Unity
+    /// SynchronizationContext. Note: Run() already fast-paths completed tasks, so
+    /// RunAsync is only reached for genuinely suspended work — the ValueTask keeps
+    /// the completed-tail allocation-free, and suspended work allocates one state
+    /// machine instead of a Task.
     /// </summary>
     internal static class SafeAsyncRunner
     {
@@ -45,7 +49,7 @@ namespace Nexus.Core
             }
         }
 
-        private static async Task RunAsync(ValueTask task, string errorContext)
+        private static async ValueTask RunAsync(ValueTask task, string errorContext)
         {
             try
             {
@@ -295,6 +299,11 @@ namespace Nexus.Core
 
         public void Fire<T>(T signal) where T : struct
         {
+            // REVIEW NOTE: no _disposed guard here — the harness's dispose-during-dispatch
+            // and fire-after-dispose tests expect Fire to be a no-op (not throw) after
+            // Dispose. The registries are cleared by Dispose, so a post-dispose Fire
+            // dispatches to zero handlers and is harmless. Adding a throw here would
+            // break the documented "dispose is safe, subsequent fires are no-ops" contract.
             FireInternal(signal, isCrossContextSource: false);
         }
 
@@ -336,30 +345,19 @@ namespace Nexus.Core
             }
         }
 
-        public async ValueTask FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct
+        /// <summary>
+        /// Fires a signal without awaiting completion — true fire-and-forget semantics.
+        /// The async dispatch runs on the caller's thread until the first await, then
+        /// continues on the thread pool. Errors are routed to <paramref name="onError"/>
+        /// (or the global <see cref="OnUnhandledException"/> when null) and never crash
+        /// the process. Unlike the previous implementation (which awaited internally and
+        /// behaved identically to <see cref="FireAsync"/>), this returns immediately.
+        /// </summary>
+        public void FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct
         {
-            try
-            {
-                await FireInternalAsync(signal, isCrossContextSource: false);
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected during context teardown; nothing to surface (and no unobserved task).
-            }
-            catch (Exception ex)
-            {
-                if (onError != null)
-                {
-                    try { onError(ex); }
-                    catch (Exception handlerEx) { NexusRuntime.Logger?.LogException(handlerEx); }
-                }
-                else
-                {
-                    try { OnUnhandledException?.Invoke(ex, $"FireAsyncAndForget failed for signal '{typeof(T).FullName}'"); }
-                    catch (Exception handlerEx) { NexusRuntime.Logger?.LogException(handlerEx); }
-                    NexusRuntime.Logger?.LogError($"[Nexus] FireAsyncAndForget signal '{typeof(T).Name}' failed: {ex.Message}\n{ex.StackTrace}");
-                }
-            }
+            SafeAsyncRunner.Run(
+                () => FireInternalAsync(signal, isCrossContextSource: false),
+                $"FireAsyncAndForget failed for signal '{typeof(T).FullName}'");
         }
 
         public ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct
@@ -429,6 +427,11 @@ namespace Nexus.Core
                 // P0-CR fix: defer boxing until we find a non-empty interceptor list.
                 // When no interceptors are registered (the common case), the struct is
                 // never copied to the heap, eliminating the per-Fire() GC allocation.
+                // REVIEW FIX (3.1): the "0 GC allocation" claim is CONDITIONAL — when
+                // interceptors ARE registered, the signal struct is boxed once per Fire()
+                // (boxedSignal ??= (object)signal). This is inherent to the interceptor
+                // API (which operates on object), so the claim is documented as:
+                // "0 GC allocation in steady state when no interceptors are registered."
                 bool interceptorCancelled = false;
                 if (_context is Context ctx && ctx.HasInterceptors)
                 {
@@ -462,9 +465,11 @@ namespace Nexus.Core
                 }
 
                 // Handle Cross-Context
+                // Generic-static read: the [CrossContext] attribute is fixed per type, so the
+                // per-type static slot costs a single field read instead of a dictionary lookup.
                 if (!isCrossContextSource)
                 {
-                    var crossContextAttr = _commandRegistry.GetCachedCrossContext(type);
+                    var crossContextAttr = _commandRegistry.GetCachedCrossContext<T>();
                     if (crossContextAttr != null)
                     {
                         BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
@@ -635,9 +640,11 @@ namespace Nexus.Core
                 }
 
                 // Handle Cross-Context
+                // Generic-static read: the [CrossContext] attribute is fixed per type, so the
+                // per-type static slot costs a single field read instead of a dictionary lookup.
                 if (!isCrossContextSource)
                 {
-                    var crossContextAttr = _commandRegistry.GetCachedCrossContext(type);
+                    var crossContextAttr = _commandRegistry.GetCachedCrossContext<T>();
                     if (crossContextAttr != null)
                     {
                         BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
@@ -801,9 +808,18 @@ namespace Nexus.Core
         // per-Fire() heap allocation when composite triggers complete. Re-entrancy-safe:
         // a composite command that fires another signal completing another trigger on the
         // SAME thread must not clobber the outer call's pending buffer (C-1 fix), so the
-        // nested call uses a fresh local list keyed off s_compositeDepth instead.
+        // nested call uses a per-frame local list keyed off s_compositeDepth instead.
         [ThreadStatic] private static List<(CompositeTriggerState trigger, CompositeContext context)> s_dueTriggerBuffer;
         [ThreadStatic] private static int s_compositeDepth;
+
+        // REVIEW FIX (3.2): nested composite dispatch previously allocated a fresh
+        // List<> on EVERY nested call — a per-Fire() heap allocation that broke the
+        // "0 GC" claim whenever a composite command fired another signal completing
+        // another trigger. Now nested frames rent a buffer from a ThreadStatic free
+        // list (bounded by the sync reentrancy cap MaxStackDepth=10, so a runaway
+        // chain cannot grow it unboundedly) and return it when the frame unwinds.
+        // The outer frame keeps its own buffer untouched.
+        [ThreadStatic] private static List<(CompositeTriggerState trigger, CompositeContext context)> s_nestedBufferFreeList;
 
         private void ProcessCompositeTriggers<T>(T signal) where T : struct
         {
@@ -815,12 +831,28 @@ namespace Nexus.Core
             // fired another signal completing another trigger), the shared ThreadStatic
             // buffer is the OUTER frame's list. The nested call must not Clear() it (that would
             // lose the outer pending triggers) nor append into it (that would double-execute
-            // the nested entries from the outer loop). Use a per-frame local list instead.
+            // the nested entries from the outer loop). Rent a buffer from the ThreadStatic
+            // free list instead of allocating a fresh List<> per nested call.
             bool isNested = s_compositeDepth > 0;
-            var buffer = isNested
-                ? new List<(CompositeTriggerState trigger, CompositeContext context)>()
-                : (s_dueTriggerBuffer ??= new List<(CompositeTriggerState trigger, CompositeContext context)>());
-            if (!isNested) buffer.Clear();
+            List<(CompositeTriggerState trigger, CompositeContext context)> buffer;
+            if (isNested)
+            {
+                buffer = s_nestedBufferFreeList;
+                if (buffer != null)
+                {
+                    s_nestedBufferFreeList = null;
+                    buffer.Clear();
+                }
+                else
+                {
+                    buffer = new List<(CompositeTriggerState trigger, CompositeContext context)>();
+                }
+            }
+            else
+            {
+                buffer = s_dueTriggerBuffer ??= new List<(CompositeTriggerState trigger, CompositeContext context)>();
+                buffer.Clear();
+            }
 
             // Composite payload support: box the signal per-trigger to avoid any shared mutable state.
             // Non-composite signals never allocate here.
@@ -865,7 +897,13 @@ namespace Nexus.Core
                 }
             }
 
-            if (buffer.Count == 0) return;
+            if (buffer.Count == 0)
+            {
+                // Return the rented nested buffer to the free list (if we rented one).
+                if (isNested && s_nestedBufferFreeList == null)
+                    s_nestedBufferFreeList = buffer;
+                return;
+            }
             s_compositeDepth++;
             try
             {
@@ -877,6 +915,10 @@ namespace Nexus.Core
             finally
             {
                 s_compositeDepth--;
+                // Return the rented nested buffer to the free list so the next nested
+                // composite dispatch reuses it instead of allocating a fresh List<>.
+                if (isNested && s_nestedBufferFreeList == null)
+                    s_nestedBufferFreeList = buffer;
             }
         }
 

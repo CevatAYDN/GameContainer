@@ -88,9 +88,9 @@ namespace NexusBench
             sw.Stop();
 
             bool okCount = _counter.Value == count;
-            bool okTime = sw.ElapsedMilliseconds < 50;
+            bool okTime = sw.ElapsedMilliseconds < 10;
             Report("Dispatch1000Signals_CompletesUnderTime", okCount && okTime,
-                $"counter={_counter.Value} expected={count}, elapsed={sw.ElapsedMilliseconds}ms (limit <50ms)");
+                $"counter={_counter.Value} expected={count}, elapsed={sw.ElapsedMilliseconds}ms (limit <10ms)");
         }
 
         private static void Subscribe1000AndFire_AllReceived()
@@ -149,12 +149,19 @@ namespace NexusBench
             GC.WaitForPendingFinalizers();
             GC.Collect();
 
+            // REVIEW FIX: tightened the assertion from <=128 to ==0 bytes. The framework's
+            // "0 GC allocation" claim means steady-state dispatch must allocate NOTHING.
+            // Kept the per-thread API (GetAllocatedBytesForCurrentThread): the harness runs
+            // dispatch synchronously on the main thread, so per-thread measurement is the
+            // correct scope. The whole-process API (GetTotalAllocatedBytes) counts unrelated
+            // background-thread allocations (e.g. GC finalizer threads, thread-pool house-
+            // keeping) and produces flaky false positives.
             long start = GC.GetAllocatedBytesForCurrentThread();
             for (int i = 0; i < 5000; i++) _signalBus.Fire(new PerfSignal(i));
             long allocated = GC.GetAllocatedBytesForCurrentThread() - start;
 
-            Report("SteadyState_HasZeroGCAllocations", allocated <= 128,
-                $"allocated={allocated} bytes for 5000 dispatches (limit <=128)");
+            Report("SteadyState_HasZeroGCAllocations", allocated == 0,
+                $"allocated={allocated} bytes for 5000 dispatches (limit ==0)");
         }
 
         private static void HighFrequency_Performance_StressTest()
@@ -165,8 +172,8 @@ namespace NexusBench
             for (int i = 0; i < count; i++) _signalBus.Fire(new PerfSignal(i));
             sw.Stop();
             Console.WriteLine($"[Nexus Benchmark] 50,000 dispatches completed in {sw.ElapsedMilliseconds} ms.");
-            Report("HighFrequency_Performance_StressTest", sw.ElapsedMilliseconds < 800,
-                $"elapsed={sw.ElapsedMilliseconds}ms (limit <800ms)");
+            Report("HighFrequency_Performance_StressTest", sw.ElapsedMilliseconds < 200,
+                $"elapsed={sw.ElapsedMilliseconds}ms (limit <200ms)");
         }
 
         private static void Benchmark_SignalFire_HotPathNs()
@@ -181,8 +188,9 @@ namespace NexusBench
 
             double nsPerDispatch = (sw.ElapsedTicks * 1_000_000_000.0 / Stopwatch.Frequency) / iterations;
             Console.WriteLine($"[Nexus Benchmark] SignalBus.Fire hot-path: {nsPerDispatch:F2} ns/dispatch over {iterations} dispatches (total {sw.ElapsedMilliseconds} ms)");
-            Report("Benchmark_SignalFire_HotPathNs", nsPerDispatch < 25000,
-                $"{nsPerDispatch:F2} ns/dispatch (limit <25000ns)");
+            // Post-optimization baseline is ~360-440 ns/dispatch; 3000 ns keeps ~7-8x CI headroom.
+            Report("Benchmark_SignalFire_HotPathNs", nsPerDispatch < 3000,
+                $"{nsPerDispatch:F2} ns/dispatch (limit <3000ns)");
         }
 
         private static void Benchmark_SignalFire_WithSubscriberNs()
@@ -200,9 +208,9 @@ namespace NexusBench
 
             double nsPerDispatch = (sw.ElapsedTicks * 1_000_000_000.0 / Stopwatch.Frequency) / iterations;
             Console.WriteLine($"[Nexus Benchmark] SignalBus.Fire with 1 subscriber: {nsPerDispatch:F2} ns/dispatch over {iterations} dispatches (total {sw.ElapsedMilliseconds} ms)");
-            bool ok = received == iterations + warmup && nsPerDispatch < 30000;
+            bool ok = received == iterations + warmup && nsPerDispatch < 4000;
             Report("Benchmark_SignalFire_WithSubscriberNs", ok,
-                $"{nsPerDispatch:F2} ns/dispatch (limit <30000ns), received={received} expected={iterations + warmup}");
+                $"{nsPerDispatch:F2} ns/dispatch (limit <4000ns), received={received} expected={iterations + warmup}");
         }
 
         private static void Run(string name, Action action)
@@ -247,7 +255,8 @@ namespace NexusBench
 
             double nsPerTransition = (sw.ElapsedTicks * 1_000_000_000.0 / Stopwatch.Frequency) / transitions;
             Console.WriteLine($"[Nexus Benchmark] FSM state transitions: {nsPerTransition:F2} ns/transition over {transitions} transitions");
-            Report("FSM_StateTransition_Performance", nsPerTransition < 50000, $"{nsPerTransition:F2} ns/transition (limit <50000ns)");
+            // Baseline ~190 ns/transition; 3000 ns keeps ~15x CI headroom.
+            Report("FSM_StateTransition_Performance", nsPerTransition < 3000, $"{nsPerTransition:F2} ns/transition (limit <3000ns)");
         }
 
         private static void HybridQueue_ThreadSafe_ZeroGC()
@@ -342,8 +351,9 @@ namespace NexusBench
             ErrorCollection.ClearBefore(DateTime.UtcNow.AddMinutes(1));
 
             Console.WriteLine($"[Nexus Benchmark] ErrorCollection: 40,000 concurrent exceptions in {sw.ElapsedMilliseconds} ms (recent={recent.Length}, frequent={frequent.Length})");
-            Report("ErrorCollection_Concurrent_StressTest", sw.ElapsedMilliseconds < 1000 && recent.Length > 0,
-                $"elapsed={sw.ElapsedMilliseconds}ms for 40k exceptions (limit <1000ms)");
+            // Baseline ~30 ms; 500 ms is generous CI headroom for a 4-thread lock-heavy path.
+            Report("ErrorCollection_Concurrent_StressTest", sw.ElapsedMilliseconds < 500 && recent.Length > 0,
+                $"elapsed={sw.ElapsedMilliseconds}ms for 40k exceptions (limit <500ms)");
         }
 
         public static int Main(string[] args)

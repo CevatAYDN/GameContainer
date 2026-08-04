@@ -54,6 +54,9 @@ namespace Nexus.Editor
             s_writeableModelCache = null;
             s_typeScriptCache = null;
             s_signalTypeMap = null;
+            // BUG: s_runFileCache was not cleared here — after a script reload, stale
+            // file contents from the previous run could be served. Clear it too.
+            s_runFileCache = null;
         }
 
         private static void EnsureCaches()

@@ -21,6 +21,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Threading;
+using System.Threading.Tasks;
 using Nexus.Core;
 
 namespace NexusBench
@@ -38,6 +39,7 @@ namespace NexusBench
         public struct CrossThreadSig { public int Producer; public int Seq; }
         public struct LocalTrafficSig { public int Val; }
         public struct AsyncDrainSig { public int Val; }
+        public struct AsyncPayloadSig { public int Val; }
 
         private static void Report(string name, bool ok, string detail)
         {
@@ -326,21 +328,101 @@ namespace NexusBench
                 int asyncDelivered = 0;
                 asyncCtx.SignalBus.SubscribeAsync<AsyncDrainSig>((_, __) =>
                 {
-                    asyncDelivered++;
+                    Interlocked.Increment(ref asyncDelivered);
                     return default;
                 });
                 for (int i = 0; i < 100; i++) asyncCtx.HybridQueue.EnqueueThreadSafe(new AsyncDrainSig { Val = i });
                 asyncCtx.HybridQueue.DrainThreadSafe();
                 sw.Restart();
-                while (asyncDelivered < 100 && sw.ElapsedMilliseconds < 15000) Thread.Sleep(5);
-                bool part3 = asyncDelivered == 100;
+                while (Volatile.Read(ref asyncDelivered) < 100 && sw.ElapsedMilliseconds < 15000) Thread.Sleep(5);
+                bool part3 = Volatile.Read(ref asyncDelivered) == 100;
                 asyncCtx.Dispose();
 
-                ok = part1 && part2 && part3;
+                // ── Part 4: queued async PAYLOAD integrity under wrapper-pool churn ──
+                // Adversarial audit item 2.6 claimed a race: a queued signal with async
+                // handlers is dispatched fire-and-forget, the wrapper is released, and a
+                // concurrent Rent could overwrite wrapper.Signal while the old dispatch is
+                // still in flight — corrupting the payload. The design is immune: FireQueued
+                // copies the payload by value into the closure BEFORE Release, so the in-flight
+                // dispatch never reads the wrapper again. This test creates the REAL window:
+                // the async handler SUSPENDS (await Task.Yield) so SafeAsyncRunner schedules
+                // the continuation on a background thread — the owning thread releases the
+                // wrapper and a churner thread re-rents it (with the -1 sentinel) WHILE the
+                // dispatch is still in flight. Every subscriber must still see exactly the
+                // payload it was sent.
+                var payloadCtx = ContextFactory.Create();
+                const int payloadCount = 2000;
+                var payloadSeen = new int[payloadCount];
+                var payloadBad = 0;
+                // Warm the wrapper pool BEFORE subscribing so the warm-up signals are not
+                // counted by the exactly-once assertion below.
+                for (int i = 0; i < 200; i++)
+                {
+                    payloadCtx.HybridQueue.EnqueueThreadSafe(new AsyncPayloadSig { Val = i });
+                    payloadCtx.HybridQueue.DrainThreadSafe();
+                }
+                payloadCtx.SignalBus.SubscribeAsync<AsyncPayloadSig>(async (sig, __) =>
+                {
+                    // Force a suspension so the dispatch outlives wrapper Release(). The
+                    // continuation runs on a thread-pool thread; the captured payload is the
+                    // by-value copy taken in FireQueued, never the (possibly re-rented) wrapper.
+                    await Task.Yield();
+                    lock (payloadSeen)
+                    {
+                        if (sig.Val < 0 || sig.Val >= payloadCount) payloadBad++;
+                        else payloadSeen[sig.Val]++;
+                    }
+                });
+                // Producer thread keeps renting/releasing the SAME wrapper type while the
+                // owning thread enqueues + drains — maximizes the overwrite window.
+                var churnStop = false;
+                var churner = new Thread(() =>
+                {
+                    while (!Volatile.Read(ref churnStop))
+                    {
+                        var w = QueuedSignalPool<AsyncPayloadSig>.Rent(new AsyncPayloadSig { Val = -1 });
+                        QueuedSignalPool<AsyncPayloadSig>.Return(w);
+                    }
+                });
+                churner.Start();
+                for (int i = 0; i < payloadCount; i++)
+                {
+                    payloadCtx.HybridQueue.EnqueueThreadSafe(new AsyncPayloadSig { Val = i });
+                    payloadCtx.HybridQueue.DrainThreadSafe();
+                }
+                Volatile.Write(ref churnStop, true);
+                churner.Join();
+                sw.Restart();
+                int payloadTotal = 0;
+                lock (payloadSeen)
+                {
+                    for (int i = 0; i < payloadCount; i++) payloadTotal += payloadSeen[i];
+                }
+                while (payloadTotal < payloadCount && sw.ElapsedMilliseconds < 15000)
+                {
+                    Thread.Sleep(5);
+                    lock (payloadSeen)
+                    {
+                        payloadTotal = 0;
+                        for (int i = 0; i < payloadCount; i++) payloadTotal += payloadSeen[i];
+                    }
+                }
+                // Exactly-once per value: no lost payloads, no duplicated/overwritten ones.
+                bool payloadExactlyOnce = true;
+                lock (payloadSeen)
+                {
+                    for (int i = 0; i < payloadCount && payloadExactlyOnce; i++)
+                        if (payloadSeen[i] != 1) payloadExactlyOnce = false;
+                }
+                bool part4 = payloadTotal == payloadCount && payloadBad == 0 && payloadExactlyOnce;
+                payloadCtx.Dispose();
+
+                ok = part1 && part2 && part3 && part4;
                 if (part2) detail = $"part1: drained={drained}/{total} delivered={delivered} unique={seen.Count} " +
                     $"order={orderOk} depth={ctx.HybridQueue.ThreadSafeQueueDepth} | " +
                     $"part2: workers={doneCount}/{workers} active={NexusRuntime.ActiveContexts.Count} | " +
-                    $"part3: asyncDelivered={asyncDelivered}/100";
+                    $"part3: asyncDelivered={Volatile.Read(ref asyncDelivered)}/100 | " +
+                    $"part4: payloadTotal={payloadTotal}/{payloadCount} bad={payloadBad} exactlyOnce={payloadExactlyOnce}";
             }
             catch (Exception ex)
             {

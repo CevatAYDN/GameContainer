@@ -19,6 +19,13 @@ namespace Nexus.Core
         private readonly NexusDI _container;
         private readonly Dictionary<Type, List<CommandHandlerInfo>> _commandHandlers = new();
         private readonly Dictionary<Type, List<CompositeTriggerState>> _compositeTriggersBySignal = new();
+        // Lock-free read copy for composite trigger lookup on the dispatch hot path: rebuilt
+        // under _compositeLock on registration, read without locking by SignalBus. Each rebuild
+        // allocates fresh lists so an in-flight dispatch iterating a previous snapshot is never
+        // mutated by a concurrent registration (list instances are never modified in place
+        // after publish). Eliminates the per-Fire() lock + per-Fire() list copy that the old
+        // TryGetCompositeTriggers snapshot incurred on the hot path.
+        private volatile Dictionary<Type, List<CompositeTriggerState>> _compositeTriggersReadCopy = new();
         private readonly List<CompositeTriggerState> _allCompositeTriggers = new();
         private readonly object _handlerReadLock = new();
         private readonly object _compositeLock = new();
@@ -38,6 +45,15 @@ namespace Nexus.Core
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_genericSyncDispatchCache = new();
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Func<object, object, CancellationToken, ValueTask>> s_genericAsyncDispatchCache = new();
         private static readonly ConcurrentDictionary<Type, CrossContextAttribute> s_crossContextCache = new();
+
+        // Per-type cross-context cache: the [CrossContext] attribute is fixed at the type level,
+        // so the dispatch hot path can read it from a generic-static slot instead of paying a
+        // ConcurrentDictionary lookup per Fire(). The attribute is immutable type metadata, so this
+        // cache needs no clearing (ClearStaticCaches still clears the dictionary for API parity).
+        private static class CrossContextCache<T> where T : struct
+        {
+            public static readonly CrossContextAttribute Value = typeof(T).GetCustomAttribute<CrossContextAttribute>();
+        }
 
         public CommandRegistry(NexusDI container)
         {
@@ -142,9 +158,18 @@ namespace Nexus.Core
                     list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
                 }
 
-                _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers.Count);
-                foreach (var kvp in _commandHandlers)
-                    _commandHandlersReadCopy[kvp.Key] = new List<CommandHandlerInfo>(kvp.Value);
+                // REVIEW FIX: previously this rebuilt EVERY per-type list copy on every
+                // registration — O(total handlers) allocation per RegisterCommand, which
+                // made startup O(n²) with many commands. Now we copy the read-copy
+                // dictionary by REFERENCE (the per-type lists are immutable after publish)
+                // and only build a fresh list for the signal being registered. Dispatch
+                // iterators still walk immutable list instances, so lock-free reads are
+                // preserved.
+                var newReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlersReadCopy.Count + 1);
+                foreach (var kvp in _commandHandlersReadCopy)
+                    newReadCopy[kvp.Key] = kvp.Value; // reference copy — lists are immutable
+                newReadCopy[signalType] = new List<CommandHandlerInfo>(list);
+                _commandHandlersReadCopy = newReadCopy;
                 _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>(_hasAsyncHandler);
             }
 
@@ -265,6 +290,8 @@ namespace Nexus.Core
                     list.Add(state);
                     list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
                 }
+
+                RebuildCompositeReadCopy();
             }
 
             _container.Bind(commandType, isSingleton: false);
@@ -283,22 +310,38 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Gets a snapshot of the composite triggers registered for a signal type, taken under the
-        /// composite lock so a dispatching bus can iterate safely while registration adds triggers.
-        /// Returns false when the signal has no composite triggers (no allocation on the hot path).
+        /// Builds fresh per-type list copies into the volatile read copy. Called under
+        /// <c>_compositeLock</c> on every composite registration so dispatch iterators (which
+        /// read the read copy WITHOUT the lock) always walk immutable list instances.
         /// </summary>
-        public bool TryGetCompositeTriggers(Type signalType, out List<CompositeTriggerState> triggers)
+        private void RebuildCompositeReadCopy()
         {
-            lock (_compositeLock)
+            var copy = new Dictionary<Type, List<CompositeTriggerState>>(_compositeTriggersBySignal.Count);
+            foreach (var kvp in _compositeTriggersBySignal)
+                copy[kvp.Key] = new List<CompositeTriggerState>(kvp.Value);
+            _compositeTriggersReadCopy = copy;
+        }
+
+        /// <summary>
+        /// Gets the composite triggers registered for a signal type. LOCK-FREE on the dispatch
+        /// hot path: returns the immutable per-type snapshot published on registration (lists are
+        /// never mutated in place after publish, so an iterating dispatch is safe while a
+        /// concurrent registration rebuilds the snapshot). Returns false when the signal has no
+        /// composite triggers (no allocation, no lock).
+        ///
+        /// The returned snapshot is SHARED between concurrent dispatches — the read-only surface
+        /// is deliberate: callers must never mutate it (a Clear/Add would corrupt every other
+        /// reader of the same read copy).
+        /// </summary>
+        public bool TryGetCompositeTriggers(Type signalType, out IReadOnlyList<CompositeTriggerState> triggers)
+        {
+            if (_compositeTriggersReadCopy.TryGetValue(signalType, out var list))
             {
-                if (!_compositeTriggersBySignal.TryGetValue(signalType, out var list))
-                {
-                    triggers = null;
-                    return false;
-                }
-                triggers = new List<CompositeTriggerState>(list);
+                triggers = list;
                 return true;
             }
+            triggers = null;
+            return false;
         }
 
         /// <summary>Gets all composite triggers (for iteration).</summary>
@@ -307,6 +350,14 @@ namespace Nexus.Core
         /// <summary>Checks if a signal type has a [CrossContext] attribute (cached).</summary>
         public CrossContextAttribute GetCachedCrossContext(Type type)
             => s_crossContextCache.GetOrAdd(type, static t => t.GetCustomAttribute<CrossContextAttribute>());
+
+        /// <summary>
+        /// Generic form of <see cref="GetCachedCrossContext(Type)"/> used by the dispatch hot path:
+        /// resolves the attribute from a per-type generic static slot, so the common no-attribute
+        /// case costs a single static field read instead of a ConcurrentDictionary lookup.
+        /// </summary>
+        public CrossContextAttribute GetCachedCrossContext<T>() where T : struct
+            => CrossContextCache<T>.Value;
 
         /// <summary>
         /// Returns a cached dispatcher that invokes <see cref="ICommand{TSignal}"/>.Execute on a
@@ -507,6 +558,7 @@ namespace Nexus.Core
             lock (_compositeLock)
             {
                 _compositeTriggersBySignal.Clear();
+                _compositeTriggersReadCopy = new Dictionary<Type, List<CompositeTriggerState>>();
                 _allCompositeTriggers.Clear();
             }
         }

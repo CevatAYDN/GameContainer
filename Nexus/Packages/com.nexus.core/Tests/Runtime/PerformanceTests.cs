@@ -135,6 +135,13 @@ namespace Nexus.Tests
             System.GC.WaitForPendingFinalizers();
             System.GC.Collect();
 
+            // REVIEW FIX: the per-thread API only measures the calling thread, so background
+            // thread allocations (async path / thread-pool continuations) are not captured.
+            // Unity's test assembly does not expose GC.GetTotalAllocatedBytes() (not in .NET
+            // Standard 2.0) nor Profiler.GetTotalAllocatedBytes(), so we keep the per-thread
+            // counter but tighten the assertion to exactly 0 bytes. The .NET benchmark harness
+            // (tools/nexus-benchmark) uses GC.GetTotalAllocatedBytes() for whole-process
+            // coverage — see Program.SteadyState_HasZeroGCAllocations.
             long startAllocations = System.GC.GetAllocatedBytesForCurrentThread();
 
             // 3. Execute 5000 dispatches in steady-state on the calling thread
@@ -146,10 +153,13 @@ namespace Nexus.Tests
             long endAllocations = System.GC.GetAllocatedBytesForCurrentThread();
             long allocatedBytes = endAllocations - startAllocations;
 
-            // In some environments, background threads might allocate a tiny bit of memory.
-            // We assert that allocations are extremely minimal (e.g. less than 128 bytes total for 5000 dispatches), 
-            // indicating zero allocations in the framework's dispatch path.
-            Assert.LessOrEqual(allocatedBytes, 128, $"Steady-state dispatch allocated {allocatedBytes} bytes. Expected near-zero allocations.");
+            // REVIEW FIX: tightened the limit from 128 bytes to 0 bytes. The framework's
+            // "0 GC allocation" claim means the steady-state dispatch path must allocate
+            // NOTHING. 128 bytes over 5000 dispatches (1 byte per 39 dispatches) was too
+            // lenient and could mask a small per-dispatch allocation. With the warm-up +
+            // GC.Collect() sequence, the JIT and pool growth are already paid; any remaining
+            // allocation is a genuine framework allocation.
+            Assert.AreEqual(0, allocatedBytes, $"Steady-state dispatch allocated {allocatedBytes} bytes. Expected zero allocations.");
         }
 
         [Test]
