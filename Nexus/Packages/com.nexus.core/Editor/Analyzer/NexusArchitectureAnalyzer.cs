@@ -1,0 +1,194 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Reflection;
+using UnityEditor;
+using UnityEngine;
+using Nexus.Core;
+
+namespace Nexus.Editor
+{
+    /// <summary>
+    /// Static C# Anti-Pattern & Architecture Analyzer for Nexus Core.
+    /// Scans project scripts for hot-path allocations, lifecycle mismatches, and dangerous async void methods.
+    /// Accessible via Editor Menu: Window -> Nexus -> Code Health Analyzer
+    /// </summary>
+    public class NexusArchitectureAnalyzer : EditorWindow
+    {
+        public enum IssueSeverity { Info, Warning, Error }
+
+        public struct AnalysisIssue
+        {
+            public string Code;
+            public IssueSeverity Severity;
+            public string FilePath;
+            public int LineNumber;
+            public string Message;
+            public string Recommendation;
+        }
+
+        private List<AnalysisIssue> _issues = new();
+        private Vector2 _scrollPos;
+
+        [MenuItem("Window/Nexus/Code Health Analyzer", false, 20)]
+        public static void ShowWindow()
+        {
+            var win = GetWindow<NexusArchitectureAnalyzer>("Nexus Code Health Analyzer");
+            win.minSize = new Vector2(650, 450);
+            win.RunAnalysis();
+        }
+
+        private void OnGUI()
+        {
+            EditorGUILayout.Space(10);
+            EditorGUILayout.BeginHorizontal();
+            GUILayout.Label("Nexus Code Health & Anti-Pattern Analyzer", EditorStyles.boldLabel);
+            GUILayout.FlexibleSpace();
+            if (GUILayout.Button("Run Analysis", GUILayout.Width(120), GUILayout.Height(24)))
+            {
+                RunAnalysis();
+            }
+            EditorGUILayout.EndHorizontal();
+
+            EditorGUILayout.Space(5);
+            EditorGUILayout.HelpBox($"Analyzed {s_scannedFilesCount} script(s). Found {_issues.Count} issue(s).", _issues.Count == 0 ? MessageType.Info : MessageType.Warning);
+
+            EditorGUILayout.Space(5);
+            _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
+
+            foreach (var issue in _issues)
+            {
+                Color boxColor = issue.Severity switch
+                {
+                    IssueSeverity.Error => new Color(0.4f, 0.1f, 0.1f, 0.4f),
+                    IssueSeverity.Warning => new Color(0.4f, 0.3f, 0.1f, 0.4f),
+                    _ => new Color(0.2f, 0.2f, 0.3f, 0.4f)
+                };
+
+                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
+                EditorGUILayout.BeginHorizontal();
+                
+                string tag = issue.Severity == IssueSeverity.Error ? "❌ ERROR" : (issue.Severity == IssueSeverity.Warning ? "⚠️ WARN" : "ℹ️ INFO");
+                GUILayout.Label($"[{issue.Code}] {tag}: {issue.Message}", EditorStyles.boldLabel);
+                GUILayout.FlexibleSpace();
+                
+                if (!string.IsNullOrEmpty(issue.FilePath) && GUILayout.Button("Open", GUILayout.Width(50)))
+                {
+                    var obj = AssetDatabase.LoadAssetAtPath<MonoScript>(issue.FilePath);
+                    if (obj != null) AssetDatabase.OpenAsset(obj, issue.LineNumber);
+                }
+                EditorGUILayout.EndHorizontal();
+
+                EditorGUILayout.LabelText("Location:", $"{issue.FilePath}:{issue.LineNumber}");
+                EditorGUILayout.LabelText("Recommendation:", issue.Recommendation);
+                EditorGUILayout.EndVertical();
+                EditorGUILayout.Space(4);
+            }
+
+            EditorGUILayout.EndScrollView();
+        }
+
+        private static int s_scannedFilesCount = 0;
+
+        public void RunAnalysis()
+        {
+            _issues.Clear();
+            s_scannedFilesCount = 0;
+
+            string[] scriptGuids = AssetDatabase.FindAssets("t:MonoScript", new[] { "Assets", "Packages/com.nexus.core" });
+            foreach (var guid in scriptGuids)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guid);
+                if (string.IsNullOrEmpty(path) || path.EndsWith(".g.cs") || path.Contains("/Tests/")) continue;
+
+                s_scannedFilesCount++;
+                AnalyzeScriptFile(path);
+            }
+        }
+
+        private void AnalyzeScriptFile(string path)
+        {
+            string fullPath = Path.GetFullPath(path);
+            if (!File.Exists(fullPath)) return;
+
+            string[] lines = File.ReadAllLines(fullPath);
+            bool inHotPathMethod = false;
+
+            for (int i = 0; i < lines.Length; i++)
+            {
+                string line = lines[i];
+                int lineNum = i + 1;
+
+                // Track hot-path method entry/exit
+                if (line.Contains("void Update()") || line.Contains("void Tick(") || line.Contains("void OnUpdate()") || line.Contains("void Execute("))
+                {
+                    inHotPathMethod = true;
+                }
+                else if (inHotPathMethod && line.Trim().StartsWith("}"))
+                {
+                    inHotPathMethod = false;
+                }
+
+                // Rule NEXUS001: Hot-Path Allocations
+                if (inHotPathMethod)
+                {
+                    if (line.Contains("new List<") || line.Contains("new Dictionary<") || line.Contains(".Where(") || line.Contains(".Select("))
+                    {
+                        _issues.Add(new AnalysisIssue
+                        {
+                            Code = "NEXUS001",
+                            Severity = IssueSeverity.Warning,
+                            FilePath = path,
+                            LineNumber = lineNum,
+                            Message = "Allocation or LINQ detected inside Hot-Path method (Update/Tick/Execute).",
+                            Recommendation = "Pre-allocate collections or use zero-GC Array/Span iterators to prevent GC spikes."
+                        });
+                    }
+                }
+
+                // Rule NEXUS002: Async Void
+                if (line.Contains("async void") && !line.Contains("OnClick") && !line.Contains("OnEvent"))
+                {
+                    _issues.Add(new AnalysisIssue
+                    {
+                        Code = "NEXUS002",
+                        Severity = IssueSeverity.Error,
+                        FilePath = path,
+                        LineNumber = lineNum,
+                        Message = "Uncaught 'async void' method declaration.",
+                        Recommendation = "Replace 'async void' with 'async ValueTask' or 'async Task' to prevent process crashes on unhandled exceptions."
+                    });
+                }
+
+                // Rule NEXUS003: Thread.Sleep Blocking Calls
+                if (line.Contains("Thread.Sleep") && !path.Contains("/Editor/"))
+                {
+                    _issues.Add(new AnalysisIssue
+                    {
+                        Code = "NEXUS003",
+                        Severity = IssueSeverity.Error,
+                        FilePath = path,
+                        LineNumber = lineNum,
+                        Message = "Synchronous 'Thread.Sleep' call detected in runtime code.",
+                        Recommendation = "Use 'await Task.Delay()' or 'ValueTask' timers to avoid blocking the main thread timeslice."
+                    });
+                }
+
+                // Rule NEXUS004: Obsolete WindowManager API usage
+                if (line.Contains("WindowManager") && !line.Contains("Obsolete") && !line.Contains("#pragma"))
+                {
+                    _issues.Add(new AnalysisIssue
+                    {
+                        Code = "NEXUS004",
+                        Severity = IssueSeverity.Info,
+                        FilePath = path,
+                        LineNumber = lineNum,
+                        Message = "Deprecated 'WindowManager' API referenced.",
+                        Recommendation = "Migrate to canonical 'UIManager' for type-safe screen management with UI Pooling support."
+                    });
+                }
+            }
+        }
+    }
+}

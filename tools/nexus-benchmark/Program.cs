@@ -487,6 +487,8 @@ namespace NexusBench
             _failures += ConcurrentDiffSuite.Run();
             _failures += CapabilitiesSuite.Run();
             _failures += LifecycleSuite.Run();
+            _failures += GCAuditSuite.Run();
+            _failures += TeardownLeakSuite.Run();
             _failures += FixVerificationSuite.Run();
             _failures += EvidenceSuite.Run();
             // Last: creates real Contexts and must not disturb earlier suites' assumptions

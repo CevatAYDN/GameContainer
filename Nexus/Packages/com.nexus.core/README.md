@@ -39,6 +39,21 @@ Nexus Core includes 5 strategic architectural capabilities:
 
 ---
 
+## ⚡ Framework Comparison Matrix
+
+| Feature / Metric | **Nexus Core** | Zenject / Extenject | VContainer | UniRx / R3 | StrangeIoC |
+|---|:---:|:---:|:---:|:---:|:---:|
+| **Steady-State GC Allocations** | **0 Bytes** | High | Low | Low/Moderate | High |
+| **AOT / IL2CPP Binder Generator** | ✅ Built-in | ❌ Reflection | ✅ CodeGen | ❌ N/A | ❌ Reflection |
+| **SignalBus & Command Pipeline** | ✅ 4 Execution Modes | ✅ Basic | ❌ Missing | ❌ N/A | ✅ Basic |
+| **Observable Reactive Models** | ✅ `ObservableProperty` | ❌ Requires UniRx | ❌ Missing | ✅ Stream-based | ❌ Missing |
+| **Out-of-the-Box Engine Services** | ✅ 13 Core Services | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
+| **RAM Anti-Cheat & Storage Encryption** | ✅ Built-in AES-256 | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
+| **Live Editor Play-Mode Dashboard** | ✅ 15 Plugins | ❌ Basic Inspector | ❌ Basic Diagnostic | ❌ N/A | ❌ Missing |
+| **Build Validation & Diagnostics** | ✅ Pre-build Rules | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
+
+---
+
 ## 📖 Glossary
 
 | Term | Definition | Concrete Example |

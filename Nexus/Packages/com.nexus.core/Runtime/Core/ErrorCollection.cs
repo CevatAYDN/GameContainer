@@ -330,10 +330,6 @@ namespace Nexus.Core
         private static void OnUnityLogReceived(string condition, string stackTrace, LogType type)
         {
             if (!s_enabled || !s_captureUnityLogs) return;
-            // Cheap early-out BEFORE any allocation: this callback fires for EVERY Unity log
-            // message; only failures are worth an ErrorEntry + interpolated grouping key under
-            // the global collection lock. Info/Warning spam from log-heavy projects is skipped.
-            if (type != LogType.Error && type != LogType.Assert && type != LogType.Exception) return;
             // Guard against infinite loop: if a subscriber of OnErrorAdded calls Debug.Log,
             // that re-enters this callback. Without the guard, the call stack grows until
             // a StackOverflowException crashes the process.
@@ -341,7 +337,26 @@ namespace Nexus.Core
             s_inLogCallback = true;
             try
             {
-                ErrorSeverity severity = type == LogType.Exception ? ErrorSeverity.Critical : ErrorSeverity.Error;
+                ErrorSeverity severity;
+                switch (type)
+                {
+                    case LogType.Log:
+                        severity = ErrorSeverity.Info;
+                        break;
+                    case LogType.Warning:
+                        severity = ErrorSeverity.Warning;
+                        break;
+                    case LogType.Assert:
+                    case LogType.Error:
+                        severity = ErrorSeverity.Error;
+                        break;
+                    case LogType.Exception:
+                        severity = ErrorSeverity.Critical;
+                        break;
+                    default:
+                        severity = ErrorSeverity.Info;
+                        break;
+                }
 
                 // Avoid loop: logToConsole MUST be false when capturing from Unity Log
                 Collect(severity, ErrorCategory.Unity, condition, stackTrace, "Unity Log", null, logToConsole: false);

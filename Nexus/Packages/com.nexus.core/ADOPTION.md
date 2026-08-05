@@ -15,7 +15,7 @@
 ## Recommended setup
 
 1. Fork `com.nexus.core` into your studio org (e.g. `your-org/com.nexus.core`).
-2. Pin a version tag (see `STABILITY.md` for the 1.0 freeze checklist).
+2. Pin a version tag (see `docs/STABILITY.md` for the 1.0 freeze checklist).
 3. Each game consumes the fork via a UPM git dependency:
 
 ```json
