@@ -135,27 +135,29 @@ namespace Nexus.Core.Services
             if (flushNow) FlushSlot(slot);
         }
 
+        private readonly List<SaveSlot> _dueBuffer = new(8);
+
         public void Tick(float deltaTime)
         {
-            SaveSlot[] ready;
             lock (_lock)
             {
-                List<SaveSlot> due = null;
+                _dueBuffer.Clear();
                 foreach (var kvp in _slots)
                 {
                     var slot = kvp.Value;
                     if (slot.Pending && Now - slot.LastSaveTime >= _throttleSeconds)
                     {
                         slot.Pending = false; // claim before releasing the lock
-                        (due ??= new List<SaveSlot>(2)).Add(slot);
+                        _dueBuffer.Add(slot);
                     }
                 }
-                ready = due?.ToArray() ?? s_emptySlots;
+                for (int i = 0; i < _dueBuffer.Count; i++)
+                {
+                    FlushSlot(_dueBuffer[i]);
+                }
+                _dueBuffer.Clear();
             }
-            for (int i = 0; i < ready.Length; i++) FlushSlot(ready[i]);
         }
-
-        private static readonly SaveSlot[] s_emptySlots = new SaveSlot[0];
 
         public void ForceSave(Action saveAction) => ForceSave(DefaultOwner, saveAction);
 

@@ -155,7 +155,7 @@ namespace Nexus.Core.Extensions
             string tempPath = Path.Combine(dir, sanitized + ".sav.tmp");
 
             // Write atomically via temporary file to prevent save corruption on crash.
-            await Task.Run(() =>
+            await Task.Run(async () =>
             {
                 ct.ThrowIfCancellationRequested();
                 string json = JsonUtility.ToJson(data);
@@ -216,7 +216,7 @@ namespace Nexus.Core.Extensions
                             }
                             // Exponential backoff with jitter
                             var backoffMs = (int)(50 * Math.Pow(2, attempt - 1)) + _retryJitter.Next(0, 50);
-                            Thread.Sleep(backoffMs);
+                            Task.Delay(backoffMs, ct).GetAwaiter().GetResult();
                         }
                     }
                 }

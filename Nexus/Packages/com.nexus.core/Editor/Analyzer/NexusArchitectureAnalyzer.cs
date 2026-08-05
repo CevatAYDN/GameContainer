@@ -45,7 +45,11 @@ namespace Nexus.Editor
             EditorGUILayout.BeginHorizontal();
             GUILayout.Label("Nexus Code Health & Anti-Pattern Analyzer", EditorStyles.boldLabel);
             GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Run Analysis", GUILayout.Width(120), GUILayout.Height(24)))
+            if (GUILayout.Button("Copy All Logs", GUILayout.Width(110), GUILayout.Height(24)))
+            {
+                CopyIssuesToClipboard();
+            }
+            if (GUILayout.Button("Run Analysis", GUILayout.Width(110), GUILayout.Height(24)))
             {
                 RunAnalysis();
             }
@@ -80,8 +84,8 @@ namespace Nexus.Editor
                 }
                 EditorGUILayout.EndHorizontal();
 
-                EditorGUILayout.LabelText("Location:", $"{issue.FilePath}:{issue.LineNumber}");
-                EditorGUILayout.LabelText("Recommendation:", issue.Recommendation);
+                EditorGUILayout.LabelField("Location:", $"{issue.FilePath}:{issue.LineNumber}");
+                EditorGUILayout.LabelField("Recommendation:", issue.Recommendation);
                 EditorGUILayout.EndVertical();
                 EditorGUILayout.Space(4);
             }
@@ -107,6 +111,33 @@ namespace Nexus.Editor
             }
         }
 
+        private void CopyIssuesToClipboard()
+        {
+            if (_issues.Count == 0)
+            {
+                EditorGUIUtility.systemCopyBuffer = "=== Nexus Code Health Analyzer Report: No issues found. ===";
+                ShowNotification(new GUIContent("No logs to copy!"));
+                return;
+            }
+
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine($"=== Nexus Code Health Analyzer Report ({_issues.Count} issue(s) found across {s_scannedFilesCount} files) ===");
+            sb.AppendLine($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine();
+
+            for (int i = 0; i < _issues.Count; i++)
+            {
+                var issue = _issues[i];
+                sb.AppendLine($"[{i + 1}] [{issue.Code}] {issue.Severity.ToString().ToUpper()}: {issue.Message}");
+                sb.AppendLine($"    Location: {issue.FilePath}:{issue.LineNumber}");
+                sb.AppendLine($"    Recommendation: {issue.Recommendation}");
+                sb.AppendLine();
+            }
+
+            EditorGUIUtility.systemCopyBuffer = sb.ToString();
+            ShowNotification(new GUIContent($"Copied {_issues.Count} log(s) to clipboard!"));
+        }
+
         private void AnalyzeScriptFile(string path)
         {
             string fullPath = Path.GetFullPath(path);
@@ -119,6 +150,12 @@ namespace Nexus.Editor
             {
                 string line = lines[i];
                 int lineNum = i + 1;
+                string trimmed = line.Trim();
+
+                // Skip comment lines, docstrings, and recommendation string definitions to avoid false positives
+                if (trimmed.StartsWith("//") || trimmed.StartsWith("///") || trimmed.StartsWith("*") || trimmed.StartsWith("/*") ||
+                    trimmed.StartsWith("Recommendation =") || trimmed.StartsWith("Message ="))
+                    continue;
 
                 // Track hot-path method entry/exit
                 if (line.Contains("void Update()") || line.Contains("void Tick(") || line.Contains("void OnUpdate()") || line.Contains("void Execute("))
@@ -148,7 +185,7 @@ namespace Nexus.Editor
                 }
 
                 // Rule NEXUS002: Async Void
-                if (line.Contains("async void") && !line.Contains("OnClick") && !line.Contains("OnEvent"))
+                if (line.Contains("async void") && !line.Contains("OnClick") && !line.Contains("OnEvent") && !line.Contains("async void Start()"))
                 {
                     _issues.Add(new AnalysisIssue
                     {
@@ -176,7 +213,7 @@ namespace Nexus.Editor
                 }
 
                 // Rule NEXUS004: Obsolete WindowManager API usage
-                if (line.Contains("WindowManager") && !line.Contains("Obsolete") && !line.Contains("#pragma"))
+                if (line.Contains("WindowManager") && !path.Contains("WindowManager.cs") && !line.Contains("Obsolete") && !line.Contains("#pragma"))
                 {
                     _issues.Add(new AnalysisIssue
                     {

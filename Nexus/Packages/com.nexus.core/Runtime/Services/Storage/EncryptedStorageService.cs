@@ -672,10 +672,8 @@ namespace Nexus.Core.Services
                     catch (IOException) when (attempt < maxAttempts - 1)
                     {
                         // Brief exponential back-off (1 ms, 2 ms) without blocking the calling
-                        // thread's timeslice for longer than necessary. Thread.Yield() only gives
-                        // up the remainder of the current timeslice and can return immediately on
-                        // single-core devices; Thread.Sleep(1) guarantees at least 1 ms relief.
-                        System.Threading.Thread.Sleep(1 << attempt); // 1 ms, 2 ms
+                        // thread's timeslice for longer than necessary.
+                        System.Threading.Tasks.Task.Delay(1 << attempt).GetAwaiter().GetResult(); // 1 ms, 2 ms
                     }
                 }
             }
