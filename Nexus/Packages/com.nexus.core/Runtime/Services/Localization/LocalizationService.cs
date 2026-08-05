@@ -14,9 +14,23 @@ namespace Nexus.Core.Services
         // null-checks. A missing binding must not fail strict injection / validation.
         [OptionalInject] public ILocalizationTableProvider TableProvider { get; set; }
 
-        public string CurrentLanguage { get; private set; } = "en";
+        // CurrentLanguage is accessed from multiple threads (editor main, async tasks,
+        // and potential worker threads). Mark volatile to ensure reads always observe the
+        // most recent write. Accesses that rely on dictionary lookups are synchronized
+        // via _tableLock to avoid TOCTOU races.
+        private volatile string _currentLanguage = "en";
+        public string CurrentLanguage { get => _currentLanguage; private set => _currentLanguage = value; }
+
         public event Action<string> OnLanguageChanged;
-        public bool IsRTL => CurrentLanguage == "ar" || CurrentLanguage == "he" || CurrentLanguage == "fa" || CurrentLanguage == "ur";
+
+        public bool IsRTL
+        {
+            get
+            {
+                var lang = _currentLanguage;
+                return lang == "ar" || lang == "he" || lang == "fa" || lang == "ur";
+            }
+        }
 
         public LocalizationService() { }
 
@@ -58,24 +72,43 @@ namespace Nexus.Core.Services
             if (string.IsNullOrEmpty(langCode)) return;
 
             string normalized = langCode.ToLower();
-            if (CurrentLanguage == normalized) return;
+            // Fast path check
+            if (_currentLanguage == normalized) return;
 
-            CurrentLanguage = normalized;
-            if (PlayerPrefsService != null)
+            Action<string> handlersToInvoke = null;
+            lock (_tableLock)
             {
-                PlayerPrefsService.SetString("NT_Language", CurrentLanguage);
-                PlayerPrefsService.Save();
+                if (_currentLanguage == normalized) return;
+                _currentLanguage = normalized;
+                if (PlayerPrefsService != null)
+                {
+                    PlayerPrefsService.SetString("NT_Language", _currentLanguage);
+                    PlayerPrefsService.Save();
+                }
+                // Capture delegate snapshot while under lock to ensure a consistent view
+                handlersToInvoke = OnLanguageChanged;
             }
-            OnLanguageChanged?.Invoke(CurrentLanguage);
+
+            try
+            {
+                handlersToInvoke?.Invoke(_currentLanguage);
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[LocalizationService] OnLanguageChanged handler threw: {ex.Message}");
+            }
         }
 
         public string GetString(string key, string fallback = "")
         {
             if (string.IsNullOrEmpty(key)) return fallback;
 
+            // Capture current language and use it within the lock to avoid TOCTOU.
+            string lang;
             lock (_tableLock)
             {
-                if (_localizedTable.TryGetValue(CurrentLanguage, out var dict) && dict.TryGetValue(key, out var val))
+                lang = _currentLanguage;
+                if (_localizedTable.TryGetValue(lang, out var dict) && dict.TryGetValue(key, out var val))
                 {
                     return FormatRTLIfNeeded(val);
                 }

@@ -278,6 +278,16 @@ namespace Nexus.Core.Services
                 }
                 _audioRoot = null;
             }
+
+            // Destroy pooled AudioSource GameObjects to avoid leaking editor/play-mode objects
+            for (int i = 0; i < _sfxPool.Count; i++)
+            {
+                var src = _sfxPool[i];
+                if (src != null)
+                {
+                    SafeDestroyUtility.SafeDestroy(src.gameObject);
+                }
+            }
             _sfxPool.Clear();
         }
     }
