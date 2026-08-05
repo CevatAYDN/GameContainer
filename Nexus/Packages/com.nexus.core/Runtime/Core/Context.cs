@@ -193,7 +193,7 @@ namespace Nexus.Core
         {
             if (_disposed) return;
 
-            // C2 fix: synchronize with _configureLock to prevent two threads from entering
+            // Synchronize with _configureLock to prevent two threads from entering
             // Configure() simultaneously, which would cause duplicate ContextBuilder creation,
             // duplicate assembly scans, and state corruption.
             lock (_configureLock)
@@ -286,7 +286,7 @@ namespace Nexus.Core
 
             ScanAssembliesAndRegister(_builder);
 
-            // A10 fix: DI validation (missing dependencies, constructor explosion, captive
+            // DI validation (missing dependencies, constructor explosion, captive
             // dependencies) must run in ALL build targets, not just the editor — production
             // builds previously ran zero validation and silently left [Inject] fields null
             // with no diagnostic. Validate() only logs (it never throws), and games that do
@@ -409,7 +409,7 @@ namespace Nexus.Core
             }
         }
 
-        // REFACTOR PLAN §1.2: the convention scan (every assembly × every type ×
+        // The convention scan (every assembly × every type ×
         // IsAssignableFrom) previously ran once per Context creation. Multiple contexts
         // sharing a ScopeTag (e.g. a hierarchy of roots with the same game scope) rescanned
         // all assemblies on every boot. The result is immutable type metadata, so it is
@@ -497,7 +497,15 @@ namespace Nexus.Core
                                 foreach (var attr in regCmdAttrs)
                                 {
                                     if (data == null) data = new ScannedHandlerData(type);
-                                    data.Handlers.Add(new SignalHandlerAttribute(attr.SignalType) { Mode = attr.Mode, Priority = attr.Priority });
+                                    // OneShot and IsAsync must be carried across: dropping OneShot
+                                    // silently turned a once-only command into a permanent handler.
+                                    data.Handlers.Add(new SignalHandlerAttribute(attr.SignalType)
+                                    {
+                                        Mode = attr.Mode,
+                                        Priority = attr.Priority,
+                                        OneShot = attr.OneShot,
+                                        IsAsync = attr.IsAsync ? true : (bool?)null
+                                    });
                                 }
                                 var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
                                 if (compositeAttr != null)
@@ -512,7 +520,8 @@ namespace Nexus.Core
                                     data.CompositeHandler = new CompositeSignalHandlerAttribute(regCompositeAttr.SignalTypes)
                                     {
                                         OneShot = regCompositeAttr.OneShot,
-                                        Priority = regCompositeAttr.Priority
+                                        Priority = regCompositeAttr.Priority,
+                                        IsAsync = regCompositeAttr.IsAsync ? true : (bool?)null
                                     };
                                 }
                                 if (data != null) cachedData.Add(data);
@@ -666,7 +675,7 @@ namespace Nexus.Core
 
             _cts.Cancel();
 
-            // A8 fix: the sync teardown path never blocks on IAsyncDisposable singletons
+            // The sync teardown path never blocks on IAsyncDisposable singletons
             // (NexusDI.Dispose schedules their DisposeAsync on a background task). Callers
             // that can await must use DisposeAsync() for deterministic async teardown.
             Container.Dispose();
@@ -689,13 +698,13 @@ namespace Nexus.Core
             }
 
             _cts.Dispose();
-            // M5 fix: UnregisterContext is owned by DisposeShared (exactly once, after the
+            // UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a
             // redundant second unregister that could double-fire the unregister event path.
         }
 
         /// <summary>
-        /// A8 fix: deterministic async teardown. Awaits every IAsyncDisposable singleton's
+        /// Deterministic async teardown. Awaits every IAsyncDisposable singleton's
         /// <c>DisposeAsync</c> (via <see cref="NexusDI.DisposeAsync"/>) instead of blocking
         /// the calling thread — eliminates the sync-over-async deadlock risk on the Unity
         /// main thread during teardown.
@@ -710,7 +719,7 @@ namespace Nexus.Core
 
             await Container.DisposeAsync();
             _cts.Dispose();
-            // M5 fix: UnregisterContext is owned by DisposeShared (exactly once, after the
+            // UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a
             // redundant second unregister that could double-fire the unregister event path.
         }
@@ -794,7 +803,7 @@ namespace Nexus.Core
             HybridQueue.Clear();
             PoolManager.Clear();
 
-            // M5 fix: unregister EXACTLY ONCE, and LAST — after the signal bus, hybrid
+            // Unregister EXACTLY ONCE, and LAST — after the signal bus, hybrid
             // queue, and pool manager are fully torn down. OnContextUnregistered
             // subscribers then observe a fully-disposed context instead of one whose bus
             // is still alive (the old order unregistered mid-teardown and the entry points

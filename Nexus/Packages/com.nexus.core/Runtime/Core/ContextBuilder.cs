@@ -25,7 +25,7 @@ namespace Nexus.Core
         public static bool ValidateOnStartup { get; set; } = true;
 
         /// <summary>
-        /// R2026-M9 fix: maximum allowed constructor parameters before the DI validator
+        /// Maximum allowed constructor parameters before the DI validator
         /// flags a constructor-explosion issue (previously a hardcoded magic number 6).
         /// Configurable per-project — set to 0 to disable the check entirely.
         /// </summary>
@@ -157,7 +157,7 @@ namespace Nexus.Core
             _container.BindMultiple(interfaces, implType, isSingleton);
         }
 
-        // REFACTOR PLAN §1.4: interface metadata is immutable per Type, so the
+        // Interface metadata is immutable per Type, so the
         // GetInterfaces() reflection scan is computed once per type and shared by every
         // BindInterfacesAndSelfTo / BindServiceInterfacesAndSelfTo / BindAllClassesMatching
         // call. Without the cache, scanning an assembly bound N matching types paid N
@@ -270,7 +270,7 @@ namespace Nexus.Core
         public void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class where TSignal : struct
         {
-            // P2-17 fix: Composite registration has its own path (CompositeSignalHandler);
+            // Composite registration has its own path (CompositeSignalHandler);
             // passing it here would silently register a normal sequential-like handler.
             if (mode == ExecutionMode.Composite)
             {
@@ -300,7 +300,7 @@ namespace Nexus.Core
         public void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0) 
             where TCommand : class where TSignal : struct
         {
-            // P2-17 fix: Composite registration has its own path (CompositeSignalHandler).
+            // Composite registration has its own path (CompositeSignalHandler).
             if (mode == ExecutionMode.Composite)
             {
                 throw new ArgumentException($"ExecutionMode.Composite cannot be used with BindAsyncCommand. Use the [CompositeSignalHandler] attribute (or SignalBus.RegisterCompositeCommand) to register composite triggers.", nameof(mode));
@@ -355,6 +355,7 @@ namespace Nexus.Core
             return new CommandBindingBuilder<TSignal>(this);
         }
 
+        [Obsolete("Fire from a lifecycle's OnInitializeAsync/OnStartAsync via ISignalPublisher instead; a builder should only register bindings.", error: false)]
         public void Fire<T>(T signal) where T : struct
         {
             _signalBus.Fire(signal);
@@ -465,7 +466,7 @@ namespace Nexus.Core
                 }
             }
 
-            // A8: captive-dependency prevention — a singleton service must not capture a
+            // Captive-dependency prevention — a singleton service must not capture a
             // transient (non-singleton, non-factory) dependency in its constructor or
             // [Inject] members, or the transient silently becomes a long-lived shared
             // instance with an unclear lifetime.

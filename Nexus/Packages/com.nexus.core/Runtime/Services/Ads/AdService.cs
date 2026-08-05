@@ -32,7 +32,7 @@ namespace Nexus.Core.Services
         event Action<string, double, string> OnImpressionRecorded; // (network, revenue, placement)
     }
 
-    // R2026-H1 fix: derives from NexusService<IAdService> like every other service, so
+    // Derives from NexusService<IAdService> like every other service, so
     // [Inject] Context/SignalBus are available and OnDispose/Dispose follow the shared
     // lifecycle contract (previously implemented INexusService directly — inconsistent).
     [Preserve]
@@ -112,7 +112,12 @@ namespace Nexus.Core.Services
             IAdNetworkAdapter adapter;
             lock (_lock) { adapter = _adapter; }
             // Readiness query outside the lock (see IsInterstitialAvailable).
-            return adapter != null && adapter.IsRewardedReady(placement);
+            if (adapter != null) return adapter.IsRewardedReady(placement);
+
+            // Mock mode: consistent with ShowRewarded — editor/dev builds grant a mock
+            // reward without an adapter, so availability must report true there too.
+            // A release build without an adapter never reports an available rewarded ad.
+            return UnityEngine.Application.isEditor || UnityEngine.Debug.isDebugBuild;
         }
 
         public void ShowInterstitial(string placement, Action onComplete = null)

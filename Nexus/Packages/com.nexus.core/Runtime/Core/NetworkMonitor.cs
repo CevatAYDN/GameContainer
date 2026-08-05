@@ -36,7 +36,7 @@ namespace Nexus.Core
         }
 
         private static readonly ConcurrentQueue<NetworkEvent> s_events = new();
-        // A9 fix: s_latencyHistory and s_currentStatus are written from network/background
+        // S_latencyHistory and s_currentStatus are written from network/background
         // threads (RecordSignalReceived, UpdateConnectionStatus) and read from the game/editor
         // thread. Plain Dictionary is not thread-safe; guard ALL accesses with a dedicated lock
         // (the same BUG-17 pattern PerformanceMonitor already applies to its metric dictionaries).
@@ -45,10 +45,21 @@ namespace Nexus.Core
         private static readonly object s_historyLock = new();
         private static int s_nextId = 1;
         private static int s_maxEvents = 500;
-        private static bool s_enabled = true;
+        // Volatile: s_enabled is toggled from any thread while the Record* methods read it
+        // on the hot path (same rationale as PerformanceMonitor.s_enabled — a plain bool
+        // could be cached in a register and never observe the toggle).
+        private static volatile bool s_enabled = true;
+        // True once user code has explicitly assigned Enabled; lets NexusRuntime's startup
+        // default skip flags the user already chose (see NexusRuntime.InitializeMonitoring).
+        private static bool s_enabledExplicitlySet;
         private static ConnectionStatus s_currentStatus = new ConnectionStatus { IsConnected = false, LastUpdate = DateTime.Now };
 
         public static event Action<NetworkEvent> OnNetworkEvent;
+        /// <summary>
+        /// Raised when the connection status changes.
+        /// WARNING: may be raised off the main thread — status updates can originate from
+        /// network/background threads, so subscribers must not touch Unity APIs directly.
+        /// </summary>
         public static event Action<ConnectionStatus> OnConnectionStatusChanged;
 
         /// <summary>
@@ -62,6 +73,7 @@ namespace Nexus.Core
             OnNetworkEvent = null;
             OnConnectionStatusChanged = null;
             s_enabled = true;
+            s_enabledExplicitlySet = false;
             s_nextId = 1;
             s_currentStatus = new ConnectionStatus { IsConnected = false, LastUpdate = DateTime.Now };
             lock (s_historyLock)
@@ -79,8 +91,15 @@ namespace Nexus.Core
         public static bool Enabled
         {
             get => s_enabled;
-            set => s_enabled = value;
+            set
+            {
+                s_enabledExplicitlySet = true;
+                s_enabled = value;
+            }
         }
+
+        /// <summary>True once <see cref="Enabled"/> has been explicitly assigned.</summary>
+        internal static bool EnabledExplicitlySet => s_enabledExplicitlySet;
 
         public static int MaxEvents
         {

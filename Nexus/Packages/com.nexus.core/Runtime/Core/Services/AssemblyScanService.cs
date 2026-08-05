@@ -12,26 +12,28 @@ namespace Nexus.Core.Services
     /// and play-mode transitions to prevent stale type arrays from being returned after scripts
     /// are recompiled (e.g. Enter Play Mode with domain reload disabled).
     /// </summary>
-    public sealed class AssemblyScanService
+    public static class AssemblyScanService
     {
-        private static readonly ConcurrentDictionary<string, Type[]> s_typeCache = new();
+        // (revised) The cache is keyed by the Assembly INSTANCE, not its name.
+        // A dynamic/in-memory assembly can have BOTH FullName and GetName().Name null, and the
+        // old "<dynamic-assembly>" placeholder key made every unnamed assembly share one cache
+        // entry (each served the first one's types). Reference identity has neither problem.
+        private static readonly ConcurrentDictionary<Assembly, Type[]> s_typeCache = new();
 
         public static Type[] GetCachedTypes(Assembly assembly)
         {
             if (assembly == null) return Array.Empty<Type>();
 
-            // R2026-M10 fix: a dynamic/in-memory assembly can have BOTH FullName and
-            // GetName().Name null — ConcurrentDictionary.GetOrAdd(null, ...) throws
-            // ArgumentNullException. Fall back to a stable placeholder key.
-            string cacheKey = assembly.FullName ?? assembly.GetName().Name ?? "<dynamic-assembly>";
-            return s_typeCache.GetOrAdd(cacheKey, _ =>
+            return s_typeCache.GetOrAdd(assembly, static asm =>
             {
                 try
                 {
-                    return assembly.GetTypes();
+                    return asm.GetTypes();
                 }
                 catch (ReflectionTypeLoadException ex)
                 {
+                    // Partial load: keep the types that DID load instead of dropping them all.
+                    LogScanFailure(asm, ex);
                     var valid = new List<Type>();
                     foreach (var t in ex.Types)
                     {
@@ -39,11 +41,21 @@ namespace Nexus.Core.Services
                     }
                     return valid.ToArray();
                 }
-                catch
+                catch (Exception ex)
                 {
+                    LogScanFailure(asm, ex);
                     return Array.Empty<Type>();
                 }
             });
+        }
+
+        private static void LogScanFailure(Assembly assembly, Exception ex)
+        {
+            string assemblyName = assembly.FullName ?? "<dynamic-assembly>";
+            string message = $"[Nexus] Type scan failed for assembly '{assemblyName}': {ex.GetType().Name}: {ex.Message}";
+            var logger = NexusRuntime.Logger;
+            if (logger != null) logger.LogWarning(message);
+            else UnityEngine.Debug.LogWarning(message);
         }
 
         /// <summary>

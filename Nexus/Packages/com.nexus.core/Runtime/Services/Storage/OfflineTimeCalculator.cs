@@ -65,7 +65,7 @@ namespace Nexus.Core.Services
                 return 0L;
             }
 
-            // A8: hardware monotonic validation. On the same boot session, the true elapsed
+            // Hardware monotonic validation. On the same boot session, the true elapsed
             // time cannot exceed what the hardware monotonic clock measured, so a clock pushed
             // forward (wall diff inflated) is clamped back to real elapsed time.
             long lastMonotonic = storage.GetLong(DefaultMonotonicKey, 0L);

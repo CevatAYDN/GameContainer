@@ -43,7 +43,7 @@ namespace Nexus.Core.Services
         private readonly List<IFixedTickable> _fixedTickables = new();
         private readonly List<ILateTickable> _lateTickables = new();
 
-        // Audit fix 3.9: O(1) dedup sets. RegisterTickable previously ran List.Contains
+        // O(1) dedup sets. RegisterTickable previously ran List.Contains
         // (O(N)) per call — a spawn/despawn storm of 1000 register calls over 500 live
         // tickables cost 500k comparisons in one frame.
         private readonly HashSet<ITickable> _tickableSet = new();
@@ -66,7 +66,7 @@ namespace Nexus.Core.Services
         private bool _fixedTickablesDirty;
         private bool _lateTickablesDirty;
 
-        // Audit fix 3.4: destroyed tickables used to stay in the snapshot FOREVER (the loop
+        // Destroyed tickables used to stay in the snapshot FOREVER (the loop
         // skipped them but never removed them — 100 dead objects = 6000 wasted null checks
         // per second at 60 fps, plus the snapshot array kept the managed shells alive).
         // The per-frame loop now counts dead entries and compacts the backing list once the
@@ -106,6 +106,11 @@ namespace Nexus.Core.Services
         {
             lock (s_driverLock)
             {
+                // Idempotent (mirrors AudioService's guard): a second InitializeAsync must
+                // not re-subscribe OnTick or re-increment the shared driver refcount —
+                // everything would tick twice per frame.
+                if (_driver != null) return default;
+
                 if (s_sharedDriverObject == null)
                 {
                     s_sharedDriverObject = new GameObject("[Nexus_TickDriver]");
@@ -143,7 +148,7 @@ namespace Nexus.Core.Services
             {
                 if (_tickableSet.Remove(tickable) && _tickables.Remove(tickable))
                 {
-                    // Audit fix 3.10: dirty-flag only — no eager ToArray per removal.
+                    // Dirty-flag only — no eager ToArray per removal.
                     _tickablesDirty = true;
                 }
             }
@@ -200,7 +205,7 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// Audit fix 3.4: removes null/destroyed entries from a tickable list (and its dedup
+        /// Removes null/destroyed entries from a tickable list (and its dedup
         /// set). Returns the number removed. Call under _lock; amortized — only invoked once
         /// the dead-entry count crosses <see cref="DeadSweepThreshold"/> or 25% of the snapshot.
         /// </summary>
@@ -259,7 +264,7 @@ namespace Nexus.Core.Services
                     }
                 }
 
-                // Audit fix 3.4: amortized compaction of accumulated dead entries.
+                // Amortized compaction of accumulated dead entries.
                 if (deadCount >= DeadSweepThreshold || (deadCount > 0 && deadCount * 4 >= snapshot.Length))
                 {
                     lock (_lock)
@@ -397,7 +402,7 @@ namespace Nexus.Core.Services
                 _lateTickablesDirty = false;
             }
 
-            // R2026-H6 fix: never call SafeDestroyUtility.SafeDestroy while holding
+            // Never call SafeDestroyUtility.SafeDestroy while holding
             // s_driverLock. Unity's Object.Destroy can trigger editor callbacks and
             // (indirectly) user code; running that under the shared driver lock risks
             // reentrancy/deadlock. Capture the object under the lock, destroy outside.

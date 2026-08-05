@@ -8,7 +8,7 @@ namespace Nexus.Core.Services
 {
     /// <summary>
     /// Standardized log entry with structured context for every Nexus log message.
-    /// Plan §7 — Error Visibility & Standardized Logging.
+    /// Error Visibility & Standardized Logging.
     /// </summary>
     public readonly struct NexusLogEntry
     {
@@ -44,7 +44,7 @@ namespace Nexus.Core.Services
     /// <summary>
     /// Centralized logging with structured context. Every Nexus component should use
     /// NexusLog to ensure consistent, searchable log output.
-    /// Plan §7 — Error Visibility & Standardized Logging.
+    /// Error Visibility & Standardized Logging.
     /// </summary>
     public static class NexusLog
     {
@@ -71,7 +71,7 @@ namespace Nexus.Core.Services
 
         public static void Error(string source, string operation, string contextId, Exception ex)
         {
-            // C5 fix: pass the full exception (with stack trace) via LogException.
+            // Pass the full exception (with stack trace) via LogException.
             // Previously only ex.Message was logged, making production debugging impossible.
             if (s_instance != null)
                 s_instance.LogException(ex);
@@ -84,7 +84,7 @@ namespace Nexus.Core.Services
 
         public static void Error(string source, string operation, string contextId, string message, Exception ex)
         {
-            // C5 fix: preserve stack trace via LogException in addition to the formatted message.
+            // Preserve stack trace via LogException in addition to the formatted message.
             var entry = new NexusLogEntry(source, operation, contextId, ex != null ? string.Concat(message, " | ", ex.Message) : message);
             if (s_instance != null)
             {

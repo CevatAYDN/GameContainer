@@ -94,7 +94,7 @@ namespace Nexus.Core.Services
         private readonly Dictionary<string, Stack<ScreenView>> _pools = new();
         private readonly List<string> _history = new();
 
-        // M3: per-screen cap on pooled (closed-but-retained) instances. Prevents a
+        // Per-screen cap on pooled (closed-but-retained) instances. Prevents a
         // screen toggled open/closed thousands of times from retaining one deactivated
         // instance per toggle.
         private const int MaxPooledPerScreenKey = 16;
@@ -404,7 +404,7 @@ namespace Nexus.Core.Services
                         pool = new Stack<ScreenView>();
                         _pools[key] = pool;
                     }
-                    // M3: bound pool growth — overflow instances are destroyed, not retained.
+                    // Bound pool growth — overflow instances are destroyed, not retained.
                     if (pool.Count < MaxPooledPerScreenKey)
                     {
                         pool.Push(screen);
@@ -445,7 +445,7 @@ namespace Nexus.Core.Services
 
         // ── Internals ─────────────────────────────────────────────────
 
-        // R2026-M3 fix: dirty-flagged cache for the active-GameObjects view. Every
+        // Dirty-flagged cache for the active-GameObjects view. Every
         // OpenScreenAsync/CloseScreenCoreAsync previously allocated a fresh Dictionary —
         // GC churn on UI-heavy flows. Invalidated by every _activeScreens mutation below.
         private Dictionary<string, GameObject> _cachedActiveGameObjects;

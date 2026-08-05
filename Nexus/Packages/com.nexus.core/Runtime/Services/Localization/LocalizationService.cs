@@ -53,6 +53,7 @@ namespace Nexus.Core.Services
 
         public void OnDispose()
         {
+            OnLanguageChanged = null;
             lock (_tableLock)
             {
                 _localizedTable.Clear();
@@ -89,13 +90,21 @@ namespace Nexus.Core.Services
                 handlersToInvoke = OnLanguageChanged;
             }
 
-            try
+            // Invoke per-subscriber: a throwing subscriber must not silence the rest of
+            // the multicast list.
+            if (handlersToInvoke != null)
             {
-                handlersToInvoke?.Invoke(_currentLanguage);
-            }
-            catch (Exception ex)
-            {
-                NexusRuntime.Logger?.LogError($"[LocalizationService] OnLanguageChanged handler threw: {ex.Message}");
+                foreach (var d in handlersToInvoke.GetInvocationList())
+                {
+                    try
+                    {
+                        ((Action<string>)d).Invoke(_currentLanguage);
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogError($"[LocalizationService] OnLanguageChanged handler threw: {ex.Message}");
+                    }
+                }
             }
         }
 
@@ -151,16 +160,26 @@ namespace Nexus.Core.Services
             return new string(chars);
         }
 
+        /// <summary>
+        /// Seeds generic UI strings (buttons and common dialog titles) for the two built-in
+        /// languages, so a project gets sensible text before it registers its own tables.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately limited to framework-generic keys. Game-specific content — titles,
+        /// dialogue, item names — belongs in the consuming project and is supplied through
+        /// <see cref="ILocalizationTableProvider"/> or <see cref="RegisterLanguageTable"/>;
+        /// a reusable package must not ship one game's copy to every other game. Keys
+        /// registered by the project win, because these defaults are only applied to
+        /// languages that have no table yet, and per-key overrides merge on top.
+        /// </remarks>
         private void BuildLocalizationDictionary()
         {
             lock (_tableLock)
             {
-                // Default universal UI fallback strings
                 if (!_localizedTable.ContainsKey("en"))
                 {
                     _localizedTable["en"] = new Dictionary<string, string>
                     {
-                        { "app_name", "Neon Transit" },
                         { "btn_undo", "Undo" },
                         { "btn_ok", "OK" },
                         { "btn_cancel", "Cancel" },
@@ -177,12 +196,11 @@ namespace Nexus.Core.Services
                 {
                     _localizedTable["tr"] = new Dictionary<string, string>
                     {
-                        { "app_name", "Neon Transit" },
                         { "btn_undo", "Geri Al" },
                         { "btn_ok", "Tamam" },
                         { "btn_cancel", "İptal" },
                         { "btn_play", "Oyna" },
-                        { "btn_retry", "Tekrar Denet" },
+                        { "btn_retry", "Tekrar Dene" },
                         { "btn_close", "Kapat" },
                         { "btn_settings", "Ayarlar" },
                         { "win_title", "Bölüm Tamamlandı!" },
@@ -196,12 +214,26 @@ namespace Nexus.Core.Services
         {
             if (TableProvider == null) return;
 
-            var languages = new[] { "en", "tr" };
-            for (int i = 0; i < languages.Length; i++)
+            // The provider enumerates its own languages (default implementation yields the
+            // built-in "en"/"tr" pair); a misbehaving provider falls back to that pair so
+            // the core languages always load.
+            IEnumerable<string> languages = null;
+            try
             {
-                if (TableProvider.TryGetTable(languages[i], out var table) && table != null)
+                languages = TableProvider.GetAvailableLanguages();
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogWarning($"[LocalizationService] GetAvailableLanguages threw: {ex.Message}. Falling back to en/tr.");
+            }
+            languages ??= new[] { "en", "tr" };
+
+            foreach (var lang in languages)
+            {
+                if (string.IsNullOrEmpty(lang)) continue;
+                if (TableProvider.TryGetTable(lang, out var table) && table != null)
                 {
-                    RegisterLanguageTable(languages[i], table);
+                    RegisterLanguageTable(lang, table);
                 }
             }
         }

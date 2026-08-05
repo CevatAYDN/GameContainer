@@ -23,7 +23,7 @@ namespace Nexus.Core
 
         private const int MaxSampleQueueSize = 2000; // Bounded: prevents the samples queue from growing forever
         private static readonly ConcurrentQueue<MetricSample> s_samples = new();
-        // BUG-17 fix: s_metricHistory and s_currentValues are accessed from both the game
+        // S_metricHistory and s_currentValues are accessed from both the game
         // thread (RecordMetric, UpdateFrameMetrics) and the editor/monitoring thread
         // (GetMetric, GetMetricHistory, GetAllCurrentMetrics). Plain Dictionary is not
         // thread-safe; protect all reads and writes with a dedicated lock.
@@ -37,6 +37,9 @@ namespace Nexus.Core
         // observe the toggle, silently continuing/stopping recording.
         private static volatile bool s_enabled = true;
         private static volatile bool s_recording = false;
+        // True once user code has explicitly assigned Enabled; lets NexusRuntime's startup
+        // default skip flags the user already chose (see NexusRuntime.InitializeMonitoring).
+        private static bool s_enabledExplicitlySet;
 
         public static event Action<MetricSample> OnMetricRecorded;
         public static event Action OnRecordingStarted;
@@ -61,8 +64,15 @@ namespace Nexus.Core
         public static bool Enabled
         {
             get => s_enabled;
-            set => s_enabled = value;
+            set
+            {
+                s_enabledExplicitlySet = true;
+                s_enabled = value;
+            }
         }
+
+        /// <summary>True once <see cref="Enabled"/> has been explicitly assigned.</summary>
+        internal static bool EnabledExplicitlySet => s_enabledExplicitlySet;
 
         public static bool IsRecording => s_recording;
 
@@ -76,7 +86,7 @@ namespace Nexus.Core
         {
             if (s_recording) return;
             s_recording = true;
-            // M7 fix: a throwing subscriber must not corrupt the recording state machine.
+            // A throwing subscriber must not corrupt the recording state machine.
             try { OnRecordingStarted?.Invoke(); }
             catch (Exception ex) { Debug.LogError($"[Nexus] OnRecordingStarted subscriber threw: {ex.Message}"); }
         }
@@ -85,7 +95,7 @@ namespace Nexus.Core
         {
             if (!s_recording) return;
             s_recording = false;
-            // M7 fix: a throwing subscriber must not corrupt the recording state machine.
+            // A throwing subscriber must not corrupt the recording state machine.
             try { OnRecordingStopped?.Invoke(); }
             catch (Exception ex) { Debug.LogError($"[Nexus] OnRecordingStopped subscriber threw: {ex.Message}"); }
         }
@@ -94,7 +104,7 @@ namespace Nexus.Core
         {
             if (!s_enabled) return;
 
-            // BUG-17 fix: all dictionary reads and writes are now under s_metricsLock.
+            // All dictionary reads and writes are now under s_metricsLock.
             lock (s_metricsLock)
             {
                 // Always keep the latest value queryable via GetMetric, even when not recording.
@@ -127,7 +137,7 @@ namespace Nexus.Core
             while (s_samples.Count > MaxSampleQueueSize)
                 s_samples.TryDequeue(out _);
 
-            // M7 fix: a throwing subscriber must not break the metrics hot path (called from
+            // A throwing subscriber must not break the metrics hot path (called from
             // frame/memory/GC metric updates) nor the recording loop, AND must not prevent
             // the OTHER subscribers from receiving the event (a multicast delegate stops at
             // the first throw, so each subscriber runs in its own try/catch). Failures are
@@ -266,7 +276,7 @@ namespace Nexus.Core
             s_lastFrameMetricFrame = Time.frameCount;
 
             var deltaTime = Time.deltaTime;
-            // BUG-18 fix: deltaTime can be 0 on the first frame or during a freeze;
+            // DeltaTime can be 0 on the first frame or during a freeze;
             // dividing by zero produces Infinity which corrupts average / max calculations.
             var fps = deltaTime > 0f ? 1f / deltaTime : 0f;
             var frameTimeMs = deltaTime * 1000f;

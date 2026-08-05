@@ -76,18 +76,21 @@ namespace Nexus.Core
         private readonly List<IModelSerializer> _serializers = new();
         private readonly List<INexusTraceSink> _traceSinks = new();
         
-        // Volatile snapshot fields for Interceptors and Decorators, rebuilt on every mutation.
-        // SignalBus dispatch reads Interceptors/Decorators properties during Fire/ExecuteWithDecorators.
-        // Without snapshots, a concurrent Add() and iteration race throws InvalidOperationException.
+        // Volatile snapshot fields for the registration lists, rebuilt on every mutation.
+        // SignalBus dispatch reads Interceptors/Decorators properties during Fire/ExecuteWithDecorators;
+        // editor tooling reads Serializers/TraceSinks. Without snapshots, a concurrent Add()
+        // and iteration race throws InvalidOperationException.
         private volatile IReadOnlyList<ISignalInterceptor> _interceptorsSnapshot = Array.Empty<ISignalInterceptor>();
         private volatile IReadOnlyList<ICommandDecorator> _decoratorsSnapshot = Array.Empty<ICommandDecorator>();
+        private volatile IReadOnlyList<IModelSerializer> _serializersSnapshot = Array.Empty<IModelSerializer>();
+        private volatile IReadOnlyList<INexusTraceSink> _traceSinksSnapshot = Array.Empty<INexusTraceSink>();
         private readonly object _listLock = new();
 
         public IContext Context => _context;
         public IReadOnlyList<ISignalInterceptor> Interceptors => _interceptorsSnapshot;
         public IReadOnlyList<ICommandDecorator> Decorators => _decoratorsSnapshot;
-        public IReadOnlyList<IModelSerializer> Serializers => _serializers;
-        public IReadOnlyList<INexusTraceSink> TraceSinks => _traceSinks;
+        public IReadOnlyList<IModelSerializer> Serializers => _serializersSnapshot;
+        public IReadOnlyList<INexusTraceSink> TraceSinks => _traceSinksSnapshot;
 
         public PluginContext(INexusPlugin plugin, IContext context)
         {
@@ -134,6 +137,7 @@ namespace Nexus.Core
             lock (_listLock)
             {
                 _serializers.Add(serializer);
+                _serializersSnapshot = new List<IModelSerializer>(_serializers);
             }
         }
 
@@ -146,16 +150,30 @@ namespace Nexus.Core
             lock (_listLock)
             {
                 _traceSinks.Add(sink);
+                _traceSinksSnapshot = new List<INexusTraceSink>(_traceSinks);
             }
             NexusTrace.AddSink(sink);
         }
 
         public void Clear()
         {
+            // Capture the removed sinks and the interceptor count in the SAME lock scope as
+            // the clear: reading the count in a separate acquisition raced a concurrent
+            // RegisterSignalInterceptor, over- or under-decrementing the context's counter.
             List<INexusTraceSink> sinksToClear;
+            int interceptorsToDecrement;
             lock (_listLock)
             {
                 sinksToClear = new List<INexusTraceSink>(_traceSinks);
+                interceptorsToDecrement = _interceptors.Count;
+                _interceptors.Clear();
+                _decorators.Clear();
+                _serializers.Clear();
+                _traceSinks.Clear();
+                _interceptorsSnapshot = Array.Empty<ISignalInterceptor>();
+                _decoratorsSnapshot = Array.Empty<ICommandDecorator>();
+                _serializersSnapshot = Array.Empty<IModelSerializer>();
+                _traceSinksSnapshot = Array.Empty<INexusTraceSink>();
             }
 
             foreach (var sink in sinksToClear)
@@ -164,21 +182,10 @@ namespace Nexus.Core
             }
             if (_context is Context ctx)
             {
-                int interceptorsToDecrement;
-                lock (_listLock) { interceptorsToDecrement = _interceptors.Count; }
                 for (int i = 0; i < interceptorsToDecrement; i++)
                 {
                     ctx.DecrementInterceptorsCount();
                 }
-            }
-            lock (_listLock)
-            {
-                _interceptors.Clear();
-                _decorators.Clear();
-                _serializers.Clear();
-                _traceSinks.Clear();
-                _interceptorsSnapshot = Array.Empty<ISignalInterceptor>();
-                _decoratorsSnapshot = Array.Empty<ICommandDecorator>();
             }
         }
     }

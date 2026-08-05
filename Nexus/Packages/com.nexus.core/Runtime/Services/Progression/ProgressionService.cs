@@ -31,7 +31,7 @@ namespace Nexus.Core.Services
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
         // Optional write-coalescer: without it, every level change triggers a synchronous
         // PlayerPrefs.Save() (frame hitches on mobile). Mirrors EconomyService's pattern.
-        [OptionalInject] public SaveThrottler SaveThrottler { get; set; }
+        [OptionalInject] public ISaveThrottler SaveThrottler { get; set; }
 
         private const string KeyCurrentLevel = "NT_Prog_CurrentLevel";
         private const string KeyMaxLevel = "NT_Prog_MaxLevel";

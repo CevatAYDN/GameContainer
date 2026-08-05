@@ -34,7 +34,7 @@ namespace Nexus.Core
         private static volatile int s_activeContextCount;
         private static List<IContext> s_activeContextsReadOnlyCache = new();
         private static bool s_activeContextsCacheDirty = true;
-        // Audit fix 2.2: int + Interlocked so the first-registration monitoring init is
+        // Int + Interlocked so the first-registration monitoring init is
         // claimed atomically — two racing RegisterContext calls can no longer both pass
         // a plain check-then-set and double-initialize.
         private static int s_monitoringInitialized;
@@ -58,8 +58,15 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Returns the first registered context, or null if no context has been registered.
+        /// Returns the FIRST-REGISTERED context, or null if none has been registered.
         /// </summary>
+        /// <remarks>
+        /// "First registered" depends on scene load and <c>Awake</c> order, so in a project with
+        /// more than one context this is ambiguous and can silently change between builds or
+        /// scene setups. Address a context explicitly with <see cref="GetContext(string)"/>, or
+        /// inject <see cref="IContext"/>/<see cref="IResolver"/>; reserve this for
+        /// single-context apps and diagnostics.
+        /// </remarks>
         public static IContext CurrentContext
         {
             get
@@ -101,7 +108,7 @@ namespace Nexus.Core
         /// </summary>
         public static IReadOnlyList<IContext> GetContexts(string scopeTag)
         {
-            // M5 fix: no longer re-enters the ActiveContexts property getter (which takes
+            // No longer re-enters the ActiveContexts property getter (which takes
             // s_lock again). Monitor locks are reentrant on the same thread so this was not
             // a deadlock, but a nested acquisition inside an already-held lock is fragile:
             // if the cache-invalidation logic ever moves off-lock or the getter is changed
@@ -134,6 +141,14 @@ namespace Nexus.Core
         /// Safely attempts to resolve a service of type <typeparamref name="T"/> from <see cref="CurrentContext"/>.
         /// Returns null if no context is registered or the service is not registered.
         /// </summary>
+        /// <remarks>
+        /// This is a service locator: it hides the dependency from the consuming type's contract,
+        /// makes the type untestable without global setup, and silently targets whichever context
+        /// registered first (see <see cref="CurrentContext"/>). Declare the dependency with
+        /// <c>[Inject]</c>, or take <see cref="IResolver"/> where a container reference is
+        /// genuinely required.
+        /// </remarks>
+        [Obsolete("Declare the dependency with [Inject], or take IResolver/IContext explicitly. Resolving through global state hides dependencies and binds the caller to whichever context registered first.", error: false)]
         public static T TryResolve<T>() where T : class
         {
             return CurrentContext?.TryResolve<T>();
@@ -148,7 +163,7 @@ namespace Nexus.Core
         {
             get
             {
-                // Audit fix 2.1: the previous version held s_loggerCacheLock while calling
+                // The previous version held s_loggerCacheLock while calling
                 // TryResolve, which acquires the DI container's _singletonLock — an AB-BA
                 // deadlock pair against any DI path that logs while holding the container
                 // lock (e.g. a constructor surfacing a recoverable error). The DI resolve
@@ -166,7 +181,7 @@ namespace Nexus.Core
         }
 
         private static Services.ILoggerService s_cachedLogger;
-        // R2026-L1 fix: removed the dead s_loggerCacheLock field — the logger cache has
+        // Removed the dead s_loggerCacheLock field — the logger cache has
         // been lock-free (Volatile/Interlocked) since audit fix 2.1, and the field was
         // never referenced anywhere.
 
@@ -193,7 +208,7 @@ namespace Nexus.Core
             var context = new Context(null, data);
             context.Configure();
 
-            // P1-8 fix: pure contexts run the SAME lifecycle sequence as Root-based
+            // Pure contexts run the SAME lifecycle sequence as Root-based
             // contexts — reactive models and services are initialized before the
             // lifecycle Init/Start phases, and ALL configured lifecycles are iterated.
             await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, context.LifetimeToken);
@@ -310,7 +325,7 @@ namespace Nexus.Core
         /// <summary>Disposes all active contexts and clears the registry. Called automatically on domain reload.</summary>
         public static void Reset()
         {
-            // Audit fix 1.2: subscriber lists are captured and detached BEFORE the lock —
+            // Subscriber lists are captured and detached BEFORE the lock —
             // never nulled inside it. Previously a context Dispose (below) could synchronously
             // re-enter UnregisterContext while the registry state was still being torn down,
             // and a concurrent RegisterContext could attach a handler that was then silently
@@ -357,12 +372,17 @@ namespace Nexus.Core
                 }
             }
 
+            // Shared convention/metadata caches join the reset discipline — with Disable
+            // Domain Reload, statics persist across play sessions and recompiles recreate
+            // Type instances while caches would hold stale ones.
+            //
+            // The explicit calls below are the framework's own built-in caches. Anything new
+            // — including caches added by consumers — should register itself with
+            // NexusStaticState instead of being appended here, so the reset list cannot fall
+            // out of sync with the code that owns the state.
             NexusDI.ClearCaches();
             Context.ClearAssemblyScanCache();
             Context.ClearDefaultScanAssembliesCache();
-            // REFACTOR PLAN §1.2/§1.4/§2.3: shared convention/metadata caches join the reset
-            // discipline — with Disable Domain Reload, statics persist across play sessions
-            // and recompiles recreate Type instances while caches would hold stale ones.
             ContextBuilder.ClearCaches();
             ViewBinder.ClearCaches();
             SignalBus.ClearStaticCaches();
@@ -372,8 +392,9 @@ namespace Nexus.Core
             Services.AssemblyScanService.ClearCache();
             Metrics.ResetTraceBuffer();
             NexusLog.Reset();
+            NexusStaticState.ClearAll();
 
-            // R7 fix: clear static tamper events on domain reset so handlers do not
+            // Clear static tamper events on domain reset so handlers do not
             // persist across disable-domain-reload sessions or editor play-mode cycles.
             try
             {
@@ -384,6 +405,7 @@ namespace Nexus.Core
                 SecureObservableLong.ClearOnTamperDetected();
                 SecureObservableFloat.ClearOnTamperDetected();
                 SecureObservableString.ClearOnTamperDetected();
+                SecureObservableBigDouble.ClearOnTamperDetected();
             }
             catch (Exception ex)
             {
@@ -393,7 +415,7 @@ namespace Nexus.Core
 
         public static class Metrics
         {
-            // Audit fix 4.1: master switch for the per-fire metrics. When disabled, a signal
+            // Master switch for the per-fire metrics. When disabled, a signal
             // fire pays a single volatile read instead of an Interlocked increment + a
             // ring-buffer slot write. Default TRUE — production tracing is a designed feature
             // (TracerPlugin reads the ring in release builds), so this is an opt-out escape
@@ -471,7 +493,7 @@ namespace Nexus.Core
                     int count = Math.Min(s_traceCount, size);
                     if (count > 0)
                     {
-                        // Audit fix 2.3: Volatile.Read — RecordTrace advances s_traceIndex via
+                        // Volatile.Read — RecordTrace advances s_traceIndex via
                         // Interlocked.Increment OUTSIDE s_traceLock, so a plain read here can
                         // observe a stale/torn value against the just-swapped buffer.
                         int oldIndex = System.Threading.Volatile.Read(ref s_traceIndex);
@@ -531,7 +553,7 @@ namespace Nexus.Core
                 // Volatile read for consistency with the writers' Interlocked updates on
                 // weak-memory (ARM) platforms — the rest of this block is equally careful.
                 int lastIndex = System.Threading.Volatile.Read(ref s_traceIndex);
-                // Audit fix 1.1: when the ring is full, the oldest entry sits at
+                // When the ring is full, the oldest entry sits at
                 // (lastIndex + 1) % size — the slot the next write will overwrite. The old
                 // formula (lastIndex - count + 1) returned the NEWEST slot (index 0 after the
                 // first wraparound) as the oldest, silently dropping the freshest trace entry
@@ -597,7 +619,7 @@ namespace Nexus.Core
             if (added)
             {
                 // Initialize monitoring systems on first context registration.
-                // Audit fix 2.2: Interlocked CAS — exactly ONE thread wins the claim even
+                // Interlocked CAS — exactly ONE thread wins the claim even
                 // when two contexts register concurrently; the plain check-then-set could
                 // double-execute InitializeMonitoring.
                 if (System.Threading.Interlocked.CompareExchange(ref s_monitoringInitialized, 1, 0) == 0)
@@ -618,10 +640,12 @@ namespace Nexus.Core
 
         private static void InitializeMonitoring()
         {
-            // Enable error collection and performance monitoring by default
-            ErrorCollection.Enabled = true;
-            PerformanceMonitor.Enabled = true;
-            NetworkMonitor.Enabled = true;
+            // Enable error collection and performance monitoring by default — but never
+            // override a value the user explicitly assigned before the first context
+            // registered (an early Enabled = false must stick).
+            if (!ErrorCollection.EnabledExplicitlySet) ErrorCollection.Enabled = true;
+            if (!PerformanceMonitor.EnabledExplicitlySet) PerformanceMonitor.Enabled = true;
+            if (!NetworkMonitor.EnabledExplicitlySet) NetworkMonitor.Enabled = true;
         }
 
         /// <summary>Unregisters a context. Thread-safe.</summary>

@@ -85,6 +85,10 @@ namespace Nexus.Core.FSM
         public const int TransitionHistoryCapacity = 32;
 
         private readonly Dictionary<Type, IGameState> _states = new();
+        // _states is touched from the main thread (RegisterState) and from async transition
+        // continuations (state lookups); a plain Dictionary is not safe for concurrent
+        // read/write, so every access goes through this lock.
+        private readonly object _statesLock = new();
         // EKSİK-5 fix: volatile ensures Tick() (Unity main thread) always observes the
         // latest state written by an async transition continuation — prevents torn reads
         // on platforms without strong memory ordering guarantees.
@@ -109,8 +113,11 @@ namespace Nexus.Core.FSM
         /// <summary>Fires once per transition attempt with a full <see cref="StateTransitionRecord"/> snapshot.</summary>
         public event Action<StateTransitionRecord> OnStateChanged;
 
-        /// <summary>Editor/introspection: state types registered via <see cref="RegisterState{TState}"/>.</summary>
-        public IReadOnlyCollection<Type> RegisteredStateTypes => _states.Keys;
+        /// <summary>Editor/introspection: state types registered via <see cref="RegisterState{TState}"/> (snapshot).</summary>
+        public IReadOnlyCollection<Type> RegisteredStateTypes
+        {
+            get { lock (_statesLock) { return new List<Type>(_states.Keys); } }
+        }
 
         /// <summary>Editor/introspection: the fallback state type, or null if none is set.</summary>
         public Type ErrorStateType => _errorStateType;
@@ -136,7 +143,7 @@ namespace Nexus.Core.FSM
         public void RegisterState<TState>(TState state) where TState : class, IGameState
         {
             if (state == null) return;
-            _states[typeof(TState)] = state;
+            lock (_statesLock) { _states[typeof(TState)] = state; }
         }
 
         public void SetErrorState<TState>() where TState : class, IGameState
@@ -156,7 +163,12 @@ namespace Nexus.Core.FSM
 
         public async Task ChangeStateAsync(Type stateType, CancellationToken ct, object args = null)
         {
-            if (!_states.TryGetValue(stateType, out var nextState))
+            IGameState nextState;
+            lock (_statesLock)
+            {
+                _states.TryGetValue(stateType, out nextState);
+            }
+            if (nextState == null)
             {
                 NexusRuntime.Logger?.LogError($"[GameStateMachine] State {stateType.Name} is not registered!");
                 return;
@@ -168,7 +180,7 @@ namespace Nexus.Core.FSM
             string argsSummary = args?.GetType().Name; // type name only — no ToString() surprises
             double startTime = UnityEngine.Time.realtimeSinceStartupAsDouble;
 
-            // R2026-C2 fix: ATOMIC token swap. The old read-null-cancel-assign sequence
+            // ATOMIC token swap. The old read-null-cancel-assign sequence
             // was not atomic: two concurrent ChangeStateAsync calls could interleave so
             // that the FIRST caller's `_stateCts = myCts` overwrote the SECOND caller's
             // freshly published token — the second transition's token was then lost and
@@ -220,7 +232,9 @@ namespace Nexus.Core.FSM
                 }
 
                 // A newer transition may have superseded us while we awaited OnExitAsync.
-                if (mySequence != _transitionSequence)
+                // Volatile.Read: _transitionSequence is a long written via Interlocked on
+                // other threads — a plain read could be torn on 32-bit platforms or stale.
+                if (mySequence != Volatile.Read(ref _transitionSequence))
                 {
                     RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
                     return;
@@ -249,7 +263,7 @@ namespace Nexus.Core.FSM
                     // If a newer transition superseded us while we were inside OnEnterAsync,
                     // it owns the machine now — a stale error-state fallback here would
                     // clobber its committed _currentState. Abort silently.
-                    if (mySequence != _transitionSequence)
+                    if (mySequence != Volatile.Read(ref _transitionSequence))
                     {
                         RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
                         return;
@@ -258,13 +272,18 @@ namespace Nexus.Core.FSM
                     NexusRuntime.Logger?.LogException(ex);
                     status = StateTransitionStatus.Failed;
                     // Attempt to transition to the consumer-registered error state for safe recovery.
-                    if (_errorStateType != null && _states.TryGetValue(_errorStateType, out var errorState))
+                    IGameState errorState = null;
+                    if (_errorStateType != null)
+                    {
+                        lock (_statesLock) { _states.TryGetValue(_errorStateType, out errorState); }
+                    }
+                    if (errorState != null)
                     {
                         toName = errorState.GetType().Name;
                         try
                         {
                             await errorState.OnEnterAsync(ex, token);
-                            if (mySequence == _transitionSequence)
+                            if (mySequence == Volatile.Read(ref _transitionSequence))
                             {
                                 _currentState = errorState;
                             }
@@ -273,17 +292,17 @@ namespace Nexus.Core.FSM
                         {
                             // Or1-fix: on cancelled recovery, reach the same terminal (null)
                             // state as the innerEx path, so no stale failed-from state leaks.
-                            if (mySequence == _transitionSequence) _currentState = null;
+                            if (mySequence == Volatile.Read(ref _transitionSequence)) _currentState = null;
                         }
                         catch (Exception innerEx)
                         {
                             NexusRuntime.Logger?.LogException(innerEx);
-                            if (mySequence == _transitionSequence) _currentState = null;
+                            if (mySequence == Volatile.Read(ref _transitionSequence)) _currentState = null;
                         }
                     }
                     else
                     {
-                        if (mySequence == _transitionSequence) _currentState = null;
+                        if (mySequence == Volatile.Read(ref _transitionSequence)) _currentState = null;
                         toName = null;
                     }
                 }
@@ -292,7 +311,7 @@ namespace Nexus.Core.FSM
                 // after a newer transition already superseded us mid-enter. The machine
                 // state is correct (the newer transition owns _currentState), but our
                 // history record and trace event must not claim a Success.
-                if (mySequence != _transitionSequence)
+                if (mySequence != Volatile.Read(ref _transitionSequence))
                 {
                     RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
                     return;
@@ -308,7 +327,10 @@ namespace Nexus.Core.FSM
             }
             finally
             {
-                if (mySequence == _transitionSequence) Interlocked.Exchange(ref _stateCts, null);
+                // CompareExchange only clears the slot when it still holds OUR source —
+                // the old sequence check-then-Exchange was check-then-act and could null
+                // out a NEWER transition's freshly published token.
+                Interlocked.CompareExchange(ref _stateCts, null, myCts);
                 myCts.Cancel();
                 myCts.Dispose();
             }
@@ -331,7 +353,7 @@ namespace Nexus.Core.FSM
                 if (_transitionCount < TransitionHistoryCapacity) _transitionCount++;
             }
 
-            // BUG-14 fix: NexusTrace calls are now wrapped in the same NEXUS_DEBUG guard
+            // NexusTrace calls are now wrapped in the same NEXUS_DEBUG guard
             // used by every other trace site in the framework. Without the guard, every
             // production build paid two method-call overheads per state transition even
             // though the trace ring-buffer stubs compile to no-ops anyway.
@@ -371,8 +393,26 @@ namespace Nexus.Core.FSM
             var cts = Interlocked.Exchange(ref _stateCts, null);
             cts?.Cancel();
             cts?.Dispose();
-            _states.Clear();
+
+            // Best-effort exit hook: give the current state a chance to clean up
+            // (fire-and-forget with error capture and a short timeout, mirroring the
+            // ContextLifecycleOrchestrator sync-dispose pattern).
+            var exiting = _currentState;
             _currentState = null;
+            if (exiting != null)
+            {
+                SafeAsyncRunner.Run(() => ExitStateOnDispose(exiting),
+                    $"[GameStateMachine] OnExitAsync during Dispose failed for state '{exiting.GetType().Name}'");
+            }
+
+            lock (_statesLock) { _states.Clear(); }
+        }
+
+        private static async ValueTask ExitStateOnDispose(IGameState state)
+        {
+            // Short timeout so fire-and-forget cleanup can't hang indefinitely.
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            await state.OnExitAsync(cts.Token);
         }
     }
 }

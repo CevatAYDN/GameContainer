@@ -102,7 +102,7 @@ namespace Nexus.Core
                 if (!s_stateLeakWarningIssued.Add(type)) return;
             }
 
-            // BUG-8 fix: collect ALL risky (mutable, non-injected, non-primitive) fields
+            // Collect ALL risky (mutable, non-injected, non-primitive) fields
             // and report them together in a single warning instead of stopping at the first one.
             var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
             var riskyFields = new System.Text.StringBuilder();
@@ -137,7 +137,7 @@ namespace Nexus.Core
                 {
                     var instance = _pool.Pop();
                     _pooledInstances.Remove(instance);
-                    // Audit fix 1.5: the T6 pop-side Reset() was REMOVED. Return() already
+                    // The T6 pop-side Reset() was REMOVED. Return() already
                     // resets every pooled instance exactly once — NexusDI.ClearInjectedReferences
                     // invokes IResettable.Reset() AND nulls [Inject] fields/properties/method
                     // params — so the pop-side call made every IResettable command pay two
@@ -192,34 +192,6 @@ namespace Nexus.Core
                 _pooledInstances.Remove(command);
                 System.Threading.Interlocked.Increment(ref _totalDiscarded);
             }
-        }
-
-        // BUG-9 fix: previously only [Inject] fields were checked, so commands that only
-        // use property- or method-injection would not have their references cleared on
-        // Return(), causing pooled commands to retain stale service references across reuses.
-        // This method now checks fields, properties, and method parameters.
-        private static readonly ConcurrentDictionary<Type, bool> s_hasInjectableMembersCache = new();
-
-        private static bool HasInjectableMembers(Type type)
-        {
-            return s_hasInjectableMembersCache.GetOrAdd(type, static t =>
-            {
-                // IsDefined avoids allocating the attribute instance per member (first-call
-                // per type only, but this runs once per command type at pool creation).
-                foreach (var field in t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                {
-                    if (field.IsDefined(typeof(InjectAttribute), false)) return true;
-                }
-                foreach (var prop in t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                {
-                    if (prop.CanWrite && prop.IsDefined(typeof(InjectAttribute), false)) return true;
-                }
-                foreach (var method in t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                {
-                    if (method.IsDefined(typeof(InjectAttribute), false)) return true;
-                }
-                return false;
-            });
         }
 
         private void Cleanup(object command)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -44,8 +45,19 @@ namespace Nexus.Core.Services
         /// <c>MasterVolume × BgmVolume × BgmStateMultiplier</c> when not muted.</summary>
         float BgmStateMultiplier { get; set; }
 
-        void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0.5f);
-        void StopBgm(float fadeDuration = 0.5f);
+        /// <summary>
+        /// Starts a BGM track. A <paramref name="fadeDuration"/> above zero crossfades from the
+        /// current track over that many seconds; the default of zero switches instantly.
+        /// Fading needs a live audio root running coroutines — where that is unavailable the
+        /// switch falls back to instant rather than silently doing nothing.
+        /// </summary>
+        void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0f);
+        /// <summary>
+        /// Stops the BGM. A <paramref name="fadeDuration"/> above zero fades out over that many
+        /// seconds (the source keeps playing until the fade completes); the default of zero
+        /// stops immediately.
+        /// </summary>
+        void StopBgm(float fadeDuration = 0f);
         void PlaySfx(AudioClip clip, float volume = 1f, float pitchMin = 1f, float pitchMax = 1f);
         void PlaySfxWithRandomPitch(AudioClip clip, float minPitch = 0.9f, float maxPitch = 1.1f, float volume = 1f) => PlaySfx(clip, volume, minPitch, maxPitch);
         void PlaySfxAtPosition(AudioClip clip, Vector3 position, float volume = 1f);
@@ -67,6 +79,13 @@ namespace Nexus.Core.Services
         private AudioSource _bgmSourceFade;
         private readonly List<AudioSource> _sfxPool = new();
 
+        // Coroutine host for BGM fades: the audio root is a plain GameObject, so a tiny
+        // runner component is added on demand (same pattern as ObjectPoolService's
+        // PoolTimerRunner). Only one fade runs at a time — starting a new fade cancels
+        // the previous one.
+        private AudioFadeRunner _fadeRunner;
+        private Coroutine _fadeCoroutine;
+
         // Hard cap on the SFX source pool. The old GetAvailableSfxSource grew the pool
         // unboundedly (a new GameObject + interpolated name string per allocation) on
         // SFX-heavy scenes — under a burst of simultaneous sounds the linear scan plus
@@ -77,7 +96,7 @@ namespace Nexus.Core.Services
         private float _masterVolume = 1f;
         private float _bgmVolume = 1f;
         private float _sfxVolume = 1f;
-        // FIX P0.3: not persisted on purpose. This is the per-state ducking scalar, driven
+        // Not persisted on purpose. This is the per-state ducking scalar, driven
         // by gameplay states and restored to 1.0 by the CALLER (e.g. on returning to the
         // main menu) — the service never auto-resets, so a level-load cannot silently
         // overwrite the player's saved BgmVolume slider value.
@@ -112,7 +131,7 @@ namespace Nexus.Core.Services
             get => _bgmStateMultiplier;
             set
             {
-                // FIX P0.3: deliberately NOT persisted — gameplay states push a transient
+                // Deliberately NOT persisted — gameplay states push a transient
                 // scalar (Menu: 0.70, Playing: 0.40 / Boss 0.80, Pause: 0.20 per GDD §12)
                 // without poisoning the user-saved slider value.
                 _bgmStateMultiplier = Mathf.Clamp01(value);
@@ -144,7 +163,7 @@ namespace Nexus.Core.Services
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
-            // Audit fix 3.13: idempotent. A second call (recovery re-init, accidental
+            // Idempotent. A second call (recovery re-init, accidental
             // transient binding, double context init) previously created a DUPLICATE
             // [Nexus_AudioService] root and a second pair of BGM sources on top of the
             // existing ones — sounds played from both roots and crossfades overlapped.
@@ -179,7 +198,7 @@ namespace Nexus.Core.Services
 
         private void UpdateVolumes()
         {
-            // FIX P0.3: Player preference × State multiplier. Old code wrote the state
+            // Player preference × State multiplier. Old code wrote the state
             // multiplier (e.g. 0.40 from PlayingState) to PlayerPrefs every level entry,
             // overwriting the user's chosen slider value permanently.
             float effectiveBgm = _isMuted
@@ -189,27 +208,121 @@ namespace Nexus.Core.Services
             if (_bgmSourceFade != null) _bgmSourceFade.volume = effectiveBgm;
         }
 
-        public void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0.5f)
+        public void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0f)
         {
             if (clip == null || _bgmSourceActive == null) return;
             if (_bgmSourceActive.clip == clip && _bgmSourceActive.isPlaying) return;
 
-            _bgmSourceActive.clip = clip;
-            _bgmSourceActive.loop = loop;
-            // FIX P0.3: same effective formula (master × user pref × state mult).
-            _bgmSourceActive.volume = _isMuted
+            // Same effective formula (master × user pref × state mult).
+            float targetVolume = _isMuted
                 ? 0f
                 : _masterVolume * _bgmVolume * _bgmStateMultiplier;
-            _bgmSourceActive.Play();
+
+            if (fadeDuration <= 0f || _bgmSourceFade == null || !TryGetFadeRunner(out var runner))
+            {
+                // Instant switch (previous behavior).
+                StopFadeCoroutine();
+                if (_bgmSourceFade != null && _bgmSourceFade.isPlaying)
+                {
+                    _bgmSourceFade.Stop();
+                    _bgmSourceFade.clip = null;
+                }
+                _bgmSourceActive.clip = clip;
+                _bgmSourceActive.loop = loop;
+                _bgmSourceActive.volume = targetVolume;
+                _bgmSourceActive.Play();
+                return;
+            }
+
+            // Crossfade: the incoming clip starts on the idle fade source and ramps up
+            // while the outgoing source ramps down; the two sources swap roles.
+            StopFadeCoroutine();
+            var incoming = _bgmSourceFade;
+            var outgoing = _bgmSourceActive;
+            incoming.clip = clip;
+            incoming.loop = loop;
+            incoming.volume = 0f;
+            incoming.Play();
+            _bgmSourceActive = incoming;
+            _bgmSourceFade = outgoing;
+            _fadeCoroutine = runner.StartCoroutine(CrossfadeCoroutine(incoming, outgoing, fadeDuration));
         }
 
-        public void StopBgm(float fadeDuration = 0.5f)
+        public void StopBgm(float fadeDuration = 0f)
         {
-            if (_bgmSourceActive != null)
+            if (_bgmSourceActive == null) return;
+
+            if (fadeDuration <= 0f || !_bgmSourceActive.isPlaying || !TryGetFadeRunner(out var runner))
             {
+                StopFadeCoroutine();
                 _bgmSourceActive.Stop();
                 _bgmSourceActive.clip = null;
+                return;
             }
+
+            StopFadeCoroutine();
+            _fadeCoroutine = runner.StartCoroutine(FadeOutCoroutine(_bgmSourceActive, fadeDuration));
+        }
+
+        private bool TryGetFadeRunner(out AudioFadeRunner runner)
+        {
+            runner = null;
+            if (_audioRoot == null || !_audioRoot.activeInHierarchy) return false;
+            if (_fadeRunner == null)
+                _fadeRunner = _audioRoot.GetComponent<AudioFadeRunner>() ?? _audioRoot.AddComponent<AudioFadeRunner>();
+            runner = _fadeRunner;
+            return runner != null;
+        }
+
+        private void StopFadeCoroutine()
+        {
+            if (_fadeCoroutine != null && _fadeRunner != null)
+                _fadeRunner.StopCoroutine(_fadeCoroutine);
+            _fadeCoroutine = null;
+        }
+
+        private IEnumerator CrossfadeCoroutine(AudioSource incoming, AudioSource outgoing, float duration)
+        {
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float t = Mathf.Clamp01(elapsed / duration);
+                // Recompute the target each frame so volume/mute changes mid-fade apply.
+                float target = _isMuted ? 0f : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+                if (incoming != null) incoming.volume = target * t;
+                if (outgoing != null) outgoing.volume = target * (1f - t);
+                yield return null;
+            }
+            if (outgoing != null)
+            {
+                outgoing.Stop();
+                outgoing.clip = null;
+            }
+            if (incoming != null)
+                incoming.volume = _isMuted ? 0f : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+            _fadeCoroutine = null;
+        }
+
+        private IEnumerator FadeOutCoroutine(AudioSource source, float duration)
+        {
+            float startVolume = source.volume;
+            float elapsed = 0f;
+            while (elapsed < duration)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                if (source == null) yield break;
+                source.volume = startVolume * (1f - Mathf.Clamp01(elapsed / duration));
+                yield return null;
+            }
+            if (source != null)
+            {
+                source.Stop();
+                source.clip = null;
+                // Restore the source volume for the next PlayBgm.
+                source.volume = _isMuted ? 0f : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+            }
+            _fadeCoroutine = null;
         }
 
         public void PlaySfxWithRandomPitch(AudioClip clip, float minPitch = 0.9f, float maxPitch = 1.1f, float volume = 1f) => PlaySfx(clip, volume, minPitch, maxPitch);
@@ -241,7 +354,7 @@ namespace Nexus.Core.Services
             source.PlayOneShot(clip);
         }
 
-        // R2026-M6 fix: round-robin scan cursor. The old always-from-index-0 scan was
+        // Round-robin scan cursor. The old always-from-index-0 scan was
         // O(N) per SFX call and — worse — always probed the oldest sources first, so
         // under sustained SFX load the same few sources were checked every call. The
         // cursor spreads the scan and finds an idle source in ~O(1) amortized.
@@ -285,6 +398,9 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
+            StopFadeCoroutine();
+            _fadeRunner = null;
+
             if (_audioRoot != null)
             {
                 if (AudioRootProvider is DefaultAudioRootProvider)
@@ -305,5 +421,7 @@ namespace Nexus.Core.Services
             }
             _sfxPool.Clear();
         }
+
+        private class AudioFadeRunner : MonoBehaviour { }
     }
 }

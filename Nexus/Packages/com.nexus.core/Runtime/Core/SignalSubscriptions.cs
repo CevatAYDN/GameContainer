@@ -25,11 +25,48 @@ namespace Nexus.Core
         /// <param name="ct">Cancellation token that disposes the subscription when triggered.</param>
         /// <param name="onDispose">Optional cleanup action invoked on disposal.</param>
         public SignalSubscription(Action<T> handler, CancellationToken ct, Action onDispose)
+            : this(handler, ct, onDispose, deferLifetimeRegistration: false)
+        {
+        }
+
+        /// <summary>
+        /// Internal overload used by <see cref="SubscriptionRegistry"/>: with
+        /// <paramref name="deferLifetimeRegistration"/> true the cancellation callback is NOT
+        /// registered here — the registry calls <see cref="RegisterLifetimeCallback"/> AFTER the
+        /// subscription is fully constructed and its node added, so a token that cancels during
+        /// that window can still unsubscribe the node (no permanent dead-node leak).
+        /// </summary>
+        internal SignalSubscription(Action<T> handler, CancellationToken ct, Action onDispose, bool deferLifetimeRegistration)
         {
             _handler = handler;
             Lifetime = ct;
             _onDispose = onDispose;
-            _registration = ct.Register(Dispose);
+            if (ct.IsCancellationRequested)
+            {
+                // Already-cancelled lifetime: become a disposed no-op WITHOUT running Dispose
+                // (which would fire the unsubscribe closure before the caller has assigned
+                // its `sub` variable — the classic constructor-reentrancy leak).
+                _disposedFlag = 1;
+                IsActive = false;
+                return;
+            }
+            if (!deferLifetimeRegistration)
+            {
+                _registration = ct.Register(Dispose);
+            }
+        }
+
+        /// <summary>Registers the auto-dispose cancellation callback. Called by the registry
+        /// once the subscription is fully constructed and its node is added.</summary>
+        internal void RegisterLifetimeCallback()
+        {
+            if (_disposedFlag == 0)
+            {
+                // If the token cancels between construction and this call, Register invokes
+                // Dispose synchronously — safe now, because the node exists and the
+                // unsubscribe closure resolves to the fully assigned subscription.
+                _registration = Lifetime.Register(Dispose);
+            }
         }
 
         /// <summary>Invokes the handler if the subscription is still active.</summary>
@@ -45,7 +82,7 @@ namespace Nexus.Core
         /// <summary>Disposes the subscription, unregistering from the cancellation token.</summary>
         public void Dispose()
         {
-            // T1 fix: atomic check-and-set using Interlocked.Exchange on int (0/1) to prevent
+            // Atomic check-and-set using Interlocked.Exchange on int (0/1) to prevent
             // double-invocation of _onDispose when two threads call Dispose() concurrently.
             // NOTE: bool cannot be used with Interlocked.Exchange in .NET Standard 2.0.
             if (System.Threading.Interlocked.Exchange(ref _disposedFlag, 1) == 0)
@@ -78,11 +115,40 @@ namespace Nexus.Core
         /// <param name="ct">Cancellation token that disposes the subscription when triggered.</param>
         /// <param name="onDispose">Optional cleanup action invoked on disposal.</param>
         public AsyncSignalSubscription(Func<T, CancellationToken, ValueTask> handler, CancellationToken ct, Action onDispose)
+            : this(handler, ct, onDispose, deferLifetimeRegistration: false)
+        {
+        }
+
+        /// <summary>
+        /// Internal overload used by <see cref="SubscriptionRegistry"/> — see the
+        /// <see cref="SignalSubscription{T}"/> counterpart for the deferred-registration rationale.
+        /// </summary>
+        internal AsyncSignalSubscription(Func<T, CancellationToken, ValueTask> handler, CancellationToken ct, Action onDispose, bool deferLifetimeRegistration)
         {
             _handler = handler;
             Lifetime = ct;
             _onDispose = onDispose;
-            _registration = ct.Register(Dispose);
+            if (ct.IsCancellationRequested)
+            {
+                // Already-cancelled lifetime: disposed no-op — see SignalSubscription<T>.
+                _disposedFlag = 1;
+                IsActive = false;
+                return;
+            }
+            if (!deferLifetimeRegistration)
+            {
+                _registration = ct.Register(Dispose);
+            }
+        }
+
+        /// <summary>Registers the auto-dispose cancellation callback. Called by the registry
+        /// once the subscription is fully constructed and its node is added.</summary>
+        internal void RegisterLifetimeCallback()
+        {
+            if (_disposedFlag == 0)
+            {
+                _registration = Lifetime.Register(Dispose);
+            }
         }
 
         /// <summary>Invokes the async handler if the subscription is still active.</summary>
@@ -99,7 +165,7 @@ namespace Nexus.Core
         /// <summary>Disposes the subscription, unregistering from the cancellation token.</summary>
         public void Dispose()
         {
-            // T1 fix: atomic check-and-set for AsyncSignalSubscription too.
+            // Atomic check-and-set for AsyncSignalSubscription too.
             if (System.Threading.Interlocked.Exchange(ref _disposedFlag, 1) == 0)
             {
                 IsActive = false;

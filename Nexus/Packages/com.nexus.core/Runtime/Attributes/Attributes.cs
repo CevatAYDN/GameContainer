@@ -31,6 +31,14 @@ namespace Nexus.Core
         public int Priority { get; set; }
         /// <summary>Execution mode for this handler.</summary>
         public ExecutionMode Mode { get; set; } = ExecutionMode.Sequential;
+        /// <summary>If true, the handler runs for the first matching signal only and is then consumed.</summary>
+        public bool OneShot { get; set; }
+        /// <summary>
+        /// Forces the sync/async classification instead of deriving it from the command's
+        /// interfaces. Null (default) = derive. Used when a command implements both the
+        /// sync and async command interfaces.
+        /// </summary>
+        public bool? IsAsync { get; set; }
 
         /// <summary>Marks a command to handle the specified signal type.</summary>
         /// <param name="signalType">The signal struct type.</param>
@@ -54,6 +62,11 @@ namespace Nexus.Core
         /// <b>Higher values run first.</b>
         /// </summary>
         public int Priority { get; set; } = 0;
+        /// <summary>
+        /// Forces the sync/async classification instead of deriving it from the command's
+        /// interfaces. Null (default) = derive.
+        /// </summary>
+        public bool? IsAsync { get; set; }
 
         /// <summary>Marks a command as a composite trigger requiring multiple signals.</summary>
         /// <param name="signalTypes">The signal types required for the trigger.</param>

@@ -34,7 +34,7 @@ namespace Nexus.Core.Services
         // batched flush per window instead of a synchronous PlayerPrefs.Save() per
         // Earn/Spend (frame hitching on mobile). Without a binding, saves are immediate
         // (previous behavior, preserved for tests and bare containers).
-        [OptionalInject] public SaveThrottler SaveThrottler { get; set; }
+        [OptionalInject] public ISaveThrottler SaveThrottler { get; set; }
 
         // Owner id for the shared SaveThrottler: EconomyService and ProgressionService may
         // share ONE throttler singleton, so each must use its own slot — otherwise one's
@@ -120,7 +120,7 @@ namespace Nexus.Core.Services
             SchedulePersist();
         }
 
-        // R2026-M5 note: reads are lock-free (ConcurrentDictionary.TryGetValue); the
+        // Reads are lock-free (ConcurrentDictionary.TryGetValue); the
         // explicit lock is taken ONLY on the create path and in Spend/Earn/SetBalance —
         // where the check-then-mutate sequence on SecureObservableLong.Value must be
         // atomic against other mutators (two concurrent Spends could both pass the
@@ -179,6 +179,8 @@ namespace Nexus.Core.Services
                     PlayerPrefsService.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
                 }
             }
+            // Flush outside the lock (may hit disk) — mirrors ProgressionService.PersistNow.
+            PlayerPrefsService.Save();
         }
 
         /// <summary>

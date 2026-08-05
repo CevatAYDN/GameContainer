@@ -13,7 +13,7 @@ namespace Nexus.Core.Services
         void SetUserProperty(string key, string value);
     }
 
-    // R2026-H1 fix: derives from NexusService<IAnalyticsService> like every other service
+    // Derives from NexusService<IAnalyticsService> like every other service
     // (previously implemented INexusService directly — inconsistent base-class usage).
     [StubService("Replace with Firebase Analytics or Amplitude before release")]
     public class AnalyticsService : NexusService<IAnalyticsService>, IAnalyticsService

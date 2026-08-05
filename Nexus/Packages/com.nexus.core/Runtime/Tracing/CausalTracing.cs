@@ -228,7 +228,7 @@ namespace Nexus.Core
                 s_ringBuffer[index] = traceEvent;
                 for (int i = 0; i < s_sinks.Count; i++)
                 {
-                    // M7 fix: a throwing sink must not break the trace path (which runs
+                    // A throwing sink must not break the trace path (which runs
                     // inside signal dispatch). Each sink is isolated and failures are
                     // logged — never silently swallowed, never propagated.
                     try { s_sinks[i].Write(traceEvent); }

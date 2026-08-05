@@ -50,17 +50,20 @@ namespace Nexus.Core.Extensions
     [Preserve]
     public interface IGameSaveManager
     {
-        /// <summary>Saves all registered model state to persistent storage.</summary>
+        /// <summary>Registers the model that provides save data. A single model is held at
+        /// a time; registering a new model replaces the previous one.</summary>
+        void RegisterModel(ISaveDataProvider model);
+        /// <summary>Saves the registered model's state to persistent storage.</summary>
         Task SaveAsync(string slotName, CancellationToken ct = default);
         /// <summary>Loads and restores model state from persistent storage.</summary>
         Task<bool> LoadAsync(string slotName, CancellationToken ct = default);
         /// <summary>Returns true if a save exists for the given slot.
-        /// İ1 note: intentionally synchronous — File.Exists is a sub-millisecond metadata
+        /// Intentionally synchronous — File.Exists is a sub-millisecond metadata
         /// call, not payload I/O; converting it would break this interface's sync contract
         /// without a real main-thread blocking win.</summary>
         bool SaveExists(string slotName);
         /// <summary>Deletes a save slot from persistent storage.
-        /// İ1 note: intentionally synchronous metadata operation (same rationale as SaveExists).</summary>
+        /// Intentionally synchronous metadata operation (same rationale as SaveExists).</summary>
         void DeleteSave(string slotName);
     }
 
@@ -87,10 +90,19 @@ namespace Nexus.Core.Extensions
         private SynchronizationContext MainThreadContext => _mainThreadContext;
 
         private readonly object _saveLock = new();
+        // Retry jitter source, hoisted from the retry loop (a new Random per retry could
+        // reseed identically under rapid retries). Only used under _saveLock.
+        private readonly System.Random _retryJitter = new();
 
         /// <summary>Registers the model that provides save data.</summary>
         public void RegisterModel(ISaveDataProvider model)
         {
+            var previous = _model;
+            if (previous != null && !ReferenceEquals(previous, model))
+            {
+                NexusRuntime.Logger?.LogWarning(
+                    "[GameSaveManager] RegisterModel replaced a previously registered model — only ONE model is held at a time; the earlier model no longer participates in save/load.");
+            }
             _model = model;
         }
 
@@ -127,7 +139,7 @@ namespace Nexus.Core.Extensions
                 string json = JsonUtility.ToJson(data);
                 lock (_saveLock)
                 {
-                    // M6 fix: stage + rename must be one critical section (see _saveLock).
+                    // Stage + rename must be one critical section (see _saveLock).
                     // Add robust retry logic with exponential backoff to improve resilience
                     // against transient I/O errors (disk busy, antivirus scan, etc.).
                     int attempt = 0;
@@ -137,8 +149,8 @@ namespace Nexus.Core.Extensions
                         try
                         {
                             File.WriteAllText(tempPath, json);
-                            // A8 fix: single overwrite-rename, never Delete-then-Move.
-                            // R2026-C3 fix: the File.Exists check and File.Replace were a TOCTOU
+                            // Single overwrite-rename, never Delete-then-Move.
+                            // The File.Exists check and File.Replace were a TOCTOU
                             // pair — the target could vanish between them (Replace then throws
                             // FileNotFoundException). Catch that specific case and retry as Move.
                             if (File.Exists(path))
@@ -168,7 +180,7 @@ namespace Nexus.Core.Extensions
                             NexusRuntime.Logger?.LogError($"[GameSaveManager] Save attempt {attempt} for '{slotName}' failed: {ex.Message}");
                             if (attempt >= maxAttempts)
                             {
-                                // R2026-C3 fix: never abandon the staged .tmp file — a stranded
+                                // Never abandon the staged .tmp file — a stranded
                                 // temp file would sit next to the save forever and the next save
                                 // silently overwrites it, masking the original failure. Best-effort
                                 // cleanup; the exception still propagates to the caller.
@@ -181,7 +193,7 @@ namespace Nexus.Core.Extensions
                                 throw;
                             }
                             // Exponential backoff with jitter
-                            var backoffMs = (int)(50 * Math.Pow(2, attempt - 1)) + new System.Random().Next(0, 50);
+                            var backoffMs = (int)(50 * Math.Pow(2, attempt - 1)) + _retryJitter.Next(0, 50);
                             Thread.Sleep(backoffMs);
                         }
                     }

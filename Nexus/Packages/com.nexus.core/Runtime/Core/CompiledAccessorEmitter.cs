@@ -66,7 +66,7 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                // M6 fix: log the exception (like other methods in this class).
+                // Log the exception (like other methods in this class).
                 // Previously this was a bare `catch { return null; }` with zero logging,
                 // making DI field-getter failures impossible to diagnose.
                 LogSetterCompileFailureOnce(targetType, field.Name, ex);

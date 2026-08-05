@@ -63,24 +63,30 @@ namespace Nexus.Core
 
         private readonly ConditionalWeakTable<object, PendingInjection> _pendingInjections = new();
         private readonly object _pendingInjectionsLock = new();
-        private readonly HashSet<Type> _constructingSingletons = new();
+        // Keyed by the Binding object (not the requested Type): polymorphic bindings
+        // (BindMultiple) expose ONE shared Binding under several interface keys, and a
+        // type-keyed guard would let two threads construct the same singleton through
+        // two different interfaces concurrently.
+        private readonly HashSet<Binding> _constructingSingletons = new();
         private readonly object _singletonLock = new();
         // Background dispose task for IAsyncDisposable singletons scheduled by Dispose()
         // When Dispose() collects async disposables it runs them through DisposeAllAsyncInBackground
         // and stores the returned Task here so callers (e.g. Context.Dispose) may wait with a timeout
         // for deterministic teardown when needed.
         private Task _backgroundDisposeTask;
-        // Per-type wait handles for singleton construction synchronization
-        private readonly Dictionary<Type, ManualResetEventSlim> _constructionWaitHandles = new();
+        // Per-binding wait handles for singleton construction synchronization
+        private readonly Dictionary<Binding, ManualResetEventSlim> _constructionWaitHandles = new();
         private readonly object _constructionWaitLock = new();
         private readonly Injector _injector;
 
-        // R2026-M1 note: ThreadStatic by design — cycle detection covers SYNCHRONOUS
+        // ThreadStatic by design — cycle detection covers SYNCHRONOUS
         // resolution chains only. A factory that hands work to another thread and awaits
         // it would resume on a fresh stack slot; such async factories are outside the
         // supported contract (BindFactory is documented as synchronous).
+        // Keyed by (type, name) so two DIFFERENT named bindings of the same type can
+        // legitimately appear in one chain without a false circular-dependency error.
         [ThreadStatic]
-        private static HashSet<Type> s_resolutionStack;
+        private static HashSet<(Type Type, string Name)> s_resolutionStack;
 
         private class Binding
         {
@@ -164,9 +170,19 @@ namespace Nexus.Core
             {
                 return InjectMeta.GetOrAdd(type, t =>
                 {
-                    var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    // Walk the inheritance chain base-first: reflection on the leaf type
+                    // never returns PRIVATE members declared on base classes, so [Inject]
+                    // on a private base-class field/property/method was silently skipped.
+                    // DeclaredOnly per level surfaces every declaration exactly once.
+                    var typeChain = new List<Type>();
+                    for (var cur = t; cur != null && cur != typeof(object); cur = cur.BaseType)
+                        typeChain.Add(cur);
+                    typeChain.Reverse();
+                    const BindingFlags DeclaredFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+
                     var fieldList = new List<InjectableField>();
-                    foreach (var field in fields)
+                    foreach (var level in typeChain)
+                    foreach (var field in level.GetFields(DeclaredFlags))
                     {
                         var injectAttr = field.GetCustomAttribute<InjectAttribute>();
                         var optionalAttr = field.GetCustomAttribute<OptionalInjectAttribute>();
@@ -191,14 +207,18 @@ namespace Nexus.Core
                         }
                     }
 
-                    var properties = t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     var propList = new List<InjectableProperty>();
-                    foreach (var prop in properties)
+                    // Overridden virtual properties appear once per declaring level in the
+                    // chain walk; dedupe by name so injection runs once (the base-level
+                    // PropertyInfo still dispatches virtually to the most-derived setter).
+                    var seenPropNames = new HashSet<string>();
+                    foreach (var level in typeChain)
+                    foreach (var prop in level.GetProperties(DeclaredFlags))
                     {
                         var injectAttr = prop.GetCustomAttribute<InjectAttribute>();
                         var optionalAttr = prop.GetCustomAttribute<OptionalInjectAttribute>();
                         // P-fix: accept [OptionalInject]-only properties (see field comment).
-                        if ((injectAttr != null || optionalAttr != null) && prop.CanWrite)
+                        if ((injectAttr != null || optionalAttr != null) && prop.CanWrite && seenPropNames.Add(prop.Name))
                         {
                             if (prop.PropertyType.IsValueType)
                                 throw new InvalidOperationException($"Cannot inject value type property {t.FullName}.{prop.Name}. Nexus DI only supports reference-type dependencies.");
@@ -214,16 +234,25 @@ namespace Nexus.Core
                         }
                     }
 
-                    var methods = t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     var methodList = new List<InjectableMethod>();
                     var postConstructList = new List<InjectableMethod>();
                     var deconstructList = new List<InjectableMethod>();
-                    foreach (var method in methods)
+                    // Dedupe overrides across chain levels by base definition so a virtual
+                    // hook runs once (the retained MethodInfo still dispatches virtually to
+                    // the most-derived override). The dedupe is applied only AFTER an
+                    // attribute matched: skipping the whole method up front would drop an
+                    // attribute declared on a derived override whose base declares none.
+                    var seenInjectDefs = new HashSet<MethodInfo>();
+                    var seenPostConstructDefs = new HashSet<MethodInfo>();
+                    var seenDeconstructDefs = new HashSet<MethodInfo>();
+                    foreach (var level in typeChain)
+                    foreach (var method in level.GetMethods(DeclaredFlags))
                     {
+                        var baseDef = method.GetBaseDefinition();
                         var injectAttr = method.GetCustomAttribute<InjectAttribute>();
                         var postAttr = method.GetCustomAttribute<PostConstructAttribute>();
                         var deconstructAttr = method.GetCustomAttribute<DeconstructAttribute>();
-                        if (injectAttr != null)
+                        if (injectAttr != null && seenInjectDefs.Add(baseDef))
                         {
                             var parameters = method.GetParameters();
                             var paramTypes = new Type[parameters.Length];
@@ -235,14 +264,14 @@ namespace Nexus.Core
                                     throw new InvalidOperationException($"Cannot inject value type parameter {t.FullName}.{method.Name}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
                                 paramTypes[i] = parameters[i].ParameterType;
                                 optionalMask[i] = parameters[i].GetCustomAttribute<OptionalInjectAttribute>() != null;
-                                // D1 fix: honor [Inject(Name=...)] on method parameters so named
+                                // Honor [Inject(Name=...)] on method parameters so named
                                 // bindings resolve exactly like fields/properties/ctor params.
                                 var paramInject = parameters[i].GetCustomAttribute<InjectAttribute>();
                                 if (paramInject != null) paramNames[i] = paramInject.Name;
                             }
                             methodList.Add(new InjectableMethod { Method = method, ParameterTypes = paramTypes, OptionalParameterMask = optionalMask, ParameterNames = paramNames });
                         }
-                        if (postAttr != null)
+                        if (postAttr != null && seenPostConstructDefs.Add(baseDef))
                         {
                             var parameters = method.GetParameters();
                             if (parameters.Length != 0)
@@ -256,7 +285,7 @@ namespace Nexus.Core
                                 IsPostConstruct = true
                             });
                         }
-                        if (deconstructAttr != null)
+                        if (deconstructAttr != null && seenDeconstructDefs.Add(baseDef))
                         {
                             var parameters = method.GetParameters();
                             if (parameters.Length != 0)
@@ -352,9 +381,17 @@ namespace Nexus.Core
             {
                 return ClearMeta.GetOrAdd(type, t =>
                 {
-                    var fields = t.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    // Same base-first hierarchy walk as the inject metadata: private
+                    // base-class [Inject] members must also be clearable.
+                    var typeChain = new List<Type>();
+                    for (var cur = t; cur != null && cur != typeof(object); cur = cur.BaseType)
+                        typeChain.Add(cur);
+                    typeChain.Reverse();
+                    const BindingFlags DeclaredFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+
                     var fieldList = new List<FieldInfo>();
-                    foreach (var field in fields)
+                    foreach (var level in typeChain)
+                    foreach (var field in level.GetFields(DeclaredFlags))
                     {
                         // P-fix parity: [OptionalInject]-only members must also be clearable.
                         if ((field.GetCustomAttribute<InjectAttribute>() != null
@@ -363,13 +400,15 @@ namespace Nexus.Core
                             fieldList.Add(field);
                     }
 
-                    var properties = t.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                     var propList = new List<PropertyInfo>();
-                    foreach (var prop in properties)
+                    var seenPropNames = new HashSet<string>();
+                    foreach (var level in typeChain)
+                    foreach (var prop in level.GetProperties(DeclaredFlags))
                     {
                         if ((prop.GetCustomAttribute<InjectAttribute>() != null
                                 || prop.GetCustomAttribute<OptionalInjectAttribute>() != null)
-                            && prop.CanWrite && !prop.PropertyType.IsValueType)
+                            && prop.CanWrite && !prop.PropertyType.IsValueType
+                            && seenPropNames.Add(prop.Name))
                             propList.Add(prop);
                     }
 
@@ -430,17 +469,16 @@ namespace Nexus.Core
                         throw new InvalidOperationException(
                             $"Strict injection failed: constructor parameter {i} of type '{paramTypes[i].FullName}' on '{type.FullName}' is not registered.");
                     }
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                    // R2026-H3 fix: non-strict mode previously passed null ctor args silently —
+                    // Non-strict mode previously passed null ctor args silently —
                     // a ctor that dereferences the dependency surfaced a bare NRE with no hint
-                    // of WHICH binding was missing. Warn once per (type, parameter) instead.
+                    // of WHICH binding was missing. Logged in ALL build targets: a missing
+                    // binding is a configuration error and must never be silent in production.
                     if (args[i] == null && !_di.StrictInjection)
                     {
                         NexusRuntime.Logger?.LogWarning(
                             $"[Nexus] Constructor parameter {i} ('{paramTypes[i].FullName}') on '{type.FullName}' is not registered; passing null. " +
                             "Enable StrictInjection or mark the dependency [OptionalInject] to make this explicit.");
                     }
-#endif
                 }
 
                 try { return meta.Constructor.Invoke(args); }
@@ -526,7 +564,7 @@ namespace Nexus.Core
                         var existingLazy = f.Getter != null ? f.Getter(instance) : f.Field.GetValue(instance);
                         if (existingLazy == null)
                         {
-                            // P1 fix: forward the [Inject(Name=...)] discriminator so named
+                            // Forward the [Inject(Name=...)] discriminator so named
                             // bindings are honored on first access instead of being dropped.
                             // Thread-safe: create lazy instance, then atomically set if still null.
                             var lazyInstance = Activator.CreateInstance(f.Type,
@@ -563,9 +601,9 @@ namespace Nexus.Core
                     else
                     {
                         _di.RecordPendingField(instance, f);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                        // Logged in ALL build targets — a silently-null [Inject] field in a
+                        // production build surfaces as an unexplained NRE far from the cause.
                         NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{f.Type.FullName}' for field '{type.FullName}.{f.Field.Name}' is not registered; the field was left null.");
-#endif
                     }
                 }
             }
@@ -615,9 +653,7 @@ namespace Nexus.Core
                     else
                     {
                         _di.RecordPendingProperty(instance, p);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
                         NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{p.Type.FullName}' for property '{type.FullName}.{p.Property.Name}' is not registered; the property was left null.");
-#endif
                     }
                 }
             }
@@ -628,7 +664,7 @@ namespace Nexus.Core
                 {
                     var m = meta.Methods[i];
                     var args = new object[m.ParameterTypes.Length];
-                    // BUG-2 fix: track whether all required parameters were resolved.
+                    // Track whether all required parameters were resolved.
                     // If any required parameter is missing, skip the invocation entirely and
                     // record it as pending — invoking with null could cause a
                     // NullReferenceException inside user code with no clear error origin.
@@ -636,7 +672,7 @@ namespace Nexus.Core
 
                     for (int j = 0; j < m.ParameterTypes.Length; j++)
                     {
-                        // D1 fix: resolve through the named binding when [Inject(Name=...)]
+                        // Resolve through the named binding when [Inject(Name=...)]
                         // is present on the parameter, mirroring field/property/ctor behavior.
                         string paramName = m.ParameterNames != null ? m.ParameterNames[j] : null;
                         args[j] = string.IsNullOrEmpty(paramName)
@@ -657,9 +693,7 @@ namespace Nexus.Core
                             {
                                 _di.RecordPendingMethodParam(instance, m, j);
                                 allRequiredResolved = false;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
                                 NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{m.ParameterTypes[j].FullName}' for method '{type.FullName}.{m.Method.Name}' is not registered; method invocation deferred.");
-#endif
                             }
                         }
                     }
@@ -715,45 +749,86 @@ namespace Nexus.Core
         }
 
         // ─── Public API: Bind ───
+
+        /// <summary>
+        /// Single write point for the default binding map: a rebind that silently
+        /// replaces an existing registration is almost always a configuration mistake,
+        /// so it is logged (the container stays last-write-wins for compatibility).
+        /// </summary>
+        private void SetBinding(Type key, Binding binding)
+        {
+            if (_bindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
+            {
+                // Re-registering the exact same shape with no live instance is a benign
+                // idempotent pattern (e.g. a command type bound once per handled signal);
+                // only a materially different rebind — or one that discards an already
+                // resolved singleton — indicates a probable configuration mistake.
+                bool equivalent = existing.ConcreteType == binding.ConcreteType
+                    && existing.IsSingleton == binding.IsSingleton
+                    && existing.Factory == binding.Factory
+                    && existing.Instance == null && binding.Instance == null;
+                if (!equivalent)
+                {
+                    NexusRuntime.Logger?.LogWarning(
+                        $"[Nexus] Rebinding '{key.FullName}': an existing registration is being replaced." +
+                        (existing.Instance != null
+                            ? " The previous binding already produced a singleton instance; it stays alive until the container is disposed."
+                            : string.Empty));
+                }
+            }
+            _bindings[key] = binding;
+        }
+
+        /// <summary>Named-map counterpart of <see cref="SetBinding"/>.</summary>
+        private void SetNamedBinding((Type Type, string Name) key, Binding binding)
+        {
+            if (_namedBindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
+            {
+                NexusRuntime.Logger?.LogWarning(
+                    $"[Nexus] Rebinding '{key.Type.FullName}' (name '{key.Name}'): an existing registration is being replaced.");
+            }
+            _namedBindings[key] = binding;
+        }
+
         public void Bind<TInterface, TImplementation>(bool isSingleton = true) where TImplementation : class, TInterface
         {
-            _bindings[typeof(TInterface)] = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
+            SetBinding(typeof(TInterface), new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton });
         }
 
         public void Bind<T>(bool isSingleton = true) where T : class
         {
-            _bindings[typeof(T)] = new Binding { ConcreteType = typeof(T), IsSingleton = isSingleton };
+            SetBinding(typeof(T), new Binding { ConcreteType = typeof(T), IsSingleton = isSingleton });
         }
 
         public void Bind(Type type, bool isSingleton = true)
         {
-            _bindings[type] = new Binding { ConcreteType = type, IsSingleton = isSingleton };
+            SetBinding(type, new Binding { ConcreteType = type, IsSingleton = isSingleton });
         }
 
         public void Bind(Type interfaceType, Type implementationType, bool isSingleton = true)
         {
-            _bindings[interfaceType] = new Binding { ConcreteType = implementationType, IsSingleton = isSingleton };
+            SetBinding(interfaceType, new Binding { ConcreteType = implementationType, IsSingleton = isSingleton });
         }
 
         /// <summary>Binds a named implementation (Strange-style). Resolves only against [Inject(Name=...)].</summary>
         public void Bind<TInterface, TImplementation>(string name, bool isSingleton = true) where TImplementation : class, TInterface
         {
             if (string.IsNullOrEmpty(name)) { Bind<TInterface, TImplementation>(isSingleton); return; }
-            _namedBindings[(typeof(TInterface), name)] = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
+            SetNamedBinding((typeof(TInterface), name), new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton });
         }
 
         /// <summary>Binds a named self-referencing type.</summary>
         public void Bind<T>(string name, bool isSingleton = true) where T : class
         {
             if (string.IsNullOrEmpty(name)) { Bind<T>(isSingleton); return; }
-            _namedBindings[(typeof(T), name)] = new Binding { ConcreteType = typeof(T), IsSingleton = isSingleton };
+            SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), IsSingleton = isSingleton });
         }
 
         /// <summary>Binds a named type (reflection-form).</summary>
         public void Bind(Type type, string name, bool isSingleton = true)
         {
             if (string.IsNullOrEmpty(name)) { Bind(type, isSingleton); return; }
-            _namedBindings[(type, name)] = new Binding { ConcreteType = type, IsSingleton = isSingleton };
+            SetNamedBinding((type, name), new Binding { ConcreteType = type, IsSingleton = isSingleton });
         }
 
         /// <summary>
@@ -767,8 +842,9 @@ namespace Nexus.Core
             where TImplementation : class, TInterface1, TInterface2
         {
             var shared = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
-            _bindings[typeof(TInterface1)] = shared;
-            _bindings[typeof(TInterface2)] = shared;
+            SetBinding(typeof(TInterface1), shared);
+            SetBinding(typeof(TInterface2), shared);
+            SetBinding(typeof(TImplementation), shared);
         }
 
         /// <summary>Three-interface polymorphic binding (see the two-interface overload).</summary>
@@ -776,10 +852,10 @@ namespace Nexus.Core
             where TImplementation : class, TInterface1, TInterface2, TInterface3
         {
             var shared = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = isSingleton };
-            _bindings[typeof(TInterface1)] = shared;
-            _bindings[typeof(TInterface2)] = shared;
-            _bindings[typeof(TInterface3)] = shared;
-            _bindings[typeof(TImplementation)] = shared;
+            SetBinding(typeof(TInterface1), shared);
+            SetBinding(typeof(TInterface2), shared);
+            SetBinding(typeof(TInterface3), shared);
+            SetBinding(typeof(TImplementation), shared);
         }
 
         /// <summary>Reflection-form polymorphic binding sharing ONE Binding instance across all interfaces and concrete type.</summary>
@@ -790,10 +866,10 @@ namespace Nexus.Core
             {
                 for (int i = 0; i < interfaceTypes.Length; i++)
                 {
-                    _bindings[interfaceTypes[i]] = shared;
+                    SetBinding(interfaceTypes[i], shared);
                 }
             }
-            _bindings[concreteType] = shared;
+            SetBinding(concreteType, shared);
         }
 
         // ─── Cross-Boundary Binding (StrangeIoC-style cross-context injection) ───
@@ -806,14 +882,14 @@ namespace Nexus.Core
         public void BindCrossBoundary<TInterface, TImplementation>()
             where TImplementation : class, TInterface
         {
-            _bindings[typeof(TInterface)] = new Binding { ConcreteType = typeof(TImplementation), IsSingleton = true };
+            SetBinding(typeof(TInterface), new Binding { ConcreteType = typeof(TImplementation), IsSingleton = true });
             _crossBoundaryTypes[typeof(TInterface)] = true;
         }
 
         /// <summary>Binds a self-referencing type as cross-boundary.</summary>
         public void BindCrossBoundary<T>() where T : class
         {
-            _bindings[typeof(T)] = new Binding { ConcreteType = typeof(T), IsSingleton = true };
+            SetBinding(typeof(T), new Binding { ConcreteType = typeof(T), IsSingleton = true });
             _crossBoundaryTypes[typeof(T)] = true;
         }
 
@@ -855,7 +931,7 @@ namespace Nexus.Core
 
         public void BindInstance<T>(T instance, bool disposeWithContainer) where T : class
         {
-            _bindings[typeof(T)] = new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true };
+            SetBinding(typeof(T), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
             if (disposeWithContainer)
             {
                 lock (_singletonLock)
@@ -867,21 +943,21 @@ namespace Nexus.Core
         public void BindInstance<T>(string name, T instance) where T : class
         {
             if (string.IsNullOrEmpty(name)) { BindInstance(instance); return; }
-            _namedBindings[(typeof(T), name)] = new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true };
+            SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
             lock (_singletonLock)
                 _resolvedSingletons.Add(instance);
         }
 
         public void BindFactory<T>(Func<T> factory) where T : class
         {
-            _bindings[typeof(T)] = new Binding { ConcreteType = typeof(T), Factory = factory, IsSingleton = false };
+            SetBinding(typeof(T), new Binding { ConcreteType = typeof(T), Factory = factory, IsSingleton = false });
         }
 
         /// <summary>Binds a named factory (a fresh instance per resolve).</summary>
         public void BindFactory<T>(string name, Func<T> factory) where T : class
         {
             if (string.IsNullOrEmpty(name)) { BindFactory(factory); return; }
-            _namedBindings[(typeof(T), name)] = new Binding { ConcreteType = typeof(T), Factory = factory, IsSingleton = false };
+            SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), Factory = factory, IsSingleton = false });
         }
 
         // ─── Public API: Resolve ───
@@ -904,7 +980,7 @@ namespace Nexus.Core
         {
             if (string.IsNullOrEmpty(name)) return Resolve(type);
             if (_namedBindings.TryGetValue((type, name), out var named))
-                return ResolveBinding(type, named);
+                return ResolveBinding(type, named, name);
             if (_parent != null && _parent.IsRegistered(type, name))
                 return _parent.Resolve(type, name);
             throw new InvalidOperationException($"Dependency of type {type.FullName} named '{name}' is not registered.");
@@ -938,19 +1014,19 @@ namespace Nexus.Core
         /// Shared resolve core for both default and named bindings: singleton construction
         /// with cross-thread waiting, factory mapping, and transient instantiation.
         /// </summary>
-        private object ResolveBinding(Type type, Binding binding)
+        private object ResolveBinding(Type type, Binding binding, string name = null)
         {
             if (binding.Instance != null) return binding.Instance;
 
-            // T1 fix: cycle detection must also guard factory-produced instances. Previously
+            // Cycle detection must also guard factory-produced instances. Previously
             // the factory check ran BEFORE the resolution-stack push, so a factory that
             // resolved back to its own key (directly or transitively) recursed until
             // StackOverflowException — an uncatchable process crash. Moving the factory
             // call inside the guarded block turns that into a clear, catchable
             // InvalidOperationException naming the offending type.
-            s_resolutionStack ??= new HashSet<Type>();
-            if (!s_resolutionStack.Add(type))
-                throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}. Resolution chain forms a cycle.");
+            s_resolutionStack ??= new HashSet<(Type, string)>();
+            if (!s_resolutionStack.Add((type, name)))
+                throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}{(string.IsNullOrEmpty(name) ? "" : $" (name '{name}')")}. Resolution chain forms a cycle.");
 
             bool addedToConstructing = false;
             ManualResetEventSlim waitHandle = null;
@@ -963,7 +1039,7 @@ namespace Nexus.Core
                     object singletonInstance = binding.Instance;
                     if (singletonInstance != null) return singletonInstance;
 
-                    // B2: same-thread cycles are caught by the thread-local
+                    // Same-thread cycles are caught by the thread-local
                     // s_resolutionStack above, so a failed Add here can only mean
                     // ANOTHER thread is mid-construction of this singleton. Wait for
                     // the builder instead of throwing a spurious "circular dependency"
@@ -976,18 +1052,18 @@ namespace Nexus.Core
                                 throw new ObjectDisposedException(nameof(NexusDI), $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
 
                             if (binding.Instance != null) return binding.Instance;
-                            if (_constructingSingletons.Add(type))
+                            if (_constructingSingletons.Add(binding))
                             {
                                 addedToConstructing = true;
                                 break;
                             }
 
                             // Another thread is constructing this singleton.
-                            // Get or create a wait handle for this type.
-                            if (!_constructionWaitHandles.TryGetValue(type, out waitHandle))
+                            // Get or create a wait handle for this binding.
+                            if (!_constructionWaitHandles.TryGetValue(binding, out waitHandle))
                             {
                                 waitHandle = new ManualResetEventSlim(false);
-                                _constructionWaitHandles[type] = waitHandle;
+                                _constructionWaitHandles[binding] = waitHandle;
                             }
                         }
 
@@ -1016,12 +1092,12 @@ namespace Nexus.Core
                     {
                         lock (_singletonLock)
                         {
-                            _constructingSingletons.Remove(type);
+                            _constructingSingletons.Remove(binding);
                             // Signal all waiting threads that construction is complete.
-                            if (_constructionWaitHandles.TryGetValue(type, out var wh))
+                            if (_constructionWaitHandles.TryGetValue(binding, out var wh))
                             {
                                 wh.Set();
-                                _constructionWaitHandles.Remove(type);
+                                _constructionWaitHandles.Remove(binding);
                             }
                         }
                         addedToConstructing = false;
@@ -1035,16 +1111,16 @@ namespace Nexus.Core
             }
             finally
             {
-                s_resolutionStack.Remove(type);
-                if (addedToConstructing) 
+                s_resolutionStack.Remove((type, name));
+                if (addedToConstructing)
                 {
                     lock (_singletonLock)
                     {
-                        _constructingSingletons.Remove(type);
-                        if (_constructionWaitHandles.TryGetValue(type, out var wh))
+                        _constructingSingletons.Remove(binding);
+                        if (_constructionWaitHandles.TryGetValue(binding, out var wh))
                         {
                             wh.Set();
-                            _constructionWaitHandles.Remove(type);
+                            _constructionWaitHandles.Remove(binding);
                         }
                     }
                 }
@@ -1105,7 +1181,7 @@ namespace Nexus.Core
                     bool methodSucceeded = true;
                     for (int j = 0; j < method.ParameterTypes.Length; j++)
                     {
-                        // D2 fix: only re-resolve the parameters that were MISSING on the
+                        // Only re-resolve the parameters that were MISSING on the
                         // original Inject pass (those in paramIndices). Parameters that were
                         // already resolved must keep their original instance — re-resolving a
                         // transient here would silently swap in a NEW instance, breaking the
@@ -1230,7 +1306,7 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// A8: returns whether the type is bound as a singleton in this container or any
+        /// Returns whether the type is bound as a singleton in this container or any
         /// ancestor. Used by DI validation to detect captive dependencies (a singleton
         /// service capturing a transient dependency).
         /// </summary>
@@ -1244,7 +1320,7 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// A8: returns whether the type is bound via a factory (BindFactory) in this
+        /// Returns whether the type is bound via a factory (BindFactory) in this
         /// container or any ancestor. Factory-managed dependencies are explicitly exempt
         /// from captive-dependency validation.
         /// </summary>
@@ -1373,7 +1449,7 @@ namespace Nexus.Core
 
                     if (instance is IAsyncDisposable asyncDisposable)
                     {
-                        // D3 fix: an IAsyncDisposable that ALSO implements IDisposable is
+                        // An IAsyncDisposable that ALSO implements IDisposable is
                         // disposed synchronously here so the sync Dispose() path (used by
                         // Root.OnDestroy / Context.Dispose) tears it down deterministically
                         // instead of leaking it to a fire-and-forget background task that may
@@ -1386,7 +1462,7 @@ namespace Nexus.Core
                         }
                         else
                         {
-                            // İ3-fix (C2 upgrade): never block the calling thread on async
+                            // Never block the calling thread on async
                             // teardown, but dispose async singletons in ONE ordered background
                             // chain instead of one fire-and-forget task per instance. The old
                             // per-instance `_ =` fired them in parallel with no ordering, so

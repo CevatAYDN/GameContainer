@@ -8,11 +8,20 @@
     <!-- Attributes scanned at runtime -->
     <type fullname="Nexus.Core.SignalHandlerAttribute" preserve="all"/>
     <type fullname="Nexus.Core.CompositeSignalHandlerAttribute" preserve="all"/>
+    <!-- The RegisterCommand pair is scanned by exactly the same assembly walk as the
+         SignalHandler pair above and must be preserved with it. -->
+    <type fullname="Nexus.Core.RegisterCommandAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.RegisterCompositeCommandAttribute" preserve="all"/>
     <type fullname="Nexus.Core.InjectAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.OptionalInjectAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.PostConstructAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.DeconstructAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.ConstructAttribute" preserve="all"/>
     <type fullname="Nexus.Core.MediatorAttribute" preserve="all"/>
     <type fullname="Nexus.Core.CommandTimeoutAttribute" preserve="all"/>
     <type fullname="Nexus.Core.CrossContextAttribute" preserve="all"/>
     <type fullname="Nexus.Core.ContextDependsOnAttribute" preserve="all"/>
+    <type fullname="Nexus.Core.StubServiceAttribute" preserve="all"/>
     
     <!-- Core types instantiated or inspected via reflection -->
     <type fullname="Nexus.Core.Context" preserve="all"/>

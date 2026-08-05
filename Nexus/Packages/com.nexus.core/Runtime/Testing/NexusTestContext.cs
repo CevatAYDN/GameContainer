@@ -311,18 +311,5 @@ namespace Nexus.Core
                 await lifecycle.OnStartAsync(ct);
             }
         }
-
-        private static bool ImplementsGenericInterface(Type type, Type genericInterface)
-        {
-            if (type == null) return false;
-            foreach (var i in type.GetInterfaces())
-            {
-                if (i.IsGenericType && i.GetGenericTypeDefinition() == genericInterface)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
     }
 }

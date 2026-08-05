@@ -5,15 +5,12 @@ using System.Threading.Tasks;
 
 namespace Nexus.Core
 {
-    public interface ISignalBus
+    /// <summary>
+    /// Publish-only view of the signal bus. Depend on this from code that fires signals but
+    /// never subscribes or inspects registrations (commands, services, models).
+    /// </summary>
+    public interface ISignalPublisher
     {
-        /// <summary>
-        /// Enumerates all signal→handler registrations discovered through configuration
-        /// and attribute scanning. Key is the signal type; value is the registered handlers.
-        /// Empty until the owning context has been configured.
-        /// </summary>
-        IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers { get; }
-
         /// <summary>Dispatches immediately on the current thread.</summary>
         void Fire<T>(T signal) where T : struct;
         /// <summary>Dispatches asynchronously and waits for the handler chain.</summary>
@@ -38,14 +35,46 @@ namespace Nexus.Core
         /// when null) and never crash the process.
         /// </summary>
         void FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct;
+    }
 
+    /// <summary>
+    /// Subscribe-only view of the signal bus. Depend on this from observers (mediators,
+    /// views) that never publish.
+    /// </summary>
+    public interface ISignalSubscriber
+    {
         ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct;
         ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct;
+    }
+
+    /// <summary>
+    /// Registration introspection, used by editor tooling, validation and diagnostics.
+    /// Kept apart from the publish/subscribe surfaces because it exposes command-layer
+    /// metadata that ordinary game code should not depend on.
+    /// </summary>
+    public interface ISignalBusIntrospection
+    {
+        /// <summary>
+        /// Enumerates all signal→handler registrations discovered through configuration
+        /// and attribute scanning. Key is the signal type; value is the registered handlers.
+        /// Empty until the owning context has been configured.
+        /// </summary>
+        IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers { get; }
 
         /// <summary>Returns true when at least one command handler is registered for the signal type.</summary>
         bool HasCommandHandler(Type signalType);
         /// <summary>Generic form of <see cref="HasCommandHandler(Type)"/>.</summary>
         bool HasCommandHandler<TSignal>() where TSignal : struct;
+    }
+
+    /// <summary>
+    /// The full signal bus surface. Prefer depending on the narrower
+    /// <see cref="ISignalPublisher"/> / <see cref="ISignalSubscriber"/> roles where possible —
+    /// this composite exists for the bus implementation and for callers that genuinely need
+    /// every capability.
+    /// </summary>
+    public interface ISignalBus : ISignalPublisher, ISignalSubscriber, ISignalBusIntrospection
+    {
     }
 
     public interface ISignalSubscription : IDisposable

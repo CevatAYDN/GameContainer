@@ -13,6 +13,9 @@ namespace Nexus.Core
         /// <summary>Current version of this manifest layout.</summary>
         public override int CurrentVersion => 1;
 
+#if UNITY_EDITOR
+        // Editor-only scaffold/tooling settings: consumed exclusively by the editor wizard
+        // and inspector plugins, so they are compiled out of player builds.
         [Header("Project Scaffold")]
         public string[] DefaultContextNames = new string[] { "Global", "Gameplay", "UI" };
         public bool GenerateSampleSignals = true;
@@ -20,6 +23,7 @@ namespace Nexus.Core
 
         [Header("Editor Tools")]
         public bool EnableInspector = true;
+#endif
 
         protected override void Migrate(int fromVersion)
         {

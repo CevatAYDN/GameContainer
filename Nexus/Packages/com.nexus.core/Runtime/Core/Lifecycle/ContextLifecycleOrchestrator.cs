@@ -12,6 +12,18 @@ namespace Nexus.Core.Lifecycle
     /// </summary>
     public sealed class ContextLifecycleOrchestrator
     {
+        // Bounded, once-per-type diagnostic for instances implementing both the sync and the
+        // async form of a lifecycle contract (both hooks fire — see the call sites).
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, byte> s_bothImplementedWarned = new();
+
+        private static void WarnBothImplemented(Type type, string syncName, string asyncName)
+        {
+            if (!s_bothImplementedWarned.TryAdd(type, 0)) return;
+            NexusRuntime.Logger?.LogWarning(
+                $"[Nexus] '{type.FullName}' implements both {syncName} and {asyncName}; BOTH hooks are invoked ({asyncName} first). " +
+                $"Implement only one unless the two hooks genuinely do different work.");
+        }
+
         public async ValueTask ExecuteLifecyclePhasesAsync(IReadOnlyList<IContextLifecycle> lifecycles, CancellationToken ct)
         {
             if (lifecycles == null || lifecycles.Count == 0) return;
@@ -27,10 +39,11 @@ namespace Nexus.Core.Lifecycle
                     }
                     catch (Exception ex)
                     {
-                        // R2026-H11 fix: route through NexusRuntime.Logger (the framework's
+                        // Route through NexusRuntime.Logger (the framework's
                         // logging abstraction) instead of raw Debug.LogError so log
                         // filtering/sinks stay consistent with the rest of the runtime.
                         NexusRuntime.Logger?.LogError($"[Nexus] Lifecycle OnInitializeAsync exception in {lifecycles[i].GetType().Name}: {ex.Message}");
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
             }
@@ -47,6 +60,7 @@ namespace Nexus.Core.Lifecycle
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogError($"[Nexus] Lifecycle OnStartAsync exception in {lifecycles[i].GetType().Name}: {ex.Message}");
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
             }
@@ -60,15 +74,20 @@ namespace Nexus.Core.Lifecycle
                 if (ct.IsCancellationRequested) break;
                 if (inst == null) continue;
 
-                // A type may implement BOTH IAsyncStartable and IStartable (unusual but valid).
-                // Prefer the async path; only fall through to sync if async is absent so the
-                // startup sequence is not executed twice for the same instance.
+                // Both hooks run when a type implements both interfaces: they are separate
+                // contracts (Start for immediate work, StartAsync for awaited work), and the
+                // async hook is awaited before the sync one so ordering stays deterministic.
+                // Implementing both is usually unintended, so it is reported once per type —
+                // splitting the work across two hooks that both fire is easy to misread as
+                // "only the async one runs".
                 if (inst is IAsyncStartable asyncStartable)
                 {
+                    if (inst is IStartable) WarnBothImplemented(inst.GetType(), nameof(IStartable), nameof(IAsyncStartable));
                     try { await asyncStartable.StartAsync(ct); }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogError($"[Nexus] Exception in IAsyncStartable.StartAsync ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
                 if (inst is IStartable startable)
@@ -77,6 +96,7 @@ namespace Nexus.Core.Lifecycle
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogError($"[Nexus] Exception in IStartable.Start ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
             }
@@ -91,12 +111,16 @@ namespace Nexus.Core.Lifecycle
                 var inst = list[i];
                 if (inst == null) continue;
 
+                // Mirrors the startable path: both hooks run, async first, and implementing
+                // both is reported once per type.
                 if (inst is IAsyncStoppable asyncStoppable)
                 {
+                    if (inst is IStoppable) WarnBothImplemented(inst.GetType(), nameof(IStoppable), nameof(IAsyncStoppable));
                     try { await asyncStoppable.StopAsync(ct); }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogError($"[Nexus] Exception in IAsyncStoppable.StopAsync ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
                 if (inst is IStoppable stoppable)
@@ -105,6 +129,7 @@ namespace Nexus.Core.Lifecycle
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
             }
@@ -119,31 +144,38 @@ namespace Nexus.Core.Lifecycle
                 var inst = list[i];
                 if (inst == null) continue;
 
-                // T3 fix: also check IAsyncStoppable. The sync path cannot await, so we
-                // fire-and-forget the async stop via SafeAsyncRunner pattern. This ensures
-                // services implementing ONLY IAsyncStoppable (not IStoppable) still get
-                // their cleanup called on synchronous Dispose (e.g. Root.OnDestroy).
-                if (inst is IAsyncStoppable asyncStoppable)
-                {
-                    try
-                    {
-                        // Fire-and-forget the async stop — best-effort cleanup.
-                        // The CancellationToken is already cancelled at this point (Context.Dispose
-                        // cancels _cts before calling this), so the async stop will see cancellation
-                        // and should complete promptly.
-                        _ = StopAsyncInternal(asyncStoppable);
-                    }
-                    catch (Exception ex)
-                    {
-                        NexusRuntime.Logger?.LogError($"[Nexus] Exception initiating IAsyncStoppable.StopAsync fire-and-forget ({inst.GetType().FullName}): {ex.Message}");
-                    }
-                }
+                // A type may implement BOTH interfaces. The sync path prefers the synchronous
+                // Stop (deterministic, completes before this method returns) and only falls
+                // back to the fire-and-forget async stop when no sync Stop exists — so the
+                // shutdown sequence never runs twice for the same instance.
                 if (inst is IStoppable stoppable)
                 {
                     try { stoppable.Stop(); }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogException(ex);
+                    }
+                }
+                // Also check IAsyncStoppable. The sync path cannot await, so we
+                // fire-and-forget the async stop via SafeAsyncRunner pattern. This ensures
+                // services implementing ONLY IAsyncStoppable (not IStoppable) still get
+                // their cleanup called on synchronous Dispose (e.g. Root.OnDestroy).
+                else if (inst is IAsyncStoppable asyncStoppable)
+                {
+                    try
+                    {
+                        // Fire-and-forget the async stop — best-effort cleanup.
+                        // StopAsyncInternal supplies its own fresh 5-second timeout token
+                        // (independent of the context's already-cancelled _cts), giving the
+                        // stop a bounded grace window to finish real cleanup work instead of
+                        // observing immediate cancellation.
+                        _ = StopAsyncInternal(asyncStoppable);
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogError($"[Nexus] Exception initiating IAsyncStoppable.StopAsync fire-and-forget ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogException(ex);
                     }
                 }
             }
@@ -155,7 +187,7 @@ namespace Nexus.Core.Lifecycle
             {
                 // Use a short timeout so fire-and-forget cleanup doesn't hang indefinitely.
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-                // İ3-fix: ConfigureAwait(false) prevents the continuation from hopping back to
+                // ConfigureAwait(false) prevents the continuation from hopping back to
                 // the (already torn-down) Unity SynchronizationContext during context dispose.
                 await stoppable.StopAsync(cts.Token).ConfigureAwait(false);
             }
@@ -163,6 +195,7 @@ namespace Nexus.Core.Lifecycle
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogError($"[Nexus] Fire-and-forget IAsyncStoppable.StopAsync failed: {ex.Message}");
+                NexusRuntime.Logger?.LogException(ex);
             }
         }
     }

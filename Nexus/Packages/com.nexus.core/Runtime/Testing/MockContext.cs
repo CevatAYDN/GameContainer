@@ -19,7 +19,19 @@ namespace Nexus.Core
 
         public void RegisterView(IView view) { }
         public void UnregisterView(IView view) { }
-        public T Resolve<T>() where T : class => null;
+
+        /// <summary>
+        /// Resolves via the assigned <see cref="Container"/>. Per the <see cref="IContext"/>
+        /// contract, Resolve throws when the type cannot be resolved — use
+        /// <see cref="TryResolve{T}()"/> for the null-returning variant.
+        /// </summary>
+        public T Resolve<T>() where T : class
+        {
+            if (Container != null) return Container.Resolve<T>();
+            throw new InvalidOperationException(
+                $"MockContext has no Container assigned — cannot resolve '{typeof(T).Name}'. " +
+                "Assign a Container with the needed registrations, or use TryResolve for an optional lookup.");
+        }
         public T TryResolve<T>() where T : class => null;
         public T TryResolve<T>(string name) where T : class => null;
         public T ResolveCrossBoundary<T>() where T : class => null;

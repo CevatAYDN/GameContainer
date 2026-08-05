@@ -197,7 +197,7 @@ namespace Nexus.Core.Services
             }
 
             // No adapter bound — fall back gracefully instead of throwing.
-            // FIX P0.2: previously this threw InvalidOperationException in release builds,
+            // Previously this threw InvalidOperationException in release builds,
             // crashing the app when the player tapped "Remove Ads" before the platform
             // adapter had finished initialising (cold start, missing network entitlement, etc.).
             var logger = NexusRuntime.Logger;
@@ -224,7 +224,7 @@ namespace Nexus.Core.Services
             }
             onComplete?.Invoke(true, productId);
 #else
-            // FIX P0.2 (release): never throw. Surface a localised, actionable failure
+            // (release) Never throw. Surface a localised, actionable failure
             // through the existing callback contract so the caller can display a
             // "Store temporarily unavailable" toast and queue the purchase intent for retry.
             try
@@ -248,7 +248,7 @@ namespace Nexus.Core.Services
                 return;
             }
 
-            // FIX P0.2 (mirror): same graceful failure for restore flow.
+            // (mirror) Same graceful failure for restore flow.
             var logger = NexusRuntime.Logger;
             if (logger != null)
             {

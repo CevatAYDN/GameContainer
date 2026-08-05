@@ -31,8 +31,15 @@ namespace Nexus.Core
     {
         /// <summary>The bound view instance. Set after <see cref="Bind"/> is called.</summary>
         protected TView View { get; private set; }
-        /// <summary>The signal bus for subscribing to signals.</summary>
-        [Inject] public ISignalBus SignalBus { get; set; }
+        /// <summary>
+        /// The signal bus for subscribing to signals. Readable everywhere, but only this class
+        /// may assign it: a publicly writable setter let any caller swap the bus of a live
+        /// mediator out from under its existing subscriptions. Injection is unaffected — the DI
+        /// metadata scan accepts a non-public setter (PropertyInfo.CanWrite is true) and both
+        /// injection paths reach it (CompiledAccessorEmitter uses prop.GetSetMethod(true), the
+        /// reflection fallback uses PropertyInfo.SetValue).
+        /// </summary>
+        [Inject] public ISignalBus SignalBus { get; private set; }
         
         private readonly List<ISignalSubscription> _subscriptions = new();
 
@@ -81,11 +88,7 @@ namespace Nexus.Core
         {
             if (property == null) throw new ArgumentNullException(nameof(property));
             if (handler == null) throw new ArgumentNullException(nameof(handler));
-
-            property.OnChanged(handler);
-            var sub = new ObservableSubscription<T>(property, handler);
-            _subscriptions.Add(sub);
-            return sub;
+            return Track<T>(property.OnChanged, property.RemoveOnChanged, handler);
         }
 
         /// <summary>
@@ -98,130 +101,81 @@ namespace Nexus.Core
         {
             if (property == null) throw new ArgumentNullException(nameof(property));
             if (handler == null) throw new ArgumentNullException(nameof(handler));
-            property.OnChanged(handler);
-            var sub = new SecureObservableIntSubscription(property, handler);
-            _subscriptions.Add(sub);
-            return sub;
+            return Track<int>(property.OnChanged, property.RemoveOnChanged, handler);
         }
 
         protected IDisposable TrackObservable(SecureObservableLong property, Action<long, long> handler)
         {
             if (property == null) throw new ArgumentNullException(nameof(property));
             if (handler == null) throw new ArgumentNullException(nameof(handler));
-            property.OnChanged(handler);
-            var sub = new SecureObservableLongSubscription(property, handler);
-            _subscriptions.Add(sub);
-            return sub;
+            return Track<long>(property.OnChanged, property.RemoveOnChanged, handler);
         }
 
         protected IDisposable TrackObservable(SecureObservableFloat property, Action<float, float> handler)
         {
             if (property == null) throw new ArgumentNullException(nameof(property));
             if (handler == null) throw new ArgumentNullException(nameof(handler));
-            property.OnChanged(handler);
-            var sub = new SecureObservableFloatSubscription(property, handler);
-            _subscriptions.Add(sub);
-            return sub;
+            return Track<float>(property.OnChanged, property.RemoveOnChanged, handler);
         }
 
         protected IDisposable TrackObservable(SecureObservableString property, Action<string, string> handler)
         {
             if (property == null) throw new ArgumentNullException(nameof(property));
             if (handler == null) throw new ArgumentNullException(nameof(handler));
-            property.OnChanged(handler);
-            var sub = new SecureObservableStringSubscription(property, handler);
-            _subscriptions.Add(sub);
-            return sub;
+            return Track<string>(property.OnChanged, property.RemoveOnChanged, handler);
         }
 
         protected IDisposable TrackObservable(SecureObservableBigDouble property, Action<BigDouble, BigDouble> handler)
         {
             if (property == null) throw new ArgumentNullException(nameof(property));
             if (handler == null) throw new ArgumentNullException(nameof(handler));
-            property.OnChanged(handler);
-            var sub = new SecureObservableBigDoubleSubscription(property, handler);
+            return Track<BigDouble>(property.OnChanged, property.RemoveOnChanged, handler);
+        }
+
+        /// <summary>
+        /// Shared subscribe-and-track step behind every TrackObservable overload. The observable
+        /// types share no common interface, so the subscribe/unsubscribe pair is passed in as
+        /// method groups — that unifies the SecureObservable family AND
+        /// <see cref="ObservableProperty{T}"/> without requiring a base type on either.
+        /// </summary>
+        private IDisposable Track<T>(Action<Action<T, T>> subscribe, Action<Action<T, T>> unsubscribe, Action<T, T> handler)
+        {
+            subscribe(handler);
+            var sub = new ObservableSubscription<T>(unsubscribe, handler);
             _subscriptions.Add(sub);
             return sub;
         }
 
         /// <summary>
-        /// Wraps an <see cref="ObservableProperty{T}"/> subscription as an <see cref="ISignalSubscription"/>.
-        /// Note: <see cref="IsActive"/> checks property attachment (differs from SignalBus node lifetime).
+        /// Wraps any observable change subscription as an <see cref="ISignalSubscription"/>.
+        /// Only the unsubscribe callback is needed, so one generic wrapper covers every
+        /// observable flavour (this replaced five copy-pasted per-type wrappers).
+        /// Note: <see cref="IsActive"/> reflects whether the subscription is still attached
+        /// (differs from SignalBus node lifetime).
         /// </summary>
         private sealed class ObservableSubscription<T> : ISignalSubscription
         {
-            private ObservableProperty<T> _property;
+            private Action<Action<T, T>> _unsubscribe;
             private Action<T, T> _handler;
 
-            public bool IsActive => _property != null;
+            public bool IsActive => _unsubscribe != null;
             public CancellationToken Lifetime => CancellationToken.None;
 
-            public ObservableSubscription(ObservableProperty<T> property, Action<T, T> handler)
+            public ObservableSubscription(Action<Action<T, T>> unsubscribe, Action<T, T> handler)
             {
-                _property = property;
+                _unsubscribe = unsubscribe;
                 _handler = handler;
             }
 
             public void Dispose()
             {
-                if (_property != null && _handler != null)
+                if (_unsubscribe != null && _handler != null)
                 {
-                    _property.RemoveOnChanged(_handler);
-                    _property = null;
+                    _unsubscribe(_handler);
+                    _unsubscribe = null;
                     _handler = null;
                 }
             }
-        }
-
-        // SecureObservable subscription wrappers
-        private sealed class SecureObservableIntSubscription : ISignalSubscription
-        {
-            private SecureObservableInt _prop;
-            private Action<int, int> _handler;
-            public bool IsActive => _prop != null;
-            public CancellationToken Lifetime => CancellationToken.None;
-            public SecureObservableIntSubscription(SecureObservableInt prop, Action<int, int> handler) { _prop = prop; _handler = handler; }
-            public void Dispose() { if (_prop != null && _handler != null) { _prop.RemoveOnChanged(_handler); _prop = null; _handler = null; } }
-        }
-
-        private sealed class SecureObservableLongSubscription : ISignalSubscription
-        {
-            private SecureObservableLong _prop;
-            private Action<long, long> _handler;
-            public bool IsActive => _prop != null;
-            public CancellationToken Lifetime => CancellationToken.None;
-            public SecureObservableLongSubscription(SecureObservableLong prop, Action<long, long> handler) { _prop = prop; _handler = handler; }
-            public void Dispose() { if (_prop != null && _handler != null) { _prop.RemoveOnChanged(_handler); _prop = null; _handler = null; } }
-        }
-
-        private sealed class SecureObservableFloatSubscription : ISignalSubscription
-        {
-            private SecureObservableFloat _prop;
-            private Action<float, float> _handler;
-            public bool IsActive => _prop != null;
-            public CancellationToken Lifetime => CancellationToken.None;
-            public SecureObservableFloatSubscription(SecureObservableFloat prop, Action<float, float> handler) { _prop = prop; _handler = handler; }
-            public void Dispose() { if (_prop != null && _handler != null) { _prop.RemoveOnChanged(_handler); _prop = null; _handler = null; } }
-        }
-
-        private sealed class SecureObservableStringSubscription : ISignalSubscription
-        {
-            private SecureObservableString _prop;
-            private Action<string, string> _handler;
-            public bool IsActive => _prop != null;
-            public CancellationToken Lifetime => CancellationToken.None;
-            public SecureObservableStringSubscription(SecureObservableString prop, Action<string, string> handler) { _prop = prop; _handler = handler; }
-            public void Dispose() { if (_prop != null && _handler != null) { _prop.RemoveOnChanged(_handler); _prop = null; _handler = null; } }
-        }
-
-        private sealed class SecureObservableBigDoubleSubscription : ISignalSubscription
-        {
-            private SecureObservableBigDouble _prop;
-            private Action<BigDouble, BigDouble> _handler;
-            public bool IsActive => _prop != null;
-            public CancellationToken Lifetime => CancellationToken.None;
-            public SecureObservableBigDoubleSubscription(SecureObservableBigDouble prop, Action<BigDouble, BigDouble> handler) { _prop = prop; _handler = handler; }
-            public void Dispose() { if (_prop != null && _handler != null) { _prop.RemoveOnChanged(_handler); _prop = null; _handler = null; } }
         }
 
         /// <summary>Override to perform custom logic when the mediator is bound to a view.</summary>

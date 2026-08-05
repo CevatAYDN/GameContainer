@@ -6,7 +6,8 @@
         "UnityEditor.TestRunner",
         "com.nexus.core",
         "com.nexus.core.editor",
-        "com.nexus.core.dots"
+        "com.nexus.core.dots",
+        "com.nexus.core.testing"
     ],
     "includePlatforms": [
         "Editor"

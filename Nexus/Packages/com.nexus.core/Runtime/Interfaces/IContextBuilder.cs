@@ -10,10 +10,14 @@ namespace Nexus.Core
         ICommandBindingBuilder<TSignal> Once();
     }
 
-    public interface IContextBuilder
+    /// <summary>
+    /// Model registration role. Depend on this (instead of the whole
+    /// <see cref="IContextBuilder"/>) in installers that only register models.
+    /// </summary>
+    public interface IModelBinder
     {
         /// <summary>
-        /// Bind models, services, and commands inside a lifecycle's OnConfigure phase.
+        /// Bind models inside a lifecycle's OnConfigure phase.
         /// Bindings made here are available before initialization begins.
         /// </summary>
         void BindModel<TInterface, TImplementation>() where TImplementation : class, TInterface;
@@ -31,7 +35,13 @@ namespace Nexus.Core
         /// <summary>Binds a self-referencing reactive model as a singleton.</summary>
         void BindReactiveModel<TImplementation>()
             where TImplementation : class, IReactiveModel;
+    }
 
+    /// <summary>
+    /// Service registration role — eager, lazy, and interfaces-and-self service bindings.
+    /// </summary>
+    public interface IServiceBinder
+    {
         /// <summary>
         /// Binds a service interface to its implementation. Services implement <see cref="INexusService"/>
         /// and receive automatic lifecycle management (initialization + disposal).
@@ -64,7 +74,14 @@ namespace Nexus.Core
         /// <summary>Binds a self-referencing lazy service as a singleton.</summary>
         void BindLazyService<TImplementation>()
             where TImplementation : class, INexusService;
+    }
 
+    /// <summary>
+    /// General type registration role: plain, named, instance, polymorphic, cross-boundary
+    /// and convention-scanned bindings, plus the strict-injection switch.
+    /// </summary>
+    public interface ITypeBinder
+    {
         /// <summary>Low-level bind for registering any implementation during OnConfigure.</summary>
         void Bind<TInterface, TImplementation>() where TImplementation : class, TInterface;
         void Bind<T>() where T : class;
@@ -117,7 +134,13 @@ namespace Nexus.Core
         void BindAllClassesMatching(System.Reflection.Assembly assembly, Func<Type, bool> predicate, bool isSingleton = true);
 
         void EnableStrictInjection();
+    }
 
+    /// <summary>
+    /// Command registration role: signal→command wiring, including one-shot and fluent forms.
+    /// </summary>
+    public interface ICommandBinder
+    {
         void BindCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0)
             where TCommand : class where TSignal : struct;
         void BindAsyncCommand<TSignal, TCommand>(ExecutionMode mode = ExecutionMode.Sequential, int priority = 0)
@@ -131,7 +154,26 @@ namespace Nexus.Core
             where TCommand : class where TSignal : struct;
 
         ICommandBindingBuilder<TSignal> BindSignal<TSignal>() where TSignal : struct;
+    }
 
+    /// <summary>
+    /// The configuration surface handed to <see cref="IContextLifecycle.OnConfigure"/>.
+    /// Composed from the narrow registration roles above: depend on
+    /// <see cref="IModelBinder"/>, <see cref="IServiceBinder"/>, <see cref="ITypeBinder"/> or
+    /// <see cref="ICommandBinder"/> in installers that only need one of them.
+    /// </summary>
+    public interface IContextBuilder : IModelBinder, IServiceBinder, ITypeBinder, ICommandBinder
+    {
+        /// <summary>
+        /// Dispatches a signal through the context's bus.
+        /// </summary>
+        /// <remarks>
+        /// Firing is not a registration concern and does not belong on the builder; it exists
+        /// here only for backward compatibility. Resolve <see cref="ISignalPublisher"/> (or
+        /// <see cref="ISignalBus"/>) and fire from a lifecycle's initialize/start phase instead —
+        /// signals fired during OnConfigure reach only handlers registered before that point.
+        /// </remarks>
+        [Obsolete("Fire from a lifecycle's OnInitializeAsync/OnStartAsync via ISignalPublisher instead; a builder should only register bindings.", error: false)]
         void Fire<T>(T signal) where T : struct;
     }
 }

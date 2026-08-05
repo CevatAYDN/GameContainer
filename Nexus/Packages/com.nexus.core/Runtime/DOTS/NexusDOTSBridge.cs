@@ -9,6 +9,24 @@ using Nexus.Core;
 namespace Nexus.DOTS
 {
     /// <summary>
+    /// Captures Unity's main-thread id at startup so <see cref="NativeSignalQueue{T}.Drain"/>
+    /// can verify its caller in ALL build types. The previous check compared against a
+    /// hard-coded id of 1 (not guaranteed by Unity) via UnityEngine.Assertions, which is
+    /// stripped from release builds.
+    /// </summary>
+    internal static class NexusDOTSMainThread
+    {
+        /// <summary>Main-thread id, or -1 when not captured yet (check is skipped then).</summary>
+        internal static int MainThreadId = -1;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void Capture()
+        {
+            MainThreadId = System.Threading.Thread.CurrentThread.ManagedThreadId;
+        }
+    }
+
+    /// <summary>
     /// Thread-safe, lock-free, Job/Burst-compatible queue for queuing unmanaged signals inside Unity Jobs.
     /// Bridges the high-performance Data-Oriented Technology Stack (DOTS) to the observable OOP Signal Bus.
     /// </summary>
@@ -41,10 +59,12 @@ namespace Nexus.DOTS
         {
             if (!_queue.IsCreated) return;
 
-            UnityEngine.Assertions.Assert.IsTrue(
-                System.Threading.Thread.CurrentThread.ManagedThreadId == 1,
-                "[Nexus DOTS] NativeSignalQueue.Drain() must be called from the main thread. Use DOTSSignalBridge.Update() instead."
-            );
+            int mainThreadId = NexusDOTSMainThread.MainThreadId;
+            if (mainThreadId != -1 && System.Threading.Thread.CurrentThread.ManagedThreadId != mainThreadId)
+            {
+                throw new InvalidOperationException(
+                    "[Nexus DOTS] NativeSignalQueue.Drain() must be called from the main thread. Use DOTSSignalBridge.Update() instead.");
+            }
 
             while (_queue.TryDequeue(out T signal))
             {
@@ -85,7 +105,10 @@ namespace Nexus.DOTS
             _isInitialized = true;
         }
 
-        public NativeSignalQueue<T> Queue => _signalQueue;
+        // Internal on purpose: the returned struct is a COPY sharing the same native handle —
+        // disposing the copy would invalidate this bridge's queue. Nothing outside the
+        // package needs it; callers must never Dispose the returned value.
+        internal NativeSignalQueue<T> Queue => _signalQueue;
 
         private void Update()
         {

@@ -4,115 +4,70 @@ using UnityEngine.Scripting;
 namespace Nexus.Core
 {
     /// <summary>
-    /// Obfuscated, Anti-Cheat reactive property wrapper for integer memory protection.
-    /// Uses multi-layer XOR with dual independent keys, integrity canaries, and key rotation
-    /// on every write to prevent GameGuardian / CheatEngine memory scans.
+    /// Obfuscated reactive property wrapper for an int, with tamper DETECTION.
     ///
     /// Storage scheme (lock-guarded):
     ///   _obscuredValue = value ^ (_cryptoKey1 ^ _cryptoKey2)
     ///   _guard = (_cryptoKey1 ^ _cryptoKey2) ^ GUARD_CONSTANT
+    /// plus a redundant copy of the same value under a third, independent key, which is the
+    /// repair source when the primary canary no longer matches.
     ///
-    /// A memory scanner must find ALL THREE fields (key1, key2, guard) to reconstruct
-    /// the real value — single-field searches cannot compute the plaintext.
-    /// Key rotation on every write means freezing the value in RAM is detected on next get.
+    /// What this actually provides:
+    ///   • naive single-field value scans ("find 500, write 999") find nothing, because no
+    ///     field ever holds the plaintext;
+    ///   • keys are rotated on every write, so a value frozen/pinned in RAM stops matching
+    ///     its canary and the freeze attempt is detected on the next access;
+    ///   • a detected mismatch raises <see cref="OnTamperDetected"/> and
+    ///     <see cref="TamperDetected"/> so the game can force server-side re-validation.
     ///
-    /// Thin wrapper: observer dispatch + key generation live in the shared
-    /// <see cref="SecureObserverSet{T}"/> / <see cref="SecureKeyGen"/> core.
+    /// What this is NOT: a security boundary. The keys and the canary live in the SAME object
+    /// next to the obscured value, so any tool that can READ process memory (GameGuardian,
+    /// CheatEngine, a debugger, a dumped heap) can read key1, key2 and guard and compute the
+    /// plaintext — and an edit of the obscured payload that leaves the key trio untouched is
+    /// not detected at all. This is obfuscation plus tamper detection, not encryption: every
+    /// value that matters must still be validated server-side.
+    ///
+    /// Thin wrapper: the whole seal/unseal/canary/repair/dispatch protocol lives in the shared
+    /// <see cref="SecureObservableCore{T}"/> core.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableInt
     {
-        // ── Integrity guard constant (ASCII "NEXU" as hex) ──
-        private const int GuardConst = unchecked((int)0x4E455855);
+        private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 
-        // Dual independent keys: real key = key1 ^ key2.
-        // Stored separately so a memory scan must find BOTH to decrypt.
-        private readonly object _valueLock = new();
-        private int _obscuredValue;
-        private int _cryptoKey1;
-        private int _cryptoKey2;
-        private int _guard; // Integrity canary: (key1 ^ key2 ^ GuardConst)
-
-        private readonly SecureObserverSet<int> _observers = new();
+        private readonly SecureIntCore _core;
 
         /// <summary>
-        /// Raised when memory tampering is detected (canary mismatch).
-        /// The bool parameter is always true. Subscribe to trigger server-side validation.
+        /// Raised when memory tampering is detected (canary mismatch). The argument carries
+        /// the property context — type name, optional debug name and access path.
+        /// Subscribe to trigger server-side validation.
+        /// Static, therefore global: prefer the per-instance <see cref="TamperDetected"/>
+        /// when you only care about one property.
         /// </summary>
         public static event Action<string> OnTamperDetected;
 
-        public SecureObservableInt(int initialValue = 0)
+        public SecureObservableInt(int initialValue = 0, string debugName = null)
         {
-            var (k1, k2) = SecureKeyGen.IntKeyPair();
-            _cryptoKey1 = k1;
-            _cryptoKey2 = k2;
-            int compound = k1 ^ k2;
-            _obscuredValue = initialValue ^ compound;
-            _guard = compound ^ GuardConst;
+            _core = new SecureIntCore(initialValue, debugName, StaticTamperAccessor);
+        }
+
+        /// <summary>Optional diagnostic name supplied at construction; null when not supplied.</summary>
+        public string DebugName => _core.DebugName;
+
+        /// <summary>
+        /// Per-instance tamper notification, raised alongside <see cref="OnTamperDetected"/>.
+        /// Lets consumers observe tampering without subscribing to global static state.
+        /// </summary>
+        public event Action<string> TamperDetected
+        {
+            add => _core.TamperDetected += value;
+            remove => _core.TamperDetected -= value;
         }
 
         public int Value
         {
-            get
-            {
-                lock (_valueLock)
-                {
-                    int compound = _cryptoKey1 ^ _cryptoKey2;
-
-                    // Integrity check: detect memory tampering.
-                    // Canary failed → keys were overwritten by a memory scanner.
-                    // Reset to 0 to deny the cheat value and raise the tamper event
-                    // so the caller can trigger server-side re-validation.
-                    if ((compound ^ GuardConst) != _guard)
-                    {
-                        RaiseTamperDetected("SecureObservableInt");
-                        // Re-initialize with a fresh key pair so subsequent reads are safe.
-                        var (k1, k2) = SecureKeyGen.IntKeyPair();
-                        _cryptoKey1 = k1;
-                        _cryptoKey2 = k2;
-                        int newCompound = k1 ^ k2;
-                        _obscuredValue = 0 ^ newCompound;
-                        _guard = newCompound ^ GuardConst;
-                        return 0;
-                    }
-
-                    return _obscuredValue ^ compound;
-                }
-            }
-            set
-            {
-                int old;
-                lock (_valueLock)
-                {
-                    int oldCompound = _cryptoKey1 ^ _cryptoKey2;
-                    // Also check tamper on write path
-                    if ((oldCompound ^ GuardConst) != _guard)
-                    {
-                        RaiseTamperDetected("SecureObservableInt.set");
-                        var (rk1, rk2) = SecureKeyGen.IntKeyPair();
-                        _cryptoKey1 = rk1;
-                        _cryptoKey2 = rk2;
-                        int resetCompound = rk1 ^ rk2;
-                        _obscuredValue = 0 ^ resetCompound;
-                        _guard = resetCompound ^ GuardConst;
-                        return;
-                    }
-                    old = _obscuredValue ^ oldCompound;
-                    if (old == value) return;
-
-                    // Full key rotation on every write: old keys are discarded,
-                    // new random pair generated. This breaks any memory scan
-                    // that was tracking the previous key pair.
-                    var (k1, k2) = SecureKeyGen.IntKeyPair();
-                    _cryptoKey1 = k1;
-                    _cryptoKey2 = k2;
-                    int newCompound = k1 ^ k2;
-                    _obscuredValue = value ^ newCompound;
-                    _guard = newCompound ^ GuardConst;
-                }
-
-                _observers.Notify(old, value);
-            }
+            get => _core.ReadValue();
+            set => _core.WriteValue(value);
         }
 
         /// <summary>
@@ -120,37 +75,15 @@ namespace Nexus.Core
         /// preserves the integrity canary. Callers may pass validateCanary=false only
         /// when they absolutely control the value source (internal-only scenarios).
         /// </summary>
-        public void SetWithoutNotify(int value, bool validateCanary = true)
-        {
-            lock (_valueLock)
-            {
-                var (k1, k2) = SecureKeyGen.IntKeyPair();
-                _cryptoKey1 = k1;
-                _cryptoKey2 = k2;
-                int newCompound = k1 ^ k2;
-                _obscuredValue = value ^ newCompound;
-                _guard = newCompound ^ GuardConst;
+        public void SetWithoutNotify(int value, bool validateCanary = true) => _core.WriteWithoutNotify(value, validateCanary);
 
-                if (validateCanary)
-                {
-                    // Verify write by recomputing and checking the round-trip.
-                    if ((_obscuredValue ^ newCompound) != value || ((_guard ^ GuardConst) != newCompound))
-                    {
-                        RaiseTamperDetected("SecureObservableInt.SetWithoutNotify.validation");
-                    }
-                }
-            }
-        }
-
-        public void OnChanged(Action<int, int> handler) => _observers.OnChanged(handler);
-        public void RemoveOnChanged(Action<int, int> handler) => _observers.RemoveOnChanged(handler);
-        public void ClearOnChanged() => _observers.Clear();
+        public void OnChanged(Action<int, int> handler) => _core.OnChanged(handler);
+        public void RemoveOnChanged(Action<int, int> handler) => _core.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _core.ClearOnChanged();
 
         public static implicit operator int(SecureObservableInt prop) => prop.Value;
         public override string ToString() => Value.ToString();
 
-        private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
-        
         /// <summary>
         /// Clears static tamper event subscribers. Only allowed from within the declaring type.
         /// Used by NexusRuntime.Reset to avoid leaked handlers across domain reloads.
@@ -159,90 +92,42 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// Obfuscated, Anti-Cheat reactive property wrapper for 64-bit integer memory protection.
-    /// Mirrors <see cref="SecureObservableInt"/> with dual-key XOR + integrity canary.
-    /// </summary>
-    /// <summary>
-    /// Obfuscated, Anti-Cheat reactive property wrapper for 64-bit integer memory protection.
-    /// Mirrors <see cref="SecureObservableInt"/> with dual-key XOR + integrity canary.
+    /// Obfuscated reactive property wrapper for a 64-bit integer, with tamper detection.
+    /// Same dual-key XOR storage, redundant copy, canary and key rotation as
+    /// <see cref="SecureObservableInt"/> — and the same non-guarantees: the keys sit next to
+    /// the obscured value, so this defeats naive value scans and freezes, not an attacker who
+    /// can read process memory. Server-side validation remains required.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableLong
     {
-        private const long GuardConst = 0x4E4558554E455855L; // "NEXUNEXU"
+        private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 
-        private readonly object _valueLock = new();
-        private long _obscuredValue;
-        private long _cryptoKey1;
-        private long _cryptoKey2;
-        private long _guard;
+        private readonly SecureLongCore _core;
 
-        private readonly SecureObserverSet<long> _observers = new();
-
-        /// <summary>Raised when memory tampering is detected.</summary>
+        /// <summary>Raised when memory tampering is detected (canary mismatch). Global —
+        /// prefer <see cref="TamperDetected"/> for a single property.</summary>
         public static event Action<string> OnTamperDetected;
 
-        public SecureObservableLong(long initialValue = 0)
+        public SecureObservableLong(long initialValue = 0, string debugName = null)
         {
-            var (k1, k2) = SecureKeyGen.LongKeyPair();
-            _cryptoKey1 = k1;
-            _cryptoKey2 = k2;
-            long compound = k1 ^ k2;
-            _obscuredValue = initialValue ^ compound;
-            _guard = compound ^ GuardConst;
+            _core = new SecureLongCore(initialValue, debugName, StaticTamperAccessor);
+        }
+
+        /// <summary>Optional diagnostic name supplied at construction; null when not supplied.</summary>
+        public string DebugName => _core.DebugName;
+
+        /// <summary>Per-instance tamper notification, raised alongside <see cref="OnTamperDetected"/>.</summary>
+        public event Action<string> TamperDetected
+        {
+            add => _core.TamperDetected += value;
+            remove => _core.TamperDetected -= value;
         }
 
         public long Value
         {
-            get
-            {
-                lock (_valueLock)
-                {
-                    long compound = _cryptoKey1 ^ _cryptoKey2;
-                    if ((compound ^ GuardConst) != _guard)
-                    {
-                        RaiseTamperDetected("SecureObservableLong");
-                        var (k1, k2) = SecureKeyGen.LongKeyPair();
-                        _cryptoKey1 = k1;
-                        _cryptoKey2 = k2;
-                        long newCompound = k1 ^ k2;
-                        _obscuredValue = 0L ^ newCompound;
-                        _guard = newCompound ^ GuardConst;
-                        return 0L;
-                    }
-                    return _obscuredValue ^ compound;
-                }
-            }
-            set
-            {
-                long old;
-                lock (_valueLock)
-                {
-                    long oldCompound = _cryptoKey1 ^ _cryptoKey2;
-                    if ((oldCompound ^ GuardConst) != _guard)
-                    {
-                        RaiseTamperDetected("SecureObservableLong.set");
-                        var (rk1, rk2) = SecureKeyGen.LongKeyPair();
-                        _cryptoKey1 = rk1;
-                        _cryptoKey2 = rk2;
-                        long resetCompound = rk1 ^ rk2;
-                        _obscuredValue = 0L ^ resetCompound;
-                        _guard = resetCompound ^ GuardConst;
-                        return;
-                    }
-                    old = _obscuredValue ^ oldCompound;
-                    if (old == value) return;
-
-                    var (k1, k2) = SecureKeyGen.LongKeyPair();
-                    _cryptoKey1 = k1;
-                    _cryptoKey2 = k2;
-                    long newCompound = k1 ^ k2;
-                    _obscuredValue = value ^ newCompound;
-                    _guard = newCompound ^ GuardConst;
-                }
-
-                _observers.Notify(old, value);
-            }
+            get => _core.ReadValue();
+            set => _core.WriteValue(value);
         }
 
         /// <summary>
@@ -250,36 +135,15 @@ namespace Nexus.Core
         /// preserves the integrity canary. Callers may pass validateCanary=false only
         /// when they absolutely control the value source (internal-only scenarios).
         /// </summary>
-        public void SetWithoutNotify(long value, bool validateCanary = true)
-        {
-            lock (_valueLock)
-            {
-                var (k1, k2) = SecureKeyGen.LongKeyPair();
-                _cryptoKey1 = k1;
-                _cryptoKey2 = k2;
-                long newCompound = k1 ^ k2;
-                _obscuredValue = value ^ newCompound;
-                _guard = newCompound ^ GuardConst;
+        public void SetWithoutNotify(long value, bool validateCanary = true) => _core.WriteWithoutNotify(value, validateCanary);
 
-                if (validateCanary)
-                {
-                    if ((_obscuredValue ^ newCompound) != value || ((_guard ^ GuardConst) != newCompound))
-                    {
-                        RaiseTamperDetected("SecureObservableLong.SetWithoutNotify.validation");
-                    }
-                }
-            }
-        }
-
-        public void OnChanged(Action<long, long> handler) => _observers.OnChanged(handler);
-        public void RemoveOnChanged(Action<long, long> handler) => _observers.RemoveOnChanged(handler);
-        public void ClearOnChanged() => _observers.Clear();
+        public void OnChanged(Action<long, long> handler) => _core.OnChanged(handler);
+        public void RemoveOnChanged(Action<long, long> handler) => _core.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _core.ClearOnChanged();
 
         public static implicit operator long(SecureObservableLong prop) => prop.Value;
         public override string ToString() => Value.ToString();
 
-        private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
-        
         /// <summary>
         /// Clears static tamper event subscribers for SecureObservableLong.
         /// Used by NexusRuntime.Reset to avoid leaked handlers across domain reloads.
@@ -288,112 +152,43 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// Obfuscated, Anti-Cheat reactive property wrapper for float memory protection.
-    /// XOR-obfuscates the IEEE-754 bit pattern with dual independent keys + integrity canary.
-    /// Mirrors <see cref="SecureObservableInt"/>.
-    ///
-    /// Uses explicit-layout union for zero-allocation float/int reinterpretation.
-    /// Alternative: <c>Unsafe.As&lt;float, int&gt;(ref value)</c> (System.Runtime.CompilerServices.Unsafe)
-    /// requires unsafe context; the union approach is CLS-compliant and allocation-free.
+    /// Obfuscated reactive property wrapper for a float, with tamper detection.
+    /// The IEEE-754 bit pattern is what gets XOR-obscured (dual keys + canary + redundant
+    /// copy), so sign and exponent bits round-trip untouched. Same guarantees — and the same
+    /// non-guarantees — as <see cref="SecureObservableInt"/>: obfuscation against naive value
+    /// scans and freeze attempts plus tamper detection, NOT protection against an attacker who
+    /// can read process memory. Server-side validation remains required.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableFloat
     {
-        private const int GuardConst = unchecked((int)0x4E455855);
+        private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 
-        private readonly object _valueLock = new();
-        private int _obscuredValue; // Float bit-pattern XORed with compound key
-        private int _cryptoKey1;
-        private int _cryptoKey2;
-        private int _guard;
+        private readonly SecureFloatCore _core;
 
-        private readonly SecureObserverSet<float> _observers = new();
-
-        /// <summary>Raised when memory tampering is detected.</summary>
+        /// <summary>Raised when memory tampering is detected (canary mismatch). Global —
+        /// prefer <see cref="TamperDetected"/> for a single property.</summary>
         public static event Action<string> OnTamperDetected;
 
-        // Zero-allocation float ↔ int re-interpretation via explicit-layout union.
-        // CLS-compliant, no unsafe block needed.
-        [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Explicit)]
-        private struct FloatBitsUnion
+        public SecureObservableFloat(float initialValue = 0f, string debugName = null)
         {
-            [System.Runtime.InteropServices.FieldOffset(0)] public float AsFloat;
-            [System.Runtime.InteropServices.FieldOffset(0)] public int AsInt;
+            _core = new SecureFloatCore(initialValue, debugName, StaticTamperAccessor);
         }
 
-        private static int FloatToIntBits(float value)
-        {
-            var u = new FloatBitsUnion { AsFloat = value };
-            return u.AsInt;
-        }
+        /// <summary>Optional diagnostic name supplied at construction; null when not supplied.</summary>
+        public string DebugName => _core.DebugName;
 
-        private static float IntToFloatBits(int bits)
+        /// <summary>Per-instance tamper notification, raised alongside <see cref="OnTamperDetected"/>.</summary>
+        public event Action<string> TamperDetected
         {
-            var u = new FloatBitsUnion { AsInt = bits };
-            return u.AsFloat;
-        }
-
-        public SecureObservableFloat(float initialValue = 0f)
-        {
-            var (k1, k2) = SecureKeyGen.IntKeyPair();
-            _cryptoKey1 = k1;
-            _cryptoKey2 = k2;
-            int compound = k1 ^ k2;
-            _obscuredValue = FloatToIntBits(initialValue) ^ compound;
-            _guard = compound ^ GuardConst;
+            add => _core.TamperDetected += value;
+            remove => _core.TamperDetected -= value;
         }
 
         public float Value
         {
-            get
-            {
-                lock (_valueLock)
-                {
-                    int compound = _cryptoKey1 ^ _cryptoKey2;
-                    if ((compound ^ GuardConst) != _guard)
-                    {
-                        RaiseTamperDetected("SecureObservableFloat");
-                        var (k1, k2) = SecureKeyGen.IntKeyPair();
-                        _cryptoKey1 = k1;
-                        _cryptoKey2 = k2;
-                        int newCompound = k1 ^ k2;
-                        _obscuredValue = FloatToIntBits(0f) ^ newCompound;
-                        _guard = newCompound ^ GuardConst;
-                        return 0f;
-                    }
-                    return IntToFloatBits(_obscuredValue ^ compound);
-                }
-            }
-            set
-            {
-                float old;
-                lock (_valueLock)
-                {
-                    int oldCompound = _cryptoKey1 ^ _cryptoKey2;
-                    if ((oldCompound ^ GuardConst) != _guard)
-                    {
-                        RaiseTamperDetected("SecureObservableFloat.set");
-                        var (rk1, rk2) = SecureKeyGen.IntKeyPair();
-                        _cryptoKey1 = rk1;
-                        _cryptoKey2 = rk2;
-                        int resetCompound = rk1 ^ rk2;
-                        _obscuredValue = FloatToIntBits(0f) ^ resetCompound;
-                        _guard = resetCompound ^ GuardConst;
-                        return;
-                    }
-                    old = IntToFloatBits(_obscuredValue ^ oldCompound);
-                    if (old == value) return;
-
-                    var (k1, k2) = SecureKeyGen.IntKeyPair();
-                    _cryptoKey1 = k1;
-                    _cryptoKey2 = k2;
-                    int newCompound = k1 ^ k2;
-                    _obscuredValue = FloatToIntBits(value) ^ newCompound;
-                    _guard = newCompound ^ GuardConst;
-                }
-
-                _observers.Notify(old, value);
-            }
+            get => _core.ReadValue();
+            set => _core.WriteValue(value);
         }
 
         /// <summary>
@@ -401,36 +196,15 @@ namespace Nexus.Core
         /// preserves the integrity canary. Callers may pass validateCanary=false only
         /// when they absolutely control the value source (internal-only scenarios).
         /// </summary>
-        public void SetWithoutNotify(float value, bool validateCanary = true)
-        {
-            lock (_valueLock)
-            {
-                var (k1, k2) = SecureKeyGen.IntKeyPair();
-                _cryptoKey1 = k1;
-                _cryptoKey2 = k2;
-                int newCompound = k1 ^ k2;
-                _obscuredValue = FloatToIntBits(value) ^ newCompound;
-                _guard = newCompound ^ GuardConst;
+        public void SetWithoutNotify(float value, bool validateCanary = true) => _core.WriteWithoutNotify(value, validateCanary);
 
-                if (validateCanary)
-                {
-                    if ((IntToFloatBits(_obscuredValue ^ newCompound) != value) || ((_guard ^ GuardConst) != newCompound))
-                    {
-                        RaiseTamperDetected("SecureObservableFloat.SetWithoutNotify.validation");
-                    }
-                }
-            }
-        }
-
-        public void OnChanged(Action<float, float> handler) => _observers.OnChanged(handler);
-        public void RemoveOnChanged(Action<float, float> handler) => _observers.RemoveOnChanged(handler);
-        public void ClearOnChanged() => _observers.Clear();
+        public void OnChanged(Action<float, float> handler) => _core.OnChanged(handler);
+        public void RemoveOnChanged(Action<float, float> handler) => _core.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _core.ClearOnChanged();
 
         public static implicit operator float(SecureObservableFloat prop) => prop.Value;
         public override string ToString() => Value.ToString();
 
-        private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
-        
         /// <summary>
         /// Clears static tamper event subscribers for SecureObservableFloat.
         /// Used by NexusRuntime.Reset to avoid leaked handlers across domain reloads.
@@ -439,9 +213,12 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// Obfuscated, Anti-Cheat reactive property wrapper for string memory protection.
-    /// Stores the string XOR-masked per-character using a dual-key compound derived key,
-    /// with integrity canary. Mirrors <see cref="SecureObservableInt"/> for strings.
+    /// Obfuscated reactive property wrapper for a string, with tamper detection.
+    /// The string is stored XOR-masked per UTF-16 code unit under a dual-key compound key,
+    /// with an integrity canary and a redundant copy under a third key. Same guarantees — and
+    /// the same non-guarantees — as <see cref="SecureObservableInt"/>: it defeats naive value
+    /// scans and freeze attempts and detects canary tampering, but the keys live next to the
+    /// masked buffer, so it is not a security boundary. Server-side validation remains required.
     ///
     /// NOTE: reading <see cref="Value"/> reconstructs the string — allocation is inherent
     /// to strings, so this is NOT 0-GC (acceptable for low-frequency data).
@@ -449,106 +226,33 @@ namespace Nexus.Core
     [Preserve]
     public sealed class SecureObservableString
     {
-        private const int GuardConst = unchecked((int)0x4E455855);
+        private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 
-        private readonly object _valueLock = new();
-        private char[] _obscuredChars; // null ⟺ value is null
-        private int _cryptoKey1;
-        private int _cryptoKey2;
-        private int _guard;
+        private readonly SecureStringCore _core;
 
-        private readonly SecureObserverSet<string> _observers = new();
-
-        /// <summary>Raised when memory tampering is detected.</summary>
+        /// <summary>Raised when memory tampering is detected (canary mismatch). Global —
+        /// prefer <see cref="TamperDetected"/> for a single property.</summary>
         public static event Action<string> OnTamperDetected;
 
-        // XOR each UTF-16 code unit with the low 16 bits of the compound key.
-        // Surrogate pairs survive because each half is XORed independently.
-        private static char[] Obscure(string value, int key)
+        public SecureObservableString(string initialValue = null, string debugName = null)
         {
-            if (value == null) return null;
-            var chars = new char[value.Length];
-            for (int i = 0; i < value.Length; i++)
-            {
-                int k = (key ^ unchecked((int)(i * 0x9E3779B9u))) & 0xFFFF;
-                chars[i] = (char)(value[i] ^ k);
-            }
-            return chars;
+            _core = new SecureStringCore(initialValue, debugName, StaticTamperAccessor);
         }
 
-        private static string Reveal(char[] obscured, int key)
-        {
-            if (obscured == null) return null;
-            var chars = new char[obscured.Length];
-            for (int i = 0; i < obscured.Length; i++)
-            {
-                int k = (key ^ unchecked((int)(i * 0x9E3779B9u))) & 0xFFFF;
-                chars[i] = (char)(obscured[i] ^ k);
-            }
-            return new string(chars);
-        }
+        /// <summary>Optional diagnostic name supplied at construction; null when not supplied.</summary>
+        public string DebugName => _core.DebugName;
 
-        public SecureObservableString(string initialValue = null)
+        /// <summary>Per-instance tamper notification, raised alongside <see cref="OnTamperDetected"/>.</summary>
+        public event Action<string> TamperDetected
         {
-            var (k1, k2) = SecureKeyGen.IntKeyPair();
-            _cryptoKey1 = k1;
-            _cryptoKey2 = k2;
-            int compound = k1 ^ k2;
-            _obscuredChars = Obscure(initialValue, compound);
-            _guard = compound ^ GuardConst;
+            add => _core.TamperDetected += value;
+            remove => _core.TamperDetected -= value;
         }
 
         public string Value
         {
-            get
-            {
-                lock (_valueLock)
-                {
-                    int compound = _cryptoKey1 ^ _cryptoKey2;
-                    if ((compound ^ GuardConst) != _guard)
-                    {
-                        RaiseTamperDetected("SecureObservableString");
-                        var (k1, k2) = SecureKeyGen.IntKeyPair();
-                        _cryptoKey1 = k1;
-                        _cryptoKey2 = k2;
-                        int newCompound = k1 ^ k2;
-                        _obscuredChars = null;
-                        _guard = newCompound ^ GuardConst;
-                        return null;
-                    }
-                    return Reveal(_obscuredChars, compound);
-                }
-            }
-            set
-            {
-                string old;
-                lock (_valueLock)
-                {
-                    int oldCompound = _cryptoKey1 ^ _cryptoKey2;
-                    if ((oldCompound ^ GuardConst) != _guard)
-                    {
-                        RaiseTamperDetected("SecureObservableString.set");
-                        var (rk1, rk2) = SecureKeyGen.IntKeyPair();
-                        _cryptoKey1 = rk1;
-                        _cryptoKey2 = rk2;
-                        int resetCompound = rk1 ^ rk2;
-                        _obscuredChars = null;
-                        _guard = resetCompound ^ GuardConst;
-                        return;
-                    }
-                    old = Reveal(_obscuredChars, oldCompound);
-                    if (string.Equals(old, value)) return;
-
-                    var (k1, k2) = SecureKeyGen.IntKeyPair();
-                    _cryptoKey1 = k1;
-                    _cryptoKey2 = k2;
-                    int newCompound = k1 ^ k2;
-                    _obscuredChars = Obscure(value, newCompound);
-                    _guard = newCompound ^ GuardConst;
-                }
-
-                _observers.Notify(old, value);
-            }
+            get => _core.ReadValue();
+            set => _core.WriteValue(value);
         }
 
         /// <summary>
@@ -556,40 +260,14 @@ namespace Nexus.Core
         /// preserves the integrity canary. Callers may pass validateCanary=false only
         /// when they absolutely control the value source (internal-only scenarios).
         /// </summary>
-        public void SetWithoutNotify(string value, bool validateCanary = true)
-        {
-            lock (_valueLock)
-            {
-                var (k1, k2) = SecureKeyGen.IntKeyPair();
-                _cryptoKey1 = k1;
-                _cryptoKey2 = k2;
-                int newCompound = k1 ^ k2;
-                _obscuredChars = Obscure(value, newCompound);
-                _guard = newCompound ^ GuardConst;
+        public void SetWithoutNotify(string value, bool validateCanary = true) => _core.WriteWithoutNotify(value, validateCanary);
 
-                if (validateCanary)
-                {
-                    if (((_guard ^ GuardConst) != newCompound) || (Reveal(_obscuredChars, newCompound) != value))
-                    {
-                        RaiseTamperDetected("SecureObservableString.SetWithoutNotify.validation");
-                    }
-                }
-            }
-        }
-
-        public void OnChanged(Action<string, string> handler) => _observers.OnChanged(handler);
-        public void RemoveOnChanged(Action<string, string> handler) => _observers.RemoveOnChanged(handler);
-        public void ClearOnChanged() => _observers.Clear();
+        public void OnChanged(Action<string, string> handler) => _core.OnChanged(handler);
+        public void RemoveOnChanged(Action<string, string> handler) => _core.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _core.ClearOnChanged();
 
         public static implicit operator string(SecureObservableString prop) => prop.Value;
         public override string ToString() => Value ?? string.Empty;
-
-        private static void RaiseTamperDetected(string context)
-        {
-            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to null. Trigger server-side validation.");
-            try { OnTamperDetected?.Invoke(context); }
-            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
-        }
 
         /// <summary>
         /// Clears static tamper event subscribers for SecureObservableString.
@@ -599,91 +277,94 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// Obfuscated, Anti-Cheat reactive property wrapper for BigDouble Idle numbers memory protection.
-    /// Obscures both Mantissa and Exponent using dual independent keys and integrity guards
-    /// (delegated to two <see cref="SecureObservableLong"/>), with shared observer dispatch.
+    /// Obfuscated reactive property wrapper for BigDouble idle numbers, with tamper detection.
+    /// Mantissa bit pattern and exponent are obscured together under one dual-key set, with an
+    /// integrity canary, a redundant copy under a third key and key rotation on every write —
+    /// and, because both words share one lock, the composite pair is never observed
+    /// half-updated. Same guarantees, and the same non-guarantees, as
+    /// <see cref="SecureObservableInt"/>: obfuscation against naive value scans and freeze
+    /// attempts plus tamper detection — not a security boundary against an attacker who can
+    /// read process memory. Server-side validation remains required.
     /// </summary>
     [Preserve]
     public sealed class SecureObservableBigDouble
     {
-        private readonly SecureObservableLong _mantissaBits;
-        private readonly SecureObservableLong _exponent;
-        private readonly SecureObserverSet<BigDouble> _observers = new();
-        // R2 fix: composite lock to make reading/writing the pair atomic. The inner
-        // SecureObservableLong instances have their own locks, but users should go
-        // through this wrapper — taking the composite lock before touching the
-        // inner values prevents torn composite reads/writes.
-        private readonly object _compositeLock = new();
+        private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 
-        public SecureObservableBigDouble(BigDouble initialValue = default)
+        private readonly SecureBigDoubleCore _core;
+
+        /// <summary>
+        /// Raised when memory tampering is detected (canary mismatch). Global — prefer
+        /// <see cref="TamperDetected"/> for a single property. Previously a tampered
+        /// BigDouble surfaced on <see cref="SecureObservableLong.OnTamperDetected"/>, because
+        /// the value was split across two inner SecureObservableLong instances; it now reports
+        /// under its own type.
+        /// </summary>
+        public static event Action<string> OnTamperDetected;
+
+        public SecureObservableBigDouble(BigDouble initialValue = default, string debugName = null)
         {
-            _mantissaBits = new SecureObservableLong(BitConverter.DoubleToInt64Bits(initialValue.Mantissa));
-            _exponent = new SecureObservableLong(initialValue.Exponent);
+            _core = new SecureBigDoubleCore(initialValue, debugName, StaticTamperAccessor);
+        }
+
+        /// <summary>Optional diagnostic name supplied at construction; null when not supplied.</summary>
+        public string DebugName => _core.DebugName;
+
+        /// <summary>Per-instance tamper notification, raised alongside <see cref="OnTamperDetected"/>.</summary>
+        public event Action<string> TamperDetected
+        {
+            add => _core.TamperDetected += value;
+            remove => _core.TamperDetected -= value;
         }
 
         public BigDouble Value
         {
-            get
-            {
-                // Lock the composite so Mantissa + Exponent are observed atomically.
-                lock (_compositeLock)
-                {
-                    double m = BitConverter.Int64BitsToDouble(_mantissaBits.Value);
-                    long e = _exponent.Value;
-                    return new BigDouble(m, e);
-                }
-            }
-            set
-            {
-                BigDouble old;
-                lock (_compositeLock)
-                {
-                    old = new BigDouble(
-                        BitConverter.Int64BitsToDouble(_mantissaBits.Value),
-                        _exponent.Value);
-                    if (old.Equals(value)) return;
-
-                    // Update inner observables while holding the composite lock so
-                    // readers/writers cannot observe a half-updated state.
-                    _mantissaBits.Value = BitConverter.DoubleToInt64Bits(value.Mantissa);
-                    _exponent.Value = value.Exponent;
-                }
-
-                // Notify outside the lock so handlers never execute while the composite
-                // lock is held. Handlers observe the change we made (old -> value).
-                _observers.Notify(old, value);
-            }
+            get => _core.ReadValue();
+            set => _core.WriteValue(value);
         }
 
         /// <summary>
-        /// Set the composite BigDouble value without firing notifications. By default
-        /// the inner pieces validate their canaries; callers may pass validateCanary=false
-        /// to skip inner validation for internal scenarios.
+        /// Set the composite BigDouble value without firing notifications. By default the
+        /// integrity canary is validated after the write; callers may pass validateCanary=false
+        /// to skip that validation for internal scenarios.
         /// </summary>
-        public void SetWithoutNotify(BigDouble value, bool validateCanary = true)
-        {
-            lock (_compositeLock)
-            {
-                _mantissaBits.SetWithoutNotify(BitConverter.DoubleToInt64Bits(value.Mantissa), validateCanary);
-                _exponent.SetWithoutNotify(value.Exponent, validateCanary);
-            }
-        }
+        public void SetWithoutNotify(BigDouble value, bool validateCanary = true) => _core.WriteWithoutNotify(value, validateCanary);
 
-        public void OnChanged(Action<BigDouble, BigDouble> handler) => _observers.OnChanged(handler);
-        public void RemoveOnChanged(Action<BigDouble, BigDouble> handler) => _observers.RemoveOnChanged(handler);
-        public void ClearOnChanged() => _observers.Clear();
+        public void OnChanged(Action<BigDouble, BigDouble> handler) => _core.OnChanged(handler);
+        public void RemoveOnChanged(Action<BigDouble, BigDouble> handler) => _core.RemoveOnChanged(handler);
+        public void ClearOnChanged() => _core.ClearOnChanged();
 
         public static implicit operator BigDouble(SecureObservableBigDouble prop) => prop.Value;
         public override string ToString() => Value.ToString();
+
+        /// <summary>
+        /// Clears static tamper event subscribers for SecureObservableBigDouble.
+        /// Mirrors the other family members so NexusRuntime.Reset can avoid leaked handlers
+        /// across domain reloads.
+        /// </summary>
+        public static void ClearOnTamperDetected() => OnTamperDetected = null;
     }
 
     internal static class SecureObservableHelper
     {
-        public static void RaiseTamper(Action<string> tamperEvent, string context)
+        /// <summary>
+        /// Single tamper reporting path for the whole family: logs the incident, then raises the
+        /// owning type's static event and the per-instance event. Handler exceptions are
+        /// isolated (and logged with their stack trace) so a bad subscriber cannot break the
+        /// caller's repair path.
+        /// </summary>
+        public static void RaiseTamper(Action<string> staticEvent, Action<string> instanceEvent, string context, string resolution)
         {
-            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. Value reset to 0. Trigger server-side validation.");
-            if (tamperEvent == null) return;
-            try { tamperEvent.Invoke(context); }
+            NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] Memory tamper detected on {context}. {resolution} Trigger server-side validation.");
+            InvokeTamperHandler(staticEvent, context);
+            InvokeTamperHandler(instanceEvent, context);
+        }
+
+        /// <summary>Invokes a tamper handler chain, isolating and logging any exception.</summary>
+        public static void InvokeTamperHandler(Action<string> handler, string context)
+        {
+            if (handler == null) return;
+            try { handler.Invoke(context); }
             catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
         }
     }

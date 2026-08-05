@@ -1,9 +1,18 @@
 using System;
+using System.Collections.Concurrent;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace Nexus.Core
 {
     public static class NexusTestHarness
     {
+        /// <summary>
+        /// Upper bound for the synchronous <c>autoInitialize</c> bridge. Exceeding it throws
+        /// instead of hanging the test runner forever.
+        /// </summary>
+        public static TimeSpan AutoInitializeTimeout { get; set; } = TimeSpan.FromSeconds(30);
+
         public static NexusTestContext CreateContext()
         {
             var context = new Context(parent: null, contextData: null);
@@ -48,10 +57,97 @@ namespace Nexus.Core
 
             if (autoInitialize)
             {
-                context.InitializeLifecycleAsync(context.ConfiguredLifecycles, default).GetAwaiter().GetResult();
+                RunBlocking(() => context.InitializeLifecycleAsync(context.ConfiguredLifecycles, default));
             }
 
             return new NexusTestContext(context);
+        }
+
+        /// <summary>
+        /// Bridges the async lifecycle into this synchronous factory without deadlocking.
+        /// A plain <c>GetAwaiter().GetResult()</c> hangs whenever a lifecycle step posts a
+        /// continuation back to the calling thread's <see cref="SynchronizationContext"/>
+        /// (Unity's main-thread context does exactly that): the thread is blocked, so the
+        /// continuation never runs. Here the calling thread installs a pumping context and
+        /// executes those continuations itself while it waits — the work still runs on the
+        /// caller's thread, so lifecycle code may touch Unity APIs.
+        /// </summary>
+        private static void RunBlocking(Func<ValueTask> work)
+        {
+            var previous = SynchronizationContext.Current;
+            var pump = new PumpingSynchronizationContext();
+            SynchronizationContext.SetSynchronizationContext(pump);
+            Task task;
+            try
+            {
+                task = work().AsTask();
+                // Stop pumping once the work finishes, whatever its outcome.
+                task.ContinueWith(_ => pump.Complete(), CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+                pump.Pump(AutoInitializeTimeout);
+            }
+            finally
+            {
+                SynchronizationContext.SetSynchronizationContext(previous);
+            }
+
+            if (!task.IsCompleted)
+            {
+                throw new TimeoutException(
+                    $"NexusTestHarness auto-initialization did not complete within {AutoInitializeTimeout.TotalSeconds:0.#}s. " +
+                    "Increase NexusTestHarness.AutoInitializeTimeout, or check the lifecycle for work that never completes.");
+            }
+            // Unwraps and rethrows the original exception with its stack intact.
+            task.GetAwaiter().GetResult();
+        }
+
+        /// <summary>
+        /// Minimal single-threaded <see cref="SynchronizationContext"/>: posted callbacks are
+        /// queued and executed by <see cref="Pump"/> on the thread that installed it.
+        /// </summary>
+        private sealed class PumpingSynchronizationContext : SynchronizationContext
+        {
+            private readonly BlockingCollection<(SendOrPostCallback Callback, object State)> _queue = new();
+
+            public override void Post(SendOrPostCallback d, object state)
+            {
+                if (d == null) return;
+                try { _queue.Add((d, state)); }
+                catch (InvalidOperationException)
+                {
+                    // Pumping already finished; run inline so the continuation is not lost.
+                    d(state);
+                }
+            }
+
+            public override void Send(SendOrPostCallback d, object state) => d?.Invoke(state);
+
+            public void Complete()
+            {
+                try { _queue.CompleteAdding(); }
+                catch (ObjectDisposedException) { }
+            }
+
+            /// <summary>Executes queued callbacks until completion is signalled or the deadline passes.</summary>
+            public void Pump(TimeSpan timeout)
+            {
+                var deadline = DateTime.UtcNow + timeout;
+                while (true)
+                {
+                    var remaining = deadline - DateTime.UtcNow;
+                    if (remaining <= TimeSpan.Zero) return;
+                    try
+                    {
+                        if (!_queue.TryTake(out var item, remaining)) return;
+                        item.Callback(item.State);
+                    }
+                    catch (InvalidOperationException)
+                    {
+                        // CompleteAdding was called and the queue drained — work is done.
+                        return;
+                    }
+                }
+            }
         }
 
         /// <summary>

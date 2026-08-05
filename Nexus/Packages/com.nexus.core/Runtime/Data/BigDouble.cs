@@ -63,7 +63,7 @@ namespace Nexus.Core
 
             while (absMantissa >= 10.0)
             {
-                // P2 fix: clamp the exponent so a saturated value (e.g. MaxValue * 10,
+                // Clamp the exponent so a saturated value (e.g. MaxValue * 10,
                 // where SaturateAddExponent already returned long.MaxValue) cannot
                 // overflow to long.MinValue and silently corrupt the number. Once the
                 // exponent is pinned at the boundary, further normalization is a no-op.
@@ -87,7 +87,7 @@ namespace Nexus.Core
             if (a.Mantissa == 0.0) return b;
             if (b.Mantissa == 0.0) return a;
 
-            // R2026-C1 fix: saturate the exponent difference instead of overflowing long.
+            // Saturate the exponent difference instead of overflowing long.
             // a.Exponent - b.Exponent wraps when a.Exponent is near long.MaxValue and
             // b.Exponent is negative (e.g. MaxValue + (-0.1) silently returned -0.1).
             long diff = SaturateSubExponent(a.Exponent, b.Exponent);
@@ -119,7 +119,7 @@ namespace Nexus.Core
         public static BigDouble operator *(BigDouble a, BigDouble b)
         {
             if (a.Mantissa == 0.0 || b.Mantissa == 0.0) return Zero;
-            // B1-fix: saturate the exponent sum instead of overflowing long (MaxValue * anything
+            // Saturate the exponent sum instead of overflowing long (MaxValue * anything
             // would otherwise wrap to a negative exponent and silently corrupt the value).
             return new BigDouble(a.Mantissa * b.Mantissa, SaturateAddExponent(a.Exponent, b.Exponent));
         }
@@ -127,7 +127,7 @@ namespace Nexus.Core
         public static BigDouble operator /(BigDouble a, BigDouble b)
         {
             if (b.Mantissa == 0.0) throw new DivideByZeroException("Cannot divide BigDouble by Zero.");
-            // B1-fix: saturate the exponent difference instead of underflowing long.
+            // Saturate the exponent difference instead of underflowing long.
             return new BigDouble(a.Mantissa / b.Mantissa, SaturateSubExponent(a.Exponent, b.Exponent));
         }
 
@@ -167,15 +167,20 @@ namespace Nexus.Core
 
         public int CompareTo(BigDouble other)
         {
-            // R2026-L3 note: ordering logic, spelled out for clarity:
+            // Ordering logic, spelled out for clarity:
             //  1. Two zeros are equal (Normalize pins zero to mantissa 0/exponent 0).
             //  2. Any positive exceeds any non-positive; any negative is below any non-negative.
             //  3. Same sign → larger exponent wins; for NEGATIVE values the direction flips
             //     (-1e5 < -1e3), hence the Mantissa > 0 ternary on the exponent comparisons.
             //  4. Same sign + same exponent → plain mantissa comparison.
             if (Mantissa == 0.0 && other.Mantissa == 0.0) return 0;
-            if (Mantissa > 0 && other.Mantissa <= 0) return 1;
-            if (Mantissa < 0 && other.Mantissa >= 0) return -1;
+            // Zero must be handled before the exponent comparison: zero is pinned to
+            // exponent 0, so letting it fall through would compare exponents of
+            // incomparable magnitudes (Zero vs 10 previously returned "0 > 10").
+            if (Mantissa == 0.0) return other.Mantissa > 0 ? -1 : 1;
+            if (other.Mantissa == 0.0) return Mantissa > 0 ? 1 : -1;
+            if (Mantissa > 0 && other.Mantissa < 0) return 1;
+            if (Mantissa < 0 && other.Mantissa > 0) return -1;
 
             if (Exponent > other.Exponent) return Mantissa > 0 ? 1 : -1;
             if (Exponent < other.Exponent) return Mantissa > 0 ? -1 : 1;
@@ -213,7 +218,7 @@ namespace Nexus.Core
             return value;
         }
 
-        // R2026-M7 fix: dynamic suffix generation for exponents beyond the static table
+        // Dynamic suffix generation for exponents beyond the static table
         // (aa..az). Idle games routinely exceed 1e90; generating ba, bb, ... keeps the
         // formatted output human-readable instead of falling back to scientific notation.
         private static string GetSuffix(long suffixIndex)
@@ -221,9 +226,11 @@ namespace Nexus.Core
             if (suffixIndex < StandardSuffixes.Length)
                 return StandardSuffixes[suffixIndex];
 
-            // Base-26 alphabetic suffix: after "az" comes "ba", "bb", ...
-            // suffixIndex 30 -> "ba", 31 -> "bb", etc.
-            long adjusted = suffixIndex - 4; // K=1,M=2,B=3,T=4 use the table; aa starts at 5
+            // Bijective base-26 alphabetic suffix continuing the table: aa=5 .. az=30,
+            // then ba=31, bb=32, ... zz, aaa, ... The +22 offset aligns suffixIndex 5
+            // with "aa" in the bijective numbering (m=27), so index 31 yields "ba"
+            // instead of colliding with the table's "aa".
+            long adjusted = suffixIndex + 22;
             var sb = new System.Text.StringBuilder(4);
             while (adjusted > 0)
             {
@@ -239,7 +246,7 @@ namespace Nexus.Core
             if (Mantissa == 0.0) return "0";
             var culture = System.Globalization.CultureInfo.InvariantCulture;
 
-            // P3 fix: a very negative exponent (e.g. -300) makes Math.Pow(10, Exponent)
+            // A very negative exponent (e.g. -300) makes Math.Pow(10, Exponent)
             // underflow to 0.0, so the old code printed "0" for a genuinely non-zero
             // value. Route any exponent that would underflow the double through the
             // scientific fallback instead of the fixed-point path.
@@ -257,6 +264,12 @@ namespace Nexus.Core
                 {
                     return $"{Mantissa.ToString("F2", culture)}e{Exponent}";
                 }
+                // Fractional values (negative exponent) need decimal places — "F0"
+                // printed every 0 < x < 1 as "0". Trailing zeros are trimmed.
+                if (Exponent < 0)
+                {
+                    return (Mantissa * pow10).ToString("0.################", culture);
+                }
                 return (Mantissa * pow10).ToString("F0", culture);
             }
 
@@ -265,7 +278,7 @@ namespace Nexus.Core
 
             double displayValue = Mantissa * Math.Pow(10, remainder);
 
-            // R2026-M7: cap dynamic suffixes at a sane bound — beyond ~1e(26^6) the
+            // Cap dynamic suffixes at a sane bound — beyond ~1e(26^6) the
             // suffix string itself becomes meaningless; scientific notation is clearer.
             const long MaxDynamicSuffixIndex = 1000000;
             if (suffixIndex <= MaxDynamicSuffixIndex)

@@ -36,7 +36,7 @@ namespace Nexus.Core
         private volatile Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersReadCopy = new();
         private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _registeredHandlersSnapshot = new();
 
-        // REFACTOR PLAN §1.1: the lock-free read copies are rebuilt LAZILY on first dispatch
+        // The lock-free read copies are rebuilt LAZILY on first dispatch
         // access after a mutation, so registration never pays O(N) dictionary allocation
         // (N commands previously cost ≈N²/2 entry copies at startup even though dispatch
         // never ran during registration). Volatile so a dispatch that observes dirty == false
@@ -49,7 +49,7 @@ namespace Nexus.Core
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
         private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
 
-        // Audit fix 4.2: cached comparison delegates for the registration-time priority sorts.
+        // Cached comparison delegates for the registration-time priority sorts.
         // A lambda written inline at the Sort call site relies on the compiler's delegate
         // caching; the explicit static makes the zero-allocation guarantee self-documenting
         // and immune to accidental capture introduction later.
@@ -138,7 +138,7 @@ namespace Nexus.Core
                     _commandHandlers[signalType] = list;
                 }
 
-                // C1 fix: the mixed-mode guard must check EVERY existing handler, not just
+                // The mixed-mode guard must check EVERY existing handler, not just
                 // list[0]. In Concurrent mode the list is never sorted (insertion order is
                 // preserved), so list[0] is always the first-registered handler — but in
                 // Sequential/Exclusive mode the list IS sorted by descending priority, so
@@ -147,14 +147,18 @@ namespace Nexus.Core
                 // mode happened to match while a later handler's mode differed. Checking the
                 // whole list makes the invariant explicit: every handler for a signal shares
                 // one ExecutionMode.
+                // The INCOMING mode is what has to agree with the already-registered handlers:
+                // comparing the existing entries only against each other (they are always
+                // consistent, precisely because of this guard) let Sequential-then-Concurrent
+                // register happily and then dispatch under mismatched ordering rules.
                 if (list.Count > 0)
                 {
-                    var firstMode = list[0].Mode;
-                    for (int i = 1; i < list.Count; i++)
+                    var existingMode = list[0].Mode;
+                    for (int i = 0; i < list.Count; i++)
                     {
-                        if (list[i].Mode != firstMode)
+                        if (list[i].Mode != mode)
                         {
-                            throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {firstMode}, cannot add handler with mode {mode}.");
+                            throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {existingMode}, cannot add handler with mode {mode}.");
                         }
                     }
                 }
@@ -192,7 +196,7 @@ namespace Nexus.Core
                     list.Sort(s_priorityDescHandlers);
                 }
 
-                // REFACTOR PLAN §1.1: registration is now O(1) in allocation. The lock-free
+                // Registration is now O(1) in allocation. The lock-free
                 // read copies (_commandHandlersReadCopy / _hasAsyncHandlerReadCopy) are rebuilt
                 // lazily on first dispatch access (see EnsureReadCopies) instead of on every
                 // RegisterCommand, so startup with N commands pays ONE rebuild instead of N.
@@ -275,7 +279,8 @@ namespace Nexus.Core
         {
             if (signalTypes == null || signalTypes.Length == 0)
                 throw new ArgumentException("Composite command requires at least one signal type.", nameof(signalTypes));
-            if (signalTypes.Length > 64 || signalTypes.Length == 0)
+            // The trigger mask is a ulong, so 64 signals is the hard upper bound.
+            if (signalTypes.Length > 64)
                 throw new ArgumentException($"Composite command requires between 1 and 64 signal types. Received {signalTypes.Length}.", nameof(signalTypes));
 
             for (int i = 0; i < signalTypes.Length; i++)
@@ -328,7 +333,7 @@ namespace Nexus.Core
         }
 
         /// <summary>Gets the read-copy of command handlers for a signal type (lock-free dispatch).
-        /// Audit fix 5.3: exposed as <see cref="IReadOnlyList{T}"/> — the published snapshot is
+        /// Exposed as <see cref="IReadOnlyList{T}"/> — the published snapshot is
         /// shared between concurrent dispatches and must never be mutated through the alias.</summary>
         public bool TryGetHandlers(Type signalType, out IReadOnlyList<CommandHandlerInfo> handlers)
         {
@@ -403,8 +408,19 @@ namespace Nexus.Core
             return false;
         }
 
-        /// <summary>Gets all composite triggers (for iteration).</summary>
-        public IReadOnlyList<CompositeTriggerState> AllCompositeTriggers => _allCompositeTriggers;
+        /// <summary>
+        /// Snapshot of every registered composite trigger. Returns a COPY taken under the
+        /// composite lock: handing out the live list would let a concurrent registration
+        /// invalidate a caller's enumerator.
+        /// </summary>
+        public IReadOnlyList<CompositeTriggerState> AllCompositeTriggers
+        {
+            get
+            {
+                lock (_compositeLock)
+                    return _allCompositeTriggers.ToArray();
+            }
+        }
 
         /// <summary>Checks if a signal type has a [CrossContext] attribute (cached).</summary>
         public CrossContextAttribute GetCachedCrossContext(Type type)
@@ -588,15 +604,22 @@ namespace Nexus.Core
                     var lambda = System.Linq.Expressions.Expression.Lambda<Action<object, object>>(assign, targetParam, valParam);
                     newSetter = lambda.Compile();
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Fallback to reflection if Expression compilation is restricted on certain AOT platforms
+                    NexusRuntime.Logger?.LogWarning($"[Nexus] Signal setter compilation failed for '{cmdType.FullName}' ({sigType.Name}); falling back to reflection: {ex.Message}");
                     if (foundMember is FieldInfo f) newSetter = (target, val) => f.SetValue(target, val);
                     else if (foundMember is PropertyInfo p) newSetter = (target, val) => p.SetValue(target, val);
                 }
             }
             else
             {
+                // No payload member found: the command runs without the signal. Warned once
+                // per (command, signal) pair via the setter cache, because a misspelled
+                // payload field ("_sig" instead of "_signal") is otherwise silently ignored.
+                NexusRuntime.Logger?.LogWarning(
+                    $"[Nexus] Command '{cmdType.FullName}' has no member able to receive signal payload '{sigType.Name}'. " +
+                    "Declare a field named '_signal'/'signal' (or a writable property) of the signal type, or implement ICommand<TSignal>. The command will execute without the payload.");
                 newSetter = (target, val) => { };
             }
             return newSetter;
@@ -608,12 +631,16 @@ namespace Nexus.Core
             lock (_handlerReadLock)
             {
                 _commandHandlers.Clear();
-                _commandHandlersSnapshot?.Clear();
-                _commandHandlersReadCopy?.Clear();
-                _registeredHandlersSnapshot?.Clear();
                 _hasAsyncHandler.Clear();
-                _hasAsyncHandlerReadCopy?.Clear();
-                _handlersReadCopyDirty = true;
+                // The published read copies and snapshots are read LOCK-FREE by dispatch.
+                // Clearing them in place would mutate a dictionary another thread may be
+                // enumerating (undefined behaviour); publish fresh empty instances instead
+                // so an in-flight dispatch keeps walking its consistent old snapshot.
+                _commandHandlersSnapshot = new Dictionary<Type, List<CommandHandlerInfo>>();
+                _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>();
+                _registeredHandlersSnapshot = new Dictionary<Type, IReadOnlyList<CommandHandlerInfo>>();
+                _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>();
+                _handlersReadCopyDirty = false;
             }
             lock (_compositeLock)
             {

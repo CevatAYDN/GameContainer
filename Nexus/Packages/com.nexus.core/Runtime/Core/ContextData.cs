@@ -27,8 +27,14 @@ namespace Nexus.Core
         public bool EnableAnalytics;
         public bool EnableDebugSignals;
 
+        // Defaults to ON for newly created assets: a missing required dependency is a
+        // configuration error, and failing at the injection site is far cheaper to diagnose
+        // than the NullReferenceException it otherwise causes much later. Assets already
+        // serialized with the old default keep their stored value, so this changes no
+        // existing project's behaviour. Mark genuinely optional dependencies with
+        // [OptionalInject], or turn this off for projects that bind late by design.
         [Tooltip("When enabled, Inject() throws InvalidOperationException on unresolved [Inject] dependencies instead of logging and leaving null. Use [OptionalInject] to exempt specific members.")]
-        public bool EnableStrictInjection;
+        public bool EnableStrictInjection = true;
 
         [Tooltip("When enabled, DI validation errors (missing bindings, captive dependencies, constructor explosion) throw NexusDiValidationException at startup instead of only logging. Recommended for development builds.")]
         public bool FailOnValidationErrors;

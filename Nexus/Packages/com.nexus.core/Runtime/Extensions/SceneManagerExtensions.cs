@@ -16,6 +16,15 @@ namespace Nexus.Core.Extensions
     public readonly struct SceneLoadingSignal { public readonly string SceneName; public SceneLoadingSignal(string name) => SceneName = name; }
     public readonly struct SceneLoadedSignal { public readonly string SceneName; public SceneLoadedSignal(string name) => SceneName = name; }
     public readonly struct SceneUnloadedSignal { public readonly string SceneName; public SceneUnloadedSignal(string name) => SceneName = name; }
+    /// <summary>Terminal signal for a load that did NOT complete (scene missing, exception,
+    /// or cancellation). Loading UI listening to <see cref="SceneLoadingSignal"/> must
+    /// subscribe to this as well as <see cref="SceneLoadedSignal"/> so it never waits forever.</summary>
+    public readonly struct SceneLoadFailedSignal
+    {
+        public readonly string SceneName;
+        public readonly string Error;
+        public SceneLoadFailedSignal(string name, string error) { SceneName = name; Error = error; }
+    }
 
     /// <summary>
     /// Service interface for Nexus-driven scene management.
@@ -43,6 +52,7 @@ namespace Nexus.Core.Extensions
     {
         private readonly ISignalBus _signalBus;
         private readonly HashSet<string> _loadingScenes = new();
+        private readonly HashSet<string> _unloadingScenes = new();
         private readonly object _loadingLock = new();
 
         public SceneLoader(ISignalBus signalBus)
@@ -69,6 +79,8 @@ namespace Nexus.Core.Extensions
                 if (op == null)
                 {
                     NexusRuntime.Logger?.LogError($"[Nexus] Scene '{sceneName}' not found in build settings.");
+                    // Terminal signal: loading UI must never wait forever on a failed load.
+                    _signalBus.Fire(new SceneLoadFailedSignal(sceneName, "Scene not found in build settings."));
                     return;
                 }
 
@@ -82,6 +94,12 @@ namespace Nexus.Core.Extensions
 
                 _signalBus.Fire(new SceneLoadedSignal(sceneName));
             }
+            catch (Exception ex)
+            {
+                // Terminal signal on exception/cancellation paths too (see above).
+                _signalBus.Fire(new SceneLoadFailedSignal(sceneName, ex.Message));
+                throw;
+            }
             finally
             {
                 lock (_loadingLock)
@@ -93,20 +111,40 @@ namespace Nexus.Core.Extensions
 
         public async Task UnloadSceneAsync(string sceneName, CancellationToken ct = default)
         {
-            var op = SceneManager.UnloadSceneAsync(sceneName);
-            if (op == null)
+            // Duplicate-unload guard, matching LoadSceneAsync's duplicate-load guard.
+            lock (_loadingLock)
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Scene '{sceneName}' is not loaded or cannot be unloaded.");
-                return;
+                if (!_unloadingScenes.Add(sceneName))
+                {
+                    NexusRuntime.Logger?.LogWarning($"[Nexus] Scene '{sceneName}' is already being unloaded.");
+                    return;
+                }
             }
 
-            while (!op.isDone)
+            try
             {
-                ct.ThrowIfCancellationRequested();
-                await Task.Yield();
-            }
+                var op = SceneManager.UnloadSceneAsync(sceneName);
+                if (op == null)
+                {
+                    NexusRuntime.Logger?.LogWarning($"[Nexus] Scene '{sceneName}' is not loaded or cannot be unloaded.");
+                    return;
+                }
 
-            _signalBus.Fire(new SceneUnloadedSignal(sceneName));
+                while (!op.isDone)
+                {
+                    ct.ThrowIfCancellationRequested();
+                    await Task.Yield();
+                }
+
+                _signalBus.Fire(new SceneUnloadedSignal(sceneName));
+            }
+            finally
+            {
+                lock (_loadingLock)
+                {
+                    _unloadingScenes.Remove(sceneName);
+                }
+            }
         }
 
         public void SetActiveScene(string sceneName)

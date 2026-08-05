@@ -35,19 +35,33 @@ namespace Nexus.Core
         {
             get
             {
-                if (!_resolved)
+                if (_resolved) return _value;
+
+                // Resolve OUTSIDE _lock: Resolve() runs arbitrary user constructors and can
+                // take container-internal locks — resolving while holding _lock risks a
+                // lock-ordering deadlock and executes user code under our lock. Two racing
+                // threads may both resolve; the first to publish wins and the losing
+                // resolution is discarded (for transients this tolerates one extra,
+                // never-published construction).
+                T resolvedValue = string.IsNullOrEmpty(_name)
+                    ? _container.Resolve<T>()
+                    : _container.Resolve<T>(_name);
+
+                bool won = false;
+                lock (_lock)
                 {
-                    lock (_lock)
+                    if (!_resolved)
                     {
-                        if (!_resolved)
-                        {
-                            _value = string.IsNullOrEmpty(_name)
-                                ? _container.Resolve<T>()
-                                : _container.Resolve<T>(_name);
-                            _resolved = true;
-                            _container.NotifyLazyServiceResolved(typeof(T), _value);
-                        }
+                        _value = resolvedValue;
+                        _resolved = true;
+                        won = true;
                     }
+                }
+                if (won)
+                {
+                    // Also outside the lock — the container's deferred-init bookkeeping is
+                    // user-visible code and must not run under _lock.
+                    _container.NotifyLazyServiceResolved(typeof(T), _value);
                 }
                 return _value;
             }

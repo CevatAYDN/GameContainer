@@ -9,17 +9,18 @@ namespace Nexus.Core
 
     /// <summary>
     /// Model that can be reset to its initial state (e.g. for pooling or replay).
-    /// Plan §4 — Memory Ownership Model.
+    /// Memory Ownership Model.
+    /// Duplicate of <see cref="IResettable"/>; kept (inheriting it) for API compatibility.
     /// </summary>
-    public interface IResettableModel
+    [Obsolete("IResettableModel duplicates IResettable — implement IResettable instead. This interface now inherits it and will be removed in a future major version.")]
+    public interface IResettableModel : IResettable
     {
-        void Reset();
     }
 
     /// <summary>
     /// Model with explicit dispose lifecycle. BuildValidation checks that
     /// all IDisposableModel instances are disposed in the disposal chain.
-    /// Plan §4 — Memory Ownership Model.
+    /// Memory Ownership Model.
     /// </summary>
     public interface IDisposableModel : IDisposable
     {

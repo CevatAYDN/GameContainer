@@ -16,7 +16,7 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// P1-15 fix: central registry of per-type queued-signal pools so
+    /// Central registry of per-type queued-signal pools so
     /// <see cref="NexusRuntime.Reset"/> can clear them all (previously the static
     /// pools were only reset on domain reload).
     /// </summary>
@@ -61,7 +61,7 @@ namespace Nexus.Core
         private static readonly HashSet<QueuedSignalWrapper<T>> s_pooledInstances = new(ReferenceComparer.Instance);
         private static readonly object s_poolLock = new();
 
-        // P1-15 fix: bound the pool and register clearing with NexusRuntime.Reset.
+        // Bound the pool and register clearing with NexusRuntime.Reset.
         private const int MaxPoolSize = 256;
 
         static QueuedSignalPool()
@@ -72,7 +72,7 @@ namespace Nexus.Core
         /// <summary>Rents a pooled wrapper initialized with the given signal.</summary>
         public static QueuedSignalWrapper<T> Rent(T signal)
         {
-            // Audit fix 3.12: removed the redundant second null check (else branch).
+            // Removed the redundant second null check (else branch).
             QueuedSignalWrapper<T> wrapper;
             lock (s_poolLock)
             {
@@ -272,12 +272,15 @@ namespace Nexus.Core
             System.Threading.Interlocked.Increment(ref _totalEnqueued);
         }
 
-        // R2026-M12 fix: reentrancy guard. Drain releases the queue lock between dequeue
+        // Reentrancy guard. Drain releases the queue lock between dequeue
         // and dispatch (by design, see Audit note 2.5), so a second caller entering Drain
         // concurrently (Drain is public API) would interleave dispatches and break the
         // chronological-order guarantee. In practice QueueDrainer drives this from one
         // thread, but the guard makes the invariant structural instead of conventional.
-        private int _drainInProgress;
+        // The two queues are independent — each gets its OWN flag, so a DrainNextFrame is
+        // never silently skipped just because a DrainThreadSafe is in flight.
+        private int _threadSafeDrainInProgress;
+        private int _nextFrameDrainInProgress;
 
         /// <summary>
         /// Drains all thread-safe queued signals into the signal bus in chronological order.
@@ -285,10 +288,10 @@ namespace Nexus.Core
         /// </summary>
         public void DrainThreadSafe()
         {
-            if (System.Threading.Interlocked.CompareExchange(ref _drainInProgress, 1, 0) != 0)
+            if (System.Threading.Interlocked.CompareExchange(ref _threadSafeDrainInProgress, 1, 0) != 0)
                 return; // another drain is already in progress — queued items will be picked up by it
             try { Drain(_threadSafeQueue, _threadSafeLock); }
-            finally { System.Threading.Interlocked.Exchange(ref _drainInProgress, 0); }
+            finally { System.Threading.Interlocked.Exchange(ref _threadSafeDrainInProgress, 0); }
         }
 
         /// <summary>
@@ -297,10 +300,10 @@ namespace Nexus.Core
         /// </summary>
         public void DrainNextFrame()
         {
-            if (System.Threading.Interlocked.CompareExchange(ref _drainInProgress, 1, 0) != 0)
+            if (System.Threading.Interlocked.CompareExchange(ref _nextFrameDrainInProgress, 1, 0) != 0)
                 return;
             try { Drain(_nextFrameQueue, _nextFrameLock); }
-            finally { System.Threading.Interlocked.Exchange(ref _drainInProgress, 0); }
+            finally { System.Threading.Interlocked.Exchange(ref _nextFrameDrainInProgress, 0); }
         }
 
         private void Drain(QueuedSignalRingBuffer queue, object queueLock)

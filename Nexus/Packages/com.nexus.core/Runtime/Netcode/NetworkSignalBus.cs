@@ -81,8 +81,10 @@ namespace Nexus.Netcode
     public class NetworkSignalHistory<T> : INetworkSignalHistory where T : struct, INetworkSignal
     {
         private readonly List<BufferedNetworkSignal<T>> _signals;
+        private System.Collections.ObjectModel.ReadOnlyCollection<BufferedNetworkSignal<T>> _signalsReadOnly;
 
-        public List<BufferedNetworkSignal<T>> Signals => _signals;
+        // Read-only live view — external callers must not mutate the history directly.
+        public IReadOnlyList<BufferedNetworkSignal<T>> Signals => _signalsReadOnly ??= _signals.AsReadOnly();
 
         public NetworkSignalHistory(int initialCapacity = 256)
         {
@@ -96,29 +98,41 @@ namespace Nexus.Netcode
 
         /// <summary>
         /// Replays every buffered signal recorded at the given tick through the local bus.
-        /// B8 contract: deterministic replay ordering is guaranteed for sync handlers
-        /// (dispatched in-record-order). Signals with async handlers go through
-        /// <see cref="SignalBus.FireQueued"/> which is fire-and-forget — for strict
-        /// replay ordering, prefer sync commands or await the dispatch from the caller.
+        /// B8 contract: signals are dispatched SYNCHRONOUSLY in-record-order so the caller's
+        /// per-tick snapshot capture observes the fully resimulated state. Signals with async
+        /// handlers cannot be replayed deterministically — a clear error is logged and the
+        /// signal falls back to fire-and-forget <see cref="SignalBus.FireQueued"/> dispatch
+        /// (snapshots for such signals are NOT rollback-safe).
         /// </summary>
         public void ReplaySignals(int tick, ISignalBus localSignalBus)
         {
-            // Audit fix 4.4: the `is SignalBus` pattern check ran PER SIGNAL inside the loop
+            // The `is SignalBus` pattern check ran PER SIGNAL inside the loop
             // (O(N) cast checks per replay). Hoisted out — one cast per replay call.
             var concreteBus = localSignalBus as SignalBus;
             for (int i = 0; i < _signals.Count; i++)
             {
                 if (_signals[i].Tick == tick)
                 {
-                    // P0-4 fix: async-aware dispatch — replayed signals with async
-                    // handlers no longer throw NexusSyncAsyncMismatchException.
-                    if (concreteBus != null)
+                    try
                     {
-                        concreteBus.FireQueued(_signals[i].Signal);
-                    }
-                    else
-                    {
+                        // Synchronous inline dispatch: rollback resimulation captures a
+                        // model snapshot per tick, so this tick's signals must be fully
+                        // applied before the loop advances. FireQueued's fire-and-forget
+                        // async path would defer application and every snapshot would
+                        // observe the same un-resimulated state.
                         localSignalBus.Fire(_signals[i].Signal);
+                    }
+                    catch (NexusSyncAsyncMismatchException)
+                    {
+                        NexusRuntime.Logger?.LogError(
+                            $"[NetworkSignalBus] Signal '{typeof(T).FullName}' has async handlers — synchronous deterministic replay is impossible. " +
+                            "Rollback snapshots captured for this tick will not include this signal's effects. " +
+                            "Use sync-only handlers for networked signals that participate in rollback.");
+                        // Best-effort delivery so the signal is not silently dropped.
+                        if (concreteBus != null)
+                        {
+                            concreteBus.FireQueued(_signals[i].Signal);
+                        }
                     }
                 }
             }
@@ -177,21 +191,27 @@ namespace Nexus.Netcode
     public class NetworkSignalBus
     {
         private readonly ISignalBus _localSignalBus;
-        // P1 fix: ConcurrentDictionary so concurrent Fire<T> calls from different threads
+        // ConcurrentDictionary so concurrent Fire<T> calls from different threads
         // (the bus is documented as network/rollback-aware and uses volatile tick state)
         // can never corrupt the history map. The old plain Dictionary's
         // TryGetValue + indexer write was a torn-read/write race under concurrent access.
         private readonly ConcurrentDictionary<Type, INetworkSignalHistory> _histories = new();
+        private System.Collections.ObjectModel.ReadOnlyDictionary<Type, INetworkSignalHistory> _historiesReadOnly;
         private readonly List<INetworkModelSnapshotHandler> _modelHandlers = new();
+        // _modelHandlers is registered from setup code but iterated from tick/rollback paths;
+        // guarded by a lock to match the concurrent design of _histories.
+        private readonly object _modelHandlersLock = new();
         private volatile int _currentTick;
 
-        // B7: true while RollbackAndResimulate is driving the tick pointer. FireAtTick
+        // True while RollbackAndResimulate is driving the tick pointer. FireAtTick
         // records to history but suppresses the synchronous local fire during this
         // window so a signal cannot be applied twice (once by replay, once by the call).
         private volatile bool _isResimulating;
 
         public int CurrentTick => _currentTick;
-        public IReadOnlyDictionary<Type, INetworkSignalHistory> Histories => _histories;
+        // Read-only live wrapper — prevents callers from casting back to the mutable dictionary.
+        public IReadOnlyDictionary<Type, INetworkSignalHistory> Histories =>
+            _historiesReadOnly ??= new System.Collections.ObjectModel.ReadOnlyDictionary<Type, INetworkSignalHistory>(_histories);
 
         public NetworkSignalBus(ISignalBus localSignalBus)
         {
@@ -201,7 +221,7 @@ namespace Nexus.Netcode
         private NetworkSignalHistory<T> GetOrCreateHistory<T>() where T : struct, INetworkSignal
         {
             var type = typeof(T);
-            // P1 fix: GetOrAdd is atomic — two concurrent Fire<T> calls for a new signal
+            // GetOrAdd is atomic — two concurrent Fire<T> calls for a new signal
             // type can never both create and publish a history, and the returned instance
             // is always the single published one.
             return (NetworkSignalHistory<T>)_histories.GetOrAdd(type, static _ => new NetworkSignalHistory<T>());
@@ -212,7 +232,10 @@ namespace Nexus.Netcode
         /// </summary>
         public void RegisterModel<TState>(ISnapshotableModel<TState> model) where TState : struct
         {
-            _modelHandlers.Add(new NetworkModelSnapshotHandler<TState>(model));
+            lock (_modelHandlersLock)
+            {
+                _modelHandlers.Add(new NetworkModelSnapshotHandler<TState>(model));
+            }
         }
 
         /// <summary>
@@ -222,9 +245,12 @@ namespace Nexus.Netcode
         {
             _currentTick = tick;
             // Capture state of all registered models for the new tick
-            for (int i = 0; i < _modelHandlers.Count; i++)
+            lock (_modelHandlersLock)
             {
-                _modelHandlers[i].Capture(_currentTick);
+                for (int i = 0; i < _modelHandlers.Count; i++)
+                {
+                    _modelHandlers[i].Capture(_currentTick);
+                }
             }
         }
 
@@ -247,7 +273,7 @@ namespace Nexus.Netcode
 
     /// <summary>
     /// Fires a signal queued specifically at a target tick.
-    /// B7: the synchronous local fire only happens when the target tick equals the
+    /// The synchronous local fire only happens when the target tick equals the
     /// current tick AND the bus is NOT mid-resimulation. During RollbackAndResimulate
     /// the tick pointer moves as signals replay, so firing here would double-apply a
     /// signal to the models (once from replay, once from this call). Inside a
@@ -259,7 +285,7 @@ namespace Nexus.Netcode
         
         if (tick == _currentTick && !_isResimulating)
         {
-            // T4 fix: route through FireQueued exactly like Fire() so a signal with async
+            // Route through FireQueued exactly like Fire() so a signal with async
             // handlers/subscriptions on the local bus never throws
             // NexusSyncAsyncMismatchException (which would abort the caller's tick loop).
             if (_localSignalBus is SignalBus concreteBus)
@@ -292,9 +318,12 @@ namespace Nexus.Netcode
                 }
 
                 // Restore models to the rollback tick state first
-                for (int i = 0; i < _modelHandlers.Count; i++)
+                lock (_modelHandlersLock)
                 {
-                    _modelHandlers[i].Restore(rollbackTick);
+                    for (int i = 0; i < _modelHandlers.Count; i++)
+                    {
+                        _modelHandlers[i].Restore(rollbackTick);
+                    }
                 }
 
                 _currentTick = rollbackTick;
@@ -303,9 +332,12 @@ namespace Nexus.Netcode
                 // Order matters: Capture BEFORE Replay keeps the pre-tick snapshot contract.
                 while (_currentTick <= targetTick)
                 {
-                    for (int i = 0; i < _modelHandlers.Count; i++)
+                    lock (_modelHandlersLock)
                     {
-                        _modelHandlers[i].Capture(_currentTick);
+                        for (int i = 0; i < _modelHandlers.Count; i++)
+                        {
+                            _modelHandlers[i].Capture(_currentTick);
+                        }
                     }
 
                     foreach (var history in _histories.Values)
@@ -330,9 +362,12 @@ namespace Nexus.Netcode
             {
                 history.Prune(confirmedTick);
             }
-            for (int i = 0; i < _modelHandlers.Count; i++)
+            lock (_modelHandlersLock)
             {
-                _modelHandlers[i].Prune(confirmedTick);
+                for (int i = 0; i < _modelHandlers.Count; i++)
+                {
+                    _modelHandlers[i].Prune(confirmedTick);
+                }
             }
         }
 
@@ -342,7 +377,10 @@ namespace Nexus.Netcode
         public void Clear()
         {
             _histories.Clear();
-            _modelHandlers.Clear();
+            lock (_modelHandlersLock)
+            {
+                _modelHandlers.Clear();
+            }
         }
     }
 }

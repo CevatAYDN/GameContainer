@@ -141,5 +141,18 @@ namespace Nexus.Core.Services
             _layerRoots.Clear();
             _canvasRoot = null;
         }
+
+        /// <summary>
+        /// Drops all references to the canvas WITHOUT destroying it. The [Nexus_UICanvas]
+        /// GameObject is a shared DontDestroyOnLoad singleton that may be referenced by
+        /// several owners (WindowManager, UIManager) at once — no single owner may destroy
+        /// it on teardown (see UIManager.Dispose). Scene/context teardown cleans it up.
+        /// </summary>
+        public void ReleaseWithoutDestroy()
+        {
+            _canvasObject = null;
+            _layerRoots.Clear();
+            _canvasRoot = null;
+        }
     }
 }

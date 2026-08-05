@@ -92,7 +92,7 @@ namespace Nexus.Core.Services
 
         /// <summary>Returns the vibration duration/amplitude for a haptic type (SDK 26+ uses
         /// amplitude; pre-26 uses duration only). Single source of truth for the pattern table.
-        /// S1 fix: moved OUTSIDE the UNITY_ANDROID guard — the iOS path also needs it, and the
+        /// Moved OUTSIDE the UNITY_ANDROID guard — the iOS path also needs it, and the
         /// old placement made the iOS build fail to compile (GetHapticPattern was undefined).</summary>
         private static (long ms, int amplitude) GetHapticPattern(HapticType type)
         {
@@ -128,7 +128,7 @@ namespace Nexus.Core.Services
             if (!IsEnabled) return;
 
 #if UNITY_IOS && !UNITY_EDITOR
-            // S1 fix: UnityEngine.iOS.Device.PlaySystemSound(int) plays one of a small set of
+            // UnityEngine.iOS.Device.PlaySystemSound(int) plays one of a small set of
             // predefined SYSTEM SOUND IDs — it does NOT drive the haptic engine, and the
             // computed values (10*30/100=3, 60*120/100=72, …) are arbitrary IDs, most out of
             // the valid range. Handheld.Vibrate() on iOS triggers the real system haptic

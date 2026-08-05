@@ -14,7 +14,12 @@ namespace Nexus.Core.Services
 
     public class UnityTimeProvider : ITimeProvider
     {
-        public float Now => Time.realtimeSinceStartup;
+        // Time.realtimeSinceStartup is main-thread-only, but SaveThrottler is documented
+        // callable from non-main threads. Use a monotonic Stopwatch instead — the
+        // throttler only compares differences, so the absolute time base is irrelevant.
+        private static readonly System.Diagnostics.Stopwatch s_clock = System.Diagnostics.Stopwatch.StartNew();
+
+        public float Now => (float)s_clock.Elapsed.TotalSeconds;
     }
 
     /// <summary>
@@ -42,6 +47,9 @@ namespace Nexus.Core.Services
             public float LastSaveTime = -999f;
             public bool Pending;
             public int ConsecutiveFailures;
+            /// <summary>Set while this slot's action is executing, so two callers (Tick,
+            /// ForceSave, Flush) can never run the same save concurrently.</summary>
+            public bool Flushing;
         }
 
         // Owner id → slot. Guarded by _lock: services may request from different threads
@@ -52,7 +60,7 @@ namespace Nexus.Core.Services
 
         private const string DefaultOwner = "default";
 
-        // M1: consecutive-failure accounting. A failing save must back off (the throttle
+        // Consecutive-failure accounting. A failing save must back off (the throttle
         // window gates the next retry) instead of retrying on every request in a tight
         // loop, and must give up after a bound so a permanently broken disk cannot keep
         // the pending flag alive forever. Per-owner.
@@ -69,7 +77,11 @@ namespace Nexus.Core.Services
             _throttleSeconds = (float)throttleTime.TotalSeconds;
         }
 
-        private float Now => TimeProvider?.Now ?? Time.realtimeSinceStartup;
+        // Thread-safe monotonic fallback clock (Time.realtimeSinceStartup would throw off
+        // the main thread; see UnityTimeProvider).
+        private static readonly System.Diagnostics.Stopwatch s_fallbackClock = System.Diagnostics.Stopwatch.StartNew();
+
+        private float Now => TimeProvider?.Now ?? (float)s_fallbackClock.Elapsed.TotalSeconds;
 
         public float SecondsSinceLastSave => GetSecondsSinceLastSave(DefaultOwner);
 
@@ -196,8 +208,18 @@ namespace Nexus.Core.Services
         private void FlushSlot(SaveSlot slot)
         {
             Action action;
-            lock (_lock) { action = slot.LastAction; }
-            if (action == null) return;
+            lock (_lock)
+            {
+                // The action is RETAINED, not consumed: Flush()/OnDispose must be able to
+                // re-persist an owner's current state even when nothing new was requested
+                // (a save is idempotent — writing the same state twice is harmless, losing
+                // it is not). What must never happen is two callers running the same action
+                // at the same time, so execution is guarded by a per-slot in-flight flag.
+                if (slot.Flushing) return;
+                action = slot.LastAction;
+                if (action == null) return;
+                slot.Flushing = true;
+            }
 
             try
             {
@@ -211,7 +233,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                // M1: back off after a failed save. Treating the failed attempt as a save
+                // Back off after a failed save. Treating the failed attempt as a save
                 // moment makes the throttle window gate the next retry (no tight loop), and
                 // the retry cap clears the pending flag after repeated failures so a broken
                 // disk cannot keep retrying forever. Per-owner, so one owner's failure never
@@ -225,6 +247,10 @@ namespace Nexus.Core.Services
                 }
                 NexusRuntime.Logger?.LogWarning(
                     $"[SaveThrottler] Save execution failed ({slot.ConsecutiveFailures}/{MaxConsecutiveSaveFailures} consecutive): {ex.Message}");
+            }
+            finally
+            {
+                lock (_lock) { slot.Flushing = false; }
             }
         }
     }

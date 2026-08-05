@@ -19,7 +19,7 @@ namespace Nexus.Core
     /// </summary>
     internal static class SafeAsyncRunner
     {
-        // R2026-H2 fix: Task-based overload shared by UIManager/WindowManager (and any
+        // Task-based overload shared by UIManager/WindowManager (and any
         // service needing fire-and-forget with guaranteed error capture). Previously both
         // UI managers carried a copy-pasted private SafeFireAndForget helper.
         public static void Run(System.Threading.Tasks.Task task, string errorContext)
@@ -31,10 +31,7 @@ namespace Nexus.Core
                 {
                     Exception ex = task.Exception?.InnerException;
                     if (ex != null && !(ex is OperationCanceledException))
-                    {
-                        SignalBus.RaiseUnhandledException(ex, errorContext);
-                        NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
-                    }
+                        ReportFailure(ex, errorContext, null);
                 }
                 return;
             }
@@ -53,12 +50,17 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                SignalBus.RaiseUnhandledException(ex, errorContext);
-                NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
+                ReportFailure(ex, errorContext, null);
             }
         }
 
-        public static void Run(Func<ValueTask> func, string errorContext)
+        /// <param name="onError">
+        /// Optional caller-supplied handler. When provided it receives the failure INSTEAD of
+        /// the global <see cref="SignalBus.OnUnhandledException"/> event, so a caller that
+        /// handles its own errors does not also trip global error reporting. The failure is
+        /// logged either way.
+        /// </param>
+        public static void Run(Func<ValueTask> func, string errorContext, Action<Exception> onError = null)
         {
             try
             {
@@ -69,26 +71,20 @@ namespace Nexus.Core
                     {
                         Exception ex = task.AsTask().Exception?.InnerException;
                         if (ex != null && !(ex is OperationCanceledException))
-                        {
-                            SignalBus.RaiseUnhandledException(ex, errorContext);
-                            NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
-                        }
+                            ReportFailure(ex, errorContext, onError);
                     }
                     return;
                 }
-                _ = RunAsync(task, errorContext);
+                _ = RunAsync(task, errorContext, onError);
             }
             catch (Exception ex)
             {
                 if (!(ex is OperationCanceledException))
-                {
-                    SignalBus.RaiseUnhandledException(ex, errorContext);
-                    NexusRuntime.Logger?.LogError($"[Nexus] {errorContext} (sync throw): {ex.Message}\n{ex.StackTrace}");
-                }
+                    ReportFailure(ex, $"{errorContext} (sync throw)", onError);
             }
         }
 
-        private static async ValueTask RunAsync(ValueTask task, string errorContext)
+        private static async ValueTask RunAsync(ValueTask task, string errorContext, Action<Exception> onError)
         {
             try
             {
@@ -100,9 +96,26 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
-                SignalBus.RaiseUnhandledException(ex, errorContext);
-                NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
+                ReportFailure(ex, errorContext, onError);
             }
+        }
+
+        private static void ReportFailure(Exception ex, string errorContext, Action<Exception> onError)
+        {
+            if (onError != null)
+            {
+                try { onError(ex); }
+                catch (Exception handlerEx)
+                {
+                    SignalBus.RaiseUnhandledException(handlerEx, $"{errorContext}: onError handler threw");
+                    NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: onError handler threw: {handlerEx.Message}\n{handlerEx.StackTrace}");
+                }
+            }
+            else
+            {
+                SignalBus.RaiseUnhandledException(ex, errorContext);
+            }
+            NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
         }
     }
 
@@ -151,7 +164,7 @@ namespace Nexus.Core
         public IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers => _commandRegistry.RegisteredHandlers;
 
         /// <summary>
-        /// P0-3 fix: cached per-signal-type trace label so the trace ring buffer
+        /// Cached per-signal-type trace label so the trace ring buffer
         /// stays allocation-free on the hot path.
         /// </summary>
         private static class SignalTraceLabel<T> where T : struct
@@ -166,7 +179,7 @@ namespace Nexus.Core
         // Reentrancy guard for the synchronous fast path. Thread-static by design: sync
         // dispatch is main-thread-only, so each thread tracks its own nesting and threads
         // never observe each other's depth.
-        // R2026-H7 note: the sync (MaxStackDepth=10) and async (MaxAsyncStackDepth=32)
+        // The sync (MaxStackDepth=10) and async (MaxAsyncStackDepth=32)
         // guards are INTENTIONALLY separate counters — a sync handler that calls
         // FireAsync starts a fresh async budget, so worst-case combined depth is
         // 10 + 32 = 42. This is by design (sync guards real stack overflow; async guards
@@ -311,13 +324,16 @@ namespace Nexus.Core
             bool registered = false;
             foreach (var attr in handlers)
             {
-                RegisterCommand(attr.SignalType, commandType, attr.Mode, attr.Priority, isAsync: forceAsync ?? (isAsync && !isSync));
+                // Precedence: an explicit forceAsync from the harness wins, then the
+                // attribute's own IsAsync override, then the interface-derived default.
+                bool attrIsAsync = forceAsync ?? attr.IsAsync ?? (isAsync && !isSync);
+                RegisterCommand(attr.SignalType, commandType, attr.Mode, attr.Priority, isAsync: attrIsAsync, oneShot: attr.OneShot);
                 registered = true;
             }
 
             if (composite != null)
             {
-                bool compositeIsAsync = forceAsync ?? ((isCompositeAsync && !isCompositeSync) || (isAsync && !isSync));
+                bool compositeIsAsync = forceAsync ?? composite.IsAsync ?? ((isCompositeAsync && !isCompositeSync) || (isAsync && !isSync));
                 RegisterCompositeCommand(composite.SignalTypes, commandType, composite.OneShot, composite.Priority, compositeIsAsync);
                 registered = true;
             }
@@ -333,7 +349,7 @@ namespace Nexus.Core
         public bool HasCommandHandler<TSignal>() where TSignal : struct
             => HasCommandHandler(typeof(TSignal));
 
-        // REFACTOR PLAN §2.1: when no composite trigger was ever registered, ProcessCompositeTriggers
+        // When no composite trigger was ever registered, ProcessCompositeTriggers
         // is skipped entirely on every Fire() — the no-composite case no longer pays the
         // per-Fire() buffer setup + dictionary lookup. Set on the single registration path
         // (RegisterCommandType → RegisterCompositeCommand) so every attribute-scanned and
@@ -354,7 +370,7 @@ namespace Nexus.Core
 
         public void Fire<T>(T signal) where T : struct
         {
-            // REVIEW NOTE: no _disposed guard here — the harness's dispose-during-dispatch
+            // No _disposed guard here — the harness's dispose-during-dispatch
             // and fire-after-dispose tests expect Fire to be a no-op (not throw) after
             // Dispose. The registries are cleared by Dispose, so a post-dispose Fire
             // dispatches to zero handlers and is harmless. Adding a throw here would
@@ -385,7 +401,7 @@ namespace Nexus.Core
             GetHybridQueue().EnqueueNextFrame(signal);
         }
 
-        // R2026-M2 note: each call allocates one linked CancellationTokenSource. That is
+        // Each call allocates one linked CancellationTokenSource. That is
         // acceptable for the intended use (user-triggered/network-bound signals, a few per
         // second at most) — do NOT use this on a per-frame hot path; use FireAsync instead.
         public async ValueTask FireAsyncWithTimeout<T>(T signal, int timeoutMilliseconds) where T : struct
@@ -415,7 +431,8 @@ namespace Nexus.Core
         {
             SafeAsyncRunner.Run(
                 () => FireInternalAsync(signal, isCrossContextSource: false),
-                $"FireAsyncAndForget failed for signal '{typeof(T).FullName}'");
+                $"FireAsyncAndForget failed for signal '{typeof(T).FullName}'",
+                onError);
         }
 
         public ISignalSubscription Subscribe<T>(Action<T> handler) where T : struct
@@ -437,18 +454,18 @@ namespace Nexus.Core
         {
             var type = typeof(T);
 
-            // Audit fix 4.1: single volatile read gates the per-fire counter + ring write.
+            // Single volatile read gates the per-fire counter + ring write.
             if (NexusRuntime.Metrics.MetricsEnabled)
             {
                 NexusRuntime.Metrics.RecordSignalDispatched();
                 NexusRuntime.Metrics.RecordTrace(SignalTraceLabel<T>.Fire);
             }
 
-            // Plan §1.4.1 — If this signal has ANY async handlers registered,
+            // If this signal has ANY async handlers registered,
             // delegate to the async path to preserve Sequential ordering guarantees.
             // The async path properly awaits each handler in priority order.
             // Sync-only signals take the fast path below with zero async overhead.
-            // P1-2 fix: reads go through volatile snapshots (no unsynchronized Dictionary access).
+            // Reads go through volatile snapshots (no unsynchronized Dictionary access).
             bool hasAsync = _commandRegistry.HasAsyncCommandHandlers(type);
             bool hasAsyncSubscriptions = _subscriptionRegistry.HasAsyncSubscriptions(type);
 
@@ -471,7 +488,7 @@ namespace Nexus.Core
             if (s_stackDepth > MaxStackDepth)
             {
                 s_stackDepth--;
-                // A8 fix: reentrancy protection must throw in ALL build targets. Silently
+                // Reentrancy protection must throw in ALL build targets. Silently
                 // returning in Release builds hid the state corruption that a runaway
                 // signal chain would cause — the guard now aborts the chain everywhere so
                 // recovery (RecoveryEngine triage) and tests see the same behavior.
@@ -489,7 +506,7 @@ namespace Nexus.Core
                 // P0-CR fix: defer boxing until we find a non-empty interceptor list.
                 // When no interceptors are registered (the common case), the struct is
                 // never copied to the heap, eliminating the per-Fire() GC allocation.
-                // REVIEW FIX (3.1): the "0 GC allocation" claim is CONDITIONAL — when
+                // The "0 GC allocation" claim is CONDITIONAL — when
                 // interceptors ARE registered, the signal struct is boxed once per Fire()
                 // (boxedSignal ??= (object)signal). This is inherent to the interceptor
                 // API (which operates on object), so the claim is documented as:
@@ -549,8 +566,12 @@ namespace Nexus.Core
                     // One-shot handlers are claimed atomically BEFORE execution: the winning
                     // fire executes, concurrent fires that observe the same read-copy snapshot
                     // lose the claim and skip — guaranteeing exactly-once even under races.
-                    foreach (var handler in handlers)
+                    // Indexed, not foreach: `handlers` is IReadOnlyList<T>, so foreach boxes
+                    // List<T>'s struct enumerator — 40 bytes on every dispatch with a handler,
+                    // which is what broke the zero-allocation guarantee on this hot path.
+                    for (int i = 0; i < handlers.Count; i++)
                     {
+                        var handler = handlers[i];
                         if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
                             continue; // another fire already claimed this one-shot handler
                         _commandExecutor.Execute(handler, signal);
@@ -600,7 +621,7 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// P0-4 fix: async-safe dispatch for recovery signals. If the failed-command
+        /// Async-safe dispatch for recovery signals. If the failed-command
         /// signal has async handlers/subscriptions, route it through the async path
         /// (fire-and-forget with error capture) instead of throwing
         /// <see cref="NexusSyncAsyncMismatchException"/> during error handling.
@@ -650,7 +671,7 @@ namespace Nexus.Core
             if (++depthBox.Value > MaxAsyncStackDepth)
             {
                 depthBox.Value--;
-                // A8 fix: same as the sync path — always throw, never return silently in
+                // Same as the sync path — always throw, never return silently in
                 // Release builds (silent return masked runaway async chains).
                 throw new NexusReentrancyException($"Async stack overflow detected. Reentrancy limit of {MaxAsyncStackDepth} exceeded for signal {typeof(T).FullName}");
             }
@@ -764,7 +785,7 @@ namespace Nexus.Core
                         int lastCompletedIndex = -1;
                         try
                         {
-                            // A5: track how many tasks actually started. If ExecuteAsync throws
+                            // Track how many tasks actually started. If ExecuteAsync throws
                             // synchronously mid-batch, the already-started ValueTasks must still
                             // be awaited — otherwise they are abandoned (their exceptions become
                             // unobserved and their work is silently lost).
@@ -807,8 +828,11 @@ namespace Nexus.Core
                         // Run sequentially. One-shot handlers are claimed atomically BEFORE their
                         // single run so concurrent fires can never double-execute them; the async
                         // one-shot is consumed synchronously before its first await.
-                        foreach (var handler in handlers)
+                        // Indexed for the same reason as the sync path: foreach over
+                        // IReadOnlyList<T> boxes the struct enumerator on every dispatch.
+                        for (int i = 0; i < handlers.Count; i++)
                         {
+                            var handler = handlers[i];
                             if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
                                 continue; // another fire already claimed this one-shot handler
                             if (handler.IsAsync)
@@ -838,7 +862,7 @@ namespace Nexus.Core
                             }
                             else if (handler is Func<T, CancellationToken, ValueTask> asyncSub)
                             {
-                                // P2-12 fix: pass the command-scoped token so subscriptions
+                                // Pass the command-scoped token so subscriptions
                                 // also honour the FireAsyncWithTimeout timeout.
                                 await asyncSub(signal, commandCt);
                             }
@@ -884,7 +908,7 @@ namespace Nexus.Core
         [ThreadStatic] private static List<(CompositeTriggerState trigger, CompositeContext context)> s_dueTriggerBuffer;
         [ThreadStatic] private static int s_compositeDepth;
 
-        // REVIEW FIX (3.2): nested composite dispatch previously allocated a fresh
+        // Nested composite dispatch previously allocated a fresh
         // List<> on EVERY nested call — a per-Fire() heap allocation that broke the
         // "0 GC" claim whenever a composite command fired another signal completing
         // another trigger. Now nested frames rent a buffer from a ThreadStatic free
@@ -895,12 +919,12 @@ namespace Nexus.Core
 
         private void ProcessCompositeTriggers<T>(T signal) where T : struct
         {
-            // REFACTOR PLAN §2.1: no composite triggers registered on this bus → nothing to
+            // No composite triggers registered on this bus → nothing to
             // collect, nothing to execute. Early return before ANY buffer setup, so the
             // common no-composite Fire() path adds a single volatile bool read.
             if (!_hasAnyCompositeTriggers) return;
 
-            // P1-14 fix: collect due triggers under the registry's composite lock (snapshot copy),
+            // Collect due triggers under the registry's composite lock (snapshot copy),
             // then execute them OUTSIDE any lock so user command code never runs while holding one.
             var signalType = typeof(T);
 
@@ -939,8 +963,11 @@ namespace Nexus.Core
 
             lock (_compositeLock)
             {
-                foreach (var trigger in triggers)
+                // Indexed: `triggers` is IReadOnlyList<T>, so foreach would box List<T>'s
+                // struct enumerator once per composite-armed dispatch.
+                for (int t = 0; t < triggers.Count; t++)
                 {
+                    var trigger = triggers[t];
                     if (trigger.IsCompleted) continue;
 
                     int index = Array.IndexOf(trigger.RequiredSignals, signalType);
@@ -1007,7 +1034,7 @@ namespace Nexus.Core
                 var targetCtx = contexts[i];
                 if (targetCtx == _context) continue; // Skip self
 
-                // BUG-5 fix: use OrdinalIgnoreCase to match NexusRuntime.GetContext()
+                // Use OrdinalIgnoreCase to match NexusRuntime.GetContext()
                 // behaviour. The previous == comparison was case-sensitive, so a ScopeTag
                 // mismatch like "Gameplay" vs "gameplay" would silently skip the target.
                 if (!string.IsNullOrEmpty(scopeTag) &&
@@ -1018,7 +1045,7 @@ namespace Nexus.Core
 
                 if (targetCtx.SignalBus is SignalBus concreteBus)
                 {
-                    // T7 fix: the TARGET bus may have async handlers/subscriptions for this
+                    // The TARGET bus may have async handlers/subscriptions for this
                     // signal. The sync FireCrossContext would throw
                     // NexusSyncAsyncMismatchException and break the broadcasting dispatch.
                     // Route through the async fire-and-forget path (with error capture) when
@@ -1051,7 +1078,7 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// P0-4 fix: async-aware dispatch used by queued/replayed signal paths
+        /// Async-aware dispatch used by queued/replayed signal paths
         /// (<see cref="HybridQueue"/> drains, network replay). If the signal has async
         /// handlers or subscriptions, it is routed through the async path fire-and-forget
         /// (with error capture) instead of throwing <see cref="NexusSyncAsyncMismatchException"/>.
@@ -1064,7 +1091,7 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// T7: fire-and-forget async dispatch used by <see cref="BroadcastCrossContext"/> when
+        /// Fire-and-forget async dispatch used by <see cref="BroadcastCrossContext"/> when
         /// the TARGET bus has async handlers/subscriptions for the broadcast signal. Kept in a
         /// separate [NoInlining] method so the lambda closure and interpolated error string live
         /// off the cross-context hot path (which must stay allocation-free — the ZeroGC harness
@@ -1135,7 +1162,7 @@ namespace Nexus.Core
             _commandRegistry.Dispose();
             _hasAnyCompositeTriggers = false;
 
-            // T2 fix: cancel in-flight async commands before disposal.
+            // Cancel in-flight async commands before disposal.
             // In-flight async commands continue running on disposed registries and container,
             // causing ObjectDisposedException/NullReferenceException. Pooled command objects
             // are also never returned (pool leak). Cancel them so they complete promptly.

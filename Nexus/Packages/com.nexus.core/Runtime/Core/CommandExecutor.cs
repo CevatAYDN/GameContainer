@@ -43,7 +43,7 @@ namespace Nexus.Core
         public int InFlightAsyncCommands => Volatile.Read(ref _inFlightAsyncCommands);
 
         /// <summary>
-        /// T2 fix: signals cancellation to all in-flight async commands. Previously a no-op
+        /// Signals cancellation to all in-flight async commands. Previously a no-op
         /// that relied on the context lifetime token being cancelled first — but if the
         /// executor is disposed before the context (or the context token is never cancelled),
         /// in-flight commands would keep running on disposed registries, causing
@@ -118,7 +118,7 @@ namespace Nexus.Core
 
                     if (command is ICommand<TSignal> genericSyncCmd)
                     {
-                        // P0-3 fix: bypass closure allocation when no decorators are registered.
+                        // Bypass closure allocation when no decorators are registered.
                         if (_context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
                         {
                             // Call via the [NoInlining] helper: an inline lambda here would capture
@@ -441,7 +441,7 @@ namespace Nexus.Core
 
                     if (command is IAsyncCommand asyncCmd)
                     {
-                        // P0-5 fix: apply [CommandTimeout] via a linked, self-cancelling token.
+                        // Apply [CommandTimeout] via a linked, self-cancelling token.
                         // useDecorators is computed once; the decorator lambda path is only
                         // entered when decorators actually exist.
                         await ExecuteAsyncWithOptionalTimeout(asyncCmd, handler.TimeoutMs, ct,
@@ -567,7 +567,7 @@ namespace Nexus.Core
 #endif
                 try
                 {
-                    // P1-14 fix: re-inject on retry so the command state is refreshed,
+                    // Re-inject on retry so the command state is refreshed,
                     // and run through the decorator pipeline like normal commands.
                     if (retryCount > 0)
                     {
@@ -603,7 +603,7 @@ namespace Nexus.Core
                     else if (command is IAsyncCompositeCommand asyncCompCmd)
                     {
                         var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        // A9 fix: composite async commands share the same in-flight cap as
+                        // Composite async commands share the same in-flight cap as
                         // regular async commands — overflow aborts the pipeline everywhere.
                         EnterAsyncInFlight();
                         inFlightIncremented = true;
@@ -630,7 +630,7 @@ namespace Nexus.Core
                     else if (command is IAsyncCommand asyncCmd)
                     {
                         var ct = _context?.LifetimeToken ?? CancellationToken.None;
-                        // A9 fix: composite async commands share the same in-flight cap as
+                        // Composite async commands share the same in-flight cap as
                         // regular async commands — overflow aborts the pipeline everywhere.
                         EnterAsyncInFlight();
                         inFlightIncremented = true;
@@ -671,7 +671,7 @@ namespace Nexus.Core
                     }
                     catch
                     {
-                        // M2 fix: HandleErrorWithDecision can THROW (strategy Abort, retry-limit
+                        // HandleErrorWithDecision can THROW (strategy Abort, retry-limit
                         // reached, or ExceptionDispatchInfo rethrow of OCE/Reentrancy). When it
                         // does, shouldRun stays true and the finally below would skip the
                         // ReturnCommand, leaking the pooled command and leaving the pool entry
@@ -695,7 +695,7 @@ namespace Nexus.Core
                     {
                         Interlocked.Decrement(ref _inFlightAsyncCommands);
                     }
-                    // M2 fix: return the pooled command on EVERY exit path — success,
+                    // Return the pooled command on EVERY exit path — success,
                     // skip/abort action, AND recovery rethrow (shouldRun set false in the
                     // catch above). Only the Retry loop iteration keeps it rented.
                     if (command != null && !shouldRun)
@@ -749,7 +749,7 @@ namespace Nexus.Core
                     }
                     else if (command is ICommand syncCmd)
                     {
-                        // P1-14 fix: composite commands run through the decorator pipeline.
+                        // Composite commands run through the decorator pipeline.
                         if (hasDecorators)
                         {
                             ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());

@@ -59,20 +59,53 @@ namespace Nexus.Core
         private static readonly object s_addLock = new();
         private static int s_nextId = 1;
         private static int s_maxErrors = 1000;
-        // A10 fix: s_errorGrouping previously grew unboundedly — every unique
+        // S_errorGrouping previously grew unboundedly — every unique
         // "category:message" key stayed in memory forever even after its entries were
         // pruned, so a long session with dynamic error messages (URLs, ids, filenames)
         // leaked memory. Cap it and rebuild from the retained queue when exceeded.
         private const int MaxGroupingKeys = 4096;
-        private static bool s_enabled = true;
+        // Volatile: s_enabled is toggled from any thread while Collect and the threaded Unity
+        // log hook read it on the hot path (same rationale as PerformanceMonitor.s_enabled —
+        // a plain bool could be cached in a register and never observe the toggle).
+        private static volatile bool s_enabled = true;
+        // True once user code has explicitly assigned Enabled; lets NexusRuntime's startup
+        // default skip flags the user already chose (see NexusRuntime.InitializeMonitoring).
+        private static bool s_enabledExplicitlySet;
+        // Opt-out for the global Unity log hook (see InitializeLogHook). Volatile: read by
+        // logMessageReceivedThreaded on arbitrary threads.
+        private static volatile bool s_captureUnityLogs = true;
 
+        /// <summary>
+        /// Raised for every collected entry.
+        /// WARNING: may be raised off the main thread — Collect() runs on whatever thread
+        /// reported the error (including Unity's threaded log callback), so subscribers must
+        /// not touch Unity APIs directly.
+        /// </summary>
         public static event Action<ErrorEntry> OnErrorAdded;
         public static event Action<int, int> OnErrorCountChanged; // (current, max)
 
         public static bool Enabled
         {
             get => s_enabled;
-            set => s_enabled = value;
+            set
+            {
+                s_enabledExplicitlySet = true;
+                s_enabled = value;
+            }
+        }
+
+        /// <summary>True once <see cref="Enabled"/> has been explicitly assigned.</summary>
+        internal static bool EnabledExplicitlySet => s_enabledExplicitlySet;
+
+        /// <summary>
+        /// Whether Unity console messages (Error/Assert/Exception) are captured into the
+        /// collection via <c>Application.logMessageReceivedThreaded</c>. Default true; set
+        /// false to opt out of the per-log-message processing entirely.
+        /// </summary>
+        public static bool CaptureUnityLogs
+        {
+            get => s_captureUnityLogs;
+            set => s_captureUnityLogs = value;
         }
 
         public static int MaxErrors
@@ -101,7 +134,7 @@ namespace Nexus.Core
                 RelatedType = relatedType
             };
 
-            // BUG-16 fix: group update and queue.Enqueue are now atomic under s_addLock so that
+            // Group update and queue.Enqueue are now atomic under s_addLock so that
             // grouping counters and the queue always stay consistent even under concurrent writers.
             var key = $"{category}:{message}";
             lock (s_addLock)
@@ -131,7 +164,7 @@ namespace Nexus.Core
                     s_errors.TryDequeue(out _);
                 }
 
-                // A10 fix: bound the grouping counters. When the unique-key cap is hit,
+                // Bound the grouping counters. When the unique-key cap is hit,
                 // rebuild the counters from the retained queue so the dictionary cannot grow
                 // without bound while Count semantics stay consistent with what is retained.
                 if (s_errorGrouping.Count > MaxGroupingKeys)
@@ -145,7 +178,7 @@ namespace Nexus.Core
                 }
             }
 
-            // T5 fix: a throwing event subscriber must never break error collection itself
+            // A throwing event subscriber must never break error collection itself
             // (an exception here would propagate into signal dispatch / recovery handling,
             // masking the original error). Raise each subscriber individually so one bad
             // handler cannot prevent the others from running, and log — never swallow
@@ -190,7 +223,7 @@ namespace Nexus.Core
 
         public static ErrorEntry[] GetErrors(ErrorSeverity? minSeverity = null, ErrorCategory? category = null, int limit = 100)
         {
-            // BUG-15 fix: take a thread-safe snapshot first so iteration runs on stable data
+            // Take a thread-safe snapshot first so iteration runs on stable data
             // even if another thread calls Collect() concurrently.
             // The queue is FIFO so entries are already in insertion (timestamp) order — the
             // previous OrderByDescending(e => e.Timestamp) was a redundant full sort. Walk
@@ -219,7 +252,7 @@ namespace Nexus.Core
 
         public static ErrorEntry[] GetRecentErrors(int count = 20)
         {
-            // BUG-15 fix: snapshot before walking. FIFO order means the newest entries are at
+            // Snapshot before walking. FIFO order means the newest entries are at
             // the tail — no sort needed, just a backwards bounded scan.
             var snapshot = s_errors.ToArray();
             int capacity = Math.Min(count, snapshot.Length);
@@ -296,7 +329,11 @@ namespace Nexus.Core
 
         private static void OnUnityLogReceived(string condition, string stackTrace, LogType type)
         {
-            if (!s_enabled) return;
+            if (!s_enabled || !s_captureUnityLogs) return;
+            // Cheap early-out BEFORE any allocation: this callback fires for EVERY Unity log
+            // message; only failures are worth an ErrorEntry + interpolated grouping key under
+            // the global collection lock. Info/Warning spam from log-heavy projects is skipped.
+            if (type != LogType.Error && type != LogType.Assert && type != LogType.Exception) return;
             // Guard against infinite loop: if a subscriber of OnErrorAdded calls Debug.Log,
             // that re-enters this callback. Without the guard, the call stack grows until
             // a StackOverflowException crashes the process.
@@ -304,15 +341,7 @@ namespace Nexus.Core
             s_inLogCallback = true;
             try
             {
-                ErrorSeverity severity = type switch
-                {
-                    LogType.Log => ErrorSeverity.Info,
-                    LogType.Warning => ErrorSeverity.Warning,
-                    LogType.Error => ErrorSeverity.Error,
-                    LogType.Assert => ErrorSeverity.Error,
-                    LogType.Exception => ErrorSeverity.Critical,
-                    _ => ErrorSeverity.Info
-                };
+                ErrorSeverity severity = type == LogType.Exception ? ErrorSeverity.Critical : ErrorSeverity.Error;
 
                 // Avoid loop: logToConsole MUST be false when capturing from Unity Log
                 Collect(severity, ErrorCategory.Unity, condition, stackTrace, "Unity Log", null, logToConsole: false);
@@ -348,7 +377,7 @@ namespace Nexus.Core
 
         public static ErrorEntry[] GetFrequentErrors(int minCount = 3, int limit = 10)
         {
-            // BUG-15 fix: snapshot before filtering. Manual filter + sort instead of the
+            // Snapshot before filtering. Manual filter + sort instead of the
             // LINQ Where/OrderByDescending/Take iterator chain (allocation-free apart from
             // the snapshot, the match list, and the result array).
             var snapshot = s_errors.ToArray();

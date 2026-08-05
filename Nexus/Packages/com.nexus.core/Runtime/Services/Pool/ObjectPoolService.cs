@@ -22,7 +22,7 @@ namespace Nexus.Core.Services
     {
         void Prewarm(GameObject prefab, int count, Transform parent = null);
         /// <summary>
-        /// Audit fix 3.3: frame-budgeted prewarm. Spreads instantiation across multiple frames
+        /// Frame-budgeted prewarm. Spreads instantiation across multiple frames
         /// (at most <paramref name="instancesPerFrame"/> per frame) so a large pool no longer
         /// stalls the main thread in a single frame on level load. The returned task completes
         /// when all <paramref name="count"/> instances are pooled (or the context is disposed).
@@ -39,7 +39,7 @@ namespace Nexus.Core.Services
     [Preserve]
     public class ObjectPoolService : NexusService<IObjectPoolService>, IObjectPoolService
     {
-        // M3: hard cap on how many inactive instances a single prefab pool may retain.
+        // Hard cap on how many inactive instances a single prefab pool may retain.
         // Guards against unbounded memory growth under high allocation bursts (e.g. a
         // projectile barrage despawning thousands of objects that are never re-spawned).
         private const int MaxInactivePerPool = 128;
@@ -71,6 +71,14 @@ namespace Nexus.Core.Services
         private GameObject _masterRootObject;
 
         private readonly List<IPoolable> _poolableBuffer = new(8);
+        // Reentrancy depth for the shared buffer above: an OnSpawned/OnDespawned callback
+        // may itself Spawn/Despawn another pooled object, which would clobber the buffer
+        // mid-iteration. Nested calls rent a fresh local list instead.
+        private int _poolableCallbackDepth;
+
+        // Fix: PrewarmAsync TCSs pending completion. Completed (cancelled) in Dispose so a
+        // caller awaiting a prewarm never hangs when the coroutine runner is torn down.
+        private readonly HashSet<System.Threading.Tasks.TaskCompletionSource<bool>> _pendingPrewarms = new();
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
@@ -99,7 +107,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        // Audit fix 3.3: the synchronous Prewarm loop instantiated every instance in one
+        // The synchronous Prewarm loop instantiated every instance in one
         // frame — an 800-object warm-up is a 50-200 ms main-thread spike exactly at level
         // transition, the worst possible moment. PrewarmAsync spreads the work across
         // frames via the same PoolTimerRunner coroutine host DespawnAfter already uses.
@@ -118,6 +126,7 @@ namespace Nexus.Core.Services
 
             var pool = GetOrCreatePool(prefab, parent);
             var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+            _pendingPrewarms.Add(tcs);
             var runner = _masterRootObject.GetComponent<PoolTimerRunner>() ?? _masterRootObject.AddComponent<PoolTimerRunner>();
             runner.StartCoroutine(PrewarmCoroutine(pool, count, instancesPerFrame, tcs));
             return tcs.Task;
@@ -125,27 +134,36 @@ namespace Nexus.Core.Services
 
         private IEnumerator PrewarmCoroutine(PoolData pool, int count, int instancesPerFrame, System.Threading.Tasks.TaskCompletionSource<bool> tcs)
         {
-            int created = 0;
-            while (created < count)
+            // The finally block runs even when the runner is destroyed mid-coroutine
+            // (Unity disposes the iterator), so the awaiting task always completes.
+            try
             {
-                int budget = instancesPerFrame;
-                while (budget-- > 0 && created < count)
+                int created = 0;
+                while (created < count)
                 {
-                    var instance = CreateInstance(pool);
-                    instance.SetActive(false);
-                    if (pool.Inactive.Count < MaxInactivePerPool)
+                    int budget = instancesPerFrame;
+                    while (budget-- > 0 && created < count)
                     {
-                        pool.Inactive.Push(instance);
+                        var instance = CreateInstance(pool);
+                        instance.SetActive(false);
+                        if (pool.Inactive.Count < MaxInactivePerPool)
+                        {
+                            pool.Inactive.Push(instance);
+                        }
+                        else
+                        {
+                            SafeDestroyUtility.SafeDestroy(instance);
+                        }
+                        created++;
                     }
-                    else
-                    {
-                        SafeDestroyUtility.SafeDestroy(instance);
-                    }
-                    created++;
+                    yield return null; // next frame
                 }
-                yield return null; // next frame
             }
-            tcs.TrySetResult(true);
+            finally
+            {
+                tcs.TrySetResult(true);
+                _pendingPrewarms.Remove(tcs);
+            }
         }
 
         public GameObject Spawn(GameObject prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null)
@@ -167,7 +185,10 @@ namespace Nexus.Core.Services
             if (parent != null)
                 t.SetParent(parent, false);
 
-            t.SetPositionAndRotation(position, rotation == default ? Quaternion.identity : rotation);
+            // Quaternion.operator== is dot-product based, so `rotation == default` never
+            // matches the all-zero default; compare components explicitly instead.
+            bool isDefaultRotation = rotation.x == 0f && rotation.y == 0f && rotation.z == 0f && rotation.w == 0f;
+            t.SetPositionAndRotation(position, isDefaultRotation ? Quaternion.identity : rotation);
             instance.SetActive(true);
 
             pool.Active.Add(instance);
@@ -175,13 +196,23 @@ namespace Nexus.Core.Services
             _poolsByInstanceId[spawnedId] = pool;
             _spawnGenerations[spawnedId] = ++_generationCounter;
 
-            _poolableBuffer.Clear();
-            instance.GetComponents(_poolableBuffer);
-            for (int i = 0; i < _poolableBuffer.Count; i++)
+            var poolables = _poolableCallbackDepth == 0 ? _poolableBuffer : new List<IPoolable>(8);
+            poolables.Clear();
+            instance.GetComponents(poolables);
+            _poolableCallbackDepth++;
+            try
             {
-                _poolableBuffer[i].OnSpawned();
+                for (int i = 0; i < poolables.Count; i++)
+                {
+                    try { poolables[i].OnSpawned(); }
+                    catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+                }
             }
-            _poolableBuffer.Clear();
+            finally
+            {
+                _poolableCallbackDepth--;
+                poolables.Clear();
+            }
 
             return instance;
         }
@@ -200,7 +231,7 @@ namespace Nexus.Core.Services
 
             if (!_poolsByInstanceId.TryGetValue(instanceId, out var pool))
             {
-                // Audit fix 1.4: the "not in any pool" branch destroyed WHATEVER was passed —
+                // The "not in any pool" branch destroyed WHATEVER was passed —
                 // including a prefab asset. Despawn(prefab) instead of Despawn(spawnedInstance)
                 // silently destroyed the project's prefab reference (the damage only surfaced
                 // on the next play). Registered prefabs are now explicitly protected.
@@ -218,18 +249,27 @@ namespace Nexus.Core.Services
 
             if (!pool.Active.Remove(instance)) return;
 
-            _poolableBuffer.Clear();
-            instance.GetComponents(_poolableBuffer);
-            for (int i = 0; i < _poolableBuffer.Count; i++)
+            var poolables = _poolableCallbackDepth == 0 ? _poolableBuffer : new List<IPoolable>(8);
+            poolables.Clear();
+            instance.GetComponents(poolables);
+            _poolableCallbackDepth++;
+            try
             {
-                try { _poolableBuffer[i].OnDespawned(); }
-                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+                for (int i = 0; i < poolables.Count; i++)
+                {
+                    try { poolables[i].OnDespawned(); }
+                    catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+                }
             }
-            _poolableBuffer.Clear();
+            finally
+            {
+                _poolableCallbackDepth--;
+                poolables.Clear();
+            }
 
             instance.SetActive(false);
             instance.transform.SetParent(pool.RootTransform, false);
-            // M3: bound inactive retention per pool so a burst of Despawn calls cannot
+            // Bound inactive retention per pool so a burst of Despawn calls cannot
             // grow the pool without limit. Overflow instances are destroyed — memory is
             // reclaimed instead of retained forever.
             if (pool.Inactive.Count < MaxInactivePerPool)
@@ -257,7 +297,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        // M3 fix: cache WaitForSeconds instances per unique delay value to avoid per-call heap allocation.
+        // Cache WaitForSeconds instances per unique delay value to avoid per-call heap allocation.
         // M3b fix: cap at 64 entries to prevent unbounded growth when callers pass non-repeating
         // float delays (e.g. computed values). The delay is rounded to the nearest 50 ms bucket
         // so similar values share a cached instance (0-alloc in the steady-state common case).
@@ -305,7 +345,7 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// Audit fix 1.4: true when <paramref name="obj"/> is one of the registered pool
+        /// True when <paramref name="obj"/> is one of the registered pool
         /// prefabs (reference compare, O(pools) — only reached on the invalid-call path).
         /// </summary>
         private bool IsRegisteredPrefab(GameObject obj)
@@ -361,7 +401,7 @@ namespace Nexus.Core.Services
         private static int GetId(UnityEngine.Object obj)
         {
             if (obj == null) return 0;
-            // A8 fix: use the modern Unity 6 GetEntityId() instead of the legacy
+            // Use the modern Unity 6 GetEntityId() instead of the legacy
             // GetInstanceID() reflection hack — GetInstanceID is obsolete (CS0619)
             // in Unity 6.5+, and GetEntityId() is its supported replacement.
             // R2026-H4 correction: GetEntityId() returns an EntityId STRUCT whose implicit
@@ -385,7 +425,7 @@ namespace Nexus.Core.Services
                 {
                     if (active != null)
                     {
-                        // Audit fix 3.2: per-instance dictionary cleanup now mirrors ClearPool
+                        // Per-instance dictionary cleanup now mirrors ClearPool
                         // exactly — previously the entries were only dropped by the bulk
                         // .Clear() below, so any per-instance teardown added between the loop
                         // and the final Clear would silently operate on stale registrations.
@@ -410,6 +450,19 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
+            // Complete pending PrewarmAsync tasks before the coroutine runner is destroyed
+            // so awaiting callers never hang on a TCS that will no longer be signalled.
+            if (_pendingPrewarms.Count > 0)
+            {
+                var pending = new System.Threading.Tasks.TaskCompletionSource<bool>[_pendingPrewarms.Count];
+                _pendingPrewarms.CopyTo(pending);
+                _pendingPrewarms.Clear();
+                for (int i = 0; i < pending.Length; i++)
+                {
+                    pending[i].TrySetCanceled();
+                }
+            }
+
             ClearAllPools();
             if (_masterRootObject != null)
             {

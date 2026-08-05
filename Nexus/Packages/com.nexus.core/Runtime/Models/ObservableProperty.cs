@@ -24,10 +24,10 @@ namespace Nexus.Core
     {
         // ── State ──────────────────────────────────────────────
         private T _value;
-        // N1: handler list, zero-GC snapshot cache, dirty flag and handler lock now
+        // Handler list, zero-GC snapshot cache, dirty flag and handler lock now
         // live once in the shared SecureObserverSet<T> core instead of being copied here.
         private readonly SecureObserverSet<T> _observers = new();
-        // Audit fix 1.3: the old `volatile bool` guard was check-then-set — two threads
+        // The old `volatile bool` guard was check-then-set — two threads
         // could both observe "not notifying" and double-dispatch (subscribers saw the same
         // old value twice and mediator/view state could desync). The guard now lives under
         // a tiny lock: the claim, the reentrant queue-write, and the dispatcher's exit
@@ -51,13 +51,13 @@ namespace Nexus.Core
         /// <summary>Gets or sets the current value. Setting triggers OnChanged without heap allocations.</summary>
         public T Value
         {
-            // R1 fix: read under _dispatchLock so a multi-field struct (e.g. BigDouble)
+            // Read under _dispatchLock so a multi-field struct (e.g. BigDouble)
             // cannot be torn — the setter writes _value under the same lock, so a
             // concurrent read/write is now serialized instead of producing a torn value.
             get { lock (_dispatchLock) return _value; }
             set
             {
-                // R2026-H5 fix: fast-path equality check OUTSIDE the lock. The previous
+                // Fast-path equality check OUTSIDE the lock. The previous
                 // code ran EqualityComparer<T>.Default.Equals under _dispatchLock — a
                 // virtual call that can run arbitrary user Equals code while holding the
                 // lock (longer critical section, theoretical deadlock if the custom
@@ -86,10 +86,19 @@ namespace Nexus.Core
                     _isNotifying = true;
                 }
 
+                bool completedNormally = false;
                 try
                 {
-                    var old = _value;
-                    _value = value;
+                    // old/current are locals: every read of the shared _value field happens
+                    // under _dispatchLock (a multi-field T would otherwise tear), and handlers
+                    // always observe the exact pair this iteration committed.
+                    T old;
+                    T current = value;
+                    lock (_dispatchLock)
+                    {
+                        old = _value;
+                        _value = current;
+                    }
                     while (true)
                     {
                         Action<T, T>[] snapshot = _observers.GetSnapshot();
@@ -97,7 +106,7 @@ namespace Nexus.Core
                         {
                             for (int i = 0; i < snapshot.Length; i++)
                             {
-                                snapshot[i]?.Invoke(old, _value);
+                                snapshot[i]?.Invoke(old, current);
                             }
                         }
 
@@ -121,18 +130,29 @@ namespace Nexus.Core
                             }
                         }
                         if (!hasPending) break;
-                        old = _value;
-                        _value = pending;
+                        lock (_dispatchLock)
+                        {
+                            old = _value;
+                            _value = pending;
+                        }
+                        current = pending;
                     }
+                    completedNormally = true;
                 }
                 finally
                 {
                     // Defensive: an exception escaping a handler must not leave the guard
-                    // claimed forever (all future writes would silently queue, never dispatch).
-                    lock (_dispatchLock)
+                    // claimed forever. Cleared ONLY on the exception path — after the loop's
+                    // normal exit another thread may already have claimed the dispatcher
+                    // role, and an unconditional reset here would drop that thread's queued
+                    // write and allow a second concurrent dispatcher.
+                    if (!completedNormally)
                     {
-                        _isNotifying = false;
-                        _hasPendingReentrantValue = false;
+                        lock (_dispatchLock)
+                        {
+                            _isNotifying = false;
+                            _hasPendingReentrantValue = false;
+                        }
                     }
                 }
             }
@@ -141,7 +161,9 @@ namespace Nexus.Core
         /// <summary>Sets the underlying value without firing the change callback.</summary>
         public void SetWithoutNotify(T value)
         {
-            _value = value;
+            // Written under the same lock as the notifying setter and the getter: an
+            // unlocked write here would defeat the tear-free guarantee for multi-field T.
+            lock (_dispatchLock) _value = value;
         }
 
         // ── Observation ────────────────────────────────────────
@@ -155,10 +177,12 @@ namespace Nexus.Core
         public void ClearOnChanged() => _observers.Clear();
 
         // ── Implicit conversion (read convenience) ─────────────
-        public static implicit operator T(ObservableProperty<T> prop) => prop._value;
+        // Routed through the Value getter so the conversion shares the getter's
+        // tear-free read; a direct field read would silently bypass it.
+        public static implicit operator T(ObservableProperty<T> prop) => prop.Value;
 
         /// <summary>Returns the current value (same as <see cref="Value"/> getter).</summary>
-        public override string ToString() => _value?.ToString() ?? "(null)";
+        public override string ToString() => Value?.ToString() ?? "(null)";
     }
 
     // ── Reactive collection (optional, for list-backed properties) ──
@@ -172,11 +196,15 @@ namespace Nexus.Core
     {
         private readonly List<T> _items = new();
 
-        // N1: the three callback channels share the SnapshotDelegateSet core (dedupe +
+        // The three callback channels share the SnapshotDelegateSet core (dedupe +
         // zero-GC snapshot cache) instead of hand-rolled lists + per-mutation ToArray copies.
         private readonly SnapshotDelegateSet<Action<int, T>> _onAdded = new();
         private readonly SnapshotDelegateSet<Action<int, T>> _onRemoved = new();
         private readonly SnapshotDelegateSet<Action> _onCleared = new();
+        // Element replacement (list[i] = x) is a change like any other — without this
+        // channel an in-place assignment mutated the list silently and bound views kept
+        // rendering the old element.
+        private readonly SnapshotDelegateSet<Action<int, T, T>> _onReplaced = new();
 
         // Fix: _isNotifying must be volatile so cross-thread visibility is guaranteed,
         // and all reads/writes stay within the same lock scope to prevent races between
@@ -184,7 +212,7 @@ namespace Nexus.Core
         private readonly object _eventLock = new();
         private volatile bool _isNotifying;
 
-        // M4: structural changes that arrived while a notification dispatch was in progress
+        // Structural changes that arrived while a notification dispatch was in progress
         // (reentrant Add/Remove/Clear, same or other thread). Previously such nested
         // mutations silently SKIPPED their callbacks — handlers were never told the list
         // changed, so views could keep stale data while the backing list moved on. Changes
@@ -194,27 +222,37 @@ namespace Nexus.Core
         // call stack, so steady state stays zero-alloc.
         private readonly List<PendingChange> _pendingChanges = new();
 
-        private enum PendingChangeOp : byte { Add = 0, Remove = 1, Clear = 2 }
+        private enum PendingChangeOp : byte { Add = 0, Remove = 1, Clear = 2, Replace = 3 }
 
         private readonly struct PendingChange
         {
             public readonly PendingChangeOp Op;
             public readonly int Index;
             public readonly T Item;
+            /// <summary>Previous element; only meaningful for <see cref="PendingChangeOp.Replace"/>.</summary>
+            public readonly T OldItem;
             public PendingChange(PendingChangeOp op, int index, T item)
             {
                 Op = op;
                 Index = index;
                 Item = item;
+                OldItem = default;
+            }
+            public PendingChange(PendingChangeOp op, int index, T oldItem, T newItem)
+            {
+                Op = op;
+                Index = index;
+                Item = newItem;
+                OldItem = oldItem;
             }
         }
 
         // ── Access ─────────────────────────────────────────────
-        // Audit fix 3.7: Count was taking _eventLock on every read — a 100-item inventory
+        // Count was taking _eventLock on every read — a 100-item inventory
         // bound every frame paid 100+ lock acquisitions. A volatile count field updated
         // under _eventLock on every mutation gives lock-free reads.
         private volatile int _count;
-        // Audit fix 3.8: AsReadOnly allocated a full new List<T> on every call (per-frame
+        // AsReadOnly allocated a full new List<T> on every call (per-frame
         // UI refresh churn). The snapshot is now version-cached: repeated calls between
         // mutations reuse the same immutable list (never mutated after publish, so stale
         // wrappers held by older callers stay consistent).
@@ -228,10 +266,34 @@ namespace Nexus.Core
             get { lock (_eventLock) return _items[index]; }
             set
             {
+                T previous;
+                Action<int, T, T>[] replacedSnapshot;
                 lock (_eventLock)
                 {
+                    previous = _items[index];
                     _items[index] = value;
                     _version++;
+                    if (_isNotifying)
+                    {
+                        _pendingChanges.Add(new PendingChange(PendingChangeOp.Replace, index, previous, value));
+                        return;
+                    }
+                    replacedSnapshot = _onReplaced.GetSnapshot();
+                    if (replacedSnapshot != null) _isNotifying = true;
+                }
+
+                if (replacedSnapshot != null)
+                {
+                    try
+                    {
+                        for (int i = 0; i < replacedSnapshot.Length; i++)
+                            replacedSnapshot[i]?.Invoke(index, previous, value);
+                    }
+                    finally
+                    {
+                        lock (_eventLock) _isNotifying = false;
+                    }
+                    DrainPendingChanges();
                 }
             }
         }
@@ -250,7 +312,7 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Audit fix 3.7: copies the current items into <paramref name="destination"/> under a
+        /// Copies the current items into <paramref name="destination"/> under a
         /// SINGLE lock acquisition — UI bind loops no longer pay N+1 lock acquisitions per frame.
         /// Returns the number of items copied (the lesser of list count and destination length).
         /// </summary>
@@ -276,7 +338,7 @@ namespace Nexus.Core
                 _items.Add(item);
                 _count = _items.Count;
                 _version++;
-                // M4: reentrant Add during an in-flight notification is QUEUED, not dropped.
+                // Reentrant Add during an in-flight notification is QUEUED, not dropped.
                 if (_isNotifying)
                 {
                     _pendingChanges.Add(new PendingChange(PendingChangeOp.Add, index, item));
@@ -313,7 +375,7 @@ namespace Nexus.Core
                 _items.RemoveAt(index);
                 _count = _items.Count;
                 _version++;
-                // M4: reentrant Remove during an in-flight notification is QUEUED, not dropped.
+                // Reentrant Remove during an in-flight notification is QUEUED, not dropped.
                 if (_isNotifying)
                 {
                     _pendingChanges.Add(new PendingChange(PendingChangeOp.Remove, index, item));
@@ -349,7 +411,7 @@ namespace Nexus.Core
                 _items.RemoveAt(index);
                 _count = _items.Count;
                 _version++;
-                // M4: reentrant RemoveAt during an in-flight notification is QUEUED, not dropped.
+                // Reentrant RemoveAt during an in-flight notification is QUEUED, not dropped.
                 if (_isNotifying)
                 {
                     _pendingChanges.Add(new PendingChange(PendingChangeOp.Remove, index, item));
@@ -382,7 +444,7 @@ namespace Nexus.Core
                 _items.Clear();
                 _count = 0;
                 _version++;
-                // M4: reentrant Clear during an in-flight notification is QUEUED, not dropped.
+                // Reentrant Clear during an in-flight notification is QUEUED, not dropped.
                 if (_isNotifying)
                 {
                     _pendingChanges.Add(new PendingChange(PendingChangeOp.Clear, -1, default));
@@ -440,6 +502,9 @@ namespace Nexus.Core
                         case PendingChangeOp.Clear:
                             DispatchPendingCleared();
                             break;
+                        case PendingChangeOp.Replace:
+                            DispatchPendingReplaced(pending[i].Index, pending[i].OldItem, pending[i].Item);
+                            break;
                     }
                 }
             }
@@ -485,6 +550,26 @@ namespace Nexus.Core
             }
         }
 
+        private void DispatchPendingReplaced(int index, T oldItem, T newItem)
+        {
+            Action<int, T, T>[] snapshot;
+            lock (_eventLock)
+            {
+                snapshot = _onReplaced.GetSnapshot();
+                if (snapshot == null || snapshot.Length == 0) return;
+                _isNotifying = true;
+            }
+            try
+            {
+                for (int i = 0; i < snapshot.Length; i++)
+                    snapshot[i]?.Invoke(index, oldItem, newItem);
+            }
+            finally
+            {
+                lock (_eventLock) _isNotifying = false;
+            }
+        }
+
         private void DispatchPendingCleared()
         {
             Action[] snapshot;
@@ -517,16 +602,20 @@ namespace Nexus.Core
         public void RemoveOnRemoved(Action<int, T> handler) => _onRemoved.Remove(handler);
         public void OnCleared(Action handler) => _onCleared.Add(handler);
         public void RemoveOnCleared(Action handler) => _onCleared.Remove(handler);
+        /// <summary>Subscribes a handler invoked when an element is replaced via the indexer: (index, oldItem, newItem).</summary>
+        public void OnReplaced(Action<int, T, T> handler) => _onReplaced.Add(handler);
+        public void RemoveOnReplaced(Action<int, T, T> handler) => _onReplaced.Remove(handler);
 
         public void ClearAllCallbacks()
         {
             _onAdded.Clear();
             _onRemoved.Clear();
             _onCleared.Clear();
+            _onReplaced.Clear();
         }
 
         // ── Enumeration ────────────────────────────────────────
-        // R4 fix: enumerate a version-cached SNAPSHOT instead of the live backing list.
+        // Enumerate a version-cached SNAPSHOT instead of the live backing list.
         // The old `_items.GetEnumerator()` returned a live enumerator over the mutable
         // list, so a mutation during foreach threw InvalidOperationException. AsReadOnly()
         // returns an immutable snapshot (never mutated after publish), so foreach is now

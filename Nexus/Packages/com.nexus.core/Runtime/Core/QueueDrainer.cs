@@ -26,7 +26,7 @@ namespace Nexus.Core
         private void Update()
         {
             var ctx = _root.Context;
-            // BUG-19 fix: use null-conditional in case HybridQueue is null after dispose.
+            // Use null-conditional in case HybridQueue is null after dispose.
             if (ctx != null && _root.IsInitialized)
                 ctx.HybridQueue?.DrainThreadSafe();
         }
@@ -34,7 +34,7 @@ namespace Nexus.Core
         private void LateUpdate()
         {
             var ctx = _root.Context;
-            // BUG-19 fix: use null-conditional in case HybridQueue is null after dispose.
+            // Use null-conditional in case HybridQueue is null after dispose.
             if (ctx != null && _root.IsInitialized)
                 ctx.HybridQueue?.DrainNextFrame();
         }

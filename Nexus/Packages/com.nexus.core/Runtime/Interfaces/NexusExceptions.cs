@@ -2,7 +2,7 @@ using System;
 
 namespace Nexus.Core
 {
-    // R2026-A3 fix: common base class so callers can catch ALL Nexus framework errors
+    // Common base class so callers can catch ALL Nexus framework errors
     // with a single catch(NexusException) instead of enumerating every concrete type.
     // Existing catch(Exception) and catch(SpecificNexusException) sites are unaffected.
     public abstract class NexusException : Exception

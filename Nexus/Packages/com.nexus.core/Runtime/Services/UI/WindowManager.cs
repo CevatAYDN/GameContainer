@@ -27,7 +27,7 @@ namespace Nexus.Core.Services
     }
 
     /// <summary>
-    /// R2026-A2: legacy string-keyed window API. Prefer <see cref="IUIManager"/> — its
+    /// Legacy string-keyed window API. Prefer <see cref="IUIManager"/> — its
     /// type-safe <c>ScreenView</c> API (open by type, pooled instances, mediator auto-bind)
     /// is the canonical path; WindowManager is kept only for backward compatibility and
     /// will be removed in a future major version.
@@ -70,7 +70,7 @@ namespace Nexus.Core.Services
         // polling every 10 ms (~3000 timer allocations over a 30 s contention window).
         private TaskCompletionSource<bool> _pendingChanged = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        // B3: set at the start of Dispose so in-flight async open/close loops bail out
+        // Set at the start of Dispose so in-flight async open/close loops bail out
         // instead of touching a disposed semaphore / destroyed GameObjects.
         private volatile bool _disposed;
 
@@ -172,7 +172,7 @@ namespace Nexus.Core.Services
                 if (_activeWindows.TryGetValue(windowName, out existing) && existing != null)
                 {
                     existing.transform.SetAsLastSibling();
-                    // B6: keep the history order in sync with the visual top-most window so
+                    // Keep the history order in sync with the visual top-most window so
                     // CloseTopWindowAsync closes what the player actually sees on top.
                     _windowHistory.Remove(windowName);
                     _windowHistory.Add(windowName);
@@ -185,7 +185,7 @@ namespace Nexus.Core.Services
                 var pendingWait = System.Diagnostics.Stopwatch.StartNew();
                 while (_pendingOpenWindows.Contains(windowName))
                 {
-                    // T2 fix: capture the completion signal UNDER the lock. SignalPendingChanged()
+                    // Capture the completion signal UNDER the lock. SignalPendingChanged()
                     // only ever runs while holding _windowLock, so reading _pendingChanged here
                     // cannot race a concurrent completion. Previously the TCS was read AFTER
                     // releasing the lock — a completion that landed between the release and the
@@ -485,8 +485,8 @@ namespace Nexus.Core.Services
         public IReadOnlyList<WindowInfo> GetOpenWindowsSnapshot()
         {
             var result = new List<WindowInfo>();
-            // B3: bail out cleanly if the manager is being disposed (no ObjectDisposedException).
-            // R2026-M4 note: Wait(0) instead of Wait(50) — this is editor/tooling-only API,
+            // Bail out cleanly if the manager is being disposed (no ObjectDisposedException).
+            // Wait(0) instead of Wait(50) — this is editor/tooling-only API,
             // called from the main thread; a 50 ms block could hitch the editor UI.
             if (_disposed || !_windowLock.Wait(0)) return result;
             try
@@ -510,7 +510,7 @@ namespace Nexus.Core.Services
         {
             get
             {
-                // R2026-M4: Wait(0) — non-blocking editor introspection (see GetOpenWindowsSnapshot).
+                // Wait(0) — non-blocking editor introspection (see GetOpenWindowsSnapshot).
                 if (_disposed || !_windowLock.Wait(0)) return 0;
                 try { return _pendingOpenWindows.Count; }
                 finally { _windowLock.Release(); }
@@ -519,11 +519,11 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
-            // B3: mark disposed FIRST so in-flight async loops bail out, then wake any
+            // Mark disposed FIRST so in-flight async loops bail out, then wake any
             // pending waiters so they stop waiting instead of timing out for 30 s.
             _disposed = true;
 
-            // Audit fix 2.6: the pending-open drain + waiter signal now run UNDER the
+            // The pending-open drain + waiter signal now run UNDER the
             // semaphore. SignalPendingChanged's contract is "call under _windowLock" (a
             // waiter captures _pendingChanged.Task only while holding it) — the previous
             // lock-free Dispose raced that capture and could leave a stale entry in
@@ -561,7 +561,9 @@ namespace Nexus.Core.Services
                 DestroyAllWindowsForTeardown();
             }
 
-            _canvas.Dispose();
+            // Release (not destroy) the shared [Nexus_UICanvas]: a concurrently-alive
+            // UIManager may still be using it — mirrors UIManager's teardown behavior.
+            _canvas.ReleaseWithoutDestroy();
 
             _windowLock.Dispose();
         }

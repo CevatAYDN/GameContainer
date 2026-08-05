@@ -72,7 +72,7 @@ namespace Nexus.Core
             if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException ||
                 (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
             {
-                // P1-3 fix: preserve the original stack trace when rethrowing.
+                // Preserve the original stack trace when rethrowing.
                 ExceptionDispatchInfo.Capture(ex).Throw();
             }
 
@@ -100,7 +100,7 @@ namespace Nexus.Core
                     }
                     if (decision.Action == RecoveryAction.Abort)
                     {
-                        // İ4-fix: throw the typed abort exception instead of a bare
+                        // Throw the typed abort exception instead of a bare
                         // InvalidOperationException. The strategy-failure catch filter below
                         // matches on TYPE now, so it can no longer misfire when a strategy
                         // wraps the original exception as InnerException for its own reasons.
@@ -131,7 +131,7 @@ namespace Nexus.Core
                                     : $"[Nexus] Fallback command '{decision.FallbackCommandType.Name}' cannot execute synchronously for signal '{signal?.GetType().Name ?? "unknown"}'. Treating as Skip.");
                         }
 
-                        // T6 fix: a rejected (or absent) fallback must still surface the
+                        // A rejected (or absent) fallback must still surface the
                         // failure. Returning a Fallback plan with a null type made
                         // ExecuteSyncPlan/ExecuteAsyncPlan take the "nominal Fallback" path
                         // WITHOUT dispatching the CommandFailedSignal — the error was logged
@@ -145,7 +145,7 @@ namespace Nexus.Core
                         if (retryCount >= decision.MaxRetries)
                         {
                             NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
-                            // İ4-fix: typed abort exception (see Abort path above) so the
+                            // Typed abort exception (see Abort path above) so the
                             // strategy-failure filter below does not swallow it as a strategy
                             // error via InnerException identity.
                             throw new NexusRecoveryAbortException($"Retry limit reached for command {commandType.Name}.", ex);
@@ -155,7 +155,7 @@ namespace Nexus.Core
                 }
                 catch (Exception strategyEx) when (!(strategyEx is NexusRecoveryAbortException))
                 {
-                    // T6 fix: strategy failures were only written to the console; the
+                    // Strategy failures were only written to the console; the
                     // diagnostics layer (ErrorCollection) never saw them, so editor tooling
                     // and ErrorCollection subscribers could not react. Surface the strategy
                     // error through the same collection pipeline the original command error
@@ -176,11 +176,32 @@ namespace Nexus.Core
             return RecoveryPlan.SkipPlan(failedSignal);
         }
 
-        // Audit fix 2.7: was a plain int with ++/-- — a sync and an async fallback executing
-        // on different threads could race the counter and slip past MaxFallbackDepth
-        // (infinite fallback recursion). All accesses are Interlocked now.
-        private int _fallbackDepth;
+        // Fallback recursion depth is scoped to the RECOVERY CHAIN, not to the engine. An
+        // engine-wide counter meant four unrelated commands failing at the same time each
+        // consumed a slot, so the fourth had its FIRST — perfectly legitimate — fallback
+        // aborted with "max fallback depth exceeded". AsyncLocal carries the depth through
+        // the logical call chain (nested sync calls and awaits alike), which is exactly the
+        // recursion this guard is meant to bound. The mutable box keeps increments and
+        // decrements allocation-free after the first access in a flow, and its field is
+        // volatile because continuations may run on other threads.
+        private static readonly System.Threading.AsyncLocal<FallbackDepthBox> s_fallbackDepth = new();
         private const int MaxFallbackDepth = 3;
+
+        private sealed class FallbackDepthBox
+        {
+            public volatile int Value;
+        }
+
+        private static FallbackDepthBox GetFallbackDepthBox()
+        {
+            var box = s_fallbackDepth.Value;
+            if (box == null)
+            {
+                box = new FallbackDepthBox();
+                s_fallbackDepth.Value = box;
+            }
+            return box;
+        }
 
         private RecoveryAction ExecuteSyncPlan(RecoveryPlan plan, object signal)
         {
@@ -195,12 +216,11 @@ namespace Nexus.Core
             }
             if (plan.Action == RecoveryAction.Fallback)
             {
-                // Atomic claim of a depth slot: the increment and the limit check cannot
-                // interleave with a concurrent fallback on another thread.
-                if (System.Threading.Interlocked.Increment(ref _fallbackDepth) > MaxFallbackDepth)
+                var depth = GetFallbackDepthBox();
+                if (++depth.Value > MaxFallbackDepth)
                 {
-                    System.Threading.Interlocked.Decrement(ref _fallbackDepth);
-                    NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded. Aborting.");
+                    depth.Value--;
+                    NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded in this recovery chain. Aborting.");
                     return RecoveryAction.Abort;
                 }
                 bool depthClaimed = true;
@@ -208,7 +228,7 @@ namespace Nexus.Core
                 {
                     if (!IsSyncCapableFallbackType(plan.FallbackType, signal))
                     {
-                        System.Threading.Interlocked.Decrement(ref _fallbackDepth);
+                        depth.Value--;
                         depthClaimed = false;
                         _fireFailedSync(plan.FailedSignal);
                         return RecoveryAction.Skip;
@@ -221,12 +241,12 @@ namespace Nexus.Core
                     }
                     finally
                     {
-                        System.Threading.Interlocked.Decrement(ref _fallbackDepth);
+                        depth.Value--;
                         depthClaimed = false;
                     }
                 }
                 if (depthClaimed)
-                    System.Threading.Interlocked.Decrement(ref _fallbackDepth);
+                    depth.Value--;
                 return RecoveryAction.Fallback;
             }
             return RecoveryAction.Retry;
@@ -236,7 +256,7 @@ namespace Nexus.Core
         {
             if (plan.Action == RecoveryAction.Skip)
             {
-                // P0-4 fix: async-safe dispatch — awaits the full handler chain
+                // Async-safe dispatch — awaits the full handler chain
                 // and captures errors instead of throwing a sync/async mismatch.
                 await _fireFailedAsync(plan.FailedSignal);
                 return RecoveryAction.Skip;
@@ -247,11 +267,12 @@ namespace Nexus.Core
             }
             if (plan.Action == RecoveryAction.Fallback)
             {
-                // Audit fix 2.7: same atomic depth claim as the sync path.
-                if (System.Threading.Interlocked.Increment(ref _fallbackDepth) > MaxFallbackDepth)
+                // Same per-chain depth claim as the sync path.
+                var depth = GetFallbackDepthBox();
+                if (++depth.Value > MaxFallbackDepth)
                 {
-                    System.Threading.Interlocked.Decrement(ref _fallbackDepth);
-                    NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded. Aborting.");
+                    depth.Value--;
+                    NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded in this recovery chain. Aborting.");
                     return RecoveryAction.Abort;
                 }
                 if (plan.FallbackType != null)
@@ -270,13 +291,13 @@ namespace Nexus.Core
                     }
                     finally
                     {
-                        System.Threading.Interlocked.Decrement(ref _fallbackDepth);
+                        depth.Value--;
                     }
                 }
                 else
                 {
-                    System.Threading.Interlocked.Decrement(ref _fallbackDepth);
-                    // T6 fix (defensive): BuildPlan now routes rejected fallbacks through
+                    depth.Value--;
+                    // (defensive) BuildPlan now routes rejected fallbacks through
                     // SkipPlan, so a null fallback type here means a plan constructed by a
                     // path that bypassed BuildPlan. Fire the failed signal rather than
                     // returning a nominal Fallback that would silently drop the error.

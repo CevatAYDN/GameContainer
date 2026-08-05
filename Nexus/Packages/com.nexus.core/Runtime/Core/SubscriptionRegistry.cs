@@ -63,7 +63,7 @@ namespace Nexus.Core
         {
             lock (s_lock)
             {
-                // Audit fix 4.5: Reset moved INSIDE the lock. It was safe outside only because
+                // Reset moved INSIDE the lock. It was safe outside only because
                 // of a subtle argument (deferred sweep + atomic `is`-pattern read); inside the
                 // lock the whole return is one critical section and the invariant no longer
                 // depends on the reader-side pattern at all. Next is still preserved (see
@@ -161,22 +161,13 @@ namespace Nexus.Core
                 node.Next = head;
                 _subscriptions[signalType] = node;
 
-                // Audit fix 3.5: no full dictionary rebuild per Subscribe. When the type
-                // already exists in the published read copy, swapping the head reference for
-                // that EXISTING key is allocation-free and safe: no bucket is added (so no
-                // resize can corrupt a concurrent reader), reference writes are atomic, and a
-                // concurrent TryGetValue observes either the old or the new head — both are
-                // complete, valid chains (nodes are only unlinked by SweepDeadNodes, which is
-                // deferred until no dispatch is in flight). Only the FIRST subscription for a
-                // signal type adds a bucket and pays the copy-on-write rebuild.
-                if (_subscriptionsReadCopy.ContainsKey(signalType))
-                {
-                    _subscriptionsReadCopy[signalType] = node;
-                }
-                else
-                {
-                    _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
-                }
+                // Copy-on-write: NEVER mutate the published read copy in place. Lock-free
+                // readers may be enumerating it (Dictionary mutation — even an existing-key
+                // overwrite bumps the version counter and can break an in-flight enumerator).
+                // A fresh dictionary is built under the lock and published with a single
+                // volatile write, matching SweepDeadNodes' pattern; readers observe either
+                // the old or the new snapshot — both are complete, valid chains.
+                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
             }
         }
 
@@ -184,11 +175,23 @@ namespace Nexus.Core
         public ISignalSubscription Subscribe<T>(Action<T> handler, CancellationToken lifetimeToken) where T : struct
         {
             var type = typeof(T);
+            // Already-cancelled lifetime: a token registration would run Dispose synchronously
+            // inside the constructor — BEFORE `sub` is assigned — so the node added afterwards
+            // could never be unsubscribed (permanent dead-node leak). Return a disposed no-op
+            // subscription without adding a node.
+            if (lifetimeToken.IsCancellationRequested)
+            {
+                return new SignalSubscription<T>(handler, lifetimeToken, null);
+            }
             SignalSubscription<T> sub = null;
             // Closure captures `sub` itself so Unsubscribe matches by RawSubscription identity
             // (same pattern as SignalBus's subscription path).
-            sub = new SignalSubscription<T>(handler, lifetimeToken, () => Unsubscribe(type, sub));
+            sub = new SignalSubscription<T>(handler, lifetimeToken, () => Unsubscribe(type, sub), deferLifetimeRegistration: true);
             AddSubscription(type, sub, handler, isAsync: false);
+            // Register the auto-dispose callback only now that the subscription is fully
+            // constructed and its node added — a cancellation racing this window disposes a
+            // complete subscription and unsubscribes the node correctly.
+            sub.RegisterLifetimeCallback();
             return sub;
         }
 
@@ -196,9 +199,16 @@ namespace Nexus.Core
         public ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler, CancellationToken lifetimeToken) where T : struct
         {
             var type = typeof(T);
+            // Already-cancelled lifetime: see Subscribe<T> — return a disposed no-op without
+            // adding a node.
+            if (lifetimeToken.IsCancellationRequested)
+            {
+                return new AsyncSignalSubscription<T>(handler, lifetimeToken, null);
+            }
             AsyncSignalSubscription<T> sub = null;
-            sub = new AsyncSignalSubscription<T>(handler, lifetimeToken, () => Unsubscribe(type, sub));
+            sub = new AsyncSignalSubscription<T>(handler, lifetimeToken, () => Unsubscribe(type, sub), deferLifetimeRegistration: true);
             AddSubscription(type, sub, handler, isAsync: true);
+            sub.RegisterLifetimeCallback();
             return sub;
         }
 
@@ -309,11 +319,32 @@ namespace Nexus.Core
             }
         }
 
-        /// <summary>Unsubscribes everything and returns all pooled nodes.</summary>
+        /// <summary>Unsubscribes everything and reclaims the chain nodes. When a dispatch is
+        /// in flight, reclamation is deferred to the ExitDispatch sweep so a node is never
+        /// pooled (and potentially re-rented) while a reader still walks the chain.</summary>
         public void Dispose()
         {
             lock (_subLock)
             {
+                if (_dispatchDepth > 0)
+                {
+                    // A dispatch is mid-flight: pooling nodes now would reset/re-rent nodes
+                    // the dispatcher is still iterating (use-after-pool). Mark every node
+                    // inactive and let the deferred sweep on ExitDispatch reclaim the chains
+                    // once the last dispatch unwinds.
+                    foreach (var head in _subscriptions.Values)
+                    {
+                        var current = head;
+                        while (current != null)
+                        {
+                            current.IsActive = false;
+                            current = current.Next;
+                        }
+                    }
+                    _pendingCleanups = true;
+                    return;
+                }
+
                 foreach (var node in _subscriptions.Values)
                 {
                     var current = node;
@@ -327,7 +358,9 @@ namespace Nexus.Core
                 _subscriptions.Clear();
                 _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>();
                 _pendingCleanups = false;
-                SubscriptionNodePool.Clear();
+                // The node pool is shared by EVERY registry/bus in the process — clearing it
+                // here would wipe other buses' warm pool. Global cleanup is owned by
+                // SignalBus.ClearStaticCaches / NexusRuntime.Reset.
             }
         }
     }

@@ -22,7 +22,7 @@ namespace Nexus.Core
         [Header("Configuration")]
         [SerializeField] private ContextData contextData;
         [SerializeField] private int initializationPriority = 0;
-        // R2026-M11 fix: frame-count timeouts made the wait wall-clock dependent on the
+        // Frame-count timeouts made the wait wall-clock dependent on the
         // device's frame rate (900 frames = 15 s @60 fps but 30 s @30 fps). Seconds are
         // frame-rate independent.
         // R2026-FIX (migration): FormerlySerializedAs was REMOVED deliberately — the old
@@ -37,8 +37,11 @@ namespace Nexus.Core
 
         /// <summary>The Nexus context owned by this root.</summary>
         public Context Context { get; private set; }
+        // Volatile: written on the main thread but polled by other Roots' startup loops,
+        // which can resume on a worker thread when no SynchronizationContext is present.
+        private volatile bool _isInitialized;
         /// <summary>True after async initialization (OnInitializeAsync + OnStartAsync) completes.</summary>
-        public volatile bool IsInitialized = false;
+        public bool IsInitialized => _isInitialized;
         /// <summary>Priority for sibling sorting; higher values initialize earlier.</summary>
         public int InitializationPriority => initializationPriority;
         /// <summary>Configuration data for this context.</summary>
@@ -60,7 +63,7 @@ namespace Nexus.Core
 
         // Pending views registered before Context is initialized
         private readonly List<IView> _pendingViews = new();
-        // REFACTOR PLAN §1.9: parallel HashSet so RegisterPendingView's dedup check is O(1)
+        // Parallel HashSet so RegisterPendingView's dedup check is O(1)
         // instead of a linear List.Contains scan.
         private readonly HashSet<IView> _pendingViewsSet = new();
 
@@ -93,7 +96,7 @@ namespace Nexus.Core
         }
 
         // Registry to avoid FindObjectsByType in every Start()
-        // REFACTOR PLAN §1.8: HashSet gives O(1) Contains/Add/Remove (the old List made
+        // HashSet gives O(1) Contains/Add/Remove (the old List made
         // OnEnable's dedup check O(N) per root). Iteration order is irrelevant: sibling
         // ordering is decided by priority + name comparison, never insertion order.
         private static readonly HashSet<Root> s_allRoots = new();
@@ -256,7 +259,7 @@ namespace Nexus.Core
             }
             catch (OperationCanceledException)
             {
-                // R2026-H12 fix: cancellation is an expected teardown signal (context
+                // Cancellation is an expected teardown signal (context
                 // disposal cancels LifetimeToken), NOT a startup failure — logging it
                 // as an error produced scary red noise on every scene unload.
             }
@@ -276,7 +279,7 @@ namespace Nexus.Core
             try
             {
                 // Wait for parent root to be initialized first (with timeout).
-                // R2026-M11: wall-clock seconds via realtimeSinceStartupAsDouble — a
+                // Wall-clock seconds via realtimeSinceStartupAsDouble — a
                 // frame-count timeout punished low-FPS devices with double-length waits.
                 if (parentRoot != null)
                 {
@@ -297,24 +300,29 @@ namespace Nexus.Core
                 // Wait for sibling roots with higher priority to initialize (with timeout)
                 EnsureRegistry();
                 _siblingsToWait.Clear();
-                foreach (var r in s_allRoots)
+                // Snapshot under s_rootLock: every other s_allRoots access is locked, and a
+                // concurrent OnEnable/OnDisable would otherwise mutate the set mid-enumeration.
+                lock (s_rootLock)
                 {
-                    if (r == null || r == this) continue;
-                    if (r.parentRoot != this.parentRoot) continue;
-                    if (!r.gameObject.activeInHierarchy || !r.enabled) continue;
-
-                    bool runsBeforeUs = r.InitializationPriority > this.InitializationPriority;
-                    if (r.InitializationPriority == this.InitializationPriority)
+                    foreach (var r in s_allRoots)
                     {
-                        if (string.Compare(r.gameObject.name, this.gameObject.name, StringComparison.Ordinal) < 0)
+                        if (r == null || r == this) continue;
+                        if (r.parentRoot != this.parentRoot) continue;
+                        if (!r.gameObject.activeInHierarchy || !r.enabled) continue;
+
+                        bool runsBeforeUs = r.InitializationPriority > this.InitializationPriority;
+                        if (r.InitializationPriority == this.InitializationPriority)
                         {
-                            runsBeforeUs = true;
+                            if (string.Compare(r.gameObject.name, this.gameObject.name, StringComparison.Ordinal) < 0)
+                            {
+                                runsBeforeUs = true;
+                            }
                         }
-                    }
 
-                    if (runsBeforeUs)
-                    {
-                        _siblingsToWait.Add(r);
+                        if (runsBeforeUs)
+                        {
+                            _siblingsToWait.Add(r);
+                        }
                     }
                 }
 
@@ -350,7 +358,7 @@ namespace Nexus.Core
                         "A lifecycle implementation likely called ConfigureAwait(false) or Task.Run without marshalling back to the main thread.");
                 }
 
-                IsInitialized = true;
+                _isInitialized = true;
             }
             catch (OperationCanceledException)
             {
@@ -360,7 +368,7 @@ namespace Nexus.Core
                     Context.Dispose();
                     Context = null;
                 }
-                IsInitialized = false;
+                _isInitialized = false;
             }
             catch (Exception ex)
             {
@@ -370,7 +378,7 @@ namespace Nexus.Core
                     Context.Dispose();
                     Context = null;
                 }
-                IsInitialized = false;
+                _isInitialized = false;
             }
         }
 
@@ -390,7 +398,7 @@ namespace Nexus.Core
                 Context.Dispose();
                 Context = null;
             }
-            IsInitialized = false;
+            _isInitialized = false;
         }
     }
 }

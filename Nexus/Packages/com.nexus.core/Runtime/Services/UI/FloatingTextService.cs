@@ -21,7 +21,12 @@ namespace Nexus.Core.Services
         private readonly List<ActiveFloatingText> _activeTexts = new();
         private readonly object _lock = new();
 
-        public IReadOnlyList<ActiveFloatingText> ActiveTexts => _activeTexts;
+        // Snapshot copy: exposing the live list would let callers observe it while
+        // UpdateService mutates it under _lock (torn enumeration / InvalidOperationException).
+        public IReadOnlyList<ActiveFloatingText> ActiveTexts
+        {
+            get { lock (_lock) return _activeTexts.ToArray(); }
+        }
 
         public void SpawnFloatingText(string text, Vector3 worldPosition, Color color, float duration = 1.0f, float riseHeight = 1.5f)
         {

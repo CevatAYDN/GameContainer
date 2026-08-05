@@ -68,7 +68,7 @@ namespace Nexus.Core.Services
         private readonly object _lock = new();
         private volatile bool _disposed;
 
-        // T3 fix: serializes the atomic-write critical section (stage-to-temp + rename).
+        // Serializes the atomic-write critical section (stage-to-temp + rename).
         // AutoSave writes and Save() batches can otherwise race on the SAME fixed temp
         // path (filePath + ".tmp"), interleaving File.WriteAllBytes and producing a
         // corrupt file that fails HMAC verification on the next read. A dedicated lock
@@ -173,7 +173,7 @@ namespace Nexus.Core.Services
             HookAppEvents();
         }
 
-        // Audit fix 3.1: instance method-group handlers on the STATIC Application.focusChanged /
+        // Instance method-group handlers on the STATIC Application.focusChanged /
         // Application.quitting events rooted every undisposed instance (cache, encryption keys,
         // file-path cache) for the whole process lifetime — with domain reload disabled, each
         // context lifetime leaked one dead service. The application events are now hooked
@@ -264,7 +264,7 @@ namespace Nexus.Core.Services
             // save a silent no-op — dirty keys were lost on every context teardown.
             Save();
             _disposed = true;
-            // Audit fix 3.1: detach the instance from the static forwarders. The static hook
+            // Detach the instance from the static forwarders. The static hook
             // itself intentionally stays (one delegate, retains no instance) — per-instance
             // subscribe/unsubscribe on the static events was the leak.
             lock (s_appEventsLock)
@@ -346,7 +346,7 @@ namespace Nexus.Core.Services
             // ── Slow path, outside the lock ──
             if (!File.Exists(filePath))
             {
-                lock (_lock) { _cache[key] = null; } // Cache negative result
+                CacheNegativeResult(key);
                 return defaultValue;
             }
 
@@ -355,7 +355,7 @@ namespace Nexus.Core.Services
                 byte[] rawData = File.ReadAllBytes(filePath);
                 if (rawData.Length < LegacyHeaderSize)
                 {
-                    lock (_lock) { _cache[key] = null; }
+                    CacheNegativeResult(key);
                     return defaultValue;
                 }
 
@@ -370,7 +370,7 @@ namespace Nexus.Core.Services
                     if (!TryReadVersion2(rawData, out val))
                     {
                         LogTamperWarning(key);
-                        lock (_lock) { _cache[key] = null; }
+                        CacheNegativeResult(key);
                         return defaultValue;
                     }
                 }
@@ -379,7 +379,7 @@ namespace Nexus.Core.Services
                     if (!TryReadLegacy(rawData, out val))
                     {
                         LogTamperWarning(key);
-                        lock (_lock) { _cache[key] = null; }
+                        CacheNegativeResult(key);
                         return defaultValue;
                     }
 
@@ -407,14 +407,23 @@ namespace Nexus.Core.Services
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
-                lock (_lock)
-                {
-                    if (!_dirtyKeys.Contains(key))
-                    {
-                        _cache[key] = null;
-                    }
-                }
+                CacheNegativeResult(key);
                 return defaultValue;
+            }
+        }
+
+        /// <summary>
+        /// Caches a negative (missing/corrupt) read result — but never clobbers a value a
+        /// concurrent SetString wrote while the disk read was in flight (dirty key, or an
+        /// AutoSave write that already updated the cache without marking it dirty).
+        /// </summary>
+        private void CacheNegativeResult(string key)
+        {
+            lock (_lock)
+            {
+                if (_dirtyKeys.Contains(key)) return;
+                if (_cache.TryGetValue(key, out var existing) && existing != null) return;
+                _cache[key] = null;
             }
         }
 
@@ -504,8 +513,10 @@ namespace Nexus.Core.Services
             bool autoSave;
             lock (_lock)
             {
-                _cache.TryGetValue(key, out string oldVal);
-                if (oldVal == value) return;
+                // Only skip when the cache actually holds the same value: an unread key
+                // must not swallow SetString(key, null) (the tombstone still has to
+                // propagate to Save() so the on-disk file is deleted).
+                if (_cache.TryGetValue(key, out string oldVal) && oldVal == value) return;
 
                 _cache[key] = value;
 
@@ -517,10 +528,11 @@ namespace Nexus.Core.Services
                 autoSave = true;
             }
 
-            // I/O outside lock: AutoSave writes each value immediately.
-            if (autoSave && !SaveKeyToDisk(key, value))
+            // I/O outside lock: AutoSave writes each value immediately. A null value is a
+            // tombstone: the on-disk file is deleted (matching Save()'s contract).
+            if (autoSave && !(value == null ? DeleteKeyFilesFromDisk(key) : SaveKeyToDisk(key, value)))
             {
-                // T3 fix: a failed AutoSave write must never be silently dropped. Mark the
+                // A failed AutoSave write must never be silently dropped. Mark the
                 // key dirty so the next Save() (focus loss / quit / explicit call) retries
                 // the write instead of losing the value until the process exits.
                 lock (_lock) { _dirtyKeys.Add(key); }
@@ -530,7 +542,7 @@ namespace Nexus.Core.Services
         /// <summary>
         /// Writes a version-2 format file: VERSION(1) + IV(16) + HMAC-SHA256(32) + cipherText.
         /// Returns true on success, false on failure (caller retains the dirty key for retry).
-        /// A1: the write is ATOMIC — the payload is staged to a temp file and then
+        /// The write is ATOMIC — the payload is staged to a temp file and then
         /// rename/overwrite-moved into place in a single filesystem operation. A crash
         /// can only ever leave the previous good file or the new complete file, never
         /// a deleted-but-not-replaced hole.
@@ -576,7 +588,7 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(key)) return null;
 
-            // B1 fix: Save() performs multiple SaveKeyToDisk calls (each acquires _writeLock
+            // Save() performs multiple SaveKeyToDisk calls (each acquires _writeLock
             // and does blocking file I/O) — running it inside _lock would stall every other
             // cache/dirty-set operation for the full save duration. Flush outside the lock
             // first, then read the path under a brief lock.
@@ -608,7 +620,7 @@ namespace Nexus.Core.Services
                 // destroy a valid save already stored on the device.
                 if (!TryReadVersion2(rawData, out string value)) return false;
 
-                // B1 fix: WriteRawDataAtomically acquires _writeLock and performs blocking
+                // WriteRawDataAtomically acquires _writeLock and performs blocking
                 // File.WriteAllBytes + File.Replace — running it inside _lock would stall
                 // every other cache/dirty-set operation for the full write duration.
                 // Resolve the path under a brief lock, then write outside.
@@ -634,7 +646,7 @@ namespace Nexus.Core.Services
 
         private void WriteRawDataAtomically(string filePath, byte[] rawData)
         {
-            // T3 fix: the whole stage-to-temp + replace sequence is one critical section.
+            // The whole stage-to-temp + replace sequence is one critical section.
             // Without this, concurrent callers (AutoSave on a worker thread + Save() on
             // focus loss) both wrote the SAME "filePath.tmp" and raced the rename — a
             // torn file that HMAC verification then rejects on the next load. Serializing
@@ -680,7 +692,7 @@ namespace Nexus.Core.Services
             }
 
             // B1 invariant: file I/O outside the shared lock so slow disk access doesn't stall other operations
-            // A6: a key written by an older build may still live under its legacy
+            // A key written by an older build may still live under its legacy
             // MD5-derived filename — report it as present so migration can run.
             string newPath = GetFilePath(key);
             if (File.Exists(newPath)) return true;
@@ -693,23 +705,33 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(key)) return;
 
-            string path;
-            string legacyPath;
             lock (_lock)
             {
                 _cache[key] = null;
                 _dirtyKeys.Remove(key);
-                path = GetFilePath(key);
-                legacyPath = GetLegacyFilePath(key);
             }
 
             // B1 invariant: file I/O outside lock
+            DeleteKeyFilesFromDisk(key);
+        }
+
+        /// <summary>
+        /// Deletes the on-disk file(s) for a key (current + legacy name). Returns false if
+        /// any existing file could not be removed. Call OUTSIDE _lock (B1 invariant).
+        /// </summary>
+        private bool DeleteKeyFilesFromDisk(string key)
+        {
+            bool ok = true;
+            string path = GetFilePath(key);
+            string legacyPath = GetLegacyFilePath(key);
+
             if (File.Exists(path))
             {
                 try { File.Delete(path); }
                 catch (Exception ex)
                 {
                     NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
+                    ok = false;
                 }
             }
 
@@ -719,8 +741,10 @@ namespace Nexus.Core.Services
                 catch (Exception ex)
                 {
                     NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete (legacy) failed for key '{key}': {ex.Message}");
+                    ok = false;
                 }
             }
+            return ok;
         }
 
         public void Save()
@@ -738,10 +762,21 @@ namespace Nexus.Core.Services
             foreach (var key in keysToWrite)
             {
                 string val;
+                bool isTombstone;
                 lock (_lock)
                 {
-                    if (!_cache.TryGetValue(key, out val) || val == null)
+                    if (!_cache.TryGetValue(key, out val))
                         continue;
+                    isTombstone = val == null;
+                }
+
+                if (isTombstone)
+                {
+                    // SetString(key, null): the old file must be deleted, otherwise the
+                    // stale on-disk value resurrects the key on the next session.
+                    if (!DeleteKeyFilesFromDisk(key))
+                        failedKeys.Add(key);
+                    continue;
                 }
 
                 if (!SaveKeyToDisk(key, val))

@@ -29,7 +29,7 @@ namespace Nexus.Core
 
         private void Awake()
         {
-            // Plan §2.3: Context/SignalBus access is forbidden in Awake.
+            // Context/SignalBus access is forbidden in Awake.
             // View has not been registered yet and Mediator has not been connected.
         }
 
@@ -107,7 +107,7 @@ namespace Nexus.Core
 
         private readonly int _maxMediatorPoolSize = 64;
 
-        // REFACTOR PLAN §2.3: the [Mediator] attribute is immutable per view Type, so the
+        // The [Mediator] attribute is immutable per view Type, so the
         // GetCustomAttribute reflection lookup runs once per type instead of once per
         // RegisterView call (views opening every frame — menus, popups — previously paid a
         // reflection walk each time). Shared across ViewBinder instances; statics reset on
