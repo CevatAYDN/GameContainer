@@ -378,11 +378,12 @@ namespace Nexus.Core
             try
             {
                 // Nulling these events prevents stale subscriber leaks. Each SecureObservable
-                // class exposes OnTamperDetected as a static event — clear them here.
-                SecureObservableInt.OnTamperDetected = null;
-                SecureObservableLong.OnTamperDetected = null;
-                SecureObservableFloat.OnTamperDetected = null;
-                SecureObservableString.OnTamperDetected = null;
+                // class exposes OnTamperDetected as a static event — clear them here via
+                // the type-provided ClearOnTamperDetected helper to respect C# event access rules.
+                SecureObservableInt.ClearOnTamperDetected();
+                SecureObservableLong.ClearOnTamperDetected();
+                SecureObservableFloat.ClearOnTamperDetected();
+                SecureObservableString.ClearOnTamperDetected();
             }
             catch (Exception ex)
             {

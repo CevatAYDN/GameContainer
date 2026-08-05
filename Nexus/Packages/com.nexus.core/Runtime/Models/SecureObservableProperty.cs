@@ -136,8 +136,18 @@ namespace Nexus.Core
         public override string ToString() => Value.ToString();
 
         private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
+        
+        /// <summary>
+        /// Clears static tamper event subscribers. Only allowed from within the declaring type.
+        /// Used by NexusRuntime.Reset to avoid leaked handlers across domain reloads.
+        /// </summary>
+        public static void ClearOnTamperDetected() => OnTamperDetected = null;
     }
 
+    /// <summary>
+    /// Obfuscated, Anti-Cheat reactive property wrapper for 64-bit integer memory protection.
+    /// Mirrors <see cref="SecureObservableInt"/> with dual-key XOR + integrity canary.
+    /// </summary>
     /// <summary>
     /// Obfuscated, Anti-Cheat reactive property wrapper for 64-bit integer memory protection.
     /// Mirrors <see cref="SecureObservableInt"/> with dual-key XOR + integrity canary.
@@ -242,6 +252,12 @@ namespace Nexus.Core
         public override string ToString() => Value.ToString();
 
         private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
+        
+        /// <summary>
+        /// Clears static tamper event subscribers for SecureObservableLong.
+        /// Used by NexusRuntime.Reset to avoid leaked handlers across domain reloads.
+        /// </summary>
+        public static void ClearOnTamperDetected() => OnTamperDetected = null;
     }
 
     /// <summary>
@@ -374,6 +390,12 @@ namespace Nexus.Core
         public override string ToString() => Value.ToString();
 
         private static void RaiseTamperDetected(string context) => SecureObservableHelper.RaiseTamper(OnTamperDetected, context);
+        
+        /// <summary>
+        /// Clears static tamper event subscribers for SecureObservableFloat.
+        /// Used by NexusRuntime.Reset to avoid leaked handlers across domain reloads.
+        /// </summary>
+        public static void ClearOnTamperDetected() => OnTamperDetected = null;
     }
 
     /// <summary>
@@ -515,6 +537,12 @@ namespace Nexus.Core
             try { OnTamperDetected?.Invoke(context); }
             catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus][AntiCheat] OnTamperDetected handler threw: {ex.Message}"); }
         }
+
+        /// <summary>
+        /// Clears static tamper event subscribers for SecureObservableString.
+        /// Used by NexusRuntime.Reset to avoid leaked handlers across domain reloads.
+        /// </summary>
+        public static void ClearOnTamperDetected() => OnTamperDetected = null;
     }
 
     /// <summary>
