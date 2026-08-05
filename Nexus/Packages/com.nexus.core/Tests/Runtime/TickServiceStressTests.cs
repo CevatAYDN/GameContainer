@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using Nexus.Core;
 using Nexus.Core.Services;
 using NUnit.Framework;
 
