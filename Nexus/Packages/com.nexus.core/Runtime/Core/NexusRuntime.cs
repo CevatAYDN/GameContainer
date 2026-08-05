@@ -372,6 +372,22 @@ namespace Nexus.Core
             Services.AssemblyScanService.ClearCache();
             Metrics.ResetTraceBuffer();
             NexusLog.Reset();
+
+            // R7 fix: clear static tamper events on domain reset so handlers do not
+            // persist across disable-domain-reload sessions or editor play-mode cycles.
+            try
+            {
+                // Nulling these events prevents stale subscriber leaks. Each SecureObservable
+                // class exposes OnTamperDetected as a static event — clear them here.
+                SecureObservableInt.OnTamperDetected = null;
+                SecureObservableLong.OnTamperDetected = null;
+                SecureObservableFloat.OnTamperDetected = null;
+                SecureObservableString.OnTamperDetected = null;
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] Clearing tamper events during Reset failed: {ex.Message}");
+            }
         }
 
         public static class Metrics

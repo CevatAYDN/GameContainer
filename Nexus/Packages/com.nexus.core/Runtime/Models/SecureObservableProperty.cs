@@ -528,6 +528,11 @@ namespace Nexus.Core
         private readonly SecureObservableLong _mantissaBits;
         private readonly SecureObservableLong _exponent;
         private readonly SecureObserverSet<BigDouble> _observers = new();
+        // R2 fix: composite lock to make reading/writing the pair atomic. The inner
+        // SecureObservableLong instances have their own locks, but users should go
+        // through this wrapper — taking the composite lock before touching the
+        // inner values prevents torn composite reads/writes.
+        private readonly object _compositeLock = new();
 
         public SecureObservableBigDouble(BigDouble initialValue = default)
         {
@@ -539,26 +544,43 @@ namespace Nexus.Core
         {
             get
             {
-                double m = BitConverter.Int64BitsToDouble(_mantissaBits.Value);
-                long e = _exponent.Value;
-                return new BigDouble(m, e);
+                // Lock the composite so Mantissa + Exponent are observed atomically.
+                lock (_compositeLock)
+                {
+                    double m = BitConverter.Int64BitsToDouble(_mantissaBits.Value);
+                    long e = _exponent.Value;
+                    return new BigDouble(m, e);
+                }
             }
             set
             {
-                BigDouble old = Value;
-                if (old.Equals(value)) return;
+                BigDouble old;
+                lock (_compositeLock)
+                {
+                    old = new BigDouble(
+                        BitConverter.Int64BitsToDouble(_mantissaBits.Value),
+                        _exponent.Value);
+                    if (old.Equals(value)) return;
 
-                _mantissaBits.Value = BitConverter.DoubleToInt64Bits(value.Mantissa);
-                _exponent.Value = value.Exponent;
+                    // Update inner observables while holding the composite lock so
+                    // readers/writers cannot observe a half-updated state.
+                    _mantissaBits.Value = BitConverter.DoubleToInt64Bits(value.Mantissa);
+                    _exponent.Value = value.Exponent;
+                }
 
+                // Notify outside the lock so handlers never execute while the composite
+                // lock is held. Handlers observe the change we made (old -> value).
                 _observers.Notify(old, value);
             }
         }
 
         public void SetWithoutNotify(BigDouble value)
         {
-            _mantissaBits.SetWithoutNotify(BitConverter.DoubleToInt64Bits(value.Mantissa));
-            _exponent.SetWithoutNotify(value.Exponent);
+            lock (_compositeLock)
+            {
+                _mantissaBits.SetWithoutNotify(BitConverter.DoubleToInt64Bits(value.Mantissa));
+                _exponent.SetWithoutNotify(value.Exponent);
+            }
         }
 
         public void OnChanged(Action<BigDouble, BigDouble> handler) => _observers.OnChanged(handler);
