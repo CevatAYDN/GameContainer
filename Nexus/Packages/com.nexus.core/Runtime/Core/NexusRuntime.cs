@@ -34,7 +34,10 @@ namespace Nexus.Core
         private static volatile int s_activeContextCount;
         private static List<IContext> s_activeContextsReadOnlyCache = new();
         private static bool s_activeContextsCacheDirty = true;
-        private static bool s_monitoringInitialized = false;
+        // Audit fix 2.2: int + Interlocked so the first-registration monitoring init is
+        // claimed atomically — two racing RegisterContext calls can no longer both pass
+        // a plain check-then-set and double-initialize.
+        private static int s_monitoringInitialized;
 
         /// <summary>Returns a thread-safe snapshot of all active contexts.</summary>
         /// <remarks>Locked access via <c>s_lock</c>. Returns a snapshot to prevent race conditions during iteration.</remarks>
@@ -145,18 +148,26 @@ namespace Nexus.Core
         {
             get
             {
-                lock (s_loggerCacheLock)
-                {
-                    if (s_cachedLogger != null) return s_cachedLogger;
-                    var resolved = CurrentContext?.TryResolve<Services.ILoggerService>();
-                    if (resolved != null)
-                        s_cachedLogger = resolved;
-                    return resolved;
-                }
+                // Audit fix 2.1: the previous version held s_loggerCacheLock while calling
+                // TryResolve, which acquires the DI container's _singletonLock — an AB-BA
+                // deadlock pair against any DI path that logs while holding the container
+                // lock (e.g. a constructor surfacing a recoverable error). The DI resolve
+                // now runs lock-FREE; the cache publish is a single Interlocked CAS.
+                // Side benefit (audit fix 5.1): the hot path is one volatile read — the
+                // per-log-call lock + DI lookup is gone.
+                var cached = System.Threading.Volatile.Read(ref s_cachedLogger);
+                if (cached != null) return cached;
+
+                var resolved = CurrentContext?.TryResolve<Services.ILoggerService>();
+                if (resolved != null)
+                    System.Threading.Interlocked.CompareExchange(ref s_cachedLogger, resolved, null);
+                return resolved;
             }
         }
 
         private static Services.ILoggerService s_cachedLogger;
+        // Retained for API compatibility with existing invalidation sites; the logger cache
+        // no longer uses a lock (see Logger getter) — Volatile/Interlocked only.
         private static readonly object s_loggerCacheLock = new();
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -299,6 +310,17 @@ namespace Nexus.Core
         /// <summary>Disposes all active contexts and clears the registry. Called automatically on domain reload.</summary>
         public static void Reset()
         {
+            // Audit fix 1.2: subscriber lists are captured and detached BEFORE the lock —
+            // never nulled inside it. Previously a context Dispose (below) could synchronously
+            // re-enter UnregisterContext while the registry state was still being torn down,
+            // and a concurrent RegisterContext could attach a handler that was then silently
+            // dropped when the in-lock null ran after the add. Detaching first also lets the
+            // dispose loop below replay the unregistered notifications to the captured
+            // subscribers, so listeners observe the same teardown they would have without Reset.
+            var onUnregistered = OnContextUnregistered;
+            OnContextRegistered = null;
+            OnContextUnregistered = null;
+
             IContext[] snapshot;
             lock (s_lock)
             {
@@ -308,8 +330,6 @@ namespace Nexus.Core
                 s_activeContextsReadOnlyCache = new List<IContext>();
                 s_activeContextsCacheDirty = false;
                 s_activeContextCount = 0;
-                OnContextRegistered = null;
-                OnContextUnregistered = null;
                 System.Threading.Volatile.Write(ref s_cachedLogger, null);
             }
 
@@ -322,6 +342,18 @@ namespace Nexus.Core
                 catch (System.Exception ex)
                 {
                     NexusLog.Error(nameof(NexusRuntime), nameof(Reset), string.Empty, ex);
+                }
+
+                // Replay the unregistered notification outside the lock with the captured
+                // delegate — handlers attached after Reset started are intentionally not
+                // notified (they subscribed to the NEW registry generation).
+                if (onUnregistered != null)
+                {
+                    try { onUnregistered(snapshot[i]); }
+                    catch (System.Exception ex)
+                    {
+                        NexusLog.Error(nameof(NexusRuntime), nameof(Reset), string.Empty, ex);
+                    }
                 }
             }
 
@@ -344,6 +376,19 @@ namespace Nexus.Core
 
         public static class Metrics
         {
+            // Audit fix 4.1: master switch for the per-fire metrics. When disabled, a signal
+            // fire pays a single volatile read instead of an Interlocked increment + a
+            // ring-buffer slot write. Default TRUE — production tracing is a designed feature
+            // (TracerPlugin reads the ring in release builds), so this is an opt-out escape
+            // hatch for apps that measured the counter cost in their profiler, not a
+            // behavior change.
+            private static volatile bool s_metricsEnabled = true;
+            public static bool MetricsEnabled
+            {
+                get => s_metricsEnabled;
+                set => s_metricsEnabled = value;
+            }
+
             private static long s_totalSignalsDispatched;
             private static long s_totalCommandsExecuted;
 
@@ -409,7 +454,11 @@ namespace Nexus.Core
                     int count = Math.Min(s_traceCount, size);
                     if (count > 0)
                     {
-                        int start = ((s_traceIndex - count + 1) % current.Length + current.Length) % current.Length;
+                        // Audit fix 2.3: Volatile.Read — RecordTrace advances s_traceIndex via
+                        // Interlocked.Increment OUTSIDE s_traceLock, so a plain read here can
+                        // observe a stale/torn value against the just-swapped buffer.
+                        int oldIndex = System.Threading.Volatile.Read(ref s_traceIndex);
+                        int start = ((oldIndex - count + 1) % current.Length + current.Length) % current.Length;
                         for (int i = 0; i < count; i++)
                             resized[i] = current[(start + i) % current.Length] ?? "";
                     }
@@ -464,7 +513,25 @@ namespace Nexus.Core
                 var result = new string[count];
                 // Volatile read for consistency with the writers' Interlocked updates on
                 // weak-memory (ARM) platforms — the rest of this block is equally careful.
-                int start = (int)((uint)(System.Threading.Volatile.Read(ref s_traceIndex) - count + 1) % (uint)size);
+                int lastIndex = System.Threading.Volatile.Read(ref s_traceIndex);
+                // Audit fix 1.1: when the ring is full, the oldest entry sits at
+                // (lastIndex + 1) % size — the slot the next write will overwrite. The old
+                // formula (lastIndex - count + 1) returned the NEWEST slot (index 0 after the
+                // first wraparound) as the oldest, silently dropping the freshest trace entry
+                // from every TracerPlugin/dashboard read once the ring had wrapped.
+                int start;
+                if (count == size)
+                {
+                    start = (int)((uint)(lastIndex + 1) % (uint)size);
+                }
+                else
+                {
+                    // Ring not yet full: entries occupy [0, count) and lastIndex == count - 1.
+                    // The negative-modulo guard keeps a torn read (count read before a
+                    // concurrent writer advanced lastIndex) inside the valid range instead of
+                    // indexing from a negative offset.
+                    start = ((lastIndex - count + 1) % size + size) % size;
+                }
                 for (int i = 0; i < count; i++)
                     result[i] = buffer[(start + i) % size] ?? "";
                 return result;
@@ -512,11 +579,13 @@ namespace Nexus.Core
             }
             if (added)
             {
-                // Initialize monitoring systems on first context registration
-                if (!s_monitoringInitialized)
+                // Initialize monitoring systems on first context registration.
+                // Audit fix 2.2: Interlocked CAS — exactly ONE thread wins the claim even
+                // when two contexts register concurrently; the plain check-then-set could
+                // double-execute InitializeMonitoring.
+                if (System.Threading.Interlocked.CompareExchange(ref s_monitoringInitialized, 1, 0) == 0)
                 {
                     InitializeMonitoring();
-                    s_monitoringInitialized = true;
                 }
 
                 try

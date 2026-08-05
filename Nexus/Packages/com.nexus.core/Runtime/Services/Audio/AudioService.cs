@@ -144,6 +144,12 @@ namespace Nexus.Core.Services
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
+            // Audit fix 3.13: idempotent. A second call (recovery re-init, accidental
+            // transient binding, double context init) previously created a DUPLICATE
+            // [Nexus_AudioService] root and a second pair of BGM sources on top of the
+            // existing ones — sounds played from both roots and crossfades overlapped.
+            if (_audioRoot != null) return default;
+
             _audioRoot = AudioRootProvider?.GetOrCreateRoot();
             if (_audioRoot == null)
             {

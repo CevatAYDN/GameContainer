@@ -61,9 +61,14 @@ namespace Nexus.Core
 
         public static void Return(SubscriptionNode node)
         {
-            node.Reset();
             lock (s_lock)
             {
+                // Audit fix 4.5: Reset moved INSIDE the lock. It was safe outside only because
+                // of a subtle argument (deferred sweep + atomic `is`-pattern read); inside the
+                // lock the whole return is one critical section and the invariant no longer
+                // depends on the reader-side pattern at all. Next is still preserved (see
+                // SubscriptionNode.Reset remarks) for in-flight chain traversal.
+                node.Reset();
                 if (s_pool.Count < MaxPoolSize)
                     s_pool.Push(node);
                 // If pool is full, simply drop the node — GC will collect it.
@@ -155,7 +160,23 @@ namespace Nexus.Core
                 var node = SubscriptionNodePool.Rent(handler, rawSubscription, isAsync);
                 node.Next = head;
                 _subscriptions[signalType] = node;
-                _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
+
+                // Audit fix 3.5: no full dictionary rebuild per Subscribe. When the type
+                // already exists in the published read copy, swapping the head reference for
+                // that EXISTING key is allocation-free and safe: no bucket is added (so no
+                // resize can corrupt a concurrent reader), reference writes are atomic, and a
+                // concurrent TryGetValue observes either the old or the new head — both are
+                // complete, valid chains (nodes are only unlinked by SweepDeadNodes, which is
+                // deferred until no dispatch is in flight). Only the FIRST subscription for a
+                // signal type adds a bucket and pays the copy-on-write rebuild.
+                if (_subscriptionsReadCopy.ContainsKey(signalType))
+                {
+                    _subscriptionsReadCopy[signalType] = node;
+                }
+                else
+                {
+                    _subscriptionsReadCopy = new Dictionary<Type, SubscriptionNode>(_subscriptions);
+                }
             }
         }
 

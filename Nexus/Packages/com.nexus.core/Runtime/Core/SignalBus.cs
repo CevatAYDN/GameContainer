@@ -390,8 +390,12 @@ namespace Nexus.Core
         {
             var type = typeof(T);
 
-            NexusRuntime.Metrics.RecordSignalDispatched();
-            NexusRuntime.Metrics.RecordTrace(SignalTraceLabel<T>.Fire);
+            // Audit fix 4.1: single volatile read gates the per-fire counter + ring write.
+            if (NexusRuntime.Metrics.MetricsEnabled)
+            {
+                NexusRuntime.Metrics.RecordSignalDispatched();
+                NexusRuntime.Metrics.RecordTrace(SignalTraceLabel<T>.Fire);
+            }
 
             // Plan §1.4.1 — If this signal has ANY async handlers registered,
             // delegate to the async path to preserve Sequential ordering guarantees.
@@ -676,7 +680,7 @@ namespace Nexus.Core
                         // guarantees the async one-shot is consumed synchronously before the
                         // first await, closing the race where a second fire slips in while the
                         // first command is still pending.
-                        var toRun = handlers;
+                        IReadOnlyList<CommandHandlerInfo> toRun = handlers;
                         bool anyOneShot = false;
                         for (int i = 0; i < handlers.Count && !anyOneShot; i++)
                             anyOneShot = handlers[i].IsOneShot;
@@ -686,14 +690,15 @@ namespace Nexus.Core
                             // Build a fresh runnable list: a one-shot that a concurrent fire
                             // already claimed must be dropped, so falling back to the original
                             // snapshot (which still contains it) would double-execute.
-                            toRun = new List<CommandHandlerInfo>(handlers.Count);
+                            var runnable = new List<CommandHandlerInfo>(handlers.Count);
                             for (int i = 0; i < handlers.Count; i++)
                             {
                                 var handler = handlers[i];
                                 if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
                                     continue; // already claimed by a concurrent fire — skip
-                                toRun.Add(handler);
+                                runnable.Add(handler);
                             }
+                            toRun = runnable;
                         }
 
                         // Run concurrently

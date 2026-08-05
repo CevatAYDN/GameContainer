@@ -102,13 +102,16 @@ namespace Nexus.Netcode
         /// </summary>
         public void ReplaySignals(int tick, ISignalBus localSignalBus)
         {
+            // Audit fix 4.4: the `is SignalBus` pattern check ran PER SIGNAL inside the loop
+            // (O(N) cast checks per replay). Hoisted out — one cast per replay call.
+            var concreteBus = localSignalBus as SignalBus;
             for (int i = 0; i < _signals.Count; i++)
             {
                 if (_signals[i].Tick == tick)
                 {
                     // P0-4 fix: async-aware dispatch — replayed signals with async
                     // handlers no longer throw NexusSyncAsyncMismatchException.
-                    if (localSignalBus is SignalBus concreteBus)
+                    if (concreteBus != null)
                     {
                         concreteBus.FireQueued(_signals[i].Signal);
                     }

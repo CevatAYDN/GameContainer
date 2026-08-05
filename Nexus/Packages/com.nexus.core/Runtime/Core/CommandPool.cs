@@ -126,7 +126,8 @@ namespace Nexus.Core
         }
 
         /// <summary>Retrieves a command instance from the pool, or creates a new one if the pool is empty.
-        /// Calls IResettable.Reset() on pooled instances that implement it before returning.</summary>
+        /// Pooled instances were already reset on return (see <see cref="Return"/>), so no
+        /// additional reset runs here.</summary>
         public object Get()
         {
             System.Threading.Interlocked.Increment(ref _totalGets);
@@ -136,11 +137,12 @@ namespace Nexus.Core
                 {
                     var instance = _pool.Pop();
                     _pooledInstances.Remove(instance);
-                    // T6 fix: call IResettable.Reset() on pop to mirror ViewBinder's
-                    // defensive reset pattern. Return() only clears [Inject] fields via
-                    // ClearInjectedReferences — non-injected mutable state leaks otherwise.
-                    if (instance is IResettable resettable)
-                        resettable.Reset();
+                    // Audit fix 1.5: the T6 pop-side Reset() was REMOVED. Return() already
+                    // resets every pooled instance exactly once — NexusDI.ClearInjectedReferences
+                    // invokes IResettable.Reset() AND nulls [Inject] fields/properties/method
+                    // params — so the pop-side call made every IResettable command pay two
+                    // Reset() dispatches per fire (2× reflection `is` + 2× virtual calls on
+                    // hot signals). Instances in the pool are therefore already clean.
                     return instance;
                 }
             }
@@ -156,14 +158,27 @@ namespace Nexus.Core
 
             lock (_poolLock)
             {
-                Cleanup(command);
-                // Double-return guard: an instance already in the pool must not be pooled again
-                // (and must not be re-cleaned, which would clobber the state of the instance
-                // another consumer may have just retrieved).
+                // Double-return guard FIRST (audit fix 2.4): an instance already in the pool
+                // must not be pooled again — and must not be re-cleaned either. Previously
+                // Cleanup ran before the guard, so a concurrent double-return reset the
+                // pooled instance a second time, potentially clobbering state a fresh Get()
+                // consumer had already started using.
                 if (!_pooledInstances.Add(command))
                 {
                     System.Threading.Interlocked.Increment(ref _totalDiscarded);
                     return;
+                }
+
+                try
+                {
+                    Cleanup(command);
+                }
+                catch
+                {
+                    // Roll back the membership marker so the instance is not left registered
+                    // as pooled while never reaching the pool stack.
+                    _pooledInstances.Remove(command);
+                    throw;
                 }
 
                 if (_pool.Count < _maxSize)

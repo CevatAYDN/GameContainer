@@ -526,10 +526,53 @@ namespace Nexus.Core.Services
             // B3: mark disposed FIRST so in-flight async loops bail out, then wake any
             // pending waiters so they stop waiting instead of timing out for 30 s.
             _disposed = true;
-            _pendingOpenWindows.Clear();
-            SignalPendingChanged();
 
-            // Destroy all active windows directly; lifecycle events are skipped during teardown
+            // Audit fix 2.6: the pending-open drain + waiter signal now run UNDER the
+            // semaphore. SignalPendingChanged's contract is "call under _windowLock" (a
+            // waiter captures _pendingChanged.Task only while holding it) — the previous
+            // lock-free Dispose raced that capture and could leave a stale entry in
+            // _pendingOpenWindows when an OpenWindowAsync was between lock release and
+            // re-acquire. The semaphore is never held across the async instantiation, so a
+            // bounded wait always succeeds in practice; the fallback keeps teardown
+            // best-effort instead of deadlocking Dispose.
+            bool lockAcquired = false;
+            try { lockAcquired = _windowLock.Wait(1000); }
+            catch (ObjectDisposedException) { /* semaphore already disposed — nothing left to guard */ }
+
+            if (lockAcquired)
+            {
+                try
+                {
+                    _pendingOpenWindows.Clear();
+                    SignalPendingChanged();
+                    DestroyAllWindowsForTeardown();
+                }
+                finally
+                {
+                    try { _windowLock.Release(); }
+                    catch (ObjectDisposedException ex)
+                    {
+                        NexusRuntime.Logger?.LogWarning($"[WindowManager] Semaphore release failed during teardown: {ex.Message}");
+                    }
+                }
+            }
+            else
+            {
+                // Pathological fallback (lock never came free): still wake waiters and clear
+                // state so readers stop seeing stale windows. Teardown must not deadlock.
+                _pendingOpenWindows.Clear();
+                SignalPendingChanged();
+                DestroyAllWindowsForTeardown();
+            }
+
+            _canvas.Dispose();
+
+            _windowLock.Dispose();
+        }
+
+        /// <summary>Destroys all active windows directly; lifecycle events are skipped during teardown.</summary>
+        private void DestroyAllWindowsForTeardown()
+        {
             foreach (var kvp in _activeWindows)
             {
                 if (kvp.Value != null)
@@ -538,10 +581,6 @@ namespace Nexus.Core.Services
             _activeWindows.Clear();
             _windowHistory.Clear();
             _activeWindowsRead = new Dictionary<string, GameObject>();
-
-            _canvas.Dispose();
-
-            _windowLock.Dispose();
         }
     }
 }

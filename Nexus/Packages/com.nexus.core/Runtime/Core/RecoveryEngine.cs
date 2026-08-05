@@ -176,7 +176,10 @@ namespace Nexus.Core
             return RecoveryPlan.SkipPlan(failedSignal);
         }
 
-        private int _fallbackDepth = 0;
+        // Audit fix 2.7: was a plain int with ++/-- — a sync and an async fallback executing
+        // on different threads could race the counter and slip past MaxFallbackDepth
+        // (infinite fallback recursion). All accesses are Interlocked now.
+        private int _fallbackDepth;
         private const int MaxFallbackDepth = 3;
 
         private RecoveryAction ExecuteSyncPlan(RecoveryPlan plan, object signal)
@@ -192,20 +195,25 @@ namespace Nexus.Core
             }
             if (plan.Action == RecoveryAction.Fallback)
             {
-                if (_fallbackDepth >= MaxFallbackDepth)
+                // Atomic claim of a depth slot: the increment and the limit check cannot
+                // interleave with a concurrent fallback on another thread.
+                if (System.Threading.Interlocked.Increment(ref _fallbackDepth) > MaxFallbackDepth)
                 {
+                    System.Threading.Interlocked.Decrement(ref _fallbackDepth);
                     NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded. Aborting.");
                     return RecoveryAction.Abort;
                 }
+                bool depthClaimed = true;
                 if (plan.FallbackType != null)
                 {
                     if (!IsSyncCapableFallbackType(plan.FallbackType, signal))
                     {
+                        System.Threading.Interlocked.Decrement(ref _fallbackDepth);
+                        depthClaimed = false;
                         _fireFailedSync(plan.FailedSignal);
                         return RecoveryAction.Skip;
                     }
 
-                    _fallbackDepth++;
                     try
                     {
                         // Use negative priority to ensure fallbacks run after normal handlers
@@ -213,9 +221,12 @@ namespace Nexus.Core
                     }
                     finally
                     {
-                        _fallbackDepth--;
+                        System.Threading.Interlocked.Decrement(ref _fallbackDepth);
+                        depthClaimed = false;
                     }
                 }
+                if (depthClaimed)
+                    System.Threading.Interlocked.Decrement(ref _fallbackDepth);
                 return RecoveryAction.Fallback;
             }
             return RecoveryAction.Retry;
@@ -236,14 +247,15 @@ namespace Nexus.Core
             }
             if (plan.Action == RecoveryAction.Fallback)
             {
-                if (_fallbackDepth >= MaxFallbackDepth)
+                // Audit fix 2.7: same atomic depth claim as the sync path.
+                if (System.Threading.Interlocked.Increment(ref _fallbackDepth) > MaxFallbackDepth)
                 {
+                    System.Threading.Interlocked.Decrement(ref _fallbackDepth);
                     NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded. Aborting.");
                     return RecoveryAction.Abort;
                 }
                 if (plan.FallbackType != null)
                 {
-                    _fallbackDepth++;
                     try
                     {
                         if (plan.FallbackIsAsync)
@@ -258,11 +270,12 @@ namespace Nexus.Core
                     }
                     finally
                     {
-                        _fallbackDepth--;
+                        System.Threading.Interlocked.Decrement(ref _fallbackDepth);
                     }
                 }
                 else
                 {
+                    System.Threading.Interlocked.Decrement(ref _fallbackDepth);
                     // T6 fix (defensive): BuildPlan now routes rejected fallbacks through
                     // SkipPlan, so a null fallback type here means a plan constructed by a
                     // path that bypassed BuildPlan. Fire the failed signal rather than

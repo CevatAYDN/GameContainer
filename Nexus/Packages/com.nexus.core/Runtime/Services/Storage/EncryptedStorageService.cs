@@ -163,8 +163,52 @@ namespace Nexus.Core.Services
             if (!Directory.Exists(_storageFolderPath))
                 Directory.CreateDirectory(_storageFolderPath);
 
-            Application.focusChanged += OnFocusChanged;
-            Application.quitting += OnQuitting;
+            HookAppEvents();
+        }
+
+        // Audit fix 3.1: instance method-group handlers on the STATIC Application.focusChanged /
+        // Application.quitting events rooted every undisposed instance (cache, encryption keys,
+        // file-path cache) for the whole process lifetime — with domain reload disabled, each
+        // context lifetime leaked one dead service. The application events are now hooked
+        // exactly ONCE with static forwarders that route to the currently-active instance;
+        // Dispose only detaches the instance reference, so the static events never retain a
+        // disposed service no matter how many ctor/dispose cycles run.
+        private static readonly object s_appEventsLock = new();
+        private static EncryptedStorageService s_activeInstance;
+        private static bool s_appEventsHooked;
+
+        private void HookAppEvents()
+        {
+            lock (s_appEventsLock)
+            {
+                if (s_activeInstance != null && !ReferenceEquals(s_activeInstance, this) && !s_activeInstance._disposed)
+                {
+                    NexusRuntime.Logger?.LogWarning(
+                        "[EncryptedStorageService] A second instance was constructed while another is still active. " +
+                        "Application focus/quit save events now route to the NEW instance; dispose the old one to avoid split-brain saves.");
+                }
+                s_activeInstance = this;
+                if (!s_appEventsHooked)
+                {
+                    Application.focusChanged += StaticOnFocusChanged;
+                    Application.quitting += StaticOnQuitting;
+                    s_appEventsHooked = true;
+                }
+            }
+        }
+
+        private static void StaticOnFocusChanged(bool hasFocus)
+        {
+            var instance = s_activeInstance;
+            if (instance != null && !instance._disposed)
+                instance.OnFocusChanged(hasFocus);
+        }
+
+        private static void StaticOnQuitting()
+        {
+            var instance = s_activeInstance;
+            if (instance != null && !instance._disposed)
+                instance.OnQuitting();
         }
 
         private void OnFocusChanged(bool hasFocus)
@@ -172,6 +216,14 @@ namespace Nexus.Core.Services
             if (!hasFocus)
             {
                 if (_disposed) return;
+                // Audit note 4.3 (documented limitation): the focus-loss save is intentionally
+                // fire-and-forget (Task.Run) so the main thread never blocks on disk I/O during
+                // backgrounding. Trade-off: if the OS tears down the process before the task
+                // runs, the last-second save is lost. Data integrity for that final moment is
+                // covered by Application.quitting (synchronous OnQuitting → Save) on platforms
+                // that raise it; on hard-kill platforms (mobile swipe-away) the last
+                // milliseconds of dirty keys can be lost — set AutoSave = true for
+                // save-critical keys if that window is unacceptable.
                 // Capture logger on main thread before switching to background.
                 var logger = NexusRuntime.Logger;
                 // Use Task.Run for true background I/O so the Unity main thread is never
@@ -199,10 +251,20 @@ namespace Nexus.Core.Services
 
         public void Dispose()
         {
-            _disposed = true;
-            Application.focusChanged -= OnFocusChanged;
-            Application.quitting -= OnQuitting;
+            if (_disposed) return;
+            // Flush BEFORE the disposed flag is set: Save() returns early when _disposed,
+            // so the previous order (flag first, Save() last) made the final dispose-time
+            // save a silent no-op — dirty keys were lost on every context teardown.
             Save();
+            _disposed = true;
+            // Audit fix 3.1: detach the instance from the static forwarders. The static hook
+            // itself intentionally stays (one delegate, retains no instance) — per-instance
+            // subscribe/unsubscribe on the static events was the leak.
+            lock (s_appEventsLock)
+            {
+                if (ReferenceEquals(s_activeInstance, this))
+                    s_activeInstance = null;
+            }
         }
 
         public int GetInt(string key, int defaultValue = 0)

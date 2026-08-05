@@ -27,12 +27,18 @@ namespace Nexus.Core
         // N1: handler list, zero-GC snapshot cache, dirty flag and handler lock now
         // live once in the shared SecureObserverSet<T> core instead of being copied here.
         private readonly SecureObserverSet<T> _observers = new();
-        // M4: volatile for cross-thread visibility parity with ObservableList<T> — the
-        // guard is read on the notifying thread and observed from any thread performing a
-        // reentrant write, so a plain bool could allow a stale read and a dropped event.
-        private volatile bool _isNotifying; // P2-3 fix: reentrancy guard
-        private bool _hasPendingReentrantValue;
-        private T _pendingReentrantValue;
+        // Audit fix 1.3: the old `volatile bool` guard was check-then-set — two threads
+        // could both observe "not notifying" and double-dispatch (subscribers saw the same
+        // old value twice and mediator/view state could desync). The guard now lives under
+        // a tiny lock: the claim, the reentrant queue-write, and the dispatcher's exit
+        // decision are one atomic protocol, so a queued write can never be dropped and a
+        // second dispatcher can never slip in. Dispatch itself still runs OUTSIDE the lock
+        // (handlers never execute under _dispatchLock), so same-thread reentrancy cannot
+        // deadlock and cross-thread writers block only for the ~20ns critical section.
+        private readonly object _dispatchLock = new();
+        private bool _isNotifying; // guarded by _dispatchLock
+        private bool _hasPendingReentrantValue; // guarded by _dispatchLock
+        private T _pendingReentrantValue; // guarded by _dispatchLock
 
         // ── Construction ───────────────────────────────────────
         /// <summary>Creates an observable property with the given initial value.</summary>
@@ -51,36 +57,64 @@ namespace Nexus.Core
                 if (EqualityComparer<T>.Default.Equals(_value, value))
                     return;
 
-                if (_isNotifying)
+                // Claim-or-queue under the lock (audit fix 1.3): exactly one thread becomes
+                // the dispatcher; everyone else — including same-thread reentrant writes from
+                // inside a handler — coalesces into the pending slot.
+                lock (_dispatchLock)
                 {
-                    _pendingReentrantValue = value;
-                    _hasPendingReentrantValue = true;
-                    return;
+                    if (_isNotifying)
+                    {
+                        _pendingReentrantValue = value;
+                        _hasPendingReentrantValue = true;
+                        return;
+                    }
+                    _isNotifying = true;
                 }
 
-                var old = _value;
-                _value = value;
-                Action<T, T>[] snapshot = _observers.GetSnapshot();
-                if (snapshot != null)
+                try
                 {
-                    _isNotifying = true;
-                    try
+                    var old = _value;
+                    _value = value;
+                    while (true)
                     {
-                        while (true)
+                        Action<T, T>[] snapshot = _observers.GetSnapshot();
+                        if (snapshot != null)
                         {
-                            _hasPendingReentrantValue = false;
                             for (int i = 0; i < snapshot.Length; i++)
                             {
                                 snapshot[i]?.Invoke(old, _value);
                             }
-                            if (!_hasPendingReentrantValue) break;
-                            old = _value;
-                            _value = _pendingReentrantValue;
-                            snapshot = _observers.GetSnapshot();
-                            if (snapshot == null) break;
                         }
+
+                        // The exit decision and the guard clear are ONE critical section:
+                        // a writer that queues after this point observes _isNotifying == false
+                        // and becomes the dispatcher itself — the handoff cannot drop a write.
+                        T pending;
+                        bool hasPending;
+                        lock (_dispatchLock)
+                        {
+                            hasPending = _hasPendingReentrantValue;
+                            if (hasPending)
+                            {
+                                pending = _pendingReentrantValue;
+                                _hasPendingReentrantValue = false;
+                            }
+                            else
+                            {
+                                _isNotifying = false;
+                                pending = default;
+                            }
+                        }
+                        if (!hasPending) break;
+                        old = _value;
+                        _value = pending;
                     }
-                    finally
+                }
+                finally
+                {
+                    // Defensive: an exception escaping a handler must not leave the guard
+                    // claimed forever (all future writes would silently queue, never dispatch).
+                    lock (_dispatchLock)
                     {
                         _isNotifying = false;
                         _hasPendingReentrantValue = false;
@@ -161,17 +195,59 @@ namespace Nexus.Core
         }
 
         // ── Access ─────────────────────────────────────────────
-        public int Count { get { lock (_eventLock) return _items.Count; } }
+        // Audit fix 3.7: Count was taking _eventLock on every read — a 100-item inventory
+        // bound every frame paid 100+ lock acquisitions. A volatile count field updated
+        // under _eventLock on every mutation gives lock-free reads.
+        private volatile int _count;
+        // Audit fix 3.8: AsReadOnly allocated a full new List<T> on every call (per-frame
+        // UI refresh churn). The snapshot is now version-cached: repeated calls between
+        // mutations reuse the same immutable list (never mutated after publish, so stale
+        // wrappers held by older callers stay consistent).
+        private int _version;
+        private List<T> _readOnlyCache;
+        private int _readOnlyCacheVersion = -1;
+
+        public int Count => _count;
         public T this[int index]
         {
             get { lock (_eventLock) return _items[index]; }
-            set { lock (_eventLock) _items[index] = value; }
+            set
+            {
+                lock (_eventLock)
+                {
+                    _items[index] = value;
+                    _version++;
+                }
+            }
         }
 
         public ReadOnlyListWrapper<T> AsReadOnly()
         {
             lock (_eventLock)
-                return new ReadOnlyListWrapper<T>(new List<T>(_items));
+            {
+                if (_readOnlyCacheVersion != _version)
+                {
+                    _readOnlyCache = new List<T>(_items);
+                    _readOnlyCacheVersion = _version;
+                }
+                return new ReadOnlyListWrapper<T>(_readOnlyCache);
+            }
+        }
+
+        /// <summary>
+        /// Audit fix 3.7: copies the current items into <paramref name="destination"/> under a
+        /// SINGLE lock acquisition — UI bind loops no longer pay N+1 lock acquisitions per frame.
+        /// Returns the number of items copied (the lesser of list count and destination length).
+        /// </summary>
+        public int CopyTo(T[] destination)
+        {
+            if (destination == null) return 0;
+            lock (_eventLock)
+            {
+                int n = _items.Count < destination.Length ? _items.Count : destination.Length;
+                _items.CopyTo(0, destination, 0, n);
+                return n;
+            }
         }
 
         // ── Mutation ───────────────────────────────────────────
@@ -183,6 +259,8 @@ namespace Nexus.Core
             {
                 index = _items.Count;
                 _items.Add(item);
+                _count = _items.Count;
+                _version++;
                 // M4: reentrant Add during an in-flight notification is QUEUED, not dropped.
                 if (_isNotifying)
                 {
@@ -218,6 +296,8 @@ namespace Nexus.Core
                 index = _items.IndexOf(item);
                 if (index < 0) return false;
                 _items.RemoveAt(index);
+                _count = _items.Count;
+                _version++;
                 // M4: reentrant Remove during an in-flight notification is QUEUED, not dropped.
                 if (_isNotifying)
                 {
@@ -252,6 +332,8 @@ namespace Nexus.Core
             {
                 item = _items[index];
                 _items.RemoveAt(index);
+                _count = _items.Count;
+                _version++;
                 // M4: reentrant RemoveAt during an in-flight notification is QUEUED, not dropped.
                 if (_isNotifying)
                 {
@@ -283,6 +365,8 @@ namespace Nexus.Core
             lock (_eventLock)
             {
                 _items.Clear();
+                _count = 0;
+                _version++;
                 // M4: reentrant Clear during an in-flight notification is QUEUED, not dropped.
                 if (_isNotifying)
                 {

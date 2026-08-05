@@ -21,6 +21,13 @@ namespace Nexus.Core.Services
     public interface IObjectPoolService
     {
         void Prewarm(GameObject prefab, int count, Transform parent = null);
+        /// <summary>
+        /// Audit fix 3.3: frame-budgeted prewarm. Spreads instantiation across multiple frames
+        /// (at most <paramref name="instancesPerFrame"/> per frame) so a large pool no longer
+        /// stalls the main thread in a single frame on level load. The returned task completes
+        /// when all <paramref name="count"/> instances are pooled (or the context is disposed).
+        /// </summary>
+        System.Threading.Tasks.Task PrewarmAsync(GameObject prefab, int count, int instancesPerFrame = 8, Transform parent = null);
         GameObject Spawn(GameObject prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null);
         T Spawn<T>(T prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null) where T : Component;
         void Despawn(GameObject instance);
@@ -92,6 +99,55 @@ namespace Nexus.Core.Services
             }
         }
 
+        // Audit fix 3.3: the synchronous Prewarm loop instantiated every instance in one
+        // frame — an 800-object warm-up is a 50-200 ms main-thread spike exactly at level
+        // transition, the worst possible moment. PrewarmAsync spreads the work across
+        // frames via the same PoolTimerRunner coroutine host DespawnAfter already uses.
+        public System.Threading.Tasks.Task PrewarmAsync(GameObject prefab, int count, int instancesPerFrame = 8, Transform parent = null)
+        {
+            if (prefab == null || count <= 0) return System.Threading.Tasks.Task.CompletedTask;
+            if (instancesPerFrame <= 0) instancesPerFrame = 1;
+
+            // No coroutine host (service disposed / not initialized): fall back to the
+            // synchronous path so the pool is still warmed rather than silently skipped.
+            if (_masterRootObject == null || !_masterRootObject.activeInHierarchy)
+            {
+                Prewarm(prefab, count, parent);
+                return System.Threading.Tasks.Task.CompletedTask;
+            }
+
+            var pool = GetOrCreatePool(prefab, parent);
+            var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
+            var runner = _masterRootObject.GetComponent<PoolTimerRunner>() ?? _masterRootObject.AddComponent<PoolTimerRunner>();
+            runner.StartCoroutine(PrewarmCoroutine(pool, count, instancesPerFrame, tcs));
+            return tcs.Task;
+        }
+
+        private IEnumerator PrewarmCoroutine(PoolData pool, int count, int instancesPerFrame, System.Threading.Tasks.TaskCompletionSource<bool> tcs)
+        {
+            int created = 0;
+            while (created < count)
+            {
+                int budget = instancesPerFrame;
+                while (budget-- > 0 && created < count)
+                {
+                    var instance = CreateInstance(pool);
+                    instance.SetActive(false);
+                    if (pool.Inactive.Count < MaxInactivePerPool)
+                    {
+                        pool.Inactive.Push(instance);
+                    }
+                    else
+                    {
+                        SafeDestroyUtility.SafeDestroy(instance);
+                    }
+                    created++;
+                }
+                yield return null; // next frame
+            }
+            tcs.TrySetResult(true);
+        }
+
         public GameObject Spawn(GameObject prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null)
         {
             if (prefab == null) return null;
@@ -144,6 +200,17 @@ namespace Nexus.Core.Services
 
             if (!_poolsByInstanceId.TryGetValue(instanceId, out var pool))
             {
+                // Audit fix 1.4: the "not in any pool" branch destroyed WHATEVER was passed —
+                // including a prefab asset. Despawn(prefab) instead of Despawn(spawnedInstance)
+                // silently destroyed the project's prefab reference (the damage only surfaced
+                // on the next play). Registered prefabs are now explicitly protected.
+                if (IsRegisteredPrefab(instance))
+                {
+                    NexusRuntime.Logger?.LogError(
+                        $"[Nexus] ObjectPoolService.Despawn was called with the prefab asset '{instance.name}' itself, not a spawned instance. " +
+                        "The prefab was NOT destroyed. Pass the instance returned by Spawn().");
+                    return;
+                }
                 _spawnGenerations.Remove(instanceId);
                 SafeDestroyUtility.SafeDestroy(instance);
                 return;
@@ -237,6 +304,20 @@ namespace Nexus.Core.Services
             return pool;
         }
 
+        /// <summary>
+        /// Audit fix 1.4: true when <paramref name="obj"/> is one of the registered pool
+        /// prefabs (reference compare, O(pools) — only reached on the invalid-call path).
+        /// </summary>
+        private bool IsRegisteredPrefab(GameObject obj)
+        {
+            foreach (var kvp in _poolsByPrefabId)
+            {
+                if (ReferenceEquals(kvp.Value.Prefab, obj))
+                    return true;
+            }
+            return false;
+        }
+
         private GameObject CreateInstance(PoolData pool)
         {
             var inst = UnityEngine.Object.Instantiate(pool.Prefab, pool.RootTransform);
@@ -301,6 +382,13 @@ namespace Nexus.Core.Services
                 {
                     if (active != null)
                     {
+                        // Audit fix 3.2: per-instance dictionary cleanup now mirrors ClearPool
+                        // exactly — previously the entries were only dropped by the bulk
+                        // .Clear() below, so any per-instance teardown added between the loop
+                        // and the final Clear would silently operate on stale registrations.
+                        int activeId = GetId(active);
+                        _poolsByInstanceId.Remove(activeId);
+                        _spawnGenerations.Remove(activeId);
                         var poolables = active.GetComponents<IPoolable>();
                         for (int i = 0; i < poolables.Length; i++)
                         {

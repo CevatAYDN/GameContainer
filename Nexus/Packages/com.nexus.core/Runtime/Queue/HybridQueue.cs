@@ -72,7 +72,8 @@ namespace Nexus.Core
         /// <summary>Rents a pooled wrapper initialized with the given signal.</summary>
         public static QueuedSignalWrapper<T> Rent(T signal)
         {
-            QueuedSignalWrapper<T> wrapper = null;
+            // Audit fix 3.12: removed the redundant second null check (else branch).
+            QueuedSignalWrapper<T> wrapper;
             lock (s_poolLock)
             {
                 if (s_pool.Count > 0)
@@ -80,7 +81,7 @@ namespace Nexus.Core
                     wrapper = s_pool.Pop();
                     s_pooledInstances.Remove(wrapper);
                 }
-                if (wrapper == null)
+                else
                 {
                     wrapper = new QueuedSignalWrapper<T>();
                 }
@@ -282,6 +283,14 @@ namespace Nexus.Core
 
         private void Drain(QueuedSignalRingBuffer queue, object queueLock)
         {
+            // Audit note 2.5 (intentional design, documented): the lock is RELEASED between
+            // the dequeue and the dispatch so a concurrent EnqueueThreadSafe is never blocked
+            // behind a slow handler — a producer arriving mid-drain is processed in the same
+            // frame. Consequence: _totalDrained increments in the finally AFTER dispatch, not
+            // in the same atomic step as the dequeue, so the dashboard counters
+            // (_totalEnqueued vs _totalDrained) can TRANSIENTLY disagree while a drain is in
+            // flight. They converge when the queue empties; do not treat a momentary mismatch
+            // as a lost signal.
             while (true)
             {
                 IQueuedSignal queuedSignal = null;

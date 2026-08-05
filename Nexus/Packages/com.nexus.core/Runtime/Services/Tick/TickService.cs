@@ -43,17 +43,35 @@ namespace Nexus.Core.Services
         private readonly List<IFixedTickable> _fixedTickables = new();
         private readonly List<ILateTickable> _lateTickables = new();
 
+        // Audit fix 3.9: O(1) dedup sets. RegisterTickable previously ran List.Contains
+        // (O(N)) per call — a spawn/despawn storm of 1000 register calls over 500 live
+        // tickables cost 500k comparisons in one frame.
+        private readonly HashSet<ITickable> _tickableSet = new();
+        private readonly HashSet<IFixedTickable> _fixedTickableSet = new();
+        private readonly HashSet<ILateTickable> _lateTickableSet = new();
+
         private ITickable[] _tickableSnapshot;
         private IFixedTickable[] _fixedTickableSnapshot;
         private ILateTickable[] _lateTickableSnapshot;
 
-        // Register is deferred (dirty flag): N registrations in one frame produce exactly
-        // ONE snapshot rebuild, so spawn storms can't allocate one array per call.
-        // Unregister stays immediate — a just-removed tickable (often a destroyed object)
-        // must never receive another tick, and its removal is allocation-free anyway.
+        // Register AND Unregister are both deferred (dirty flag): N mutations in one frame
+        // produce exactly ONE snapshot rebuild at the next tick, so spawn/despawn storms
+        // allocate one array per frame instead of one per call (audit fix 3.10 — Unregister
+        // previously called ToArray() eagerly per removal). A removed tickable can still
+        // appear in the CURRENT in-flight snapshot, but the per-frame loop already skips
+        // null/destroyed entries, and the next tick rebuilds without it — the same
+        // guarantee the eager rebuild provided (it never affected the in-flight iteration
+        // either, since OnTick captures the snapshot reference before iterating).
         private bool _tickablesDirty;
         private bool _fixedTickablesDirty;
         private bool _lateTickablesDirty;
+
+        // Audit fix 3.4: destroyed tickables used to stay in the snapshot FOREVER (the loop
+        // skipped them but never removed them — 100 dead objects = 6000 wasted null checks
+        // per second at 60 fps, plus the snapshot array kept the managed shells alive).
+        // The per-frame loop now counts dead entries and compacts the backing list once the
+        // waste crosses an amortization threshold.
+        private const int DeadSweepThreshold = 8;
 
         private readonly object _lock = new();
         private TickDriver _driver;
@@ -110,7 +128,7 @@ namespace Nexus.Core.Services
             if (tickable == null) return;
             lock (_lock)
             {
-                if (!_tickables.Contains(tickable))
+                if (_tickableSet.Add(tickable))
                 {
                     _tickables.Add(tickable);
                     _tickablesDirty = true;
@@ -123,10 +141,10 @@ namespace Nexus.Core.Services
             if (tickable == null) return;
             lock (_lock)
             {
-                if (_tickables.Remove(tickable))
+                if (_tickableSet.Remove(tickable) && _tickables.Remove(tickable))
                 {
-                    _tickableSnapshot = _tickables.Count > 0 ? _tickables.ToArray() : null;
-                    _tickablesDirty = false; // snapshot is already current — avoid a redundant rebuild.
+                    // Audit fix 3.10: dirty-flag only — no eager ToArray per removal.
+                    _tickablesDirty = true;
                 }
             }
         }
@@ -136,7 +154,7 @@ namespace Nexus.Core.Services
             if (fixedTickable == null) return;
             lock (_lock)
             {
-                if (!_fixedTickables.Contains(fixedTickable))
+                if (_fixedTickableSet.Add(fixedTickable))
                 {
                     _fixedTickables.Add(fixedTickable);
                     _fixedTickablesDirty = true;
@@ -149,10 +167,9 @@ namespace Nexus.Core.Services
             if (fixedTickable == null) return;
             lock (_lock)
             {
-                if (_fixedTickables.Remove(fixedTickable))
+                if (_fixedTickableSet.Remove(fixedTickable) && _fixedTickables.Remove(fixedTickable))
                 {
-                    _fixedTickableSnapshot = _fixedTickables.Count > 0 ? _fixedTickables.ToArray() : null;
-                    _fixedTickablesDirty = false; // snapshot is already current — avoid a redundant rebuild.
+                    _fixedTickablesDirty = true;
                 }
             }
         }
@@ -162,7 +179,7 @@ namespace Nexus.Core.Services
             if (lateTickable == null) return;
             lock (_lock)
             {
-                if (!_lateTickables.Contains(lateTickable))
+                if (_lateTickableSet.Add(lateTickable))
                 {
                     _lateTickables.Add(lateTickable);
                     _lateTickablesDirty = true;
@@ -175,12 +192,32 @@ namespace Nexus.Core.Services
             if (lateTickable == null) return;
             lock (_lock)
             {
-                if (_lateTickables.Remove(lateTickable))
+                if (_lateTickableSet.Remove(lateTickable) && _lateTickables.Remove(lateTickable))
                 {
-                    _lateTickableSnapshot = _lateTickables.Count > 0 ? _lateTickables.ToArray() : null;
-                    _lateTickablesDirty = false; // snapshot is already current — avoid a redundant rebuild.
+                    _lateTickablesDirty = true;
                 }
             }
+        }
+
+        /// <summary>
+        /// Audit fix 3.4: removes null/destroyed entries from a tickable list (and its dedup
+        /// set). Returns the number removed. Call under _lock; amortized — only invoked once
+        /// the dead-entry count crosses <see cref="DeadSweepThreshold"/> or 25% of the snapshot.
+        /// </summary>
+        private static int SweepDead<T>(List<T> list, HashSet<T> set) where T : class
+        {
+            int removed = 0;
+            for (int i = list.Count - 1; i >= 0; i--)
+            {
+                var t = list[i];
+                if (t == null || (t is UnityEngine.Object uo && uo == false))
+                {
+                    list.RemoveAt(i);
+                    set.Remove(t);
+                    removed++;
+                }
+            }
+            return removed;
         }
 
         internal void OnTick(float deltaTime)
@@ -201,6 +238,7 @@ namespace Nexus.Core.Services
                 }
                 if (snapshot == null) return;
 
+                int deadCount = 0;
                 for (int i = 0; i < snapshot.Length; i++)
                 {
                     try
@@ -209,12 +247,25 @@ namespace Nexus.Core.Services
                         // Unity "fake null": a destroyed MonoBehaviour is not C# null, so we
                         // check via both reference null and the Unity-specific cast-to-bool.
                         if (tickable == null || (tickable is UnityEngine.Object uo && uo == false))
+                        {
+                            deadCount++;
                             continue;
+                        }
                         tickable.Tick(deltaTime);
                     }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogException(ex);
+                    }
+                }
+
+                // Audit fix 3.4: amortized compaction of accumulated dead entries.
+                if (deadCount >= DeadSweepThreshold || (deadCount > 0 && deadCount * 4 >= snapshot.Length))
+                {
+                    lock (_lock)
+                    {
+                        if (SweepDead(_tickables, _tickableSet) > 0)
+                            _tickablesDirty = true;
                     }
                 }
             }
@@ -242,18 +293,31 @@ namespace Nexus.Core.Services
                 }
                 if (snapshot == null) return;
 
+                int deadCount = 0;
                 for (int i = 0; i < snapshot.Length; i++)
                 {
                     try
                     {
                         var tickable = snapshot[i];
                         if (tickable == null || (tickable is UnityEngine.Object uo && uo == false))
+                        {
+                            deadCount++;
                             continue;
+                        }
                         tickable.FixedTick(fixedDeltaTime);
                     }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogException(ex);
+                    }
+                }
+
+                if (deadCount >= DeadSweepThreshold || (deadCount > 0 && deadCount * 4 >= snapshot.Length))
+                {
+                    lock (_lock)
+                    {
+                        if (SweepDead(_fixedTickables, _fixedTickableSet) > 0)
+                            _fixedTickablesDirty = true;
                     }
                 }
             }
@@ -281,18 +345,31 @@ namespace Nexus.Core.Services
                 }
                 if (snapshot == null) return;
 
+                int deadCount = 0;
                 for (int i = 0; i < snapshot.Length; i++)
                 {
                     try
                     {
                         var tickable = snapshot[i];
                         if (tickable == null || (tickable is UnityEngine.Object uo && uo == false))
+                        {
+                            deadCount++;
                             continue;
+                        }
                         tickable.LateTick(deltaTime);
                     }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogException(ex);
+                    }
+                }
+
+                if (deadCount >= DeadSweepThreshold || (deadCount > 0 && deadCount * 4 >= snapshot.Length))
+                {
+                    lock (_lock)
+                    {
+                        if (SweepDead(_lateTickables, _lateTickableSet) > 0)
+                            _lateTickablesDirty = true;
                     }
                 }
             }
@@ -309,6 +386,9 @@ namespace Nexus.Core.Services
                 _tickables.Clear();
                 _fixedTickables.Clear();
                 _lateTickables.Clear();
+                _tickableSet.Clear();
+                _fixedTickableSet.Clear();
+                _lateTickableSet.Clear();
                 _tickableSnapshot = null;
                 _fixedTickableSnapshot = null;
                 _lateTickableSnapshot = null;

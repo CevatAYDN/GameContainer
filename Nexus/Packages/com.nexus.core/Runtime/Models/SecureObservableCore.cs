@@ -13,8 +13,15 @@ namespace Nexus.Core
     internal sealed class SnapshotDelegateSet<TDelegate>
     {
         private List<TDelegate> _handlers;
-        private TDelegate[] _snapshotCache;
-        private bool _snapshotDirty;
+        // Audit fix 3.6: the snapshot is now published as a VOLATILE array reference and
+        // rebuilt EAGERLY on mutation (Add/Remove/Clear), so GetSnapshot is a single
+        // lock-free volatile read. The old lazy-dirty design took _handlersLock on EVERY
+        // read — an ObservableProperty firing 1000×/frame with 10 subscribers paid 10k
+        // lock acquisitions per frame. Mutations are rare against reads, so moving the
+        // ToArray cost to the write side is a strict win. The published array is never
+        // mutated after the volatile store, so lock-free readers always see a complete,
+        // consistent handler set.
+        private volatile TDelegate[] _snapshotCache;
         private readonly object _handlersLock = new();
 
         public void Add(TDelegate handler)
@@ -26,7 +33,7 @@ namespace Nexus.Core
                 if (!_handlers.Contains(handler))
                 {
                     _handlers.Add(handler);
-                    _snapshotDirty = true;
+                    _snapshotCache = _handlers.ToArray();
                 }
             }
         }
@@ -37,7 +44,9 @@ namespace Nexus.Core
             lock (_handlersLock)
             {
                 if (_handlers != null && _handlers.Remove(handler))
-                    _snapshotDirty = true;
+                {
+                    _snapshotCache = _handlers.Count > 0 ? _handlers.ToArray() : null;
+                }
             }
         }
 
@@ -47,24 +56,12 @@ namespace Nexus.Core
             {
                 _handlers?.Clear();
                 _snapshotCache = null;
-                _snapshotDirty = false;
             }
         }
 
-        /// <summary>Returns the snapshot cache. Zero-GC on the hot path: the array is
-        /// rebuilt only when the handler set changed since the last call.</summary>
-        public TDelegate[] GetSnapshot()
-        {
-            lock (_handlersLock)
-            {
-                if (_snapshotDirty)
-                {
-                    _snapshotCache = _handlers != null && _handlers.Count > 0 ? _handlers.ToArray() : null;
-                    _snapshotDirty = false;
-                }
-                return _snapshotCache;
-            }
-        }
+        /// <summary>Returns the snapshot cache. Zero-GC AND lock-free on the hot path:
+        /// the array is rebuilt on the write side whenever the handler set changes.</summary>
+        public TDelegate[] GetSnapshot() => _snapshotCache;
     }
 
     /// <summary>
@@ -107,21 +104,33 @@ namespace Nexus.Core
         private static readonly System.Security.Cryptography.RandomNumberGenerator s_rng =
             System.Security.Cryptography.RandomNumberGenerator.Create();
 
+        // Audit fix 3.11: shared scratch buffers under a lock — every SecureObservable*
+        // construction used to allocate 2× byte[4] (or byte[8]) per key-pair call.
+        // Key generation is a boot-time path, so the lock is never contended in practice
+        // and the steady-state allocation is now zero.
+        private static readonly byte[] s_intBuf = new byte[4];
+        private static readonly byte[] s_longBuf = new byte[8];
+        private static readonly object s_bufLock = new();
+
         public static int NextIntKey()
         {
-            byte[] bytes = new byte[4];
-            s_rng.GetBytes(bytes);
-            // Ensure non-zero to avoid degenerate XOR (key ^ 0 == key)
-            int key = BitConverter.ToInt32(bytes, 0) & 0x7FFFFFFF;
-            return key != 0 ? key : 0x4E5855; // fallback "NXU"
+            lock (s_bufLock)
+            {
+                s_rng.GetBytes(s_intBuf);
+                // Ensure non-zero to avoid degenerate XOR (key ^ 0 == key)
+                int key = BitConverter.ToInt32(s_intBuf, 0) & 0x7FFFFFFF;
+                return key != 0 ? key : 0x4E5855; // fallback "NXU"
+            }
         }
 
         public static long NextLongKey()
         {
-            byte[] bytes = new byte[8];
-            s_rng.GetBytes(bytes);
-            long key = BitConverter.ToInt64(bytes, 0) & long.MaxValue;
-            return key != 0 ? key : 0x4E4558554E5855L;
+            lock (s_bufLock)
+            {
+                s_rng.GetBytes(s_longBuf);
+                long key = BitConverter.ToInt64(s_longBuf, 0) & long.MaxValue;
+                return key != 0 ? key : 0x4E4558554E5855L;
+            }
         }
 
         public static (int key1, int key2) IntKeyPair()

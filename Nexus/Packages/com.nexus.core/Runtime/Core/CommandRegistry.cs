@@ -49,6 +49,15 @@ namespace Nexus.Core
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
         private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
 
+        // Audit fix 4.2: cached comparison delegates for the registration-time priority sorts.
+        // A lambda written inline at the Sort call site relies on the compiler's delegate
+        // caching; the explicit static makes the zero-allocation guarantee self-documenting
+        // and immune to accidental capture introduction later.
+        private static readonly Comparison<CommandHandlerInfo> s_priorityDescHandlers =
+            static (a, b) => b.Priority.CompareTo(a.Priority);
+        private static readonly Comparison<CompositeTriggerState> s_priorityDescTriggers =
+            static (a, b) => b.Priority.CompareTo(a.Priority);
+
         // Caches for generic command fallback and cross-context
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_signalSetterCache = new();
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_genericSyncDispatchCache = new();
@@ -164,7 +173,7 @@ namespace Nexus.Core
 
                 if (mode != ExecutionMode.Concurrent)
                 {
-                    list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
+                    list.Sort(s_priorityDescHandlers);
                 }
 
                 // REFACTOR PLAN §1.1: registration is now O(1) in allocation. The lock-free
@@ -286,7 +295,7 @@ namespace Nexus.Core
                         _compositeTriggersBySignal[sigType] = list;
                     }
                     list.Add(state);
-                    list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
+                    list.Sort(s_priorityDescTriggers);
                 }
 
                 RebuildCompositeReadCopy();
@@ -302,11 +311,19 @@ namespace Nexus.Core
             return _hasAsyncHandlerReadCopy.TryGetValue(signalType, out var flag) && flag;
         }
 
-        /// <summary>Gets the read-copy of command handlers for a signal type (lock-free dispatch).</summary>
-        public bool TryGetHandlers(Type signalType, out List<CommandHandlerInfo> handlers)
+        /// <summary>Gets the read-copy of command handlers for a signal type (lock-free dispatch).
+        /// Audit fix 5.3: exposed as <see cref="IReadOnlyList{T}"/> — the published snapshot is
+        /// shared between concurrent dispatches and must never be mutated through the alias.</summary>
+        public bool TryGetHandlers(Type signalType, out IReadOnlyList<CommandHandlerInfo> handlers)
         {
             EnsureReadCopies();
-            return _commandHandlersReadCopy.TryGetValue(signalType, out handlers);
+            if (_commandHandlersReadCopy.TryGetValue(signalType, out var list))
+            {
+                handlers = list;
+                return true;
+            }
+            handlers = null;
+            return false;
         }
 
         /// <summary>
