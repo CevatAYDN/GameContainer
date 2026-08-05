@@ -289,12 +289,23 @@ namespace Nexus.Core
         public bool HasCommandHandler<TSignal>() where TSignal : struct
             => HasCommandHandler(typeof(TSignal));
 
+        // REFACTOR PLAN §2.1: when no composite trigger was ever registered, ProcessCompositeTriggers
+        // is skipped entirely on every Fire() — the no-composite case no longer pays the
+        // per-Fire() buffer setup + dictionary lookup. Set on the single registration path
+        // (RegisterCommandType → RegisterCompositeCommand) so every attribute-scanned and
+        // fluent composite marks this bus. Volatile: registrations are typically main-thread
+        // but dispatch can race from worker threads.
+        private volatile bool _hasAnyCompositeTriggers;
+
         public void RegisterCompositeCommand(Type[] signalTypes, Type commandType, bool oneShot, int priority, bool isAsync)
         {
             // Validation, the composite tables (all-triggers + by-signal, sorted by priority),
             // and the DI binding all live in the CommandRegistry — SignalBus only dispatches
             // against them via TryGetCompositeTriggers/ProcessCompositeTriggers.
+            // Flag set AFTER the registry call succeeds so an invalid registration
+            // (throwing ArgumentException) does not arm the composite path pointlessly.
             _commandRegistry.RegisterCompositeCommand(signalTypes, commandType, oneShot, priority, isAsync);
+            _hasAnyCompositeTriggers = true;
         }
 
         public void Fire<T>(T signal) where T : struct
@@ -823,6 +834,11 @@ namespace Nexus.Core
 
         private void ProcessCompositeTriggers<T>(T signal) where T : struct
         {
+            // REFACTOR PLAN §2.1: no composite triggers registered on this bus → nothing to
+            // collect, nothing to execute. Early return before ANY buffer setup, so the
+            // common no-composite Fire() path adds a single volatile bool read.
+            if (!_hasAnyCompositeTriggers) return;
+
             // P1-14 fix: collect due triggers under the registry's composite lock (snapshot copy),
             // then execute them OUTSIDE any lock so user command code never runs while holding one.
             var signalType = typeof(T);
@@ -1056,6 +1072,7 @@ namespace Nexus.Core
 
             _subscriptionRegistry.Dispose();
             _commandRegistry.Dispose();
+            _hasAnyCompositeTriggers = false;
 
             // T2 fix: cancel in-flight async commands before disposal.
             // In-flight async commands continue running on disposed registries and container,

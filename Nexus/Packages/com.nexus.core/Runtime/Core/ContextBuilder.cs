@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -146,32 +147,51 @@ namespace Nexus.Core
         private void BindInterfacesAndSelfTo(Type implType, bool isSingleton)
         {
             var interfaces = GetUserDefinedInterfaces(implType);
-            _container.BindMultiple(interfaces.ToArray(), implType, isSingleton);
+            _container.BindMultiple(interfaces, implType, isSingleton);
         }
 
-        private static List<Type> GetUserDefinedInterfaces(Type type)
+        // REFACTOR PLAN §1.4: interface metadata is immutable per Type, so the
+        // GetInterfaces() reflection scan is computed once per type and shared by every
+        // BindInterfacesAndSelfTo / BindServiceInterfacesAndSelfTo / BindAllClassesMatching
+        // call. Without the cache, scanning an assembly bound N matching types paid N
+        // reflection walks (each including the System/UnityEngine namespace filtering).
+        private static readonly ConcurrentDictionary<Type, Type[]> s_userDefinedInterfacesCache = new();
+
+        private static Type[] GetUserDefinedInterfaces(Type type)
         {
-            var result = new List<Type>();
-            var allInterfaces = type.GetInterfaces();
-            for (int i = 0; i < allInterfaces.Length; i++)
+            return s_userDefinedInterfacesCache.GetOrAdd(type, static t =>
             {
-                var iface = allInterfaces[i];
-                if (iface == typeof(IDisposable) || iface == typeof(IAsyncDisposable))
-                    continue;
-                if (iface == typeof(IStartable) || iface == typeof(IAsyncStartable) || iface == typeof(IStoppable) || iface == typeof(IAsyncStoppable))
-                    continue;
-                if (iface == typeof(INexusService) || iface == typeof(IReactiveModel) || iface == typeof(IContextLifecycle) || iface == typeof(IPostContextLifecycle))
-                    continue;
-                if (iface.Namespace != null && (iface.Namespace.StartsWith("System") || iface.Namespace.StartsWith("UnityEngine")))
-                    continue;
-                result.Add(iface);
-            }
-            return result;
+                var result = new List<Type>();
+                var allInterfaces = t.GetInterfaces();
+                for (int i = 0; i < allInterfaces.Length; i++)
+                {
+                    var iface = allInterfaces[i];
+                    if (iface == typeof(IDisposable) || iface == typeof(IAsyncDisposable))
+                        continue;
+                    if (iface == typeof(IStartable) || iface == typeof(IAsyncStartable) || iface == typeof(IStoppable) || iface == typeof(IAsyncStoppable))
+                        continue;
+                    if (iface == typeof(INexusService) || iface == typeof(IReactiveModel) || iface == typeof(IContextLifecycle) || iface == typeof(IPostContextLifecycle))
+                        continue;
+                    if (iface.Namespace != null && (iface.Namespace.StartsWith("System") || iface.Namespace.StartsWith("UnityEngine")))
+                        continue;
+                    result.Add(iface);
+                }
+                return result.ToArray();
+            });
         }
 
         public void EnableStrictInjection()
         {
             _container.StrictInjection = true;
+        }
+
+        /// <summary>
+        /// Clears the shared interface-metadata cache. Called by <see cref="NexusRuntime.Reset"/>
+        /// so a recompile with Disable Domain Reload can never leave stale Type references.
+        /// </summary>
+        internal static void ClearCaches()
+        {
+            s_userDefinedInterfacesCache.Clear();
         }
 
         // ─── Cross-Boundary Binding ───

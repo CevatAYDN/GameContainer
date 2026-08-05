@@ -36,6 +36,15 @@ namespace Nexus.Core
         private volatile Dictionary<Type, List<CommandHandlerInfo>> _commandHandlersReadCopy = new();
         private Dictionary<Type, IReadOnlyList<CommandHandlerInfo>> _registeredHandlersSnapshot = new();
 
+        // REFACTOR PLAN §1.1: the lock-free read copies are rebuilt LAZILY on first dispatch
+        // access after a mutation, so registration never pays O(N) dictionary allocation
+        // (N commands previously cost ≈N²/2 entry copies at startup even though dispatch
+        // never ran during registration). Volatile so a dispatch that observes dirty == false
+        // is guaranteed to see the fully-published snapshot (the rebuild writes the snapshot
+        // BEFORE clearing this flag). Starts false: the initial empty snapshot is already
+        // correct, so the very first Fire with zero registrations stays lock-free.
+        private volatile bool _handlersReadCopyDirty = false;
+
         // Precomputed cache: does this signal type have at least one async handler?
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
         private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
@@ -158,19 +167,11 @@ namespace Nexus.Core
                     list.Sort((a, b) => b.Priority.CompareTo(a.Priority));
                 }
 
-                // REVIEW FIX: previously this rebuilt EVERY per-type list copy on every
-                // registration — O(total handlers) allocation per RegisterCommand, which
-                // made startup O(n²) with many commands. Now we copy the read-copy
-                // dictionary by REFERENCE (the per-type lists are immutable after publish)
-                // and only build a fresh list for the signal being registered. Dispatch
-                // iterators still walk immutable list instances, so lock-free reads are
-                // preserved.
-                var newReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlersReadCopy.Count + 1);
-                foreach (var kvp in _commandHandlersReadCopy)
-                    newReadCopy[kvp.Key] = kvp.Value; // reference copy — lists are immutable
-                newReadCopy[signalType] = new List<CommandHandlerInfo>(list);
-                _commandHandlersReadCopy = newReadCopy;
-                _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>(_hasAsyncHandler);
+                // REFACTOR PLAN §1.1: registration is now O(1) in allocation. The lock-free
+                // read copies (_commandHandlersReadCopy / _hasAsyncHandlerReadCopy) are rebuilt
+                // lazily on first dispatch access (see EnsureReadCopies) instead of on every
+                // RegisterCommand, so startup with N commands pays ONE rebuild instead of N.
+                _handlersReadCopyDirty = true;
             }
 
             _container.Bind(commandType, isSingleton: false);
@@ -219,10 +220,7 @@ namespace Nexus.Core
             }
 
             _handlersSnapshotDirty = true;
-            _commandHandlersReadCopy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers.Count);
-            foreach (var kvp in _commandHandlers)
-                _commandHandlersReadCopy[kvp.Key] = new List<CommandHandlerInfo>(kvp.Value);
-            _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>(_hasAsyncHandler);
+            _handlersReadCopyDirty = true;
         }
 
         /// <summary>
@@ -300,13 +298,41 @@ namespace Nexus.Core
         /// <summary>Checks if a signal type has any async command handlers registered.</summary>
         public bool HasAsyncCommandHandlers(Type signalType)
         {
+            EnsureReadCopies();
             return _hasAsyncHandlerReadCopy.TryGetValue(signalType, out var flag) && flag;
         }
 
         /// <summary>Gets the read-copy of command handlers for a signal type (lock-free dispatch).</summary>
         public bool TryGetHandlers(Type signalType, out List<CommandHandlerInfo> handlers)
         {
+            EnsureReadCopies();
             return _commandHandlersReadCopy.TryGetValue(signalType, out handlers);
+        }
+
+        /// <summary>
+        /// Lazily rebuilds the volatile lock-free read copies after a mutation. The common
+        /// (steady-state dispatch) case is a single volatile bool read and NEVER touches a
+        /// lock; only when a registration/unregistration races a dispatch does the read path
+        /// briefly take <c>_handlerReadLock</c> (short critical section, registration-time
+        /// cost only — dispatch itself never mutates the live tables). The double-check under
+        /// the lock ensures concurrent dispatches racing the first access never build two
+        /// snapshots or read a half-published one. Each per-type list is copied fresh because
+        /// registration mutates the live lists in place; after a snapshot is published, its
+        /// list instances are never mutated again, so lock-free dispatch iterators are safe.
+        /// </summary>
+        private void EnsureReadCopies()
+        {
+            if (!_handlersReadCopyDirty) return;
+            lock (_handlerReadLock)
+            {
+                if (!_handlersReadCopyDirty) return;
+                var copy = new Dictionary<Type, List<CommandHandlerInfo>>(_commandHandlers.Count);
+                foreach (var kvp in _commandHandlers)
+                    copy[kvp.Key] = new List<CommandHandlerInfo>(kvp.Value);
+                _commandHandlersReadCopy = copy;
+                _hasAsyncHandlerReadCopy = new Dictionary<Type, bool>(_hasAsyncHandler);
+                _handlersReadCopyDirty = false;
+            }
         }
 
         /// <summary>
@@ -554,6 +580,7 @@ namespace Nexus.Core
                 _registeredHandlersSnapshot?.Clear();
                 _hasAsyncHandler.Clear();
                 _hasAsyncHandlerReadCopy?.Clear();
+                _handlersReadCopyDirty = true;
             }
             lock (_compositeLock)
             {

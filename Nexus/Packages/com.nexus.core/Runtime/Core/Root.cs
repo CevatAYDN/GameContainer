@@ -51,6 +51,9 @@ namespace Nexus.Core
 
         // Pending views registered before Context is initialized
         private readonly List<IView> _pendingViews = new();
+        // REFACTOR PLAN §1.9: parallel HashSet so RegisterPendingView's dedup check is O(1)
+        // instead of a linear List.Contains scan.
+        private readonly HashSet<IView> _pendingViewsSet = new();
 
         // Main-thread id captured in Awake. async void Start() awaits user lifecycle code;
         // if a lifecycle implementation switches threads internally (ConfigureAwait(false),
@@ -67,7 +70,7 @@ namespace Nexus.Core
             }
             else
             {
-                if (!_pendingViews.Contains(view))
+                if (_pendingViewsSet.Add(view))
                 {
                     _pendingViews.Add(view);
                 }
@@ -77,20 +80,21 @@ namespace Nexus.Core
         public void UnregisterPendingView(IView view)
         {
             _pendingViews.Remove(view);
+            _pendingViewsSet.Remove(view);
         }
 
         // Registry to avoid FindObjectsByType in every Start()
-        private static readonly List<Root> s_allRoots = new();
+        // REFACTOR PLAN §1.8: HashSet gives O(1) Contains/Add/Remove (the old List made
+        // OnEnable's dedup check O(N) per root). Iteration order is irrelevant: sibling
+        // ordering is decided by priority + name comparison, never insertion order.
+        private static readonly HashSet<Root> s_allRoots = new();
         private static readonly object s_rootLock = new();
 
         private void OnEnable()
         {
             lock (s_rootLock)
             {
-                if (!s_allRoots.Contains(this))
-                {
-                    s_allRoots.Add(this);
-                }
+                s_allRoots.Add(this); // HashSet.Add is idempotent — no Contains check needed
             }
         }
 
@@ -115,7 +119,7 @@ namespace Nexus.Core
             lock (s_rootLock)
             {
                 // Purge destroyed native objects dynamically
-                s_allRoots.RemoveAll(r => r == null);
+                s_allRoots.RemoveWhere(r => r == null);
             }
         }
 
@@ -185,11 +189,12 @@ namespace Nexus.Core
             // QueueDrainer the HybridQueue never drains, so queued signals
             // (FireThreadSafe/FireNextFrame) silently never run; without MetricsSampler
             // the game never records FPS/memory/GC, so the Performance Dashboard reads a
-            // flat 0.0. Adding here covers every creation path at runtime; GetComponent
-            // guards against double-add when a scene already carries them.
-            if (GetComponent<QueueDrainer>() == null)
+            // flat 0.0. Adding here covers every creation path at runtime; TryGetComponent
+            // guards against double-add when a scene already carries them (REFACTOR PLAN
+            // §1.7 — TryGetComponent avoids the null-check allocation of GetComponent).
+            if (!gameObject.TryGetComponent<QueueDrainer>(out _))
                 gameObject.AddComponent<QueueDrainer>();
-            if (GetComponent<MetricsSampler>() == null)
+            if (!gameObject.TryGetComponent<MetricsSampler>(out _))
                 gameObject.AddComponent<MetricsSampler>();
         }
 
@@ -231,6 +236,7 @@ namespace Nexus.Core
                 Context.RegisterView(_pendingViews[i]);
             }
             _pendingViews.Clear();
+            _pendingViewsSet.Clear();
         }
 
         private async void Start()

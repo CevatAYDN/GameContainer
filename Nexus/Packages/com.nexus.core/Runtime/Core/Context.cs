@@ -400,13 +400,44 @@ namespace Nexus.Core
             }
         }
 
+        // REFACTOR PLAN §1.2: the convention scan (every assembly × every type ×
+        // IsAssignableFrom) previously ran once per Context creation. Multiple contexts
+        // sharing a ScopeTag (e.g. a hierarchy of roots with the same game scope) rescanned
+        // all assemblies on every boot. The result is immutable type metadata, so it is
+        // cached per ScopeTag — including negative results (null), so a scope with no
+        // convention lifecycle is also resolved in O(1) on later contexts. The cache key
+        // includes the AssemblyScopes signature so contexts that scope their assembly list
+        // differently never share a stale result. Cleared together with the assembly scan
+        // cache (both are convention-scan caches); statics reset on Unity domain reload.
+        private static readonly Dictionary<string, Type> s_lifecycleTypeCache = new();
+        private static readonly object s_lifecycleTypeLock = new();
+
         private Type FindLifecycleTypeByConvention()
         {
             if (string.IsNullOrEmpty(ScopeTag)) return null;
+            // Cache key = scope tag, suffixed with the scoped-assembly list when configured
+            // (so two contexts with the same scope tag but different AssemblyScopes never
+            // share a result). The common default-scan path keys on the scope tag alone.
+            var key = ScopeTag;
+            if (_contextData?.AssemblyScopes?.Length > 0)
+                key += "|" + string.Join(",", _contextData.AssemblyScopes);
+
+            lock (s_lifecycleTypeLock)
+            {
+                if (s_lifecycleTypeCache.TryGetValue(key, out var cached)) return cached;
+            }
+
             var assemblies = (_contextData?.AssemblyScopes?.Length > 0)
                 ? LoadScopedAssemblies(logWarnings: false)
                 : GetDefaultScanAssemblies();
-            return FindLifecycleTypeInAssemblies(assemblies, ScopeTag);
+            var found = FindLifecycleTypeInAssemblies(assemblies, ScopeTag);
+
+            // Cache the result (null included — negative caching prevents rescanning).
+            lock (s_lifecycleTypeLock)
+            {
+                s_lifecycleTypeCache[key] = found;
+            }
+            return found;
         }
 
         private static Type FindLifecycleTypeInAssemblies(List<Assembly> assemblies, string scopeTag)
@@ -747,6 +778,9 @@ namespace Nexus.Core
         public static void ClearAssemblyScanCache()
         {
             lock (s_scanLock) { s_assemblyScanCache.Clear(); }
+            // Convention-scan sibling cache: cleared with the scan so a rescan (or a
+            // recompile with Disable Domain Reload) never hits a stale negative result.
+            lock (s_lifecycleTypeLock) { s_lifecycleTypeCache.Clear(); }
         }
     }
 }

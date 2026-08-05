@@ -328,6 +328,11 @@ namespace Nexus.Core
             NexusDI.ClearCaches();
             Context.ClearAssemblyScanCache();
             Context.ClearDefaultScanAssembliesCache();
+            // REFACTOR PLAN §1.2/§1.4/§2.3: shared convention/metadata caches join the reset
+            // discipline — with Disable Domain Reload, statics persist across play sessions
+            // and recompiles recreate Type instances while caches would hold stale ones.
+            ContextBuilder.ClearCaches();
+            ViewBinder.ClearCaches();
             SignalBus.ClearStaticCaches();
             QueuedSignalPoolRegistry.ClearAll();
             Root.ClearRegistry();

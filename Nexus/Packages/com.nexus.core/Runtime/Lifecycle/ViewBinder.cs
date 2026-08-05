@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Reflection;
 using Nexus.Core.Services;
@@ -106,6 +107,13 @@ namespace Nexus.Core
 
         private readonly int _maxMediatorPoolSize = 64;
 
+        // REFACTOR PLAN §2.3: the [Mediator] attribute is immutable per view Type, so the
+        // GetCustomAttribute reflection lookup runs once per type instead of once per
+        // RegisterView call (views opening every frame — menus, popups — previously paid a
+        // reflection walk each time). Shared across ViewBinder instances; statics reset on
+        // Unity domain reload.
+        private static readonly ConcurrentDictionary<Type, MediatorAttribute> s_mediatorAttributeCache = new();
+
         // Pool telemetry (main-thread only; plain ints are fine — ViewBinder is not shared
         // across threads). Used by diagnostics/tests to verify pool hygiene and spot leaks.
         private int _poolPopCount;
@@ -152,7 +160,8 @@ namespace Nexus.Core
                 return;
             }
 
-            var mediatorAttr = view.GetType().GetCustomAttribute<MediatorAttribute>();
+            var mediatorAttr = s_mediatorAttributeCache.GetOrAdd(view.GetType(),
+                static t => t.GetCustomAttribute<MediatorAttribute>());
             if (mediatorAttr == null)
             {
                 NexusRuntime.Logger?.Log($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
@@ -315,6 +324,15 @@ namespace Nexus.Core
         private void CleanupMediator(IMediator mediator)
         {
             NexusDI.ClearInjectedReferences(mediator);
+        }
+
+        /// <summary>
+        /// Clears the shared [Mediator] attribute cache. Called by <see cref="NexusRuntime.Reset"/>
+        /// so a recompile with Disable Domain Reload can never leave stale Type references.
+        /// </summary>
+        internal static void ClearCaches()
+        {
+            s_mediatorAttributeCache.Clear();
         }
 
         /// <summary>Disposes all active mediators and unbinds all views, then clears all pools.</summary>

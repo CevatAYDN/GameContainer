@@ -556,6 +556,13 @@ namespace UnityEngine
             return default;
         }
 
+        /// <summary>Mirrors UnityEngine.GameObject.TryGetComponent (Root's support-component guard).</summary>
+        public bool TryGetComponent<T>(out T component) where T : Component
+        {
+            component = GetComponent<T>();
+            return component != null;
+        }
+
         public T[] GetComponents<T>()
         {
             var list = GetComponentsInternal();
