@@ -71,7 +71,10 @@ namespace Nexus.Core.Extensions
     [Preserve]
     public sealed class GameSaveManager : IGameSaveManager, IDisposable
     {
-        private static string SaveDirectory => Path.Combine(Application.persistentDataPath, "saves");
+        // For tests, allow overriding the persistent save directory. When null, the
+        // implementation falls back to Application.persistentDataPath/saves.
+        internal static string TestSaveDirectory { get; set; }
+        private static string SaveDirectory => Path.Combine(TestSaveDirectory ?? Application.persistentDataPath, "saves");
 
         private volatile ISaveDataProvider _model;
         private SynchronizationContext _mainThreadContext;
@@ -125,18 +128,39 @@ namespace Nexus.Core.Extensions
                 lock (_saveLock)
                 {
                     // M6 fix: stage + rename must be one critical section (see _saveLock).
-                    File.WriteAllText(tempPath, json);
-                    // A8 fix: single overwrite-rename, never Delete-then-Move. The old
-                    // Delete + Move pair left a crash window where the only good save was
-                    // already deleted but the new one not yet in place (the exact
-                    // data-loss pattern EncryptedStorageService documents and avoids).
-                    if (File.Exists(path))
+                    // Add robust retry logic with exponential backoff to improve resilience
+                    // against transient I/O errors (disk busy, antivirus scan, etc.).
+                    int attempt = 0;
+                    const int maxAttempts = 3;
+                    while (true)
                     {
-                        File.Replace(tempPath, path, null);
-                    }
-                    else
-                    {
-                        File.Move(tempPath, path);
+                        try
+                        {
+                            File.WriteAllText(tempPath, json);
+                            // A8 fix: single overwrite-rename, never Delete-then-Move.
+                            if (File.Exists(path))
+                            {
+                                File.Replace(tempPath, path, null);
+                            }
+                            else
+                            {
+                                File.Move(tempPath, path);
+                            }
+                            break; // success
+                        }
+                        catch (Exception ex)
+                        {
+                            attempt++;
+                            NexusRuntime.Logger?.LogError($"[GameSaveManager] Save attempt {attempt} for '{slotName}' failed: {ex.Message}");
+                            if (attempt >= maxAttempts)
+                            {
+                                // Give up and surface the error to the caller via exception
+                                throw;
+                            }
+                            // Exponential backoff with jitter
+                            var backoffMs = (int)(50 * Math.Pow(2, attempt - 1)) + new System.Random().Next(0, 50);
+                            Thread.Sleep(backoffMs);
+                        }
                     }
                 }
             }, ct);
@@ -163,9 +187,17 @@ namespace Nexus.Core.Extensions
             byte[] modelData = await Task.Run(() =>
             {
                 ct.ThrowIfCancellationRequested();
-                string json = File.ReadAllText(path);
-                var data = JsonUtility.FromJson<GameSaveData>(json);
-                return data?.ModelData;
+                try
+                {
+                    string json = File.ReadAllText(path);
+                    var data = JsonUtility.FromJson<GameSaveData>(json);
+                    return data?.ModelData;
+                }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogError($"[GameSaveManager] Failed to read save from '{path}': {ex.Message}");
+                    return null;
+                }
             }, ct);
 
             if (modelData == null)
