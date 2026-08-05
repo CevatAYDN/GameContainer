@@ -59,7 +59,7 @@ namespace Nexus.Tests
             var lockObj = new object();
 
             // Bind a factory that produces a command instance which increments executed atomically
-            _container.BindFactory<ConcurrentAsyncCommand>((c) => new ConcurrentAsyncCommand(() => Interlocked.Increment(ref executed)));
+            _container.BindFactory<ConcurrentAsyncCommand>(() => new ConcurrentAsyncCommand(() => Interlocked.Increment(ref executed)));
             _signalBus.RegisterCommand(typeof(TestSignal), typeof(ConcurrentAsyncCommand), ExecutionMode.Concurrent, priority: 0, isAsync: true);
 
             var tasks = new List<Task>(parallel);
