@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Nexus.Core;
 
@@ -176,7 +177,11 @@ namespace Nexus.Netcode
     public class NetworkSignalBus
     {
         private readonly ISignalBus _localSignalBus;
-        private readonly Dictionary<Type, INetworkSignalHistory> _histories = new();
+        // P1 fix: ConcurrentDictionary so concurrent Fire<T> calls from different threads
+        // (the bus is documented as network/rollback-aware and uses volatile tick state)
+        // can never corrupt the history map. The old plain Dictionary's
+        // TryGetValue + indexer write was a torn-read/write race under concurrent access.
+        private readonly ConcurrentDictionary<Type, INetworkSignalHistory> _histories = new();
         private readonly List<INetworkModelSnapshotHandler> _modelHandlers = new();
         private volatile int _currentTick;
 
@@ -196,12 +201,10 @@ namespace Nexus.Netcode
         private NetworkSignalHistory<T> GetOrCreateHistory<T>() where T : struct, INetworkSignal
         {
             var type = typeof(T);
-            if (!_histories.TryGetValue(type, out var history))
-            {
-                history = new NetworkSignalHistory<T>();
-                _histories[type] = history;
-            }
-            return (NetworkSignalHistory<T>)history;
+            // P1 fix: GetOrAdd is atomic — two concurrent Fire<T> calls for a new signal
+            // type can never both create and publish a history, and the returned instance
+            // is always the single published one.
+            return (NetworkSignalHistory<T>)_histories.GetOrAdd(type, static _ => new NetworkSignalHistory<T>());
         }
 
         /// <summary>

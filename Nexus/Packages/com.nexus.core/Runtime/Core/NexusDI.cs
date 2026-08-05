@@ -111,6 +111,8 @@ namespace Nexus.Core
             public MethodInfo Method { get; set; }
             public Type[] ParameterTypes { get; set; }
             public bool[] OptionalParameterMask { get; set; }
+            /// <summary>Per-parameter binding names for the injected method (null = default binding).</summary>
+            public string[] ParameterNames { get; set; }
             /// <summary>Post-construct ordering when the method is [PostConstruct]-tagged.</summary>
             public int PostConstructOrder { get; set; }
             public bool IsPostConstruct { get; set; }
@@ -217,14 +219,19 @@ namespace Nexus.Core
                             var parameters = method.GetParameters();
                             var paramTypes = new Type[parameters.Length];
                             var optionalMask = new bool[parameters.Length];
+                            var paramNames = new string[parameters.Length];
                             for (int i = 0; i < parameters.Length; i++)
                             {
                                 if (parameters[i].ParameterType.IsValueType)
                                     throw new InvalidOperationException($"Cannot inject value type parameter {t.FullName}.{method.Name}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
                                 paramTypes[i] = parameters[i].ParameterType;
                                 optionalMask[i] = parameters[i].GetCustomAttribute<OptionalInjectAttribute>() != null;
+                                // D1 fix: honor [Inject(Name=...)] on method parameters so named
+                                // bindings resolve exactly like fields/properties/ctor params.
+                                var paramInject = parameters[i].GetCustomAttribute<InjectAttribute>();
+                                if (paramInject != null) paramNames[i] = paramInject.Name;
                             }
-                            methodList.Add(new InjectableMethod { Method = method, ParameterTypes = paramTypes, OptionalParameterMask = optionalMask });
+                            methodList.Add(new InjectableMethod { Method = method, ParameterTypes = paramTypes, OptionalParameterMask = optionalMask, ParameterNames = paramNames });
                         }
                         if (postAttr != null)
                         {
@@ -609,7 +616,12 @@ namespace Nexus.Core
 
                     for (int j = 0; j < m.ParameterTypes.Length; j++)
                     {
-                        args[j] = _di.TryResolve(m.ParameterTypes[j]);
+                        // D1 fix: resolve through the named binding when [Inject(Name=...)]
+                        // is present on the parameter, mirroring field/property/ctor behavior.
+                        string paramName = m.ParameterNames != null ? m.ParameterNames[j] : null;
+                        args[j] = string.IsNullOrEmpty(paramName)
+                            ? _di.TryResolve(m.ParameterTypes[j])
+                            : _di.TryResolve(m.ParameterTypes[j], paramName);
                         if (args[j] == null)
                         {
                             if (m.OptionalParameterMask[j])
@@ -619,7 +631,7 @@ namespace Nexus.Core
                             else if (_di.StrictInjection)
                             {
                                 throw new InvalidOperationException(
-                                    $"Strict injection failed: [Inject] method '{type.FullName}.{m.Method.Name}' parameter {j} of type '{m.ParameterTypes[j].FullName}' is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                                    $"Strict injection failed: [Inject] method '{type.FullName}.{m.Method.Name}' parameter {j} of type '{m.ParameterTypes[j].FullName}'{(string.IsNullOrEmpty(paramName) ? "" : $" (name '{paramName}')")} is not registered. Mark with [OptionalInject] if this dependency is optional.");
                             }
                             else
                             {
@@ -1073,9 +1085,20 @@ namespace Nexus.Core
                     bool methodSucceeded = true;
                     for (int j = 0; j < method.ParameterTypes.Length; j++)
                     {
-                        args[j] = TryResolve(method.ParameterTypes[j]);
-                        if (args[j] == null && Array.IndexOf(paramIndices, j) >= 0)
-                            methodSucceeded = false;
+                        // D2 fix: only re-resolve the parameters that were MISSING on the
+                        // original Inject pass (those in paramIndices). Parameters that were
+                        // already resolved must keep their original instance — re-resolving a
+                        // transient here would silently swap in a NEW instance, breaking the
+                        // method's captured dependency. Named bindings are honored too (D1).
+                        if (Array.IndexOf(paramIndices, j) >= 0)
+                        {
+                            string paramName = method.ParameterNames != null ? method.ParameterNames[j] : null;
+                            args[j] = string.IsNullOrEmpty(paramName)
+                                ? TryResolve(method.ParameterTypes[j])
+                                : TryResolve(method.ParameterTypes[j], paramName);
+                            if (args[j] == null)
+                                methodSucceeded = false;
+                        }
                     }
                     if (methodSucceeded) { method.Method.Invoke(instance, args); pending.Methods.RemoveAt(i); }
                     else { allSucceeded = false; }
@@ -1330,14 +1353,29 @@ namespace Nexus.Core
 
                     if (instance is IAsyncDisposable asyncDisposable)
                     {
-                        // İ3-fix (C2 upgrade): never block the calling thread on async teardown,
-                        // but dispose async singletons in ONE ordered background chain instead of
-                        // one fire-and-forget task per instance. The old per-instance `_ =` fired
-                        // them in parallel with no ordering, so registration-dependency order was
-                        // lost. Collecting them and awaiting sequentially on the thread pool with
-                        // ConfigureAwait(false) preserves order AND prevents continuations from
-                        // re-capturing the Unity SynchronizationContext of the (disposing) caller.
-                        asyncDisposables.Add(asyncDisposable);
+                        // D3 fix: an IAsyncDisposable that ALSO implements IDisposable is
+                        // disposed synchronously here so the sync Dispose() path (used by
+                        // Root.OnDestroy / Context.Dispose) tears it down deterministically
+                        // instead of leaking it to a fire-and-forget background task that may
+                        // never complete before the process exits. Only pure-IAsyncDisposable
+                        // singletons (no IDisposable) fall through to the ordered background
+                        // chain — those genuinely cannot be torn down without awaiting.
+                        if (instance is IDisposable disposable)
+                        {
+                            disposable.Dispose();
+                        }
+                        else
+                        {
+                            // İ3-fix (C2 upgrade): never block the calling thread on async
+                            // teardown, but dispose async singletons in ONE ordered background
+                            // chain instead of one fire-and-forget task per instance. The old
+                            // per-instance `_ =` fired them in parallel with no ordering, so
+                            // registration-dependency order was lost. Collecting them and
+                            // awaiting sequentially on the thread pool with ConfigureAwait(false)
+                            // preserves order AND prevents continuations from re-capturing the
+                            // Unity SynchronizationContext of the (disposing) caller.
+                            asyncDisposables.Add(asyncDisposable);
+                        }
                     }
                     else if (instance is IDisposable disposable)
                     {

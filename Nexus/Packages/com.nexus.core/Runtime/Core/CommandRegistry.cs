@@ -138,9 +138,25 @@ namespace Nexus.Core
                     _commandHandlers[signalType] = list;
                 }
 
-                if (list.Count > 0 && list[0].Mode != mode)
+                // C1 fix: the mixed-mode guard must check EVERY existing handler, not just
+                // list[0]. In Concurrent mode the list is never sorted (insertion order is
+                // preserved), so list[0] is always the first-registered handler — but in
+                // Sequential/Exclusive mode the list IS sorted by descending priority, so
+                // list[0] is the highest-priority handler. A guard keyed on list[0] alone
+                // would let a mixed-mode registration slip through if the first handler's
+                // mode happened to match while a later handler's mode differed. Checking the
+                // whole list makes the invariant explicit: every handler for a signal shares
+                // one ExecutionMode.
+                if (list.Count > 0)
                 {
-                    throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {list[0].Mode}, cannot add handler with mode {mode}.");
+                    var firstMode = list[0].Mode;
+                    for (int i = 1; i < list.Count; i++)
+                    {
+                        if (list[i].Mode != firstMode)
+                        {
+                            throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {firstMode}, cannot add handler with mode {mode}.");
+                        }
+                    }
                 }
 
                 if (mode == ExecutionMode.Exclusive && list.Count > 0)

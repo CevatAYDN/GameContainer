@@ -88,9 +88,12 @@ namespace Nexus.Core.Services
             var (ms, amplitude) = GetHapticPattern(type);
             return _vibrationEffectClass.CallStatic<AndroidJavaObject>("createOneShot", ms, amplitude);
         }
+#endif
 
         /// <summary>Returns the vibration duration/amplitude for a haptic type (SDK 26+ uses
-        /// amplitude; pre-26 uses duration only). Single source of truth for the pattern table.</summary>
+        /// amplitude; pre-26 uses duration only). Single source of truth for the pattern table.
+        /// S1 fix: moved OUTSIDE the UNITY_ANDROID guard — the iOS path also needs it, and the
+        /// old placement made the iOS build fail to compile (GetHapticPattern was undefined).</summary>
         private static (long ms, int amplitude) GetHapticPattern(HapticType type)
         {
             switch (type)
@@ -104,7 +107,6 @@ namespace Nexus.Core.Services
                 default:                   return (20, 50);
             }
         }
-#endif
 
         public void OnDispose()
         {
@@ -126,15 +128,13 @@ namespace Nexus.Core.Services
             if (!IsEnabled) return;
 
 #if UNITY_IOS && !UNITY_EDITOR
-            // C4 fix: differentiate haptic types using platform-specific API.
-            // Handheld.Vibrate() is uniform on iOS; use UnityEngine.iOS.Device if available,
-            // or the newer CoreHaptics-backed UIFeedbackGenerator APIs.
-#if UNITY_IOS
-            var (ms, amplitude) = GetHapticPattern(type);
-            UnityEngine.iOS.Device.PlaySystemSound((int)(ms * amplitude / 100));
-#else
+            // S1 fix: UnityEngine.iOS.Device.PlaySystemSound(int) plays one of a small set of
+            // predefined SYSTEM SOUND IDs — it does NOT drive the haptic engine, and the
+            // computed values (10*30/100=3, 60*120/100=72, …) are arbitrary IDs, most out of
+            // the valid range. Handheld.Vibrate() on iOS triggers the real system haptic
+            // motor. (True per-type CoreHaptics differentiation requires a native plugin;
+            // Handheld.Vibrate is the correct built-in fallback that actually vibrates.)
             Handheld.Vibrate();
-#endif
 #elif UNITY_ANDROID && !UNITY_EDITOR
             if (_vibrator != null && _hasVibrator)
             {

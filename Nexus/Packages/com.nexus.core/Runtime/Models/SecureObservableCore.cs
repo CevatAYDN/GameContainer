@@ -74,6 +74,18 @@ namespace Nexus.Core
     {
         private readonly SnapshotDelegateSet<Action<T, T>> _delegates = new();
 
+        // R3 fix: reentrancy coalescing. A handler that writes the observable's Value
+        // re-enters Notify; without a guard this recursed unboundedly (stack overflow).
+        // The claim-or-queue protocol mirrors ObservableProperty<T>: exactly one thread
+        // becomes the dispatcher, everyone else (including same-thread reentrant writes)
+        // coalesces into the pending slot, and the dispatcher drains pending changes in
+        // one loop. Dispatch runs OUTSIDE the lock, so handlers never execute under it.
+        private readonly object _notifyLock = new();
+        private bool _isNotifying; // guarded by _notifyLock
+        private bool _hasPending;   // guarded by _notifyLock
+        private T _pendingOld;      // guarded by _notifyLock
+        private T _pendingNew;      // guarded by _notifyLock
+
         public void OnChanged(Action<T, T> handler) => _delegates.Add(handler);
         public void RemoveOnChanged(Action<T, T> handler) => _delegates.Remove(handler);
         public void Clear() => _delegates.Clear();
@@ -82,14 +94,68 @@ namespace Nexus.Core
         public Action<T, T>[] GetSnapshot() => _delegates.GetSnapshot();
 
         /// <summary>Invokes the snapshot cache with the change. Zero-GC on the hot path:
-        /// the array is rebuilt only when the handler set changed since the last notify.</summary>
+        /// the array is rebuilt only when the handler set changed since the last notify.
+        /// Reentrancy-safe: a handler that writes the value is coalesced, not recursed.</summary>
         public void Notify(T oldValue, T newValue)
         {
-            Action<T, T>[] snapshot = _delegates.GetSnapshot();
-            if (snapshot != null)
+            lock (_notifyLock)
             {
-                for (int i = 0; i < snapshot.Length; i++)
-                    snapshot[i]?.Invoke(oldValue, newValue);
+                if (_isNotifying)
+                {
+                    _pendingOld = oldValue;
+                    _pendingNew = newValue;
+                    _hasPending = true;
+                    return;
+                }
+                _isNotifying = true;
+            }
+
+            try
+            {
+                while (true)
+                {
+                    Action<T, T>[] snapshot = _delegates.GetSnapshot();
+                    if (snapshot != null)
+                    {
+                        for (int i = 0; i < snapshot.Length; i++)
+                            snapshot[i]?.Invoke(oldValue, newValue);
+                    }
+
+                    // Exit decision + guard clear are ONE critical section: a writer that
+                    // queues after this point observes _isNotifying == false and becomes
+                    // the dispatcher itself — the handoff cannot drop a change.
+                    T pOld, pNew;
+                    bool hasPending;
+                    lock (_notifyLock)
+                    {
+                        hasPending = _hasPending;
+                        if (hasPending)
+                        {
+                            pOld = _pendingOld;
+                            pNew = _pendingNew;
+                            _hasPending = false;
+                        }
+                        else
+                        {
+                            _isNotifying = false;
+                            pOld = default;
+                            pNew = default;
+                        }
+                    }
+                    if (!hasPending) break;
+                    oldValue = pOld;
+                    newValue = pNew;
+                }
+            }
+            finally
+            {
+                // Defensive: an exception escaping a handler must not leave the guard
+                // claimed forever (all future notifies would silently queue, never dispatch).
+                lock (_notifyLock)
+                {
+                    _isNotifying = false;
+                    _hasPending = false;
+                }
             }
         }
     }
