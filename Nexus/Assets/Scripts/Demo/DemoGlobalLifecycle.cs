@@ -34,7 +34,10 @@ namespace Nexus.Demo
 
             // ── Eager services (InitializeAsync must run at startup) ──
             builder.BindServiceInterfacesAndSelfTo<ObjectPoolService>();
+            builder.BindServiceInterfacesAndSelfTo<UIManager>();
+#pragma warning disable CS0618 // WindowManager is kept for backward compatibility
             builder.BindServiceInterfacesAndSelfTo<WindowManager>();
+#pragma warning restore CS0618
             builder.BindServiceInterfacesAndSelfTo<AudioService>();
             builder.BindServiceInterfacesAndSelfTo<TickService>();
             builder.BindServiceInterfacesAndSelfTo<SaveThrottler>();

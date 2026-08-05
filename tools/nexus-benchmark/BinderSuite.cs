@@ -759,7 +759,8 @@ namespace NexusBench
             // members emitted with di.TryResolve<T>() (unbound -> null, never throw) and
             // SaveThrottler injected into Economy/Progression. Any di.Resolve<T>() for an
             // optional dependency means the binder drifted from NexusCodeGenerator/runtime.
-            int saveThrottlerInjects = CountOccurrences(text, "instance.SaveThrottler = di.TryResolve<Nexus.Core.Services.SaveThrottler>();");
+            int saveThrottlerInjects = CountOccurrences(text, "instance.SaveThrottler = di.TryResolve<Nexus.Core.Services.ISaveThrottler>();")
+                + CountOccurrences(text, "instance.SaveThrottler = di.TryResolve<Nexus.Core.Services.SaveThrottler>();");
             int saveThrottlerClears = CountOccurrences(text, "instance.SaveThrottler = null;");
             bool networkValidatorTryResolve = text.Contains("instance.NetworkValidator = di.TryResolve<Nexus.Core.Services.INetworkEconomyValidator>();");
             bool tableProviderTryResolve = text.Contains("instance.TableProvider = di.TryResolve<Nexus.Core.Services.ILocalizationTableProvider>();");

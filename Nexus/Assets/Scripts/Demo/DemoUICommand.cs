@@ -9,7 +9,9 @@ namespace Nexus.Demo
     public class DemoUICommand : ICommand<DemoUISignal>
     {
         [Inject] private IDemoUIModel _uiModel;
+#pragma warning disable CS0618 // WindowManager is kept for backward compatibility demo
         [Inject] private WindowManager _windowManager;
+#pragma warning restore CS0618
         [Inject] private AdService _adService;
         [Inject] private IapService _iapService;
         [Inject] private EconomyService _economy;

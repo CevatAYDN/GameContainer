@@ -571,6 +571,7 @@ namespace Nexus.Editor
             sb.AppendLine("// </auto-generated>");
             sb.AppendLine("//------------------------------------------------------------------------------");
             sb.AppendLine();
+            sb.AppendLine("#pragma warning disable CS0618");
             sb.AppendLine("using System;");
             sb.AppendLine("using Nexus.Core;");
             sb.AppendLine("using Nexus.Netcode;");

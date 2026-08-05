@@ -174,7 +174,7 @@ namespace Nexus.Core.FSM
                 return;
             }
 
-            if (_currentState == nextState) return;
+            if (_currentState == nextState && _stateCts == null) return;
 
             string fromName = _currentState?.GetType().Name;
             string argsSummary = args?.GetType().Name; // type name only — no ToString() surprises

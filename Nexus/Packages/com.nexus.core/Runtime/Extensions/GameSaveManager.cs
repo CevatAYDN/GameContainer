@@ -87,7 +87,17 @@ namespace Nexus.Core.Extensions
             _mainThreadContext = SynchronizationContext.Current;
         }
 
-        private SynchronizationContext MainThreadContext => _mainThreadContext;
+        private SynchronizationContext MainThreadContext
+        {
+            get
+            {
+                if (_mainThreadContext == null && SynchronizationContext.Current != null)
+                {
+                    _mainThreadContext = SynchronizationContext.Current;
+                }
+                return _mainThreadContext;
+            }
+        }
 
         private readonly object _saveLock = new();
         // Retry jitter source, hoisted from the retry loop (a new Random per retry could
@@ -106,13 +116,14 @@ namespace Nexus.Core.Extensions
             _model = model;
         }
 
-        public Task SaveAsync(string slotName, CancellationToken ct = default)
+        public async Task SaveAsync(string slotName, CancellationToken ct = default)
         {
             ValidateSlotName(slotName);
-            if (_model == null)
+            var model = _model;
+            if (model == null)
             {
                 NexusRuntime.Logger?.LogWarning("[Nexus] No save model registered. Skipping save.");
-                return Task.CompletedTask;
+                return;
             }
 
             ct.ThrowIfCancellationRequested();
@@ -121,11 +132,22 @@ namespace Nexus.Core.Extensions
             if (!Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
 
+            byte[] modelData = null;
+            var ctx = MainThreadContext;
+            if (ctx != null && SynchronizationContext.Current != ctx)
+            {
+                await RunOnCapturedContextAsync(() => modelData = model.CaptureSaveData(), ctx, ct);
+            }
+            else
+            {
+                modelData = model.CaptureSaveData();
+            }
+
             var data = new GameSaveData
             {
                 Version = Application.version,
                 Timestamp = DateTime.UtcNow.ToString("O"),
-                ModelData = _model.CaptureSaveData()
+                ModelData = modelData
             };
 
             string sanitized = SanitizeSlotName(slotName);
@@ -133,7 +155,7 @@ namespace Nexus.Core.Extensions
             string tempPath = Path.Combine(dir, sanitized + ".sav.tmp");
 
             // Write atomically via temporary file to prevent save corruption on crash.
-            return Task.Run(() =>
+            await Task.Run(() =>
             {
                 ct.ThrowIfCancellationRequested();
                 string json = JsonUtility.ToJson(data);

@@ -388,6 +388,16 @@ namespace Nexus.Core.Services
                 return stolen;
             }
 
+            if (_audioRoot == null)
+            {
+                _audioRoot = AudioRootProvider?.GetOrCreateRoot();
+                if (_audioRoot == null)
+                {
+                    _audioRoot = new GameObject("[Nexus_AudioService]");
+                    UnityEngine.Object.DontDestroyOnLoad(_audioRoot);
+                }
+            }
+
             var newSourceGo = new GameObject($"SFXSource_{_sfxPool.Count}");
             newSourceGo.transform.SetParent(_audioRoot.transform, false);
             var source = newSourceGo.AddComponent<AudioSource>();

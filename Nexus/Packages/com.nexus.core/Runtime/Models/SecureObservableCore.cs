@@ -123,7 +123,10 @@ namespace Nexus.Core
 
                 if (_isNotifying)
                 {
-                    _pendingOld = oldValue;
+                    if (!_hasPending)
+                    {
+                        _pendingOld = oldValue;
+                    }
                     _pendingNew = newValue;
                     _hasPending = true;
                     return;

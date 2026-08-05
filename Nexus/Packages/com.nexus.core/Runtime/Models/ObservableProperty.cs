@@ -74,6 +74,7 @@ namespace Nexus.Core
                 {
                     if (_isNotifying)
                     {
+                        _value = value;
                         _pendingReentrantValue = value;
                         _hasPendingReentrantValue = true;
                         return;

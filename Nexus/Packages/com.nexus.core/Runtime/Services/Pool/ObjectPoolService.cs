@@ -288,7 +288,10 @@ namespace Nexus.Core.Services
         {
             if (instance == null) return;
             int instanceId = GetId(instance);
-            if (!_spawnGenerations.TryGetValue(instanceId, out long generation)) return;
+            if (!_spawnGenerations.TryGetValue(instanceId, out long generation))
+            {
+                generation = -1L; // Unpooled GameObject fallback
+            }
 
             if (_masterRootObject != null && _masterRootObject.activeInHierarchy)
             {
@@ -327,7 +330,7 @@ namespace Nexus.Core.Services
             // Only despawn if the instance is still in the SAME spawn session. If it was
             // manually despawned and re-spawned while the timer was pending, the generation
             // has advanced — despawning would kill the live re-spawned object.
-            if (_spawnGenerations.TryGetValue(instanceId, out long current) && current == generation)
+            if ((_spawnGenerations.TryGetValue(instanceId, out long current) && current == generation) || (generation == -1L && instance != null))
             {
                 Despawn(instance);
             }
