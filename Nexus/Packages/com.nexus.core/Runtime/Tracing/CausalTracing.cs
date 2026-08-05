@@ -288,24 +288,32 @@ namespace Nexus.Core
         public static TraceEvent[] GetRecentEvents(out int count)
         {
 #if NEXUS_DEBUG
-            if (s_totalEventsWritten == 0)
+            // Read the counters via Volatile.Read to ensure we observe the latest
+            // values updated by other threads. This reduces the window for stale reads
+            // (P4). The ring buffer is still a best-effort diagnostic tool; if a torn
+            // TraceEvent occurs it is limited to debugging output only.
+            int totalWritten = System.Threading.Volatile.Read(ref s_totalEventsWritten);
+            if (totalWritten == 0)
             {
                 count = 0;
                 return Array.Empty<TraceEvent>();
             }
 
-            int available = Math.Min(s_totalEventsWritten, MaxEvents);
+            int available = Math.Min(totalWritten, MaxEvents);
             var events = new TraceEvent[available];
             int written = 0;
-            int start = s_ringBufferIndex - available + 1;
+            int ringIndex = System.Threading.Volatile.Read(ref s_ringBufferIndex);
+            int start = ringIndex - available + 1;
             if (start < 0) start += MaxEvents;
 
             for (int i = 0; i < available; i++)
             {
                 int idx = (start + i) % MaxEvents;
-                if (s_ringBuffer[idx].Id > 0)
+                // Copy struct value locally — this makes the read semantic explicit.
+                var ev = s_ringBuffer[idx];
+                if (ev.Id > 0)
                 {
-                    events[written++] = s_ringBuffer[idx];
+                    events[written++] = ev;
                 }
             }
 

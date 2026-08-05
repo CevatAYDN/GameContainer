@@ -91,7 +91,6 @@ namespace Nexus.Core.FSM
         private volatile IGameState _currentState;
         private Type _errorStateType;
         private CancellationTokenSource _stateCts;
-        private readonly SemaphoreSlim _transitionLock = new(1, 1);
 
         // Monotonic sequence used to serialize concurrent ChangeStateAsync calls.
         // A transition records its sequence on entry; after every await it bails out
@@ -371,7 +370,6 @@ namespace Nexus.Core.FSM
             cts?.Dispose();
             _states.Clear();
             _currentState = null;
-            _transitionLock.Dispose();
         }
     }
 }
