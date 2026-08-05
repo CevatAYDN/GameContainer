@@ -97,8 +97,9 @@ namespace Nexus.Core
                     $"NexusTestHarness auto-initialization did not complete within {AutoInitializeTimeout.TotalSeconds:0.#}s. " +
                     "Increase NexusTestHarness.AutoInitializeTimeout, or check the lifecycle for work that never completes.");
             }
-            // Unwraps and rethrows the original exception with its stack intact.
-            task.GetAwaiter().GetResult();
+            // Unwraps and rethrows the original exception with its stack intact. The task
+            // already completed inside Pump() above, so this GetResult never blocks.
+            task.GetAwaiter().GetResult(); // NEXUS003-exempt: task already completed via Pump(); rethrows only
         }
 
         /// <summary>

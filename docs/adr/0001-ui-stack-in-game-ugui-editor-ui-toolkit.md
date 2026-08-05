@@ -40,6 +40,23 @@ The project owner has now decided the UI direction:
 - Future architecture reviews should not re-flag the `Task<GameObject>` interface as a
   deepening candidate while UGUI is the in-game stack.
 
+## Addendum (2026-08-06) — UIManager as the forward API
+
+Records the current codebase state (does not change this ADR's technology decision — the
+in-game stack stays UGUI):
+
+- `UIManager` (typed `ScreenView`-based API with pooling, `UICanvasSystem` layer policy)
+  has been introduced as the **forward-looking** runtime screen API.
+- `WindowManager` is marked `[Obsolete]` — "use IUIManager; kept for backward
+  compatibility, removed in a future major version". Existing string-keyed windows
+  (including the demo screens, which derive from `View`, not `ScreenView`) continue to
+  run on `WindowManager`; migration is gradual.
+- The analyzer rule NEXUS004 flags new `WindowManager` references to drive the migration.
+
+A future review may revisit this addendum if the migration completes or the direction
+changes; this ADR's original decision (UGUI stays, `Task<GameObject>` stays in service)
+remains in effect.
+
 ## References
 
 - 2026-08-01 architecture review — candidate 4 (WindowManager).

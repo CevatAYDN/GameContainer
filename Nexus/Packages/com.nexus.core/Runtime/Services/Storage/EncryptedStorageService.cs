@@ -671,9 +671,10 @@ namespace Nexus.Core.Services
                     }
                     catch (IOException) when (attempt < maxAttempts - 1)
                     {
-                        // Brief exponential back-off (1 ms, 2 ms) without blocking the calling
-                        // thread's timeslice for longer than necessary.
-                        System.Threading.Tasks.Task.Delay(1 << attempt).GetAwaiter().GetResult(); // 1 ms, 2 ms
+                        // Brief exponential back-off (1 ms, 2 ms). Deliberately synchronous:
+                        // this is a sync PlayerPrefs-style API and Save() also runs on the
+                        // sync quit path, so awaiting is not possible here.
+                        System.Threading.Tasks.Task.Delay(1 << attempt).GetAwaiter().GetResult(); // NEXUS003-exempt: 1-2 ms sync IO backoff (sync API + quit path cannot await)
                     }
                 }
             }

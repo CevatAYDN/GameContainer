@@ -135,29 +135,34 @@ namespace Nexus.Core.Services
             if (flushNow) FlushSlot(slot);
         }
 
-        private readonly List<SaveSlot> _dueBuffer = new(8);
-
         public void Tick(float deltaTime)
         {
+            // Claim the due slots under the lock, then flush OUTSIDE it. Save actions are
+            // arbitrary user code (disk I/O, cloud calls) that may re-enter
+            // TryRequestSave/ForceSave or block waiting on another thread that itself
+            // wants _lock; holding the lock across action.Invoke() would serialize every
+            // save behind the slowest action and risk a deadlock (see TryRequestSave's
+            // "Invoke OUTSIDE the lock" invariant). The per-slot Flushing flag already
+            // prevents two callers from ever running the same action concurrently.
+            SaveSlot[] ready;
             lock (_lock)
             {
-                _dueBuffer.Clear();
+                List<SaveSlot> due = null;
                 foreach (var kvp in _slots)
                 {
                     var slot = kvp.Value;
                     if (slot.Pending && Now - slot.LastSaveTime >= _throttleSeconds)
                     {
                         slot.Pending = false; // claim before releasing the lock
-                        _dueBuffer.Add(slot);
+                        (due ??= new List<SaveSlot>(2)).Add(slot);
                     }
                 }
-                for (int i = 0; i < _dueBuffer.Count; i++)
-                {
-                    FlushSlot(_dueBuffer[i]);
-                }
-                _dueBuffer.Clear();
+                ready = due?.ToArray() ?? s_emptySlots;
             }
+            for (int i = 0; i < ready.Length; i++) FlushSlot(ready[i]);
         }
+
+        private static readonly SaveSlot[] s_emptySlots = new SaveSlot[0];
 
         public void ForceSave(Action saveAction) => ForceSave(DefaultOwner, saveAction);
 
@@ -217,7 +222,16 @@ namespace Nexus.Core.Services
                 // (a save is idempotent — writing the same state twice is harmless, losing
                 // it is not). What must never happen is two callers running the same action
                 // at the same time, so execution is guarded by a per-slot in-flight flag.
-                if (slot.Flushing) return;
+                if (slot.Flushing)
+                {
+                    // Another caller is mid-save for this slot. A concurrent request
+                    // (TryRequestSave/ForceSave) may already have overwritten LastAction
+                    // with a NEWER state than the in-flight save captured. Queue it as
+                    // pending so the next Tick/Flush persists it — otherwise the newest
+                    // state is silently dropped until the next explicit request.
+                    slot.Pending = true;
+                    return;
+                }
                 action = slot.LastAction;
                 if (action == null) return;
                 slot.Flushing = true;

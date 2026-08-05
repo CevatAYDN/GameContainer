@@ -155,7 +155,14 @@ namespace Nexus.Core.Extensions
             string tempPath = Path.Combine(dir, sanitized + ".sav.tmp");
 
             // Write atomically via temporary file to prevent save corruption on crash.
-            await Task.Run(async () =>
+            // NOTE: the lambda is intentionally NOT async — the whole stage+rename+retry
+            // sequence stays inside one _saveLock critical section. Releasing the lock
+            // between attempts (to await the backoff) would let a concurrent SaveAsync on
+            // the SAME slot interleave: a retrying thread could then overwrite the newer
+            // concurrent save with its own stale data (silent lost update). Serializing the
+            // full retry keeps retry-writes ordered; the cancellable backoff below blocks
+            // only this worker thread during rare IO errors (disk busy, antivirus scan).
+            await Task.Run(() =>
             {
                 ct.ThrowIfCancellationRequested();
                 string json = JsonUtility.ToJson(data);
@@ -214,9 +221,10 @@ namespace Nexus.Core.Extensions
                                 // Give up and surface the error to the caller via exception
                                 throw;
                             }
-                            // Exponential backoff with jitter
+                            // Exponential backoff with jitter (cancellable via ct). Kept
+                            // synchronous and under _saveLock — see the NOTE above.
                             var backoffMs = (int)(50 * Math.Pow(2, attempt - 1)) + _retryJitter.Next(0, 50);
-                            Task.Delay(backoffMs, ct).GetAwaiter().GetResult();
+                            Task.Delay(backoffMs, ct).GetAwaiter().GetResult(); // NEXUS003-exempt: serialized retry backoff — releasing _saveLock between attempts risks clobbering concurrent same-slot saves
                         }
                     }
                 }

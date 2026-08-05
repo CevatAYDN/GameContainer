@@ -9,8 +9,10 @@ namespace Nexus.Demo
     public class DemoUICommand : ICommand<DemoUISignal>
     {
         [Inject] private IDemoUIModel _uiModel;
-        [Inject] private IUIManager _uiManager;
 #pragma warning disable CS0618
+        // Demo screens are string-keyed and derive from View (not ScreenView), so they
+        // are opened through the legacy WindowManager API until they are migrated to
+        // UIManager's typed OpenScreenAsync<TScreen> (TScreen : ScreenView).
         [Inject] private WindowManager _windowManager;
 #pragma warning restore CS0618
         [Inject] private AdService _adService;

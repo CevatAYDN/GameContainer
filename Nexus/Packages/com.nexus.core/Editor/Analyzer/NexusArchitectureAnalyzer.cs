@@ -198,8 +198,13 @@ namespace Nexus.Editor
                     });
                 }
 
-                // Rule NEXUS003: Thread.Sleep Blocking Calls
-                if (line.Contains("Thread.Sleep") && !path.Contains("/Editor/"))
+                // Rule NEXUS003: Synchronous blocking calls (Thread.Sleep + sync-over-async
+                // like Task.Delay(...).GetAwaiter().GetResult(), which still blocks the thread).
+                // A trailing "// NEXUS003-exempt: <reason>" comment marks a deliberate,
+                // documented blocking site (e.g. EncryptedStorageService's 1-2 ms IO backoff,
+                // NexusTestHarness's rethrow-only GetResult) and opts it out.
+                if ((line.Contains("Thread.Sleep") || line.Contains("GetAwaiter().GetResult()"))
+                    && !path.Contains("/Editor/") && !line.Contains("NEXUS003-exempt"))
                 {
                     _issues.Add(new AnalysisIssue
                     {
@@ -207,8 +212,8 @@ namespace Nexus.Editor
                         Severity = IssueSeverity.Error,
                         FilePath = path,
                         LineNumber = lineNum,
-                        Message = "Synchronous 'Thread.Sleep' call detected in runtime code.",
-                        Recommendation = "Use 'await Task.Delay()' or 'ValueTask' timers to avoid blocking the main thread timeslice."
+                        Message = "Synchronous blocking or sync-over-async call detected in runtime code.",
+                        Recommendation = "Use 'await Task.Delay()' or a ValueTask timer so the thread yields instead of blocking. For a deliberate sync site, append '// NEXUS003-exempt: <reason>' to the line."
                     });
                 }
 
