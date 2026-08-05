@@ -115,7 +115,12 @@ namespace Nexus.Core
             }
         }
 
-        public void SetWithoutNotify(int value)
+        /// <summary>
+        /// Set the underlying value without firing OnChanged. By default this method
+        /// preserves the integrity canary. Callers may pass validateCanary=false only
+        /// when they absolutely control the value source (internal-only scenarios).
+        /// </summary>
+        public void SetWithoutNotify(int value, bool validateCanary = true)
         {
             lock (_valueLock)
             {
@@ -125,6 +130,15 @@ namespace Nexus.Core
                 int newCompound = k1 ^ k2;
                 _obscuredValue = value ^ newCompound;
                 _guard = newCompound ^ GuardConst;
+
+                if (validateCanary)
+                {
+                    // Verify write by recomputing and checking the round-trip.
+                    if ((_obscuredValue ^ newCompound) != value || ((_guard ^ GuardConst) != newCompound))
+                    {
+                        RaiseTamperDetected("SecureObservableInt.SetWithoutNotify.validation");
+                    }
+                }
             }
         }
 
@@ -231,7 +245,12 @@ namespace Nexus.Core
             }
         }
 
-        public void SetWithoutNotify(long value)
+        /// <summary>
+        /// Set the underlying value without firing OnChanged. By default this method
+        /// preserves the integrity canary. Callers may pass validateCanary=false only
+        /// when they absolutely control the value source (internal-only scenarios).
+        /// </summary>
+        public void SetWithoutNotify(long value, bool validateCanary = true)
         {
             lock (_valueLock)
             {
@@ -241,6 +260,14 @@ namespace Nexus.Core
                 long newCompound = k1 ^ k2;
                 _obscuredValue = value ^ newCompound;
                 _guard = newCompound ^ GuardConst;
+
+                if (validateCanary)
+                {
+                    if ((_obscuredValue ^ newCompound) != value || ((_guard ^ GuardConst) != newCompound))
+                    {
+                        RaiseTamperDetected("SecureObservableLong.SetWithoutNotify.validation");
+                    }
+                }
             }
         }
 
@@ -369,7 +396,12 @@ namespace Nexus.Core
             }
         }
 
-        public void SetWithoutNotify(float value)
+        /// <summary>
+        /// Set the underlying value without firing OnChanged. By default this method
+        /// preserves the integrity canary. Callers may pass validateCanary=false only
+        /// when they absolutely control the value source (internal-only scenarios).
+        /// </summary>
+        public void SetWithoutNotify(float value, bool validateCanary = true)
         {
             lock (_valueLock)
             {
@@ -379,6 +411,14 @@ namespace Nexus.Core
                 int newCompound = k1 ^ k2;
                 _obscuredValue = FloatToIntBits(value) ^ newCompound;
                 _guard = newCompound ^ GuardConst;
+
+                if (validateCanary)
+                {
+                    if ((IntToFloatBits(_obscuredValue ^ newCompound) != value) || ((_guard ^ GuardConst) != newCompound))
+                    {
+                        RaiseTamperDetected("SecureObservableFloat.SetWithoutNotify.validation");
+                    }
+                }
             }
         }
 
@@ -511,7 +551,12 @@ namespace Nexus.Core
             }
         }
 
-        public void SetWithoutNotify(string value)
+        /// <summary>
+        /// Set the underlying value without firing OnChanged. By default this method
+        /// preserves the integrity canary. Callers may pass validateCanary=false only
+        /// when they absolutely control the value source (internal-only scenarios).
+        /// </summary>
+        public void SetWithoutNotify(string value, bool validateCanary = true)
         {
             lock (_valueLock)
             {
@@ -521,6 +566,14 @@ namespace Nexus.Core
                 int newCompound = k1 ^ k2;
                 _obscuredChars = Obscure(value, newCompound);
                 _guard = newCompound ^ GuardConst;
+
+                if (validateCanary)
+                {
+                    if (((_guard ^ GuardConst) != newCompound) || (Reveal(_obscuredChars, newCompound) != value))
+                    {
+                        RaiseTamperDetected("SecureObservableString.SetWithoutNotify.validation");
+                    }
+                }
             }
         }
 
@@ -602,12 +655,17 @@ namespace Nexus.Core
             }
         }
 
-        public void SetWithoutNotify(BigDouble value)
+        /// <summary>
+        /// Set the composite BigDouble value without firing notifications. By default
+        /// the inner pieces validate their canaries; callers may pass validateCanary=false
+        /// to skip inner validation for internal scenarios.
+        /// </summary>
+        public void SetWithoutNotify(BigDouble value, bool validateCanary = true)
         {
             lock (_compositeLock)
             {
-                _mantissaBits.SetWithoutNotify(BitConverter.DoubleToInt64Bits(value.Mantissa));
-                _exponent.SetWithoutNotify(value.Exponent);
+                _mantissaBits.SetWithoutNotify(BitConverter.DoubleToInt64Bits(value.Mantissa), validateCanary);
+                _exponent.SetWithoutNotify(value.Exponent, validateCanary);
             }
         }
 

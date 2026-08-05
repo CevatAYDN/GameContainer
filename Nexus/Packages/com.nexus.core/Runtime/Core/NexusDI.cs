@@ -65,6 +65,11 @@ namespace Nexus.Core
         private readonly object _pendingInjectionsLock = new();
         private readonly HashSet<Type> _constructingSingletons = new();
         private readonly object _singletonLock = new();
+        // Background dispose task for IAsyncDisposable singletons scheduled by Dispose()
+        // When Dispose() collects async disposables it runs them through DisposeAllAsyncInBackground
+        // and stores the returned Task here so callers (e.g. Context.Dispose) may wait with a timeout
+        // for deterministic teardown when needed.
+        private Task _backgroundDisposeTask;
         // Per-type wait handles for singleton construction synchronization
         private readonly Dictionary<Type, ManualResetEventSlim> _constructionWaitHandles = new();
         private readonly object _constructionWaitLock = new();
@@ -1388,7 +1393,7 @@ namespace Nexus.Core
                 }
             }
             if (asyncDisposables.Count > 0)
-                _ = DisposeAllAsyncInBackground(asyncDisposables);
+                _backgroundDisposeTask = DisposeAllAsyncInBackground(asyncDisposables);
             _bindings.Clear();
             _namedBindings.Clear();
         }
@@ -1410,6 +1415,32 @@ namespace Nexus.Core
                 {
                     NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {asyncDisposables[i].GetType().FullName}: {ex.Message}");
                 }
+            }
+        }
+
+        /// <summary>
+        /// Blocks the calling thread up to <paramref name="timeout"/> waiting for the
+        /// background async-dispose task scheduled by <see cref="Dispose()"/>, if any.
+        /// Returns true if the background dispose completed within the timeout, false
+        /// if it is still running or threw.
+        /// </summary>
+        public bool WaitForBackgroundDispose(TimeSpan timeout)
+        {
+            var t = _backgroundDisposeTask;
+            if (t == null) return true;
+            try
+            {
+                return t.Wait(timeout);
+            }
+            catch (AggregateException ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] Waiting for background dispose failed: {ex.Flatten().InnerException?.Message}");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] Waiting for background dispose failed: {ex.Message}");
+                return false;
             }
         }
 

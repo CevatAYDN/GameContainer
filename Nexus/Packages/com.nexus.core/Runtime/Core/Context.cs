@@ -670,6 +670,21 @@ namespace Nexus.Core
             // (NexusDI.Dispose schedules their DisposeAsync on a background task). Callers
             // that can await must use DisposeAsync() for deterministic async teardown.
             Container.Dispose();
+            try
+            {
+                // Block briefly to allow background async-dispose chain to complete for
+                // callers that can't await (e.g. Unity's synchronous OnDestroy). This
+                // waits up to 5 seconds; if the background dispose exceeds the timeout
+                // a warning is logged and teardown proceeds to avoid deadlock during
+                // engine shutdown.
+                if (!Container.WaitForBackgroundDispose(TimeSpan.FromSeconds(5)))
+                    NexusRuntime.Logger?.LogError("[Nexus] Timeout waiting for async singletons to dispose in Context.Dispose().");
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] Error while waiting for background disposes: {ex.Message}");
+            }
+
             _cts.Dispose();
             // M5 fix: UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a

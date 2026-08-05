@@ -135,6 +135,15 @@ namespace Nexus.Core
         /// <summary>
         /// Fires the wrapped signal into the signal bus.
         /// </summary>
+        /// <remarks>
+        /// Important: <see cref="QueuedSignalWrapper{T}"/> is a pooled reference type that
+        /// stores the signal payload as a value-type field. The value-type payload is copied
+        /// when passed to <see cref="SignalBus.FireQueued{T}(T)"/>, so code that subsequently
+        /// calls <see cref="Release"/> and resets the wrapper's Signal does not mutate the
+        /// copy observed by the in-flight dispatch. This design relies on the value-type copy
+        /// semantic to avoid races; do not change the wrapper to hold a reference to mutable
+        /// shared state without revisiting this contract.
+        /// </remarks>
         public void Fire(SignalBus bus)
         {
             bus.FireQueued(Signal);
