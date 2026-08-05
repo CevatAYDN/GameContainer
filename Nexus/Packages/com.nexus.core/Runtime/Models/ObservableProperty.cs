@@ -51,21 +51,26 @@ namespace Nexus.Core
         /// <summary>Gets or sets the current value. Setting triggers OnChanged without heap allocations.</summary>
         public T Value
         {
-            get => _value;
+            // R1 fix: read under _dispatchLock so a multi-field struct (e.g. BigDouble)
+            // cannot be torn — the setter writes _value under the same lock, so a
+            // concurrent read/write is now serialized instead of producing a torn value.
+            get { lock (_dispatchLock) return _value; }
             set
             {
-                if (EqualityComparer<T>.Default.Equals(_value, value))
-                    return;
-
-                // Claim-or-queue under the lock (audit fix 1.3): exactly one thread becomes
+                    // Claim-or-queue under the lock (audit fix 1.3): exactly one thread becomes
                 // the dispatcher; everyone else — including same-thread reentrant writes from
-                // inside a handler — coalesces into the pending slot.
+                // inside a handler — coalesces into the pending slot. Also perform the equality
+                // check inside the same lock to avoid TOCTOU races (R5).
                 lock (_dispatchLock)
                 {
                     if (_isNotifying)
                     {
                         _pendingReentrantValue = value;
                         _hasPendingReentrantValue = true;
+                        return;
+                    }
+                    if (EqualityComparer<T>.Default.Equals(_value, value))
+                    {
                         return;
                     }
                     _isNotifying = true;
@@ -511,7 +516,12 @@ namespace Nexus.Core
         }
 
         // ── Enumeration ────────────────────────────────────────
-        public List<T>.Enumerator GetEnumerator() => _items.GetEnumerator();
+        // R4 fix: enumerate a version-cached SNAPSHOT instead of the live backing list.
+        // The old `_items.GetEnumerator()` returned a live enumerator over the mutable
+        // list, so a mutation during foreach threw InvalidOperationException. AsReadOnly()
+        // returns an immutable snapshot (never mutated after publish), so foreach is now
+        // safe even if the list changes concurrently.
+        public List<T>.Enumerator GetEnumerator() => AsReadOnly().GetEnumerator();
     }
 
     /// <summary>Minimal read-only wrapper to avoid exposing List mutators.</summary>
