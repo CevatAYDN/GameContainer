@@ -63,6 +63,11 @@ namespace Nexus.Core
 
             while (absMantissa >= 10.0)
             {
+                // P2 fix: clamp the exponent so a saturated value (e.g. MaxValue * 10,
+                // where SaturateAddExponent already returned long.MaxValue) cannot
+                // overflow to long.MinValue and silently corrupt the number. Once the
+                // exponent is pinned at the boundary, further normalization is a no-op.
+                if (Exponent == long.MaxValue) break;
                 Mantissa /= 10.0;
                 absMantissa /= 10.0;
                 Exponent++;
@@ -70,6 +75,7 @@ namespace Nexus.Core
 
             while (absMantissa < 1.0 && absMantissa > 0.0)
             {
+                if (Exponent == long.MinValue) break;
                 Mantissa *= 10.0;
                 absMantissa *= 10.0;
                 Exponent--;
@@ -202,7 +208,27 @@ namespace Nexus.Core
         {
             if (Mantissa == 0.0) return "0";
             var culture = System.Globalization.CultureInfo.InvariantCulture;
-            if (Exponent < 3) return (Mantissa * Math.Pow(10, Exponent)).ToString("F0", culture);
+
+            // P3 fix: a very negative exponent (e.g. -300) makes Math.Pow(10, Exponent)
+            // underflow to 0.0, so the old code printed "0" for a genuinely non-zero
+            // value. Route any exponent that would underflow the double through the
+            // scientific fallback instead of the fixed-point path.
+            if (Exponent < 3)
+            {
+                if (Exponent < -15)
+                {
+                    return $"{Mantissa.ToString("F2", culture)}e{Exponent}";
+                }
+                // Guard against Math.Pow underflow: if Exponent is very negative such
+                // that 10^Exponent is subnormal/zero, fall back to the scientific format
+                // which preserves non-zero magnitude for display purposes.
+                double pow10 = Math.Pow(10, Exponent);
+                if (pow10 == 0.0)
+                {
+                    return $"{Mantissa.ToString("F2", culture)}e{Exponent}";
+                }
+                return (Mantissa * pow10).ToString("F0", culture);
+            }
 
             long suffixIndex = Exponent / 3;
             long remainder = Exponent % 3;
