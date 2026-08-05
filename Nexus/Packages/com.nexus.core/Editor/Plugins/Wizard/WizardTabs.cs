@@ -304,6 +304,50 @@ public class {_viewName}Mediator : Mediator<{_viewName}>
     protected override void OnUnbind() {{ }}
 }}");
             AssetDatabase.Refresh();
+
+            // R2026-H10 fix: the "Create View GameObject" toggle was previously dead UI —
+            // the flag was stored but never acted on. When enabled, create the scene
+            // GameObject after the compile finishes (the generated View type only exists
+            // post-refresh, so creation is deferred via delayCall).
+            if (_createViewGo)
+            {
+                string viewTypeName = _viewName;
+                EditorApplication.delayCall += () =>
+                {
+                    // The freshly generated type lives in Assembly-CSharp (or a game
+                    // asmdef) — scan loaded assemblies by simple name via the catalog.
+                    Type viewType = null;
+                    foreach (var asm in AssemblyCatalog.LoadedAssemblies)
+                    {
+                        if (asm.IsDynamic) continue;
+                        foreach (var t in AssemblyCatalog.GetTypesSafe(asm))
+                        {
+                            if (t != null && t.Name == viewTypeName && typeof(Nexus.Core.View).IsAssignableFrom(t))
+                            {
+                                viewType = t;
+                                break;
+                            }
+                        }
+                        if (viewType != null) break;
+                    }
+                    if (viewType == null)
+                    {
+                        Debug.LogWarning($"[Nexus] View GameObject creation skipped: type '{viewTypeName}' not found after compile.");
+                        return;
+                    }
+                    // R2026: FindAnyObjectByType — the ordering-dependent FindFirstObjectByType
+                    // overload is deprecated in Unity 6.
+                    if (GameObject.FindAnyObjectByType(viewType) != null)
+                    {
+                        Debug.Log($"[Nexus] Scene already contains a '{viewTypeName}' instance; skipping GameObject creation.");
+                        return;
+                    }
+                    var go = new GameObject(viewTypeName);
+                    go.AddComponent(viewType);
+                    Undo.RegisterCreatedObjectUndo(go, $"Create {viewTypeName}");
+                    Debug.Log($"[Nexus] View GameObject created in scene: {viewTypeName}");
+                };
+            }
             Debug.Log($"[Nexus] View/Mediator generated: {_viewName}");
         }
     }

@@ -22,8 +22,17 @@ namespace Nexus.Core
         [Header("Configuration")]
         [SerializeField] private ContextData contextData;
         [SerializeField] private int initializationPriority = 0;
-        [SerializeField] private int parentTimeoutFrames = 900;
-        [SerializeField] private int siblingTimeoutFrames = 900;
+        // R2026-M11 fix: frame-count timeouts made the wait wall-clock dependent on the
+        // device's frame rate (900 frames = 15 s @60 fps but 30 s @30 fps). Seconds are
+        // frame-rate independent.
+        // R2026-FIX (migration): FormerlySerializedAs was REMOVED deliberately — the old
+        // int fields stored FRAMES (900), and Unity's int→float coercion would read that
+        // as 900 SECONDS (15-minute waits → PlayMode tests appear to hang). Fresh field
+        // names make existing scenes fall back to the 15 s default instead.
+        [Tooltip("Seconds to wait for the parent root to initialize before failing.")]
+        [SerializeField] private float parentTimeoutSeconds = 15f;
+        [Tooltip("Seconds to wait for each higher-priority sibling root before failing.")]
+        [SerializeField] private float siblingTimeoutSeconds = 15f;
 #pragma warning restore 0649
 
         /// <summary>The Nexus context owned by this root.</summary>
@@ -245,6 +254,12 @@ namespace Nexus.Core
             {
                 await StartInternal();
             }
+            catch (OperationCanceledException)
+            {
+                // R2026-H12 fix: cancellation is an expected teardown signal (context
+                // disposal cancels LifetimeToken), NOT a startup failure — logging it
+                // as an error produced scary red noise on every scene unload.
+            }
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogError($"[Nexus] Root startup failed: {ex.Message}\n{ex.StackTrace}");
@@ -260,20 +275,21 @@ namespace Nexus.Core
 
             try
             {
-                // Wait for parent root to be initialized first (with timeout)
+                // Wait for parent root to be initialized first (with timeout).
+                // R2026-M11: wall-clock seconds via realtimeSinceStartupAsDouble — a
+                // frame-count timeout punished low-FPS devices with double-length waits.
                 if (parentRoot != null)
                 {
-                    int timeoutFrames = parentTimeoutFrames;
-                    while (!parentRoot.IsInitialized && timeoutFrames > 0)
+                    double deadline = UnityEngine.Time.realtimeSinceStartupAsDouble + parentTimeoutSeconds;
+                    while (!parentRoot.IsInitialized && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
                     {
                         await Task.Yield();
                         Context.LifetimeToken.ThrowIfCancellationRequested();
-                        timeoutFrames--;
                     }
 
                     if (!parentRoot.IsInitialized)
                     {
-                        NexusRuntime.Logger?.LogError($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within timeout. Continuing would leave dependent views and services in an undefined state.");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Parent root '{parentRoot.name}' failed to initialize within {parentTimeoutSeconds:0.#}s. Continuing would leave dependent views and services in an undefined state.");
                         throw new TimeoutException($"Parent root '{parentRoot.name}' did not initialize in time.");
                     }
                 }
@@ -304,17 +320,16 @@ namespace Nexus.Core
 
                 foreach (var sibling in _siblingsToWait)
                 {
-                    int timeoutFrames = siblingTimeoutFrames;
-                    while (sibling != null && !sibling.IsInitialized && timeoutFrames > 0)
+                    double deadline = UnityEngine.Time.realtimeSinceStartupAsDouble + siblingTimeoutSeconds;
+                    while (sibling != null && !sibling.IsInitialized && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
                     {
                         await Task.Yield();
                         Context.LifetimeToken.ThrowIfCancellationRequested();
-                        timeoutFrames--;
                     }
 
                     if (sibling != null && !sibling.IsInitialized)
                     {
-                        NexusRuntime.Logger?.LogError($"[Nexus] Root '{gameObject.name}' timed out waiting for sibling root '{sibling.gameObject.name}' to initialize. Continuing would make sibling ordering nondeterministic.");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Root '{gameObject.name}' timed out after {siblingTimeoutSeconds:0.#}s waiting for sibling root '{sibling.gameObject.name}' to initialize. Continuing would make sibling ordering nondeterministic.");
                         throw new TimeoutException($"Sibling root '{sibling.gameObject.name}' did not initialize in time.");
                     }
                 }

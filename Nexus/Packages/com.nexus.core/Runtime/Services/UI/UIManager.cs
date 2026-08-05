@@ -236,6 +236,7 @@ namespace Nexus.Core.Services
                         _activeScreens[key] = screen;
                         _history.Remove(key);
                         _history.Add(key);
+                        _activeGameObjectsDirty = true; // R2026-M3: invalidate cache
                     }
                     else if (instantiated)
                     {
@@ -263,7 +264,7 @@ namespace Nexus.Core.Services
 
         public void OpenScreen<TScreen>(object args = null, UILayer layer = UILayer.Screen) where TScreen : ScreenView
         {
-            _ = SafeFireAndForget(OpenScreenAsync<TScreen>(args, layer), $"OpenScreen<{typeof(TScreen).Name}>");
+            SafeAsyncRunner.Run(OpenScreenAsync<TScreen>(args, layer), $"OpenScreen<{typeof(TScreen).Name}>");
         }
 
         private async Task<ScreenView> InstantiateScreenAsync<TScreen>(string key, Transform layerRoot) where TScreen : ScreenView
@@ -332,7 +333,7 @@ namespace Nexus.Core.Services
 
         public void CloseScreen<TScreen>() where TScreen : ScreenView
         {
-            _ = SafeFireAndForget(CloseScreenAsync<TScreen>(), $"CloseScreen<{typeof(TScreen).Name}>");
+            SafeAsyncRunner.Run(CloseScreenAsync<TScreen>(), $"CloseScreen<{typeof(TScreen).Name}>");
         }
 
         public async Task CloseTopScreenAsync()
@@ -388,6 +389,7 @@ namespace Nexus.Core.Services
                 {
                     _activeScreens.Remove(key);
                     _history.Remove(key);
+                    _activeGameObjectsDirty = true; // R2026-M3: invalidate cache
                 }
             }
 
@@ -443,30 +445,25 @@ namespace Nexus.Core.Services
 
         // ── Internals ─────────────────────────────────────────────────
 
-        /// <summary>
-        /// Fire-and-forget helper that logs any exception which escapes the task.
-        /// Replaces bare "_ = task" discards so exceptions are never silently swallowed.
-        /// OperationCanceledException is suppressed — it is expected during context teardown.
-        /// </summary>
-        private static async System.Threading.Tasks.Task SafeFireAndForget(System.Threading.Tasks.Task task, string context)
-        {
-            try { await task; }
-            catch (OperationCanceledException) { /* expected during context teardown */ }
-            catch (Exception ex)
-            {
-                NexusRuntime.Logger?.LogError($"[UIManager] {context} failed: {ex.Message}\n{ex.StackTrace}");
-            }
-        }
+        // R2026-M3 fix: dirty-flagged cache for the active-GameObjects view. Every
+        // OpenScreenAsync/CloseScreenCoreAsync previously allocated a fresh Dictionary —
+        // GC churn on UI-heavy flows. Invalidated by every _activeScreens mutation below.
+        private Dictionary<string, GameObject> _cachedActiveGameObjects;
+        private bool _activeGameObjectsDirty = true;
 
         /// <summary>Builds the GameObject view of active screens for layer interactivity.</summary>
         private Dictionary<string, GameObject> GetActiveGameObjects()
         {
             lock (_lock)
             {
-                var result = new Dictionary<string, GameObject>(_activeScreens.Count);
-                foreach (var kvp in _activeScreens)
-                    result[kvp.Key] = kvp.Value.gameObject;
-                return result;
+                if (_activeGameObjectsDirty || _cachedActiveGameObjects == null)
+                {
+                    _cachedActiveGameObjects = new Dictionary<string, GameObject>(_activeScreens.Count);
+                    foreach (var kvp in _activeScreens)
+                        _cachedActiveGameObjects[kvp.Key] = kvp.Value.gameObject;
+                    _activeGameObjectsDirty = false;
+                }
+                return _cachedActiveGameObjects;
             }
         }
 

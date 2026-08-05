@@ -629,6 +629,9 @@ namespace Nexus.Editor
             s_strings["wizard_toggle_analytics"] = "Analytics";
             s_strings["wizard_toggle_inventory"] = "Inventory / Economy";
             s_strings["wizard_toggle_create_go"] = "Create GameObject in Scene";
+            // R2026-H10 fix: the View/Mediator wizard tab referenced this key but it was
+            // never registered — the toggle rendered with its raw key as the label.
+            s_strings["wizard_create_view_go"] = "Create View GameObject in Scene";
             s_strings["wizard_hint_no_manifest"] = "No NexusBootstrapManifest found in the project. Create one to enable skeleton generation.";
             s_strings["wizard_label_active_manifest"] = "Active Manifest: {0}";
             s_strings["wizard_label_default_contexts"] = "Default Contexts: {0}";

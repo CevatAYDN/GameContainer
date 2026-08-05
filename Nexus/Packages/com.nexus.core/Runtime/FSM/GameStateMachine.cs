@@ -168,21 +168,24 @@ namespace Nexus.Core.FSM
             string argsSummary = args?.GetType().Name; // type name only — no ToString() surprises
             double startTime = UnityEngine.Time.realtimeSinceStartupAsDouble;
 
-            // Preempt any in-flight transition. The superseded transition observes the
-            // cancellation at its next await point and abandons its own transition
-            // (see the sequence check after every await below). We deliberately do NOT
-            // dispose its source here — the superseded flow disposes its OWN source in
-            // its finally block, so a state still holding a reference to the old token
-            // can never hit ObjectDisposedException.
-            var superseded = _stateCts;
-            _stateCts = null;
-            superseded?.Cancel();
-
+            // R2026-C2 fix: ATOMIC token swap. The old read-null-cancel-assign sequence
+            // was not atomic: two concurrent ChangeStateAsync calls could interleave so
+            // that the FIRST caller's `_stateCts = myCts` overwrote the SECOND caller's
+            // freshly published token — the second transition's token was then lost and
+            // could never be cancelled (a runaway transition that still commits state).
+            // Interlocked.Exchange publishes the new token and grabs the old one in a
+            // single indivisible step; cancelling the superseded source afterwards is
+            // safe because the superseded flow disposes its OWN source in its finally.
             long mySequence = System.Threading.Interlocked.Increment(ref _transitionSequence);
             var myCts = ct != CancellationToken.None
                 ? CancellationTokenSource.CreateLinkedTokenSource(ct)
                 : new CancellationTokenSource();
-            _stateCts = myCts;
+            var superseded = System.Threading.Interlocked.Exchange(ref _stateCts, myCts);
+            // R2026-FIX: Cancel() on a token source that the superseded flow's finally
+            // block has ALREADY disposed throws ObjectDisposedException. The window is
+            // narrow (Exchange → Cancel vs the old flow's finally → Dispose) but real.
+            try { superseded?.Cancel(); }
+            catch (ObjectDisposedException) { /* superseded flow already completed and disposed its source */ }
             var token = myCts.Token;
 
             if (token.IsCancellationRequested)

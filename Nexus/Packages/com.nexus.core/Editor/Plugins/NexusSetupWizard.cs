@@ -396,6 +396,7 @@ namespace Nexus.Editor
         // ─── Main Scaffold ────────────────────────────────────
 
         private const string PendingSceneKey = "Nexus_SetupWizard_PendingScene";
+        private const string PendingSceneRetryKey = "Nexus_SetupWizard_PendingSceneRetries";
 
         private static void ScaffoldProject()
         {
@@ -416,9 +417,33 @@ namespace Nexus.Editor
             //          domain reload resets ALL static state including delayCall delegates.
             //          [DidReloadScripts] below catches it after domain reload.
             SessionState.SetBool(PendingSceneKey, true);
+            SessionState.SetInt(PendingSceneRetryKey, 0);
             EditorApplication.delayCall += OnDelayScaffold;
+            // E-H10 fix: PlayMode geçişinde flag'i sıfırla — play mode domain reload'unda
+            // [DidReloadScripts] tetiklenmez, flag sonsuza dek set kalırdı.
+            // Subscribe ONCE per domain — re-running the wizard must not stack duplicate
+            // handlers on the static event (they would all fire, harmless but wasteful).
+            EditorApplication.playModeStateChanged -= OnPlayModeClearPending;
+            EditorApplication.playModeStateChanged += OnPlayModeClearPending;
             Debug.Log("[Nexus] Waiting for script compilation before creating scene...");
         }
+
+        // E-H10 fix: play mode'a girerken bekleyen scaffold'u iptal et. Scene creation
+        // play mode'da zaten anlamsız (editor scene'leri yaratılmalı) ve flag'in play
+        // mode reload'unda hayatta kalması edit mode'a dönüldüğünde kilitli bırakırdı.
+        private static void OnPlayModeClearPending(PlayModeStateChange state)
+        {
+            if (state == PlayModeStateChange.ExitingEditMode || state == PlayModeStateChange.EnteredPlayMode)
+            {
+                if (SessionState.GetBool(PendingSceneKey, false))
+                {
+                    Debug.LogWarning("[Nexus] Scaffold pending scene creation cancelled: editor entered Play Mode before compilation finished. Re-run the setup wizard after exiting Play Mode.");
+                    SessionState.SetBool(PendingSceneKey, false);
+                }
+            }
+        }
+
+        private const int MaxScaffoldRetries = 3;
 
         [DidReloadScripts]
         private static void OnDidReloadScripts()
@@ -431,13 +456,26 @@ namespace Nexus.Editor
 
             if (!IsGameViewCompiled())
             {
-                Debug.LogWarning("[Nexus] Game.GameView type not found yet — retrying on next reload...");
+                // E-H10 fix: bounded retry — the flag previously survived FOREVER when the
+                // generated Game.GameView never compiled (e.g. compile error in user code),
+                // leaving every future wizard run thinking a scaffold was still pending.
+                int retries = SessionState.GetInt(PendingSceneRetryKey, 0) + 1;
+                if (retries > MaxScaffoldRetries)
+                {
+                    Debug.LogError($"[Nexus] Game.GameView type still not found after {MaxScaffoldRetries} reloads — scaffold aborted. Fix compile errors and re-run the wizard.");
+                    SessionState.SetBool(PendingSceneKey, false);
+                    SessionState.SetInt(PendingSceneRetryKey, 0);
+                    return;
+                }
+                SessionState.SetInt(PendingSceneRetryKey, retries);
+                Debug.LogWarning($"[Nexus] Game.GameView type not found yet — retrying on next reload ({retries}/{MaxScaffoldRetries})...");
                 SessionState.SetBool(PendingSceneKey, true);
                 // Can't use delayCall here because domain reload JUST finished and
                 // delayCall may not be ready. The flag is still set, so the next
                 // [DidReloadScripts] firing will retry.
                 return;
             }
+            SessionState.SetInt(PendingSceneRetryKey, 0);
 
             // IMPORTANT: Do NOT call ExecuteDelayedSceneCreation() directly here!
             // [DidReloadScripts] fires BEFORE Editor enters its main update loop.

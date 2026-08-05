@@ -127,6 +127,7 @@
     {"key": "wizard_toggle_analytics", "value": "Analitik"},
     {"key": "wizard_toggle_inventory", "value": "Envanter / Ekonomi"},
     {"key": "wizard_toggle_create_go", "value": "Sahnede GameObject Oluştur"},
+    {"key": "wizard_create_view_go", "value": "Sahnede View GameObject Oluştur"},
     {"key": "wizard_hint_no_manifest", "value": "Projede NexusBootstrapManifest bulunamadı. İskelet üretimini etkinleştirmek için bir tane oluşturun."},
     {"key": "wizard_label_active_manifest", "value": "Aktif Manifest: {0}"},
     {"key": "wizard_label_default_contexts", "value": "Varsayılan Context'ler: {0}"},

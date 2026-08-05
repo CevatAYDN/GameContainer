@@ -241,23 +241,38 @@ namespace Nexus.Core.Services
             source.PlayOneShot(clip);
         }
 
+        // R2026-M6 fix: round-robin scan cursor. The old always-from-index-0 scan was
+        // O(N) per SFX call and — worse — always probed the oldest sources first, so
+        // under sustained SFX load the same few sources were checked every call. The
+        // cursor spreads the scan and finds an idle source in ~O(1) amortized.
+        private int _sfxScanCursor;
+
         private AudioSource GetAvailableSfxSource()
         {
-            for (int i = 0; i < _sfxPool.Count; i++)
+            int count = _sfxPool.Count;
+            if (count > 0)
             {
-                if (!_sfxPool[i].isPlaying)
-                    return _sfxPool[i];
+                int start = _sfxScanCursor % count;
+                for (int i = 0; i < count; i++)
+                {
+                    int idx = (start + i) % count;
+                    if (!_sfxPool[idx].isPlaying)
+                    {
+                        _sfxScanCursor = idx + 1;
+                        return _sfxPool[idx];
+                    }
+                }
             }
 
             if (_sfxPool.Count >= MaxSfxPoolSize)
             {
-                // Pool exhausted — steal the oldest channel (index 0) and rotate it to the back
-                // so subsequent steals cycle fairly (Round-Robin) instead of starving index 0.
-                var oldest = _sfxPool[0];
-                _sfxPool.RemoveAt(0);
-                _sfxPool.Add(oldest);
-                oldest.Stop();
-                return oldest;
+                // Pool exhausted — steal the channel at the cursor (round-robin), so
+                // steals cycle fairly instead of starving index 0.
+                int stealIdx = _sfxScanCursor % _sfxPool.Count;
+                var stolen = _sfxPool[stealIdx];
+                stolen.Stop();
+                _sfxScanCursor = stealIdx + 1;
+                return stolen;
             }
 
             var newSourceGo = new GameObject($"SFXSource_{_sfxPool.Count}");

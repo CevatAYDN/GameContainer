@@ -26,6 +26,13 @@ namespace Nexus.Core.Services
         ValueTask OnClosedAsync(CancellationToken ct);
     }
 
+    /// <summary>
+    /// R2026-A2: legacy string-keyed window API. Prefer <see cref="IUIManager"/> — its
+    /// type-safe <c>ScreenView</c> API (open by type, pooled instances, mediator auto-bind)
+    /// is the canonical path; WindowManager is kept only for backward compatibility and
+    /// will be removed in a future major version.
+    /// </summary>
+    [System.Obsolete("Use IUIManager (type-safe ScreenView API with pooling) instead. WindowManager is kept for backward compatibility and will be removed in a future major version.", false)]
     public interface IWindowManager
     {
         Task<GameObject> OpenWindowAsync(string windowName, UILayer layer = UILayer.Screen, object args = null);
@@ -41,6 +48,7 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
+    [System.Obsolete("Use UIManager instead. See IWindowManager's deprecation note.", false)]
     public class WindowManager : NexusService<IWindowManager>, IWindowManager
     {
         [Inject] public IUIAssetProvider AssetProvider { get; set; }
@@ -298,7 +306,7 @@ namespace Nexus.Core.Services
 
         public void OpenWindow(string windowName, object args = null)
         {
-            _ = SafeFireAndForget(OpenWindowAsync(windowName, UILayer.Screen, args), $"OpenWindow '{windowName}'");
+            SafeAsyncRunner.Run(OpenWindowAsync(windowName, UILayer.Screen, args), $"OpenWindow '{windowName}'");
         }
 
         public async Task CloseWindowAsync(string windowName)
@@ -339,7 +347,7 @@ namespace Nexus.Core.Services
 
         public void CloseWindow(string windowName)
         {
-            _ = SafeFireAndForget(CloseWindowAsync(windowName), $"CloseWindow '{windowName}'");
+            SafeAsyncRunner.Run(CloseWindowAsync(windowName), $"CloseWindow '{windowName}'");
         }
 
         public async Task CloseTopWindowAsync()
@@ -371,7 +379,7 @@ namespace Nexus.Core.Services
 
         public void CloseTopWindow()
         {
-            _ = SafeFireAndForget(CloseTopWindowAsync(), "CloseTopWindow");
+            SafeAsyncRunner.Run(CloseTopWindowAsync(), "CloseTopWindow");
         }
 
         public async Task CloseAllAsync()
@@ -395,22 +403,7 @@ namespace Nexus.Core.Services
 
         public void CloseAll()
         {
-            _ = SafeFireAndForget(CloseAllAsync(), "CloseAll");
-        }
-
-        /// <summary>
-        /// Fire-and-forget helper that logs any exception which escapes the task.
-        /// Replaces bare "_ = task" discards so exceptions are never silently swallowed.
-        /// OperationCanceledException is suppressed — it is expected during context teardown.
-        /// </summary>
-        private static async System.Threading.Tasks.Task SafeFireAndForget(System.Threading.Tasks.Task task, string context)
-        {
-            try { await task; }
-            catch (OperationCanceledException) { /* expected during context teardown */ }
-            catch (Exception ex)
-            {
-                NexusRuntime.Logger?.LogError($"[WindowManager] {context} failed: {ex.Message}\n{ex.StackTrace}");
-            }
+            SafeAsyncRunner.Run(CloseAllAsync(), "CloseAll");
         }
 
         private async Task FinalizeClosedWindowAsync(string windowName, GameObject go, bool alreadyRemoved)
@@ -493,7 +486,9 @@ namespace Nexus.Core.Services
         {
             var result = new List<WindowInfo>();
             // B3: bail out cleanly if the manager is being disposed (no ObjectDisposedException).
-            if (_disposed || !_windowLock.Wait(50)) return result;
+            // R2026-M4 note: Wait(0) instead of Wait(50) — this is editor/tooling-only API,
+            // called from the main thread; a 50 ms block could hitch the editor UI.
+            if (_disposed || !_windowLock.Wait(0)) return result;
             try
             {
                 foreach (var kvp in _activeWindows)
@@ -515,7 +510,8 @@ namespace Nexus.Core.Services
         {
             get
             {
-                if (_disposed || !_windowLock.Wait(50)) return 0;
+                // R2026-M4: Wait(0) — non-blocking editor introspection (see GetOpenWindowsSnapshot).
+                if (_disposed || !_windowLock.Wait(0)) return 0;
                 try { return _pendingOpenWindows.Count; }
                 finally { _windowLock.Release(); }
             }

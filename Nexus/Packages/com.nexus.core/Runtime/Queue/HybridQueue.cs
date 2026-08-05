@@ -272,13 +272,23 @@ namespace Nexus.Core
             System.Threading.Interlocked.Increment(ref _totalEnqueued);
         }
 
+        // R2026-M12 fix: reentrancy guard. Drain releases the queue lock between dequeue
+        // and dispatch (by design, see Audit note 2.5), so a second caller entering Drain
+        // concurrently (Drain is public API) would interleave dispatches and break the
+        // chronological-order guarantee. In practice QueueDrainer drives this from one
+        // thread, but the guard makes the invariant structural instead of conventional.
+        private int _drainInProgress;
+
         /// <summary>
         /// Drains all thread-safe queued signals into the signal bus in chronological order.
         /// Called from <c>Root.Update()</c>. Zero-allocation.
         /// </summary>
         public void DrainThreadSafe()
         {
-            Drain(_threadSafeQueue, _threadSafeLock);
+            if (System.Threading.Interlocked.CompareExchange(ref _drainInProgress, 1, 0) != 0)
+                return; // another drain is already in progress — queued items will be picked up by it
+            try { Drain(_threadSafeQueue, _threadSafeLock); }
+            finally { System.Threading.Interlocked.Exchange(ref _drainInProgress, 0); }
         }
 
         /// <summary>
@@ -287,7 +297,10 @@ namespace Nexus.Core
         /// </summary>
         public void DrainNextFrame()
         {
-            Drain(_nextFrameQueue, _nextFrameLock);
+            if (System.Threading.Interlocked.CompareExchange(ref _drainInProgress, 1, 0) != 0)
+                return;
+            try { Drain(_nextFrameQueue, _nextFrameLock); }
+            finally { System.Threading.Interlocked.Exchange(ref _drainInProgress, 0); }
         }
 
         private void Drain(QueuedSignalRingBuffer queue, object queueLock)

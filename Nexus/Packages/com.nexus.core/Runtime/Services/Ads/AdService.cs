@@ -32,9 +32,12 @@ namespace Nexus.Core.Services
         event Action<string, double, string> OnImpressionRecorded; // (network, revenue, placement)
     }
 
+    // R2026-H1 fix: derives from NexusService<IAdService> like every other service, so
+    // [Inject] Context/SignalBus are available and OnDispose/Dispose follow the shared
+    // lifecycle contract (previously implemented INexusService directly — inconsistent).
     [Preserve]
     [StubService("Replace with AdMob / IronSource adapter before release")]
-    public class AdService : IAdService, INexusService
+    public class AdService : NexusService<IAdService>, IAdService
     {
         private IAdNetworkAdapter _adapter;
         // Anti-cheat: cooldown config and the last-show timestamp are XOR-masked in RAM
@@ -50,11 +53,6 @@ namespace Nexus.Core.Services
         public bool IsInitialized => _isInitialized;
 
         public event Action<string, double, string> OnImpressionRecorded;
-
-        public ValueTask InitializeAsync(CancellationToken ct)
-        {
-            return default;
-        }
 
         public void SetNetworkAdapter(IAdNetworkAdapter adapter)
         {
@@ -213,10 +211,11 @@ namespace Nexus.Core.Services
             OnImpressionRecorded?.Invoke(network, revenue, placement);
         }
 
-        public void OnDispose()
+        public override void Dispose()
         {
             _interstitialCooldownSeconds.ClearOnChanged();
             _lastInterstitialTime.ClearOnChanged();
+            base.Dispose();
         }
     }
 }

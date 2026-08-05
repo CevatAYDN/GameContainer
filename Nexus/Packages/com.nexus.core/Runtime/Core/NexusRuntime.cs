@@ -166,9 +166,9 @@ namespace Nexus.Core
         }
 
         private static Services.ILoggerService s_cachedLogger;
-        // Retained for API compatibility with existing invalidation sites; the logger cache
-        // no longer uses a lock (see Logger getter) — Volatile/Interlocked only.
-        private static readonly object s_loggerCacheLock = new();
+        // R2026-L1 fix: removed the dead s_loggerCacheLock field — the logger cache has
+        // been lock-free (Volatile/Interlocked) since audit fix 2.1, and the field was
+        // never referenced anywhere.
 
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
         private static void InitializeOnLoad()

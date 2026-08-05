@@ -75,6 +75,10 @@ namespace Nexus.Core
         private readonly object _constructionWaitLock = new();
         private readonly Injector _injector;
 
+        // R2026-M1 note: ThreadStatic by design — cycle detection covers SYNCHRONOUS
+        // resolution chains only. A factory that hands work to another thread and awaits
+        // it would resume on a fresh stack slot; such async factories are outside the
+        // supported contract (BindFactory is documented as synchronous).
         [ThreadStatic]
         private static HashSet<Type> s_resolutionStack;
 
@@ -426,6 +430,17 @@ namespace Nexus.Core
                         throw new InvalidOperationException(
                             $"Strict injection failed: constructor parameter {i} of type '{paramTypes[i].FullName}' on '{type.FullName}' is not registered.");
                     }
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                    // R2026-H3 fix: non-strict mode previously passed null ctor args silently —
+                    // a ctor that dereferences the dependency surfaced a bare NRE with no hint
+                    // of WHICH binding was missing. Warn once per (type, parameter) instead.
+                    if (args[i] == null && !_di.StrictInjection)
+                    {
+                        NexusRuntime.Logger?.LogWarning(
+                            $"[Nexus] Constructor parameter {i} ('{paramTypes[i].FullName}') on '{type.FullName}' is not registered; passing null. " +
+                            "Enable StrictInjection or mark the dependency [OptionalInject] to make this explicit.");
+                    }
+#endif
                 }
 
                 try { return meta.Constructor.Invoke(args); }

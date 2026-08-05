@@ -27,7 +27,10 @@ namespace Nexus.Core.Lifecycle
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Nexus] Lifecycle OnInitializeAsync exception in {lifecycles[i].GetType().Name}: {ex.Message}");
+                        // R2026-H11 fix: route through NexusRuntime.Logger (the framework's
+                        // logging abstraction) instead of raw Debug.LogError so log
+                        // filtering/sinks stay consistent with the rest of the runtime.
+                        NexusRuntime.Logger?.LogError($"[Nexus] Lifecycle OnInitializeAsync exception in {lifecycles[i].GetType().Name}: {ex.Message}");
                     }
                 }
             }
@@ -43,7 +46,7 @@ namespace Nexus.Core.Lifecycle
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Nexus] Lifecycle OnStartAsync exception in {lifecycles[i].GetType().Name}: {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Lifecycle OnStartAsync exception in {lifecycles[i].GetType().Name}: {ex.Message}");
                     }
                 }
             }
@@ -65,7 +68,7 @@ namespace Nexus.Core.Lifecycle
                     try { await asyncStartable.StartAsync(ct); }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Nexus] Exception in IAsyncStartable.StartAsync ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Exception in IAsyncStartable.StartAsync ({inst.GetType().FullName}): {ex.Message}");
                     }
                 }
                 if (inst is IStartable startable)
@@ -73,7 +76,7 @@ namespace Nexus.Core.Lifecycle
                     try { startable.Start(); }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Nexus] Exception in IStartable.Start ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Exception in IStartable.Start ({inst.GetType().FullName}): {ex.Message}");
                     }
                 }
             }
@@ -93,7 +96,7 @@ namespace Nexus.Core.Lifecycle
                     try { await asyncStoppable.StopAsync(ct); }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Nexus] Exception in IAsyncStoppable.StopAsync ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Exception in IAsyncStoppable.StopAsync ({inst.GetType().FullName}): {ex.Message}");
                     }
                 }
                 if (inst is IStoppable stoppable)
@@ -101,7 +104,7 @@ namespace Nexus.Core.Lifecycle
                     try { stoppable.Stop(); }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
                     }
                 }
             }
@@ -132,7 +135,7 @@ namespace Nexus.Core.Lifecycle
                     }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Nexus] Exception initiating IAsyncStoppable.StopAsync fire-and-forget ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Exception initiating IAsyncStoppable.StopAsync fire-and-forget ({inst.GetType().FullName}): {ex.Message}");
                     }
                 }
                 if (inst is IStoppable stoppable)
@@ -140,7 +143,7 @@ namespace Nexus.Core.Lifecycle
                     try { stoppable.Stop(); }
                     catch (Exception ex)
                     {
-                        Debug.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] Exception in IStoppable.Stop ({inst.GetType().FullName}): {ex.Message}");
                     }
                 }
             }
@@ -159,7 +162,7 @@ namespace Nexus.Core.Lifecycle
             catch (OperationCanceledException) { /* timeout or cancellation during teardown */ }
             catch (Exception ex)
             {
-                Debug.LogError($"[Nexus] Fire-and-forget IAsyncStoppable.StopAsync failed: {ex.Message}");
+                NexusRuntime.Logger?.LogError($"[Nexus] Fire-and-forget IAsyncStoppable.StopAsync failed: {ex.Message}");
             }
         }
     }

@@ -19,6 +19,45 @@ namespace Nexus.Core
     /// </summary>
     internal static class SafeAsyncRunner
     {
+        // R2026-H2 fix: Task-based overload shared by UIManager/WindowManager (and any
+        // service needing fire-and-forget with guaranteed error capture). Previously both
+        // UI managers carried a copy-pasted private SafeFireAndForget helper.
+        public static void Run(System.Threading.Tasks.Task task, string errorContext)
+        {
+            if (task == null) return;
+            if (task.IsCompleted)
+            {
+                if (task.IsFaulted)
+                {
+                    Exception ex = task.Exception?.InnerException;
+                    if (ex != null && !(ex is OperationCanceledException))
+                    {
+                        SignalBus.RaiseUnhandledException(ex, errorContext);
+                        NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
+                    }
+                }
+                return;
+            }
+            _ = AwaitTaskAsync(task, errorContext);
+        }
+
+        private static async System.Threading.Tasks.Task AwaitTaskAsync(System.Threading.Tasks.Task task, string errorContext)
+        {
+            try
+            {
+                await task;
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected during context cancellation
+            }
+            catch (Exception ex)
+            {
+                SignalBus.RaiseUnhandledException(ex, errorContext);
+                NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
+            }
+        }
+
         public static void Run(Func<ValueTask> func, string errorContext)
         {
             try
@@ -127,6 +166,11 @@ namespace Nexus.Core
         // Reentrancy guard for the synchronous fast path. Thread-static by design: sync
         // dispatch is main-thread-only, so each thread tracks its own nesting and threads
         // never observe each other's depth.
+        // R2026-H7 note: the sync (MaxStackDepth=10) and async (MaxAsyncStackDepth=32)
+        // guards are INTENTIONALLY separate counters — a sync handler that calls
+        // FireAsync starts a fresh async budget, so worst-case combined depth is
+        // 10 + 32 = 42. This is by design (sync guards real stack overflow; async guards
+        // runaway chains) and is NOT a bug — but it is now documented explicitly.
         [ThreadStatic]
         private static int s_stackDepth;
 
@@ -341,6 +385,9 @@ namespace Nexus.Core
             GetHybridQueue().EnqueueNextFrame(signal);
         }
 
+        // R2026-M2 note: each call allocates one linked CancellationTokenSource. That is
+        // acceptable for the intended use (user-triggered/network-bound signals, a few per
+        // second at most) — do NOT use this on a per-frame hot path; use FireAsync instead.
         public async ValueTask FireAsyncWithTimeout<T>(T signal, int timeoutMilliseconds) where T : struct
         {
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_context.LifetimeToken);

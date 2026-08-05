@@ -57,10 +57,19 @@ namespace Nexus.Core
             get { lock (_dispatchLock) return _value; }
             set
             {
-                    // Claim-or-queue under the lock (audit fix 1.3): exactly one thread becomes
+                // R2026-H5 fix: fast-path equality check OUTSIDE the lock. The previous
+                // code ran EqualityComparer<T>.Default.Equals under _dispatchLock — a
+                // virtual call that can run arbitrary user Equals code while holding the
+                // lock (longer critical section, theoretical deadlock if the custom
+                // Equals touches another lock). The unchecked double-write race is
+                // harmless: the loser simply re-dispatches the same value, which the
+                // equality re-check inside the lock suppresses.
+                if (EqualityComparer<T>.Default.Equals(_value, value))
+                    return;
+
+                // Claim-or-queue under the lock (audit fix 1.3): exactly one thread becomes
                 // the dispatcher; everyone else — including same-thread reentrant writes from
-                // inside a handler — coalesces into the pending slot. Also perform the equality
-                // check inside the same lock to avoid TOCTOU races (R5).
+                // inside a handler — coalesces into the pending slot.
                 lock (_dispatchLock)
                 {
                     if (_isNotifying)
@@ -69,6 +78,7 @@ namespace Nexus.Core
                         _hasPendingReentrantValue = true;
                         return;
                     }
+                    // Re-check under the lock: the fast-path read may have raced a writer.
                     if (EqualityComparer<T>.Default.Equals(_value, value))
                     {
                         return;

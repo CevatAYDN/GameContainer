@@ -120,9 +120,11 @@ namespace Nexus.Core.Services
             SchedulePersist();
         }
 
-        // Lock-free lookup: ConcurrentDictionary reads are thread-safe; the explicit
-        // lock only serializes the lazy-registration create path (so two racing callers
-        // of a brand-new currency cannot create two SecureObservableLong wrappers).
+        // R2026-M5 note: reads are lock-free (ConcurrentDictionary.TryGetValue); the
+        // explicit lock is taken ONLY on the create path and in Spend/Earn/SetBalance —
+        // where the check-then-mutate sequence on SecureObservableLong.Value must be
+        // atomic against other mutators (two concurrent Spends could both pass the
+        // CanAfford check). Do NOT remove the lock from mutation paths.
         public SecureObservableLong GetObservableBalance(string currencyId)
         {
             if (string.IsNullOrEmpty(currencyId)) return null;

@@ -87,7 +87,10 @@ namespace Nexus.Core
             if (a.Mantissa == 0.0) return b;
             if (b.Mantissa == 0.0) return a;
 
-            long diff = a.Exponent - b.Exponent;
+            // R2026-C1 fix: saturate the exponent difference instead of overflowing long.
+            // a.Exponent - b.Exponent wraps when a.Exponent is near long.MaxValue and
+            // b.Exponent is negative (e.g. MaxValue + (-0.1) silently returned -0.1).
+            long diff = SaturateSubExponent(a.Exponent, b.Exponent);
             if (diff > 15) return a;
             if (diff < -15) return b;
 
@@ -164,6 +167,12 @@ namespace Nexus.Core
 
         public int CompareTo(BigDouble other)
         {
+            // R2026-L3 note: ordering logic, spelled out for clarity:
+            //  1. Two zeros are equal (Normalize pins zero to mantissa 0/exponent 0).
+            //  2. Any positive exceeds any non-positive; any negative is below any non-negative.
+            //  3. Same sign → larger exponent wins; for NEGATIVE values the direction flips
+            //     (-1e5 < -1e3), hence the Mantissa > 0 ternary on the exponent comparisons.
+            //  4. Same sign + same exponent → plain mantissa comparison.
             if (Mantissa == 0.0 && other.Mantissa == 0.0) return 0;
             if (Mantissa > 0 && other.Mantissa <= 0) return 1;
             if (Mantissa < 0 && other.Mantissa >= 0) return -1;
@@ -204,6 +213,27 @@ namespace Nexus.Core
             return value;
         }
 
+        // R2026-M7 fix: dynamic suffix generation for exponents beyond the static table
+        // (aa..az). Idle games routinely exceed 1e90; generating ba, bb, ... keeps the
+        // formatted output human-readable instead of falling back to scientific notation.
+        private static string GetSuffix(long suffixIndex)
+        {
+            if (suffixIndex < StandardSuffixes.Length)
+                return StandardSuffixes[suffixIndex];
+
+            // Base-26 alphabetic suffix: after "az" comes "ba", "bb", ...
+            // suffixIndex 30 -> "ba", 31 -> "bb", etc.
+            long adjusted = suffixIndex - 4; // K=1,M=2,B=3,T=4 use the table; aa starts at 5
+            var sb = new System.Text.StringBuilder(4);
+            while (adjusted > 0)
+            {
+                adjusted--;
+                sb.Insert(0, (char)('a' + (adjusted % 26)));
+                adjusted /= 26;
+            }
+            return sb.ToString();
+        }
+
         public string ToFormattedString()
         {
             if (Mantissa == 0.0) return "0";
@@ -235,9 +265,12 @@ namespace Nexus.Core
 
             double displayValue = Mantissa * Math.Pow(10, remainder);
 
-            if (suffixIndex < StandardSuffixes.Length)
+            // R2026-M7: cap dynamic suffixes at a sane bound — beyond ~1e(26^6) the
+            // suffix string itself becomes meaningless; scientific notation is clearer.
+            const long MaxDynamicSuffixIndex = 1000000;
+            if (suffixIndex <= MaxDynamicSuffixIndex)
             {
-                return $"{displayValue.ToString("F2", culture)}{StandardSuffixes[suffixIndex]}";
+                return $"{displayValue.ToString("F2", culture)}{GetSuffix(suffixIndex)}";
             }
 
             return $"{Mantissa.ToString("F2", culture)}e{Exponent}";

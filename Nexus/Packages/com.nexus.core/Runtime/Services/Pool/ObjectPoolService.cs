@@ -363,8 +363,11 @@ namespace Nexus.Core.Services
             if (obj == null) return 0;
             // A8 fix: use the modern Unity 6 GetEntityId() instead of the legacy
             // GetInstanceID() reflection hack — GetInstanceID is obsolete (CS0619)
-            // in Unity 6.5+, and GetEntityId() is its supported replacement. The
-            // .GetHashCode() keeps the key a plain int for the pool dictionaries.
+            // in Unity 6.5+, and GetEntityId() is its supported replacement.
+            // R2026-H4 correction: GetEntityId() returns an EntityId STRUCT whose implicit
+            // int conversion is obsolete ("will not be representable by an int in the
+            // future"). EntityId.GetHashCode() is the supported, future-proof way to
+            // obtain a stable int key for the pool dictionaries — keep it.
             return obj.GetEntityId().GetHashCode();
         }
 

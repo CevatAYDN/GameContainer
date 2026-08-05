@@ -4,6 +4,9 @@ using Nexus.Core;
 using Nexus.Core.Services;
 using UnityEngine;
 
+// These tests intentionally exercise the legacy WindowManager API.
+#pragma warning disable CS0618
+
 namespace Nexus.Tests
 {
     [TestFixture]

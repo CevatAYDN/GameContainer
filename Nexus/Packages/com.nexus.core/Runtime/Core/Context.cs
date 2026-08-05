@@ -673,12 +673,15 @@ namespace Nexus.Core
             try
             {
                 // Block briefly to allow background async-dispose chain to complete for
-                // callers that can't await (e.g. Unity's synchronous OnDestroy). This
-                // waits up to 5 seconds; if the background dispose exceeds the timeout
-                // a warning is logged and teardown proceeds to avoid deadlock during
-                // engine shutdown.
-                if (!Container.WaitForBackgroundDispose(TimeSpan.FromSeconds(5)))
-                    NexusRuntime.Logger?.LogError("[Nexus] Timeout waiting for async singletons to dispose in Context.Dispose().");
+                // callers that can't await (e.g. Unity's synchronous OnDestroy). The
+                // timeout is configurable via ContextData.DisposeTimeoutSeconds (R2026-H9
+                // — previously a hardcoded 5 s, which could stall the main thread for an
+                // unacceptable window on mobile / ANR-sensitive platforms). If the
+                // background dispose exceeds the timeout a warning is logged and teardown
+                // proceeds to avoid deadlock during engine shutdown.
+                float timeoutSeconds = _contextData != null ? _contextData.DisposeTimeoutSeconds : 5f;
+                if (!Container.WaitForBackgroundDispose(TimeSpan.FromSeconds(timeoutSeconds)))
+                    NexusRuntime.Logger?.LogError($"[Nexus] Timeout ({timeoutSeconds:0.#}s) waiting for async singletons to dispose in Context.Dispose().");
             }
             catch (Exception ex)
             {

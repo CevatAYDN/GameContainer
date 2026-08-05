@@ -4,6 +4,10 @@ using UnityEngine.UIElements;
 using Nexus.Core;
 using Nexus.Core.Services;
 
+// R2026-A2: this debug panel intentionally drives the legacy WindowManager API
+// (it exists to exercise that service). Suppress the deprecation warning locally.
+#pragma warning disable CS0618
+
 namespace Nexus.Editor.Plugins
 {
     public class CasualServicesPlugin : NexusEditorPlugin

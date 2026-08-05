@@ -20,7 +20,11 @@ namespace Nexus.Core.Services
         {
             if (assembly == null) return Array.Empty<Type>();
 
-            return s_typeCache.GetOrAdd(assembly.FullName ?? assembly.GetName().Name, _ =>
+            // R2026-M10 fix: a dynamic/in-memory assembly can have BOTH FullName and
+            // GetName().Name null — ConcurrentDictionary.GetOrAdd(null, ...) throws
+            // ArgumentNullException. Fall back to a stable placeholder key.
+            string cacheKey = assembly.FullName ?? assembly.GetName().Name ?? "<dynamic-assembly>";
+            return s_typeCache.GetOrAdd(cacheKey, _ =>
             {
                 try
                 {

@@ -139,6 +139,68 @@ namespace Nexus.Editor
             return set;
         }
 
+        /// <summary>
+        /// E-C1 fix: converts a Type to a compilable C# reference name. The previous
+        /// FullName.Replace("+", ".") produced INVALID C# for generic types (the raw
+        /// backtick arity marker leaked and type arguments were dropped → CS0246/CS0305
+        /// in the generated binder). Handles nested, generic and array types correctly.
+        /// Returns null for open generic definitions (ContainsGenericParameters) — those
+        /// can never be named in generated code and are skipped by the caller.
+        /// </summary>
+        private static string GetCSharpTypeName(Type type)
+        {
+            if (type == null) return null;
+            if (type.ContainsGenericParameters) return null;
+            if (type.IsArray)
+            {
+                var elem = GetCSharpTypeName(type.GetElementType());
+                return elem != null ? elem + "[]" : null;
+            }
+
+            var sb = new StringBuilder();
+            if (type.IsNested)
+            {
+                var parent = GetCSharpTypeName(type.DeclaringType);
+                if (parent == null) return null;
+                sb.Append(parent);
+                sb.Append('.');
+            }
+            else if (!string.IsNullOrEmpty(type.Namespace))
+            {
+                sb.Append(type.Namespace);
+                sb.Append('.');
+            }
+
+            var name = type.Name;
+            int tick = name.IndexOf('`');
+            if (tick > 0) name = name.Substring(0, tick);
+            sb.Append(name);
+
+            if (type.IsGenericType)
+            {
+                var args = type.GetGenericArguments();
+                sb.Append('<');
+                for (int i = 0; i < args.Length; i++)
+                {
+                    if (i > 0) sb.Append(", ");
+                    var argName = GetCSharpTypeName(args[i]);
+                    if (argName == null) return null;
+                    sb.Append(argName);
+                }
+                sb.Append('>');
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>E-C1: sanitizes a C# type name into a valid identifier prefix for cache fields.</summary>
+        private static string GetSafeIdentifierName(string csharpTypeName)
+        {
+            var sb = new StringBuilder(csharpTypeName.Length);
+            foreach (char c in csharpTypeName)
+                sb.Append(char.IsLetterOrDigit(c) || c == '_' ? c : '_');
+            return sb.ToString();
+        }
+
         [MenuItem("Nexus/Generate AOT Binder")]
         public static void GenerateBinder()
         {
@@ -247,7 +309,9 @@ namespace Nexus.Editor
                 initSb.AppendLine("                var type = signal.GetType();");
                 foreach (var sigType in networkSignalTypes)
                 {
-                    string fullName = sigType.FullName.Replace("+", ".");
+                    // E-C1: skip types that cannot be named in C# (open generics).
+                    string fullName = GetCSharpTypeName(sigType);
+                    if (fullName == null) continue;
                     initSb.AppendLine($"                if (type == typeof({fullName}))");
                     initSb.AppendLine("                {");
                     initSb.AppendLine($"                    bus.Fire(({fullName})signal);");
@@ -261,8 +325,15 @@ namespace Nexus.Editor
             // Generate Injectors and Cache Definitions (Issue 5 & 7)
             foreach (var type in injectTypes)
             {
-                string fullName = type.FullName.Replace("+", "."); // handle nested classes
-                string typeSafeName = fullName.Replace(".", "_").Replace("+", "_");
+                // E-C1 fix: use the compilable C# name; skip open-generic types that can
+                // never be named (previously emitted `1 backtick arity markers → CS0246).
+                string fullName = GetCSharpTypeName(type);
+                if (fullName == null)
+                {
+                    Debug.LogWarning($"[Nexus CodeGen] Skipping open generic type '{type.FullName}' — injectors cannot be generated for unbound generic types.");
+                    continue;
+                }
+                string typeSafeName = GetSafeIdentifierName(fullName);
 
                 initSb.AppendLine($"            NexusDI.RegisterInjector<{fullName}>((instance, di) =>");
                 initSb.AppendLine("            {");
@@ -276,9 +347,12 @@ namespace Nexus.Editor
                     {
                         // Optional members resolve through TryResolve (null when unbound) so an
                         // absent optional dependency never throws at boot on the AOT path.
+                        // E-C1: a field whose TYPE cannot be named in C# is skipped.
+                        string fTypeName = GetCSharpTypeName(f.FieldType);
+                        if (fTypeName == null) continue;
                         string fResolve = fOptional
-                            ? $"di.TryResolve<{f.FieldType.FullName.Replace("+", ".")}>()"
-                            : $"di.Resolve<{f.FieldType.FullName.Replace("+", ".")}>()";
+                            ? $"di.TryResolve<{fTypeName}>()"
+                            : $"di.Resolve<{fTypeName}>()";
                         if (f.IsPublic)
                         {
                             initSb.AppendLine($"                instance.{f.Name} = {fResolve};");
@@ -302,9 +376,12 @@ namespace Nexus.Editor
                         var setMethod = p.GetSetMethod(true);
                         if (setMethod != null)
                         {
+                            // E-C1: a property whose TYPE cannot be named in C# is skipped.
+                            string pTypeName = GetCSharpTypeName(p.PropertyType);
+                            if (pTypeName == null) continue;
                             string pResolve = pOptional
-                                ? $"di.TryResolve<{p.PropertyType.FullName.Replace("+", ".")}>()"
-                                : $"di.Resolve<{p.PropertyType.FullName.Replace("+", ".")}>()";
+                                ? $"di.TryResolve<{pTypeName}>()"
+                                : $"di.Resolve<{pTypeName}>()";
                             if (setMethod.IsPublic)
                             {
                                 initSb.AppendLine($"                instance.{p.Name} = {pResolve};");
@@ -337,9 +414,12 @@ namespace Nexus.Editor
                             }
                             // [OptionalInject] on a parameter → TryResolve (null when unbound).
                             bool paramOptional = param.GetCustomAttribute<OptionalInjectAttribute>() != null;
+                            // E-C1: unnameable parameter type (open generic) → skip the method.
+                            string paramTypeName = GetCSharpTypeName(param.ParameterType);
+                            if (paramTypeName == null) { hasValueTypeParams = true; break; }
                             paramList.Add(paramOptional
-                                ? $"di.TryResolve<{param.ParameterType.FullName.Replace("+", ".")}>()"
-                                : $"di.Resolve<{param.ParameterType.FullName.Replace("+", ".")}>()");
+                                ? $"di.TryResolve<{paramTypeName}>()"
+                                : $"di.Resolve<{paramTypeName}>()");
                         }
                         
                         if (hasValueTypeParams) continue;
@@ -351,7 +431,7 @@ namespace Nexus.Editor
                         else
                         {
                             string cacheMethodName = $"s_m_{typeSafeName}_{m.Name}";
-                            var paramTypesString = string.Join(", ", m.GetParameters().Select(param => $"typeof({param.ParameterType.FullName.Replace("+", ".")})"));
+                            var paramTypesString = string.Join(", ", m.GetParameters().Select(param => $"typeof({GetCSharpTypeName(param.ParameterType)})"));
                             cacheSb.AppendLine($"        private static readonly System.Reflection.MethodInfo {cacheMethodName} = typeof({fullName}).GetMethod(\"{m.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, null, new System.Type[] {{ {paramTypesString} }}, null);");
                             initSb.AppendLine($"                if ({cacheMethodName} == null) throw new InvalidOperationException(\"[Nexus CodeGen] Failed to bind private injector method {fullName}.{m.Name}.\");");
                             initSb.AppendLine($"                {cacheMethodName}.Invoke(instance, new object[] {{ {string.Join(", ", paramList)} }});");
@@ -412,9 +492,11 @@ namespace Nexus.Editor
 
             foreach (var type in injectTypes)
             {
-                string fullName = type.FullName.Replace("+", ".");
-                string typeSafeName = fullName.Replace(".", "_").Replace("+", "_");
-                
+                // E-C1: same naming fix as the injector pass above.
+                string fullName = GetCSharpTypeName(type);
+                if (fullName == null) continue;
+                string typeSafeName = GetSafeIdentifierName(fullName);
+
                 var fields = GetMemberSet(type, memberCache).Fields;
                 foreach (var f in fields)
                 {

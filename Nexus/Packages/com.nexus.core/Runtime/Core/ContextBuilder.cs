@@ -24,6 +24,13 @@ namespace Nexus.Core
         /// </summary>
         public static bool ValidateOnStartup { get; set; } = true;
 
+        /// <summary>
+        /// R2026-M9 fix: maximum allowed constructor parameters before the DI validator
+        /// flags a constructor-explosion issue (previously a hardcoded magic number 6).
+        /// Configurable per-project — set to 0 to disable the check entirely.
+        /// </summary>
+        public static int MaxConstructorParameters { get; set; } = 6;
+
         public ContextBuilder(NexusDI container, SignalBus signalBus)
         {
             _container = container;
@@ -386,12 +393,12 @@ namespace Nexus.Core
                 // Check constructor parameters
                 if (meta.ConstructorParameterTypes != null)
                 {
-                    if (meta.ConstructorParameterTypes.Length > 6)
+                    if (MaxConstructorParameters > 0 && meta.ConstructorParameterTypes.Length > MaxConstructorParameters)
                     {
                         issues.Add(new DiValidationIssue(
                             type, type,
                             DiValidationIssueType.MissingConstructorDependency,
-                            $"[ConstructorExplosion] Constructor of '{type.Name}' has {meta.ConstructorParameterTypes.Length} parameters (> 6 limit), indicating high coupling risk."
+                            $"[ConstructorExplosion] Constructor of '{type.Name}' has {meta.ConstructorParameterTypes.Length} parameters (> {MaxConstructorParameters} limit), indicating high coupling risk."
                         ));
                     }
 

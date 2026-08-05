@@ -126,13 +126,13 @@ namespace Nexus.Editor
             BuildFrameworkInfo(scroll);
 
             _view.Add(scroll);
-
-            if (!_subscribedPlayMode)
-            {
-                EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-                _subscribedPlayMode = true;
-            }
-
+            // E-C2 fix: no playModeStateChanged subscription here. CreateView() is invoked
+            // by RefreshActivePlugin() EVERY time this tab becomes visible, while the
+            // matching unsubscribe lives in OnDisable() — which the window only calls on
+            // tab SWITCH or window close. A re-show after an edit-mode refresh would double-
+            // subscribe the static event; with domain reload disabled the duplicate handler
+            // (and the captured view refs) leaked for the process lifetime. Lifecycle
+            // subscriptions belong in OnEnable/OnDisable exclusively.
             return _view;
         }
 

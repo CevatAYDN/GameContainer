@@ -3,6 +3,9 @@ using System.Threading.Tasks;
 using UnityEngine;
 using Nexus.Core.Services;
 
+// These tests intentionally exercise the legacy WindowManager API.
+#pragma warning disable CS0618
+
 namespace Nexus.Editor.Tests
 {
     [TestFixture]

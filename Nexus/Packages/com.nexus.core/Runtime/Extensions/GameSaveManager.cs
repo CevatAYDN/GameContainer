@@ -138,9 +138,23 @@ namespace Nexus.Core.Extensions
                         {
                             File.WriteAllText(tempPath, json);
                             // A8 fix: single overwrite-rename, never Delete-then-Move.
+                            // R2026-C3 fix: the File.Exists check and File.Replace were a TOCTOU
+                            // pair — the target could vanish between them (Replace then throws
+                            // FileNotFoundException). Catch that specific case and retry as Move.
                             if (File.Exists(path))
                             {
-                                File.Replace(tempPath, path, null);
+                                try
+                                {
+                                    File.Replace(tempPath, path, null);
+                                }
+                                catch (FileNotFoundException)
+                                {
+                                    // Target disappeared between the check and Replace — the
+                                    // staged file is still intact; fall back to a plain move.
+                                    if (!File.Exists(tempPath))
+                                        File.WriteAllText(tempPath, json); // restage if Replace consumed it
+                                    File.Move(tempPath, path);
+                                }
                             }
                             else
                             {
@@ -154,6 +168,15 @@ namespace Nexus.Core.Extensions
                             NexusRuntime.Logger?.LogError($"[GameSaveManager] Save attempt {attempt} for '{slotName}' failed: {ex.Message}");
                             if (attempt >= maxAttempts)
                             {
+                                // R2026-C3 fix: never abandon the staged .tmp file — a stranded
+                                // temp file would sit next to the save forever and the next save
+                                // silently overwrites it, masking the original failure. Best-effort
+                                // cleanup; the exception still propagates to the caller.
+                                try { if (File.Exists(tempPath)) File.Delete(tempPath); }
+                                catch (Exception cleanupEx)
+                                {
+                                    NexusRuntime.Logger?.LogWarning($"[GameSaveManager] Failed to clean up temp file '{tempPath}': {cleanupEx.Message}");
+                                }
                                 // Give up and surface the error to the caller via exception
                                 throw;
                             }

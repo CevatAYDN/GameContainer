@@ -73,6 +73,9 @@ namespace Nexus.Editor
 
         public override void OnUpdate()
         {
+            // E-C4: drain thread-marshalled network events on the editor (main) thread.
+            DrainPendingEvents();
+
             double now = EditorApplication.timeSinceStartup;
             if (now - _lastRefreshTime < 0.5) return;
             _lastRefreshTime = now;
@@ -82,6 +85,9 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             UnsubscribeEvents();
+            // E-C4: drop undrained events so a re-enabled plugin never replays stale bursts.
+            while (_pendingEvents.TryDequeue(out _)) { }
+            _statusDirty = false;
             base.OnDisable();
         }
 
@@ -376,26 +382,52 @@ namespace Nexus.Editor
             NetworkMonitor.OnConnectionStatusChanged -= OnConnectionChanged;
         }
 
+        // E-C4 fix: NetworkMonitor raises these events from background/network threads.
+        // UI Toolkit is NOT thread-safe — mutating _filteredEvents and rebuilding the
+        // VisualElement table from a worker thread races the editor-thread ApplyFilters()
+        // read and can corrupt the UI/crash. Marshal to the editor thread: the handler
+        // only enqueues; OnUpdate (main thread) drains and rebuilds.
+        private readonly System.Collections.Concurrent.ConcurrentQueue<NetworkMonitor.NetworkEvent> _pendingEvents = new();
+        private volatile bool _statusDirty;
+
         private void OnNetworkEvent(NetworkMonitor.NetworkEvent evt)
         {
-            if (evt.EventType == "Sent") _totalSent++;
-            else if (evt.EventType == "Received") _totalRcvd++;
-            if (evt.EventType == "Failed" || evt.EventType == "Timeout") _totalErr++;
-
-            // Only rebuild if filter matches
-            bool passes = (_typeFilter == "All" || evt.EventType.ToString().Equals(_typeFilter, StringComparison.OrdinalIgnoreCase)) &&
-                          (string.IsNullOrEmpty(_searchFilter) || (evt.SignalName?.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) >= 0));
-            if (passes)
-            {
-                _filteredEvents.Add(evt);
-                if (_filteredEvents.Count > 200) _filteredEvents.RemoveAt(0);
-                RebuildEventTable();
-            }
+            _pendingEvents.Enqueue(evt);
         }
 
         private void OnConnectionChanged(NetworkMonitor.ConnectionStatus status)
         {
-            RefreshStatus();
+            _statusDirty = true;
+        }
+
+        private void DrainPendingEvents()
+        {
+            bool rebuilt = false;
+            while (_pendingEvents.TryDequeue(out var evt))
+            {
+                if (evt.EventType == "Sent") _totalSent++;
+                else if (evt.EventType == "Received") _totalRcvd++;
+                if (evt.EventType == "Failed" || evt.EventType == "Timeout") _totalErr++;
+
+                // Only rebuild if filter matches
+                bool passes = (_typeFilter == "All" || evt.EventType.ToString().Equals(_typeFilter, StringComparison.OrdinalIgnoreCase)) &&
+                              (string.IsNullOrEmpty(_searchFilter) || (evt.SignalName?.IndexOf(_searchFilter, StringComparison.OrdinalIgnoreCase) >= 0));
+                if (passes)
+                {
+                    _filteredEvents.Add(evt);
+                    if (_filteredEvents.Count > 200) _filteredEvents.RemoveAt(0);
+                    rebuilt = true;
+                }
+            }
+            // E-C4 perf: rebuild the table ONCE per drain batch, not once per event —
+            // a burst of 200 network events previously triggered 200 full table rebuilds
+            // (each allocating a fresh VisualElement tree) on the editor thread.
+            if (rebuilt) RebuildEventTable();
+            if (_statusDirty)
+            {
+                _statusDirty = false;
+                RefreshStatus();
+            }
         }
 
         // ── Actions ───────────────────────────────────────────────

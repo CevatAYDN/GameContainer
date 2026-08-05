@@ -397,6 +397,11 @@ namespace Nexus.Core.Services
                 _lateTickablesDirty = false;
             }
 
+            // R2026-H6 fix: never call SafeDestroyUtility.SafeDestroy while holding
+            // s_driverLock. Unity's Object.Destroy can trigger editor callbacks and
+            // (indirectly) user code; running that under the shared driver lock risks
+            // reentrancy/deadlock. Capture the object under the lock, destroy outside.
+            GameObject driverToDestroy = null;
             lock (s_driverLock)
             {
                 if (_driver != null)
@@ -409,12 +414,14 @@ namespace Nexus.Core.Services
                     s_activeDriverCount = Math.Max(0, s_activeDriverCount - 1);
                     if (s_activeDriverCount == 0 && s_sharedDriverObject != null)
                     {
-                        SafeDestroyUtility.SafeDestroy(s_sharedDriverObject);
+                        driverToDestroy = s_sharedDriverObject;
                         s_sharedDriverObject = null;
                         s_sharedDriver = null;
                     }
                 }
             }
+            if (driverToDestroy != null)
+                SafeDestroyUtility.SafeDestroy(driverToDestroy);
         }
     }
 }

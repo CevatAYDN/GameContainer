@@ -14,6 +14,13 @@ namespace Nexus.Core.Services
     /// AES-256 Encrypted & Device-Bound Storage Service.
     /// Protects game saves against APK modification, XML editing, and save file sharing.
     ///
+    /// R2026-H8 security note: the on-device seed is XOR-obfuscated with a key derived
+    /// from <c>SystemInfo.deviceUniqueIdentifier</c> — a value any local attacker can
+    /// read. This is defense-in-depth against CASUAL tampering (save editors, file
+    /// sharing), NOT a barrier against a determined attacker with a rooted/jailbroken
+    /// device. If your threat model includes root-level adversaries, back the seed with
+    /// the platform keystore (Android Keystore / iOS Keychain) instead of PlayerPrefs.
+    ///
     /// File format (version 2):
     ///   [VERSION:1 byte] [IV:16 bytes] [HMAC-SHA256:32 bytes] [AES-256 ciphertext:N bytes]
     ///
