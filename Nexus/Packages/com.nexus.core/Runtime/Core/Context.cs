@@ -262,16 +262,25 @@ namespace Nexus.Core
                 allLifecycles.Add(lifecycle);
             }
 
-            _configuredLifecycles = allLifecycles.ToArray();
-
-            // Detect IPostContextLifecycle implementations among the registered lifecycles
-            _postContextLifecycles.Clear();
+            // Publish the configured lifecycles and post-context list under the
+            // _configureLock so concurrent DisposeShared readers cannot observe a
+            // partially-populated collection (D4 fix).
+            var lifecyclesArray = allLifecycles.ToArray();
+            var postList = new List<IPostContextLifecycle>(allLifecycles.Count);
             for (int i = 0; i < allLifecycles.Count; i++)
             {
                 if (allLifecycles[i] is IPostContextLifecycle postCtx)
-                    _postContextLifecycles.Add(postCtx);
+                    postList.Add(postCtx);
             }
 
+            lock (_configureLock)
+            {
+                _configuredLifecycles = lifecyclesArray;
+                _postContextLifecycles = postList;
+            }
+
+            // Now invoke lifecycle OnConfigure outside the lock — handlers should not
+            // execute while holding the configure lock.
             foreach (var lifecycle in allLifecycles)
                 lifecycle.OnConfigure(_builder);
 

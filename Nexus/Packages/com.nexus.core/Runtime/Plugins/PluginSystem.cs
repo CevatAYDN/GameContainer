@@ -164,7 +164,9 @@ namespace Nexus.Core
             }
             if (_context is Context ctx)
             {
-                for (int i = 0; i < _interceptors.Count; i++)
+                int interceptorsToDecrement;
+                lock (_listLock) { interceptorsToDecrement = _interceptors.Count; }
+                for (int i = 0; i < interceptorsToDecrement; i++)
                 {
                     ctx.DecrementInterceptorsCount();
                 }

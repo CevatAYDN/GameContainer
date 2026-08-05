@@ -73,7 +73,7 @@ namespace Nexus.Core.Extensions
     {
         private static string SaveDirectory => Path.Combine(Application.persistentDataPath, "saves");
 
-        private ISaveDataProvider _model;
+        private volatile ISaveDataProvider _model;
         private SynchronizationContext _mainThreadContext;
 
         public GameSaveManager()
