@@ -673,7 +673,16 @@ namespace Nexus.Core
                 // Phase 1: Process commands (mutate state)
                 if (_commandRegistry.TryGetHandlers(type, out var handlers))
                 {
-                    if (handlers.Count > 0 && handlers[0].Mode == ExecutionMode.Concurrent)
+                    bool allConcurrent = true;
+                    if (handlers.Count == 0) allConcurrent = false;
+                    else
+                    {
+                        for (int __i = 0; __i < handlers.Count; __i++)
+                        {
+                            if (handlers[__i].Mode != ExecutionMode.Concurrent) { allConcurrent = false; break; }
+                        }
+                    }
+                    if (handlers.Count > 0 && allConcurrent)
                     {
                         // One-shot handlers are claimed atomically BEFORE any task starts so a
                         // concurrent fire can never double-execute them. Claiming first also
