@@ -406,8 +406,8 @@ namespace Nexus.Core.Services
                     _driver.OnLateUpdate -= OnLateTick;
                     _driver = null;
                     _driverObject = null;
-                    s_activeDriverCount--;
-                    if (s_activeDriverCount <= 0 && s_sharedDriverObject != null)
+                    s_activeDriverCount = Math.Max(0, s_activeDriverCount - 1);
+                    if (s_activeDriverCount == 0 && s_sharedDriverObject != null)
                     {
                         SafeDestroyUtility.SafeDestroy(s_sharedDriverObject);
                         s_sharedDriverObject = null;
