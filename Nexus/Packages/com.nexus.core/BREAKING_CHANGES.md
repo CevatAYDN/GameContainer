@@ -410,6 +410,15 @@ Features marked as beta:
 
 ### Recent Breaking Changes
 
+#### Version 0.4.0 → 0.5.0 (Unreleased)
+
+**Breaking Changes:**
+- `WindowManager` / `IWindowManager` removed — `UIManager` (`IUIManager`) is the single runtime UI manager with UI pooling. `UILayer` and `IUIWindowLifecycle` were extracted from the old `WindowManager.cs`. See [ADR-0001](../../../docs/adr/0001-ui-stack-in-game-ugui-editor-ui-toolkit.md).
+- `Assets/Scripts/Demo/` sample scaffolding removed — the single canonical project example is the wizard-generated `Game/Samples` (scene-wired via `NexusStarter.unity`).
+- Analyzer rule `NEXUS004` (the WindowManager deprecation driver) retired with `WindowManager`; the Code Health Analyzer now enforces NEXUS001/002/003 and gates CI.
+
+**Migration:** See [MIGRATION.md](MIGRATION.md#version-040--050-unreleased).
+
 #### Version 0.3.0 (2026-07-07)
 
 **Breaking Changes:**
@@ -441,6 +450,6 @@ If you have questions about this policy:
 
 ---
 
-**Last Updated:** 2026-07-07
-**Nexus Core Version:** 0.3.0
+**Last Updated:** 2026-08-06
+**Nexus Core Version:** 0.4.0
 **Policy Version:** 1.0

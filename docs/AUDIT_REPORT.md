@@ -9,6 +9,14 @@
 
 ---
 
+> ✅ **Status update (2026-08-06):** Bu rapor 0.4.0 kodunu (2026-08-05) denetler. Bulguların çoğu 0.5.x çalışmasında giderildi; kod üzerinde doğrulanan kapatmalar: 1.1 ring math fix, 1.2 event detach lock dışı, 1.3 `_dispatchLock` claim-or-queue, 1.4 prefab guard, 1.5 pop-side Reset kaldırıldı, 2.1 Logger lock-free CAS, 2.4 double-return guard'ı Cleanup'tan önce, 3.1 static forwarder, 3.3 PrewarmAsync, 3.4 SweepDead, 3.7/3.8 volatile count + version-cached AsReadOnly, 3.13 idempotent InitializeAsync, 4.1 MetricsEnabled guard, 5.2 lazy tek rebuild. Benchmark'ın audit-fix regression suite'i (C-1/C-2/T-1/T-4–T-7/M-1/M-3/M-4/M-6/M-7) her commit'te tam pipeline'ı koşar (ALL BENCHMARKS PASSED, 2026-08-06).
+>
+> **Yeniden kontrol listesi (bu turda doğrulanmadı, çoğu performans/code-quality sınıfı):** 2.2 (s_monitoringInitialized), 2.5 (drain counter semantiği), 2.7 (_fallbackDepth), 3.2 (ClearAllPools per-instance dict), 3.5 (SubscriptionRegistry rebuild), 3.6 (GetSnapshot lock), 3.9/3.10 (TickService O(N) Contains / Unregister alloc), 3.11/3.12 (küçük), 4.2 (sort delegate), 4.3 (belgelenmiş sınırlama), 4.4 (is-pattern), 5.1 (Logger per-fire), 5.3 (IReadOnlyList).
+>
+> **2.6 SUPERSEDED:** `WindowManager` 2026-08-06'da silindi — `UIManager` tek runtime UI yöneticisidir (`docs/adr/0001` addendum). Benchmark'ın WindowManager W1–W7 kanıtı UIManager U1–U7 olarak taşındı. Aynı gün `Assets/Scripts/Demo/` scaffolding'i kaldırıldı; kanonik örnek wizard ile üretilen `Game/Samples`.
+
+---
+
 ## 1. 🔴 Critical Vulnerabilities & Dead Guards
 
 ### 1.1 [CRITICAL] Trace buffer ring math misses newest entry after wraparound
@@ -355,6 +363,8 @@ private void Drain(QueuedSignalRingBuffer queue, object queueLock)
 ---
 
 ### 2.6 [MEDIUM] `WindowManager.OpenWindowAsync` has TOCTOU window between registration check and instantiation
+
+> **SUPERSEDED (2026-08-06):** `WindowManager` silindi. UIManager (açık/kapalı ekran yönetimi, UI pooling) bu TOCTOU yüzeyini `OpenScreenAsync`/`CloseAllAsync` teardown semantiğiyle yeniden ele aldı — bkz. benchmark U1–U7.
 
 **File & Line:** `Runtime/Services/UI/WindowManager.cs:140-160` (overview)
 
@@ -920,7 +930,7 @@ The exposed read-copy uses `List<CommandHandlerInfo>` which can be cast back to 
 | 2.3 | Thread-Safety / TOCTOU | NexusRuntime.cs:412 | 🟠 HIGH | Confirmed | s_traceIndex read plain in resize; Interlocked write outside lock |
 | 2.4 | Thread-Safety | CommandPool.cs:159-163 | 🟠 MEDIUM | Confirmed | Cleanup runs before double-return guard |
 | 2.5 | Thread-Safety | HybridQueue.cs:283-308 | 🟠 MEDIUM | Confirmed | Lock release between dequeue and dispatch |
-| 2.6 | Lifecycle / Race | WindowManager.cs:140-160 | 🟠 MEDIUM | Confirmed | Dispose can race with OpenWindowAsync between lock release and re-acquire |
+| 2.6 | Lifecycle / Race | WindowManager.cs:140-160 | 🟠 MEDIUM | Superseded (2026-08-06) | Dispose can race with OpenWindowAsync between lock release and re-acquire — WindowManager removed; UIManager canonical (ADR-0001) |
 | 2.7 | Thread-Safety | RecoveryEngine.cs:179-180 | 🟠 MEDIUM | Confirmed | _fallbackDepth plain int under multi-thread access |
 | 3.1 | Memory Leak | EncryptedStorageService.cs:166-167 | 🟠 HIGH | Confirmed | Static event handlers leak across ctor/dispose cycles |
 | 3.2 | Lifecycle Inconsistency | ObjectPoolService.cs:290-318 | 🟠 HIGH | Confirmed | ClearAllPools missing per-instance dict cleanup |

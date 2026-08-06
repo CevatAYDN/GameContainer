@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Headless analyzer gate (`NexusArchitectureAnalyzer.RunHeadless`)** — batch-mode entry point (exit 0 clean / 1 issues) usable from CI; NEXUS002 (`async void`) extracted to an `IsNexus002Violation` predicate with editor tests, completing parity with the NEXUS001/NEXUS003 predicates.
 
+### Documentation (2026-08-06)
+- **Docs aligned with the current architecture.** `BREAKING_CHANGES.md` and `MIGRATION.md` gained a "0.4.0 → 0.5.0 (Unreleased)" section: `WindowManager` removal (`UIManager` is the single UI manager, with migration steps), Demo scaffolding removal (`Game/Samples` canonical), and `NEXUS004` retirement. Audit reports (`docs/AUDIT_REPORT.md`, `docs/AUDIT-2026-08-04.md`) gained resolution-status banners with the superseded WindowManager finding marked; `docs/REFACTOR_PLAN.md` gained an implementation-status banner; `docs/SLO.md` lists the CI Code Health Analyzer gate.
+
 ### Fixed (2026-08-06 adversarial re-audit)
 - **Analyzer self-scan false positive** — `IsNexus002Violation` strips string literals/comments so its own `"async void"` literal no longer flags the analyzer file.
 - **EncryptedStorageService legacy-migration I/O under shared lock** — the one-time v1→v2 migration re-encrypted the legacy payload while holding `_lock` (B1 invariant violation). `SaveKeyToDisk` now runs outside the lock; the dirty-key/TOCTOU guard keeps the cache authoritative if a concurrent `SetString` raced the migration.

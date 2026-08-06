@@ -5,6 +5,13 @@
 
 ---
 
+> ✅ **Durum (2026-08-06):** Aşağıdaki maddelerin çoğu 0.5.x çalışmasında uygulandı; benchmark'ın audit-fix regression suite'i ve commit geçmişi kanıttır.
+> - **Uygulandı ve doğrulandı:** 1.1 (CommandRegistry lazy tek rebuild — dirty-flag), 1.2 (lifecycle type cache), 2.1 (`_hasAnyCompositeTriggers` bayrağı), 2.3 (MediatorAttribute `GetOrAdd` cache), 2.5 (`MetricsEnabled` guard).
+> - **Bilinçli sapma:** 1.3 (`ContextBuilder.Validate`) — plan "release'de skip" öneriyordu; güvenlik kararıyla tüm build hedeflerinde açık bırakıldı (`ValidateOnStartup` opt-out'u mevcut). 2.4 (Mediator çift Reset) — bilinçli idempotent tasarım olarak belgelendi, pop-side Reset yalnızca CommandPool için kaldırıldı.
+> - **Doğrulanmadı / açık kalabilir:** 1.4–1.9, 2.2, 2.6–2.8 bu plan bağlamında tekrar denetlenmedi; Bölüm 3 (3.1–3.3) uzun vadeli maddelerdir.
+
+---
+
 ## Önce Büyük Resim
 
 Boot yolun:

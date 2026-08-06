@@ -1,7 +1,7 @@
 # Nexus SLO (Service Level Objectives)
 
 **Version:** 0.4.0  
-**Last Updated:** 2026-08-04  
+**Last Updated:** 2026-08-06  
 **Status:** Baseline — measured on benchmark harness (real runtime, .NET 10, 8-core)
 
 ---
@@ -76,7 +76,8 @@
 - **Output:** JSON report with per-test metrics + coverage
 - **Runs on:** GitHub Actions (ubuntu-latest, free tier compatible)
 
-### Unity Tests (Planned)
+### Unity Tests (Current / Planned)
+- **Code Health Analyzer gate (CI, 2026-08-06)** — `NexusArchitectureAnalyzer.RunHeadless` batch-mode gate wired into the Unity job before EditMode tests: NEXUS001 (hot-path alloc) / NEXUS002 (async void) / NEXUS003 (sync blocking), exit 0 clean / 1 issues. NEXUS004 retired with `WindowManager` (see ADR-0001).
 - **EditMode:** Architecture validation, DI, binding, registry
 - **PlayMode:** Root lifecycle, scene loading, services integration
 - **Runner:** Self-hosted (Unity 6000.5.6f1 + Android/iOS build support)
