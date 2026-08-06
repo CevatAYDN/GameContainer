@@ -222,6 +222,21 @@ namespace Nexus.Core
         // once. The queue only grows while a dispatch is active and is drained in the same
         // call stack, so steady state stays zero-alloc.
         private readonly List<PendingChange> _pendingChanges = new();
+        // Reusable per-thread drain buffer for DrainPendingChanges. The old `pending =
+        // _pendingChanges.ToArray()` allocated a fresh array on EVERY pass whenever
+        // reentrant handlers queued changes. The buffer grows only when a deeper
+        // reentrancy nests more changes than any prior drain — amortized
+        // zero-allocation steady state — and each pass copies under _eventLock then
+        // dispatches outside it, so semantics are identical to the old code.
+        // [ThreadStatic]: the class supports concurrent mutation from multiple
+        // threads, and two threads CAN be draining at once (a concurrent mutation
+        // landing between dispatch batches — when _isNotifying is false — captures
+        // its own snapshot and drains its own pass while this thread is mid-dispatch
+        // reading its buffer). A shared instance buffer would be overwritten mid-read
+        // and dispatch the WRONG pending change; a per-thread buffer cannot. Same-thread
+        // nested drains are impossible (a nested mutator sees _isNotifying and queues
+        // without draining), so one buffer per thread is sufficient.
+        [ThreadStatic] private static PendingChange[] t_drainBuffer;
 
         private enum PendingChangeOp : byte { Add = 0, Remove = 1, Clear = 2, Replace = 3 }
 
@@ -482,29 +497,39 @@ namespace Nexus.Core
         {
             while (true)
             {
-                PendingChange[] pending;
+                int drainCount;
                 lock (_eventLock)
                 {
-                    if (_pendingChanges.Count == 0) return;
-                    pending = _pendingChanges.ToArray();
+                    drainCount = _pendingChanges.Count;
+                    if (drainCount == 0) return;
+                    if (t_drainBuffer == null || t_drainBuffer.Length < drainCount)
+                    {
+                        t_drainBuffer = new PendingChange[drainCount];
+                    }
+                    _pendingChanges.CopyTo(t_drainBuffer);
                     _pendingChanges.Clear();
                 }
 
-                for (int i = 0; i < pending.Length; i++)
+                // Dispatch OUTSIDE the lock. Changes queued during a handler land in
+                // _pendingChanges and are drained by the next pass; t_drainBuffer is only
+                // written (and grown) under _eventLock at the top of a pass, so the read
+                // loop here never races the next copy on this thread.
+                for (int i = 0; i < drainCount; i++)
                 {
-                    switch (pending[i].Op)
+                    var pending = t_drainBuffer[i];
+                    switch (pending.Op)
                     {
                         case PendingChangeOp.Add:
-                            DispatchPendingAdded(pending[i].Index, pending[i].Item);
+                            DispatchPendingAdded(pending.Index, pending.Item);
                             break;
                         case PendingChangeOp.Remove:
-                            DispatchPendingRemoved(pending[i].Index, pending[i].Item);
+                            DispatchPendingRemoved(pending.Index, pending.Item);
                             break;
                         case PendingChangeOp.Clear:
                             DispatchPendingCleared();
                             break;
                         case PendingChangeOp.Replace:
-                            DispatchPendingReplaced(pending[i].Index, pending[i].OldItem, pending[i].Item);
+                            DispatchPendingReplaced(pending.Index, pending.OldItem, pending.Item);
                             break;
                     }
                 }

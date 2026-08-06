@@ -385,10 +385,14 @@ namespace Nexus.Core.Services
 
                     // Successfully migrated: re-encrypt with AES-256 (v2 format) under the
                     // current (FNV-1a) filename, then drop the legacy MD5-named file (A6).
-                    lock (_lock)
-                    {
-                        SaveKeyToDisk(key, val);
-                    }
+                    // B1 invariant: SaveKeyToDisk performs blocking file I/O (encrypt +
+                    // atomic stage/rename under _writeLock) — it must NOT run under the
+                    // shared _lock or a slow disk could stall every other key operation
+                    // (the pre-B1 code path this migration used to sit in). A concurrent
+                    // SetString during migration leaves the key dirty, so the next Save()
+                    // re-writes the fresher cached value over this file; the TOCTOU guard
+                    // below keeps the cache authoritative in the meantime.
+                    SaveKeyToDisk(key, val);
                     TryDeleteLegacyFile(key);
                 }
 

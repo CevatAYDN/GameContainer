@@ -12,6 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed (2026-08-06 adversarial re-audit)
 - **Analyzer self-scan false positive** — `IsNexus002Violation` strips string literals/comments so its own `"async void"` literal no longer flags the analyzer file.
+- **EncryptedStorageService legacy-migration I/O under shared lock** — the one-time v1→v2 migration re-encrypted the legacy payload while holding `_lock` (B1 invariant violation). `SaveKeyToDisk` now runs outside the lock; the dirty-key/TOCTOU guard keeps the cache authoritative if a concurrent `SetString` raced the migration.
+- **ObservableList reentrant-drain allocation** — `DrainPendingChanges` swapped its per-pass `_pendingChanges.ToArray()` for a reusable growable buffer (amortized zero-allocation steady state).
 - **`NexusTrace` sink deadlock risk (2.6)** — sinks snapshotted under the lock, invoked outside it (re-entrant/slow sinks can no longer deadlock `s_lock`).
 - **Pure-context `ContextData` leak (3.9)** — `CreatePureContextAsync` marks its runtime-created `ContextData` as context-owned; destroyed on dispose. Asset/scene-backed data stays caller-owned.
 - **`ProgressionService` lost-update race (6.3)** — `CompleteCurrentLevel`/`SetLevel` cross-property chains serialized under `_levelLock`.
