@@ -205,13 +205,26 @@ namespace Nexus.Core
                 data.AssemblyScopes = assemblyScopes;
             }
 
-            var context = new Context(null, data);
-            context.Configure();
+            // The context owns this runtime-created ContextData and destroys it on dispose
+            // (audit 3.9: previously every pure context leaked one ScriptableObject).
+            var context = new Context(null, data).OwnsContextData();
+            try
+            {
+                context.Configure();
 
-            // Pure contexts run the SAME lifecycle sequence as Root-based
-            // contexts — reactive models and services are initialized before the
-            // lifecycle Init/Start phases, and ALL configured lifecycles are iterated.
-            await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, context.LifetimeToken);
+                // Pure contexts run the SAME lifecycle sequence as Root-based
+                // contexts — reactive models and services are initialized before the
+                // lifecycle Init/Start phases, and ALL configured lifecycles are iterated.
+                await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, context.LifetimeToken);
+            }
+            catch
+            {
+                // A failed boot must not leak the ScriptableObject: the happy path destroys
+                // it via Context.Dispose, so the failure path disposes the context (which
+                // tears down the owned data) before rethrowing the original exception.
+                context.Dispose();
+                throw;
+            }
 
             return context;
         }

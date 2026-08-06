@@ -44,6 +44,19 @@ namespace Nexus.Core.Services
         public SecureObservableInt CurrentLevel { get; } = new(1);
         public SecureObservableInt MaxUnlockedLevel { get; } = new(1);
 
+        // Serializes the read-modify-write chains (CompleteCurrentLevel / SetLevel):
+        // ObservableProperty makes a SINGLE set atomic, but these methods read, compute,
+        // then write TWO properties — two concurrent callers could otherwise compute the
+        // same next level from one shared read (lost update) or leave CurrentLevel above
+        // MaxUnlockedLevel (audit 6.3). Level calls are user-triggered and rare, so a lock
+        // is free on the hot path (which is read-only).
+        // Note: without a SaveThrottler, PersistNow (PlayerPrefs.Save) runs synchronously
+        // INSIDE this lock via the OnChanged → SchedulePersist chain. That is intentional:
+        // moving I/O out would split the two-property read-modify-write. Level changes are
+        // rare, so the brief disk write under the lock is acceptable — do not "optimize"
+        // this without reintroducing the cross-property invariant.
+        private readonly object _levelLock = new();
+
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
             if (PlayerPrefsService != null)
@@ -75,20 +88,27 @@ namespace Nexus.Core.Services
 
         public void CompleteCurrentLevel()
         {
-            int nextLevel = CurrentLevel.Value + 1;
-            CurrentLevel.Value = nextLevel;
-            if (nextLevel > MaxUnlockedLevel.Value)
+            lock (_levelLock)
             {
-                MaxUnlockedLevel.Value = nextLevel;
+                int nextLevel = CurrentLevel.Value + 1;
+                CurrentLevel.Value = nextLevel;
+                if (nextLevel > MaxUnlockedLevel.Value)
+                {
+                    MaxUnlockedLevel.Value = nextLevel;
+                }
             }
         }
 
         public void SetLevel(int levelIndex)
         {
-            CurrentLevel.Value = Math.Max(1, levelIndex);
-            if (CurrentLevel.Value > MaxUnlockedLevel.Value)
+            lock (_levelLock)
             {
-                MaxUnlockedLevel.Value = CurrentLevel.Value;
+                int nextLevel = Math.Max(1, levelIndex);
+                CurrentLevel.Value = nextLevel;
+                if (nextLevel > MaxUnlockedLevel.Value)
+                {
+                    MaxUnlockedLevel.Value = nextLevel;
+                }
             }
         }
 

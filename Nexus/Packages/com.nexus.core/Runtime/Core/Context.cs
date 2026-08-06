@@ -36,6 +36,15 @@ namespace Nexus.Core
     {
         private readonly Context _parent;
         private readonly ContextData _contextData;
+        // True when this context created its own ContextData ScriptableObject and therefore
+        // owns its lifetime (see NexusRuntime.CreatePureContextAsync). Scene/asset-backed
+        // ContextData is caller-owned and must NEVER be destroyed here — only the runtime-
+        // created instance gets torn down on dispose so pure contexts don't leak one
+        // ScriptableObject per context lifetime (audit 3.9). Not readonly: set via
+        // OwnsContextData() before the context is configured, read only during dispose.
+        private bool _ownsContextData;
+        // Double-dispose guard for the owned-data destroy (see DisposeShared).
+        private bool _contextDataDestroyed;
         private readonly CancellationTokenSource _cts = new();
         private readonly ViewBinder _viewBinder;
         private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
@@ -160,6 +169,18 @@ namespace Nexus.Core
         public Context(Context parent = null, ContextData contextData = null)
             : this(parent, contextData, null, null)
         {
+        }
+
+        /// <summary>
+        /// Marks the supplied <see cref="ContextData"/> as owned by this context so it is
+        /// destroyed on dispose. Used by <see cref="NexusRuntime.CreatePureContextAsync"/>,
+        /// which creates a fresh ScriptableObject per pure context; asset/scene-backed data
+        /// stays caller-owned. Returns the context for chaining.
+        /// </summary>
+        internal Context OwnsContextData()
+        {
+            _ownsContextData = true;
+            return this;
         }
 
         /// <summary>Builds the standard DI container + command pool manager pair.</summary>
@@ -809,6 +830,19 @@ namespace Nexus.Core
             // is still alive (the old order unregistered mid-teardown and the entry points
             // unregistered a second time).
             NexusRuntime.UnregisterContext(this);
+
+            // Destroy a runtime-created ContextData AFTER the unregister notification so
+            // subscribers still observe a valid ScopeTag. Asset/scene-backed ContextData is
+            // caller-owned and never destroyed here (_ownsContextData stays false).
+            // Idempotent: a second DisposeShared (double dispose) sees _contextDataDestroyed
+            // and skips — destroying an already-destroyed object would only warn, but the
+            // explicit flag keeps teardown deterministic (mirrors the double-dispose
+            // discipline enforced by the Context_DoubleDispose stress test).
+            if (_ownsContextData && _contextData != null && !_contextDataDestroyed)
+            {
+                _contextDataDestroyed = true;
+                UnityEngine.Object.DestroyImmediate(_contextData);
+            }
         }
 
         public static void ClearAssemblyScanCache()

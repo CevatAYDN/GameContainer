@@ -84,6 +84,22 @@ namespace Nexus.Tests.Editor
             Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus002Violation(line));
         }
 
+        [Test]
+        public void NEXUS002_StringLiteralAsyncVoidIsNotFlagged()
+        {
+            // The predicate's own implementation contains the "async void" literal;
+            // string literals are stripped so a self-scan cannot flag it.
+            const string line = "            return line.Contains(\"async void\");";
+            Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus002Violation(line));
+        }
+
+        [Test]
+        public void NEXUS002_DocCommentAsyncVoidIsNotFlagged()
+        {
+            const string line = "        /// Replaces uncaught <c>async void</c> declarations.";
+            Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus002Violation(line));
+        }
+
         // ── NEXUS001 (hot-path allocations) ───────────────────────────────────────
 
         [Test]

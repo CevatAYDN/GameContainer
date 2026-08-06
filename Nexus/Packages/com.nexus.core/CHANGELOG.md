@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Headless analyzer gate (`NexusArchitectureAnalyzer.RunHeadless`)** — batch-mode entry point (exit 0 clean / 1 issues) usable from CI; NEXUS002 (`async void`) extracted to an `IsNexus002Violation` predicate with editor tests, completing parity with the NEXUS001/NEXUS003 predicates.
 
+### Fixed (2026-08-06 adversarial re-audit)
+- **Analyzer self-scan false positive** — `IsNexus002Violation` strips string literals/comments so its own `"async void"` literal no longer flags the analyzer file.
+- **`NexusTrace` sink deadlock risk (2.6)** — sinks snapshotted under the lock, invoked outside it (re-entrant/slow sinks can no longer deadlock `s_lock`).
+- **Pure-context `ContextData` leak (3.9)** — `CreatePureContextAsync` marks its runtime-created `ContextData` as context-owned; destroyed on dispose. Asset/scene-backed data stays caller-owned.
+- **`ProgressionService` lost-update race (6.3)** — `CompleteCurrentLevel`/`SetLevel` cross-property chains serialized under `_levelLock`.
+
 ### Removed
 - **`Assets/Scripts/Demo/` game-project scaffolding removed** — the demo (bootstrap, global lifecycle, 4 `ScreenView` screens, commands/models/signals) was never wired to a scene or prefabs; `Game/Samples` is now the single canonical project example (scene-wired, scaffolded by `NexusSetupWizard`). `DemoCompatibilitySuite` removed from the benchmark; wizard default view name and the `cs_default_window` localization key cleaned up.
 

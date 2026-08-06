@@ -223,15 +223,33 @@ namespace Nexus.Core
             var timestamp = UnityEngine.Time.realtimeSinceStartupAsDouble;
             var traceEvent = new TraceEvent(eventId, parentId, type, timestamp, typeName, TraceStatus.OK, mode);
 
+            // Sinks are SNAPSHOTTED under the lock but invoked OUTSIDE it: a slow sink
+            // (disk writer, network) must not block every trace write, and a re-entrant
+            // sink that calls AddSink/RemoveSink (which take s_lock) would deadlock if
+            // Write ran while the lock was held. Ring-buffer write stays under the lock
+            // so concurrent BeginEvent calls never race the slot.
+            INexusTraceSink[] sinkSnapshot;
             lock (s_lock)
             {
                 s_ringBuffer[index] = traceEvent;
-                for (int i = 0; i < s_sinks.Count; i++)
+                if (s_sinks.Count == 0)
+                {
+                    sinkSnapshot = null;
+                }
+                else
+                {
+                    sinkSnapshot = s_sinks.ToArray();
+                }
+            }
+
+            if (sinkSnapshot != null)
+            {
+                for (int i = 0; i < sinkSnapshot.Length; i++)
                 {
                     // A throwing sink must not break the trace path (which runs
                     // inside signal dispatch). Each sink is isolated and failures are
                     // logged — never silently swallowed, never propagated.
-                    try { s_sinks[i].Write(traceEvent); }
+                    try { sinkSnapshot[i].Write(traceEvent); }
                     catch (Exception ex)
                     {
                         NexusRuntime.Logger?.LogError($"[NexusTrace] Custom sink threw exception: {ex.Message}");

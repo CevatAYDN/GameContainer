@@ -246,15 +246,19 @@ namespace Nexus.Editor
         /// NEXUS002 predicate: true when a line declares an uncaught <c>async void</c>
         /// method. Unity event callbacks (<c>OnClick</c>/<c>OnEvent</c> and the deliberate
         /// <c>async void Start()</c> Unity entry point) are exempt because their signatures
-        /// are fixed by the engine and cannot be changed to Task. Internal so the editor
-        /// test assembly can lock the rule.
+        /// are fixed by the engine and cannot be changed to Task. Comments and string
+        /// literals are stripped first (same as NEXUS001) so the predicate's own
+        /// implementation — which necessarily contains the <c>"async void"</c> literal —
+        /// and any doc text cannot trigger the rule (self-scan false positive). Internal so
+        /// the editor test assembly can lock the rule.
         /// </summary>
         internal static bool IsNexus002Violation(string line)
         {
-            return line.Contains("async void")
-                   && !line.Contains("OnClick")
-                   && !line.Contains("OnEvent")
-                   && !line.Contains("async void Start()");
+            string codeOnly = StripCommentsAndStrings(line);
+            return codeOnly.Contains("async void")
+                   && !codeOnly.Contains("OnClick")
+                   && !codeOnly.Contains("OnEvent")
+                   && !codeOnly.Contains("async void Start()");
         }
 
         /// <summary>
