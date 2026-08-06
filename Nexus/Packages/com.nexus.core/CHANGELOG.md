@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Headless analyzer gate (`NexusArchitectureAnalyzer.RunHeadless`)** — batch-mode entry point (exit 0 clean / 1 issues) usable from CI; NEXUS002 (`async void`) extracted to an `IsNexus002Violation` predicate with editor tests, completing parity with the NEXUS001/NEXUS003 predicates.
+
 ### Removed
 - **`Assets/Scripts/Demo/` game-project scaffolding removed** — the demo (bootstrap, global lifecycle, 4 `ScreenView` screens, commands/models/signals) was never wired to a scene or prefabs; `Game/Samples` is now the single canonical project example (scene-wired, scaffolded by `NexusSetupWizard`). `DemoCompatibilitySuite` removed from the benchmark; wizard default view name and the `cs_default_window` localization key cleaned up.
 

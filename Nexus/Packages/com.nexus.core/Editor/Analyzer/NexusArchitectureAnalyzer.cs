@@ -39,6 +39,32 @@ namespace Nexus.Editor
             win.RunAnalysis();
         }
 
+        /// <summary>
+        /// Batch-mode (CI) entry point: runs the full analysis, logs every issue to the
+        /// console, and exits with code 0 when clean / 1 when issues were found.
+        /// Invoke via: Unity -batchmode -projectPath &lt;path&gt; -executeMethod
+        /// Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless
+        /// </summary>
+        public static void RunHeadless()
+        {
+            var analyzer = CreateInstance<NexusArchitectureAnalyzer>();
+            analyzer.RunAnalysis();
+
+            if (analyzer._issues.Count == 0)
+            {
+                Debug.Log($"[Nexus] Code Health Analyzer: clean — 0 issues across {s_scannedFilesCount} files.");
+                EditorApplication.Exit(0);
+                return;
+            }
+
+            Debug.LogError($"[Nexus] Code Health Analyzer: {analyzer._issues.Count} issue(s) across {s_scannedFilesCount} files:");
+            foreach (var issue in analyzer._issues)
+            {
+                Debug.LogError($"[{issue.Code}] {issue.Severity}: {issue.Message} — {issue.FilePath}:{issue.LineNumber} | {issue.Recommendation}");
+            }
+            EditorApplication.Exit(1);
+        }
+
         private void OnGUI()
         {
             EditorGUILayout.Space(10);
@@ -182,7 +208,7 @@ namespace Nexus.Editor
                 }
 
                 // Rule NEXUS002: Async Void
-                if (line.Contains("async void") && !line.Contains("OnClick") && !line.Contains("OnEvent") && !line.Contains("async void Start()"))
+                if (IsNexus002Violation(line))
                 {
                     _issues.Add(new AnalysisIssue
                     {
@@ -214,6 +240,21 @@ namespace Nexus.Editor
                 }
 
             }
+        }
+
+        /// <summary>
+        /// NEXUS002 predicate: true when a line declares an uncaught <c>async void</c>
+        /// method. Unity event callbacks (<c>OnClick</c>/<c>OnEvent</c> and the deliberate
+        /// <c>async void Start()</c> Unity entry point) are exempt because their signatures
+        /// are fixed by the engine and cannot be changed to Task. Internal so the editor
+        /// test assembly can lock the rule.
+        /// </summary>
+        internal static bool IsNexus002Violation(string line)
+        {
+            return line.Contains("async void")
+                   && !line.Contains("OnClick")
+                   && !line.Contains("OnEvent")
+                   && !line.Contains("async void Start()");
         }
 
         /// <summary>

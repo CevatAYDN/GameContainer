@@ -47,6 +47,43 @@ namespace Nexus.Tests.Editor
             Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus003Violation(line, "Assets/Scripts/EconomyService.cs"));
         }
 
+        // ── NEXUS002 (async void) ──────────────────────────────────────────────────
+
+        [Test]
+        public void NEXUS002_FlagsAsyncVoidDeclaration()
+        {
+            const string line = "        public async void FireAndForget()";
+            Assert.IsTrue(NexusArchitectureAnalyzer.IsNexus002Violation(line));
+        }
+
+        [Test]
+        public void NEXUS002_UnityOnClickCallbackIsExempt()
+        {
+            const string line = "        private async void OnClickButton()";
+            Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus002Violation(line));
+        }
+
+        [Test]
+        public void NEXUS002_UnityStartEntryPointIsExempt()
+        {
+            const string line = "        private async void Start()";
+            Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus002Violation(line));
+        }
+
+        [Test]
+        public void NEXUS002_AsyncValueTaskIsNotFlagged()
+        {
+            const string line = "        public async ValueTask InitializeAsync(CancellationToken ct)";
+            Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus002Violation(line));
+        }
+
+        [Test]
+        public void NEXUS002_OnEventCallbackIsExempt()
+        {
+            const string line = "        private async void OnEventOccurred(string payload)";
+            Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus002Violation(line));
+        }
+
         // ── NEXUS001 (hot-path allocations) ───────────────────────────────────────
 
         [Test]

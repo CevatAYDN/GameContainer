@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Headless Code Health Analyzer gate (`NexusArchitectureAnalyzer.RunHeadless`)** — batch-mode entry point runs NEXUS001/002/003 analysis and exits 0 when clean / 1 when issues are found; wired into the CI Unity job. NEXUS002 (`async void`) extracted to an `IsNexus002Violation` predicate locked by editor tests, matching NEXUS001/NEXUS003. Full-project re-scan: 0 issues across 185 files (previous 15 resolved: 14× NEXUS004 WindowManager + 1× NEXUS001 SaveThrottler).
+
 ### Removed
 - **`WindowManager` / `IWindowManager` deleted** — the legacy string-keyed window API is gone; `UIManager` (type-safe `ScreenView` API with pooling) is the single UI manager. `UILayer`/`IUIWindowLifecycle` extracted to their own files; demo screens migrated to `ScreenView`; the analyzer migration-driver rule NEXUS004 and its editor tests retired; benchmark W1–W7 migrated to UIManager U1–U7.
 - **`Assets/Scripts/Demo/` scaffolding removed** — the Unity demo (`DemoGlobalLifecycle`, 4 `ScreenView` screens, demo commands/models/signals) was never wired to a scene or prefabs (no bootstrap in `NexusStarter.unity`, zero Resources prefabs). `Game/Samples` is the single canonical example: scene-wired, scaffolded by `NexusSetupWizard`, canonical in the quickstart/how-to docs. `DemoCompatibilitySuite` was removed with it; the wizard default view name and the `cs_default_window` localization key were cleaned up.
