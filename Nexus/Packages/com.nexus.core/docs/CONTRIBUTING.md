@@ -29,6 +29,16 @@ All editor plugin changes must follow the 4 cross-cutting patterns:
 - Every P1/P2 fix or new plugin MUST include unit test coverage under `Tests/Editor/`.
 - Verify that both `InfrastructureValidationTests` and `PluginRefactorValidationTests` pass cleanly in Unity Test Runner.
 
+### 4. Synchronous-Blocking Exemptions (NEXUS003)
+The `NexusArchitectureAnalyzer` rule NEXUS003 flags synchronous blocking calls in runtime
+code: `Thread.Sleep` and sync-over-async `GetAwaiter().GetResult()` (which still blocks the
+thread). Prefer a real `await Task.Delay(...)`. A blocking site is acceptable only when
+awaiting is genuinely impossible — e.g. a synchronous `PlayerPrefs`-style API whose write
+path also runs on the sync quit handler. In that case keep the call, append a trailing
+`// NEXUS003-exempt: <reason>` comment to the SAME line stating why awaiting is impossible,
+and use the `CancellationToken`-aware overload where one is available. Anything not marked
+exempt is reported as an Error by the analyzer.
+
 ---
 
 ## 📋 PR Review Checklist for AI Agents
@@ -92,7 +102,7 @@ When reviewing or self-auditing a PR, validate every check item:
 
 ---
 
-**Last updated:** 2026-07-24  
+**Last updated:** 2026-08-06  
 **Code version:** 0.4.0  
 **Maintainers:** Nexus Core Team  
 **Re-review trigger:** Any pull request submission or API change.

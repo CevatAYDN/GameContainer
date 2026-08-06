@@ -203,8 +203,7 @@ namespace Nexus.Editor
                 // A trailing "// NEXUS003-exempt: <reason>" comment marks a deliberate,
                 // documented blocking site (e.g. EncryptedStorageService's 1-2 ms IO backoff,
                 // NexusTestHarness's rethrow-only GetResult) and opts it out.
-                if ((line.Contains("Thread.Sleep") || line.Contains("GetAwaiter().GetResult()"))
-                    && !path.Contains("/Editor/") && !line.Contains("NEXUS003-exempt"))
+                if (IsNexus003Violation(line, path))
                 {
                     _issues.Add(new AnalysisIssue
                     {
@@ -231,6 +230,21 @@ namespace Nexus.Editor
                     });
                 }
             }
+        }
+
+        /// <summary>
+        /// NEXUS003 predicate: true when a runtime (non-Editor) line contains a synchronous
+        /// blocking call (Thread.Sleep or sync-over-async <c>GetAwaiter().GetResult()</c>,
+        /// which still blocks the thread) that is not explicitly exempted via a trailing
+        /// <c>// NEXUS003-exempt: &lt;reason&gt;</c> comment. Comment lines and Editor paths
+        /// are filtered by the caller (<see cref="AnalyzeScriptFile"/>). Internal so the
+        /// editor test assembly can lock the rule.
+        /// </summary>
+        internal static bool IsNexus003Violation(string line, string path)
+        {
+            return (line.Contains("Thread.Sleep") || line.Contains("GetAwaiter().GetResult()"))
+                   && !path.Contains("/Editor/")
+                   && !line.Contains("NEXUS003-exempt");
         }
     }
 }
