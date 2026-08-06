@@ -228,14 +228,12 @@ namespace Nexus.Core
         // reentrancy nests more changes than any prior drain — amortized
         // zero-allocation steady state — and each pass copies under _eventLock then
         // dispatches outside it, so semantics are identical to the old code.
-        // [ThreadStatic]: the class supports concurrent mutation from multiple
-        // threads, and two threads CAN be draining at once (a concurrent mutation
-        // landing between dispatch batches — when _isNotifying is false — captures
-        // its own snapshot and drains its own pass while this thread is mid-dispatch
-        // reading its buffer). A shared instance buffer would be overwritten mid-read
-        // and dispatch the WRONG pending change; a per-thread buffer cannot. Same-thread
-        // nested drains are impossible (a nested mutator sees _isNotifying and queues
-        // without draining), so one buffer per thread is sufficient.
+        // [ThreadStatic]: under the claim protocol below only the claim holder ever
+        // drains (a non-holder mutator sees _isNotifying and queues without draining),
+        // so a plain instance buffer would already be safe. The per-thread buffer is a
+        // zero-cost second line of defense: if a future regression lets two threads
+        // drain at once, one can never dispatch the OTHER's pending change from a
+        // shared buffer (the wrong-pair/duplicate-dispatch bug locked by benchmark M4b).
         [ThreadStatic] private static PendingChange[] t_drainBuffer;
 
         private enum PendingChangeOp : byte { Add = 0, Remove = 1, Clear = 2, Replace = 3 }
@@ -289,11 +287,18 @@ namespace Nexus.Core
                     previous = _items[index];
                     _items[index] = value;
                     _version++;
+                    // Reentrant Replace during an in-flight notification is QUEUED, not dropped.
                     if (_isNotifying)
                     {
                         _pendingChanges.Add(new PendingChange(PendingChangeOp.Replace, index, previous, value));
                         return;
                     }
+                    // Claim the whole dispatch unit (direct + drains) only when there is a
+                    // subscriber to notify — identical to Add/Remove/RemoveAt/Clear. The old
+                    // finally below cleared _isNotifying directly: one dispatcher's teardown
+                    // could release ANOTHER dispatcher's in-flight claim (the flag-overwrite
+                    // bug this protocol eliminates) and a throwing direct handler skipped the
+                    // drain entirely.
                     replacedSnapshot = _onReplaced.GetSnapshot();
                     if (replacedSnapshot != null) _isNotifying = true;
                 }
@@ -307,9 +312,10 @@ namespace Nexus.Core
                     }
                     finally
                     {
-                        lock (_eventLock) _isNotifying = false;
+                        // Drains every queued change and releases the claim when the queue is
+                        // empty. Runs even if a direct handler threw, so the claim never leaks.
+                        DrainPendingChanges();
                     }
-                    DrainPendingChanges();
                 }
             }
         }
@@ -344,10 +350,28 @@ namespace Nexus.Core
         }
 
         // ── Mutation ───────────────────────────────────────────
+        // ── Dispatch-unit claim protocol ───────────────────────
+        // _isNotifying is an EXCLUSIVE, OWNER-TRACKED claim for the whole dispatch unit:
+        // one direct mutation dispatch + every drain pass that follows. The claim is
+        // taken in the mutation's lock and released ONLY by DrainPendingChanges, in the
+        // same lock scope as its queue-empty check. DispatchPending* NEVER touches the
+        // flag — so no other thread's finally can clear it mid-dispatch, a reentrant
+        // mutation can never see the flag false (no nested drain), and a queued change
+        // can never be stranded: any mutation that observes the flag false takes over
+        // the claim and drains. Applies uniformly to Add/Remove/RemoveAt/Clear and the
+        // indexer setter; the claim is taken only when the mutation actually has
+        // subscribers to notify (with none, no dispatch follows and the queue is
+        // provably empty — changes queue only while a claim is held).
+        // (Pre-2026-08-06 design: every DispatchPending* cleared the flag in its own
+        // finally, so one dispatcher's teardown could clear ANOTHER dispatcher's
+        // in-flight claim — reentrant mutations then claimed directly, nested drains
+        // overwrote the shared drain buffer, and queued notifications were silently
+        // lost or double-delivered. Locked by benchmark M4b.)
+
         public void Add(T item)
         {
             int index;
-            Action<int, T>[] addedSnapshot;
+            Action<int, T>[] snapshot;
             lock (_eventLock)
             {
                 index = _items.Count;
@@ -360,30 +384,35 @@ namespace Nexus.Core
                     _pendingChanges.Add(new PendingChange(PendingChangeOp.Add, index, item));
                     return;
                 }
-                // Capture snapshot inside the lock so handler set cannot change mid-dispatch
-                addedSnapshot = _onAdded.GetSnapshot();
-                if (addedSnapshot != null) _isNotifying = true;
+                // Claim the whole dispatch unit (direct dispatch + every drain pass) only
+                // when there is a subscriber to notify. With none, no dispatch follows —
+                // and the queue is provably empty (changes queue only while a claim is
+                // held, and the claim is released only at queue-empty), so nothing is
+                // stranded by not claiming.
+                snapshot = _onAdded.GetSnapshot();
+                if (snapshot != null) _isNotifying = true;
             }
 
-            if (addedSnapshot != null)
+            if (snapshot != null)
             {
                 try
                 {
-                    for (int i = 0; i < addedSnapshot.Length; i++)
-                        addedSnapshot[i]?.Invoke(index, item);
+                    for (int i = 0; i < snapshot.Length; i++)
+                        snapshot[i]?.Invoke(index, item);
                 }
                 finally
                 {
-                    lock (_eventLock) _isNotifying = false;
+                    // Drains every queued change and releases the claim when the queue is
+                    // empty. Runs even if a direct handler threw, so the claim never leaks.
+                    DrainPendingChanges();
                 }
-                DrainPendingChanges();
             }
         }
 
         public bool Remove(T item)
         {
             int index;
-            Action<int, T>[] removedSnapshot;
+            Action<int, T>[] snapshot;
             lock (_eventLock)
             {
                 index = _items.IndexOf(item);
@@ -397,22 +426,22 @@ namespace Nexus.Core
                     _pendingChanges.Add(new PendingChange(PendingChangeOp.Remove, index, item));
                     return true;
                 }
-                removedSnapshot = _onRemoved.GetSnapshot();
-                if (removedSnapshot != null) _isNotifying = true;
+                // Claim only when there is a subscriber to notify (see Add).
+                snapshot = _onRemoved.GetSnapshot();
+                if (snapshot != null) _isNotifying = true;
             }
 
-            if (removedSnapshot != null)
+            if (snapshot != null)
             {
                 try
                 {
-                    for (int i = 0; i < removedSnapshot.Length; i++)
-                        removedSnapshot[i]?.Invoke(index, item);
+                    for (int i = 0; i < snapshot.Length; i++)
+                        snapshot[i]?.Invoke(index, item);
                 }
                 finally
                 {
-                    lock (_eventLock) _isNotifying = false;
+                    DrainPendingChanges();
                 }
-                DrainPendingChanges();
             }
             return true;
         }
@@ -420,7 +449,7 @@ namespace Nexus.Core
         public void RemoveAt(int index)
         {
             T item;
-            Action<int, T>[] removedSnapshot;
+            Action<int, T>[] snapshot;
             lock (_eventLock)
             {
                 item = _items[index];
@@ -433,28 +462,28 @@ namespace Nexus.Core
                     _pendingChanges.Add(new PendingChange(PendingChangeOp.Remove, index, item));
                     return;
                 }
-                removedSnapshot = _onRemoved.GetSnapshot();
-                if (removedSnapshot != null) _isNotifying = true;
+                // Claim only when there is a subscriber to notify (see Add).
+                snapshot = _onRemoved.GetSnapshot();
+                if (snapshot != null) _isNotifying = true;
             }
 
-            if (removedSnapshot != null)
+            if (snapshot != null)
             {
                 try
                 {
-                    for (int i = 0; i < removedSnapshot.Length; i++)
-                        removedSnapshot[i]?.Invoke(index, item);
+                    for (int i = 0; i < snapshot.Length; i++)
+                        snapshot[i]?.Invoke(index, item);
                 }
                 finally
                 {
-                    lock (_eventLock) _isNotifying = false;
+                    DrainPendingChanges();
                 }
-                DrainPendingChanges();
             }
         }
 
         public void Clear()
         {
-            Action[] clearedSnapshot;
+            Action[] snapshot;
             lock (_eventLock)
             {
                 _items.Clear();
@@ -466,72 +495,96 @@ namespace Nexus.Core
                     _pendingChanges.Add(new PendingChange(PendingChangeOp.Clear, -1, default));
                     return;
                 }
-                clearedSnapshot = _onCleared.GetSnapshot();
-                if (clearedSnapshot != null) _isNotifying = true;
+                // Claim only when there is a subscriber to notify (see Add).
+                snapshot = _onCleared.GetSnapshot();
+                if (snapshot != null) _isNotifying = true;
             }
 
-            if (clearedSnapshot != null)
+            if (snapshot != null)
             {
                 try
                 {
-                    for (int i = 0; i < clearedSnapshot.Length; i++)
-                        clearedSnapshot[i]?.Invoke();
+                    for (int i = 0; i < snapshot.Length; i++)
+                        snapshot[i]?.Invoke();
                 }
                 finally
                 {
-                    lock (_eventLock) _isNotifying = false;
+                    DrainPendingChanges();
                 }
-                DrainPendingChanges();
             }
         }
 
         // ── M4: reentrant-notification drain ───────────────────
         /// <summary>
         /// Dispatches structural changes that arrived while an earlier notification was
-        /// in flight. Runs after the outer dispatch unwinds; drains to empty so changes
+        /// in flight. Runs after the direct dispatch unwinds; drains to empty so changes
         /// queued DURING this drain (deeper reentrancy) are also delivered. Each queued
         /// change is dispatched with the same snapshot-under-lock discipline as the
         /// primary mutations, so handler sets cannot change mid-dispatch.
+        /// The claim release and the queue-empty check are ONE critical section, so a
+        /// mutation that queues after this point observes _isNotifying == false and takes
+        /// over the claim itself — the handoff cannot drop a queued change.
         /// </summary>
         private void DrainPendingChanges()
         {
-            while (true)
+            bool released = false;
+            try
             {
-                int drainCount;
-                lock (_eventLock)
+                while (true)
                 {
-                    drainCount = _pendingChanges.Count;
-                    if (drainCount == 0) return;
-                    if (t_drainBuffer == null || t_drainBuffer.Length < drainCount)
+                    int drainCount;
+                    lock (_eventLock)
                     {
-                        t_drainBuffer = new PendingChange[drainCount];
+                        drainCount = _pendingChanges.Count;
+                        if (drainCount == 0)
+                        {
+                            _isNotifying = false; // release claim: queue empty, we own it
+                            released = true;
+                            return;
+                        }
+                        if (t_drainBuffer == null || t_drainBuffer.Length < drainCount)
+                        {
+                            t_drainBuffer = new PendingChange[drainCount];
+                        }
+                        _pendingChanges.CopyTo(t_drainBuffer);
+                        _pendingChanges.Clear();
                     }
-                    _pendingChanges.CopyTo(t_drainBuffer);
-                    _pendingChanges.Clear();
-                }
 
-                // Dispatch OUTSIDE the lock. Changes queued during a handler land in
-                // _pendingChanges and are drained by the next pass; t_drainBuffer is only
-                // written (and grown) under _eventLock at the top of a pass, so the read
-                // loop here never races the next copy on this thread.
-                for (int i = 0; i < drainCount; i++)
-                {
-                    var pending = t_drainBuffer[i];
-                    switch (pending.Op)
+                    // Dispatch OUTSIDE the lock. Changes queued during a handler land in
+                    // _pendingChanges and are drained by the next pass; t_drainBuffer is only
+                    // written (and grown) under _eventLock at the top of a pass, so the read
+                    // loop here never races the next copy on this thread.
+                    for (int i = 0; i < drainCount; i++)
                     {
-                        case PendingChangeOp.Add:
-                            DispatchPendingAdded(pending.Index, pending.Item);
-                            break;
-                        case PendingChangeOp.Remove:
-                            DispatchPendingRemoved(pending.Index, pending.Item);
-                            break;
-                        case PendingChangeOp.Clear:
-                            DispatchPendingCleared();
-                            break;
-                        case PendingChangeOp.Replace:
-                            DispatchPendingReplaced(pending.Index, pending.OldItem, pending.Item);
-                            break;
+                        var pending = t_drainBuffer[i];
+                        switch (pending.Op)
+                        {
+                            case PendingChangeOp.Add:
+                                DispatchPendingAdded(pending.Index, pending.Item);
+                                break;
+                            case PendingChangeOp.Remove:
+                                DispatchPendingRemoved(pending.Index, pending.Item);
+                                break;
+                            case PendingChangeOp.Clear:
+                                DispatchPendingCleared();
+                                break;
+                            case PendingChangeOp.Replace:
+                                DispatchPendingReplaced(pending.Index, pending.OldItem, pending.Item);
+                                break;
+                        }
                     }
+                }
+            }
+            finally
+            {
+                if (!released)
+                {
+                    // An exception escaped a queued handler mid-drain: release the claim
+                    // so future mutations never queue forever. The already-copied tail of
+                    // THIS pass is dropped (same semantics as a throwing direct handler
+                    // skipping the rest of its snapshot); only changes queued AFTER the
+                    // copy stay in the queue and are picked up by the next claimer.
+                    lock (_eventLock) _isNotifying = false;
                 }
             }
         }
@@ -543,17 +596,9 @@ namespace Nexus.Core
             {
                 snapshot = _onAdded.GetSnapshot();
                 if (snapshot == null || snapshot.Length == 0) return;
-                _isNotifying = true;
             }
-            try
-            {
-                for (int i = 0; i < snapshot.Length; i++)
-                    snapshot[i]?.Invoke(index, item);
-            }
-            finally
-            {
-                lock (_eventLock) _isNotifying = false;
-            }
+            for (int i = 0; i < snapshot.Length; i++)
+                snapshot[i]?.Invoke(index, item);
         }
 
         private void DispatchPendingRemoved(int index, T item)
@@ -563,17 +608,9 @@ namespace Nexus.Core
             {
                 snapshot = _onRemoved.GetSnapshot();
                 if (snapshot == null || snapshot.Length == 0) return;
-                _isNotifying = true;
             }
-            try
-            {
-                for (int i = 0; i < snapshot.Length; i++)
-                    snapshot[i]?.Invoke(index, item);
-            }
-            finally
-            {
-                lock (_eventLock) _isNotifying = false;
-            }
+            for (int i = 0; i < snapshot.Length; i++)
+                snapshot[i]?.Invoke(index, item);
         }
 
         private void DispatchPendingReplaced(int index, T oldItem, T newItem)
@@ -583,17 +620,9 @@ namespace Nexus.Core
             {
                 snapshot = _onReplaced.GetSnapshot();
                 if (snapshot == null || snapshot.Length == 0) return;
-                _isNotifying = true;
             }
-            try
-            {
-                for (int i = 0; i < snapshot.Length; i++)
-                    snapshot[i]?.Invoke(index, oldItem, newItem);
-            }
-            finally
-            {
-                lock (_eventLock) _isNotifying = false;
-            }
+            for (int i = 0; i < snapshot.Length; i++)
+                snapshot[i]?.Invoke(index, oldItem, newItem);
         }
 
         private void DispatchPendingCleared()
@@ -603,17 +632,9 @@ namespace Nexus.Core
             {
                 snapshot = _onCleared.GetSnapshot();
                 if (snapshot == null || snapshot.Length == 0) return;
-                _isNotifying = true;
             }
-            try
-            {
-                for (int i = 0; i < snapshot.Length; i++)
-                    snapshot[i]?.Invoke();
-            }
-            finally
-            {
-                lock (_eventLock) _isNotifying = false;
-            }
+            for (int i = 0; i < snapshot.Length; i++)
+                snapshot[i]?.Invoke();
         }
 
         public bool Contains(T item) { lock (_eventLock) return _items.Contains(item); }

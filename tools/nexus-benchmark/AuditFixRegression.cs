@@ -8,6 +8,7 @@
 //   T-7 cross-context broadcast to a bus with async handlers (no mismatch throw)
 //   M-1 SaveThrottler failure backoff + retry cap (no tight retry loop)
 //   M-4 ObservableList reentrant mutation notifications are queued, not dropped
+//   M-4b ObservableList concurrent multi-thread reentrant drains stay isolated (per-thread buffer)
 //   M-6 GameSaveManager concurrent SaveAsync serialized (no torn temp writes)
 //   M-7 PerformanceMonitor / NetworkMonitor throwing subscribers isolated
 // Each test FAILS if the pre-fix behavior returns.
@@ -134,7 +135,7 @@ namespace NexusBench
         public static int Run()
         {
             Console.WriteLine();
-            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-6/M-7) ===");
+            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7) ===");
             _failures = 0;
 
             Test_Composite_NestedCompletion_NoLostTriggers();
@@ -146,6 +147,7 @@ namespace NexusBench
             Test_CrossContext_AsyncTarget_NoMismatch();
             Test_SaveThrottler_FailureBackoff_And_RetryCap();
             Test_ObservableList_Reentrant_Notifications_Queued();
+            Test_ObservableList_ConcurrentReentrant_DrainIsolation();
             Test_GameSaveManager_ConcurrentSaves_Serialized();
             Test_PerfMonitor_ThrowingSubscriber_Isolated();
             Test_NetworkMonitor_ThrowingSubscriber_Isolated();
@@ -502,6 +504,171 @@ namespace NexusBench
 
             Check("M4. ObservableList_Reentrant_Notifications_Queued", bothNotified && listHasBoth,
                 $"added events={addedEvents} (expected 2), list contains 1&2={listHasBoth} (pre-fix: nested Add notified nobody)");
+        }
+
+        // ── M-4b ──────────────────────────────────────────────────────────────
+        /// <summary>
+        /// Multi-threaded reentrant-drain stress. ObservableList supports concurrent
+        /// mutation from multiple threads; the claim protocol must guarantee exactly
+        /// ONE thread owns the dispatch unit (direct mutation + every drain pass) — the
+        /// _isNotifying flag is claimed under _eventLock and released only when the
+        /// pending queue is empty, in the same lock scope. A regression that lets one
+        /// dispatcher's teardown clear ANOTHER dispatcher's in-flight claim lets
+        /// reentrant mutations claim directly, start nested drains, and silently lose or
+        /// double-deliver notifications (observed 2026-08-06: blocks of values notified
+        /// 0 and 2 times). Phase 1 hammers concurrent Add + handler-reentrant Add;
+        /// phase 2 hammers concurrent indexer-set Replace + handler-reentrant Replace
+        /// (the indexer was the last path still clearing the flag in its own finally).
+        /// Every value must be notified EXACTLY once — the per-index count check is the
+        /// wrong-pair/dropped detector (a value dispatched in place of another, or
+        /// missed, shows up as a count mismatch). NOTE: this is a stress test with HIGH
+        /// (not deterministic) detection probability — it failed 5/5 against the
+        /// pre-fix shared-buffer variant and ~3/4 against the pre-fix flag-overwrite
+        /// protocol; a pass does not prove a future regression variant cannot exist.
+        /// </summary>
+        private static void Test_ObservableList_ConcurrentReentrant_DrainIsolation()
+        {
+            const int threadCount = 8;
+            const int addsPerThread = 4000;
+            int domain = threadCount * addsPerThread; // primary values [0, domain)
+            int[] counts = new int[domain * 2 + 16]; // primary + reentrant-sentinel domain
+
+            var list = new ObservableList<int>();
+            list.OnAdded((index, value) =>
+            {
+                System.Threading.Interlocked.Increment(ref counts[value]);
+                // Reentrant mutation while this (or another thread's) dispatch is in
+                // flight → queued under _eventLock, drained by the outer loop later.
+                // Only primary values re-add, so sentinels never chain out of bounds.
+                if (value < domain && value % 97 == 0)
+                {
+                    list.Add(domain + value);
+                }
+            });
+
+            var threads = new Thread[threadCount];
+            var startGate = new ManualResetEvent(false);
+            var failures = new bool[threadCount];
+            for (int t = 0; t < threadCount; t++)
+            {
+                int baseId = t * addsPerThread;
+                int idx = t;
+                threads[t] = new Thread(() =>
+                {
+                    try
+                    {
+                        startGate.WaitOne();
+                        for (int i = 0; i < addsPerThread; i++)
+                        {
+                            list.Add(baseId + i);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failures[idx] = true;
+                        Console.WriteLine($"[Nexus Benchmark]   M4b worker {idx} failed: {ex.GetType().Name}: {ex.Message}");
+                    }
+                });
+                threads[t].Start();
+            }
+
+            startGate.Set();
+            bool joined = true;
+            foreach (var th in threads)
+            {
+                if (!th.Join(30000)) joined = false; // watchdog — must never trip post-fix
+            }
+
+            // Every primary value notified exactly once (the wrong-pair/dropped detector).
+            bool primariesExact = true;
+            for (int v = 0; v < domain; v++)
+            {
+                if (counts[v] != 1) primariesExact = false;
+            }
+
+            // Every reentrant sentinel (added when v % 97 == 0) notified exactly once.
+            int sentinelCount = 0;
+            bool sentinelsExact = true;
+            for (int v = 0; v < domain; v++)
+            {
+                if (v % 97 == 0)
+                {
+                    sentinelCount++;
+                    if (counts[domain + v] != 1) sentinelsExact = false;
+                }
+            }
+
+            bool sizeCorrect = list.Count == domain + sentinelCount;
+
+            // ── Phase 2: indexer-set (Replace) stress ─────────────────────────────
+            // The indexer setter was the last mutation path still using the old
+            // flag-clearing pattern (it cleared _isNotifying in its own finally, before
+            // the drain) — the same flag-overwrite hazard the claim protocol eliminates.
+            // Same stress as phase 1 but through list[0] = v (index 0 is always valid
+            // once the list is non-empty; phase 1 left 32330 items).
+            int[] replaceCounts = new int[domain * 2 + 16];
+            list.OnReplaced((index, oldItem, newItem) =>
+            {
+                System.Threading.Interlocked.Increment(ref replaceCounts[newItem]);
+                // Reentrant Replace while a dispatch is in flight → queued, drained later.
+                // Only primary values re-replace, so sentinels never chain out of bounds.
+                if (newItem < domain && newItem % 97 == 0)
+                {
+                    list[list.Count - 1] = domain + newItem;
+                }
+            });
+
+            startGate.Reset();
+            for (int t = 0; t < threadCount; t++)
+            {
+                int baseId = t * addsPerThread;
+                int idx = t;
+                threads[t] = new Thread(() =>
+                {
+                    try
+                    {
+                        startGate.WaitOne();
+                        for (int i = 0; i < addsPerThread; i++)
+                        {
+                            list[0] = baseId + i;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        failures[idx] = true;
+                        Console.WriteLine($"[Nexus Benchmark]   M4b worker {idx} failed (phase 2): {ex.GetType().Name}: {ex.Message}");
+                    }
+                });
+                threads[t].Start();
+            }
+            startGate.Set();
+            foreach (var th in threads)
+            {
+                if (!th.Join(30000)) joined = false; // watchdog — must never trip post-fix
+            }
+
+            // Every primary replace notified exactly once.
+            bool replacesExact = true;
+            for (int v = 0; v < domain; v++)
+            {
+                if (replaceCounts[v] != 1) replacesExact = false;
+            }
+            // Every reentrant replace sentinel (added when v % 97 == 0) notified exactly once.
+            bool replaceSentinelsExact = true;
+            for (int v = 0; v < domain; v++)
+            {
+                if (v % 97 == 0 && replaceCounts[domain + v] != 1) replaceSentinelsExact = false;
+            }
+
+            bool noWorkerFailures = true;
+            for (int t = 0; t < threadCount; t++) noWorkerFailures &= !failures[t];
+
+            Check("M4b. ObservableList_ConcurrentReentrant_DrainIsolation",
+                joined && primariesExact && sentinelsExact && sizeCorrect && replacesExact && replaceSentinelsExact && noWorkerFailures,
+                $"threads joined={joined}, adds notified exactly once={primariesExact} (x{domain}) + sentinels={sentinelsExact} (x{sentinelCount}), " +
+                $"replaces notified exactly once={replacesExact} (x{domain}) + sentinels={replaceSentinelsExact}, " +
+                $"list size={list.Count} (expected {domain + sentinelCount}), worker failures={!noWorkerFailures} " +
+                $"(flag-overwrite/nested-drain would drop or double-deliver)");
         }
 
         // ── M-6 ────────────────────────────────────────────────────────────────
