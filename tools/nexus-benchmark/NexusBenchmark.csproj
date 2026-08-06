@@ -99,7 +99,8 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IFloatingTextService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IUIAssetProvider.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ResourcesUIAssetProvider.cs" />
-    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/WindowManager.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/UILayer.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IUIWindowLifecycle.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/UICanvasSystem.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ScreenView.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ScreenMediator.cs" />

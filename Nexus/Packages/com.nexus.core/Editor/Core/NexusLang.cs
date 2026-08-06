@@ -408,18 +408,16 @@ namespace Nexus.Editor
             s_strings["cs_sec_progression"] = "Progression Debugger";
             s_strings["cs_jump_to_level"] = "Jump To Level";
             s_strings["cs_set_level"] = "Set Level";
-            s_strings["cs_sec_ui"] = "UI Window Navigation";
-            s_strings["cs_window_name"] = "Window Name";
-            s_strings["cs_open_window"] = "Open Window";
-            s_strings["cs_close_top"] = "Close Top Window";
+            s_strings["cs_sec_ui"] = "UI Screen Navigation";
+            s_strings["cs_close_top"] = "Close Top Screen";
             s_strings["cs_asset_provider"] = "UI Asset Provider: {0}";
-            s_strings["cs_open_stack"] = "Open Window Stack (live)";
+            s_strings["cs_open_stack"] = "Open Screen Stack (live)";
             s_strings["cs_sec_haptics"] = "Haptics & Feedback Tester";
             s_strings["cs_light_haptic"] = "Trigger Light Haptic";
             s_strings["cs_heavy_haptic"] = "Trigger Heavy Haptic";
             s_strings["cs_success_feedback"] = "Play Success Feedback";
-            s_strings["cs_no_windowmanager"] = "  (no WindowManager registered)";
-            s_strings["cs_custom_windowmanager"] = "  (custom IWindowManager — no introspection)";
+            s_strings["cs_no_uimanager"] = "  (no UIManager registered)";
+            s_strings["cs_custom_uimanager"] = "  (custom IUIManager — no introspection)";
             s_strings["cs_stack_header"] = "Open: {0}    Pending: {1}";
             s_strings["cs_stack_empty"] = "  (stack empty)";
 

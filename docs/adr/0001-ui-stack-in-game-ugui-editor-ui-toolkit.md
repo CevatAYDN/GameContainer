@@ -57,6 +57,25 @@ A future review may revisit this addendum if the migration completes or the dire
 changes; this ADR's original decision (UGUI stays, `Task<GameObject>` stays in service)
 remains in effect.
 
+## Addendum (2026-08-06, second) — WindowManager removed; UIManager is the single UI manager
+
+The migration this ADR's first addendum recorded is **complete**:
+
+- `WindowManager` + `IWindowManager` are **deleted**. `UIManager` is the single runtime
+  UI manager; `UILayer` and `IUIWindowLifecycle` were extracted from `WindowManager.cs`
+  into their own files so the canonical stack keeps compiling.
+- The demo screens (`MainMenuScreen`, `GameplayHUD`, `GameOverScreen`, `ShopScreen`)
+  now derive from `ScreenView` and are opened through `IUIManager.OpenScreenAsync<TScreen>`.
+  The demo binds one UI manager only — no parallel window stack remains.
+- `CasualServicesPlugin`'s legacy window panel now drives `UIManager`'s editor
+  introspection (`GetOpenScreensSnapshot`/`PendingScreenCount`).
+- The analyzer rule NEXUS004 (migration driver) is **retired** together with its editor
+  tests — there is no obsolete API left to police.
+- The benchmark's WindowManager W1–W7 proof was migrated to UIManager U1–U7.
+
+This ADR's original decision (in-game UGUI stays; `Task<GameObject>` as the in-game
+abstraction) is unchanged — the consolidation happened on top of it.
+
 ## References
 
 - 2026-08-01 architecture review — candidate 4 (WindowManager).

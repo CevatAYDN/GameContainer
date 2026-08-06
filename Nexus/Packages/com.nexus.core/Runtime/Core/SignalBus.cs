@@ -19,7 +19,7 @@ namespace Nexus.Core
     /// </summary>
     internal static class SafeAsyncRunner
     {
-        // Task-based overload shared by UIManager/WindowManager (and any
+        // Task-based overload shared by UIManager (and any
         // service needing fire-and-forget with guaranteed error capture). Previously both
         // UI managers carried a copy-pasted private SafeFireAndForget helper.
         public static void Run(System.Threading.Tasks.Task task, string errorContext)

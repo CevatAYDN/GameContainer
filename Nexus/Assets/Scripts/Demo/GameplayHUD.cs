@@ -7,7 +7,7 @@ namespace Nexus.Demo
 {
     /// <summary>Gameplay HUD view - shows during active gameplay.</summary>
     [Mediator(typeof(GameplayHUDMediator))]
-    public class GameplayHUD : View
+    public class GameplayHUD : ScreenView
     {
         [SerializeField] private Text levelText;
         [SerializeField] private Text coinsText;

@@ -1,6 +1,6 @@
 // Service-layer proof suite: exercises the service/tooling files that were pulled
 // into the harness (Localization, Haptics, Input, Feedback, Audio, FloatingText,
-// Analytics, SceneLoader, WindowManager, NexusTestContext/NexusTestHarness) against
+// Analytics, SceneLoader, UIManager, NexusTestContext/NexusTestHarness) against
 // the REAL runtime. Uses the functional Unity stubs (scene graph, AudioSource state,
 // SceneManager operation queue) so the logic paths run end-to-end, not as mocks.
 
@@ -39,12 +39,25 @@ namespace NexusBench
         public void LogException(Exception exception) => Messages.Add(exception?.Message);
     }
 
-    public sealed class SvcWindowProvider : IUIAssetProvider
+    /// <summary>ScreenView test double: records the async lifecycle order.</summary>
+    public sealed class SvcScreenView : ScreenView
+    {
+        public static readonly List<string> Events = new();
+        public object LastArgs;
+
+        protected override void OnScreenOpening(object args) { LastArgs = args; Events.Add("opening"); }
+        protected override void OnScreenOpened(object args) { Events.Add("opened"); }
+        protected override void OnScreenClosing() { Events.Add("closing"); }
+        protected override void OnScreenClosed() { Events.Add("closed"); }
+    }
+
+    /// <summary>Second screen type so stack-order tests can open two distinct screens.</summary>
+    public sealed class SvcScreenViewB : ScreenView { }
+
+    public sealed class SvcScreenProvider : IUIAssetProvider
     {
         public int InstantiateCount;
-        public int ReleaseCount;
         public TaskCompletionSource<GameObject> Gate;
-        public GameObject LastWindow;
         private string _name;
         private Transform _parent;
 
@@ -59,10 +72,12 @@ namespace NexusBench
 
         public GameObject CreateWindow()
         {
-            var go = new GameObject(_name ?? "Window");
-            go.AddComponent<SvcWindowLifecycleRecorder>();
+            var go = new GameObject(_name ?? "Screen");
+            // Both screen components so either typed open (SvcScreenView / SvcScreenViewB)
+            // resolves from the same provider-created GameObject.
+            go.AddComponent<SvcScreenView>();
+            go.AddComponent<SvcScreenViewB>();
             if (_parent != null) go.transform.SetParent(_parent, false);
-            LastWindow = go;
             if (Gate != null)
             {
                 var gate = Gate;
@@ -74,25 +89,10 @@ namespace NexusBench
 
         public void ReleaseWindow(GameObject windowInstance)
         {
-            ReleaseCount++;
+            // UIManager pools closed screens instead of releasing them; kept for
+            // interface parity (never exercised by the U1–U7 proof).
             if (windowInstance != null) UnityEngine.Object.Destroy(windowInstance);
         }
-    }
-
-    public sealed class SvcWindowLifecycleRecorder : Component, IUIWindowLifecycle
-    {
-        public static readonly List<string> Events = new();
-        public object LastArgs;
-
-        public ValueTask OnOpeningAsync(object args, CancellationToken ct)
-        {
-            LastArgs = args;
-            Events.Add("opening");
-            return default;
-        }
-        public ValueTask OnOpenedAsync(CancellationToken ct) { Events.Add("opened"); return default; }
-        public ValueTask OnClosingAsync(CancellationToken ct) { Events.Add("closing"); return default; }
-        public ValueTask OnClosedAsync(CancellationToken ct) { Events.Add("closed"); return default; }
     }
 
     public sealed class SvcFlagService : INexusService
@@ -169,7 +169,7 @@ namespace NexusBench
                 RunAnalytics();
                 RunSceneLoader();
                 RunNexusTestContext();
-                RunWindowManager();
+                RunUIManager();
                 RunAds();
                 RunIap();
                 RunZeroGc();
@@ -183,7 +183,7 @@ namespace NexusBench
                 NexusRuntime.Reset();
                 UnityEngine.PlayerPrefs.ClearAll();
                 SceneManager.SimulateReset();
-                SvcWindowLifecycleRecorder.Events.Clear();
+                SvcScreenView.Events.Clear();
                 Time.realtimeSinceStartup = 0f;
                 foreach (var clip in s_clipsToDestroy) UnityEngine.Object.Destroy(clip);
                 s_clipsToDestroy.Clear();
@@ -812,103 +812,112 @@ namespace NexusBench
         }
 
         // =========================================================================
-        // WindowManager — lifecycle order, concurrent-open dedup (E-5), modal blocking
+        // UIManager — lifecycle order, concurrent-open dedup, modal blocking, pooled
+        // reopen (the canonical type-safe UI manager)
         // =========================================================================
 
-        private static void RunWindowManager()
+        private static void RunUIManager()
         {
-            SvcWindowLifecycleRecorder.Events.Clear();
+            SvcScreenView.Events.Clear();
             var ctx = NexusTestHarness.CreateContext();
             try
             {
-                var provider = new SvcWindowProvider();
+                var provider = new SvcScreenProvider();
                 ctx.Context.Container.BindInstance<IUIAssetProvider>(provider);
-                ctx.Context.Container.Bind<IWindowManager, WindowManager>(isSingleton: true);
-                var wm = ctx.Context.Resolve<IWindowManager>() as WindowManager;
-                wm.InitializeAsync(default).GetAwaiter().GetResult();
+                ctx.Context.Container.Bind<IUIManager, UIManager>(isSingleton: true);
+                var ui = ctx.Context.Resolve<IUIManager>() as UIManager;
+                ui.InitializeAsync(default).GetAwaiter().GetResult();
 
-                // W1: full open/close cycle with lifecycle callbacks in order.
-                var opened = wm.OpenWindowAsync("Shop", UILayer.Screen, "payload").GetAwaiter().GetResult();
-                bool openOrder = SvcWindowLifecycleRecorder.Events.Count == 2
-                    && SvcWindowLifecycleRecorder.Events[0] == "opening"
-                    && SvcWindowLifecycleRecorder.Events[1] == "opened";
-                bool openState = wm.IsWindowOpen("Shop") && provider.InstantiateCount == 1;
-                SvcWindowLifecycleRecorder.Events.Clear();
-                wm.CloseWindowAsync("Shop").GetAwaiter().GetResult();
-                bool closeOrder = SvcWindowLifecycleRecorder.Events.Count == 2
-                    && SvcWindowLifecycleRecorder.Events[0] == "closing"
-                    && SvcWindowLifecycleRecorder.Events[1] == "closed";
-                bool closeState = !wm.IsWindowOpen("Shop") && provider.ReleaseCount == 1;
-                Check("W1. Open_Close_Lifecycle_In_Order", openOrder && openState && closeOrder && closeState,
-                    $"open=[{string.Join(",", SvcWindowLifecycleRecorder.Events)}] released={provider.ReleaseCount}");
+                // U1: full open/close cycle with lifecycle callbacks in order.
+                var opened = ui.OpenScreenAsync<SvcScreenView>("payload", UILayer.Screen).GetAwaiter().GetResult();
+                bool openOrder = SvcScreenView.Events.Count == 2
+                    && SvcScreenView.Events[0] == "opening"
+                    && SvcScreenView.Events[1] == "opened";
+                bool openState = opened != null && ui.IsScreenOpen<SvcScreenView>()
+                    && ui.OpenScreenCount == 1 && provider.InstantiateCount == 1
+                    && opened.LastArgs as string == "payload";
+                SvcScreenView.Events.Clear();
+                ui.CloseScreenAsync<SvcScreenView>().GetAwaiter().GetResult();
+                bool closeOrder = SvcScreenView.Events.Count == 2
+                    && SvcScreenView.Events[0] == "closing"
+                    && SvcScreenView.Events[1] == "closed";
+                bool closeState = !ui.IsScreenOpen<SvcScreenView>() && ui.OpenScreenCount == 0;
+                Check("U1. Open_Close_Lifecycle_In_Order", openOrder && openState && closeOrder && closeState,
+                    $"open=[{string.Join(",", SvcScreenView.Events)}] openCount={ui.OpenScreenCount}");
 
-                // W2 (E-5 fix): a second concurrent open of the same window waits for the
-                // pending opener and returns the SAME instance — one instantiation only.
+                // U2: a second open of the same screen while one is mid-open is REJECTED
+                // (pending-set dedup) — one instantiation only, the duplicate returns null.
+                // Uses a FRESH screen type (SvcScreenViewB) so its pool is empty and the
+                // first open really suspends on the gated asset provider (a pooled open
+                // would complete inline instead of staying pending).
                 provider.Gate = new TaskCompletionSource<GameObject>(TaskCreationOptions.RunContinuationsAsynchronously);
-                var t1 = wm.OpenWindowAsync("Shop");
-                var t2 = wm.OpenWindowAsync("Shop");
-                bool bothPending = wm.PendingWindowCount == 1;
+                var t1 = ui.OpenScreenAsync<SvcScreenViewB>();
                 var timeout = Task.Delay(5000);
-                while (wm.PendingWindowCount != 1 && !timeout.IsCompleted)
+                while (ui.PendingScreenCount != 1 && !timeout.IsCompleted)
                 {
                     Thread.Sleep(5);
                 }
-                bool secondWaited = !t2.IsCompleted && !t1.IsCompleted && wm.PendingWindowCount == 1;
+                bool pending = ui.PendingScreenCount == 1;
+                var dup = ui.OpenScreenAsync<SvcScreenViewB>().GetAwaiter().GetResult();
+                bool rejected = dup == null;
                 provider.CreateWindow();
-                var w1 = t1.GetAwaiter().GetResult();
-                var w2 = t2.GetAwaiter().GetResult();
-                bool deduped = ReferenceEquals(w1, w2) && provider.InstantiateCount == 2
-                    && wm.IsWindowOpen("Shop");
-                Check("W2. Concurrent_Open_Deduplicated_Same_Instance", bothPending && secondWaited && deduped,
-                    $"sameInstance={ReferenceEquals(w1, w2)} instantiated={provider.InstantiateCount} pending={wm.PendingWindowCount}");
-                wm.CloseWindowAsync("Shop").GetAwaiter().GetResult();
+                var opened1 = t1.GetAwaiter().GetResult();
+                bool single = opened1 != null && provider.InstantiateCount == 2
+                    && ui.IsScreenOpen<SvcScreenViewB>() && ui.OpenScreenCount == 1;
+                Check("U2. Concurrent_Open_Rejects_Duplicate", pending && rejected && single,
+                    $"pending={pending} rejected={rejected} instantiated={provider.InstantiateCount} openCount={ui.OpenScreenCount}");
+                ui.CloseScreenAsync<SvcScreenViewB>().GetAwaiter().GetResult();
 
-                // W3: CloseTopWindow closes the most recently opened window.
-                SvcWindowLifecycleRecorder.Events.Clear();
-                wm.OpenWindowAsync("A").GetAwaiter().GetResult();
-                wm.OpenWindowAsync("B").GetAwaiter().GetResult();
-                wm.CloseTopWindowAsync().GetAwaiter().GetResult();
-                bool topClosed = !wm.IsWindowOpen("B") && wm.IsWindowOpen("A");
-                Check("W3. CloseTopWindow_Closes_Most_Recent", topClosed,
-                    $"B={wm.IsWindowOpen("B")} A={wm.IsWindowOpen("A")}");
+                // U3: CloseTopScreen closes the most recently opened screen.
+                ui.OpenScreenAsync<SvcScreenView>().GetAwaiter().GetResult();
+                ui.OpenScreenAsync<SvcScreenViewB>().GetAwaiter().GetResult();
+                ui.CloseTopScreenAsync().GetAwaiter().GetResult();
+                bool topClosed = !ui.IsScreenOpen<SvcScreenViewB>() && ui.IsScreenOpen<SvcScreenView>();
+                Check("U3. CloseTopScreen_Closes_Most_Recent", topClosed,
+                    $"B={ui.IsScreenOpen<SvcScreenViewB>()} A={ui.IsScreenOpen<SvcScreenView>()}");
 
-                // W4: a modal window blocks interactivity on all lower layers.
-                wm.OpenWindowAsync("ModalWin", UILayer.Modal).GetAwaiter().GetResult();
+                // U4: a modal screen blocks interactivity on all lower layers.
+                ui.OpenScreenAsync<SvcScreenViewB>(layer: UILayer.Modal).GetAwaiter().GetResult();
                 var hud = GameObject.Find("HUD");
                 var modal = GameObject.Find("Modal");
                 bool modalBlocks = hud != null && modal != null
                     && hud.GetComponent<CanvasGroup>().interactable == false
                     && hud.GetComponent<CanvasGroup>().blocksRaycasts == false
                     && modal.GetComponent<CanvasGroup>().interactable == true;
-                wm.CloseWindowAsync("ModalWin").GetAwaiter().GetResult();
+                ui.CloseScreenAsync<SvcScreenViewB>().GetAwaiter().GetResult();
                 bool unblocked = hud.GetComponent<CanvasGroup>().interactable == true;
-                Check("W4. Modal_Blocks_Lower_Layers_And_Unblocks", modalBlocks && unblocked,
+                Check("U4. Modal_Blocks_Lower_Layers_And_Unblocks", modalBlocks && unblocked,
                     $"hudBlocked={modalBlocks} unblocked={unblocked}");
 
-                // W5: snapshot reports open windows with layer + history order.
-                wm.CloseWindowAsync("A").GetAwaiter().GetResult();
-                wm.OpenWindowAsync("First", UILayer.HUD).GetAwaiter().GetResult();
-                wm.OpenWindowAsync("Second", UILayer.Popup).GetAwaiter().GetResult();
-                var snap = wm.GetOpenWindowsSnapshot();
-                bool snapshot = snap.Count == 2 && snap[0].Name == "First" && snap[1].Name == "Second"
+                // U5: snapshot reports open screens with layer + history order.
+                ui.CloseScreenAsync<SvcScreenView>().GetAwaiter().GetResult();
+                ui.OpenScreenAsync<SvcScreenView>(layer: UILayer.HUD).GetAwaiter().GetResult();
+                ui.OpenScreenAsync<SvcScreenViewB>(layer: UILayer.Popup).GetAwaiter().GetResult();
+                var snap = ui.GetOpenScreensSnapshot();
+                bool snapshot = snap.Count == 2 && snap[0].Name == "SvcScreenView" && snap[1].Name == "SvcScreenViewB"
                     && snap[0].Layer == UILayer.HUD && snap[1].Layer == UILayer.Popup
                     && snap[0].HistoryOrder < snap[1].HistoryOrder;
-                Check("W5. Snapshot_Sorted_By_Open_Order", snapshot,
+                Check("U5. Snapshot_Sorted_By_Open_Order", snapshot,
                     $"snapshot=[{string.Join(",", snap.Select(s => s.Name))}]");
 
-                // W6: reopen after close instantiates fresh.
-                wm.CloseAllAsync().GetAwaiter().GetResult();
-                wm.OpenWindowAsync("First").GetAwaiter().GetResult();
-                bool reopen = wm.IsWindowOpen("First") && provider.InstantiateCount == 8;
-                Check("W6. Reopen_After_Close_Instantiates_Fresh", reopen,
-                    $"instantiated={provider.InstantiateCount}");
+                // U6: close pools the instance; reopen reuses the SAME pooled screen
+                // (no fresh instantiation).
+                int beforeReopen = provider.InstantiateCount;
+                var first = ui.GetScreen<SvcScreenView>();
+                ui.CloseScreenAsync<SvcScreenView>().GetAwaiter().GetResult();
+                var reopened = ui.OpenScreenAsync<SvcScreenView>().GetAwaiter().GetResult();
+                bool pooledReuse = reopened != null && ReferenceEquals(first, reopened)
+                    && provider.InstantiateCount == beforeReopen;
+                Check("U6. Reopen_Reuses_Pooled_Instance", pooledReuse,
+                    $"sameInstance={ReferenceEquals(first, reopened)} instantiated={provider.InstantiateCount} (before={beforeReopen}; pooled => no fresh instantiation)");
+                ui.CloseAllAsync().GetAwaiter().GetResult();
 
-                wm.Dispose();
-                bool disposed = false;
-                try { disposed = !wm.IsWindowOpen("First"); }
-                catch (ObjectDisposedException) { disposed = true; }
-                Check("W7. Dispose_Cleans_Windows_And_Canvas", disposed,
-                    $"IsWindowOpen={disposed} (ObjectDisposedException after Dispose = disposed)");
+                // U7: dispose destroys screens; queries and snapshot are safe afterwards.
+                ui.Dispose();
+                bool disposed = !ui.IsScreenOpen<SvcScreenView>() && ui.OpenScreenCount == 0
+                    && ui.GetOpenScreensSnapshot().Count == 0 && ui.PendingScreenCount == 0;
+                Check("U7. Dispose_Cleans_Screens_And_Canvas", disposed,
+                    $"IsScreenOpen={ui.IsScreenOpen<SvcScreenView>()} openCount={ui.OpenScreenCount}");
             }
             finally
             {

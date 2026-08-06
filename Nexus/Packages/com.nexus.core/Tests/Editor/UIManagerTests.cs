@@ -126,5 +126,41 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(0, _uiManager.OpenScreenCount);
             Assert.IsFalse(_uiManager.IsScreenOpen<TestScreenView>());
         }
+
+        [Test]
+        public void OpenScreen_FiresScreenOpenedEvent_WithArgs()
+        {
+            object firedArgs = null;
+            var screen = _uiManager.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+            screen.ScreenOpened += args => firedArgs = args;
+
+            // Close pools the instance; the pooled reopen re-runs the open lifecycle
+            // and raises ScreenOpened with the new payload.
+            _uiManager.CloseScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+            _uiManager.OpenScreenAsync<TestScreenView>("reopen").GetAwaiter().GetResult();
+
+            Assert.AreEqual("reopen", firedArgs);
+        }
+
+        [Test]
+        public void CloseScreen_FiresScreenClosedEvent()
+        {
+            bool fired = false;
+            var screen = _uiManager.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+            screen.ScreenClosed += () => fired = true;
+
+            _uiManager.CloseScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+
+            Assert.IsTrue(fired);
+        }
+
+        [Test]
+        public void OpenScreen_OnSpecifiedLayer_ParentsToLayerRoot()
+        {
+            var screen = _uiManager.OpenScreenAsync<TestScreenView>(layer: UILayer.HUD).GetAwaiter().GetResult();
+
+            Assert.IsNotNull(screen);
+            Assert.AreEqual("HUD", screen.transform.parent.name);
+        }
     }
 }

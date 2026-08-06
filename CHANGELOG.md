@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- **`WindowManager` / `IWindowManager` deleted** — the legacy string-keyed window API is gone; `UIManager` (type-safe `ScreenView` API with pooling) is the single UI manager. `UILayer`/`IUIWindowLifecycle` extracted to their own files; demo screens migrated to `ScreenView`; the analyzer migration-driver rule NEXUS004 and its editor tests retired; benchmark W1–W7 migrated to UIManager U1–U7.
+
+### Changed
+- **Demo + tooling consolidated on `UIManager`** — demo screens derive from `ScreenView` and open via `IUIManager.OpenScreenAsync<TScreen>`; `CasualServicesPlugin` drives UIManager's new non-blocking `GetOpenScreensSnapshot`/`PendingScreenCount`; `CounterLifecycle` sample binds `IUIManager`. UIManager editor tests extended (`ScreenOpened`/`ScreenClosed` events, layer-root parenting).
+
 ### Performance
 - **`Binder.Unbind` O(n) scan (`Binder.cs`)**: added a secondary key index so `Unbind` removes a key's bindings directly instead of scanning the whole entry table under the exclusive write lock (which blocked every concurrent `Get`/`TryGet` reader). Reads are untouched; index entries are deduplicated on rebind.
 - **`CommandExecutor` timeout path (`CommandExecutor.cs`)**: the timeout logic (linked `CancellationTokenSource` + `CancelAfter` timer, allocated per async dispatch) was duplicated inline in the object-path dispatcher; it is now consolidated into the single `ExecuteAsyncDispatcherWithOptionalTimeout` helper, and the linked CTS is skipped entirely when the parent token is already cancelled (teardown floods allocate nothing). Commands without `[CommandTimeout]` keep the zero-allocation direct path.

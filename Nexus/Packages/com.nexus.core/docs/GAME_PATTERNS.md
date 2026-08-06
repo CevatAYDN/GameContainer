@@ -74,7 +74,7 @@ This guide describes recommended Nexus Core architectural setups, context topolo
   - `ProgressionService` for linear/exponential upgrade cost curves.
   - `TickService` + `ITickable` for passive income per-second simulation.
   - `EncryptedStorageService` for offline earnings persistence.
-  - `WindowManager` (HUD → Shop → Prestige modal) layered UI navigation.
+  - `UIManager` (HUD → Shop → Prestige modal) layered UI navigation.
   - `Sequential` mode for discrete upgrades; `Composite` triggers for multi-resource milestones.
 - **Performance Budget:** 60 FPS, < 500B GC/frame, < 30 draw calls (UI-heavy).
 - **Offline Earnings Example:**

@@ -8,9 +8,9 @@ namespace Nexus.Core.Services
     /// <summary>
     /// Owns the in-game UGUI canvas hierarchy and layer interactivity policy.
     ///
-    /// Extracted from <see cref="WindowManager"/> so the window manager reads as a pure
-    /// window-lifecycle orchestrator (open/close/stack/locking) while all canvas
-    /// plumbing — root creation, per-layer transforms, modal blocking — lives here once.
+    /// Shared by <see cref="UIManager"/> so the screen manager reads as a pure screen
+    /// orchestrator (open/close/stack/pooling) while all canvas plumbing — root creation,
+    /// per-layer transforms, modal blocking — lives here once.
     ///
     /// In-game UI is UGUI (see docs/adr); editor screens use UI Toolkit separately, so
     /// this module is the single place where the runtime canvas policy is decided.
@@ -144,9 +144,9 @@ namespace Nexus.Core.Services
 
         /// <summary>
         /// Drops all references to the canvas WITHOUT destroying it. The [Nexus_UICanvas]
-        /// GameObject is a shared DontDestroyOnLoad singleton that may be referenced by
-        /// several owners (WindowManager, UIManager) at once — no single owner may destroy
-        /// it on teardown (see UIManager.Dispose). Scene/context teardown cleans it up.
+        /// GameObject is a shared DontDestroyOnLoad singleton that may outlive a single
+        /// UIManager instance across scene/context teardown — this owner must not destroy it
+        /// (see UIManager.Dispose). Scene/context teardown cleans it up.
         /// </summary>
         public void ReleaseWithoutDestroy()
         {

@@ -7,7 +7,7 @@ namespace Nexus.Demo
 {
     /// <summary>Game over screen view.</summary>
     [Mediator(typeof(GameOverMediator))]
-    public class GameOverScreen : View
+    public class GameOverScreen : ScreenView
     {
         [SerializeField] private Text finalLevelText;
         [SerializeField] private Text coinsEarnedText;

@@ -443,6 +443,63 @@ namespace Nexus.Core.Services
             }
         }
 
+        // ── Editor introspection ────────────────────────────────────────
+
+        /// <summary>Immutable description of one open screen for editor visibility.</summary>
+        public readonly struct ScreenInfo
+        {
+            public readonly string Name;
+            public readonly UILayer Layer;
+            public readonly int HistoryOrder;
+            public readonly bool IsAlive;
+            public ScreenInfo(string name, UILayer layer, int historyOrder, bool isAlive)
+            {
+                Name = name; Layer = layer; HistoryOrder = historyOrder; IsAlive = isAlive;
+            }
+        }
+
+        /// <summary>
+        /// Non-blocking snapshot of currently open screens with their UI layer and open order.
+        /// Read-only: never mutates manager state. Intended for editor tooling
+        /// (CasualServicesPlugin's live screen stack). Returns an empty list while the
+        /// manager is disposing or the lock is contended.
+        /// </summary>
+        public IReadOnlyList<ScreenInfo> GetOpenScreensSnapshot()
+        {
+            var result = new List<ScreenInfo>();
+            if (_disposed || !Monitor.TryEnter(_lock)) return result;
+            try
+            {
+                foreach (var kvp in _activeScreens)
+                {
+                    int order = _history.LastIndexOf(kvp.Key);
+                    // Check aliveness FIRST: a Unity screen whose GameObject was destroyed
+                    // externally compares == null while still being a tracked entry —
+                    // dereferencing .gameObject on it would throw MissingReferenceException.
+                    bool alive = kvp.Value != null;
+                    UILayer layer = alive ? _canvas.ResolveLayer(kvp.Value.gameObject) : UILayer.Screen;
+                    result.Add(new ScreenInfo(kvp.Key, layer, order, alive));
+                }
+            }
+            finally
+            {
+                Monitor.Exit(_lock);
+            }
+            result.Sort((a, b) => a.HistoryOrder.CompareTo(b.HistoryOrder));
+            return result;
+        }
+
+        /// <summary>Number of screens currently mid-open (awaiting instantiation).</summary>
+        public int PendingScreenCount
+        {
+            get
+            {
+                if (_disposed || !Monitor.TryEnter(_lock)) return 0;
+                try { return _pendingOpens.Count; }
+                finally { Monitor.Exit(_lock); }
+            }
+        }
+
         // ── Internals ─────────────────────────────────────────────────
 
         // Dirty-flagged cache for the active-GameObjects view. Every
@@ -508,9 +565,9 @@ namespace Nexus.Core.Services
             }
 
             // NOTE: do not destroy the shared [Nexus_UICanvas] here. It is a DontDestroyOnLoad
-            // singleton that may also be referenced by the WindowManager when both services are
-            // bound in the same context; destroying it from either owner would break the other.
-            // Scene/context teardown cleans it up.
+            // singleton shared by every UI canvas owner across scene/context teardown;
+            // destroying it from any single owner would break the next owner. Scene/context
+            // teardown cleans it up.
             base.Dispose();
         }
     }

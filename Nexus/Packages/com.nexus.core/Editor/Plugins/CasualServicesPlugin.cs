@@ -4,10 +4,6 @@ using UnityEngine.UIElements;
 using Nexus.Core;
 using Nexus.Core.Services;
 
-// R2026-A2: this debug panel intentionally drives the legacy WindowManager API
-// (it exists to exercise that service). Suppress the deprecation warning locally.
-#pragma warning disable CS0618
-
 namespace Nexus.Editor.Plugins
 {
     public class CasualServicesPlugin : NexusEditorPlugin
@@ -23,7 +19,6 @@ namespace Nexus.Editor.Plugins
         private TextField _currencyNameField;
         private LongField _currencyAmountField;
         private IntegerField _levelField;
-        private TextField _windowNameField;
         private VisualElement _openWindowsList;
         private double _lastRefreshTime;
 
@@ -108,21 +103,17 @@ namespace Nexus.Editor.Plugins
             progSection.Add(setLevelBtn);
             _content.Add(progSection);
 
-            // UI Window Stack Section
+            // UI Screen Stack Section
             var uiSection = CreateSectionBox(NexusLang.Get("cs_sec_ui"));
-            _windowNameField = new TextField(NexusLang.Get("cs_window_name")) { value = "ShopScreen" };
-            uiSection.Add(_windowNameField);
-            var openWinBtn = new Button(OnOpenWindow) { text = NexusLang.Get("cs_open_window") };
-            var closeTopBtn = new Button(OnCloseTopWindow) { text = NexusLang.Get("cs_close_top") };
-            uiSection.Add(openWinBtn);
+            var closeTopBtn = new Button(OnCloseTopScreen) { text = NexusLang.Get("cs_close_top") };
             uiSection.Add(closeTopBtn);
 
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IWindowManager)))
+            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IUIManager)))
             {
-                var winMgr = root.Context.Resolve<IWindowManager>();
-                if (winMgr is WindowManager concreteWinMgr && concreteWinMgr.AssetProvider != null)
+                var uiMgr = root.Context.Resolve<IUIManager>();
+                if (uiMgr is UIManager concreteUiMgr && concreteUiMgr.AssetProvider != null)
                 {
-                    var providerLabel = new Label(string.Format(NexusLang.Get("cs_asset_provider"), concreteWinMgr.AssetProvider.GetType().Name));
+                    var providerLabel = new Label(string.Format(NexusLang.Get("cs_asset_provider"), concreteUiMgr.AssetProvider.GetType().Name));
                     providerLabel.style.fontSize = 10;
                     providerLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
                     providerLabel.style.marginTop = 4;
@@ -130,7 +121,7 @@ namespace Nexus.Editor.Plugins
                 }
             }
 
-            // Live open-window stack (G-3): refreshed on a 500 ms schedule.
+            // Live open-screen stack (G-3): refreshed on a 500 ms schedule.
             var winStackTitle = new Label(NexusLang.Get("cs_open_stack"));
             winStackTitle.style.fontSize = 11;
             winStackTitle.style.unityFontStyleAndWeight = FontStyle.Bold;
@@ -174,36 +165,36 @@ namespace Nexus.Editor.Plugins
             _openWindowsList.Clear();
 
             var root = FindActiveRoot();
-            if (root?.Context == null || !root.Context.Container.IsRegistered(typeof(IWindowManager)))
+            if (root?.Context == null || !root.Context.Container.IsRegistered(typeof(IUIManager)))
             {
-                _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_no_windowmanager")));
+                _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_no_uimanager")));
                 return;
             }
-            if (root.Context.Resolve<IWindowManager>() is not WindowManager winMgr)
+            if (root.Context.Resolve<IUIManager>() is not UIManager uiMgr)
             {
-                _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_custom_windowmanager")));
+                _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_custom_uimanager")));
                 return;
             }
 
-            var windows = winMgr.GetOpenWindowsSnapshot();
-            var header = new Label(string.Format(NexusLang.Get("cs_stack_header"), windows.Count, winMgr.PendingWindowCount));
+            var screens = uiMgr.GetOpenScreensSnapshot();
+            var header = new Label(string.Format(NexusLang.Get("cs_stack_header"), screens.Count, uiMgr.PendingScreenCount));
             header.style.fontSize = 10;
             header.style.unityFontStyleAndWeight = FontStyle.Bold;
             header.style.color = new StyleColor(new Color(0.7f, 0.9f, 1f));
             _openWindowsList.Add(header);
 
-            if (windows.Count == 0)
+            if (screens.Count == 0)
             {
                 _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_stack_empty")));
                 return;
             }
 
-            for (int i = 0; i < windows.Count; i++)
+            for (int i = 0; i < screens.Count; i++)
             {
-                var w = windows[i];
-                var row = new Label($"  {i + 1}. {w.Name}   [{w.Layer}]{(w.IsAlive ? "" : NexusLang.Get("cs_destroyed_suffix"))}");
+                var s = screens[i];
+                var row = new Label($"  {i + 1}. {s.Name}   [{s.Layer}]{(s.IsAlive ? "" : NexusLang.Get("cs_destroyed_suffix"))}");
                 row.style.fontSize = 10;
-                row.style.color = new StyleColor(w.IsAlive ? new Color(0.85f, 0.85f, 0.85f) : new Color(0.8f, 0.4f, 0.4f));
+                row.style.color = new StyleColor(s.IsAlive ? new Color(0.85f, 0.85f, 0.85f) : new Color(0.8f, 0.4f, 0.4f));
                 _openWindowsList.Add(row);
             }
         }
@@ -268,23 +259,13 @@ namespace Nexus.Editor.Plugins
             }
         }
 
-        private void OnOpenWindow()
+        private void OnCloseTopScreen()
         {
             var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IWindowManager)))
+            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IUIManager)))
             {
-                var winMgr = root.Context.Resolve<IWindowManager>();
-                winMgr?.OpenWindow(_windowNameField.value);
-            }
-        }
-
-        private void OnCloseTopWindow()
-        {
-            var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IWindowManager)))
-            {
-                var winMgr = root.Context.Resolve<IWindowManager>();
-                winMgr?.CloseTopWindow();
+                var uiMgr = root.Context.Resolve<IUIManager>();
+                uiMgr?.CloseTopScreenAsync();
             }
         }
 

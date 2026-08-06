@@ -20,7 +20,7 @@ Bu rapor, 13 servisin **tamamını** kapsayan satır satır incelemenin sonucudu
 |---|--------|-------|-----------------|-------------|-----------|----------------------|
 | 1 | `EncryptedStorageService` | ✅ Temiz | Yok (path cache) | Yok | AES-256 + HMAC + device-bound | Hayır |
 | 2 | `ObjectPoolService` | ✅ Temiz | Yok (dictionary) | Yok | — | Hayır |
-| 3 | `WindowManager` | ✅ Temiz | Yok | Yok | — | Hayır |
+| 3 | `UIManager` | ✅ Temiz | Yok (dirty-flag cache) | Yok | — | Hayır |
 | 4 | `AudioService` | ⚠️ Düzeltildi | **Yok artık** | **Kapatıldı** | — | **Evet** (havuz sınırı) |
 | 5 | `HapticService` | ⚠️ Düzeltildi | **Yok artık** | Yok | — | **Evet** (JNI önbellek) |
 | 6 | `FeedbackService` | ✅ Temiz | Yok | Yok | — | Hayır |
@@ -59,14 +59,21 @@ Bu rapor, 13 servisin **tamamını** kapsayan satır satır incelemenin sonucudu
 - **Concurrency:** Mono-behaviour tabanlı olduğundan main-thread, lock yok (Unity API zaten thread-safe değil).
 - **Bulgular:** Yok.
 
-## 3. `WindowManager` — UI ✅
+## 3. `UIManager` — UI ✅
 
-**Dosya:** `Runtime/Services/UI/WindowManager.cs`
+**Dosya:** `Runtime/Services/UI/UIManager.cs`
 
-- **Katmanlar:** Background → System (7 katman) canvas yığını, `sortingOrder` ile.
-- **Concurrency:** `SemaphoreSlim` lock; E-5 fix'i lock kapsamını genişleterek yarış penceresini kapattı. `OpenWindowAsync` için 30sn pending timeout — sonsuz spin yok.
-- **Hot-path tahsis:** `UpdateLayerInteractivity` yalnızca open/close'ta çalışır — per-frame değil.
-- **Sorgu güvenliği:** `IsWindowOpen`/`GetWindow` `Wait(50)` sınırlı kilit beklemesi — `Wait(0)` false-negative tuzağından kaçınılmış.
+> **2026-08-06:** Eski `WindowManager` (string-keyed legacy API) tamamen kaldırıldı —
+> `UIManager` tek UI yöneticisidir. `UILayer` ve `IUIWindowLifecycle` `WindowManager.cs`'ten
+> ayrı dosyalara çıkarıldı; benchmark'ın W1–W7 kanıtları U1–U7 (`UIManager`) olarak taşındı.
+> Demo ekranları `ScreenView` tabanına geçti; NEXUS004 analyzer kuralı emekli edildi.
+
+- **Kanoniik yapı:** Tip-güvenli `ScreenView` API (`OpenScreenAsync<TScreen>`), havuzlanmış örnekler, `RegisterScreenPrefab`.
+- **Katmanlar:** Background → System (7 katman) canvas yığını, `sortingOrder` ile (`UICanvasSystem` paylaşır).
+- **Concurrency:** `lock` korumalı; eşzamanlı çift açılış `_pendingOpens` ile reddedilir (tek instantiation).
+- **Hot-path tahsis:** `UpdateLayerInteractivity` yalnızca open/close'ta çalışır — per-frame değil; aktif-GameObject görünümü dirty-flag cache'li.
+- **Pooling:** Kapatılan ekran deaktive edilip havuzlanır (`MaxPooledPerScreenKey=16`); yeniden açılış aynı örneği yeniden kullanır.
+- **Editör introspesiyonu:** `GetOpenScreensSnapshot`/`PendingScreenCount` non-blocking (`Monitor.TryEnter`).
 - **Bulgular:** Yok.
 
 ## 4. `AudioService` — Audio ⚠️→✅ (DÜZELTİLDİ)

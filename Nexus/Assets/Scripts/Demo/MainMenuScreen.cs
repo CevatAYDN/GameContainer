@@ -7,7 +7,7 @@ namespace Nexus.Demo
 {
     /// <summary>Main menu screen view.</summary>
     [Mediator(typeof(MainMenuMediator))]
-    public class MainMenuScreen : View
+    public class MainMenuScreen : ScreenView
     {
         [SerializeField] private Button playButton;
         [SerializeField] private Button shopButton;

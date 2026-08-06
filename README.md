@@ -52,7 +52,7 @@ Nexus is designed to solve debuggability and observability issues common in trad
 | :-: | :--- | :--- | :--- |
 | **1** | **`EncryptedStorageService`** | `Nexus.Core.Services.EncryptedStorageService` | AES-256 encrypted, HMAC-SHA256 tamper-proof, device-bound local save storage. |
 | **2** | **`ObjectPoolService`** | `Nexus.Core.Services.ObjectPoolService` | Universal GameObject/Component pool with prewarming, `IPoolable` callbacks, and timed auto-despawn. |
-| **3** | **`WindowManager`** | `Nexus.Core.Services.WindowManager` | Multi-layered UI canvas stack (`HUD`, `Screen`, `Popup`, `Modal`), async loading, back-button history navigation. |
+| **3** | **`UIManager`** | `Nexus.Core.Services.UIManager` | Type-safe screen manager (typed `ScreenView` API, pooled instances), multi-layer canvas stack (`HUD`, `Screen`, `Popup`, `Modal`), async loading, close-top navigation. |
 | **4** | **`AudioService`** | `Nexus.Core.Services.AudioService` | BGM playlist crossfading, 2D/3D SFX AudioSource pool, random pitch variation, volume channels. |
 | **5** | **`HapticService`** | `Nexus.Core.Services.HapticService` | Zero-alloc Android JNI handle caching, iOS Taptic Engine integration, desktop preview. |
 | **6** | **`FeedbackService`** | `Nexus.Core.Services.FeedbackService` | Orchestrates combined Audio + Haptics ("Juice") presets (`CoinCollect`, `SuccessFanfare`, `Impact`). |
@@ -343,7 +343,7 @@ Nexus, geleneksel DI ve Event-Driven kütüphanelerindeki izlenebilirlik (debugg
 | :-: | :--- | :--- | :--- |
 | **1** | **`EncryptedStorageService`** | `Nexus.Core.Services.EncryptedStorageService` | AES-256 şifreli, HMAC-SHA256 kurcalama korumalı ve cihaza özel donanım anahtarlı kayıt servisi. |
 | **2** | **`ObjectPoolService`** | `Nexus.Core.Services.ObjectPoolService` | Prewarming, `IPoolable` ve süreli oto-despawn destekli evrensel GameObject/Component havuzu. |
-| **3** | **`WindowManager`** | `Nexus.Core.Services.WindowManager` | Katmanlı UI yığını (`HUD`, `Screen`, `Popup`, `Modal`), asenkron yükleme ve mobil geri tuşu geçmişi. |
+| **3** | **`UIManager`** | `Nexus.Core.Services.UIManager` | Tip-güvenli ekran yöneticisi (tipli `ScreenView` API, havuzlanmış örnekler), katmanlı canvas yığını (`HUD`, `Screen`, `Popup`, `Modal`), asenkron yükleme ve üst-ekran navigasyonu. |
 | **4** | **`AudioService`** | `Nexus.Core.Services.AudioService` | BGM playlist yumuşak geçişleri (crossfade), 2D/3D SFX audio havuzu ve pitch varyasyonu. |
 | **5** | **`HapticService`** | `Nexus.Core.Services.HapticService` | Zero-alloc Android JNI handle cachi'li titreşim yönetimi, iOS Taptic Engine ve masaüstü önizleme. |
 | **6** | **`FeedbackService`** | `Nexus.Core.Services.FeedbackService` | Oyun içi "Juice" hissi için Ses + Titreşim kombinasyon hazır ayarları (`CoinCollect`, `SuccessFanfare`, `Impact`). |

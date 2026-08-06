@@ -7,7 +7,7 @@ namespace Nexus.Demo
 {
     /// <summary>Shop screen view - shows IAP products and virtual currency purchases.</summary>
     [Mediator(typeof(ShopMediator))]
-    public class ShopScreen : View
+    public class ShopScreen : ScreenView
     {
         [SerializeField] private Text coinsText;
         [SerializeField] private Text gemsText;

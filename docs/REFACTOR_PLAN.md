@@ -226,7 +226,7 @@ builder.BindService<TickService>();             // frame update için erken laz�
 // ...
 ```
 
-**Önce kontrol et:** Hangi servis gerçekten `OnStart` öncesi lazım? Çoğu muhtemelen değil. Sadece `TickService`, `AudioService` (prewarm için), `WindowManager` (ilk pencere lazım), `ObjectPoolService` (prewarm için) → bunlar eager. Diğerleri lazy.
+**Önce kontrol et:** Hangi servis gerçekten `OnStart` öncesi lazım? Çoğu muhtemelen değil. Sadece `TickService`, `AudioService` (prewarm için), `UIManager` (ilk ekran lazım), `ObjectPoolService` (prewarm için) → bunlar eager. Diğerleri lazy.
 
 **Beklenen kazanç:** 13 → 4 eager service = **%60-70 daha az injection** + **%60-70 daha az async init work** boot'ta.
 

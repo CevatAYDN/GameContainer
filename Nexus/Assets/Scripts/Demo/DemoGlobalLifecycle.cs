@@ -13,7 +13,7 @@ namespace Nexus.Demo
     ///  - <c>BindServiceInterfacesAndSelfTo&lt;T&gt;</c>: interfaces + concrete type share ONE
     ///    singleton AND the service is eagerly initialized at startup — required for services
     ///    whose InitializeAsync sets up runtime state (TickService driver, AudioService
-    ///    sources, WindowManager canvas, SaveThrottler tick registration, ObjectPoolService
+    ///    sources, UIManager canvas, SaveThrottler tick registration, ObjectPoolService
     ///    root, ProgressionService prefs load).
     ///  - <c>BindInterfacesAndSelfTo&lt;T&gt;</c>: same shared singleton, constructed on first
     ///    resolve — fine for services with no startup-time work.
@@ -29,15 +29,12 @@ namespace Nexus.Demo
 
             // ── Providers required by the services below ──
             builder.BindInterfacesAndSelfTo<DefaultAudioRootProvider>();  // IAudioRootProvider (AudioService)
-            builder.BindInterfacesAndSelfTo<ResourcesUIAssetProvider>();  // IUIAssetProvider (WindowManager/UIManager)
+            builder.BindInterfacesAndSelfTo<ResourcesUIAssetProvider>();  // IUIAssetProvider (UIManager)
             builder.BindInterfacesAndSelfTo<UnityTimeProvider>();         // ITimeProvider (SaveThrottler)
 
             // ── Eager services (InitializeAsync must run at startup) ──
             builder.BindServiceInterfacesAndSelfTo<ObjectPoolService>();
             builder.BindServiceInterfacesAndSelfTo<UIManager>();
-#pragma warning disable CS0618
-            builder.BindServiceInterfacesAndSelfTo<WindowManager>();
-#pragma warning restore CS0618
             builder.BindServiceInterfacesAndSelfTo<AudioService>();
             builder.BindServiceInterfacesAndSelfTo<TickService>();
             builder.BindServiceInterfacesAndSelfTo<SaveThrottler>();

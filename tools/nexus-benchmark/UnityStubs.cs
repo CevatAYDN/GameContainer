@@ -793,7 +793,7 @@ namespace UnityEngine
         WorldSpace = 2
     }
 
-    /// <summary>Unity Canvas — functional sort-order state for the WindowManager layers.</summary>
+    /// <summary>Unity Canvas — functional sort-order state for the UIManager layer roots.</summary>
     public class Canvas : Component
     {
         public RenderMode renderMode = RenderMode.ScreenSpaceOverlay;
@@ -927,7 +927,7 @@ namespace UnityEngine.Assertions
 
 namespace UnityEngine.UI
 {
-    /// <summary>Unity UI scaler — enum surface only for the WindowManager canvas setup.</summary>
+    /// <summary>Unity UI scaler — enum surface only for the UIManager canvas setup.</summary>
     public class CanvasScaler : Component
     {
         public enum ScaleMode

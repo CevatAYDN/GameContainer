@@ -30,7 +30,7 @@ namespace Nexus.Samples.Counter
             builder.BindService<IEconomyService, EconomyService>();
             builder.BindService<IProgressionService, ProgressionService>();
             builder.BindService<IFeedbackService, FeedbackService>();
-            builder.BindService<IWindowManager, WindowManager>();
+            builder.BindService<IUIManager, UIManager>();
 
             // ── Error Recovery ────────────────────────────────────
             // SignalBus auto-resolves this when a command throws.

@@ -10,14 +10,13 @@ namespace Nexus.Core.Services
     /// Base class for Nexus UI screens.
     ///
     /// A screen is a <see cref="View"/> that is opened/closed by the <see cref="UIManager"/>
-    /// (or the name-based <see cref="WindowManager"/>) on a dedicated canvas layer. Because it
-    /// derives from View, the standard Nexus pipeline — OnEnable → ViewRegistration →
-    /// Context.RegisterView → ViewBinder — attaches its mediator automatically the moment the
-    /// screen prefab is instantiated. UIManager only handles layering, pooling and lifecycle
-    /// ordering; it never touches the mediator itself.
+    /// on a dedicated canvas layer. Because it derives from View, the standard Nexus pipeline
+    /// — OnEnable → ViewRegistration → Context.RegisterView → ViewBinder — attaches its
+    /// mediator automatically the moment the screen prefab is instantiated. UIManager only
+    /// handles layering, pooling and lifecycle ordering; it never touches the mediator itself.
     ///
-    /// Implement <see cref="IUIWindowLifecycle"/> so screens are fully interoperable with the
-    /// existing <see cref="WindowManager"/> and its async open/close pipeline.
+    /// Implements <see cref="IUIWindowLifecycle"/> so screens integrate with UIManager's
+    /// async open/close pipeline (opening → opened → closing → closed).
     /// </summary>
     [Preserve]
     public abstract class ScreenView : View, IUIWindowLifecycle

@@ -9,12 +9,9 @@ namespace Nexus.Demo
     public class DemoUICommand : ICommand<DemoUISignal>
     {
         [Inject] private IDemoUIModel _uiModel;
-#pragma warning disable CS0618
-        // Demo screens are string-keyed and derive from View (not ScreenView), so they
-        // are opened through the legacy WindowManager API until they are migrated to
-        // UIManager's typed OpenScreenAsync<TScreen> (TScreen : ScreenView).
-        [Inject] private WindowManager _windowManager;
-#pragma warning restore CS0618
+        // Demo screens are ScreenViews, opened through the canonical UIManager's typed
+        // OpenScreenAsync<TScreen> API (type-safe keys + pooled instances).
+        [Inject] private IUIManager _uiManager;
         [Inject] private AdService _adService;
         [Inject] private IapService _iapService;
         [Inject] private EconomyService _economy;
@@ -27,22 +24,22 @@ namespace Nexus.Demo
             {
                 case DemoUISignalType.ShowMainMenu:
                     _uiModel.SetScreen("MainMenu");
-                    _ = OpenWindowAsync("MainMenuScreen", UILayer.Screen);
+                    _ = OpenScreenAsync<MainMenuScreen>(UILayer.Screen);
                     break;
 
                 case DemoUISignalType.ShowGameplayHUD:
                     _uiModel.SetScreen("GameplayHUD");
-                    _ = OpenWindowAsync("GameplayHUD", UILayer.HUD);
+                    _ = OpenScreenAsync<GameplayHUD>(UILayer.HUD);
                     break;
 
                 case DemoUISignalType.ShowGameOver:
                     _uiModel.SetScreen("GameOver");
-                    _ = OpenWindowAsync("GameOverScreen", UILayer.Popup);
+                    _ = OpenScreenAsync<GameOverScreen>(UILayer.Popup);
                     break;
 
                 case DemoUISignalType.ShowShop:
                     _uiModel.SetScreen("Shop");
-                    _ = OpenWindowAsync("ShopScreen", UILayer.Screen);
+                    _ = OpenScreenAsync<ShopScreen>(UILayer.Screen);
                     break;
 
                 case DemoUISignalType.UpdateCurrency:
@@ -63,16 +60,17 @@ namespace Nexus.Demo
             }
         }
 
-        /// <summary>Opens a window on the specified layer, surfacing failures via the logger.</summary>
-        private async System.Threading.Tasks.Task OpenWindowAsync(string windowName, UILayer layer)
+        /// <summary>Opens a screen on the specified layer, surfacing failures via the logger.</summary>
+        private async System.Threading.Tasks.Task OpenScreenAsync<TScreen>(UILayer layer = UILayer.Screen)
+            where TScreen : ScreenView
         {
             try
             {
-                await _windowManager.OpenWindowAsync(windowName, layer);
+                await _uiManager.OpenScreenAsync<TScreen>(layer: layer);
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[Demo] Failed to open window '{windowName}': {ex.Message}");
+                Debug.LogError($"[Demo] Failed to open screen '{typeof(TScreen).Name}': {ex.Message}");
             }
         }
 

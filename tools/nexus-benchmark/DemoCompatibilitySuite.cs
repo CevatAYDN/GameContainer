@@ -99,8 +99,8 @@ namespace NexusBench
                     context.TryResolve<IUIAssetProvider>() != null,
                     context.TryResolve<ITimeProvider>() != null,
                     context.TryResolve<IObjectPoolService>() != null,
-                    context.TryResolve<IWindowManager>() != null,
-                    context.TryResolve<WindowManager>() != null,
+                    context.TryResolve<IUIManager>() != null,
+                    context.TryResolve<UIManager>() != null,
                     context.TryResolve<IAudioService>() != null,
                     context.TryResolve<AudioService>() != null,
                     context.TryResolve<ITickService>() != null,
@@ -151,11 +151,11 @@ namespace NexusBench
                 bool commandWired = DemoCompatUICommand.FiredCount == 1;
 
                 // ── Negative control: the validator has teeth. Drop IUIAssetProvider →
-                //    WindowManager's [Inject] dependency must be flagged (the pre-fix demo). ──
+                //    UIManager's [Inject] dependency must be flagged (the pre-fix demo). ──
                 var badData = ScriptableObject.CreateInstance<ContextData>();
                 badContext = new Context(parent: null, contextData: badData);
                 var badBuilder = new ContextBuilder(badContext.Container, badContext.SignalBusInternal);
-                badBuilder.BindServiceInterfacesAndSelfTo<WindowManager>();
+                badBuilder.BindServiceInterfacesAndSelfTo<UIManager>();
                 bool validatorHasTeeth = badBuilder.Validate().Count >= 1;
 
                 bool ok = cleanGraph && booted && allResolve && sharedSingleton && commandWired && validatorHasTeeth;
@@ -191,12 +191,12 @@ namespace NexusBench
 
             // ── Providers required by the services below ──
             builder.BindInterfacesAndSelfTo<DefaultAudioRootProvider>();  // IAudioRootProvider (AudioService)
-            builder.BindInterfacesAndSelfTo<ResourcesUIAssetProvider>();  // IUIAssetProvider (WindowManager)
+            builder.BindInterfacesAndSelfTo<ResourcesUIAssetProvider>();  // IUIAssetProvider (UIManager)
             builder.BindInterfacesAndSelfTo<UnityTimeProvider>();         // ITimeProvider (SaveThrottler)
 
             // ── Eager services (InitializeAsync must run at startup) ──
             builder.BindServiceInterfacesAndSelfTo<ObjectPoolService>();
-            builder.BindServiceInterfacesAndSelfTo<WindowManager>();
+            builder.BindServiceInterfacesAndSelfTo<UIManager>();
             builder.BindServiceInterfacesAndSelfTo<AudioService>();
             builder.BindServiceInterfacesAndSelfTo<TickService>();
             builder.BindServiceInterfacesAndSelfTo<SaveThrottler>();

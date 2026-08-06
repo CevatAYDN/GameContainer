@@ -67,7 +67,7 @@ Sürüm sabitleme için tag/branch eklenebilir:
    sürümünde UPM uyarı verir veya paketi kabul etmez. C# 9+ / .NET Standard 2.1 özellikleri
    kullanılır.
 2. **`com.unity.ugui` bağımlılığı** — runtime asmdef `UnityEngine.UI` assembly'sine
-   referans verir (WindowManager, View/Mediator sistemi). Bu bağımlılık `package.json`'da
+   referans verir (UIManager, View/Mediator sistemi). Bu bağımlılık `package.json`'da
    beyan edilmiştir; UPM otomatik çözer. (Not: eski sürümlerde beyan eksikti; bu belgeyle
    birlikte düzeltilmiştir.)
 3. **DOTS isteğe bağlıdır** — projenizde `com.unity.collections` yoksa `com.nexus.core.dots`
