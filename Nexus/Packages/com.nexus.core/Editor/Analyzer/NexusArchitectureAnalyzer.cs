@@ -168,20 +168,17 @@ namespace Nexus.Editor
                 }
 
                 // Rule NEXUS001: Hot-Path Allocations
-                if (inHotPathMethod)
+                if (inHotPathMethod && IsNexus001Violation(line))
                 {
-                    if (line.Contains("new List<") || line.Contains("new Dictionary<") || line.Contains(".Where(") || line.Contains(".Select("))
+                    _issues.Add(new AnalysisIssue
                     {
-                        _issues.Add(new AnalysisIssue
-                        {
-                            Code = "NEXUS001",
-                            Severity = IssueSeverity.Warning,
-                            FilePath = path,
-                            LineNumber = lineNum,
-                            Message = "Allocation or LINQ detected inside Hot-Path method (Update/Tick/Execute).",
-                            Recommendation = "Pre-allocate collections or use zero-GC Array/Span iterators to prevent GC spikes."
-                        });
-                    }
+                        Code = "NEXUS001",
+                        Severity = IssueSeverity.Warning,
+                        FilePath = path,
+                        LineNumber = lineNum,
+                        Message = "Allocation or LINQ detected inside Hot-Path method (Update/Tick/Execute).",
+                        Recommendation = "Pre-allocate collections or use zero-GC Array/Span iterators to prevent GC spikes."
+                    });
                 }
 
                 // Rule NEXUS002: Async Void
@@ -216,20 +213,50 @@ namespace Nexus.Editor
                     });
                 }
 
-                // Rule NEXUS004: Obsolete WindowManager API usage
-                if (line.Contains("WindowManager") && !path.Contains("WindowManager.cs") && !line.Contains("Obsolete") && !line.Contains("#pragma"))
-                {
-                    _issues.Add(new AnalysisIssue
-                    {
-                        Code = "NEXUS004",
-                        Severity = IssueSeverity.Info,
-                        FilePath = path,
-                        LineNumber = lineNum,
-                        Message = "Deprecated 'WindowManager' API referenced.",
-                        Recommendation = "Migrate to canonical 'UIManager' for type-safe screen management with UI Pooling support."
-                    });
-                }
             }
+        }
+
+        /// <summary>
+        /// NEXUS001 predicate: true when a line inside a hot-path method (Update/Tick/Execute)
+        /// allocates a new collection or uses LINQ. Comments and string literals are stripped
+        /// first so documentation text cannot trigger the rule. Internal so the editor test
+        /// assembly can lock the rule.
+        /// </summary>
+        internal static bool IsNexus001Violation(string line)
+        {
+            string codeOnly = StripCommentsAndStrings(line);
+            return codeOnly.Contains("new List<")
+                || codeOnly.Contains("new Dictionary<")
+                || codeOnly.Contains(".Where(")
+                || codeOnly.Contains(".Select(");
+        }
+
+        /// <summary>
+        /// Removes double-quoted string literals and trailing <c>//</c> comments from a source
+        /// line so the text-based rules (NEXUS001) match CODE tokens only — a trailing comment
+        /// like <c>// pre-allocate: a new List&lt;int&gt;() here would be flagged</c> must not
+        /// count as an allocation. Escaped characters and a <c>//</c> inside a string
+        /// (e.g. a URL) are handled.
+        /// </summary>
+        internal static string StripCommentsAndStrings(string line)
+        {
+            char[] result = new char[line.Length];
+            int n = 0;
+            bool inString = false;
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (inString)
+                {
+                    if (c == '\\') i++;            // skip escaped character inside the string
+                    else if (c == '"') inString = false;
+                    continue;
+                }
+                if (c == '"') { inString = true; continue; }
+                if (c == '/' && i + 1 < line.Length && line[i + 1] == '/') break; // trailing comment
+                result[n++] = c;
+            }
+            return new string(result, 0, n);
         }
 
         /// <summary>

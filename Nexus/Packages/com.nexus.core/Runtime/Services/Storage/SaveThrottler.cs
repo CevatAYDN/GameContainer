@@ -135,6 +135,22 @@ namespace Nexus.Core.Services
             if (flushNow) FlushSlot(slot);
         }
 
+        // Reusable per-thread due-slot buffer so Tick stays allocation-free in steady state
+        // (NEXUS001 flags per-frame collection allocation inside hot-path methods).
+        // Re-entrancy-safe: a save action that (pathologically) re-enters Tick on the same
+        // thread rents a FRESH list via the depth guard (mirrors ObjectPoolService's
+        // _poolableCallbackDepth convention) instead of clobbering the outer drain.
+        [ThreadStatic] private static List<SaveSlot> s_tickDueBuffer;
+        [ThreadStatic] private static int s_tickDepth;
+
+        private static List<SaveSlot> GetTickDueBuffer()
+        {
+            if (s_tickDepth > 0) return new List<SaveSlot>(2); // nested Tick: fresh list
+            var buffer = s_tickDueBuffer;
+            if (buffer == null) buffer = s_tickDueBuffer = new List<SaveSlot>(2);
+            return buffer;
+        }
+
         public void Tick(float deltaTime)
         {
             // Claim the due slots under the lock, then flush OUTSIDE it. Save actions are
@@ -144,25 +160,30 @@ namespace Nexus.Core.Services
             // save behind the slowest action and risk a deadlock (see TryRequestSave's
             // "Invoke OUTSIDE the lock" invariant). The per-slot Flushing flag already
             // prevents two callers from ever running the same action concurrently.
-            SaveSlot[] ready;
-            lock (_lock)
+            var due = GetTickDueBuffer();
+            s_tickDepth++;
+            try
             {
-                List<SaveSlot> due = null;
-                foreach (var kvp in _slots)
+                lock (_lock)
                 {
-                    var slot = kvp.Value;
-                    if (slot.Pending && Now - slot.LastSaveTime >= _throttleSeconds)
+                    due.Clear();
+                    foreach (var kvp in _slots)
                     {
-                        slot.Pending = false; // claim before releasing the lock
-                        (due ??= new List<SaveSlot>(2)).Add(slot);
+                        var slot = kvp.Value;
+                        if (slot.Pending && Now - slot.LastSaveTime >= _throttleSeconds)
+                        {
+                            slot.Pending = false; // claim before releasing the lock
+                            due.Add(slot);
+                        }
                     }
                 }
-                ready = due?.ToArray() ?? s_emptySlots;
+                for (int i = 0; i < due.Count; i++) FlushSlot(due[i]);
             }
-            for (int i = 0; i < ready.Length; i++) FlushSlot(ready[i]);
+            finally
+            {
+                s_tickDepth--;
+            }
         }
-
-        private static readonly SaveSlot[] s_emptySlots = new SaveSlot[0];
 
         public void ForceSave(Action saveAction) => ForceSave(DefaultOwner, saveAction);
 

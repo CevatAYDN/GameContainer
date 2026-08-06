@@ -46,5 +46,57 @@ namespace Nexus.Tests.Editor
             const string line = "            await Task.Delay(100, ct);";
             Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus003Violation(line, "Assets/Scripts/EconomyService.cs"));
         }
+
+        // ── NEXUS001 (hot-path allocations) ───────────────────────────────────────
+
+        [Test]
+        public void NEXUS001_FlagsNewListInsideHotPath()
+        {
+            const string line = "                (due ??= new List<SaveSlot>(2)).Add(slot);";
+            Assert.IsTrue(NexusArchitectureAnalyzer.IsNexus001Violation(line));
+        }
+
+        [Test]
+        public void NEXUS001_FlagsLinqInsideHotPath()
+        {
+            const string line = "            var filtered = items.Where(x => x > 0).Select(y => y * 2);";
+            Assert.IsTrue(NexusArchitectureAnalyzer.IsNexus001Violation(line));
+        }
+
+        [Test]
+        public void NEXUS001_AllocationInCommentIsNotFlagged()
+        {
+            const string line = "            // pre-allocate: a new List<int>() here would be flagged";
+            Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus001Violation(line));
+        }
+
+        [Test]
+        public void NEXUS001_NoAllocationLineIsNotFlagged()
+        {
+            const string line = "            var due = GetTickDueBuffer();";
+            Assert.IsFalse(NexusArchitectureAnalyzer.IsNexus001Violation(line));
+        }
+
+        // ── String/comment stripping (shared by NEXUS001) ─────────────────────────
+
+        [Test]
+        public void StripCommentsAndStrings_RemovesTrailingComment()
+        {
+            Assert.AreEqual("builder.Bind<SomeService>(); ", NexusArchitectureAnalyzer.StripCommentsAndStrings("builder.Bind<SomeService>(); // trailing"));
+        }
+
+        [Test]
+        public void StripCommentsAndStrings_RemovesStringLiterals()
+        {
+            Assert.AreEqual("s_strings[] = ;", NexusArchitectureAnalyzer.StripCommentsAndStrings("s_strings[\"some_key\"] = \"(localized text)\";"));
+        }
+
+        [Test]
+        public void StripCommentsAndStrings_KeepsUrlInsideString()
+        {
+            // The // inside "http://example.com" must survive (it is inside a string), and
+            // only the real trailing comment is dropped.
+            Assert.AreEqual("var url = ; ", NexusArchitectureAnalyzer.StripCommentsAndStrings("var url = \"http://example.com\"; // note"));
+        }
     }
 }
