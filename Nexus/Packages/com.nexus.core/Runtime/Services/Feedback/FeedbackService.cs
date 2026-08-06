@@ -26,7 +26,7 @@ namespace Nexus.Core.Services
 
     [Preserve]
     [StubService("Integrate with platform-specific haptic/audio SDKs or replace with native implementations")]
-    public class FeedbackService : IFeedbackService, INexusService
+    public class FeedbackService : NexusService<IFeedbackService>, IFeedbackService
     {
         [Inject] public IAudioService AudioService { get; set; }
         [Inject] public IHapticService HapticService { get; set; }
@@ -37,7 +37,7 @@ namespace Nexus.Core.Services
         /// </summary>
         public Dictionary<FeedbackPreset, AudioClip> PresetAudioClips { get; set; }
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             return default;
         }
@@ -106,6 +106,6 @@ namespace Nexus.Core.Services
             }
         }
 
-        public void OnDispose() { }
+        public override void OnDispose() { }
     }
 }

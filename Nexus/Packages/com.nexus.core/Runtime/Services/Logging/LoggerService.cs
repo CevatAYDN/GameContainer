@@ -3,6 +3,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
 {
@@ -120,11 +121,12 @@ namespace Nexus.Core.Services
         }
     }
 
-    public class LoggerService : ILoggerService, INexusService
+    [Preserve]
+    public class LoggerService : NexusService<ILoggerService>, ILoggerService
     {
         public bool IsEnabled { get; set; } = true;
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
 #if !UNITY_EDITOR && !DEVELOPMENT_BUILD
             IsEnabled = false;
@@ -133,7 +135,7 @@ namespace Nexus.Core.Services
             return default;
         }
 
-        public void OnDispose()
+        public override void OnDispose()
         {
             NexusLog.Reset();
         }

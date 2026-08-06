@@ -4,10 +4,12 @@ using System.Globalization;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
 {
-    public class LocalizationService : ILocalizationService, INexusService
+    [Preserve]
+    public class LocalizationService : NexusService<ILocalizationService>, ILocalizationService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
         // Optional: built-in "en"/"tr" tables work without it; LoadExternalTables()
@@ -43,7 +45,7 @@ namespace Nexus.Core.Services
         private readonly Dictionary<string, Dictionary<string, string>> _localizedTable = new Dictionary<string, Dictionary<string, string>>();
         private readonly object _tableLock = new();
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             LoadSavedLanguage();
             BuildLocalizationDictionary();
@@ -51,7 +53,7 @@ namespace Nexus.Core.Services
             return default;
         }
 
-        public void OnDispose()
+        public override void OnDispose()
         {
             OnLanguageChanged = null;
             lock (_tableLock)

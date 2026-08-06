@@ -42,7 +42,7 @@ namespace Nexus.Core.Services
 
     [Preserve]
     [StubService("Replace with Unity IAP / RevenueCat adapter before release")]
-    public class IapService : IIapService, INexusService
+    public class IapService : NexusService<IIapService>, IIapService
     {
         // Guards adapter swap and read-use hand-off. The catalog has its own lock;
         // the adapter is a separate mutable reference that SetStoreAdapter/Purchase/
@@ -91,7 +91,7 @@ namespace Nexus.Core.Services
             RecomputeMockOwnedChecksum();
         }
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             return default;
         }
@@ -297,7 +297,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        public void OnDispose()
+        public override void OnDispose()
         {
             // Release the platform adapter so its native handles (billing connections) are
             // torn down deterministically instead of leaking until process exit. Swap under

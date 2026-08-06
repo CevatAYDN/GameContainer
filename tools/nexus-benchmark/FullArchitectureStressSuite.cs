@@ -2658,10 +2658,19 @@ namespace NexusBench
             }
             finally
             {
-                try { Directory.Delete(Path.Combine(Application.persistentDataPath, "SecureData"), true); }
-                catch (Exception ex)
+                // Only attempt deletion when the folder actually exists: Directory.Delete
+                // throws DirectoryNotFoundException when the storage test never created it
+                // (platform-specific path, or a run where tamper detection skipped the
+                // write), which previously printed a spurious "SecureData cleanup failed"
+                // line on every run.
+                string secureDataPath = Path.Combine(Application.persistentDataPath, "SecureData");
+                if (Directory.Exists(secureDataPath))
                 {
-                    Console.WriteLine($"[Nexus Architecture Stress] SecureData cleanup failed: {ex}");
+                    try { Directory.Delete(secureDataPath, true); }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Nexus Architecture Stress] SecureData cleanup failed: {ex}");
+                    }
                 }
                 UnityEngine.PlayerPrefs.ClearAll();
             }

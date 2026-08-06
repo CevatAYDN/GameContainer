@@ -2,6 +2,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core.Services;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
 {
@@ -9,7 +10,8 @@ namespace Nexus.Core.Services
     /// Platform-specific zero-alloc haptic feedback management.
     /// Caches native Android/iOS references to prevent GC spikes during rapid haptic triggers.
     /// </summary>
-    public class HapticService : IHapticService, INexusService
+    [Preserve]
+    public class HapticService : NexusService<IHapticService>, IHapticService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
 
@@ -29,7 +31,7 @@ namespace Nexus.Core.Services
         private readonly AndroidJavaObject[] _vibrationEffects = new AndroidJavaObject[6];
 #endif
 
-        public ValueTask InitializeAsync(CancellationToken ct)
+        public override ValueTask InitializeAsync(CancellationToken ct)
         {
             if (PlayerPrefsService != null)
             {
@@ -108,7 +110,7 @@ namespace Nexus.Core.Services
             }
         }
 
-        public void OnDispose()
+        public override void OnDispose()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
             for (int i = 0; i < _vibrationEffects.Length; i++)
