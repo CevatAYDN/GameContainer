@@ -65,7 +65,14 @@ namespace Nexus.Core
         private readonly List<IView> _pendingViews = new();
         // Parallel HashSet so RegisterPendingView's dedup check is O(1)
         // instead of a linear List.Contains scan.
-        private readonly HashSet<IView> _pendingViewsSet = new();
+        private readonly HashSet<IView> _pendingViewsSet = new(ReferenceComparer<IView>.Instance);
+
+        private sealed class ReferenceComparer<T> : IEqualityComparer<T> where T : class
+        {
+            internal static readonly ReferenceComparer<T> Instance = new();
+            public bool Equals(T x, T y) => ReferenceEquals(x, y);
+            public int GetHashCode(T obj) => obj == null ? 0 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+        }
 
         // Main-thread id captured in Awake. async void Start() awaits user lifecycle code;
         // if a lifecycle implementation switches threads internally (ConfigureAwait(false),
@@ -278,6 +285,9 @@ namespace Nexus.Core
 
             try
             {
+                if (HasParentCycle())
+                    throw new InvalidOperationException($"Root '{name}' has a parent cycle. Fix parentRoot references before starting the scene.");
+
                 // Wait for parent root to be initialized first (with timeout).
                 // Wall-clock seconds via realtimeSinceStartupAsDouble — a
                 // frame-count timeout punished low-FPS devices with double-length waits.
@@ -359,6 +369,12 @@ namespace Nexus.Core
                 }
 
                 _isInitialized = true;
+
+                // The last active Root to finish startup runs the cross-context phase.
+                // Per-context idempotency makes this safe when scenes add another Root later:
+                // existing contexts are skipped and only newly configured ones participate.
+                if (AreAllActiveRootsInitialized())
+                    await NexusRuntime.FinalizeInitializationAsync(Context.LifetimeToken);
             }
             catch (OperationCanceledException)
             {
@@ -380,6 +396,33 @@ namespace Nexus.Core
                 }
                 _isInitialized = false;
             }
+        }
+
+        private static bool AreAllActiveRootsInitialized()
+        {
+            lock (s_rootLock)
+            {
+                foreach (var root in s_allRoots)
+                {
+                    if (root == null || !root.enabled || !root.gameObject.activeInHierarchy) continue;
+                    if (!root.IsInitialized) return false;
+                }
+                return true;
+            }
+        }
+
+        private bool HasParentCycle()
+        {
+            var visited = new List<Root>();
+            var cursor = this;
+            while (cursor != null)
+            {
+                for (int i = 0; i < visited.Count; i++)
+                    if (ReferenceEquals(visited[i], cursor)) return true;
+                visited.Add(cursor);
+                cursor = cursor.parentRoot;
+            }
+            return false;
         }
 
         // Queue draining and metrics sampling are handled by <see cref="QueueDrainer"/>

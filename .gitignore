@@ -72,3 +72,5 @@ tools/nexus-benchmark/obj/
 tools/nexus-benchmark/*.txt
 # `*.csproj` is ignored globally above; keep the harness project tracked.
 !tools/nexus-benchmark/NexusBenchmark.csproj
+# Keep the standalone Unity runtime compile gate tracked as well.
+!tools/nexus-compile-check/nexus-compile-check.csproj

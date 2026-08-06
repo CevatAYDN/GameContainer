@@ -39,8 +39,24 @@ namespace Nexus.Core
         // Named bindings (Strange-style named injection): key = (type, name).
         // Resolution falls back to the default binding when a name is not registered.
         private readonly ConcurrentDictionary<(Type Type, string Name), Binding> _namedBindings = new();
-        private readonly HashSet<object> _resolvedSingletons = new();
-        private volatile bool _disposed;
+        private readonly HashSet<object> _resolvedSingletons = new(ReferenceComparer<object>.Instance);
+        private int _disposeState;
+        private readonly object _disposeLock = new();
+        private readonly ConcurrentDictionary<Type, bool> _lazyServiceTypes = new();
+        internal Action<INexusService> LazyServiceResolvedCallback { get; set; }
+
+        internal sealed class ReferenceComparer<T> : IEqualityComparer<T> where T : class
+        {
+            internal static readonly ReferenceComparer<T> Instance = new();
+            public bool Equals(T x, T y) => ReferenceEquals(x, y);
+            public int GetHashCode(T obj) => obj == null ? 0 : RuntimeHelpers.GetHashCode(obj);
+        }
+
+        private bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
+        private void ThrowIfDisposed()
+        {
+            if (IsDisposed) throw new ObjectDisposedException(nameof(NexusDI));
+        }
 
         /// <summary>Safe editor snapshot of resolved singleton instances (thread-safe copy, no raw reference leak).</summary>
         internal IReadOnlyList<object> EditorResolvedSingletons
@@ -757,6 +773,15 @@ namespace Nexus.Core
         /// </summary>
         private void SetBinding(Type key, Binding binding)
         {
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                SetBindingCore(key, binding);
+            }
+        }
+
+        private void SetBindingCore(Type key, Binding binding)
+        {
             if (_bindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
             {
                 // Re-registering the exact same shape with no live instance is a benign
@@ -781,6 +806,15 @@ namespace Nexus.Core
 
         /// <summary>Named-map counterpart of <see cref="SetBinding"/>.</summary>
         private void SetNamedBinding((Type Type, string Name) key, Binding binding)
+        {
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                SetNamedBindingCore(key, binding);
+            }
+        }
+
+        private void SetNamedBindingCore((Type Type, string Name) key, Binding binding)
         {
             if (_namedBindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
             {
@@ -931,11 +965,16 @@ namespace Nexus.Core
 
         public void BindInstance<T>(T instance, bool disposeWithContainer) where T : class
         {
-            SetBinding(typeof(T), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
-            if (disposeWithContainer)
+            if (instance == null) throw new ArgumentNullException(nameof(instance));
+            lock (_disposeLock)
             {
-                lock (_singletonLock)
-                    _resolvedSingletons.Add(instance);
+                ThrowIfDisposed();
+                SetBindingCore(typeof(T), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
+                if (disposeWithContainer)
+                {
+                    lock (_singletonLock)
+                        _resolvedSingletons.Add(instance);
+                }
             }
         }
 
@@ -943,9 +982,14 @@ namespace Nexus.Core
         public void BindInstance<T>(string name, T instance) where T : class
         {
             if (string.IsNullOrEmpty(name)) { BindInstance(instance); return; }
-            SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
-            lock (_singletonLock)
-                _resolvedSingletons.Add(instance);
+            if (instance == null) throw new ArgumentNullException(nameof(instance));
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                SetNamedBindingCore((typeof(T), name), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
+                lock (_singletonLock)
+                    _resolvedSingletons.Add(instance);
+            }
         }
 
         public void BindFactory<T>(Func<T> factory) where T : class
@@ -978,9 +1022,10 @@ namespace Nexus.Core
         /// <summary>Resolves a named binding (reflection-form). Throws when the name is explicitly requested but unregistered.</summary>
         public object Resolve(Type type, string name)
         {
+            ThrowIfDisposed();
             if (string.IsNullOrEmpty(name)) return Resolve(type);
             if (_namedBindings.TryGetValue((type, name), out var named))
-                return ResolveBinding(type, named, name);
+                return ResolveAndNotifyLazy(type, named, name);
             if (_parent != null && _parent.IsRegistered(type, name))
                 return _parent.Resolve(type, name);
             throw new InvalidOperationException($"Dependency of type {type.FullName} named '{name}' is not registered.");
@@ -999,15 +1044,23 @@ namespace Nexus.Core
 
         public object Resolve(Type type)
         {
+            ThrowIfDisposed();
             if (type == typeof(NexusDI)) return this;
             if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type))
                 return ExternalAdapter.Resolve(type);
 
             if (_bindings.TryGetValue(type, out var binding))
-                return ResolveBinding(type, binding);
+                return ResolveAndNotifyLazy(type, binding);
 
             if (_parent != null) return _parent.Resolve(type);
             throw new InvalidOperationException($"Dependency of type {type.FullName} is not registered.");
+        }
+
+        private object ResolveAndNotifyLazy(Type type, Binding binding, string name = null)
+        {
+            var instance = ResolveBinding(type, binding, name);
+            NotifyMarkedLazyService(type, instance);
+            return instance;
         }
 
         /// <summary>
@@ -1016,6 +1069,7 @@ namespace Nexus.Core
         /// </summary>
         private object ResolveBinding(Type type, Binding binding, string name = null)
         {
+            ThrowIfDisposed();
             if (binding.Instance != null) return binding.Instance;
 
             // Cycle detection must also guard factory-produced instances. Previously
@@ -1048,7 +1102,7 @@ namespace Nexus.Core
                     {
                         lock (_singletonLock)
                         {
-                            if (_disposed)
+                            if (IsDisposed)
                                 throw new ObjectDisposedException(nameof(NexusDI), $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
 
                             if (binding.Instance != null) return binding.Instance;
@@ -1080,7 +1134,7 @@ namespace Nexus.Core
                         _injector.Inject(singletonInstance);
                         lock (_singletonLock)
                         {
-                            if (_disposed)
+                            if (IsDisposed)
                             {
                                 throw new ObjectDisposedException(nameof(NexusDI), $"Cannot publish singleton '{type.FullName}': the container has been disposed.");
                             }
@@ -1370,12 +1424,27 @@ namespace Nexus.Core
         /// </summary>
         internal static InjectableMetadata GetOrCreateInjectMetadata(Type type) => MetadataCache.GetOrCreateInjectMetadata(type);
 
-        private readonly ConcurrentDictionary<INexusService, bool> _lazyServicesEnqueued = new();
+        private readonly ConcurrentDictionary<INexusService, bool> _lazyServicesEnqueued =
+            new(ReferenceComparer<INexusService>.Instance);
+
+        internal void MarkLazyService(Type type)
+        {
+            if (type != null) _lazyServiceTypes[type] = true;
+        }
+
+        private void NotifyMarkedLazyService(Type requestedType, object instance)
+        {
+            if (instance is INexusService service && (_lazyServiceTypes.ContainsKey(requestedType) || _lazyServiceTypes.ContainsKey(instance.GetType())))
+                NotifyLazyServiceResolved(instance.GetType(), service);
+        }
 
         internal void NotifyLazyServiceResolved(Type type, object instance)
         {
             if (instance is INexusService service && _lazyServicesEnqueued.TryAdd(service, true))
+            {
                 _lazyServicesPendingInit.Enqueue(service);
+                LazyServiceResolvedCallback?.Invoke(service);
+            }
         }
 
         public IEnumerable<object> GetActiveSingletons()
@@ -1420,19 +1489,32 @@ namespace Nexus.Core
         }
 
         // ─── Disposal ───
+        private bool TryBeginDispose(out HashSet<object> singletonsCopy)
+        {
+            lock (_disposeLock)
+            {
+                if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+                {
+                    singletonsCopy = null;
+                    return false;
+                }
+                lock (_singletonLock)
+                {
+                    singletonsCopy = new HashSet<object>(_resolvedSingletons, ReferenceComparer<object>.Instance);
+                    _resolvedSingletons.Clear();
+                }
+                _bindings.Clear();
+                _namedBindings.Clear();
+            }
+            return true;
+        }
+
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
+            if (!TryBeginDispose(out var singletonsCopy)) return;
 
-            var alreadyDisposed = new HashSet<object>();
-            HashSet<object> singletonsCopy;
-            lock (_singletonLock)
-            {
-                singletonsCopy = new HashSet<object>(_resolvedSingletons);
-                _resolvedSingletons.Clear();
-            }
-
+            var alreadyDisposed = new HashSet<object>(ReferenceComparer<object>.Instance);
+            
             var asyncDisposables = new List<IAsyncDisposable>();
             foreach (var instance in singletonsCopy)
             {
@@ -1485,8 +1567,6 @@ namespace Nexus.Core
             }
             if (asyncDisposables.Count > 0)
                 _backgroundDisposeTask = DisposeAllAsyncInBackground(asyncDisposables);
-            _bindings.Clear();
-            _namedBindings.Clear();
         }
 
         /// <summary>
@@ -1537,16 +1617,9 @@ namespace Nexus.Core
 
         public async ValueTask DisposeAsync()
         {
-            if (_disposed) return;
-            _disposed = true;
+            if (!TryBeginDispose(out var singletonsCopy)) return;
 
-            var alreadyDisposed = new HashSet<object>();
-            HashSet<object> singletonsCopy;
-            lock (_singletonLock)
-            {
-                singletonsCopy = new HashSet<object>(_resolvedSingletons);
-                _resolvedSingletons.Clear();
-            }
+            var alreadyDisposed = new HashSet<object>(ReferenceComparer<object>.Instance);
 
             foreach (var instance in singletonsCopy)
             {
@@ -1570,8 +1643,6 @@ namespace Nexus.Core
                     }
                 }
             }
-            _bindings.Clear();
-            _namedBindings.Clear();
         }
 
         public static void ClearCaches()

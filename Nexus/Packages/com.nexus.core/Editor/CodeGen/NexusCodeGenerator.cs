@@ -207,9 +207,11 @@ namespace Nexus.Editor
             Debug.Log("[Nexus] Generating AOT Binder...");
             var injectTypes = new List<Type>();
             var networkSignalTypes = new List<Type>();
+            // (command, signal, isAsync) triples for generic-only command dispatchers.
+            var genericCommandPairs = new List<(Type Command, Type Signal, bool IsAsync)>();
             // Shared across all passes below so each type's members reflect exactly once.
             var memberCache = new Dictionary<Type, MemberSet>();
-            
+
             // Gather all types containing [Inject] and all INetworkSignal implementations
             foreach (var assembly in AssemblyCatalog.RuntimeAssemblies())
             {
@@ -218,6 +220,23 @@ namespace Nexus.Editor
                     if (type.IsValueType && typeof(Nexus.Netcode.INetworkSignal).IsAssignableFrom(type))
                     {
                         networkSignalTypes.Add(type);
+                    }
+
+                    // Generic-only commands (ICommand<T>/IAsyncCommand<T>): on IL2CPP the
+                    // runtime dispatcher falls back to MethodInfo.Invoke with a per-call
+                    // object[] allocation. Emitting strongly-typed dispatcher registrations
+                    // keeps the AOT dispatch path allocation-free.
+                    if (type.IsClass && !type.IsAbstract && !type.IsGenericTypeDefinition)
+                    {
+                        foreach (var iface in type.GetInterfaces())
+                        {
+                            if (!iface.IsGenericType) continue;
+                            var genericDef = iface.GetGenericTypeDefinition();
+                            if (genericDef == typeof(ICommand<>))
+                                genericCommandPairs.Add((type, iface.GetGenericArguments()[0], false));
+                            else if (genericDef == typeof(IAsyncCommand<>))
+                                genericCommandPairs.Add((type, iface.GetGenericArguments()[0], true));
+                        }
                     }
 
                     if (type.IsClass && !type.IsAbstract)
@@ -278,6 +297,7 @@ namespace Nexus.Editor
             var cacheSb = new StringBuilder();
             var initSb = new StringBuilder();
             var preserveSb = new StringBuilder();
+            var dispatcherSb = new StringBuilder();
 
             // Check value types first (Issue 6)
             foreach (var type in injectTypes)
@@ -301,25 +321,32 @@ namespace Nexus.Editor
                 }
             }
 
-            // Generate NetworkSignalBus CustomDispatcher
-            if (networkSignalTypes.Count > 0)
+            // NetworkSignalBus dispatch is intentionally not emitted here.  The runtime
+            // exposes only generic Fire<T> APIs, so a generated assignment to a
+            // NetworkSignalBus.CustomDispatcher member would make every project that
+            // declares an INetworkSignal fail to compile (the member does not exist).
+            // Network signal types are still included in link.xml below so IL2CPP can
+            // preserve their serialized fields.
+
+            // Generic-only command dispatchers: strongly-typed delegates registered into
+            // CommandRegistry's dispatcher caches so IL2CPP builds never hit the
+            // MethodInfo.Invoke fallback (per-dispatch object[] allocation).
+            foreach (var (commandType, signalType, isAsync) in genericCommandPairs)
             {
-                initSb.AppendLine("            NetworkSignalBus.CustomDispatcher = (bus, signal) =>");
-                initSb.AppendLine("            {");
-                initSb.AppendLine("                var type = signal.GetType();");
-                foreach (var sigType in networkSignalTypes)
+                string commandName = GetCSharpTypeName(commandType);
+                string signalName = GetCSharpTypeName(signalType);
+                if (commandName == null || signalName == null) continue;
+
+                if (isAsync)
                 {
-                    // E-C1: skip types that cannot be named in C# (open generics).
-                    string fullName = GetCSharpTypeName(sigType);
-                    if (fullName == null) continue;
-                    initSb.AppendLine($"                if (type == typeof({fullName}))");
-                    initSb.AppendLine("                {");
-                    initSb.AppendLine($"                    bus.Fire(({fullName})signal);");
-                    initSb.AppendLine("                    return;");
-                    initSb.AppendLine("                }");
+                    dispatcherSb.AppendLine($"            CommandRegistry.RegisterGenericAsyncDispatcher(typeof({commandName}), typeof({signalName}),");
+                    dispatcherSb.AppendLine($"                (cmd, sig, ct) => ((IAsyncCommand<{signalName}>)cmd).ExecuteAsync(({signalName})sig, ct));");
                 }
-                initSb.AppendLine("            };");
-                initSb.AppendLine();
+                else
+                {
+                    dispatcherSb.AppendLine($"            CommandRegistry.RegisterGenericSyncDispatcher(typeof({commandName}), typeof({signalName}),");
+                    dispatcherSb.AppendLine($"                (cmd, sig) => ((ICommand<{signalName}>)cmd).Execute(({signalName})sig));");
+                }
             }
 
             // Generate Injectors and Cache Definitions (Issue 5 & 7)
@@ -589,6 +616,7 @@ namespace Nexus.Editor
             sb.AppendLine("        public static void Initialize()");
             sb.AppendLine("        {");
             sb.Append(initSb.ToString());
+            sb.Append(dispatcherSb.ToString());
             sb.AppendLine("        }");
             sb.AppendLine();
             
@@ -619,6 +647,18 @@ namespace Nexus.Editor
                 Directory.CreateDirectory(linkXmlFolder);
 
             bool changed = false;
+
+            // Preflight the preservation file before touching the generated binder.  A
+            // curated/non-auto link.xml must fail atomically; otherwise a failed codegen
+            // could leave a new binder paired with stale IL2CPP stripping rules.
+            string destLinkXmlFile = Path.Combine(linkXmlFolder, "link.xml");
+            if (File.Exists(destLinkXmlFile) && !File.ReadAllText(destLinkXmlFile).Contains("<auto-generated>"))
+            {
+                throw new InvalidOperationException(
+                    $"[Nexus CodeGen] Overwrite blocked: the file at '{destLinkXmlFile}' " +
+                    "does not contain the <auto-generated> tag. Move/merge the curated " +
+                    "rules, then regenerate the Nexus AOT link.xml before building.");
+            }
 
             // Write binder file with overwrite guard
             string destBinderFile = Path.Combine(binderFolder, "NexusGeneratedBinder.g.cs");
@@ -689,19 +729,32 @@ namespace Nexus.Editor
             }
             xmlSb.AppendLine("</linker>");
 
-            string destLinkXmlFile = Path.Combine(linkXmlFolder, "link.xml");
             string newLinkXmlContent = xmlSb.ToString();
 
-            // Overwrite guard (mirrors the binder guard): the existing file must either
-            // not exist or contain the <auto-generated> tag indicating it was produced
-            // by codegen. A user-hand-curated link.xml is never silently replaced.
-            if (!File.Exists(destLinkXmlFile) || File.ReadAllText(destLinkXmlFile).Contains("<auto-generated>"))
+            // Overwrite guard: a hand-curated link.xml is never silently replaced.
+            // Failing loudly is important here.  Silently retaining stale preservation
+            // rules lets an IL2CPP build continue with stripped injected members.
+            if (File.Exists(destLinkXmlFile))
             {
-                if (!File.Exists(destLinkXmlFile) || File.ReadAllText(destLinkXmlFile) != newLinkXmlContent)
+                string existingLinkXml = File.ReadAllText(destLinkXmlFile);
+                if (!existingLinkXml.Contains("<auto-generated>"))
+                {
+                    throw new InvalidOperationException(
+                        $"[Nexus CodeGen] Overwrite blocked: the file at '{destLinkXmlFile}' " +
+                        "does not contain the <auto-generated> tag. Move/merge the curated " +
+                        "rules, then regenerate the Nexus AOT link.xml before building.");
+                }
+
+                if (existingLinkXml != newLinkXmlContent)
                 {
                     File.WriteAllText(destLinkXmlFile, newLinkXmlContent);
                     changed = true;
                 }
+            }
+            else
+            {
+                File.WriteAllText(destLinkXmlFile, newLinkXmlContent);
+                changed = true;
             }
             EnsureGitIgnore(linkXmlFolder, "link.xml");
 

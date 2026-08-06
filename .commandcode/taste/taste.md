@@ -1,0 +1,5 @@
+- Communicates primarily in Turkish; responds naturally to Turkish greetings and instructions without asking for translation. Confidence: 0.95
+- Values systematic, framework-level code review over surface-level pattern matching — created a comprehensive Unity/C# review skill and then critically analyzed its blind spots across 14 architectural categories. Confidence: 0.9
+- Prefers fixes ordered by severity: P0 (critical/confirmed bugs) first, then P1 (important), then P2 (nice-to-have). Confidence: 0.85
+- Prefers direct continuation from context summaries without recap, acknowledgment, or "I'll continue" prefaces — resume work as if the break never happened. Confidence: 0.9
+- Prefers actions over words in code review feedback: no performative agreement ("you're absolutely right!"), no gratitude expressions, just state the fix and implement. Confidence: 0.85

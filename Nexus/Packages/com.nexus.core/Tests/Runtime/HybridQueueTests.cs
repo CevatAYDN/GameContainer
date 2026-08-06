@@ -77,6 +77,30 @@ namespace Nexus.Tests
         }
 
         [Test]
+        public void FireNextFrame_ReentrantEnqueue_WaitsForFollowingDrain()
+        {
+            var received = new System.Collections.Generic.List<int>();
+            _signalBus.Subscribe<QueueTestSignal>(sig =>
+            {
+                received.Add(sig.Id);
+                if (sig.Id == 1)
+                    _queue.EnqueueNextFrame(new QueueTestSignal(2));
+            });
+
+            _queue.EnqueueNextFrame(new QueueTestSignal(1));
+            _queue.DrainNextFrame();
+
+            CollectionAssert.AreEqual(new[] { 1 }, received,
+                "A signal enqueued by a next-frame handler belongs to the following drain generation.");
+            Assert.AreEqual(1, _queue.NextFrameQueueDepth);
+
+            _queue.DrainNextFrame();
+
+            CollectionAssert.AreEqual(new[] { 1, 2 }, received);
+            Assert.AreEqual(0, _queue.NextFrameQueueDepth);
+        }
+
+        [Test]
         public void ThreadSafeDrained_Before_NextFrame()
         {
             var order = new System.Collections.Generic.List<string>();

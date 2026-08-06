@@ -70,6 +70,15 @@ namespace Nexus.Editor.Tests
             public void Execute(ETOnceSignal signal) => Executions++;
         }
 
+        public sealed class ETOnceRetryCommand : ICommand<ETOnceSignal>
+        {
+            public static int Attempts;
+            public void Execute(ETOnceSignal signal)
+            {
+                if (Attempts++ == 0) throw new System.InvalidOperationException("intentional one-shot failure");
+            }
+        }
+
         public readonly struct ETOnceAsyncSignal { public readonly int Value; public ETOnceAsyncSignal(int v) => Value = v; }
 
         public sealed class ETOnceAsyncCommand : IAsyncCommand<ETOnceAsyncSignal>
@@ -78,6 +87,16 @@ namespace Nexus.Editor.Tests
             public ValueTask ExecuteAsync(ETOnceAsyncSignal signal, CancellationToken ct)
             {
                 Executions++;
+                return default;
+            }
+        }
+
+        public sealed class ETOnceAsyncRetryCommand : IAsyncCommand<ETOnceAsyncSignal>
+        {
+            public static int Attempts;
+            public ValueTask ExecuteAsync(ETOnceAsyncSignal signal, CancellationToken ct)
+            {
+                if (Attempts++ == 0) throw new System.InvalidOperationException("intentional async one-shot failure");
                 return default;
             }
         }
@@ -196,6 +215,36 @@ namespace Nexus.Editor.Tests
 
             Assert.AreEqual(1, ETOnceAsyncCommand.Executions, "Async one-shot must fire exactly once");
             Assert.IsFalse(bus.HasCommandHandler<ETOnceAsyncSignal>(), "Async handler must be truly unregistered");
+        }
+
+        [Test]
+        public void Once_SyncFailure_RetainsHandlerForRetry()
+        {
+            ETOnceRetryCommand.Attempts = 0;
+            using var ctx = NexusTestHarness.CreateContext(
+                builder => builder.BindCommandOnce<ETOnceSignal, ETOnceRetryCommand>());
+            var bus = ctx.Context.SignalBus;
+
+            Assert.Throws<System.InvalidOperationException>(() => bus.Fire(new ETOnceSignal(1)));
+            Assert.IsTrue(bus.HasCommandHandler<ETOnceSignal>(), "Failed one-shot execution must remain retryable");
+            Assert.DoesNotThrow(() => bus.Fire(new ETOnceSignal(2)));
+            Assert.AreEqual(2, ETOnceRetryCommand.Attempts);
+            Assert.IsFalse(bus.HasCommandHandler<ETOnceSignal>());
+        }
+
+        [Test]
+        public void Once_AsyncFailure_RetainsHandlerForRetry()
+        {
+            ETOnceAsyncRetryCommand.Attempts = 0;
+            using var ctx = NexusTestHarness.CreateContext(
+                builder => builder.BindAsyncCommandOnce<ETOnceAsyncSignal, ETOnceAsyncRetryCommand>());
+            var bus = ctx.Context.SignalBus;
+
+            Assert.Throws<System.InvalidOperationException>(() => bus.FireAsync(new ETOnceAsyncSignal(1)).GetAwaiter().GetResult());
+            Assert.IsTrue(bus.HasCommandHandler<ETOnceAsyncSignal>(), "Failed async one-shot must remain retryable");
+            Assert.DoesNotThrow(() => bus.FireAsync(new ETOnceAsyncSignal(2)).GetAwaiter().GetResult());
+            Assert.AreEqual(2, ETOnceAsyncRetryCommand.Attempts);
+            Assert.IsFalse(bus.HasCommandHandler<ETOnceAsyncSignal>());
         }
     }
 }

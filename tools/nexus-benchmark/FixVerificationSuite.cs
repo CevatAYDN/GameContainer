@@ -284,7 +284,7 @@ namespace NexusBench
                 $"executions={FvOnceCommand.Executions} (expected exactly 1)");
         }
 
-        private struct FvModeSignal { public int Value; }
+        private struct FvModeSignal { }
         private sealed class FvModeCommand : ICommand<FvModeSignal> { public void Execute(FvModeSignal signal) { } }
 
         private static void Test_MixedMode_Rejected_On_Incoming()

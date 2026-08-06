@@ -16,11 +16,25 @@ PROJECT="$(cd "$(dirname "$0")/../.." && pwd)/Nexus"
 ARTIFACTS="$(cd "$(dirname "$0")" && pwd)/artifacts"
 mkdir -p "$ARTIFACTS"
 
+require_passed_test_results() {
+  local results="$1"
+  local label="$2"
+  if [ ! -f "$results" ]; then
+    echo "$label tests produced no result XML: $results"
+    return 1
+  fi
+  if ! grep -q '<test-run' "$results" || ! grep -q 'result="Passed"' "$results"; then
+    echo "$label tests did not report an overall Passed result"
+    return 1
+  fi
+}
+
 echo "=== [1/4] EditMode tests (compiles editor + runtime under Mono) ==="
 "$UNITY" -batchmode -nographics -projectPath "$PROJECT" \
   -runTests -testPlatform EditMode \
   -testResults "$ARTIFACTS/editmode-results.xml" \
   -logFile "$ARTIFACTS/editmode.log" -quit
+require_passed_test_results "$ARTIFACTS/editmode-results.xml" "EditMode"
 if grep -q 'result="Failed"' "$ARTIFACTS/editmode-results.xml"; then
   echo "EditMode tests FAILED"; tail -n 60 "$ARTIFACTS/editmode.log"; exit 1
 fi
@@ -31,6 +45,7 @@ echo "=== [2/4] PlayMode tests (NexusStarter boots, dispatch pipelines run) ==="
   -runTests -testPlatform PlayMode \
   -testResults "$ARTIFACTS/playmode-results.xml" \
   -logFile "$ARTIFACTS/playmode.log" -quit
+require_passed_test_results "$ARTIFACTS/playmode-results.xml" "PlayMode"
 if grep -q 'result="Failed"' "$ARTIFACTS/playmode-results.xml"; then
   echo "PlayMode tests FAILED"; tail -n 60 "$ARTIFACTS/playmode.log"; exit 1
 fi

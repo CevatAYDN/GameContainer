@@ -187,6 +187,23 @@ namespace Nexus.Tests
             ctx2.Dispose();
         }
 
+        [Test]
+        public async Task PostContext_RepeatedFinalize_InvokesEachLifecycleOnce()
+        {
+            var lifecycle = new PostContextCounter(7);
+            var context = new Context();
+            context.Container.BindInstance<IContextLifecycle>(lifecycle);
+            context.Configure();
+            await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, CancellationToken.None);
+
+            await NexusRuntime.FinalizeInitializationAsync(CancellationToken.None);
+            await NexusRuntime.FinalizeInitializationAsync(CancellationToken.None);
+
+            Assert.AreEqual(1, PostContextCounter.CallOrder.Count);
+            Assert.AreEqual(7, PostContextCounter.CallOrder[0]);
+            context.Dispose();
+        }
+
         // ─── PC3: No PostContext when lifecycle does not implement IPostContextLifecycle ───
 
         [Test]
@@ -211,14 +228,14 @@ namespace Nexus.Tests
         [Test]
         public async Task PostContext_EnablesCrossContextWiring()
         {
-            // Context A: binds ICrossService as cross-boundary visible to sibling/child contexts
+            // Context A owns the cross-boundary binding.
             var lifecycleA = new CrossBindLifecycle();
             var ctxA = new Context();
             ctxA.Container.BindInstance<IContextLifecycle>(lifecycleA);
             ctxA.Configure();
             await ctxA.InitializeLifecycleAsync(ctxA.ConfiguredLifecycles, CancellationToken.None);
 
-            // Context B: resolves ICrossService from context A during PostContext
+            // Context B is given the explicit owning context; sibling containers are isolated.
             var lifecycleB = new CrossResolveLifecycle(ctxA);
             var ctxB = new Context();
             ctxB.Container.BindInstance<IContextLifecycle>(lifecycleB);

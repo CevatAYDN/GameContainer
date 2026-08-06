@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core.Services;
@@ -33,6 +34,7 @@ namespace Nexus.Core
         private static readonly object s_lock = new();
         private static volatile int s_activeContextCount;
         private static List<IContext> s_activeContextsReadOnlyCache = new();
+        private static IReadOnlyList<IContext> s_activeContextsReadOnlyView = Array.Empty<IContext>();
         private static bool s_activeContextsCacheDirty = true;
         // Int + Interlocked so the first-registration monitoring init is
         // claimed atomically — two racing RegisterContext calls can no longer both pass
@@ -50,9 +52,10 @@ namespace Nexus.Core
                     if (s_activeContextsCacheDirty)
                     {
                         s_activeContextsReadOnlyCache = new List<IContext>(s_activeContexts);
+                        s_activeContextsReadOnlyView = new ReadOnlyCollection<IContext>(s_activeContextsReadOnlyCache);
                         s_activeContextsCacheDirty = false;
                     }
-                    return s_activeContextsReadOnlyCache;
+                    return s_activeContextsReadOnlyView;
                 }
             }
         }
@@ -121,9 +124,10 @@ namespace Nexus.Core
                     if (s_activeContextsCacheDirty)
                     {
                         s_activeContextsReadOnlyCache = new List<IContext>(s_activeContexts);
+                        s_activeContextsReadOnlyView = new ReadOnlyCollection<IContext>(s_activeContextsReadOnlyCache);
                         s_activeContextsCacheDirty = false;
                     }
-                    return s_activeContextsReadOnlyCache;
+                    return s_activeContextsReadOnlyView;
                 }
 
                 var matches = new List<IContext>();
@@ -356,6 +360,7 @@ namespace Nexus.Core
                 s_activeContexts.Clear();
                 s_contextSet.Clear();
                 s_activeContextsReadOnlyCache = new List<IContext>();
+                s_activeContextsReadOnlyView = new ReadOnlyCollection<IContext>(s_activeContextsReadOnlyCache);
                 s_activeContextsCacheDirty = false;
                 s_activeContextCount = 0;
                 System.Threading.Volatile.Write(ref s_cachedLogger, null);
@@ -673,6 +678,7 @@ namespace Nexus.Core
                     s_activeContexts.Remove(context);
                     s_activeContextCount = s_activeContexts.Count;
                     s_activeContextsReadOnlyCache = new List<IContext>(s_activeContexts);
+                    s_activeContextsReadOnlyView = new ReadOnlyCollection<IContext>(s_activeContextsReadOnlyCache);
                     s_activeContextsCacheDirty = false;
                     removed = true;
                     // Invalidate logger cache — removed context may have been providing the logger

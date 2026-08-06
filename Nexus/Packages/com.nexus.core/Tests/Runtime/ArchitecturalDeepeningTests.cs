@@ -275,7 +275,7 @@ namespace Nexus.Tests.Runtime
             // This requires a Unity scene with a Root, so it's a PlayMode test.
             // The test verifies the code path exists and doesn't throw.
             // Full integration testing requires Play Mode.
-            Assert.Pass("ViewRegistration integration requires Play Mode with a Root in the scene.");
+            Assert.Ignore("ViewRegistration integration requires a Play Mode scene with a Root; this EditMode suite does not claim coverage.");
         }
 
         // ─── Phase 5: QueueDrainer MetricsSampler ───
@@ -296,7 +296,7 @@ namespace Nexus.Tests.Runtime
             // QueueDrainer.Awake disables itself if no Root is found on the GameObject.
             // This is a structural test - the logic is in Awake.
             // Full verification requires a Unity scene.
-            Assert.Pass("QueueDrainer self-disable requires Play Mode with a game object.");
+            Assert.Ignore("QueueDrainer self-disable requires a Play Mode GameObject; this EditMode suite does not claim coverage.");
         }
 
         [Test]

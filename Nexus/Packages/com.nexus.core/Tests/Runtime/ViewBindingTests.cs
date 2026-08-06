@@ -77,6 +77,16 @@ namespace Nexus.Tests
         {
         }
 
+        [Mediator(typeof(MockMediator))]
+        public class ThrowingDecoratedView : TestView
+        {
+            public override void Bind(IContext context)
+            {
+                base.Bind(context);
+                throw new System.InvalidOperationException("bind failed");
+            }
+        }
+
         public class ResettableMockMediator : IMediator, IResettable
         {
             public int ResetCount;
@@ -198,6 +208,37 @@ namespace Nexus.Tests
 
             binder.UnregisterView(view);
             Assert.IsFalse(view.IsBound);
+
+            Object.DestroyImmediate(go);
+        }
+
+        [Test]
+        public void Dispose_UnbindsViewWithoutMediator()
+        {
+            var go = new GameObject();
+            var view = go.AddComponent<TestView>();
+            var binder = _context.Resolve<ViewBinder>();
+
+            binder.RegisterView(view);
+            Assert.IsTrue(view.IsBound);
+
+            binder.Dispose();
+            Assert.IsFalse(view.IsBound);
+
+            Object.DestroyImmediate(go);
+        }
+
+        [Test]
+        public void RegisterView_WhenViewBindThrows_ReturnsMediatorAndUnbindsView()
+        {
+            var go = new GameObject();
+            var view = go.AddComponent<ThrowingDecoratedView>();
+            var binder = _context.Resolve<ViewBinder>();
+
+            Assert.DoesNotThrow(() => binder.RegisterView(view));
+            Assert.IsFalse(view.IsBound);
+            Assert.AreEqual(0, binder.ActiveMediatorCount);
+            Assert.AreEqual(1, binder.PoolReturnCount);
 
             Object.DestroyImmediate(go);
         }

@@ -34,7 +34,7 @@ namespace Nexus.Editor.Tests
         {
             // This test verifies the new sidebar grouping logic compiles and works.
             // Full verification requires Unity Editor with NexusWindow open.
-            Assert.Pass("Sidebar grouping requires Unity Editor Play Mode for full verification.");
+            Assert.Ignore("Sidebar grouping requires an opened NexusWindow; this headless EditMode suite does not claim coverage.");
         }
     }
 

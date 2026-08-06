@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Threading;
 using Nexus.Core;
 
 namespace Nexus.Netcode
@@ -81,19 +82,38 @@ namespace Nexus.Netcode
     public class NetworkSignalHistory<T> : INetworkSignalHistory where T : struct, INetworkSignal
     {
         private readonly List<BufferedNetworkSignal<T>> _signals;
-        private System.Collections.ObjectModel.ReadOnlyCollection<BufferedNetworkSignal<T>> _signalsReadOnly;
+        private readonly object _signalsLock = new();
+        private BufferedNetworkSignal<T>[] _replayBuffer;
+        private readonly object _replayLock = new();
 
-        // Read-only live view — external callers must not mutate the history directly.
-        public IReadOnlyList<BufferedNetworkSignal<T>> Signals => _signalsReadOnly ??= _signals.AsReadOnly();
+        // Return a stable snapshot for readers.  Add/rollback/prune are synchronized below;
+        // exposing List<T>.AsReadOnly() directly would still let an external enumerator race
+        // with in-place compaction.  This property is an inspection API, not the Fire hot path.
+        public IReadOnlyList<BufferedNetworkSignal<T>> Signals
+        {
+            get
+            {
+                lock (_signalsLock)
+                {
+                    return new System.Collections.ObjectModel.ReadOnlyCollection<BufferedNetworkSignal<T>>(
+                        _signals.ToArray());
+                }
+            }
+        }
 
         public NetworkSignalHistory(int initialCapacity = 256)
         {
-            _signals = new List<BufferedNetworkSignal<T>>(initialCapacity);
+            int capacity = Math.Max(1, initialCapacity);
+            _signals = new List<BufferedNetworkSignal<T>>(capacity);
+            _replayBuffer = new BufferedNetworkSignal<T>[capacity];
         }
 
         public void Add(int tick, T signal)
         {
-            _signals.Add(new BufferedNetworkSignal<T> { Tick = tick, Signal = signal });
+            lock (_signalsLock)
+            {
+                _signals.Add(new BufferedNetworkSignal<T> { Tick = tick, Signal = signal });
+            }
         }
 
         /// <summary>
@@ -106,32 +126,48 @@ namespace Nexus.Netcode
         /// </summary>
         public void ReplaySignals(int tick, ISignalBus localSignalBus)
         {
-            // The `is SignalBus` pattern check ran PER SIGNAL inside the loop
-            // (O(N) cast checks per replay). Hoisted out — one cast per replay call.
-            var concreteBus = localSignalBus as SignalBus;
-            for (int i = 0; i < _signals.Count; i++)
+            // Reuse a private replay buffer so rollback remains allocation-free after the
+            // history's initial capacity is reached.  The replay lock serializes concurrent
+            // rollback callers; user handlers run after the history lock is released and may
+            // safely append a new signal for a later tick.
+            lock (_replayLock)
             {
-                if (_signals[i].Tick == tick)
+                int signalCount;
+                lock (_signalsLock)
                 {
-                    try
+                    signalCount = _signals.Count;
+                    if (_replayBuffer.Length < signalCount)
                     {
-                        // Synchronous inline dispatch: rollback resimulation captures a
-                        // model snapshot per tick, so this tick's signals must be fully
-                        // applied before the loop advances. FireQueued's fire-and-forget
-                        // async path would defer application and every snapshot would
-                        // observe the same un-resimulated state.
-                        localSignalBus.Fire(_signals[i].Signal);
+                        Array.Resize(ref _replayBuffer, Math.Max(signalCount, _replayBuffer.Length * 2));
                     }
-                    catch (NexusSyncAsyncMismatchException)
+                    _signals.CopyTo(_replayBuffer, 0);
+                }
+
+                // The `is SignalBus` pattern check ran PER SIGNAL inside the loop
+                // (O(N) cast checks per replay). Hoisted out — one cast per replay call.
+                var concreteBus = localSignalBus as SignalBus;
+                for (int i = 0; i < signalCount; i++)
+                {
+                    if (_replayBuffer[i].Tick == tick)
                     {
-                        NexusRuntime.Logger?.LogError(
-                            $"[NetworkSignalBus] Signal '{typeof(T).FullName}' has async handlers — synchronous deterministic replay is impossible. " +
-                            "Rollback snapshots captured for this tick will not include this signal's effects. " +
-                            "Use sync-only handlers for networked signals that participate in rollback.");
-                        // Best-effort delivery so the signal is not silently dropped.
-                        if (concreteBus != null)
+                        try
                         {
-                            concreteBus.FireQueued(_signals[i].Signal);
+                            // Synchronous inline dispatch: rollback resimulation captures a
+                            // model snapshot per tick, so this tick's signals must be fully
+                            // applied before the loop advances.
+                            localSignalBus.Fire(_replayBuffer[i].Signal);
+                        }
+                        catch (NexusSyncAsyncMismatchException)
+                        {
+                            NexusRuntime.Logger?.LogError(
+                                $"[NetworkSignalBus] Signal '{typeof(T).FullName}' has async handlers — synchronous deterministic replay is impossible. " +
+                                "Rollback snapshots captured for this tick will not include this signal's effects. " +
+                                "Use sync-only handlers for networked signals that participate in rollback.");
+                            // Best-effort delivery so the signal is not silently dropped.
+                            if (concreteBus != null)
+                            {
+                                concreteBus.FireQueued(_replayBuffer[i].Signal);
+                            }
                         }
                     }
                 }
@@ -144,18 +180,21 @@ namespace Nexus.Netcode
             // in the old backwards loop was O(N²) for large histories (each removal
             // shifts every later element). List.RemoveAll would allocate a predicate;
             // manual compaction keeps the 0-GC steady-state guarantee.
-            int write = 0;
-            for (int read = 0; read < _signals.Count; read++)
+            lock (_signalsLock)
             {
-                if (_signals[read].Tick <= tick)
+                int write = 0;
+                for (int read = 0; read < _signals.Count; read++)
                 {
-                    _signals[write] = _signals[read];
-                    write++;
+                    if (_signals[read].Tick <= tick)
+                    {
+                        _signals[write] = _signals[read];
+                        write++;
+                    }
                 }
-            }
-            if (write < _signals.Count)
-            {
-                _signals.RemoveRange(write, _signals.Count - write);
+                if (write < _signals.Count)
+                {
+                    _signals.RemoveRange(write, _signals.Count - write);
+                }
             }
         }
 
@@ -163,24 +202,27 @@ namespace Nexus.Netcode
         {
             // Same O(N), zero-allocation in-place compaction as RemoveSignalsAfter —
             // keeps only signals strictly newer than the confirmed tick.
-            int write = 0;
-            for (int read = 0; read < _signals.Count; read++)
+            lock (_signalsLock)
             {
-                if (_signals[read].Tick > confirmedTick)
+                int write = 0;
+                for (int read = 0; read < _signals.Count; read++)
                 {
-                    _signals[write] = _signals[read];
-                    write++;
+                    if (_signals[read].Tick > confirmedTick)
+                    {
+                        _signals[write] = _signals[read];
+                        write++;
+                    }
                 }
-            }
-            if (write < _signals.Count)
-            {
-                _signals.RemoveRange(write, _signals.Count - write);
+                if (write < _signals.Count)
+                {
+                    _signals.RemoveRange(write, _signals.Count - write);
+                }
             }
         }
 
         public void Clear()
         {
-            _signals.Clear();
+            lock (_signalsLock) _signals.Clear();
         }
     }
 
@@ -207,6 +249,8 @@ namespace Nexus.Netcode
         // records to history but suppresses the synchronous local fire during this
         // window so a signal cannot be applied twice (once by replay, once by the call).
         private volatile bool _isResimulating;
+        private readonly int _ownerThreadId;
+        private readonly object _tickLock = new();
 
         public int CurrentTick => _currentTick;
         // Read-only live wrapper — prevents callers from casting back to the mutable dictionary.
@@ -216,6 +260,7 @@ namespace Nexus.Netcode
         public NetworkSignalBus(ISignalBus localSignalBus)
         {
             _localSignalBus = localSignalBus;
+            _ownerThreadId = Thread.CurrentThread.ManagedThreadId;
         }
 
         private NetworkSignalHistory<T> GetOrCreateHistory<T>() where T : struct, INetworkSignal
@@ -243,29 +288,46 @@ namespace Nexus.Netcode
         /// </summary>
         public void SetTick(int tick)
         {
-            _currentTick = tick;
-            // Capture state of all registered models for the new tick
-            lock (_modelHandlersLock)
+            // Capture the pre-tick model state before publishing the new tick.  Fire() takes
+            // the same lock while reading the tick and appending history, so a worker cannot
+            // associate a signal with a tick whose snapshot is still being captured.
+            lock (_tickLock)
             {
-                for (int i = 0; i < _modelHandlers.Count; i++)
+                lock (_modelHandlersLock)
                 {
-                    _modelHandlers[i].Capture(_currentTick);
+                    for (int i = 0; i < _modelHandlers.Count; i++)
+                    {
+                        _modelHandlers[i].Capture(tick);
+                    }
                 }
+                _currentTick = tick;
             }
         }
 
         /// <summary>
-        /// Fires a signal immediately and registers it in the tick history.
-        /// Uses FireQueued to avoid NexusSyncAsyncMismatchException when the signal
-        /// has async handlers registered on the local bus.
+    /// Fires a signal from the owning thread immediately and registers it in the tick
+    /// history.  Calls from worker threads are marshaled through FireThreadSafe so handlers
+    /// never execute on a network worker.  Async handlers use the queued async-safe path.
         /// </summary>
         public void Fire<T>(T signal) where T : struct, INetworkSignal
         {
-            GetOrCreateHistory<T>().Add(_currentTick, signal);
-            // Always route through FireQueued: if the signal has async handlers,
-            // Fire() would throw NexusSyncAsyncMismatchException. FireQueued is
-            // async-safe and guarantees delivery on the next main-thread drain.
-            if (_localSignalBus is SignalBus concreteBus)
+            lock (_tickLock)
+            {
+                GetOrCreateHistory<T>().Add(_currentTick, signal);
+            }
+
+            if (Thread.CurrentThread.ManagedThreadId != _ownerThreadId)
+            {
+                // Network callbacks may arrive on worker threads.  Always marshal through the
+                // public thread-safe queue; calling FireQueued directly would execute sync
+                // handlers on the worker thread instead of the Unity main-thread drain.
+                _localSignalBus.FireThreadSafe(signal);
+                return;
+            }
+
+            // Preserve the allocation-free owner-thread fast path.  Async handlers still use
+            // the queued async-safe dispatcher; sync-only handlers run inline.
+            if (_localSignalBus is SignalBus concreteBus && concreteBus.HasAsyncHandlers(typeof(T)))
                 concreteBus.FireQueued(signal);
             else
                 _localSignalBus.Fire(signal);
@@ -278,6 +340,9 @@ namespace Nexus.Netcode
     /// the tick pointer moves as signals replay, so firing here would double-apply a
     /// signal to the models (once from replay, once from this call). Inside a
     /// resimulation the signal is recorded to history only; the replay loop applies it.
+    /// Unlike <see cref="Fire{T}(T)"/>, the current-tick path intentionally dispatches
+    /// synchronously on the CALLER thread for deterministic simulation code. Call it only
+    /// from the owning/main thread; worker-thread producers must use <see cref="Fire{T}(T)"/>.
     /// </summary>
     public void FireAtTick<T>(T signal, int tick) where T : struct, INetworkSignal
     {

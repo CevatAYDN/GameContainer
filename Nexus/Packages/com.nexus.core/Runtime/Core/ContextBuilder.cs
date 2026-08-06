@@ -248,6 +248,8 @@ namespace Nexus.Core
             where TImplementation : class, TInterface, INexusService
         {
             _container.Bind<TInterface, TImplementation>(isSingleton: true);
+            _container.MarkLazyService(typeof(TInterface));
+            _container.MarkLazyService(typeof(TImplementation));
             // Intentionally NOT adding to _serviceTypes — prevents eager construction
             // during InitializeServicesAsync(). Construction happens on first Resolve().
         }
@@ -256,6 +258,7 @@ namespace Nexus.Core
             where TImplementation : class, INexusService
         {
             _container.Bind<TImplementation>(isSingleton: true);
+            _container.MarkLazyService(typeof(TImplementation));
             // Intentionally NOT adding to _serviceTypes
         }
 
@@ -381,6 +384,14 @@ namespace Nexus.Core
                 if (concrete != null) typesToValidate.Add(concrete);
             }
 
+            bool IsDependencyRegistered(Type dependencyType, string bindingName)
+                => string.IsNullOrEmpty(bindingName)
+                    ? allRegisteredTypes.Contains(dependencyType)
+                    : _container.IsRegistered(dependencyType, bindingName);
+
+            static string BindingSuffix(string bindingName)
+                => string.IsNullOrEmpty(bindingName) ? string.Empty : $" named '{bindingName}'";
+
             foreach (var type in typesToValidate)
             {
                 NexusDI.InjectableMetadata meta;
@@ -403,14 +414,18 @@ namespace Nexus.Core
                         ));
                     }
 
-                    foreach (var paramType in meta.ConstructorParameterTypes)
+                    for (int paramIndex = 0; paramIndex < meta.ConstructorParameterTypes.Length; paramIndex++)
                     {
-                        if (!allRegisteredTypes.Contains(paramType))
+                        var paramType = meta.ConstructorParameterTypes[paramIndex];
+                        var bindingName = meta.ConstructorParameterNames != null && paramIndex < meta.ConstructorParameterNames.Length
+                            ? meta.ConstructorParameterNames[paramIndex]
+                            : null;
+                        if (!IsDependencyRegistered(paramType, bindingName))
                         {
                             issues.Add(new DiValidationIssue(
                                 type, paramType,
                                 DiValidationIssueType.MissingConstructorDependency,
-                                $"Constructor of '{type.Name}' requires '{paramType.Name}' which is not registered."
+                                $"Constructor of '{type.Name}' requires '{paramType.Name}'{BindingSuffix(bindingName)} which is not registered."
                             ));
                         }
                     }
@@ -423,12 +438,12 @@ namespace Nexus.Core
                     // (never resolved), so they are always satisfiable — skip them.
                     if (field.Type.IsGenericType && field.Type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
                         continue;
-                    if (!field.IsOptional && !allRegisteredTypes.Contains(field.Type))
+                    if (!field.IsOptional && !IsDependencyRegistered(field.Type, field.Name))
                     {
                         issues.Add(new DiValidationIssue(
                             type, field.Type,
                             DiValidationIssueType.MissingFieldDependency,
-                            $"[Inject] field '{type.Name}.{field.Field.Name}' requires '{field.Type.Name}' which is not registered."
+                            $"[Inject] field '{type.Name}.{field.Field.Name}' requires '{field.Type.Name}'{BindingSuffix(field.Name)} which is not registered."
                         ));
                     }
                 }
@@ -438,12 +453,12 @@ namespace Nexus.Core
                 {
                     if (prop.Type.IsGenericType && prop.Type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
                         continue;
-                    if (!prop.IsOptional && !allRegisteredTypes.Contains(prop.Type))
+                    if (!prop.IsOptional && !IsDependencyRegistered(prop.Type, prop.Name))
                     {
                         issues.Add(new DiValidationIssue(
                             type, prop.Type,
                             DiValidationIssueType.MissingPropertyDependency,
-                            $"[Inject] property '{type.Name}.{prop.Property.Name}' requires '{prop.Type.Name}' which is not registered."
+                            $"[Inject] property '{type.Name}.{prop.Property.Name}' requires '{prop.Type.Name}'{BindingSuffix(prop.Name)} which is not registered."
                         ));
                     }
                 }
@@ -453,13 +468,16 @@ namespace Nexus.Core
                 {
                     for (int i = 0; i < method.ParameterTypes.Length; i++)
                     {
-                        if (!method.OptionalParameterMask[i] && !allRegisteredTypes.Contains(method.ParameterTypes[i]))
+                        var bindingName = method.ParameterNames != null && i < method.ParameterNames.Length
+                            ? method.ParameterNames[i]
+                            : null;
+                        if (!method.OptionalParameterMask[i] && !IsDependencyRegistered(method.ParameterTypes[i], bindingName))
                         {
                             var paramName = method.Method.GetParameters()[i].Name;
                             issues.Add(new DiValidationIssue(
                                 type, method.ParameterTypes[i],
                                 DiValidationIssueType.MissingMethodDependency,
-                                $"[Inject] method '{type.Name}.{method.Method.Name}' parameter '{paramName}' requires '{method.ParameterTypes[i].Name}' which is not registered."
+                                $"[Inject] method '{type.Name}.{method.Method.Name}' parameter '{paramName}' requires '{method.ParameterTypes[i].Name}'{BindingSuffix(bindingName)} which is not registered."
                             ));
                         }
                     }

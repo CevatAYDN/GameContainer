@@ -103,6 +103,10 @@ namespace Nexus.Core
         private readonly NexusDI _container;
         private readonly Dictionary<IView, IMediator> _activeMediators = new();
         private readonly HashSet<IMediator> _activeMediatorSet = new();
+        // Views without a mediator still own a context binding and must be unbound
+        // during unregister/dispose. Keep this as a list and compare by reference:
+        // view implementations are user code and may override Equals.
+        private readonly List<IView> _boundOnlyViews = new();
         private readonly Dictionary<Type, Stack<IMediator>> _mediatorPools = new();
 
         private readonly int _maxMediatorPoolSize = 64;
@@ -152,6 +156,7 @@ namespace Nexus.Core
         {
             if (view == null) return;
             if (_activeMediators.ContainsKey(view)) return;
+            if (ContainsBoundOnly(view)) return;
 
             if (_context == null)
             {
@@ -165,8 +170,17 @@ namespace Nexus.Core
             if (mediatorAttr == null)
             {
                 NexusRuntime.Logger?.Log($"[Nexus] View '{view.GetType().Name}' has no MediatorAttribute. Binding only the context.");
-                _container.Inject(view);
-                view.Bind(_context);
+                try
+                {
+                    _container.Inject(view);
+                    view.Bind(_context);
+                    _boundOnlyViews.Add(view);
+                }
+                catch (Exception ex)
+                {
+                    try { view.Unbind(); } catch (Exception unbindEx) { NexusRuntime.Logger?.LogException(unbindEx); }
+                    NexusRuntime.Logger?.LogException(ex);
+                }
                 return;
             }
 
@@ -186,7 +200,19 @@ namespace Nexus.Core
                     $"View '{view.GetType().Name}' will not have a mediator attached.");
                 return;
             }
-            view.Bind(_context);
+            try
+            {
+                view.Bind(_context);
+            }
+            catch (Exception ex)
+            {
+                try { view.Unbind(); } catch (Exception unbindEx) { NexusRuntime.Logger?.LogException(unbindEx); }
+                _activeMediators.Remove(view);
+                _activeMediatorSet.Remove(mediator);
+                ReturnMediator(mediator);
+                NexusRuntime.Logger?.LogException(ex);
+                return;
+            }
 
             _activeMediators[view] = mediator;
             _activeMediatorSet.Add(mediator);
@@ -233,6 +259,10 @@ namespace Nexus.Core
                     _activeMediatorSet.Remove(mediator);
                     mediator.Unbind();
                     ReturnMediator(mediator);
+                }
+                else
+                {
+                    RemoveBoundOnly(view);
                 }
             }
             finally
@@ -326,6 +356,23 @@ namespace Nexus.Core
             NexusDI.ClearInjectedReferences(mediator);
         }
 
+        private bool ContainsBoundOnly(IView view)
+        {
+            for (int i = 0; i < _boundOnlyViews.Count; i++)
+                if (ReferenceEquals(_boundOnlyViews[i], view)) return true;
+            return false;
+        }
+
+        private void RemoveBoundOnly(IView view)
+        {
+            for (int i = _boundOnlyViews.Count - 1; i >= 0; i--)
+            {
+                if (!ReferenceEquals(_boundOnlyViews[i], view)) continue;
+                _boundOnlyViews.RemoveAt(i);
+                break;
+            }
+        }
+
         /// <summary>
         /// Clears the shared [Mediator] attribute cache. Called by <see cref="NexusRuntime.Reset"/>
         /// so a recompile with Disable Domain Reload can never leave stale Type references.
@@ -350,6 +397,12 @@ namespace Nexus.Core
                     NexusRuntime.Logger?.LogException(ex);
                 }
             }
+            for (int i = _boundOnlyViews.Count - 1; i >= 0; i--)
+            {
+                try { _boundOnlyViews[i].Unbind(); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+            }
+            _boundOnlyViews.Clear();
             _activeMediators.Clear();
             _activeMediatorSet.Clear();
             _mediatorPools.Clear();

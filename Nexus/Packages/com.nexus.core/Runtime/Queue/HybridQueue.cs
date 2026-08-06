@@ -222,7 +222,11 @@ namespace Nexus.Core
         private readonly SignalBus _signalBus;
         
         private readonly QueuedSignalRingBuffer _threadSafeQueue = new(256);
-        private readonly QueuedSignalRingBuffer _nextFrameQueue = new(256);
+        // The active queue receives new next-frame signals.  DrainNextFrame swaps it with
+        // the detached queue before dispatch, so a handler that enqueues another next-frame
+        // signal cannot have that signal consumed by the current drain.
+        private QueuedSignalRingBuffer _nextFrameQueue = new(256);
+        private QueuedSignalRingBuffer _nextFrameDrainQueue = new(256);
         private readonly object _threadSafeLock = new();
         private readonly object _nextFrameLock = new();
 
@@ -302,7 +306,21 @@ namespace Nexus.Core
         {
             if (System.Threading.Interlocked.CompareExchange(ref _nextFrameDrainInProgress, 1, 0) != 0)
                 return;
-            try { Drain(_nextFrameQueue, _nextFrameLock); }
+            try
+            {
+                QueuedSignalRingBuffer queueToDrain;
+                lock (_nextFrameLock)
+                {
+                    queueToDrain = _nextFrameQueue;
+                    _nextFrameQueue = _nextFrameDrainQueue;
+                    _nextFrameDrainQueue = queueToDrain;
+                }
+
+                // queueToDrain is detached from producers for the whole drain.  Drain keeps
+                // the lock boundary for Clear() and diagnostics, but all reentrant enqueues
+                // target the newly active queue above and therefore wait for the next call.
+                Drain(queueToDrain, _nextFrameLock);
+            }
             finally { System.Threading.Interlocked.Exchange(ref _nextFrameDrainInProgress, 0); }
         }
 
@@ -351,6 +369,7 @@ namespace Nexus.Core
             lock (_nextFrameLock)
             {
                 _nextFrameQueue.Clear();
+                _nextFrameDrainQueue.Clear();
             }
         }
     }

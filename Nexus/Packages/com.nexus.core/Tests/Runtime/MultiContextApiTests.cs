@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using NUnit.Framework;
 using Nexus.Core;
 using UnityEngine;
@@ -42,6 +43,21 @@ namespace Nexus.Tests
 
             Object.DestroyImmediate(aData);
             Object.DestroyImmediate(bData);
+        }
+
+        [Test]
+        public void ActiveContexts_SnapshotCannotMutateRegistry()
+        {
+            var data = ScriptableObject.CreateInstance<ContextData>();
+            using var context = new Context(null, data);
+
+            var snapshot = NexusRuntime.ActiveContexts;
+            Assert.IsFalse(snapshot is List<IContext>, "Public snapshot must not expose the mutable cache list.");
+            Assert.IsInstanceOf<IList<IContext>>(snapshot);
+            Assert.Throws<System.NotSupportedException>(() => ((IList<IContext>)snapshot).Add(context));
+            Assert.That(NexusRuntime.ActiveContexts, Has.Member(context));
+
+            Object.DestroyImmediate(data);
         }
     }
 }

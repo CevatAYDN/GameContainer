@@ -171,6 +171,8 @@ namespace Nexus.Core
 
         private async ValueTask ExecuteAsyncWithOptionalTimeout(IAsyncCommand asyncCmd, int timeoutMs, CancellationToken ct, bool useDecorators)
         {
+            using var executorLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _executorCts.Token);
+            ct = executorLinkedCts.Token;
             // Timeout semantics require a FRESH linked CTS + CancelAfter timer PER EXECUTION:
             // concurrent in-flight commands of the same type share the context lifetime token
             // and must not cancel each other, so the linked CTS cannot be cached per handler.
@@ -197,6 +199,8 @@ namespace Nexus.Core
 
         private async ValueTask ExecuteGenericAsyncWithOptionalTimeout<TSignal>(IAsyncCommand<TSignal> asyncCmd, TSignal signal, int timeoutMs, CancellationToken ct, bool useDecorators) where TSignal : struct
         {
+            using var executorLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _executorCts.Token);
+            ct = executorLinkedCts.Token;
             // Same fresh-per-execution linked CTS semantics as ExecuteAsyncWithOptionalTimeout
             // (see the allocation note there); skipped when the parent token is already cancelled.
             if (timeoutMs > 0 && !ct.IsCancellationRequested)
@@ -218,6 +222,8 @@ namespace Nexus.Core
 
         private async ValueTask ExecuteAsyncDispatcherWithOptionalTimeout(object command, Func<object, object, CancellationToken, ValueTask> asyncDispatcher, object signal, int timeoutMs, CancellationToken ct, bool useDecorators)
         {
+            using var executorLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _executorCts.Token);
+            ct = executorLinkedCts.Token;
             if (timeoutMs > 0 && !ct.IsCancellationRequested)
             {
                 using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -551,7 +557,7 @@ namespace Nexus.Core
 
         // ─── Composite execution ───────────────────────────────────────────────
 
-        private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command, CompositeContext context)
+        private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command, CompositeContext context, CancellationToken cancellationToken)
         {
             int retryCount = 0;
             bool shouldRun = true;
@@ -602,7 +608,7 @@ namespace Nexus.Core
                     }
                     else if (command is IAsyncCompositeCommand asyncCompCmd)
                     {
-                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                        var ct = cancellationToken;
                         // Composite async commands share the same in-flight cap as
                         // regular async commands — overflow aborts the pipeline everywhere.
                         EnterAsyncInFlight();
@@ -629,7 +635,7 @@ namespace Nexus.Core
                     }
                     else if (command is IAsyncCommand asyncCmd)
                     {
-                        var ct = _context?.LifetimeToken ?? CancellationToken.None;
+                        var ct = cancellationToken;
                         // Composite async commands share the same in-flight cap as
                         // regular async commands — overflow aborts the pipeline everywhere.
                         EnterAsyncInFlight();
@@ -708,8 +714,40 @@ namespace Nexus.Core
 
         private void ExecuteCompositeCommandAsync(CompositeTriggerState trigger, object command, CompositeContext context)
         {
-            SafeAsyncRunner.Run(() => ExecuteCompositeCommandAsyncCore(trigger, command, context),
+            SafeAsyncRunner.Run(() => ExecuteCompositeCommandAsyncWithLinkedToken(trigger, command, context),
                 $"Composite command '{trigger.CommandType.FullName}' failed.");
+        }
+
+        private async ValueTask ExecuteCompositeCommandAsyncWithLinkedToken(CompositeTriggerState trigger, object command, CompositeContext context)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+                _context?.LifetimeToken ?? CancellationToken.None, _executorCts.Token);
+            await ExecuteCompositeCommandAsyncCore(trigger, command, context, linked.Token);
+        }
+
+        /// <summary>Executes a composite trigger and awaits async composite commands.</summary>
+        public async ValueTask ExecuteCompositeAwaitedAsync(CompositeTriggerState trigger, CompositeContext context, CancellationToken ct)
+        {
+            using var executorLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _executorCts.Token);
+            NexusRuntime.Metrics.RecordCommandExecuted();
+            NexusRuntime.Metrics.RecordTrace(trigger.CommandType.Name);
+
+            object command = null;
+            bool transferred = false;
+            try
+            {
+                command = _poolManager.GetCommand(trigger.CommandType);
+                _container.Inject(command);
+                transferred = true;
+                await ExecuteCompositeCommandAsyncCore(trigger, command, context, executorLinkedCts.Token);
+            }
+            finally
+            {
+                // The core owns and returns the rented command on every exit path once
+                // ownership is transferred. Injection failures remain owned here.
+                if (!transferred && command != null)
+                    _poolManager.ReturnCommand(trigger.CommandType, command);
+            }
         }
 
         public void ExecuteComposite(CompositeTriggerState trigger, CompositeContext context)

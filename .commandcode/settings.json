@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "allow": [
+      "Shell(git:*)",
+      "Shell(rm:*)",
+      "Shell(cat playmode.pid 2>/dev/null; ls \"C:/Program Files/Unity/Hub/Editor/\" 2>/dev/null; tasklist //FI \"IMAGENAME eq Unity.exe\" 2>/dev/null | head -5)",
+      "Shell(if:*)",
+      "Shell(type:*)",
+      "Shell(else:*)",
+      "Shell(dir \"C:\\Program Files\\Unity\\Hub\\Editor\" 2>nul || echo no-unity-hub-dir)",
+      "Shell(tasklist /FI \"PID eq 26044\" 2>nul | findstr /I \"Unity\" || echo pid-26044-not-running)",
+      "Shell(dotnet:*)",
+      "Shell(mkdir:*)",
+      "Shell(C:/Program Files/Unity/Hub/Editor/6000.5.6f1/Editor/Unity.exe:*)",
+      "Shell(sleep:*)",
+      "Shell({command::*)",
+      "Shell(tasklist /FI \"IMAGENAME eq Unity.exe\" /FO CSV 2>nul | findstr /I \"Unity.exe\" || echo no-unity-process)",
+      "Shell(dir \"C:\\Program Files\\Unity\\Hub\\Editor\\6000.5.6f1\\Editor\\Data\\Managed\\UnityEngine\" 2>nul | findstr /I \"CoreModule UI\" || echo not-found-core)",
+      "Shell(set:*)",
+      "Shell(tailing:*)",
+      "Shell(tail -n 25 \"C:\\Users\\wwwla\\AppData\\Local\\Temp\\commandcode\\shellout\\2026-08-06T20-40-29-540Z-s4jbfkex.log\" 2>&1; echo --COMPILECHECK--; tail -n 25 \"C:\\Users\\wwwla\\AppData\\Local\\Temp\\commandcode\\shellout\\2026-08-06T20-40-22-354Z-s3ij6gkj.log\" 2>&1)",
+      "Shell(ls -la report.json 2>/dev/null; ls report.json 2>/dev/null)",
+      "Shell(cmd:*)",
+      "Shell(dotnet run -c Release --no-build -- --json > \"%COMMANDCODE_SCRATCHPAD%\\harness.json\" 2>&1; echo HARNESS_DONE_EXIT=$? >> \"%COMMANDCODE_SCRATCHPAD%\\harness.json\")",
+      "Shell(set UNITY_MODULES=C:\\Program Files\\Unity\\Hub\\Editor\\6000.5.6f1\\Editor\\Data\\Managed\\UnityEngine\\ && dotnet build -c Release --nologo > \"%COMMANDCODE_SCRATCHPAD%\\compilecheck.log\" 2>&1; echo COMPILE_CHECK_EXIT=$? >> \"%COMMANDCODE_SCRATCHPAD%\\compilecheck.log\")",
+      "Shell(powershell -NoProfile -Command \"Get-Content -Tail 40 'C:\\Users\\wwwla\\AppData\\Local\\Temp\\commandcode\\C--Users-wwwla-Documents-Github-GameContainer\\7102becd-8de2-4cfb-8421-3c48fa9addd2\\scratchpad\\compilecheck.log' -ErrorAction SilentlyContinue; if (!(Test-Path '...')) { 'not-yet' }\")",
+      "Shell(mkdir artifacts 2>nul; dotnet run -c Release -- --json > \"artifacts/harness.json\" 2>&1; echo HARNESS_DONE_EXIT=$? >> \"artifacts/harness.json\")",
+      "Shell(mkdir artifacts 2>nul; set UNITY_MODULES=C:\\Program Files\\Unity\\Hub\\Editor\\6000.5.6f1\\Editor\\Data\\Managed\\UnityEngine\\ && dotnet build -c Release --nologo > \"artifacts/compilecheck.log\" 2>&1; echo COMPILE_CHECK_EXIT=$? >> \"artifacts/compilecheck.log\")",
+      "Shell(set \"UNITY_MODULES=C:\\Program Files\\Unity\\Hub\\Editor\\6000.5.6f1\\Editor\\Data\\Managed\\UnityEngine\\\" && cd /d \"C:\\Users\\wwwla\\Documents\\Github\\GameContainer\\tools\\nexus-compile-check\" && dotnet build -c Release --nologo 2>&1 | findstr /rc:\"error\" /rc:\"Build succeeded\" /rc:\"^\\s*-\\s*\"/> nul; echo EXIT=%ERRORLEVEL%)"
+    ],
+    "deny": [],
+    "defaultMode": "default"
+  }
+}

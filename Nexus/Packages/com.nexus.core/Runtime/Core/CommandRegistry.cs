@@ -48,6 +48,7 @@ namespace Nexus.Core
         // Precomputed cache: does this signal type have at least one async handler?
         private readonly Dictionary<Type, bool> _hasAsyncHandler = new();
         private volatile Dictionary<Type, bool> _hasAsyncHandlerReadCopy = new();
+        private readonly HashSet<(Type SignalType, Type CommandType)> _claimedOneShots = new();
 
         // Cached comparison delegates for the registration-time priority sorts.
         // A lambda written inline at the Sort call site relies on the compiler's delegate
@@ -110,19 +111,21 @@ namespace Nexus.Core
         {
             var genericSyncType = typeof(ICommand<>).MakeGenericType(signalType);
             var genericAsyncType = typeof(IAsyncCommand<>).MakeGenericType(signalType);
-            bool implementsGenericSync = genericSyncType.IsAssignableFrom(commandType);
-            bool implementsGenericAsync = genericAsyncType.IsAssignableFrom(commandType);
+            bool implementsSync = typeof(ICommand).IsAssignableFrom(commandType)
+                || genericSyncType.IsAssignableFrom(commandType);
+            bool implementsAsync = typeof(IAsyncCommand).IsAssignableFrom(commandType)
+                || genericAsyncType.IsAssignableFrom(commandType);
 
-            if (!implementsGenericSync && !implementsGenericAsync)
+            if (!implementsSync && !implementsAsync)
             {
-                throw new InvalidOperationException($"Command type {commandType.Name} registered for signal {signalType.Name} must implement either ICommand<{signalType.Name}> or IAsyncCommand<{signalType.Name}>.");
+                throw new InvalidOperationException($"Command type {commandType.Name} registered for signal {signalType.Name} must implement ICommand/ICommand<{signalType.Name}> or IAsyncCommand/IAsyncCommand<{signalType.Name}>.");
             }
 
-            if (implementsGenericAsync && implementsGenericSync)
+            if (implementsAsync && implementsSync)
             {
                 throw new InvalidOperationException($"Command type {commandType.Name} cannot implement both ICommand and IAsyncCommand interfaces.");
             }
-            if (implementsGenericAsync && !isAsync)
+            if (implementsAsync && !isAsync)
             {
                 throw new InvalidOperationException($"Command type {commandType.Name} implements IAsyncCommand but is being registered as sync. It must be registered as async (isAsync: true).");
             }
@@ -221,6 +224,7 @@ namespace Nexus.Core
                 int removed = list.RemoveAll(h => h.CommandType == commandType);
                 if (removed == 0) return;
 
+                _claimedOneShots.Remove((signalType, commandType));
                 RebuildHandlerReadCopies(signalType, list);
             }
         }
@@ -265,13 +269,36 @@ namespace Nexus.Core
                 if (!_commandHandlers.TryGetValue(signalType, out var list))
                     return false;
 
-                // Only one-shot handlers are claimable; persistent handlers are untouched.
-                int removed = list.RemoveAll(h => h.CommandType == commandType && h.IsOneShot);
-                if (removed == 0) return false;
-
-                RebuildHandlerReadCopies(signalType, list);
-                return true;
+                bool registeredOneShot = false;
+                for (int i = 0; i < list.Count; i++)
+                {
+                    if (list[i].CommandType == commandType && list[i].IsOneShot)
+                    {
+                        registeredOneShot = true;
+                        break;
+                    }
+                }
+                return registeredOneShot && _claimedOneShots.Add((signalType, commandType));
             }
+        }
+
+        /// <summary>Commits a successful one-shot execution and removes its registration.</summary>
+        public void CompleteOneShot(Type signalType, Type commandType)
+        {
+            lock (_handlerReadLock)
+            {
+                if (!_claimedOneShots.Remove((signalType, commandType))) return;
+                if (!_commandHandlers.TryGetValue(signalType, out var list)) return;
+                if (list.RemoveAll(h => h.CommandType == commandType && h.IsOneShot) > 0)
+                    RebuildHandlerReadCopies(signalType, list);
+            }
+        }
+
+        /// <summary>Releases a failed one-shot claim so a later signal can retry it.</summary>
+        public void ReleaseOneShot(Type signalType, Type commandType)
+        {
+            lock (_handlerReadLock)
+                _claimedOneShots.Remove((signalType, commandType));
         }
 
         /// <summary>Registers a composite command that triggers on multiple signals.</summary>
@@ -512,6 +539,31 @@ namespace Nexus.Core
             return dispatcher;
         }
 
+        /// <summary>
+        /// AOT codegen hook: pre-registers a strongly-typed dispatcher for a generic-only
+        /// command/signal pair (e.g. <c>(cmd, sig) =&gt; ((ICommand&lt;T&gt;)cmd).Execute((T)sig)</c>).
+        /// On IL2CPP/AOT targets <see cref="GetGenericSyncDispatcher"/> cannot compile
+        /// expressions and falls back to <c>MethodInfo.Invoke</c>, which allocates an
+        /// <c>object[]</c> per dispatch; a generated registration populates the cache up
+        /// front so the reflection fallback never runs for discovered command types.
+        /// </summary>
+        public static void RegisterGenericSyncDispatcher(Type commandType, Type signalType, Action<object, object> dispatcher)
+        {
+            if (commandType == null || signalType == null || dispatcher == null) return;
+            s_genericSyncDispatchCache[(commandType, signalType)] = dispatcher;
+        }
+
+        /// <summary>
+        /// AOT codegen hook: pre-registers a strongly-typed dispatcher for a generic-only
+        /// async command/signal pair. See <see cref="RegisterGenericSyncDispatcher"/> for
+        /// why this exists on IL2CPP/AOT targets.
+        /// </summary>
+        public static void RegisterGenericAsyncDispatcher(Type commandType, Type signalType, Func<object, object, CancellationToken, ValueTask> dispatcher)
+        {
+            if (commandType == null || signalType == null || dispatcher == null) return;
+            s_genericAsyncDispatchCache[(commandType, signalType)] = dispatcher;
+        }
+
         /// <summary>Gets or creates a signal setter delegate.</summary>
         public Action<object, object> GetSignalSetter(Type commandType, Type signalType)
             => s_signalSetterCache.GetOrAdd((commandType, signalType), CreateSignalSetter);
@@ -632,6 +684,7 @@ namespace Nexus.Core
             {
                 _commandHandlers.Clear();
                 _hasAsyncHandler.Clear();
+                _claimedOneShots.Clear();
                 // The published read copies and snapshots are read LOCK-FREE by dispatch.
                 // Clearing them in place would mutate a dictionary another thread may be
                 // enumerating (undefined behaviour); publish fresh empty instances instead

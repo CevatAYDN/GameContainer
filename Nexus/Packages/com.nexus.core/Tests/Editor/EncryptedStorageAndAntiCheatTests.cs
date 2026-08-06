@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using NUnit.Framework;
 using Nexus.Core;
 using Nexus.Core.Services;
@@ -471,6 +472,51 @@ namespace Nexus.Editor.Tests
             storage.DeleteKey("CachedLongKey");
             Assert.IsFalse(File.Exists(filePath), "File should be deleted from disk");
             storage.Dispose();
+        }
+
+        [Test]
+        public void EncryptedStorageService_Save_DoesNotClearNewerDirtyValue()
+        {
+            const string salt = "Test_Salt_SaveVersionRace";
+            const string key = "VersionedKey";
+            var storage = new EncryptedStorageService(salt) { AutoSave = false };
+            storage.DeleteKey(key);
+            storage.SetString(key, "old-value");
+
+            var writeLock = typeof(EncryptedStorageService).GetField("_writeLock",
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)?.GetValue(storage);
+            Assert.IsNotNull(writeLock);
+
+            var started = new ManualResetEventSlim(false);
+            var saver = new Thread(() =>
+            {
+                started.Set();
+                storage.Save();
+            }) { IsBackground = true };
+
+            // Hold the write gate while Save starts.  The fixed implementation snapshots only
+            // after acquiring this gate; the old implementation snapshots old-value first,
+            // then blocks inside its per-key atomic write.  Updating the key while the saver
+            // is waiting deterministically exercises the stale-write/dirty-clear window.
+            lock (writeLock)
+            {
+                saver.Start();
+                Assert.IsTrue(started.Wait(1000));
+                Assert.IsTrue(SpinWait.SpinUntil(
+                    () => (saver.ThreadState & ThreadState.WaitSleepJoin) != 0, 1000),
+                    "Save thread did not reach the serialized write gate.");
+                storage.SetString(key, "new-value");
+            }
+
+            Assert.IsTrue(saver.Join(5000), "Save thread did not complete.");
+            storage.Save();
+            storage.Dispose();
+
+            var reloaded = new EncryptedStorageService(salt);
+            Assert.AreEqual("new-value", reloaded.GetString(key),
+                "A newer SetString must remain dirty until its value reaches disk.");
+            reloaded.DeleteKey(key);
+            reloaded.Dispose();
         }
     }
 }

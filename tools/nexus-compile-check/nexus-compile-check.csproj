@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- Match Unity's optional DOTS assembly: compile NexusDOTSBridge only when the
+         generated Unity.Collections assembly is available. -->
+    <UNITY_COLLECTIONS_DLL Condition="'$(UNITY_COLLECTIONS_DLL)' == ''">..\..\Nexus\Library\ScriptAssemblies\Unity.Collections.dll</UNITY_COLLECTIONS_DLL>
+    <UNITY_COLLECTIONS_DEFINE Condition="Exists('$(UNITY_COLLECTIONS_DLL)')">;UNITY_COLLECTIONS</UNITY_COLLECTIONS_DEFINE>
+    <UNITY_UGUI_DLL Condition="'$(UNITY_UGUI_DLL)' == '' and Exists('$(UNITY_UGUI)UnityEngine.UI.dll')">$(UNITY_UGUI)UnityEngine.UI.dll</UNITY_UGUI_DLL>
+    <UNITY_UGUI_DLL Condition="'$(UNITY_UGUI_DLL)' == ''">..\..\Nexus\Library\ScriptAssemblies\UnityEngine.UI.dll</UNITY_UGUI_DLL>
+    <DefineConstants>UNITY_6000;UNITY_6000_5_OR_NEWER;DEVELOPMENT_BUILD$(UNITY_COLLECTIONS_DEFINE)</DefineConstants>
+    <NoWarn>CS0067;CS0649;CS0414;CS0219;CS8019</NoWarn>
+    <WarningLevel>4</WarningLevel>
+    <Deterministic>true</Deterministic>
+    <AssemblyName>com.nexus.core</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="..\..\Nexus\Packages\com.nexus.core\Runtime\**\*.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="$(UNITY_MODULES)UnityEngine.CoreModule.dll" />
+    <Reference Include="$(UNITY_MODULES)Unity.Scripting.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.SharedInternalsModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.AudioModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.UIModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.UIElementsModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.TextRenderingModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.TextCoreTextEngineModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.TextCoreFontEngineModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.IMGUIModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.PhysicsModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.Physics2DModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.AnimationModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.InputModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.InputLegacyModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.InputForUIModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.JSONSerializeModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.UnityWebRequestModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.UnityWebRequestWWWModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.ScreenCaptureModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.ParticleSystemModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.VFXModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.VideoModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.DirectorModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.MathematicsModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.HierarchyCoreModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.IdentifiersModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.MultiplayerModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.UnityAnalyticsModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.UnityAnalyticsCommonModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.AIModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.AccessibilityModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.ImageConversionModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.AssetBundleModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.UnityCurlModule.dll" />
+    <Reference Include="$(UNITY_MODULES)UnityEngine.TLSModule.dll" />
+    <Reference Include="$(UNITY_UGUI_DLL)" Condition="Exists('$(UNITY_UGUI_DLL)')" />
+    <Reference Include="$(UNITY_COLLECTIONS_DLL)" Condition="Exists('$(UNITY_COLLECTIONS_DLL)')" />
+  </ItemGroup>
+
+</Project>

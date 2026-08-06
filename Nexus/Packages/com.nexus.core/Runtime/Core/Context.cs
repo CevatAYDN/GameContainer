@@ -60,11 +60,14 @@ namespace Nexus.Core
         // Distinct from _builder != null: the harness path (GetOrCreateBuilder) creates the
         // builder WITHOUT configuring, so guarding on _builder would silently skip Configure.
         private bool _configured;
-        private volatile bool _disposed;
+        private int _disposeState;
+        private int _lifecycleState; // 0 = not started, 1 = starting, 2 = started
+        private int _lazyDrainScheduled;
 
         private readonly ContextLifecycleOrchestrator _orchestrator = new();
         private IContextLifecycle[] _configuredLifecycles = Array.Empty<IContextLifecycle>();
         private List<IPostContextLifecycle> _postContextLifecycles = new();
+        private int _postContextState;
 
         internal IReadOnlyList<IContextLifecycle> ConfiguredLifecycles => _configuredLifecycles;
         internal IReadOnlyList<IPostContextLifecycle> PostContextLifecycles => _postContextLifecycles;
@@ -135,6 +138,7 @@ namespace Nexus.Core
                 (container, poolManager) = CreateModules(parent, contextData);
             }
             Container = container;
+            Container.LazyServiceResolvedCallback = OnLazyServiceResolved;
             Container.BindInstance(container);
             PoolManager = poolManager;
             Container.BindInstance(poolManager);
@@ -212,7 +216,7 @@ namespace Nexus.Core
 
         private void ConfigureInternal(ContextBuilder prebuiltBuilder, IContextLifecycle[] lifecycles)
         {
-            if (_disposed) return;
+            if (Volatile.Read(ref _disposeState) != 0) return;
 
             // Synchronize with _configureLock to prevent two threads from entering
             // Configure() simultaneously, which would cause duplicate ContextBuilder creation,
@@ -247,96 +251,114 @@ namespace Nexus.Core
             }
 
             // ... rest stays the same until after assemblies scan ...
-            var allLifecycles = new List<IContextLifecycle>();
-            if (lifecycles != null) allLifecycles.AddRange(lifecycles);
-
-            if (_contextData == null || _contextData.EnableAutoDiscovery)
+            try
             {
-                if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
+                var allLifecycles = new List<IContextLifecycle>();
+                if (lifecycles != null) allLifecycles.AddRange(lifecycles);
+
+                if (_contextData == null || _contextData.EnableAutoDiscovery)
                 {
-                    var lifecycleType = FindLifecycleTypeByConvention();
-                    if (lifecycleType != null)
+                    if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
                     {
-                        try
+                        var lifecycleType = FindLifecycleTypeByConvention();
+                        if (lifecycleType != null)
                         {
-                            var instance = Activator.CreateInstance(lifecycleType) as IContextLifecycle;
-                            if (instance != null)
+                            try
                             {
-                                Container.BindInstance<IContextLifecycle>(instance);
-                                allLifecycles.Add(instance);
+                                var instance = Activator.CreateInstance(lifecycleType) as IContextLifecycle;
+                                if (instance != null)
+                                {
+                                    Container.BindInstance<IContextLifecycle>(instance);
+                                    allLifecycles.Add(instance);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                NexusRuntime.Logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
                             }
                         }
-                        catch (Exception ex)
+                    }
+
+                    if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
+                        NexusRuntime.Logger?.LogWarning("[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
+                }
+
+                if (allLifecycles.Count == 0 && Container.IsRegistered(typeof(IContextLifecycle)))
+                {
+                    var lifecycle = Container.Resolve<IContextLifecycle>();
+                    allLifecycles.Add(lifecycle);
+                }
+
+                // Publish the configured lifecycles and post-context list under the
+                // _configureLock so concurrent DisposeShared readers cannot observe a
+                // partially-populated collection (D4 fix).
+                var lifecyclesArray = allLifecycles.ToArray();
+                var postList = new List<IPostContextLifecycle>(allLifecycles.Count);
+                for (int i = 0; i < allLifecycles.Count; i++)
+                {
+                    if (allLifecycles[i] is IPostContextLifecycle postCtx)
+                        postList.Add(postCtx);
+                }
+
+                lock (_configureLock)
+                {
+                    _configuredLifecycles = lifecyclesArray;
+                    _postContextLifecycles = postList;
+                }
+
+                // Now invoke lifecycle OnConfigure outside the lock — handlers should not
+                // execute while holding the configure lock.
+                foreach (var lifecycle in allLifecycles)
+                    lifecycle.OnConfigure(_builder);
+
+                ScanAssembliesAndRegister(_builder);
+
+                // DI validation (missing dependencies, constructor explosion, captive
+                // dependencies) must run in ALL build targets, not just the editor — production
+                // builds previously ran zero validation and silently left [Inject] fields null
+                // with no diagnostic. Validate() only logs (it never throws), and games that do
+                // intentional late binding can opt out via ContextBuilder.ValidateOnStartup.
+                if (ContextBuilder.ValidateOnStartup)
+                {
+                    var issues = _builder.Validate();
+                    if (issues.Count > 0)
+                    {
+                        var sb = new System.Text.StringBuilder();
+                        foreach (var issue in issues)
                         {
-                            NexusRuntime.Logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
+                            var message = $"[Nexus] DI Validation: {issue.Message}";
+                            if (NexusRuntime.Logger != null)
+                                NexusRuntime.Logger.LogError(message);
+                            else
+                                UnityEngine.Debug.LogError(message);
+                            sb.AppendLine(issue.Message);
+                        }
+
+                        // P0-CR fix: opt-in fail-fast — teams that enable FailOnValidationErrors
+                        // in their ContextData get a hard exception at startup so DI misconfigurations
+                        // cannot silently pass through to production.
+                        if (_contextData != null && _contextData.FailOnValidationErrors)
+                        {
+                            throw new NexusDiValidationException(
+                                $"DI validation failed with {issues.Count} issue(s):\n{sb}");
                         }
                     }
                 }
-
-                if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
-                    NexusRuntime.Logger?.LogWarning("[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
             }
-
-            if (allLifecycles.Count == 0 && Container.IsRegistered(typeof(IContextLifecycle)))
+            catch
             {
-                var lifecycle = Container.Resolve<IContextLifecycle>();
-                allLifecycles.Add(lifecycle);
-            }
-
-            // Publish the configured lifecycles and post-context list under the
-            // _configureLock so concurrent DisposeShared readers cannot observe a
-            // partially-populated collection (D4 fix).
-            var lifecyclesArray = allLifecycles.ToArray();
-            var postList = new List<IPostContextLifecycle>(allLifecycles.Count);
-            for (int i = 0; i < allLifecycles.Count; i++)
-            {
-                if (allLifecycles[i] is IPostContextLifecycle postCtx)
-                    postList.Add(postCtx);
-            }
-
-            lock (_configureLock)
-            {
-                _configuredLifecycles = lifecyclesArray;
-                _postContextLifecycles = postList;
-            }
-
-            // Now invoke lifecycle OnConfigure outside the lock — handlers should not
-            // execute while holding the configure lock.
-            foreach (var lifecycle in allLifecycles)
-                lifecycle.OnConfigure(_builder);
-
-            ScanAssembliesAndRegister(_builder);
-
-            // DI validation (missing dependencies, constructor explosion, captive
-            // dependencies) must run in ALL build targets, not just the editor — production
-            // builds previously ran zero validation and silently left [Inject] fields null
-            // with no diagnostic. Validate() only logs (it never throws), and games that do
-            // intentional late binding can opt out via ContextBuilder.ValidateOnStartup.
-            if (ContextBuilder.ValidateOnStartup)
-            {
-                var issues = _builder.Validate();
-                if (issues.Count > 0)
+                // A failed Configure (throwing OnConfigure, scan/registration error, or
+                // fail-fast validation) must not strand the context in a zombie state
+                // where _configured stays true and every retry is silently ignored.
+                // Roll the flags back so the caller can fix the cause and re-Configure.
+                lock (_configureLock)
                 {
-                    var sb = new System.Text.StringBuilder();
-                    foreach (var issue in issues)
-                    {
-                        var message = $"[Nexus] DI Validation: {issue.Message}";
-                        if (NexusRuntime.Logger != null)
-                            NexusRuntime.Logger.LogError(message);
-                        else
-                            UnityEngine.Debug.LogError(message);
-                        sb.AppendLine(issue.Message);
-                    }
-
-                    // P0-CR fix: opt-in fail-fast — teams that enable FailOnValidationErrors
-                    // in their ContextData get a hard exception at startup so DI misconfigurations
-                    // cannot silently pass through to production.
-                    if (_contextData != null && _contextData.FailOnValidationErrors)
-                    {
-                        throw new NexusDiValidationException(
-                            $"DI validation failed with {issues.Count} issue(s):\n{sb}");
-                    }
+                    _configured = false;
+                    _configuredBuilder = null;
+                    _configuredLifecycles = Array.Empty<IContextLifecycle>();
+                    _postContextLifecycles = new List<IPostContextLifecycle>();
                 }
+                throw;
             }
         }
 
@@ -352,6 +374,7 @@ namespace Nexus.Core
 
         internal async ValueTask InitializeLifecycleAsync(IReadOnlyList<IContextLifecycle> lifecycles, CancellationToken ct)
         {
+            Volatile.Write(ref _lifecycleState, 1);
             // Apply the app's configured trace-ring capacity so ContextData.TracerRingBufferSize
             // takes effect instead of being dead configuration.
             if (_contextData != null && _contextData.TracerRingBufferSize > 0)
@@ -383,6 +406,9 @@ namespace Nexus.Core
             // Previously the single drain ran before OnStartAsync, so a lazy service resolved
             // during startup would never receive InitializeAsync.
             await InitializeLazyServicesAsync(ct);
+            Volatile.Write(ref _lifecycleState, 2);
+            if (!Container._lazyServicesPendingInit.IsEmpty)
+                ScheduleLazyServiceDrain();
         }
 
         /// <summary>
@@ -400,6 +426,11 @@ namespace Nexus.Core
                     $"[Nexus] Context '{ScopeTag}': RunPostContextAsync skipped because context was never configured.");
                 return default;
             }
+
+            // FinalizeInitializationAsync is public and can be called by scene/bootstrap
+            // integrations more than once. The lifecycle contract is exactly-once.
+            if (Interlocked.CompareExchange(ref _postContextState, 1, 0) != 0)
+                return default;
 
             // NOTE: We pass the CONFIGURED builder (the one used during Configure) so that
             // lifecycles calling OnPostContext can add cross-context bindings and signal
@@ -427,6 +458,33 @@ namespace Nexus.Core
             {
                 if (ct.IsCancellationRequested) break;
                 await service.InitializeAsync(ct);
+            }
+        }
+
+        private void OnLazyServiceResolved(INexusService service)
+        {
+            if (Volatile.Read(ref _lifecycleState) == 2 && Volatile.Read(ref _disposeState) == 0)
+                ScheduleLazyServiceDrain();
+        }
+
+        private void ScheduleLazyServiceDrain()
+        {
+            if (Interlocked.CompareExchange(ref _lazyDrainScheduled, 1, 0) != 0) return;
+            SafeAsyncRunner.Run(DrainLazyServicesAfterStartupAsync,
+                $"Lazy service initialization failed in context '{ScopeTag}'.");
+        }
+
+        private async ValueTask DrainLazyServicesAfterStartupAsync()
+        {
+            try
+            {
+                await InitializeLazyServicesAsync(_cts.Token);
+            }
+            finally
+            {
+                Volatile.Write(ref _lazyDrainScheduled, 0);
+                if (Volatile.Read(ref _disposeState) == 0 && !Container._lazyServicesPendingInit.IsEmpty)
+                    ScheduleLazyServiceDrain();
             }
         }
 
@@ -690,35 +748,19 @@ namespace Nexus.Core
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
-            DisposeShared();
-
+            if (Interlocked.Exchange(ref _disposeState, 1) != 0) return;
             _cts.Cancel();
+            DisposeShared(executeStoppables: true);
 
             // The sync teardown path never blocks on IAsyncDisposable singletons
             // (NexusDI.Dispose schedules their DisposeAsync on a background task). Callers
             // that can await must use DisposeAsync() for deterministic async teardown.
-            Container.Dispose();
-            try
+            try { Container.Dispose(); }
+            finally
             {
-                // Block briefly to allow background async-dispose chain to complete for
-                // callers that can't await (e.g. Unity's synchronous OnDestroy). The
-                // timeout is configurable via ContextData.DisposeTimeoutSeconds (R2026-H9
-                // — previously a hardcoded 5 s, which could stall the main thread for an
-                // unacceptable window on mobile / ANR-sensitive platforms). If the
-                // background dispose exceeds the timeout a warning is logged and teardown
-                // proceeds to avoid deadlock during engine shutdown.
-                float timeoutSeconds = _contextData != null ? _contextData.DisposeTimeoutSeconds : 5f;
-                if (!Container.WaitForBackgroundDispose(TimeSpan.FromSeconds(timeoutSeconds)))
-                    NexusRuntime.Logger?.LogError($"[Nexus] Timeout ({timeoutSeconds:0.#}s) waiting for async singletons to dispose in Context.Dispose().");
+                CompleteTeardown();
+                _cts.Dispose();
             }
-            catch (Exception ex)
-            {
-                NexusRuntime.Logger?.LogError($"[Nexus] Error while waiting for background disposes: {ex.Message}");
-            }
-
-            _cts.Dispose();
             // UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a
             // redundant second unregister that could double-fire the unregister event path.
@@ -732,30 +774,36 @@ namespace Nexus.Core
         /// </summary>
         public async ValueTask DisposeAsync()
         {
-            if (_disposed) return;
-            _disposed = true;
-            DisposeShared();
-
+            if (Interlocked.Exchange(ref _disposeState, 1) != 0) return;
+            await _orchestrator.ExecuteStoppableLifecyclesAsync(Container.GetActiveSingletons(), _cts.Token);
             _cts.Cancel();
+            DisposeShared(executeStoppables: false);
 
-            await Container.DisposeAsync();
-            _cts.Dispose();
+            try { await Container.DisposeAsync(); }
+            finally
+            {
+                CompleteTeardown();
+                _cts.Dispose();
+            }
             // UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a
             // redundant second unregister that could double-fire the unregister event path.
         }
 
         /// <summary>Shared teardown for <see cref="Dispose"/> and <see cref="DisposeAsync"/>.</summary>
-        private void DisposeShared()
+        private void DisposeShared(bool executeStoppables)
         {
             // Execute IStoppable domain lifecycles before container teardown
-            try
+            if (executeStoppables)
             {
-                _orchestrator.ExecuteStoppableLifecyclesSync(Container.GetActiveSingletons());
-            }
-            catch (Exception ex)
-            {
-                NexusRuntime.Logger?.LogError($"[Nexus] Exception during ExecuteStoppableLifecyclesSync: {ex.Message}");
+                try
+                {
+                    _orchestrator.ExecuteStoppableLifecyclesSync(Container.GetActiveSingletons());
+                }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogError($"[Nexus] Exception during ExecuteStoppableLifecyclesSync: {ex.Message}");
+                }
             }
 
             if (_configuredLifecycles.Length > 0)
@@ -775,7 +823,7 @@ namespace Nexus.Core
             // INexusService lifecycle is owned by the Context (NexusDI.Dispose skips them), so
             // dispose every resolved INexusService singleton even when no builder was configured
             // (e.g. bare test contexts that bound services directly through the container).
-            var disposedServices = new HashSet<object>();
+            var disposedServices = new HashSet<object>(NexusDI.ReferenceComparer<object>.Instance);
             if (_builder != null)
             {
                 var serviceTypes = _builder.ServiceTypes;
@@ -786,6 +834,11 @@ namespace Nexus.Core
                         if (Container.TryGetExistingInstance(serviceTypes[i], out var existing) && existing is INexusService service
                             && disposedServices.Add(existing))
                         {
+                            // NexusDI.Dispose skips INexusService instances BEFORE running
+                            // their [Deconstruct] hooks (the Context owns their lifecycle),
+                            // so the Context must run those hooks itself — otherwise a
+                            // service's [Deconstruct] cleanup would never fire at all.
+                            Container.RunDeconstructs(service);
                             service.OnDispose();
                         }
                     }
@@ -799,7 +852,12 @@ namespace Nexus.Core
             {
                 if (instance is INexusService service && disposedServices.Add(instance))
                 {
-                    try { service.OnDispose(); }
+                    try
+                    {
+                        // Same [Deconstruct] gap as the ServiceTypes loop above.
+                        Container.RunDeconstructs(service);
+                        service.OnDispose();
+                    }
                     catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                 }
             }
@@ -824,24 +882,19 @@ namespace Nexus.Core
             HybridQueue.Clear();
             PoolManager.Clear();
 
-            // Unregister EXACTLY ONCE, and LAST — after the signal bus, hybrid
-            // queue, and pool manager are fully torn down. OnContextUnregistered
-            // subscribers then observe a fully-disposed context instead of one whose bus
-            // is still alive (the old order unregistered mid-teardown and the entry points
-            // unregistered a second time).
+        }
+
+        private void CompleteTeardown()
+        {
+            // Unregister only after the container and all background disposables have been
+            // handed off. Subscribers must never observe a context that is still resolvable.
             NexusRuntime.UnregisterContext(this);
 
-            // Destroy a runtime-created ContextData AFTER the unregister notification so
-            // subscribers still observe a valid ScopeTag. Asset/scene-backed ContextData is
-            // caller-owned and never destroyed here (_ownsContextData stays false).
-            // Idempotent: a second DisposeShared (double dispose) sees _contextDataDestroyed
-            // and skips — destroying an already-destroyed object would only warn, but the
-            // explicit flag keeps teardown deterministic (mirrors the double-dispose
-            // discipline enforced by the Context_DoubleDispose stress test).
+            // Destroy runtime-created ContextData last. Scene/asset-backed data is caller-owned.
             if (_ownsContextData && _contextData != null && !_contextDataDestroyed)
             {
                 _contextDataDestroyed = true;
-                UnityEngine.Object.DestroyImmediate(_contextData);
+                SafeDestroyUtility.SafeDestroy(_contextData);
             }
         }
 

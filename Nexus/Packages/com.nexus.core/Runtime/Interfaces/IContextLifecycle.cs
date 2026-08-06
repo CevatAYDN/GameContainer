@@ -27,9 +27,10 @@ namespace Nexus.Core
     /// Optional extension to <see cref="IContextLifecycle"/> for cross-context wiring.
     /// <see cref="OnPostContext"/> is called once ALL contexts in the application have completed
     /// their standard lifecycle (OnConfigure → OnInitializeAsync → OnStartAsync).
-    /// Use this for wiring that spans multiple contexts — e.g. sharing a model reference
-    /// from a parent context into a child context's view, or synchronizing state across
-    /// sibling contexts (StrangeIoC-style PostContexts).
+    /// Use this for wiring that spans a configured context hierarchy — e.g. exposing a
+    /// parent-owned model to descendant contexts through an explicit cross-boundary binding.
+    /// Sibling containers are intentionally isolated; communicate through a common ancestor
+    /// or an explicitly shared service instead of relying on implicit sibling lookup.
     ///
     /// Implement this interface on the same class as <see cref="IContextLifecycle"/>.
     /// The framework detects the interface and calls <see cref="OnPostContext"/> after

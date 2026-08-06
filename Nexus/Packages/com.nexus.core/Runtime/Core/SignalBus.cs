@@ -146,13 +146,35 @@ namespace Nexus.Core
 
         internal static void RaiseUnhandledException(Exception ex, string context)
         {
-            OnUnhandledException?.Invoke(ex, context);
+            var handlers = OnUnhandledException;
+            if (handlers == null) return;
+
+            // One faulty diagnostics subscriber must not suppress later subscribers or fault
+            // the fire-and-forget runner that is already reporting an original failure.
+            var invocationList = handlers.GetInvocationList();
+            for (int i = 0; i < invocationList.Length; i++)
+            {
+                try { ((Action<Exception, string>)invocationList[i])(ex, context); }
+                catch (Exception handlerEx)
+                {
+                    NexusRuntime.Logger?.LogError(
+                        $"[Nexus] OnUnhandledException subscriber failed while reporting '{context}': " +
+                        $"{handlerEx.Message}\n{handlerEx.StackTrace}");
+                }
+            }
         }
 
-        private volatile bool _disposed;
+        private int _disposeState;
+        private readonly object _disposeLock = new();
         private readonly NexusDI _container;
         private readonly IContext _context;
         private readonly IContextResolver _contextResolver;
+
+        private bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
+        private void ThrowIfDisposed()
+        {
+            if (IsDisposed) throw new ObjectDisposedException(nameof(SignalBus));
+        }
 
         /// <summary>Registered signal→handler snapshots, owned by the command registry.</summary>
         public IReadOnlyDictionary<Type, List<CommandHandlerInfo>> CommandHandlers => _commandRegistry.CommandHandlers;
@@ -281,7 +303,11 @@ namespace Nexus.Core
         {
             // Registration, validation, snapshot rebuild, async-handler tracking, and DI binding
             // all live in the CommandRegistry — SignalBus only dispatches against the registry.
-            _commandRegistry.RegisterCommand(signalType, commandType, mode, priority, isAsync, oneShot);
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                _commandRegistry.RegisterCommand(signalType, commandType, mode, priority, isAsync, oneShot);
+            }
         }
 
         /// <summary>
@@ -364,8 +390,12 @@ namespace Nexus.Core
             // against them via TryGetCompositeTriggers/ProcessCompositeTriggers.
             // Flag set AFTER the registry call succeeds so an invalid registration
             // (throwing ArgumentException) does not arm the composite path pointlessly.
-            _commandRegistry.RegisterCompositeCommand(signalTypes, commandType, oneShot, priority, isAsync);
-            _hasAnyCompositeTriggers = true;
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                _commandRegistry.RegisterCompositeCommand(signalTypes, commandType, oneShot, priority, isAsync);
+                _hasAnyCompositeTriggers = true;
+            }
         }
 
         public void Fire<T>(T signal) where T : struct
@@ -375,29 +405,51 @@ namespace Nexus.Core
             // Dispose. The registries are cleared by Dispose, so a post-dispose Fire
             // dispatches to zero handlers and is harmless. Adding a throw here would
             // break the documented "dispose is safe, subsequent fires are no-ops" contract.
+            if (IsDisposed) return;
             FireInternal(signal, isCrossContextSource: false);
         }
 
         public async ValueTask FireAsync<T>(T signal) where T : struct
         {
+            if (IsDisposed) return;
             await FireInternalAsync(signal, isCrossContextSource: false);
         }
 
         private HybridQueue _cachedHybridQueue;
+        private readonly object _hybridQueueLock = new();
         private HybridQueue GetHybridQueue()
         {
             if (_cachedHybridQueue != null) return _cachedHybridQueue;
-            _cachedHybridQueue = _container.Resolve<HybridQueue>();
-            return _cachedHybridQueue;
+            lock (_hybridQueueLock)
+            {
+                if (_cachedHybridQueue != null) return _cachedHybridQueue;
+
+                // Context construction normally binds its HybridQueue before publishing the
+                // bus.  Standalone/test buses are also valid, however; provision a private
+                // queue instead of turning FireThreadSafe into an unregistered-dependency
+                // exception.  This fallback is initialized once and never runs on the hot path.
+                _cachedHybridQueue = _container.IsRegistered(typeof(HybridQueue))
+                    ? _container.Resolve<HybridQueue>()
+                    : new HybridQueue(this);
+                if (!_container.IsRegistered(typeof(HybridQueue)))
+                    _container.BindInstance(_cachedHybridQueue);
+                return _cachedHybridQueue;
+            }
         }
+
+        internal bool HasAsyncHandlers(Type signalType) =>
+            _commandRegistry.HasAsyncCommandHandlers(signalType)
+            || _subscriptionRegistry.HasAsyncSubscriptions(signalType);
 
         public void FireThreadSafe<T>(T signal) where T : struct
         {
+            if (IsDisposed) return;
             GetHybridQueue().EnqueueThreadSafe(signal);
         }
 
         public void FireNextFrame<T>(T signal) where T : struct
         {
+            if (IsDisposed) return;
             GetHybridQueue().EnqueueNextFrame(signal);
         }
 
@@ -406,6 +458,7 @@ namespace Nexus.Core
         // second at most) — do NOT use this on a per-frame hot path; use FireAsync instead.
         public async ValueTask FireAsyncWithTimeout<T>(T signal, int timeoutMilliseconds) where T : struct
         {
+            if (IsDisposed) return;
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(_context.LifetimeToken);
             timeoutCts.CancelAfter(timeoutMilliseconds);
             try
@@ -429,6 +482,7 @@ namespace Nexus.Core
         /// </summary>
         public void FireAsyncAndForget<T>(T signal, Action<Exception> onError = null) where T : struct
         {
+            if (IsDisposed) return;
             SafeAsyncRunner.Run(
                 () => FireInternalAsync(signal, isCrossContextSource: false),
                 $"FireAsyncAndForget failed for signal '{typeof(T).FullName}'",
@@ -439,12 +493,20 @@ namespace Nexus.Core
         {
             // Delegated to the SubscriptionRegistry — the single storage layer owns the pooled
             // node list, the volatile read copy, and the deferred sweep on dispatch unwind.
-            return _subscriptionRegistry.Subscribe<T>(handler, _context.LifetimeToken);
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                return _subscriptionRegistry.Subscribe<T>(handler, _context.LifetimeToken);
+            }
         }
 
         public ISignalSubscription SubscribeAsync<T>(Func<T, CancellationToken, ValueTask> handler) where T : struct
         {
-            return _subscriptionRegistry.SubscribeAsync<T>(handler, _context.LifetimeToken);
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                return _subscriptionRegistry.SubscribeAsync<T>(handler, _context.LifetimeToken);
+            }
         }
 
         // Unsubscribe/SweepDeadNodes live in the SubscriptionRegistry (deferred sweep on
@@ -572,9 +634,16 @@ namespace Nexus.Core
                     for (int i = 0; i < handlers.Count; i++)
                     {
                         var handler = handlers[i];
-                        if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
-                            continue; // another fire already claimed this one-shot handler
-                        _commandExecutor.Execute(handler, signal);
+                        if (handler.IsOneShot)
+                        {
+                            if (!_commandRegistry.TryClaimOneShot(type, handler.CommandType))
+                                continue;
+                            ExecuteClaimedOneShot(handler, signal, type);
+                        }
+                        else
+                        {
+                            _commandExecutor.Execute(handler, signal);
+                        }
                     }
                 }
 
@@ -791,7 +860,9 @@ namespace Nexus.Core
                             // unobserved and their work is silently lost).
                             for (; started < taskCount; started++)
                             {
-                                tasks[started] = _commandExecutor.ExecuteAsync(toRun[started], signal, commandCt);
+                                tasks[started] = toRun[started].IsOneShot
+                                    ? ExecuteClaimedOneShotAsync(toRun[started], signal, commandCt, type)
+                                    : _commandExecutor.ExecuteAsync(toRun[started], signal, commandCt);
                             }
 
                             for (int i = 0; i < started; i++)
@@ -833,9 +904,13 @@ namespace Nexus.Core
                         for (int i = 0; i < handlers.Count; i++)
                         {
                             var handler = handlers[i];
-                            if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
-                                continue; // another fire already claimed this one-shot handler
-                            if (handler.IsAsync)
+                            if (handler.IsOneShot)
+                            {
+                                if (!_commandRegistry.TryClaimOneShot(type, handler.CommandType))
+                                    continue;
+                                await ExecuteClaimedOneShotAsync(handler, signal, commandCt, type);
+                            }
+                            else if (handler.IsAsync)
                             {
                                 await _commandExecutor.ExecuteAsync(handler, signal, commandCt);
                             }
@@ -871,8 +946,8 @@ namespace Nexus.Core
                     }
                 }
 
-                // Process composite triggers
-                ProcessCompositeTriggers(signal);
+                // Process composite triggers; async composites are awaited as part of FireAsync.
+                await ProcessCompositeTriggersAsync(signal, commandCt);
 #if NEXUS_DEBUG
                 NexusTrace.EndEvent(eventId, TraceStatus.OK);
 #endif
@@ -897,6 +972,38 @@ namespace Nexus.Core
                 depthBox = s_asyncStackDepth.Value;
                 if (depthBox != null) depthBox.Value--;
                 _subscriptionRegistry.ExitDispatch();
+            }
+        }
+
+        private void ExecuteClaimedOneShot<T>(CommandHandlerInfo handler, T signal, Type signalType) where T : struct
+        {
+            try
+            {
+                _commandExecutor.Execute(handler, signal);
+                _commandRegistry.CompleteOneShot(signalType, handler.CommandType);
+            }
+            catch
+            {
+                _commandRegistry.ReleaseOneShot(signalType, handler.CommandType);
+                throw;
+            }
+        }
+
+        private async ValueTask ExecuteClaimedOneShotAsync<T>(CommandHandlerInfo handler, T signal,
+            CancellationToken ct, Type signalType) where T : struct
+        {
+            try
+            {
+                if (handler.IsAsync)
+                    await _commandExecutor.ExecuteAsync(handler, signal, ct);
+                else
+                    _commandExecutor.Execute(handler, signal);
+                _commandRegistry.CompleteOneShot(signalType, handler.CommandType);
+            }
+            catch
+            {
+                _commandRegistry.ReleaseOneShot(signalType, handler.CommandType);
+                throw;
             }
         }
 
@@ -1129,8 +1236,14 @@ namespace Nexus.Core
 
         public void Dispose()
         {
-            if (_disposed) return;
-            _disposed = true;
+            lock (_disposeLock)
+            {
+                if (Interlocked.Exchange(ref _disposeState, 1) != 0) return;
+
+                // Cancel command work before registries and pools are torn down. Every async
+                // command links this token, so cancellation is observable before dependencies
+                // disappear underneath the command.
+                _commandExecutor.TryCancelInFlightCommands();
             // Snapshot the nodes before disposing: RawSubscription.Dispose() re-enters
             // the registry's Unsubscribe → deferred sweep. The registries then reclaim
             // every node and clear all state, so we dispose the raw subscriptions first
@@ -1158,19 +1271,44 @@ namespace Nexus.Core
                 }
             }
 
-            _subscriptionRegistry.Dispose();
-            _commandRegistry.Dispose();
-            _hasAnyCompositeTriggers = false;
-
-            // Cancel in-flight async commands before disposal.
-            // In-flight async commands continue running on disposed registries and container,
-            // causing ObjectDisposedException/NullReferenceException. Pooled command objects
-            // are also never returned (pool leak). Cancel them so they complete promptly.
-            if (_commandExecutor.InFlightAsyncCommands > 0)
-            {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] SignalBus disposed while {_commandExecutor.InFlightAsyncCommands} async command(s) are still in-flight. Attempting cancellation.");
-                _commandExecutor.TryCancelInFlightCommands();
+                _subscriptionRegistry.Dispose();
+                _commandRegistry.Dispose();
+                _hasAnyCompositeTriggers = false;
             }
+        }
+
+        private async ValueTask ProcessCompositeTriggersAsync<T>(T signal, CancellationToken ct) where T : struct
+        {
+            if (!_hasAnyCompositeTriggers) return;
+            if (!_commandRegistry.TryGetCompositeTriggers(typeof(T), out var triggers)) return;
+
+            var due = new List<(CompositeTriggerState trigger, CompositeContext context)>();
+            lock (_compositeLock)
+            {
+                for (int t = 0; t < triggers.Count; t++)
+                {
+                    var trigger = triggers[t];
+                    if (trigger.IsCompleted) continue;
+                    int index = Array.IndexOf(trigger.RequiredSignals, typeof(T));
+                    if (index < 0) continue;
+
+                    trigger.CapturePayload(index, signal);
+                    trigger.CurrentMask |= (1UL << index);
+                    if (trigger.CurrentMask != trigger.TargetMask) continue;
+
+                    due.Add((trigger, new CompositeContext(trigger.RequiredSignals, trigger.SnapshotPayloads())));
+                    if (trigger.OneShot)
+                        trigger.IsCompleted = true;
+                    else
+                    {
+                        trigger.CurrentMask = 0;
+                        trigger.ClearPayloads();
+                    }
+                }
+            }
+
+            for (int i = 0; i < due.Count; i++)
+                await _commandExecutor.ExecuteCompositeAwaitedAsync(due[i].trigger, due[i].context, ct);
         }
 
         internal static void ClearStaticCaches()

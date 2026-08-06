@@ -65,8 +65,13 @@ namespace Nexus.Core.Services
 
         private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
         private readonly HashSet<string> _dirtyKeys = new(StringComparer.Ordinal);
+        // Monotonic per-key generations make an out-of-lock disk write conditional: a
+        // concurrent SetString/DeleteKey can never have its newer value hidden by an older
+        // Save completion.
+        private readonly Dictionary<string, long> _keyVersions = new(StringComparer.Ordinal);
         private readonly object _lock = new();
         private volatile bool _disposed;
+        private bool _disposing;
 
         // Serializes the atomic-write critical section (stage-to-temp + rename).
         // AutoSave writes and Save() batches can otherwise race on the SAME fixed temp
@@ -75,6 +80,17 @@ namespace Nexus.Core.Services
         // (not _lock) keeps slow file I/O out of the cache/dirty-set critical section
         // (the B1 invariant) while making concurrent writes to one key atomic.
         private readonly object _writeLock = new();
+
+        private long BumpKeyVersionLocked(string key)
+        {
+            _keyVersions.TryGetValue(key, out long version);
+            version++;
+            _keyVersions[key] = version;
+            return version;
+        }
+
+        private bool IsCurrentVersionLocked(string key, long version) =>
+            (!_keyVersions.TryGetValue(key, out long current) && version == 0) || current == version;
 
         /// <summary>
         /// DI-friendly parameterless constructor. Nexus DI requires a parameterless ctor
@@ -258,12 +274,30 @@ namespace Nexus.Core.Services
 
         public void Dispose()
         {
-            if (_disposed) return;
-            // Flush BEFORE the disposed flag is set: Save() returns early when _disposed,
-            // so the previous order (flag first, Save() last) made the final dispose-time
-            // save a silent no-op — dirty keys were lost on every context teardown.
-            Save();
-            _disposed = true;
+            lock (_lock)
+            {
+                if (_disposed || _disposing) return;
+                // Block new mutations while the final flush is in progress.  The old
+                // check-Save-set sequence allowed SetString to add a dirty key after the
+                // final Save and before _disposed became true.
+                _disposing = true;
+            }
+
+            try
+            {
+                // Flush BEFORE the disposed flag is set: Save() returns early when _disposed,
+                // so the previous order (flag first, Save() last) made the final dispose-time
+                // save a silent no-op — dirty keys were lost on every context teardown.
+                Save();
+            }
+            finally
+            {
+                lock (_lock)
+                {
+                    _disposed = true;
+                    _disposing = false;
+                }
+            }
             // Detach the instance from the static forwarders. The static hook
             // itself intentionally stays (one delegate, retains no instance) — per-instance
             // subscribe/unsubscribe on the static events was the leak.
@@ -335,12 +369,14 @@ namespace Nexus.Core.Services
             if (string.IsNullOrEmpty(key)) return defaultValue;
 
             string filePath;
+            long readVersion;
             lock (_lock)
             {
                 if (_cache.TryGetValue(key, out string cachedVal))
                     return cachedVal ?? defaultValue;
 
                 filePath = ResolveExistingFilePath(key);
+                _keyVersions.TryGetValue(key, out readVersion);
             }
 
             // ── Slow path, outside the lock ──
@@ -398,6 +434,15 @@ namespace Nexus.Core.Services
 
                 lock (_lock)
                 {
+                    // A SetString/DeleteKey completed while disk I/O was in flight.  The
+                    // cache is authoritative; never overwrite its newer value with stale
+                    // bytes read before that mutation.
+                    if (!IsCurrentVersionLocked(key, readVersion))
+                    {
+                        return _cache.TryGetValue(key, out string currentValue)
+                            ? currentValue ?? defaultValue
+                            : defaultValue;
+                    }
                     // Guard against TOCTOU race: if SetString was called concurrently while reading from disk,
                     // keep the fresher dirty cache value instead of overwriting with disk bytes.
                     if (_dirtyKeys.Contains(key) && _cache.TryGetValue(key, out string currentVal) && currentVal != null)
@@ -511,22 +556,27 @@ namespace Nexus.Core.Services
 
         public void SetString(string key, string value)
         {
-            if (_disposed) return;
             if (string.IsNullOrEmpty(key)) return;
 
             bool autoSave;
+            long version;
             lock (_lock)
             {
+                if (_disposed || _disposing) return;
                 // Only skip when the cache actually holds the same value: an unread key
                 // must not swallow SetString(key, null) (the tombstone still has to
                 // propagate to Save() so the on-disk file is deleted).
                 if (_cache.TryGetValue(key, out string oldVal) && oldVal == value) return;
 
                 _cache[key] = value;
+                version = BumpKeyVersionLocked(key);
+                // Every mutation is dirty until its exact version reaches disk.  AutoSave
+                // removes this marker only after a successful conditional write; this also
+                // lets a concurrent Dispose final-flush an AutoSave call already in flight.
+                _dirtyKeys.Add(key);
 
                 if (!AutoSave)
                 {
-                    _dirtyKeys.Add(key);
                     return;
                 }
                 autoSave = true;
@@ -534,12 +584,43 @@ namespace Nexus.Core.Services
 
             // I/O outside lock: AutoSave writes each value immediately. A null value is a
             // tombstone: the on-disk file is deleted (matching Save()'s contract).
-            if (autoSave && !(value == null ? DeleteKeyFilesFromDisk(key) : SaveKeyToDisk(key, value)))
+            bool writeSucceeded = false;
+            if (autoSave)
             {
-                // A failed AutoSave write must never be silently dropped. Mark the
-                // key dirty so the next Save() (focus loss / quit / explicit call) retries
-                // the write instead of losing the value until the process exits.
-                lock (_lock) { _dirtyKeys.Add(key); }
+                lock (_writeLock)
+                {
+                    bool shouldWrite;
+                    lock (_lock)
+                    {
+                        // A newer mutation owns the next write.  Skipping this stale write
+                        // prevents an older AutoSave from overwriting the newer disk value.
+                        shouldWrite = !_disposed && !_disposing && IsCurrentVersionLocked(key, version);
+                    }
+                    if (shouldWrite)
+                        writeSucceeded = value == null
+                            ? DeleteKeyFilesFromDisk(key)
+                            : SaveKeyToDisk(key, value);
+                }
+            }
+
+            if (autoSave && !writeSucceeded)
+            {
+                // A failed (or superseded) AutoSave write must never be silently dropped.
+                // Preserve dirtiness only when this operation is still the current version;
+                // a newer mutation will own its own retry/write path.
+                lock (_lock)
+                {
+                    if (!_disposed && !_disposing && IsCurrentVersionLocked(key, version))
+                        _dirtyKeys.Add(key);
+                }
+            }
+            else if (autoSave)
+            {
+                lock (_lock)
+                {
+                    if (IsCurrentVersionLocked(key, version))
+                        _dirtyKeys.Remove(key);
+                }
             }
         }
 
@@ -708,14 +789,30 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(key)) return;
 
+            long version;
             lock (_lock)
             {
+                if (_disposed || _disposing) return;
                 _cache[key] = null;
                 _dirtyKeys.Remove(key);
+                version = BumpKeyVersionLocked(key);
             }
 
-            // B1 invariant: file I/O outside lock
-            DeleteKeyFilesFromDisk(key);
+            // B1 invariant: file I/O outside _lock.  Serialize it with Save/AutoSave and
+            // skip this delete if a newer mutation superseded it.
+            lock (_writeLock)
+            {
+                bool shouldDelete;
+                lock (_lock) shouldDelete = !_disposed && !_disposing && IsCurrentVersionLocked(key, version);
+                if (shouldDelete && !DeleteKeyFilesFromDisk(key))
+                {
+                    lock (_lock)
+                    {
+                        if (!_disposed && !_disposing && IsCurrentVersionLocked(key, version))
+                            _dirtyKeys.Add(key);
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -753,47 +850,65 @@ namespace Nexus.Core.Services
         public void Save()
         {
             if (_disposed) return;
-            string[] keysToWrite;
-            lock (_lock)
+            lock (_writeLock)
             {
-                if (_dirtyKeys.Count == 0) return;
-                keysToWrite = new string[_dirtyKeys.Count];
-                _dirtyKeys.CopyTo(keysToWrite);
-            }
-
-            var failedKeys = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var key in keysToWrite)
-            {
-                string val;
-                bool isTombstone;
+                string[] keysToWrite;
                 lock (_lock)
                 {
-                    if (!_cache.TryGetValue(key, out val))
-                        continue;
-                    isTombstone = val == null;
+                    if (_disposed || _dirtyKeys.Count == 0) return;
+                    keysToWrite = new string[_dirtyKeys.Count];
+                    _dirtyKeys.CopyTo(keysToWrite);
                 }
 
-                if (isTombstone)
-                {
-                    // SetString(key, null): the old file must be deleted, otherwise the
-                    // stale on-disk value resurrects the key on the next session.
-                    if (!DeleteKeyFilesFromDisk(key))
-                        failedKeys.Add(key);
-                    continue;
-                }
-
-                if (!SaveKeyToDisk(key, val))
-                    failedKeys.Add(key);
-            }
-
-            lock (_lock)
-            {
                 foreach (var key in keysToWrite)
                 {
-                    // Failed keys stay dirty so the next Save() retries them (no silent loss).
-                    if (!failedKeys.Contains(key))
-                        _dirtyKeys.Remove(key);
+                    string val;
+                    bool isTombstone;
+                    long version;
+                    lock (_lock)
+                    {
+                        if (_disposed || !_cache.TryGetValue(key, out val))
+                            continue;
+                        isTombstone = val == null;
+                        _keyVersions.TryGetValue(key, out version);
+
+                        // A newer SetString/DeleteKey has already superseded this snapshot.
+                        // Leave the key dirty for that newer operation instead of writing the
+                        // stale value and clearing its retry marker.
+                        if (!IsCurrentVersionLocked(key, version))
+                            continue;
+                    }
+
+                    bool success;
+                    if (isTombstone)
+                    {
+                        // SetString(key, null): the old file must be deleted, otherwise the
+                        // stale on-disk value resurrects the key on the next session.
+                        success = DeleteKeyFilesFromDisk(key);
+                    }
+                    else
+                    {
+                        success = SaveKeyToDisk(key, val);
+                    }
+                    if (!success)
+                    {
+                        lock (_lock)
+                        {
+                            if (!_disposed && IsCurrentVersionLocked(key, version))
+                                _dirtyKeys.Add(key);
+                        }
+                        continue;
+                    }
+
+                    lock (_lock)
+                    {
+                        // Remove the dirty marker only if this exact version is still the
+                        // cached value.  A concurrent mutation remains dirty for retry.
+                        if (!_disposed && IsCurrentVersionLocked(key, version))
+                            _dirtyKeys.Remove(key);
+                    }
                 }
+
             }
         }
 

@@ -24,6 +24,12 @@ namespace Nexus.Editor.Tests
             field?.SetValue(this, version);
         }
 
+        public void ResetMigrationObservations()
+        {
+            MigrationCallCount = 0;
+            LastMigratedFrom = -1;
+        }
+
         public void TriggerOnValidate()
         {
             // Call protected OnValidate via reflection
@@ -45,6 +51,7 @@ namespace Nexus.Editor.Tests
         public void Migration_Triggers_WhenVersionIsOlder()
         {
             var so = ScriptableObject.CreateInstance<TestVersionedSO>();
+            so.ResetMigrationObservations();
             so.SetSerializedVersion(0);
             so.SetCurrentVersion(1);
 
@@ -53,12 +60,14 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(1, so.Version);
             Assert.AreEqual(1, so.MigrationCallCount);
             Assert.AreEqual(0, so.LastMigratedFrom);
+            Object.DestroyImmediate(so);
         }
 
         [Test]
         public void Migration_DoesNotTrigger_WhenVersionIsCurrent()
         {
             var so = ScriptableObject.CreateInstance<TestVersionedSO>();
+            so.ResetMigrationObservations();
             so.SetSerializedVersion(1);
             so.SetCurrentVersion(1);
 
@@ -66,12 +75,14 @@ namespace Nexus.Editor.Tests
 
             Assert.AreEqual(1, so.Version);
             Assert.AreEqual(0, so.MigrationCallCount);
+            Object.DestroyImmediate(so);
         }
 
         [Test]
         public void Migration_DoesNotTrigger_WhenVersionIsNewer()
         {
             var so = ScriptableObject.CreateInstance<TestVersionedSO>();
+            so.ResetMigrationObservations();
             so.SetSerializedVersion(2);
             so.SetCurrentVersion(1);
 
@@ -79,6 +90,7 @@ namespace Nexus.Editor.Tests
 
             Assert.AreEqual(2, so.Version);
             Assert.AreEqual(0, so.MigrationCallCount);
+            Object.DestroyImmediate(so);
         }
     }
 }
