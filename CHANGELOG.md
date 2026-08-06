@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 - **Demo + tooling consolidated on `UIManager`** — demo screens derive from `ScreenView` and open via `IUIManager.OpenScreenAsync<TScreen>`; `CasualServicesPlugin` drives UIManager's new non-blocking `GetOpenScreensSnapshot`/`PendingScreenCount`; `CounterLifecycle` sample binds `IUIManager`. UIManager editor tests extended (`ScreenOpened`/`ScreenClosed` events, layer-root parenting).
+- **Service-graph regression gate restored (`tools/nexus-benchmark/ServiceGraphSuite.cs`)** — successor to the deleted `DemoCompatibilitySuite`: boots the full package service graph (all runtime services + providers + adapter factories, no demo stand-ins) under `EnableStrictInjection` + `FailOnValidationErrors`. `SVC1` validates with zero DI issues, boots, resolves every service by interface and concrete type, shares ONE `SaveThrottler` between economy and progression, and proves the validator flags a missing provider.
+- **Lifecycle-discovery docs aligned with the shipped sample** — `10_MIN_QUICKSTART` (en+TR) now shows `GameLifecycle : MonoBehaviour` attached to `GameRoot` (what the wizard generates) and documents both discovery paths (Root component scan + `{ScopeTag}Lifecycle` convention); `THE_BIG_NEXUS_HOWTO` wording corrected.
 
 ### Performance
 - **`Binder.Unbind` O(n) scan (`Binder.cs`)**: added a secondary key index so `Unbind` removes a key's bindings directly instead of scanning the whole entry table under the exclusive write lock (which blocked every concurrent `Get`/`TryGet` reader). Reads are untouched; index entries are deduplicated on rebind.

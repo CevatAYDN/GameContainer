@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 - **`Assets/Scripts/Demo/` game-project scaffolding removed** — the demo (bootstrap, global lifecycle, 4 `ScreenView` screens, commands/models/signals) was never wired to a scene or prefabs; `Game/Samples` is now the single canonical project example (scene-wired, scaffolded by `NexusSetupWizard`). `DemoCompatibilitySuite` removed from the benchmark; wizard default view name and the `cs_default_window` localization key cleaned up.
 
+### Changed
+- **Lifecycle-discovery docs aligned with the shipped sample** — `10_MIN_QUICKSTART` (en+TR) shows `GameLifecycle : MonoBehaviour` attached to `GameRoot` (what the wizard generates) and documents both discovery paths (Root component scan + `{ScopeTag}Lifecycle` name convention); `THE_BIG_NEXUS_HOWTO` wording corrected. The strict-injection full-service-graph regression gate moved from the deleted `DemoCompatibilitySuite` to `tools/nexus-benchmark/ServiceGraphSuite.cs` (pure package graph, no demo stand-ins).
+
 ### Fixed (Adversarial Audit - 2026)
 - **SaveThrottler Lock Discipline + Silent Save-Loss Race (SaveThrottler.cs)** — `Tick()` now claims due slots under `_lock` and flushes user save actions OUTSIDE it: holding the lock across `action.Invoke()` serialized every save behind the slowest action and risked deadlock when an action blocked on a thread that wanted `_lock`. `FlushSlot` also queues a request that races an in-flight flush as pending instead of silently dropping it, so the newest state is never lost.
 - **GameSaveManager Non-Async Lambda + Documented Backoff (GameSaveManager.cs)** — removed a pointless `async` on the `Task.Run` lambda (CS1998) and documented why the retry backoff stays inside the serialized stage+rename critical section (releasing `_saveLock` between attempts could clobber a concurrent same-slot save).

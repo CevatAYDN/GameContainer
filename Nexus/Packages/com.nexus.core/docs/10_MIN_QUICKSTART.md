@@ -33,7 +33,7 @@ A **Context** is Nexus's central container — it holds models, services, comman
 1. In the Project window, right-click **Create > Nexus > ContextData**
 2. Name it `GameContextData`
 3. Select it and check **Enable Auto-Discovery**
-   - This tells Nexus to scan your project and automatically register lifecycle classes
+   - Enables the `{ScopeTag}Lifecycle` name-convention scan (see Step 3c). The `Root` component additionally discovers every `IContextLifecycle` component attached to its GameObject.
 
 ### 2b. Add the Root component
 
@@ -85,10 +85,11 @@ public class AddScoreCommand : ICommand<ScoreSignal>
 ```csharp
 // Lifecycle/GameLifecycle.cs
 using Nexus.Core;
+using UnityEngine;
 using System.Threading;
 using System.Threading.Tasks;
 
-public class GameLifecycle : IContextLifecycle
+public class GameLifecycle : MonoBehaviour, IContextLifecycle
 {
     public void OnConfigure(IContextBuilder builder)
     {
@@ -102,7 +103,10 @@ public class GameLifecycle : IContextLifecycle
 }
 ```
 
-> **Auto-Discovery** will find `GameLifecycle` automatically — no manual registration needed!
+> **Discovery:** attach `GameLifecycle` to the `GameRoot` GameObject (**Add Component**) —
+> `Root` finds every `IContextLifecycle` component on it automatically. (A plain class
+> also works via the `{ScopeTag}Lifecycle` name convention when the ContextData carries a
+> matching `ScopeTag`.)
 
 ---
 
@@ -198,7 +202,7 @@ public class ScoreView : View
 
 | Symptom | Fix |
 |---------|-----|
-| **"No lifecycle found"** | Make sure your lifecycle class implements `IContextLifecycle` and **ContextData has Auto-Discovery enabled** |
+| **"No lifecycle found"** | Make sure your lifecycle class implements `IContextLifecycle` and is **attached to the Root GameObject as a component** (or matches the `{ScopeTag}Lifecycle` convention with a non-empty ContextData `ScopeTag`) |
 | **"Type not registered"** | Add `builder.Bind<MyType>()` in `OnConfigure`, or check that the type is in a non-system assembly |
 | **Signal not dispatched** | Verify the command implements `ICommand<YourSignal>` and is registered via `builder.BindSignal<>()` |
 | **Test won't run** | Open EditMode Test Runner, select `InfrastructureValidationTests` and `PluginRefactorValidationTests` |

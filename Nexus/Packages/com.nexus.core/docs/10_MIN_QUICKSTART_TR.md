@@ -33,7 +33,7 @@
 1. Project penceresinde sağ tıklayın → **Create > Nexus > ContextData**
 2. Adını `GameContextData` olarak değiştirin
 3. Üzerine tıklayın ve **Enable Auto-Discovery** seçeneğini işaretleyin
-   - Bu, Nexus'a projenizi tarayıp lifecycle sınıflarını otomatik bulmasını söyler
+   - `{ScopeTag}Lifecycle` isim-konvansiyonu taramasını etkinleştirir (bkz. Adım 3c). `Root` bileşeni ayrıca kendi GameObject'ine eklenen her `IContextLifecycle` bileşenini otomatik bulur.
 
 ### 2b. Root bileşenini ekleyin
 
@@ -85,10 +85,11 @@ public class AddScoreCommand : ICommand<ScoreSignal>
 ```csharp
 // Lifecycle/GameLifecycle.cs
 using Nexus.Core;
+using UnityEngine;
 using System.Threading;
 using System.Threading.Tasks;
 
-public class GameLifecycle : IContextLifecycle
+public class GameLifecycle : MonoBehaviour, IContextLifecycle
 {
     public void OnConfigure(IContextBuilder builder)
     {
@@ -102,7 +103,9 @@ public class GameLifecycle : IContextLifecycle
 }
 ```
 
-> **Auto-Discovery** sayesinde `GameLifecycle` otomatik bulunur — manuel kayıt gerekmez!
+> **Keşif:** `GameLifecycle`'ı `GameRoot` GameObject'ine ekleyin (**Add Component**) —
+> `Root`, üzerindeki tüm `IContextLifecycle` bileşenlerini otomatik bulur. (Düz bir sınıf da
+> ContextData'da eşleşen bir `ScopeTag` ile `{ScopeTag}Lifecycle` isim konvansiyonu üzerinden bulunur.)
 
 ---
 
@@ -198,7 +201,7 @@ public class ScoreView : View
 
 | Belirti | Çözüm |
 |---------|-------|
-| **"No lifecycle found"** | Lifecycle sınıfınız `IContextLifecycle` implemente etmeli ve **ContextData'da Auto-Discovery açık olmalı** |
+| **"No lifecycle found"** | Lifecycle sınıfınız `IContextLifecycle` implemente etmeli ve **Root GameObject'ine bileşen olarak eklenmeli** (veya boş olmayan ContextData `ScopeTag`'i ile `{ScopeTag}Lifecycle` konvansiyonuna uymalı) |
 | **"Type not registered"** | `OnConfigure`'a `builder.Bind<MyType>()` ekleyin veya türün sistem dışı bir assembly'de olduğunu kontrol edin |
 | **Signal gönderilmiyor** | Command'in `ICommand<YourSignal>` implemente ettiğini ve `builder.BindSignal<>()` ile kayıtlı olduğunu doğrulayın |
 | **Test çalışmıyor** | EditMode Test Runner'ı açın, `InfrastructureValidationTests` ve `PluginRefactorValidationTests`'i seçin |

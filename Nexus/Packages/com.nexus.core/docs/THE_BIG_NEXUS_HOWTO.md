@@ -172,8 +172,9 @@ Signal, Command, Mediator — hepsi bir **Context**'in içinde yaşar. Context,
 uygulamanın (veya bir sahnenin) bağımsız bir bölgesidir: kendi DI container'ı,
 kendi SignalBus'ı, kendi yaşam döngüsü.
 
-Kurulum sözleşmesi bir MonoBehaviour üzerindedir ve isim konvansiyonuyla
-otomatik keşfedilir: `{ScopeTag}Lifecycle`.
+Kurulum sözleşmesi bir MonoBehaviour üzerindedir: Root GameObject'ine eklenen
+`IContextLifecycle` bileşenleri otomatik keşfedilir. (Düz sınıf kullanılırsa isim
+konvansiyonu devreye girer: `{ScopeTag}Lifecycle` + ContextData'da dolu `ScopeTag`.)
 
 ```csharp
 public class GameLifecycle : MonoBehaviour, IContextLifecycle
