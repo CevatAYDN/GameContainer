@@ -491,9 +491,6 @@ namespace NexusBench
             _failures += TeardownLeakSuite.Run();
             _failures += FixVerificationSuite.Run();
             _failures += EvidenceSuite.Run();
-            // Last: creates real Contexts and must not disturb earlier suites' assumptions
-            // about active-context counts or trace-buffer state.
-            _failures += DemoCompatibilitySuite.Run();
             return _failures;
         }
     }

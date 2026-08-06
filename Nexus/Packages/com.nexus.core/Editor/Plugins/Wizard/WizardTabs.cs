@@ -247,7 +247,7 @@ public class {_serviceName} : NexusService<I{_serviceName}>, I{_serviceName}
     internal class ViewMediatorGenTab : IWizardTab
     {
         public string Title => NexusLang.Get("wizard_subtab_view_gen");
-        private string _viewName = "GameplayHUD";
+        private string _viewName = "GameHUD";
         private bool _createViewGo = true;
         private Label _validationLabel;
         private Button _generateBtn;

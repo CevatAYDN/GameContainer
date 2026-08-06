@@ -286,7 +286,6 @@ namespace Nexus.Editor
 
             // CasualServices plugin
             s_strings["cs_default_currency"] = "Coins";
-            s_strings["cs_default_window"] = "ShopScreen";
             s_strings["cs_destroyed_suffix"] = " (destroyed)";
 
             // Context Inspector plugin

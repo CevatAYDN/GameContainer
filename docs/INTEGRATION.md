@@ -410,5 +410,5 @@ Gerçek SDK kullanıyorsanız tüketici projenizin `Packages/manifest.json`'una 
 | --- | --- | --- |
 | UPM Git URL (`?path=`) | ✅ **Önerilen** | Sparse checkout, sürüm sabitleme, temiz |
 | npm | ❌ Uygulanamaz | Unity paketleri npm ile tüketilmez |
-| Git submodule (monorepo tamamı) | ⚠️ Riskli | Demo içeriği girer; paket tecrit edilmezse sorun çıkar |
+| Git submodule (monorepo tamamı) | ⚠️ Riskli | Örnek içerik girer; paket tecrit edilmezse sorun çıkar |
 | Git submodule (ayrı paket repo) | ✅ Temiz | Split sonrası en iyi submodule deneyimi |

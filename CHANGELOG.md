@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 - **`WindowManager` / `IWindowManager` deleted** — the legacy string-keyed window API is gone; `UIManager` (type-safe `ScreenView` API with pooling) is the single UI manager. `UILayer`/`IUIWindowLifecycle` extracted to their own files; demo screens migrated to `ScreenView`; the analyzer migration-driver rule NEXUS004 and its editor tests retired; benchmark W1–W7 migrated to UIManager U1–U7.
+- **`Assets/Scripts/Demo/` scaffolding removed** — the Unity demo (`DemoGlobalLifecycle`, 4 `ScreenView` screens, demo commands/models/signals) was never wired to a scene or prefabs (no bootstrap in `NexusStarter.unity`, zero Resources prefabs). `Game/Samples` is the single canonical example: scene-wired, scaffolded by `NexusSetupWizard`, canonical in the quickstart/how-to docs. `DemoCompatibilitySuite` was removed with it; the wizard default view name and the `cs_default_window` localization key were cleaned up.
 
 ### Changed
 - **Demo + tooling consolidated on `UIManager`** — demo screens derive from `ScreenView` and open via `IUIManager.OpenScreenAsync<TScreen>`; `CasualServicesPlugin` drives UIManager's new non-blocking `GetOpenScreensSnapshot`/`PendingScreenCount`; `CounterLifecycle` sample binds `IUIManager`. UIManager editor tests extended (`ScreenOpened`/`ScreenClosed` events, layer-root parenting).

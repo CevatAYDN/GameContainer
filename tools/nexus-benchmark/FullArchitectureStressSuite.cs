@@ -300,7 +300,7 @@ namespace NexusBench
             finally
             {
                 // P-leak fix: restore the static opt-out so every later suite (Services, Registry,
-                // ConcurrentDiff, GameSession, DemoCompatibility, ...) runs with the framework
+                // ConcurrentDiff, GameSession, ...) runs with the framework
                 // default ValidateOnStartup == true again instead of inheriting this suite's false.
                 ContextBuilder.ValidateOnStartup = s_a10DefaultValidateOnStartup;
             }
@@ -2993,7 +2993,7 @@ namespace NexusBench
             public DependsOnRecorder(string tag) { Tag = tag; }
             public void OnConfigure(IContextBuilder builder)
             {
-                // Harness-only accommodation (same as DemoCompatibilitySuite): the unconditional
+                // Harness-only accommodation: the unconditional
                 // assembly scan auto-registers other suites' commands (SvcCounterCommand→TestCounter,
                 // CapCommandA→CapTracker); bind their deps before Validate() so the harness log
                 // stays clean now that ValidateOnStartup defaults to true.

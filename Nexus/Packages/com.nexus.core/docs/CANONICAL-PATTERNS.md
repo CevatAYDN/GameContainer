@@ -187,15 +187,15 @@ public class GameplayLifecycle : IContextLifecycle
     }
 }
 
-public class OpenShopCommand : ICommand<OpenShopSignal>
+public class OpenSettingsCommand : ICommand<OpenSettingsSignal>
 {
     [Inject] public IUIManager UI { get; set; }
-    public void Execute(OpenShopSignal signal) => UI.OpenScreen<ShopScreen>(layer: UILayer.Screen);
+    public void Execute(OpenSettingsSignal signal) => UI.OpenScreen<SettingsScreen>(layer: UILayer.Screen);
 }
 
 // Screens derive from ScreenView (View + IUIWindowLifecycle) — the mediator binds automatically:
-[Mediator(typeof(ShopMediator))]
-public class ShopScreen : ScreenView { ... }
+[Mediator(typeof(SettingsMediator))]
+public class SettingsScreen : ScreenView { ... }
 ```
 
 **Rationale:** `UIManager` is the canonical, type-safe screen manager — open by type

@@ -76,6 +76,17 @@ The migration this ADR's first addendum recorded is **complete**:
 This ADR's original decision (in-game UGUI stays; `Task<GameObject>` as the in-game
 abstraction) is unchanged — the consolidation happened on top of it.
 
+## Addendum (2026-08-06, third) — Demo scaffolding removed; Game/Samples is canonical
+
+- `Assets/Scripts/Demo/` — the 4 demo `ScreenView` screens and their commands/models/signals
+  — is **removed**: it was never wired to a scene or prefabs (no bootstrap in
+  `NexusStarter.unity`, zero Resources prefabs), so it could not run.
+- `Game/Samples` is the single canonical project example: scene-wired, scaffolded by
+  `NexusSetupWizard`, and referenced by the quickstart/how-to docs.
+- `DemoCompatibilitySuite` was removed from the benchmark with the demo; the wizard's
+  default view name and the `cs_default_window` localization key were cleaned up.
+- The prior addenda remain valid history of the UI consolidation.
+
 ## References
 
 - 2026-08-01 architecture review — candidate 4 (WindowManager).

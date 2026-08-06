@@ -66,7 +66,8 @@ Bu rapor, 13 servisin **tamamını** kapsayan satır satır incelemenin sonucudu
 > **2026-08-06:** Eski `WindowManager` (string-keyed legacy API) tamamen kaldırıldı —
 > `UIManager` tek UI yöneticisidir. `UILayer` ve `IUIWindowLifecycle` `WindowManager.cs`'ten
 > ayrı dosyalara çıkarıldı; benchmark'ın W1–W7 kanıtları U1–U7 (`UIManager`) olarak taşındı.
-> Demo ekranları `ScreenView` tabanına geçti; NEXUS004 analyzer kuralı emekli edildi.
+> NEXUS004 analyzer kuralı emekli edildi. Sahneye bağlı olmayan demo iskelesi
+> (`Assets/Scripts/Demo/`) kaldırıldı — kanonik örnek `Game/Samples` (sahneye bağlı, wizard ile üretilir).
 
 - **Kanoniik yapı:** Tip-güvenli `ScreenView` API (`OpenScreenAsync<TScreen>`), havuzlanmış örnekler, `RegisterScreenPrefab`.
 - **Katmanlar:** Background → System (7 katman) canvas yığını, `sortingOrder` ile (`UICanvasSystem` paylaşır).
