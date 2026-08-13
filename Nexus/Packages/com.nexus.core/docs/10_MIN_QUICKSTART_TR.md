@@ -71,11 +71,13 @@ using Nexus.Core;
 
 public class AddScoreCommand : ICommand<ScoreSignal>
 {
-    [Inject] private ScoreModel _score; // Bunu sonra oluşturacağız
+    // Kanonik AOT-optimal enjeksiyon stili (CANONICAL-PATTERNS.md'ye bakın).
+    // Constructor injection da çalışır: public AddScoreCommand(ScoreModel score) { ... }
+    [Inject] public ScoreModel Score { get; set; }
 
     public void Execute(ScoreSignal signal)
     {
-        _score.Total.Value += signal.Points;
+        Score.Total.Value += signal.Points;
     }
 }
 ```
@@ -194,6 +196,43 @@ public class ScoreView : View
 | 🛠️ Editor eklentileri ve araçlar | [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) |
 | 🔍 Yerelleştirme sistemi | [LOCALIZATION_KEYS.md](LOCALIZATION_KEYS.md) |
 | 🤝 Katkıda bulunma | [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+---
+
+## 🧬 Modern Binding'ler, Filtreler ve Sıfır-Reflection Constructor'lar
+
+**Fluent binding zinciri** (VContainer/Zenject tarzı, `builder` veya `container` üzerinde):
+```csharp
+// Konteyner başına bir örnek, konteynerle birlikte dispose edilir (AsSingle/AsCached = aynı)
+builder.BindFluent<IPlayerData>().To<PlayerData>().AsScoped();
+// Uygulama genelinde root konteynerda tek örnek
+builder.BindFluent<SaveService>().AsSingleton();
+// Her resolve'da yeni örnek, konteyner sahiplenmez
+builder.BindFluent<IMusicPlayer>().To<MusicPlayer>().AsTransient();
+// Tüm implemente edilen arayüzlerin altına da kaydeder (tek paylaşılan örnek)
+builder.BindFluent<SessionService>().AsImplementedInterfaces();
+// Açık constructor argümanı (Zenject WithParameter karşılığı)
+builder.BindFluent<ScoreService>().WithParameter<int>(100);
+```
+
+**Sinyal filtreleri** — komutlardan/abonelerden önce çalışan, sinyali iptal edebilen veya mutasyon yapabilen ve asla boxing yapmayan MessagePipe tarzı middleware:
+```csharp
+public sealed class CapDamageFilter : ISignalFilter<DamageSignal>
+{
+    public bool OnFilter(ref DamageSignal signal)
+    {
+        if (signal.Amount > 9999) return false; // iptal
+        signal.Amount = Math.Min(signal.Amount, 9999); // veya ref ile mutasyon
+        return true;
+    }
+}
+// Kayıt:
+bus.AddSignalFilter(new CapDamageFilter());                    // örnek formu
+builder.AddSignalFilter<DamageSignal, CapDamageFilter>();      // tip formu (DI'dan çözülür veya üretilir)
+```
+Filtreler hem `Fire` hem `FireAsync` üzerinde kayıt sırasıyla çalışır. Eski object-tabanlı `ISignalInterceptor` hâlâ çalışır; kayıtlıyken her fire'da bir kez box'lanır.
+
+**Sıfır-reflection constructor'lar (AOT/IL2CPP)** — Nexus kod üreteci, tek public constructor'ı (veya tek `[Inject]`/`[Construct]` işaretli constructor'ı) olan her tip için `NexusDI.RegisterConstructorFactory<T>` lambda'ları üretir. Çalışma zamanında `new T(...)` doğrudan çalışır — `ConstructorInfo.Invoke` yok — yani `readonly`/immutable durum IL2CPP'de de çalışır. Sizin tarafınızda yapmanız gereken bir şey yok; constructor injection'ı kullanmaya devam edin.
 
 ---
 

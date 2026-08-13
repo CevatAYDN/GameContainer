@@ -146,6 +146,7 @@ namespace UnityEngine
         public static double realtimeSinceStartupAsDouble => 0d;
         /// <summary>Monotonic runtime clock — settable so suites can advance time (AdService cooldowns).</summary>
         public static float realtimeSinceStartup { get; set; } = 0f;
+        public static float unscaledTime => 0f;
         public static int frameCount => 0;
     }
 
@@ -672,14 +673,6 @@ namespace UnityEngine
 
     namespace Profiling
     {
-        /// <summary>Unity ProfilerMarker — a no-op outside Unity.</summary>
-        public struct ProfilerMarker
-        {
-            public ProfilerMarker(string name) { }
-            public void Begin() { }
-            public void End() { }
-        }
-
         public static class Profiler
         {
             public static long GetTotalAllocatedMemoryLong() => 0L;
@@ -912,8 +905,13 @@ namespace UnityEngine
 
 namespace Unity.Profiling
 {
-    // SignalBus.cs imports this namespace; only the (guarded) ProfilerMarker usage
-    // needs the type, which lives under UnityEngine.Profiling above.
+    /// <summary>Unity ProfilerMarker (Unity.Profiling in real Unity) — a no-op outside Unity.</summary>
+    public struct ProfilerMarker
+    {
+        public ProfilerMarker(string name) { }
+        public void Begin() { }
+        public void End() { }
+    }
 }
 
 namespace UnityEngine.Assertions
@@ -1040,6 +1038,28 @@ namespace UnityEngine.SceneManagement
         {
             if (scene.IsValid()) s_active = scene.name;
         }
+    }
+}
+
+namespace Nexus.Core
+{
+    /// <summary>
+    /// Harness stand-in for the Unity Profiler-counter surface of NexusProfiler
+    /// (NexusProfiler.cs itself is editor/Profiler-coupled and not compiled into the
+    /// harness). Keeps the counter increments in the real hot paths compiling and
+    /// observable without a Unity profiler.
+    /// </summary>
+    public static class NexusProfiler
+    {
+        public sealed class CounterValue
+        {
+            public int Value;
+        }
+
+        public static readonly CounterValue SignalsDispatched = new CounterValue();
+        public static readonly CounterValue CommandsExecuted = new CounterValue();
+        public static readonly CounterValue CompositeTriggersProcessed = new CounterValue();
+        public static readonly CounterValue ResolvesPerformed = new CounterValue();
     }
 }
 

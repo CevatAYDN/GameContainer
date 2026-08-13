@@ -61,12 +61,15 @@ public class ScoreUpdatedSignal { ... }
 ```
 
 ### Rule 2: Public Property Injection
-Dependencies are injected by the `NexusDI` container into `public` auto-properties marked with `[Inject]`:
+Dependencies are injected by the `NexusDI` container. The **AOT-optimal canonical** style is
+`public` auto-properties marked with `[Inject]` (the generated binder emits a direct assignment):
 ```csharp
-// GOOD: Public auto-property
+// GOOD (canonical): Public auto-property — direct AOT assignment
 [Inject] public IScoreModel ScoreModel { get; set; }
 
-// BAD: Field injection or private setter breaks AOT code generation
+// WORKS BUT NOT CANONICAL: Private field injection — generated binder falls back to a cached
+// FieldInfo.SetValue (works incl. IL2CPP, but reflection-based). Constructor injection is
+// equally valid for immutability: public Ctor(IScoreModel model) { ... } ([Inject]/[Construct]).
 [Inject] private IScoreModel _scoreModel;
 ```
 
@@ -253,7 +256,7 @@ namespace MyGame.Contexts
 | Anti-Pattern | Why it fails | Correct Pattern |
 |:---|:---|:---|
 | `public class MySignal` | Allocates memory on GC heap every fire. | `public struct MySignal` |
-| `[Inject] private IModel _model;` | Reflection/AOT generator cannot set private field. | `[Inject] public IModel Model { get; set; }` |
+| `[Inject] private IModel _model;` | Works (cached `FieldInfo.SetValue` fallback incl. IL2CPP) but not AOT-direct; encapsulation costs AOT-optimality. | `[Inject] public IModel Model { get; set; }` — direct AOT assignment |
 | Redeclaring `SignalBus` in `Mediator` | Causes `CS0108` compiler warning and shadows base member. | Omit `SignalBus` declaration; use inherited property. |
 | Direct `GetComponent` in Mediators | Bypasses MVCS decoupling and fails during unit tests. | Inject models or views through Mediator binding. |
 | Hardcoded strings for signals | Brittle, breaks refactoring, no compile-time checks. | Use typed struct signals (`SignalBus.Fire(new MySignal())`). |

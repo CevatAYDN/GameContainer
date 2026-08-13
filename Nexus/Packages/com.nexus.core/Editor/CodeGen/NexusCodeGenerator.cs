@@ -209,6 +209,11 @@ namespace Nexus.Editor
             var networkSignalTypes = new List<Type>();
             // (command, signal, isAsync) triples for generic-only command dispatchers.
             var genericCommandPairs = new List<(Type Command, Type Signal, bool IsAsync)>();
+            // Constructor factory candidates: (type, ctor). Mirrors NexusDI's runtime ctor
+            // selection — exactly one [Inject]/[Construct]-marked public ctor, or a single public
+            // ctor. Every other shape keeps the reflection path (the runtime decides
+            // parameterless-or-throw there).
+            var ctorFactoryTypes = new List<(Type Type, ConstructorInfo Ctor)>();
             // Shared across all passes below so each type's members reflect exactly once.
             var memberCache = new Dictionary<Type, MemberSet>();
 
@@ -241,6 +246,30 @@ namespace Nexus.Editor
 
                     if (type.IsClass && !type.IsAbstract)
                     {
+                        // Constructor factory candidate scan (same loop — one reflection pass).
+                        if (!type.IsGenericTypeDefinition)
+                        {
+                            var publicCtors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+                            if (publicCtors.Length > 0)
+                            {
+                                ConstructorInfo markedCtor = null;
+                                int markedCount = 0;
+                                for (int c = 0; c < publicCtors.Length; c++)
+                                {
+                                    if (publicCtors[c].IsDefined(typeof(InjectAttribute), false)
+                                        || publicCtors[c].IsDefined(typeof(ConstructAttribute), false))
+                                    {
+                                        markedCount++;
+                                        markedCtor = publicCtors[c];
+                                    }
+                                }
+                                if (markedCount == 1)
+                                    ctorFactoryTypes.Add((type, markedCtor));
+                                else if (markedCount == 0 && publicCtors.Length == 1)
+                                    ctorFactoryTypes.Add((type, publicCtors[0]));
+                            }
+                        }
+
                         bool hasInject = false;
 
                         var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
@@ -327,6 +356,41 @@ namespace Nexus.Editor
             // declares an INetworkSignal fail to compile (the member does not exist).
             // Network signal types are still included in link.xml below so IL2CPP can
             // preserve their serialized fields.
+
+            // Constructor factories: zero-reflection instantiation on IL2CPP. The lambda calls
+            // di.ResolveConstructorParameter<T> which reproduces the reflection path's
+            // strict/warn semantics byte-for-byte; [OptionalInject] params use TryResolve, and
+            // [Inject(Name=...)] params resolve the named binding.
+            var ctorFactorySb = new StringBuilder();
+            foreach (var (type, ctor) in ctorFactoryTypes)
+            {
+                string fullName = GetCSharpTypeName(type);
+                if (fullName == null) continue;
+                var parameters = ctor.GetParameters();
+                var argList = new List<string>(parameters.Length);
+                bool skipType = false;
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    var p = parameters[i];
+                    if (p.ParameterType.IsValueType) { skipType = true; break; }
+                    string pTypeName = GetCSharpTypeName(p.ParameterType);
+                    if (pTypeName == null) { skipType = true; break; }
+                    bool optional = p.IsDefined(typeof(OptionalInjectAttribute), false);
+                    var paramInject = p.GetCustomAttribute<InjectAttribute>();
+                    string paramName = paramInject?.Name;
+                    if (optional)
+                    {
+                        argList.Add($"di.TryResolve<{pTypeName}>()");
+                    }
+                    else
+                    {
+                        string nameArg = string.IsNullOrEmpty(paramName) ? "" : $", \"{paramName}\"";
+                        argList.Add($"di.ResolveConstructorParameter<{pTypeName}>({i}, \"{fullName}\", \"{pTypeName}\"{nameArg})");
+                    }
+                }
+                if (skipType) continue;
+                ctorFactorySb.AppendLine($"            NexusDI.RegisterConstructorFactory<{fullName}>((di) => new {fullName}({string.Join(", ", argList)}));");
+            }
 
             // Generic-only command dispatchers: strongly-typed delegates registered into
             // CommandRegistry's dispatcher caches so IL2CPP builds never hit the
@@ -615,6 +679,7 @@ namespace Nexus.Editor
             sb.AppendLine("        [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]");
             sb.AppendLine("        public static void Initialize()");
             sb.AppendLine("        {");
+            sb.Append(ctorFactorySb.ToString());
             sb.Append(initSb.ToString());
             sb.Append(dispatcherSb.ToString());
             sb.AppendLine("        }");

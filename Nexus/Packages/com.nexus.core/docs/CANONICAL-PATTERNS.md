@@ -51,17 +51,23 @@ public class MyCompositeCommand : ICompositeCommand
 
 ## 🥇 Canonical Dependency Injection
 
-**Use `[Inject] public T Property { get; set; }` — public auto-properties only.**
+**Use `[Inject] public T Property { get; set; }` — public auto-properties (AOT-optimal).**
 
 ```csharp
-// ✅ CANONICAL — public auto-property for AOT codegen compatibility
+// ✅ CANONICAL — public auto-property: generated binder emits a DIRECT assignment (AOT/IL2CPP-optimal)
 [Inject] public IScoreModel ScoreModel { get; set; }
 
-// ❌ AVOID — field injection (breaks AOT codegen)
+// ⚠️ WORKS BUT NOT CANONICAL — private field injection: generated binder falls back to a
+// cached FieldInfo.SetValue (works everywhere incl. IL2CPP, but reflection-based, slower)
 [Inject] private IScoreModel _scoreModel;
 ```
 
-**Rationale:** Nexus AOT code generator emits IL that sets public properties. Private field injection falls back to reflection at runtime, defeating IL2CPP optimization and adding GC pressure.
+**Rationale:** The Nexus AOT generator emits direct IL/C# assignments for public members.
+Private fields/properties are **also injected** — via cached `FieldInfo.SetValue` / `PropertyInfo.SetValue`
+with `link.xml` preservation — so they work in every build target; they simply trade
+AOT-directness for encapsulation. Public auto-properties are the canonical AOT-optimal style.
+**Constructor injection is equally valid** (`[Inject]`/`[Construct]`-marked or single public
+constructor); prefer it when you want immutability (`readonly` fields).
 
 ---
 

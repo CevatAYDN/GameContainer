@@ -19,6 +19,30 @@ namespace Nexus.Core
         bool IsRegistered(Type type);
     }
 
+    /// <summary>
+    /// Defines how long a bound instance lives and who owns its disposal.
+    /// <list type="bullet">
+    /// <item><description><see cref="Lifetime.Transient"/>: a fresh instance is created on every
+    /// resolve. The container never caches or disposes it — the caller owns cleanup.</description></item>
+    /// <item><description><see cref="Lifetime.Scoped"/>: one instance per container (scope). It is
+    /// created on first resolve in that container, cached, and disposed — in reverse creation
+    /// order — when the container is disposed. Child containers that do not register the type
+    /// resolve the parent's scoped instance (parent-scope semantics).</description></item>
+    /// <item><description><see cref="Lifetime.Singleton"/>: one instance for the whole application.
+    /// The binding is registered on the ROOT container regardless of where the Bind call happens,
+    /// so every container in the hierarchy shares the same instance and it is disposed with the
+    /// root (reverse creation order).</description></item>
+    /// </list>
+    /// The legacy <c>bool isSingleton</c> bind overloads map <c>true</c> → <see cref="Lifetime.Scoped"/>
+    /// and <c>false</c> → <see cref="Lifetime.Transient"/>; they remain for backward compatibility.
+    /// </summary>
+    public enum Lifetime
+    {
+        Transient = 0,
+        Scoped = 1,
+        Singleton = 2,
+    }
+
     [Preserve]
     public class NexusDI : IDisposable, IAsyncDisposable
     {
@@ -41,6 +65,11 @@ namespace Nexus.Core
         // Resolution falls back to the default binding when a name is not registered.
         private readonly ConcurrentDictionary<(Type Type, string Name), Binding> _namedBindings = new();
         private readonly HashSet<object> _resolvedSingletons = new(ReferenceComparer<object>.Instance);
+        // Creation-ordered list of container-owned instances so Dispose tears down in REVERSE
+        // creation order (a dependency created before its consumers is disposed after them,
+        // so [Deconstruct]/Dispose can still touch it). The HashSet above stays for O(1)
+        // membership/count/editor snapshots; this list carries the order guarantee.
+        private readonly List<object> _resolvedSingletonOrder = new();
         private int _disposeState;
         private readonly object _disposeLock = new();
         private readonly ConcurrentDictionary<Type, bool> _lazyServiceTypes = new();
@@ -77,6 +106,14 @@ namespace Nexus.Core
 
         private static readonly ConcurrentDictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
         private static readonly ConcurrentDictionary<Type, Action<object>> s_customClearers = new();
+        // AOT codegen constructor factories (NexusGeneratedBinder.g.cs): zero-reflection
+        // instantiation on every build target. Keyed by the CONCRETE type; the generated
+        // lambda is `di => new T(di.Resolve<A>(), di.Resolve<B>())` so readonly/immutable
+        // constructor state works and IL2CPP never falls back to ConstructorInfo.Invoke.
+        private static readonly ConcurrentDictionary<Type, Func<NexusDI, object>> s_constructorFactories = new();
+        // Shared user-defined-interface filter (fluent AsImplementedInterfaces + ContextBuilder).
+        // Interface metadata is immutable per Type, so the GetInterfaces() walk runs once per type.
+        private static readonly ConcurrentDictionary<Type, Type[]> s_userDefinedInterfacesCache = new();
 
         private readonly ConditionalWeakTable<object, PendingInjection> _pendingInjections = new();
         private readonly object _pendingInjectionsLock = new();
@@ -109,8 +146,132 @@ namespace Nexus.Core
         {
             public Type ConcreteType { get; set; }
             public volatile object Instance;
-            public bool IsSingleton { get; set; }
+            // Backed by a private field so the property name cannot shadow the Lifetime type
+            // inside this class (see the qualified enum references below).
+            private Lifetime _lifetime = Nexus.Core.Lifetime.Transient;
+            public Lifetime Lifetime
+            {
+                get => _lifetime;
+                set => _lifetime = value;
+            }
+            /// <summary>
+            /// Legacy accessor: <c>true</c> → <see cref="Lifetime.Scoped"/>, <c>false</c> →
+            /// <see cref="Lifetime.Transient"/>. Kept so existing object initializers
+            /// (<c>new Binding { IsSingleton = ... }</c>) compile unchanged.
+            /// </summary>
+            public bool IsSingleton
+            {
+                get => _lifetime != Nexus.Core.Lifetime.Transient;
+                set => _lifetime = value ? Nexus.Core.Lifetime.Scoped : Nexus.Core.Lifetime.Transient;
+            }
             public Func<object> Factory { get; set; }
+            /// <summary>Explicit constructor parameter values (fluent <c>WithParameter</c>). Null when none.</summary>
+            public ParameterOverride[] ParameterOverrides { get; set; }
+        }
+
+        /// <summary>
+        /// An explicit value for one constructor parameter of a binding's implementation,
+        /// supplied via the fluent <see cref="FluentTypeBinder{T}.WithParameter(Type, object)"/>.
+        /// Matched by exact parameter type; the first matching override wins over resolution.
+        /// </summary>
+        internal sealed class ParameterOverride
+        {
+            public readonly Type Type;
+            public readonly object Value;
+            public ParameterOverride(Type type, object value)
+            {
+                Type = type;
+                Value = value;
+            }
+        }
+
+        /// <summary>
+        /// Fluent binding chain (Zenject/VContainer-style ergonomics):
+        /// <c>di.BindFluent&lt;IFoo&gt;().To&lt;Foo&gt;().AsScoped()</c>,
+        /// <c>di.BindFluent&lt;Foo&gt;().AsSingle().WithParameter(new FooOptions(1, 2))</c>.
+        /// Every terminal method (<c>AsSingleton/AsScoped/AsTransient/AsSingle/AsCached/WithParameter</c>)
+        /// applies the binding immediately (silently rebinding — no warning), so chain order is
+        /// last-wins. The legacy <c>Bind&lt;T&gt;(bool)</c> overloads are untouched and remain canonical
+        /// for existing code; this chain is a compatible addition.
+        /// </summary>
+        public sealed class FluentTypeBinder<T> where T : class
+        {
+            private readonly NexusDI _di;
+            private Type _implType;
+            private Lifetime _lifetime = Lifetime.Scoped;
+            private bool _bindInterfaces;
+            private readonly List<ParameterOverride> _overrides = new();
+
+            internal FluentTypeBinder(NexusDI di)
+            {
+                _di = di;
+                _implType = typeof(T);
+            }
+
+            /// <summary>Sets the implementation type (default: the key type itself).</summary>
+            public FluentTypeBinder<T> To<TImplementation>() where TImplementation : class, T
+            {
+                _implType = typeof(TImplementation);
+                return this;
+            }
+
+            /// <summary>One instance for the whole application, registered on the ROOT container.</summary>
+            public FluentTypeBinder<T> AsSingleton() { _lifetime = Lifetime.Singleton; Apply(); return this; }
+
+            /// <summary>One instance per container (scope); disposed with the container, reverse creation order.</summary>
+            public FluentTypeBinder<T> AsScoped() { _lifetime = Lifetime.Scoped; Apply(); return this; }
+
+            /// <summary>A fresh instance per resolve; never owned by the container.</summary>
+            public FluentTypeBinder<T> AsTransient() { _lifetime = Lifetime.Transient; Apply(); return this; }
+
+            /// <summary>Zenject-compat alias: one instance per container (identical to <see cref="AsScoped"/>).</summary>
+            public FluentTypeBinder<T> AsSingle() { _lifetime = Lifetime.Scoped; Apply(); return this; }
+
+            /// <summary>VContainer-compat alias for per-scope caching (identical to <see cref="AsScoped"/>).</summary>
+            public FluentTypeBinder<T> AsCached() { _lifetime = Lifetime.Scoped; Apply(); return this; }
+
+            /// <summary>
+            /// Also registers the implementation under all of its user-defined interfaces
+            /// (one shared binding). The key type is always bound regardless.
+            /// </summary>
+            public FluentTypeBinder<T> AsImplementedInterfaces() { _bindInterfaces = true; Apply(); return this; }
+
+            /// <summary>Alias of <see cref="AsImplementedInterfaces"/> (Zenject <c>AndSelf</c> naming).</summary>
+            public FluentTypeBinder<T> AndSelf() { _bindInterfaces = true; Apply(); return this; }
+
+            /// <summary>Supplies an explicit value for the constructor parameter whose type is <typeparamref name="TParam"/>.</summary>
+            public FluentTypeBinder<T> WithParameter<TParam>(TParam value) => WithParameter(typeof(TParam), value);
+
+            /// <summary>Supplies an explicit value for the constructor parameter of the given type (reflection form).</summary>
+            public FluentTypeBinder<T> WithParameter(Type parameterType, object value)
+            {
+                if (parameterType == null) throw new ArgumentNullException(nameof(parameterType));
+                _overrides.Add(new ParameterOverride(parameterType, value));
+                Apply();
+                return this;
+            }
+
+            private void Apply()
+            {
+                var binding = new Binding
+                {
+                    ConcreteType = _implType,
+                    Lifetime = _lifetime,
+                    ParameterOverrides = _overrides.Count > 0 ? _overrides.ToArray() : null,
+                };
+                var target = _di.BindingTarget(_lifetime);
+                lock (target._disposeLock)
+                {
+                    target.ThrowIfDisposed();
+                    target.SetBindingCore(typeof(T), binding);
+                    if (_bindInterfaces)
+                    {
+                        var interfaces = GetUserDefinedInterfaces(_implType);
+                        for (int i = 0; i < interfaces.Length; i++)
+                            target.SetBindingCore(interfaces[i], binding);
+                    }
+                }
+            }
         }
 
         // ─── Internal types shared by DI internals ───
@@ -161,6 +322,10 @@ namespace Nexus.Core
             public Type[] ConstructorParameterTypes { get; set; }
             /// <summary>Per-parameter binding names for the injected constructor (null = default).</summary>
             public string[] ConstructorParameterNames { get; set; }
+            /// <summary>Per-parameter C# optional-parameter flag (true = has a default value).</summary>
+            public bool[] ConstructorParameterHasDefault { get; set; }
+            /// <summary>Per-parameter default value when <see cref="ConstructorParameterHasDefault"/> is true.</summary>
+            public object[] ConstructorParameterDefaults { get; set; }
         }
         private class ClearableMetadata
         {
@@ -365,16 +530,26 @@ namespace Nexus.Core
 
                     Type[] ctorParamTypes = null;
                     string[] ctorParamNames = null;
+                    bool[] ctorParamHasDefault = null;
+                    object[] ctorParamDefaults = null;
                     if (targetCtor != null)
                     {
                         var parameters = targetCtor.GetParameters();
                         ctorParamTypes = new Type[parameters.Length];
                         ctorParamNames = new string[parameters.Length];
+                        ctorParamHasDefault = new bool[parameters.Length];
+                        ctorParamDefaults = new object[parameters.Length];
                         for (int i = 0; i < parameters.Length; i++)
                         {
-                            if (parameters[i].ParameterType.IsValueType)
-                                throw new InvalidOperationException($"Cannot inject value type constructor parameter {t.FullName}({parameters[i].Name}). Nexus DI only supports reference-type dependencies.");
+                            // Value-type parameters are permitted here: they can only be
+                            // satisfied by an explicit ParameterOverride (e.g. the fluent
+                            // WithParameter<TParam> chain / Zenject WithArguments parity), a
+                            // C# optional-parameter default (CommandPoolManager(int = 4)), or
+                            // pass-through for registered value-type bindings.
                             ctorParamTypes[i] = parameters[i].ParameterType;
+                            ctorParamHasDefault[i] = parameters[i].HasDefaultValue;
+                            if (parameters[i].HasDefaultValue)
+                                ctorParamDefaults[i] = parameters[i].DefaultValue;
                             var paramInject = parameters[i].GetCustomAttribute<InjectAttribute>();
                             if (paramInject != null) ctorParamNames[i] = paramInject.Name;
                         }
@@ -389,7 +564,9 @@ namespace Nexus.Core
                         DeconstructMethods = deconstructList.Count > 0 ? deconstructList.ToArray() : null,
                         Constructor = targetCtor,
                         ConstructorParameterTypes = ctorParamTypes,
-                        ConstructorParameterNames = ctorParamNames
+                        ConstructorParameterNames = ctorParamNames,
+                        ConstructorParameterHasDefault = ctorParamHasDefault,
+                        ConstructorParameterDefaults = ctorParamDefaults
                     };
                 });
             }
@@ -467,8 +644,15 @@ namespace Nexus.Core
 
             public Injector(NexusDI di) { _di = di; }
 
-            public object CreateInstance(Type type)
+            public object CreateInstance(Type type, IReadOnlyList<ParameterOverride> overrides = null)
             {
+                // AOT codegen constructor factory (NexusGeneratedBinder.g.cs): zero-reflection
+                // instantiation on every build target. The generated lambda performs the
+                // constructor calls directly (`new T(di.Resolve<A>(), ...)`), so readonly
+                // fields/immutability work and IL2CPP never falls back to ConstructorInfo.Invoke.
+                if (s_constructorFactories.TryGetValue(type, out var ctorFactory))
+                    return ctorFactory(_di);
+
                 var meta = MetadataCache.GetOrCreateInjectMetadata(type);
                 if (meta.Constructor == null)
                     return Activator.CreateInstance(type, true);
@@ -478,9 +662,38 @@ namespace Nexus.Core
                 var args = new object[paramTypes.Length];
                 for (int i = 0; i < paramTypes.Length; i++)
                 {
+                    bool overridden = false;
+                    if (overrides != null)
+                    {
+                        for (int o = 0; o < overrides.Count; o++)
+                        {
+                            if (overrides[o].Type == paramTypes[i])
+                            {
+                                args[i] = overrides[o].Value;
+                                overridden = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (overridden)
+                        continue;
+
                     args[i] = string.IsNullOrEmpty(paramNames?[i])
                         ? _di.TryResolve(paramTypes[i])
                         : _di.TryResolve(paramTypes[i], paramNames[i]);
+
+                    // C# optional parameter (e.g. `CommandPoolManager(NexusDI, int initialSize = 4)`):
+                    // an explicit binding/override wins, otherwise the declared default is used —
+                    // this is a satisfied dependency, never a warning or strict-mode failure.
+                    if (args[i] == null
+                        && meta.ConstructorParameterHasDefault != null
+                        && i < meta.ConstructorParameterHasDefault.Length
+                        && meta.ConstructorParameterHasDefault[i])
+                    {
+                        args[i] = meta.ConstructorParameterDefaults[i];
+                        continue;
+                    }
+
                     if (args[i] == null && _di.StrictInjection)
                     {
                         throw new InvalidOperationException(
@@ -765,6 +978,53 @@ namespace Nexus.Core
             _injector = new Injector(this);
         }
 
+        /// <summary>
+        /// Creates a child scope (container) for VContainer-style hierarchical lifetimes.
+        /// <see cref="Lifetime.Scoped"/> instances resolved through the child are owned by the
+        /// child and disposed — in reverse creation order — when the child is disposed; the parent
+        /// and its instances are never affected. Types the child does not register fall back to the
+        /// parent chain (parent-scope resolution). <see cref="Lifetime.Singleton"/> bindings made on
+        /// the child are registered on the root container instead.
+        /// </summary>
+        /// <example>
+        /// <code>
+        /// using var child = parentContainer.CreateChildScope(scope =>
+        /// {
+        ///     scope.Bind&lt;ICombatModel, CombatModel&gt;(Lifetime.Scoped);
+        /// });
+        /// // child.Dispose() disposes CombatModel; parentContainer is unaffected.
+        /// </code>
+        /// </example>
+        public NexusDI CreateChildScope(Action<NexusDI> configure = null)
+        {
+            ThrowIfDisposed();
+            var child = new NexusDI(this);
+            configure?.Invoke(child);
+            return child;
+        }
+
+        /// <summary>Singleton bindings live on the root container; all other lifetimes bind where called.</summary>
+        private NexusDI BindingTarget(Lifetime lifetime) => lifetime == Lifetime.Singleton ? GetRootContainer() : this;
+
+        private NexusDI GetRootContainer()
+        {
+            var current = this;
+            while (current._parent != null) current = current._parent;
+            return current;
+        }
+
+        /// <summary>
+        /// Starts a fluent binding chain (Zenject/VContainer-style):
+        /// <c>di.BindFluent&lt;IFoo&gt;().To&lt;Foo&gt;().AsScoped().AsImplementedInterfaces()</c>.
+        /// The chain applies the binding at each terminal call (<c>AsSingleton/AsScoped/AsTransient/
+        /// AsSingle/AsCached/WithParameter</c>); calling <c>BindFluent</c> alone registers nothing.
+        /// </summary>
+        public FluentTypeBinder<T> BindFluent<T>() where T : class
+        {
+            ThrowIfDisposed();
+            return new FluentTypeBinder<T>(this);
+        }
+
         // ─── Public API: Bind ───
 
         /// <summary>
@@ -790,7 +1050,7 @@ namespace Nexus.Core
                 // only a materially different rebind — or one that discards an already
                 // resolved singleton — indicates a probable configuration mistake.
                 bool equivalent = existing.ConcreteType == binding.ConcreteType
-                    && existing.IsSingleton == binding.IsSingleton
+                    && existing.Lifetime == binding.Lifetime
                     && existing.Factory == binding.Factory
                     && existing.Instance == null && binding.Instance == null;
                 if (!equivalent)
@@ -845,6 +1105,34 @@ namespace Nexus.Core
             SetBinding(interfaceType, new Binding { ConcreteType = implementationType, IsSingleton = isSingleton });
         }
 
+        // ─── Explicit-lifetime Bind overloads (Lifetime.Scoped/Singleton/Transient) ───
+        // Singleton bindings are registered on the ROOT container (BindingTarget), so every
+        // container in the hierarchy shares one instance and it is disposed with the root.
+
+        /// <summary>Binds with an explicit <see cref="Lifetime"/> (see <see cref="Lifetime"/> for semantics).</summary>
+        public void Bind<TInterface, TImplementation>(Lifetime lifetime) where TImplementation : class, TInterface
+        {
+            BindingTarget(lifetime).SetBinding(typeof(TInterface), new Binding { ConcreteType = typeof(TImplementation), Lifetime = lifetime });
+        }
+
+        /// <summary>Binds a self-referencing type with an explicit <see cref="Lifetime"/>.</summary>
+        public void Bind<T>(Lifetime lifetime) where T : class
+        {
+            BindingTarget(lifetime).SetBinding(typeof(T), new Binding { ConcreteType = typeof(T), Lifetime = lifetime });
+        }
+
+        /// <summary>Binds a type with an explicit <see cref="Lifetime"/> (reflection form).</summary>
+        public void Bind(Type type, Lifetime lifetime)
+        {
+            BindingTarget(lifetime).SetBinding(type, new Binding { ConcreteType = type, Lifetime = lifetime });
+        }
+
+        /// <summary>Binds an interface to an implementation with an explicit <see cref="Lifetime"/> (reflection form).</summary>
+        public void Bind(Type interfaceType, Type implementationType, Lifetime lifetime)
+        {
+            BindingTarget(lifetime).SetBinding(interfaceType, new Binding { ConcreteType = implementationType, Lifetime = lifetime });
+        }
+
         /// <summary>Binds a named implementation (Strange-style). Resolves only against [Inject(Name=...)].</summary>
         public void Bind<TInterface, TImplementation>(string name, bool isSingleton = true) where TImplementation : class, TInterface
         {
@@ -857,6 +1145,27 @@ namespace Nexus.Core
         {
             if (string.IsNullOrEmpty(name)) { Bind<T>(isSingleton); return; }
             SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), IsSingleton = isSingleton });
+        }
+
+        /// <summary>Binds a named implementation with an explicit <see cref="Lifetime"/>.</summary>
+        public void Bind<TInterface, TImplementation>(string name, Lifetime lifetime) where TImplementation : class, TInterface
+        {
+            if (string.IsNullOrEmpty(name)) { Bind<TInterface, TImplementation>(lifetime); return; }
+            BindingTarget(lifetime).SetNamedBinding((typeof(TInterface), name), new Binding { ConcreteType = typeof(TImplementation), Lifetime = lifetime });
+        }
+
+        /// <summary>Binds a named self-referencing type with an explicit <see cref="Lifetime"/>.</summary>
+        public void Bind<T>(string name, Lifetime lifetime) where T : class
+        {
+            if (string.IsNullOrEmpty(name)) { Bind<T>(lifetime); return; }
+            BindingTarget(lifetime).SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), Lifetime = lifetime });
+        }
+
+        /// <summary>Binds a named type with an explicit <see cref="Lifetime"/> (reflection form).</summary>
+        public void Bind(Type type, string name, Lifetime lifetime)
+        {
+            if (string.IsNullOrEmpty(name)) { Bind(type, lifetime); return; }
+            BindingTarget(lifetime).SetNamedBinding((type, name), new Binding { ConcreteType = type, Lifetime = lifetime });
         }
 
         /// <summary>Binds a named type (reflection-form).</summary>
@@ -905,6 +1214,44 @@ namespace Nexus.Core
                 }
             }
             SetBinding(concreteType, shared);
+        }
+
+        /// <summary>Two-interface polymorphic binding with an explicit <see cref="Lifetime"/>.</summary>
+        public void BindMultiple<TInterface1, TInterface2, TImplementation>(Lifetime lifetime)
+            where TImplementation : class, TInterface1, TInterface2
+        {
+            var shared = new Binding { ConcreteType = typeof(TImplementation), Lifetime = lifetime };
+            var target = BindingTarget(lifetime);
+            target.SetBinding(typeof(TInterface1), shared);
+            target.SetBinding(typeof(TInterface2), shared);
+            target.SetBinding(typeof(TImplementation), shared);
+        }
+
+        /// <summary>Three-interface polymorphic binding with an explicit <see cref="Lifetime"/>.</summary>
+        public void BindMultiple<TInterface1, TInterface2, TInterface3, TImplementation>(Lifetime lifetime)
+            where TImplementation : class, TInterface1, TInterface2, TInterface3
+        {
+            var shared = new Binding { ConcreteType = typeof(TImplementation), Lifetime = lifetime };
+            var target = BindingTarget(lifetime);
+            target.SetBinding(typeof(TInterface1), shared);
+            target.SetBinding(typeof(TInterface2), shared);
+            target.SetBinding(typeof(TInterface3), shared);
+            target.SetBinding(typeof(TImplementation), shared);
+        }
+
+        /// <summary>Reflection-form polymorphic binding with an explicit <see cref="Lifetime"/>.</summary>
+        public void BindMultiple(Type[] interfaceTypes, Type concreteType, Lifetime lifetime)
+        {
+            var shared = new Binding { ConcreteType = concreteType, Lifetime = lifetime };
+            var target = BindingTarget(lifetime);
+            if (interfaceTypes != null)
+            {
+                for (int i = 0; i < interfaceTypes.Length; i++)
+                {
+                    target.SetBinding(interfaceTypes[i], shared);
+                }
+            }
+            target.SetBinding(concreteType, shared);
         }
 
         // ─── Cross-Boundary Binding (StrangeIoC-style cross-context injection) ───
@@ -974,7 +1321,10 @@ namespace Nexus.Core
                 if (disposeWithContainer)
                 {
                     lock (_singletonLock)
+                    {
                         _resolvedSingletons.Add(instance);
+                        _resolvedSingletonOrder.Add(instance);
+                    }
                 }
             }
         }
@@ -989,7 +1339,10 @@ namespace Nexus.Core
                 ThrowIfDisposed();
                 SetNamedBindingCore((typeof(T), name), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
                 lock (_singletonLock)
+                {
                     _resolvedSingletons.Add(instance);
+                    _resolvedSingletonOrder.Add(instance);
+                }
             }
         }
 
@@ -1010,6 +1363,34 @@ namespace Nexus.Core
         public T TryResolve<T>() where T : class => IsRegistered(typeof(T)) ? Resolve<T>() : null;
         /// <summary>Safely resolves a named binding; returns null when the name is not registered.</summary>
         public T TryResolve<T>(string name) where T : class => TryResolve(typeof(T), name) as T;
+
+        /// <summary>
+        /// Codegen support for the AOT binder (<see cref="NexusCodeGenerator"/>): resolves a
+        /// constructor parameter with EXACTLY the reflection path's semantics
+        /// (<see cref="Injector.CreateInstance"/>) — TryResolve, strict throw on missing,
+        /// warn-and-pass-null otherwise. Emitted into <c>RegisterConstructorFactory</c> lambdas
+        /// so IL2CPP builds keep identical behavior without <c>ConstructorInfo.Invoke</c>.
+        /// </summary>
+        /// <param name="parameterIndex">Zero-based constructor parameter index (for diagnostics).</param>
+        /// <param name="ownerTypeName">Full name of the type being constructed (for diagnostics).</param>
+        /// <param name="parameterTypeName">Full name of the parameter type (for diagnostics).</param>
+        /// <param name="name">Optional <c>[Inject(Name=...)]</c> binding name.</param>
+        public T ResolveConstructorParameter<T>(int parameterIndex, string ownerTypeName, string parameterTypeName, string name = null) where T : class
+        {
+            T value = string.IsNullOrEmpty(name) ? TryResolve<T>() : TryResolve<T>(name);
+            if (value == null && StrictInjection)
+            {
+                throw new InvalidOperationException(
+                    $"Strict injection failed: constructor parameter {parameterIndex} of type '{parameterTypeName}' on '{ownerTypeName}' is not registered.");
+            }
+            if (value == null && !StrictInjection)
+            {
+                NexusRuntime.Logger?.LogWarning(
+                    $"[Nexus] Constructor parameter {parameterIndex} ('{parameterTypeName}') on '{ownerTypeName}' is not registered; passing null. " +
+                    "Enable StrictInjection or mark the dependency [OptionalInject] to make this explicit.");
+            }
+            return value;
+        }
         public object TryResolve(Type type) => (type != null && IsRegistered(type)) ? Resolve(type) : null;
 
         /// <summary>
@@ -1145,7 +1526,7 @@ namespace Nexus.Core
 
                     try
                     {
-                        singletonInstance = _injector.CreateInstance(binding.ConcreteType);
+                        singletonInstance = _injector.CreateInstance(binding.ConcreteType, binding.ParameterOverrides);
                         _injector.Inject(singletonInstance);
                         lock (_singletonLock)
                         {
@@ -1155,6 +1536,7 @@ namespace Nexus.Core
                             }
                             binding.Instance = singletonInstance;
                             _resolvedSingletons.Add(singletonInstance);
+                            _resolvedSingletonOrder.Add(singletonInstance);
                         }
                     }
                     finally
@@ -1174,7 +1556,7 @@ namespace Nexus.Core
                     return singletonInstance;
                 }
 
-                var transientInstance = _injector.CreateInstance(binding.ConcreteType);
+                var transientInstance = _injector.CreateInstance(binding.ConcreteType, binding.ParameterOverrides);
                 _injector.Inject(transientInstance);
                 return transientInstance;
             }
@@ -1493,6 +1875,19 @@ namespace Nexus.Core
             Clearer.ClearInjectedReferences(instance);
         }
 
+        /// <summary>
+        /// Registers a zero-reflection constructor factory for <typeparamref name="T"/> — emitted
+        /// by the Nexus AOT code generator as <c>di =&gt; new T(di.Resolve&lt;A&gt;(), di.Resolve&lt;B&gt;())</c>.
+        /// When present, <see cref="Injector.CreateInstance"/> uses it instead of reflection, so
+        /// readonly/immutable constructor state works and IL2CPP never hits
+        /// <c>ConstructorInfo.Invoke</c>. Field/property/method injection still runs afterwards.
+        /// </summary>
+        public static void RegisterConstructorFactory<T>(Func<NexusDI, T> factory) where T : class
+        {
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            s_constructorFactories[typeof(T)] = di => factory(di);
+        }
+
         public static void RegisterInjector<T>(Action<T, NexusDI> injector) where T : class
         {
             s_customInjectors[typeof(T)] = (instance, di) => injector((T)instance, di);
@@ -1504,19 +1899,23 @@ namespace Nexus.Core
         }
 
         // ─── Disposal ───
-        private bool TryBeginDispose(out HashSet<object> singletonsCopy)
+        private bool TryBeginDispose(out List<object> singletonsInCreationOrder)
         {
             lock (_disposeLock)
             {
                 if (Interlocked.Exchange(ref _disposeState, 1) != 0)
                 {
-                    singletonsCopy = null;
+                    singletonsInCreationOrder = null;
                     return false;
                 }
                 lock (_singletonLock)
                 {
-                    singletonsCopy = new HashSet<object>(_resolvedSingletons, ReferenceComparer<object>.Instance);
+                    // Snapshot the CREATION-ORDERED list so teardown runs in reverse creation
+                    // order (a dependency created before its consumers is disposed after them).
+                    // The HashSet stays for O(1) membership/count/editor snapshots.
+                    singletonsInCreationOrder = new List<object>(_resolvedSingletonOrder);
                     _resolvedSingletons.Clear();
+                    _resolvedSingletonOrder.Clear();
                 }
                 _bindings.Clear();
                 _namedBindings.Clear();
@@ -1531,8 +1930,11 @@ namespace Nexus.Core
             var alreadyDisposed = new HashSet<object>(ReferenceComparer<object>.Instance);
             
             var asyncDisposables = new List<IAsyncDisposable>();
-            foreach (var instance in singletonsCopy)
+            // Reverse creation order: dependencies created first are disposed last, so
+            // [Deconstruct]/Dispose on a consumer can still touch its dependencies.
+            for (int i = singletonsCopy.Count - 1; i >= 0; i--)
             {
+                var instance = singletonsCopy[i];
                 if (!alreadyDisposed.Add(instance)) continue;
                 try
                 {
@@ -1636,8 +2038,10 @@ namespace Nexus.Core
 
             var alreadyDisposed = new HashSet<object>(ReferenceComparer<object>.Instance);
 
-            foreach (var instance in singletonsCopy)
+            // Reverse creation order (see Dispose).
+            for (int i = singletonsCopy.Count - 1; i >= 0; i--)
             {
+                var instance = singletonsCopy[i];
                 if (alreadyDisposed.Add(instance))
                 {
                     try
@@ -1660,10 +2064,40 @@ namespace Nexus.Core
             }
         }
 
+        /// <summary>
+        /// User-defined interface filter shared by the fluent <c>AsImplementedInterfaces</c> and
+        /// <see cref="ContextBuilder.BindInterfacesAndSelfTo{TImplementation}(bool)"/> — one cache,
+        /// one predicate, so the two surfaces can never disagree about which interfaces to bind.
+        /// </summary>
+        internal static Type[] GetUserDefinedInterfaces(Type type)
+        {
+            return s_userDefinedInterfacesCache.GetOrAdd(type, static t =>
+            {
+                var result = new List<Type>();
+                var allInterfaces = t.GetInterfaces();
+                for (int i = 0; i < allInterfaces.Length; i++)
+                {
+                    var iface = allInterfaces[i];
+                    if (iface == typeof(IDisposable) || iface == typeof(IAsyncDisposable))
+                        continue;
+                    if (iface == typeof(IStartable) || iface == typeof(IAsyncStartable) || iface == typeof(IStoppable) || iface == typeof(IAsyncStoppable))
+                        continue;
+                    if (iface == typeof(INexusService) || iface == typeof(IReactiveModel) || iface == typeof(IContextLifecycle) || iface == typeof(IPostContextLifecycle))
+                        continue;
+                    if (iface.Namespace != null && (iface.Namespace.StartsWith("System") || iface.Namespace.StartsWith("UnityEngine")))
+                        continue;
+                    result.Add(iface);
+                }
+                return result.ToArray();
+            });
+        }
+
         public static void ClearCaches()
         {
             s_customInjectors.Clear();
             s_customClearers.Clear();
+            s_constructorFactories.Clear();
+            s_userDefinedInterfacesCache.Clear();
             MetadataCache.ClearAll();
         }
     }

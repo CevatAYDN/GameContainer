@@ -44,17 +44,17 @@ bazıları bilinçli olarak farklı tasarlanmıştır.
 - `NexusRuntime.GetContexts(scopeTag)` / `GetContext(scopeTag)` — isimle bağlam
   bulma; `ActiveContexts` thread-safe anlık görüntü sağlar.
 
-**Durum:** ✅ İşlevsel karşılık mevcut — ama **kavramsal fark var**: Strange
-"her şey paylaşılabilir" derken (cross-context binder her şeyi taşır), Nexus
-yalnızca `[CrossContext]` işaretli sinyalleri yayınlar (bilinçli, az-ayrıcalık
-tasarımı). DI nesnelerinin bağlamlar arası paylaşımı için Nexus'ta doğrudan bir
-`crossContextInjectionBinder` **yoktur**; bunun yerine paylaşılacak servisler
-ortak bir üst bağlamda ya da singleton olarak kaydedilir.
+**Durum:** ✅ İşlevsel karşılık mevcut. DI nesnelerinin bağlamlar arası paylaşımı
+`BindCrossBoundary<TInterface,TImpl>()` + `ResolveCrossBoundary<T>()` ile sağlanır —
+Strange'in `crossContextInjectionBinder`'ının Nexus karşılığıdır: tip `BindCrossBoundary`
+ile kayıtlı olduğu bağlamda singleton olur ve alt (child/grandchild) bağlamlar onu
+parent zincirinden bilinçli olarak `ResolveCrossBoundary<T>()` ile alır (CB1–CB8
+harness kanıtı). Sinyal yayını için ayrıca `[CrossContext(scopeTag)]` attribute'u vardır.
 
-> **Öneri:** Gerçekten ihtiyaç duyulursa (ör. çok oyunculu oturum paylaşımı)
-> `IContextResolver` üzerinden hedefli "cross-context resolve" API'si eklenebilir.
-> Bu, Strange'in genel binder'ına göre Nexus'un "az ayrıcalık" felsefesiyle
-> uyumlu bir uzantı olur.
+**Kavramsal fark bilinçlidir (az-ayrıcalık tasarımı):** Strange "her şey paylaşılabilir"
+derken, Nexus yalnızca **açıkça işaretlenmiş** tipleri (`BindCrossBoundary`) ve
+sinyalleri (`[CrossContext]`) paylaşır. Paylaşılacak servisler ayrıca ortak bir üst
+bağlamda ya da `Lifetime.Singleton` ile root container'da kaydedilebilir.
 
 ---
 

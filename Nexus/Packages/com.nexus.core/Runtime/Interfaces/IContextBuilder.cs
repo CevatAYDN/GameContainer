@@ -87,10 +87,33 @@ namespace Nexus.Core
         void Bind<T>() where T : class;
         void BindInstance<T>(T instance) where T : class;
 
+        /// <summary>
+        /// Starts a fluent binding chain (Zenject/VContainer-style):
+        /// <c>builder.BindFluent&lt;IFoo&gt;().To&lt;Foo&gt;().AsScoped().AsImplementedInterfaces()</c>,
+        /// with <c>AsSingleton/AsScoped/AsTransient/AsSingle/AsCached</c>, <c>WithParameter</c> and
+        /// <c>AsImplementedInterfaces</c> terminals.
+        /// </summary>
+        NexusDI.FluentTypeBinder<T> BindFluent<T>() where T : class;
+
+        /// <summary>
+        /// Binds with an explicit <see cref="Lifetime"/>. <see cref="Lifetime.Singleton"/> bindings
+        /// are registered on the ROOT container (one app-wide instance, disposed with the root);
+        /// <see cref="Lifetime.Scoped"/> bindings live in the current container and are disposed with
+        /// it (reverse creation order); <see cref="Lifetime.Transient"/> creates a fresh instance per
+        /// resolve that the container never owns.
+        /// </summary>
+        void Bind<TInterface, TImplementation>(Lifetime lifetime) where TImplementation : class, TInterface;
+        /// <summary>Binds a self-referencing type with an explicit <see cref="Lifetime"/>.</summary>
+        void Bind<T>(Lifetime lifetime) where T : class;
+
         /// <summary>Binds a named implementation (Strange-style named injection).</summary>
         void Bind<TInterface, TImplementation>(string name) where TImplementation : class, TInterface;
         /// <summary>Binds a named self-referencing type.</summary>
         void Bind<T>(string name) where T : class;
+        /// <summary>Binds a named implementation with an explicit <see cref="Lifetime"/>.</summary>
+        void Bind<TInterface, TImplementation>(string name, Lifetime lifetime) where TImplementation : class, TInterface;
+        /// <summary>Binds a named self-referencing type with an explicit <see cref="Lifetime"/>.</summary>
+        void Bind<T>(string name, Lifetime lifetime) where T : class;
         /// <summary>Binds a named instance value.</summary>
         void BindInstance<T>(string name, T instance) where T : class;
 
@@ -128,10 +151,16 @@ namespace Nexus.Core
         /// </summary>
         void BindInterfacesAndSelfTo<TImplementation>(bool isSingleton = true) where TImplementation : class;
 
+        /// <summary>Interfaces-and-self binding with an explicit <see cref="Lifetime"/>.</summary>
+        void BindInterfacesAndSelfTo<TImplementation>(Lifetime lifetime) where TImplementation : class;
+
         /// <summary>
         /// Scans an assembly and automatically binds matching concrete types using the specified predicate.
         /// </summary>
         void BindAllClassesMatching(System.Reflection.Assembly assembly, Func<Type, bool> predicate, bool isSingleton = true);
+
+        /// <summary>Assembly-scan binding with an explicit <see cref="Lifetime"/>.</summary>
+        void BindAllClassesMatching(System.Reflection.Assembly assembly, Func<Type, bool> predicate, Lifetime lifetime);
 
         void EnableStrictInjection();
     }
@@ -154,6 +183,16 @@ namespace Nexus.Core
             where TCommand : class where TSignal : struct;
 
         ICommandBindingBuilder<TSignal> BindSignal<TSignal>() where TSignal : struct;
+
+        /// <summary>
+        /// Registers a ref-based signal filter (MessagePipe-style middleware) by type. The filter
+        /// is resolved from the container so it may carry dependencies; when unbound it is created
+        /// via <c>Activator.CreateInstance</c>. A filter returning <c>false</c> cancels the signal
+        /// before dispatch — zero allocation, never boxes the signal.
+        /// </summary>
+        void AddSignalFilter<TSignal, TFilter>()
+            where TSignal : struct
+            where TFilter : class, ISignalFilter<TSignal>;
     }
 
     /// <summary>

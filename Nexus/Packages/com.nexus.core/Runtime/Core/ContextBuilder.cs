@@ -81,6 +81,27 @@ namespace Nexus.Core
             _container.BindInstance(instance);
         }
 
+        /// <summary>
+        /// Starts a fluent binding chain (Zenject/VContainer-style):
+        /// <c>builder.BindFluent&lt;IFoo&gt;().To&lt;Foo&gt;().AsScoped().AsImplementedInterfaces()</c>.
+        /// </summary>
+        public NexusDI.FluentTypeBinder<T> BindFluent<T>() where T : class
+        {
+            return _container.BindFluent<T>();
+        }
+
+        /// <summary>Binds with an explicit <see cref="Lifetime"/> (see <see cref="Lifetime"/> for semantics).</summary>
+        public void Bind<TInterface, TImplementation>(Lifetime lifetime) where TImplementation : class, TInterface
+        {
+            _container.Bind<TInterface, TImplementation>(lifetime);
+        }
+
+        /// <summary>Binds a self-referencing type with an explicit <see cref="Lifetime"/>.</summary>
+        public void Bind<T>(Lifetime lifetime) where T : class
+        {
+            _container.Bind<T>(lifetime);
+        }
+
         /// <summary>Binds a named implementation (Strange-style named injection).</summary>
         public void Bind<TInterface, TImplementation>(string name) where TImplementation : class, TInterface
         {
@@ -91,6 +112,18 @@ namespace Nexus.Core
         public void Bind<T>(string name) where T : class
         {
             _container.Bind<T>(name, isSingleton: true);
+        }
+
+        /// <summary>Binds a named implementation with an explicit <see cref="Lifetime"/>.</summary>
+        public void Bind<TInterface, TImplementation>(string name, Lifetime lifetime) where TImplementation : class, TInterface
+        {
+            _container.Bind<TInterface, TImplementation>(name, lifetime);
+        }
+
+        /// <summary>Binds a named self-referencing type with an explicit <see cref="Lifetime"/>.</summary>
+        public void Bind<T>(string name, Lifetime lifetime) where T : class
+        {
+            _container.Bind<T>(name, lifetime);
         }
 
         /// <summary>Binds a named instance value.</summary>
@@ -132,6 +165,12 @@ namespace Nexus.Core
             BindInterfacesAndSelfTo(typeof(TImplementation), isSingleton);
         }
 
+        /// <summary>Interfaces-and-self binding with an explicit <see cref="Lifetime"/>.</summary>
+        public void BindInterfacesAndSelfTo<TImplementation>(Lifetime lifetime) where TImplementation : class
+        {
+            BindInterfacesAndSelfTo(typeof(TImplementation), lifetime);
+        }
+
         /// <summary>
         /// Scans an assembly and automatically binds matching concrete types using the specified predicate.
         /// </summary>
@@ -151,41 +190,39 @@ namespace Nexus.Core
             }
         }
 
+        /// <summary>Assembly-scan binding with an explicit <see cref="Lifetime"/>.</summary>
+        public void BindAllClassesMatching(System.Reflection.Assembly assembly, Func<Type, bool> predicate, Lifetime lifetime)
+        {
+            if (assembly == null) throw new ArgumentNullException(nameof(assembly));
+            if (predicate == null) throw new ArgumentNullException(nameof(predicate));
+
+            var types = Services.AssemblyScanService.GetCachedTypes(assembly);
+            for (int i = 0; i < types.Length; i++)
+            {
+                var t = types[i];
+                if (t.IsClass && !t.IsAbstract && predicate(t))
+                {
+                    BindInterfacesAndSelfTo(t, lifetime);
+                }
+            }
+        }
+
         private void BindInterfacesAndSelfTo(Type implType, bool isSingleton)
         {
             var interfaces = GetUserDefinedInterfaces(implType);
             _container.BindMultiple(interfaces, implType, isSingleton);
         }
 
-        // Interface metadata is immutable per Type, so the
-        // GetInterfaces() reflection scan is computed once per type and shared by every
-        // BindInterfacesAndSelfTo / BindServiceInterfacesAndSelfTo / BindAllClassesMatching
-        // call. Without the cache, scanning an assembly bound N matching types paid N
-        // reflection walks (each including the System/UnityEngine namespace filtering).
-        private static readonly ConcurrentDictionary<Type, Type[]> s_userDefinedInterfacesCache = new();
-
-        private static Type[] GetUserDefinedInterfaces(Type type)
+        private void BindInterfacesAndSelfTo(Type implType, Lifetime lifetime)
         {
-            return s_userDefinedInterfacesCache.GetOrAdd(type, static t =>
-            {
-                var result = new List<Type>();
-                var allInterfaces = t.GetInterfaces();
-                for (int i = 0; i < allInterfaces.Length; i++)
-                {
-                    var iface = allInterfaces[i];
-                    if (iface == typeof(IDisposable) || iface == typeof(IAsyncDisposable))
-                        continue;
-                    if (iface == typeof(IStartable) || iface == typeof(IAsyncStartable) || iface == typeof(IStoppable) || iface == typeof(IAsyncStoppable))
-                        continue;
-                    if (iface == typeof(INexusService) || iface == typeof(IReactiveModel) || iface == typeof(IContextLifecycle) || iface == typeof(IPostContextLifecycle))
-                        continue;
-                    if (iface.Namespace != null && (iface.Namespace.StartsWith("System") || iface.Namespace.StartsWith("UnityEngine")))
-                        continue;
-                    result.Add(iface);
-                }
-                return result.ToArray();
-            });
+            var interfaces = GetUserDefinedInterfaces(implType);
+            _container.BindMultiple(interfaces, implType, lifetime);
         }
+
+        // User-defined-interface filtering lives in NexusDI.GetUserDefinedInterfaces (one cache,
+        // one predicate) so the fluent AsImplementedInterfaces chain and the builder's
+        // BindInterfacesAndSelfTo surfaces can never disagree about which interfaces to bind.
+        private static Type[] GetUserDefinedInterfaces(Type type) => NexusDI.GetUserDefinedInterfaces(type);
 
         public void EnableStrictInjection()
         {
@@ -198,7 +235,7 @@ namespace Nexus.Core
         /// </summary>
         internal static void ClearCaches()
         {
-            s_userDefinedInterfacesCache.Clear();
+            NexusDI.ClearCaches();
         }
 
         // ─── Cross-Boundary Binding ───
@@ -358,6 +395,14 @@ namespace Nexus.Core
             return new CommandBindingBuilder<TSignal>(this);
         }
 
+        /// <summary>Registers a ref-based signal filter by type (see <see cref="SignalBus.AddSignalFilter{TSignal,TFilter}"/>).</summary>
+        public void AddSignalFilter<TSignal, TFilter>()
+            where TSignal : struct
+            where TFilter : class, ISignalFilter<TSignal>
+        {
+            _signalBus.AddSignalFilter<TSignal, TFilter>();
+        }
+
         [Obsolete("Fire from a lifecycle's OnInitializeAsync/OnStartAsync via ISignalPublisher instead; a builder should only register bindings.", error: false)]
         public void Fire<T>(T signal) where T : struct
         {
@@ -420,6 +465,12 @@ namespace Nexus.Core
                         var bindingName = meta.ConstructorParameterNames != null && paramIndex < meta.ConstructorParameterNames.Length
                             ? meta.ConstructorParameterNames[paramIndex]
                             : null;
+                        // C# optional parameters have a declared default — they are satisfied
+                        // without a registration (e.g. CommandPoolManager(NexusDI, int = 4)).
+                        if (meta.ConstructorParameterHasDefault != null
+                            && paramIndex < meta.ConstructorParameterHasDefault.Length
+                            && meta.ConstructorParameterHasDefault[paramIndex])
+                            continue;
                         if (!IsDependencyRegistered(paramType, bindingName))
                         {
                             issues.Add(new DiValidationIssue(

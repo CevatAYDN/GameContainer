@@ -165,12 +165,12 @@ using UnityEngine;
 
 public class DamageCommand : ICommand<DamageSignal>
 {
-    [Inject] private IPlayerModel _playerModel; // Model dependency
+    [Inject] public IPlayerModel PlayerModel { get; set; } // Model dependency
 
     public void Execute(DamageSignal signal)
     {
-        _playerModel.Health -= signal.Amount;
-        Debug.Log($"Damage processed: {signal.Amount}. New Health: {_playerModel.Health}");
+        PlayerModel.Health -= signal.Amount;
+        Debug.Log($"Damage processed: {signal.Amount}. New Health: {PlayerModel.Health}");
     }
 }
 ```
@@ -190,12 +190,12 @@ using UnityEngine;
 [SignalHandler(typeof(DamageSignal))] // Auto-discovered and registered by Nexus
 public class DamageCommand : ICommand<DamageSignal>
 {
-    [Inject] private IPlayerModel _playerModel; // Model dependency
+    [Inject] public IPlayerModel PlayerModel { get; set; } // Model dependency
 
     public void Execute(DamageSignal signal)
     {
-        _playerModel.Health -= signal.Amount;
-        Debug.Log($"Damage processed: {signal.Amount}. New Health: {_playerModel.Health}");
+        PlayerModel.Health -= signal.Amount;
+        Debug.Log($"Damage processed: {signal.Amount}. New Health: {PlayerModel.Health}");
     }
 }
 ```
@@ -226,12 +226,12 @@ public class PlayerView : View
 // 2. Mediator (UI Controller)
 public class PlayerMediator : Mediator<PlayerView>
 {
-    [Inject] private IPlayerModel _playerModel;
+    [Inject] public IPlayerModel PlayerModel { get; set; }
 
     protected override void OnBind()
     {
         // Initialize the UI with the current health value
-        View.UpdateHealthUI(_playerModel.Health);
+        View.UpdateHealthUI(PlayerModel.Health);
 
         // Listen for the event triggered when DamageSignal is dispatched
         Subscribe<DamageSignal>(OnDamageReceived);
@@ -240,7 +240,7 @@ public class PlayerMediator : Mediator<PlayerView>
     private void OnDamageReceived(DamageSignal signal)
     {
         // Refresh the UI after the model updates
-        View.UpdateHealthUI(_playerModel.Health);
+        View.UpdateHealthUI(PlayerModel.Health);
     }
 }
 ```
@@ -259,11 +259,11 @@ SignalBus.Fire(new DamageSignal(10));
 ##### 2. Inside a Dependency-Injected Class (Lifecycle, Services, etc.)
 Inject the `ISignalBus` interface via property or field injection:
 ```csharp
-[Inject] private ISignalBus _signalBus;
+[Inject] public ISignalBus SignalBus { get; set; }
 
 public void DealDamage()
 {
-    _signalBus.Fire(new DamageSignal(10));
+    SignalBus.Fire(new DamageSignal(10));
 }
 ```
 
@@ -456,12 +456,12 @@ using UnityEngine;
 
 public class DamageCommand : ICommand<DamageSignal>
 {
-    [Inject] private IPlayerModel _playerModel; // Model bağımlılığı
+    [Inject] public IPlayerModel PlayerModel { get; set; } // Model bağımlılığı
 
     public void Execute(DamageSignal signal)
     {
-        _playerModel.Health -= signal.Amount;
-        Debug.Log($"Damage processed: {signal.Amount}. New Health: {_playerModel.Health}");
+        PlayerModel.Health -= signal.Amount;
+        Debug.Log($"Damage processed: {signal.Amount}. New Health: {PlayerModel.Health}");
     }
 }
 ```
@@ -481,12 +481,12 @@ using UnityEngine;
 [SignalHandler(typeof(DamageSignal))] // Nexus tarafından otomatik olarak taranıp kaydedilir
 public class DamageCommand : ICommand<DamageSignal>
 {
-    [Inject] private IPlayerModel _playerModel; // Model bağımlılığı
+    [Inject] public IPlayerModel PlayerModel { get; set; } // Model bağımlılığı
 
     public void Execute(DamageSignal signal)
     {
-        _playerModel.Health -= signal.Amount;
-        Debug.Log($"Damage processed: {signal.Amount}. New Health: {_playerModel.Health}");
+        PlayerModel.Health -= signal.Amount;
+        Debug.Log($"Damage processed: {signal.Amount}. New Health: {PlayerModel.Health}");
     }
 }
 ```
@@ -517,12 +517,12 @@ public class PlayerView : View
 // 2. Mediator (UI Controller)
 public class PlayerMediator : Mediator<PlayerView>
 {
-    [Inject] private IPlayerModel _playerModel;
+    [Inject] public IPlayerModel PlayerModel { get; set; }
 
     protected override void OnBind()
     {
         // UI'ı mevcut can değeriyle ilklendir
-        View.UpdateHealthUI(_playerModel.Health);
+        View.UpdateHealthUI(PlayerModel.Health);
 
         // DamageSignal fırlatıldığında tetiklenecek eventi dinle
         Subscribe<DamageSignal>(OnDamageReceived);
@@ -531,7 +531,7 @@ public class PlayerMediator : Mediator<PlayerView>
     private void OnDamageReceived(DamageSignal signal)
     {
         // Model güncellendikten sonra UI'ı tazele
-        View.UpdateHealthUI(_playerModel.Health);
+        View.UpdateHealthUI(PlayerModel.Health);
     }
 }
 ```
@@ -550,11 +550,11 @@ SignalBus.Fire(new DamageSignal(10));
 ##### 2. Dependency Injection Alan Bir Sınıf İçinden (Servisler, Lifecycle vb.)
 `ISignalBus` arayüzünü enjekte edin:
 ```csharp
-[Inject] private ISignalBus _signalBus;
+[Inject] public ISignalBus SignalBus { get; set; }
 
 public void DealDamage()
 {
-    _signalBus.Fire(new DamageSignal(10));
+    SignalBus.Fire(new DamageSignal(10));
 }
 ```
 

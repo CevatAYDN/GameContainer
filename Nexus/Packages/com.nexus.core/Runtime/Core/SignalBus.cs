@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -383,6 +384,52 @@ namespace Nexus.Core
         // but dispatch can race from worker threads.
         private volatile bool _hasAnyCompositeTriggers;
 
+        // ─── Signal filters (ISignalFilter<T>) ───
+        // Ref-based, zero-allocation middleware. Per-bus, per-signal-type arrays snapshotted on
+        // registration; the volatile flag keeps the no-filter hot path to a single branch, and
+        // the dictionary is only touched when at least one filter exists on this bus. A filter
+        // returning false cancels the signal before ANY dispatch (commands, subscriptions and
+        // legacy object-based interceptors never see it).
+        private readonly ConcurrentDictionary<Type, Array> _signalFilters = new();
+        private volatile bool _hasAnySignalFilters;
+
+        /// <summary>
+        /// Registers a ref-based signal filter. Filters run in registration order before dispatch;
+        /// returning <c>false</c> from <see cref="ISignalFilter{T}.OnFilter"/> cancels the signal.
+        /// Filters may mutate the signal via <c>ref</c>. This path never boxes the signal struct.
+        /// </summary>
+        public void AddSignalFilter<T>(ISignalFilter<T> filter) where T : struct
+        {
+            if (filter == null) throw new ArgumentNullException(nameof(filter));
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                var current = (ISignalFilter<T>[])(_signalFilters.TryGetValue(typeof(T), out var existing)
+                    ? existing
+                    : Array.Empty<ISignalFilter<T>>());
+                var updated = new ISignalFilter<T>[current.Length + 1];
+                Array.Copy(current, updated, current.Length);
+                updated[current.Length] = filter;
+                _signalFilters[typeof(T)] = updated;
+                _hasAnySignalFilters = true;
+            }
+        }
+
+        /// <summary>
+        /// Registers a signal filter by type (MessagePipe/VContainer-style). The filter is
+        /// resolved from the container so it may carry dependencies; when it is not bound,
+        /// <c>Activator.CreateInstance</c> is used.
+        /// </summary>
+        public void AddSignalFilter<TSignal, TFilter>()
+            where TSignal : struct
+            where TFilter : class, ISignalFilter<TSignal>
+        {
+            object instance = _container.IsRegistered(typeof(TFilter))
+                ? _container.Resolve(typeof(TFilter))
+                : Activator.CreateInstance(typeof(TFilter));
+            AddSignalFilter((ISignalFilter<TSignal>)instance);
+        }
+
         public void RegisterCompositeCommand(Type[] signalTypes, Type commandType, bool oneShot, int priority, bool isAsync)
         {
             // Validation, the composite tables (all-triggers + by-signal, sorted by priority),
@@ -568,6 +615,32 @@ namespace Nexus.Core
             _subscriptionRegistry.EnterDispatch();
             try
             {
+                // Run signal filters (ISignalFilter<T>) FIRST: ref-based, never box. A filter
+                // returning false cancels the signal before interceptors/commands/subscriptions.
+                if (_hasAnySignalFilters)
+                {
+                    if (_signalFilters.TryGetValue(type, out var filterArray) && filterArray.Length > 0)
+                    {
+                        var filters = (ISignalFilter<T>[])filterArray;
+                        bool filterCancelled = false;
+                        for (int f = 0; f < filters.Length; f++)
+                        {
+                            if (!filters[f].OnFilter(ref signal))
+                            {
+                                filterCancelled = true;
+                                break;
+                            }
+                        }
+                        if (filterCancelled)
+                        {
+#if NEXUS_DEBUG
+                            NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
+#endif
+                            return;
+                        }
+                    }
+                }
+
                 // Run plugins' SignalInterceptors
                 // P0-CR fix: defer boxing until we find a non-empty interceptor list.
                 // When no interceptors are registered (the common case), the struct is
@@ -761,6 +834,31 @@ namespace Nexus.Core
             try
             {
                 var type = typeof(T);
+
+                // Run signal filters (ISignalFilter<T>) FIRST (async path): ref-based, never box.
+                if (_hasAnySignalFilters)
+                {
+                    if (_signalFilters.TryGetValue(type, out var filterArray) && filterArray.Length > 0)
+                    {
+                        var filters = (ISignalFilter<T>[])filterArray;
+                        bool filterCancelled = false;
+                        for (int f = 0; f < filters.Length; f++)
+                        {
+                            if (!filters[f].OnFilter(ref signal))
+                            {
+                                filterCancelled = true;
+                                break;
+                            }
+                        }
+                        if (filterCancelled)
+                        {
+#if NEXUS_DEBUG
+                            NexusTrace.EndEvent(eventId, TraceStatus.Cancelled);
+#endif
+                            return;
+                        }
+                    }
+                }
 
                 // Run plugins' SignalInterceptors
                 // P0-CR fix: defer boxing until we find a non-empty interceptor list (async path).
@@ -1290,6 +1388,8 @@ namespace Nexus.Core
                 _subscriptionRegistry.Dispose();
                 _commandRegistry.Dispose();
                 _hasAnyCompositeTriggers = false;
+                _signalFilters.Clear();
+                _hasAnySignalFilters = false;
             }
         }
 

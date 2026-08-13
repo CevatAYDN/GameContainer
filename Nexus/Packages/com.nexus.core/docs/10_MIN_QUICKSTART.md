@@ -71,11 +71,13 @@ using Nexus.Core;
 
 public class AddScoreCommand : ICommand<ScoreSignal>
 {
-    [Inject] private ScoreModel _score; // We'll create this next
+    // Canonical AOT-optimal injection style (see CANONICAL-PATTERNS.md).
+    // Constructor injection works too: public AddScoreCommand(ScoreModel score) { ... }
+    [Inject] public ScoreModel Score { get; set; }
 
     public void Execute(ScoreSignal signal)
     {
-        _score.Total.Value += signal.Points;
+        Score.Total.Value += signal.Points;
     }
 }
 ```
@@ -182,6 +184,43 @@ public class ScoreView : View
    - Causal trace log
 
 > **Congratulations!** You've just built a fully reactive Nexus application.
+
+---
+
+## 🧬 Modern Bindings, Filters & Zero-Reflection Constructors
+
+**Fluent binding chain** (VContainer/Zenject-style, on `builder` or `container`):
+```csharp
+// One instance per container, disposed with it (AsSingle/AsCached = same)
+builder.BindFluent<IPlayerData>().To<PlayerData>().AsScoped();
+// One app-wide instance on the root container
+builder.BindFluent<SaveService>().AsSingleton();
+// Fresh instance per resolve, never owned
+builder.BindFluent<IMusicPlayer>().To<MusicPlayer>().AsTransient();
+// Also register under every implemented interface (one shared instance)
+builder.BindFluent<SessionService>().AsImplementedInterfaces();
+// Explicit constructor argument (Zenject WithParameter equivalent)
+builder.BindFluent<ScoreService>().WithParameter<int>(100);
+```
+
+**Signal filters** — MessagePipe-style middleware that runs before commands/subscribers, can cancel or mutate the signal, and never boxes it:
+```csharp
+public sealed class CapDamageFilter : ISignalFilter<DamageSignal>
+{
+    public bool OnFilter(ref DamageSignal signal)
+    {
+        if (signal.Amount > 9999) return false; // cancel
+        signal.Amount = Math.Min(signal.Amount, 9999); // or mutate via ref
+        return true;
+    }
+}
+// Register:
+bus.AddSignalFilter(new CapDamageFilter());                    // instance form
+builder.AddSignalFilter<DamageSignal, CapDamageFilter>();      // type form (resolved from DI or activated)
+```
+Filters run in registration order on both `Fire` and `FireAsync`. The legacy object-based `ISignalInterceptor` still works; when registered it boxes once per fire.
+
+**Zero-reflection constructors (AOT/IL2CPP)** — the Nexus code generator emits `NexusDI.RegisterConstructorFactory<T>` lambdas for every type with a single public constructor (or one `[Inject]`/`[Construct]`-marked constructor). At runtime `new T(...)` runs directly — no `ConstructorInfo.Invoke` — so `readonly`/immutable state works on IL2CPP. Nothing to do on your side; just keep using constructor injection.
 
 ---
 

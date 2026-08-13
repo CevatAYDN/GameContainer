@@ -105,8 +105,8 @@ Nexus Core includes 5 strategic architectural capabilities:
    ```csharp
    public class HandlePlayerScored : ICommand<PlayerScoredSignal>
    {
-       [Inject] private ScoreModel _score;
-       public void Execute(PlayerScoredSignal signal) => _score.CurrentScore.Value += signal.Points;
+       [Inject] public ScoreModel Score { get; set; } // Canonical AOT-optimal style
+       public void Execute(PlayerScoredSignal signal) => Score.CurrentScore.Value += signal.Points;
    }
    ```
 3. Register command in context: `builder.BindCommand<PlayerScoredSignal, HandlePlayerScored>(ExecutionMode.Sequential);`

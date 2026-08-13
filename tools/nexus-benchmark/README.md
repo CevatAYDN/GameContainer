@@ -16,6 +16,15 @@ checked-in runtime.
   runtime's Unity build cannot)
 - No NuGet dependencies — the harness compiles the real runtime sources directly
 
+> **Known machine issue (this dev box):** a failed servicing pass zeroed the `10.0.11`
+> component set in `C:\Program Files\dotnet` (hostfxr, runtime, SDK `10.0.303` and ref
+> packs — PE headers are `0x00`), so the stock `dotnet` fails with `0x800700C1` on any
+> invocation. Workaround (user-space, no admin): `~/.dotnet-fixed` is a junction tree
+> over the intact `10.0.9`/`9.0.16`/`8.0.27` sets plus a copy of the muxer, so run:
+> `~/.dotnet-fixed/dotnet.exe build NexusBenchmark.csproj -c Release` and
+> `~/.dotnet-fixed/dotnet.exe bin/Release/net10.0/NexusBenchmark.dll`. Proper fix:
+> re-run the .NET SDK installer (admin) to restore the 10.0.11 files.
+
 ## Run
 
 ```powershell

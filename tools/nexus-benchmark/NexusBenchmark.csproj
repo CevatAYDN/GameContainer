@@ -8,7 +8,12 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>NexusBenchmark</AssemblyName>
     <RootNamespace>NexusBench</RootNamespace>
-    <DefineConstants>NEXUS_DEBUG</DefineConstants>
+    <!-- NEXUS_DEBUG deliberately NOT defined: the real CausalTracing implementation
+         allocates per event under NEXUS_DEBUG (AsyncLocal set + TraceEvent), which would
+         make the 0-GC audit family (GCA1, SteadyState, Stress 2/4/9/14, Fuzz F1, Services G1)
+         fail. Those audits assert the PRODUCTION contract, and E5/Stress-27 explicitly test
+         the compiled-out-tracing behavior — i.e. exactly the no-NEXUS_DEBUG configuration. -->
+    <DefineConstants></DefineConstants>
     <Optimize>true</Optimize>
     <TieredCompilation>false</TieredCompilation>
     <ServerGarbageCollection>false</ServerGarbageCollection>
