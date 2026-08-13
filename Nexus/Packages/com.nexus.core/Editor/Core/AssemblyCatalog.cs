@@ -37,7 +37,8 @@ namespace Nexus.Editor
         {
             "Newtonsoft", "Grpc", "ExCSS", "log4net", "TextMateSharp", "JetBrains",
             "Onigwrap", "unityplastic", "Codice", "Plastic", "MCPForUnity",
-            "Bee", "NiceIO", "GLTFast", "Google.Protobuf", "I18N", "AndroidPlayerBuildProgram"
+            "Bee", "NiceIO", "GLTFast", "Google.Protobuf", "I18N", "AndroidPlayerBuildProgram",
+            "PlayerBuildProgram", "ScriptCompilation", "WinPlayerBuildProgram", "BuildProgram"
         };
 
         /// <summary>All assemblies currently loaded in the editor domain.</summary>

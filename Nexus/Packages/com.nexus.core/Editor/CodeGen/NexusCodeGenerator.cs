@@ -228,7 +228,21 @@ namespace Nexus.Editor
 
         /// <summary>True when a type can be referenced from the generated binder file.</summary>
         private static bool IsEmittableType(Type type)
-            => type != null && type.IsVisible && GetCSharpTypeName(type) != null;
+        {
+            if (type == null || !type.IsVisible || type.IsNestedPrivate || type.IsNestedAssembly) return false;
+            if (type.IsDefined(typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), false)) return false;
+            if (GetCSharpTypeName(type) == null) return false;
+
+            var asmName = AssemblyCatalog.GetSimpleName(type.Assembly);
+            if (AssemblyCatalog.IsFrameworkAssembly(asmName)
+                || AssemblyCatalog.IsThirdPartyAssembly(asmName)
+                || AssemblyCatalog.IsEditorAssembly(asmName)
+                || AssemblyCatalog.IsTestAssembly(asmName))
+            {
+                return false;
+            }
+            return true;
+        }
 
         /// <summary>E-C1: sanitizes a C# type name into a valid identifier prefix for cache fields.</summary>
         private static string GetSafeIdentifierName(string csharpTypeName)
@@ -253,8 +267,7 @@ namespace Nexus.Editor
             var genericCommandPairs = new List<(Type Command, Type Signal, bool IsAsync)>();
             // Constructor factory candidates: (type, ctor). Mirrors NexusDI's runtime ctor
             // selection — exactly one [Inject]/[Construct]-marked public ctor, or a single public
-            // ctor. Every other shape keeps the reflection path (the runtime decides
-            // parameterless-or-throw there).
+            // ctor on an injectable/DI type. Every other shape keeps the reflection path.
             var ctorFactoryTypes = new List<(Type Type, ConstructorInfo Ctor)>();
             // Shared across all passes below so each type's members reflect exactly once.
             var memberCache = new Dictionary<Type, MemberSet>();
@@ -298,27 +311,19 @@ namespace Nexus.Editor
                         bool codegenVisible = type.IsVisible
                             && !type.IsDefined(typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), false);
 
-                        // Constructor factory candidate scan (same loop — one reflection pass).
-                        if (codegenVisible && !type.IsGenericTypeDefinition)
+                        ConstructorInfo markedCtor = null;
+                        int markedCtorCount = 0;
+                        var publicCtors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
+                        if (publicCtors.Length > 0)
                         {
-                            var publicCtors = type.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
-                            if (publicCtors.Length > 0)
+                            for (int c = 0; c < publicCtors.Length; c++)
                             {
-                                ConstructorInfo markedCtor = null;
-                                int markedCount = 0;
-                                for (int c = 0; c < publicCtors.Length; c++)
+                                if (publicCtors[c].IsDefined(typeof(InjectAttribute), false)
+                                    || publicCtors[c].IsDefined(typeof(ConstructAttribute), false))
                                 {
-                                    if (publicCtors[c].IsDefined(typeof(InjectAttribute), false)
-                                        || publicCtors[c].IsDefined(typeof(ConstructAttribute), false))
-                                    {
-                                        markedCount++;
-                                        markedCtor = publicCtors[c];
-                                    }
+                                    markedCtorCount++;
+                                    markedCtor = publicCtors[c];
                                 }
-                                if (markedCount == 1)
-                                    ctorFactoryTypes.Add((type, markedCtor));
-                                else if (markedCount == 0 && publicCtors.Length == 1)
-                                    ctorFactoryTypes.Add((type, publicCtors[0]));
                             }
                         }
 
@@ -331,11 +336,6 @@ namespace Nexus.Editor
                         var members = GetMemberSet(type, memberCache);
                         foreach (var f in members.Fields)
                         {
-                            // OptionalInjectAttribute does NOT derive from InjectAttribute, so
-                            // [OptionalInject]-only members must be matched explicitly (P-fix,
-                            // mirrors the NexusDI reflection fix) or they are silently never
-                            // injected on the AOT path even when a binding exists.
-                            // IsDefined scans metadata only — no attribute instance per member.
                             if (f.IsDefined(typeof(InjectAttribute), false) || f.IsDefined(typeof(OptionalInjectAttribute), false))
                             {
                                 hasInject = true;
@@ -357,8 +357,6 @@ namespace Nexus.Editor
 
                         if (!hasInject)
                         {
-                            // OptionalInjectAttribute's AttributeUsage is Field|Property|Parameter
-                            // (NOT Method), so method-level discovery only needs [Inject].
                             foreach (var m in members.Methods)
                             {
                                 if (m.IsDefined(typeof(InjectAttribute), false))
@@ -371,12 +369,33 @@ namespace Nexus.Editor
 
                         if (hasInject)
                         {
-                            // link.xml preserves ALL injectables (reflection path survives IL2CPP
-                            // stripping); binder EMISSION is restricted to visible types the
-                            // generated file can reference.
                             linkXmlTypes.Add(type);
-                            if (codegenVisible)
+                            if (codegenVisible && IsEmittableType(type))
                                 injectTypes.Add(type);
+                        }
+
+                        // Constructor factory emission: ONLY for emittable types that either have an
+                        // explicit [Inject]/[Construct] constructor OR are injectable/DI types.
+                        if (codegenVisible && IsEmittableType(type) && !type.IsGenericTypeDefinition)
+                        {
+                            ConstructorInfo ctorToRegister = null;
+                            if (markedCtorCount == 1)
+                            {
+                                ctorToRegister = markedCtor;
+                            }
+                            else if (markedCtorCount == 0 && (hasInject
+                                || typeof(ICommand).IsAssignableFrom(type)
+                                || typeof(IAsyncCommand).IsAssignableFrom(type)
+                                || typeof(INexusService).IsAssignableFrom(type)))
+                            {
+                                if (publicCtors.Length == 1)
+                                    ctorToRegister = publicCtors[0];
+                            }
+
+                            if (ctorToRegister != null)
+                            {
+                                ctorFactoryTypes.Add((type, ctorToRegister));
+                            }
                         }
                     }
                 }

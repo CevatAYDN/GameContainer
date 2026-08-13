@@ -96,7 +96,7 @@ namespace Nexus.Editor
         {
             try
             {
-                var roots = Object.FindObjectsByType<Root>(FindObjectsSortMode.None);
+                var roots = Object.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
                 var nodes = NexusSceneOverlayData.CollectContextNodes(roots);
                 int signature = ComputeSignature(nodes);
                 if (signature == s_lastSignature) return;
