@@ -287,18 +287,6 @@ namespace Nexus.Core
             return result;
         }
 
-        public static Dictionary<ErrorCategory, int> GetCategoryCounts()
-        {
-            var snapshot = s_errors.ToArray();
-            var result = new Dictionary<ErrorCategory, int>(8);
-            foreach (var e in snapshot)
-            {
-                if (result.TryGetValue(e.Category, out var c)) result[e.Category] = c + 1;
-                else result[e.Category] = 1;
-            }
-            return result;
-        }
-
         public static void Clear()
         {
             lock (s_addLock)

@@ -109,6 +109,7 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
                 s_CommandMarker.Begin();
+                NexusProfiler.CommandsExecuted.Value += 1;
 #endif
                 object command = null;
                 try
@@ -153,6 +154,15 @@ namespace Nexus.Core
                     }
                     else
                     {
+                        // One-shot contract (SignalBus.ExecuteClaimedOneShot): a failed
+                        // one-shot must surface the failure to the Fire() caller so it can
+                        // retry the fire — the claim is released and the handler stays
+                        // registered. A recovery Skip would otherwise swallow the
+                        // exception and let CompleteOneShot consume the handler while the
+                        // caller believed the fire succeeded. Retry re-runs the command
+                        // internally and Fallback substitutes another command, so only
+                        // Skip propagates the original failure.
+                        if (handler.IsOneShot && action == RecoveryAction.Skip) throw;
                         shouldRun = false;
                     }
                 }
@@ -180,20 +190,34 @@ namespace Nexus.Core
             // (timeoutMs > 0); commands without one take the zero-allocation direct path below.
             // An already-cancelled parent token also skips the linked CTS — the command observes
             // the same cancellation either way (teardown floods allocate nothing).
-            if (timeoutMs > 0 && !ct.IsCancellationRequested)
+            //
+            // The timeout CTS must OUTLIVE the command execution: scoping it to the `if` block
+            // disposed it before the command awaited, which dropped the CancelAfter timer — the
+            // token never cancelled and a hanging command blocked the signal line forever
+            // (RecoveryTests.CommandTimeout_CancelsHangingCommand_DoesNotBlockRetryLoop froze
+            // PlayMode). It is declared here and disposed in the finally below.
+            CancellationTokenSource timeoutCts = null;
+            try
             {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeoutCts.CancelAfter(timeoutMs);
-                ct = timeoutCts.Token;
-            }
+                if (timeoutMs > 0 && !ct.IsCancellationRequested)
+                {
+                    timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeoutCts.CancelAfter(timeoutMs);
+                    ct = timeoutCts.Token;
+                }
 
-            if (useDecorators && _context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
-            {
-                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                if (useDecorators && _context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
+                {
+                    await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(ct));
+                }
+                else
+                {
+                    await asyncCmd.ExecuteAsync(ct);
+                }
             }
-            else
+            finally
             {
-                await asyncCmd.ExecuteAsync(ct);
+                timeoutCts?.Dispose();
             }
         }
 
@@ -203,20 +227,30 @@ namespace Nexus.Core
             ct = executorLinkedCts.Token;
             // Same fresh-per-execution linked CTS semantics as ExecuteAsyncWithOptionalTimeout
             // (see the allocation note there); skipped when the parent token is already cancelled.
-            if (timeoutMs > 0 && !ct.IsCancellationRequested)
+            // The timeout CTS must OUTLIVE the command (see ExecuteAsyncWithOptionalTimeout for
+            // the dispose-before-await bug this guards against).
+            CancellationTokenSource timeoutCts = null;
+            try
             {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeoutCts.CancelAfter(timeoutMs);
-                ct = timeoutCts.Token;
-            }
+                if (timeoutMs > 0 && !ct.IsCancellationRequested)
+                {
+                    timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeoutCts.CancelAfter(timeoutMs);
+                    ct = timeoutCts.Token;
+                }
 
-            if (useDecorators && _context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
-            {
-                await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(signal, ct));
+                if (useDecorators && _context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
+                {
+                    await ExecuteWithDecoratorsAsync(asyncCmd, async () => await asyncCmd.ExecuteAsync(signal, ct));
+                }
+                else
+                {
+                    await asyncCmd.ExecuteAsync(signal, ct);
+                }
             }
-            else
+            finally
             {
-                await asyncCmd.ExecuteAsync(signal, ct);
+                timeoutCts?.Dispose();
             }
         }
 
@@ -224,20 +258,30 @@ namespace Nexus.Core
         {
             using var executorLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _executorCts.Token);
             ct = executorLinkedCts.Token;
-            if (timeoutMs > 0 && !ct.IsCancellationRequested)
+            // Same outlives-the-command lifetime rule for the timeout CTS as the other two
+            // timeout wrappers (the dispose-before-await bug froze PlayMode recovery tests).
+            CancellationTokenSource timeoutCts = null;
+            try
             {
-                using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                timeoutCts.CancelAfter(timeoutMs);
-                ct = timeoutCts.Token;
-            }
+                if (timeoutMs > 0 && !ct.IsCancellationRequested)
+                {
+                    timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeoutCts.CancelAfter(timeoutMs);
+                    ct = timeoutCts.Token;
+                }
 
-            if (useDecorators && _context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
-            {
-                await ExecuteDecoratedAsyncDispatcher(command, asyncDispatcher, signal, ct);
+                if (useDecorators && _context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
+                {
+                    await ExecuteDecoratedAsyncDispatcher(command, asyncDispatcher, signal, ct);
+                }
+                else
+                {
+                    await asyncDispatcher(command, signal, ct);
+                }
             }
-            else
+            finally
             {
-                await asyncDispatcher(command, signal, ct);
+                timeoutCts?.Dispose();
             }
         }
 
@@ -254,6 +298,7 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
                 s_CommandMarker.Begin();
+                NexusProfiler.CommandsExecuted.Value += 1;
 #endif
                 object command = null;
                 try
@@ -316,6 +361,15 @@ namespace Nexus.Core
                     }
                     else
                     {
+                        // One-shot contract (SignalBus.ExecuteClaimedOneShot): a failed
+                        // one-shot must surface the failure to the Fire() caller so it can
+                        // retry the fire — the claim is released and the handler stays
+                        // registered. A recovery Skip would otherwise swallow the
+                        // exception and let CompleteOneShot consume the handler while the
+                        // caller believed the fire succeeded. Retry re-runs the command
+                        // internally and Fallback substitutes another command, so only
+                        // Skip propagates the original failure.
+                        if (handler.IsOneShot && action == RecoveryAction.Skip) throw;
                         shouldRun = false;
                     }
                 }
@@ -345,6 +399,7 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
                 s_CommandMarker.Begin();
+                NexusProfiler.CommandsExecuted.Value += 1;
 #endif
                 object command = null;
                 bool inFlightIncremented = false;
@@ -400,6 +455,10 @@ namespace Nexus.Core
                     }
                     else
                     {
+                        // One-shot contract: see the sync paths — a Skip decision must
+                        // surface the original failure so ExecuteClaimedOneShotAsync can
+                        // release the claim and the caller can retry the fire.
+                        if (handler.IsOneShot && action == RecoveryAction.Skip) throw;
                         shouldRun = false;
                     }
                 }
@@ -433,6 +492,7 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
                 s_CommandMarker.Begin();
+                NexusProfiler.CommandsExecuted.Value += 1;
 #endif
                 object command = null;
                 bool inFlightIncremented = false;
@@ -521,6 +581,10 @@ namespace Nexus.Core
                     }
                     else
                     {
+                        // One-shot contract: see the sync paths — a Skip decision must
+                        // surface the original failure so ExecuteClaimedOneShotAsync can
+                        // release the claim and the caller can retry the fire.
+                        if (handler.IsOneShot && action == RecoveryAction.Skip) throw;
                         shouldRun = false;
                     }
                 }

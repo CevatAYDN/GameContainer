@@ -98,22 +98,23 @@ namespace Nexus.Editor.Tests
             // while the timer was pending, the stale timer killed the live re-spawned object.
             // The fix tracks a per-instance spawn-session generation: it advances on every
             // Spawn and is cleared on Despawn, so stale timers can detect the re-spawn.
+            // The generation map was re-keyed from GetInstanceID ints to managed object
+            // references (ObjectPoolService.GetKey) — the test must use the same key space.
             var genField = typeof(ObjectPoolService).GetField("_spawnGenerations",
                 System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var generations = (System.Collections.Generic.Dictionary<int, long>)genField.GetValue(_poolService);
+            var generations = (System.Collections.Generic.Dictionary<UnityEngine.Object, long>)genField.GetValue(_poolService);
 
             var instance = _poolService.Spawn(_prefab);
-            int id = instance.GetHashCode();
-            Assert.IsTrue(generations.TryGetValue(id, out long firstGen), "Spawn must record a generation.");
+            Assert.IsTrue(generations.TryGetValue(instance, out long firstGen), "Spawn must record a generation.");
 
             // Manual despawn clears the generation entry (no stale timer can hit it).
             _poolService.Despawn(instance);
-            Assert.IsFalse(generations.ContainsKey(id), "Despawn must clear the generation entry.");
+            Assert.IsFalse(generations.ContainsKey(instance), "Despawn must clear the generation entry.");
 
             // Re-spawn gets a NEW, higher generation.
             var respawned = _poolService.Spawn(_prefab);
             Assert.AreSame(instance, respawned, "Pool should reuse the same instance.");
-            Assert.IsTrue(generations.TryGetValue(id, out long secondGen));
+            Assert.IsTrue(generations.TryGetValue(instance, out long secondGen));
             Assert.Greater(secondGen, firstGen,
                 "Re-spawn must advance the generation so stale DespawnAfter timers are ignored.");
 

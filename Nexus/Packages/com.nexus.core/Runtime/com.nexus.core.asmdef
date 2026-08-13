@@ -2,6 +2,7 @@
     "name": "com.nexus.core",
     "rootNamespace": "Nexus.Core",
     "references": [
+        "Unity.Profiling.Core",
         "UnityEngine.UI"
     ],
     "includePlatforms": [],

@@ -47,9 +47,9 @@ Nexus Core includes 5 strategic architectural capabilities:
 | **AOT / IL2CPP Binder Generator** | ✅ Built-in | ❌ Reflection | ✅ CodeGen | ❌ N/A | ❌ Reflection |
 | **SignalBus & Command Pipeline** | ✅ 4 Execution Modes | ✅ Basic | ❌ Missing | ❌ N/A | ✅ Basic |
 | **Observable Reactive Models** | ✅ `ObservableProperty` | ❌ Requires UniRx | ❌ Missing | ✅ Stream-based | ❌ Missing |
-| **Out-of-the-Box Engine Services** | ✅ 13 Core Services | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
+| **Out-of-the-Box Engine Services** | ✅ 14 Core Services | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
 | **RAM Anti-Cheat & Storage Encryption** | ✅ Built-in AES-256 | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
-| **Live Editor Play-Mode Dashboard** | ✅ 15 Plugins | ❌ Basic Inspector | ❌ Basic Diagnostic | ❌ N/A | ❌ Missing |
+| **Live Editor Play-Mode Dashboard** | ✅ 16 Plugins | ❌ Basic Inspector | ❌ Basic Diagnostic | ❌ N/A | ❌ Missing |
 | **Build Validation & Diagnostics** | ✅ Pre-build Rules | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
 
 ---
@@ -80,7 +80,7 @@ Nexus Core includes 5 strategic architectural capabilities:
 | `Runtime/Core/Root.cs` | Scene-anchored context entry point | ~400 | `OnEnable`, `RootContext` |
 | `Editor/Core/NexusWindow.cs` | Host shell for editor suite, tab management | ~676 | `SwitchToPlugin()`, `Instance` |
 | `Editor/Core/INexusEditorPlugin.cs` | Plugin interface contract and base class | ~56 | `INexusEditorPlugin`, `NexusEditorPlugin` |
-| `Editor/Plugins/*.cs` | 15 integrated editor plugin implementations | varies | `DashboardPlugin`, `TracerPlugin`, `GameManagerPlugin` |
+| `Editor/Plugins/*.cs` | 16 integrated editor plugin implementations | varies | `DashboardPlugin`, `TracerPlugin`, `GameManagerPlugin` |
 | `Editor/Core/NexusEditorStyles.cs` | Shared UI Toolkit styles, colors, stat tiles | ~650 | `CreateStatTile()`, `CreateStatusDot()` |
 | `Editor/Core/NexusLang.cs` | Framework localization manager (en + tr) | ~770 | `Get(key)`, `CurrentLocale` |
 | `Editor/Validation/BuildValidation.cs` | Pre-build checks and architectural rules engine | ~1141 | `RunSilent()`, `LastResults` |

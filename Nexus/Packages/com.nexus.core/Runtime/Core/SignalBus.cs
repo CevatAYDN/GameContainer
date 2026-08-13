@@ -561,6 +561,10 @@ namespace Nexus.Core
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
             s_DispatchMarker.Begin();
 #endif
+            // Counter is ungated (unlike the NEXUS_DEBUG marker): it must record in any
+            // development build so the NexusProfilerModule chart has data (counters are
+            // compiled out in non-development builds by Unity itself).
+            NexusProfiler.SignalsDispatched.Value += 1;
             _subscriptionRegistry.EnterDispatch();
             try
             {
@@ -752,6 +756,7 @@ namespace Nexus.Core
 #if NEXUS_DEBUG
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
 #endif
+            NexusProfiler.SignalsDispatched.Value += 1;
             _subscriptionRegistry.EnterDispatch();
             try
             {
@@ -1031,6 +1036,8 @@ namespace Nexus.Core
             // common no-composite Fire() path adds a single volatile bool read.
             if (!_hasAnyCompositeTriggers) return;
 
+            NexusProfiler.CompositeTriggersProcessed.Value += 1;
+
             // Collect due triggers under the registry's composite lock (snapshot copy),
             // then execute them OUTSIDE any lock so user command code never runs while holding one.
             var signalType = typeof(T);
@@ -1066,7 +1073,16 @@ namespace Nexus.Core
             // Non-composite signals never allocate here.
 
             if (!_commandRegistry.TryGetCompositeTriggers(signalType, out var triggers))
+            {
+                // Return the rented nested buffer to the free list (if we rented one) —
+                // the buffer.Count == 0 path below does this after the lock, but this
+                // early-out skips that path and would otherwise strand the buffer,
+                // leaking one List<> allocation per nested composite fire of a
+                // non-composite signal (the 0-GC claim in the nested case).
+                if (isNested && s_nestedBufferFreeList == null)
+                    s_nestedBufferFreeList = buffer;
                 return;
+            }
 
             lock (_compositeLock)
             {
@@ -1281,6 +1297,8 @@ namespace Nexus.Core
         {
             if (!_hasAnyCompositeTriggers) return;
             if (!_commandRegistry.TryGetCompositeTriggers(typeof(T), out var triggers)) return;
+
+            NexusProfiler.CompositeTriggersProcessed.Value += 1;
 
             var due = new List<(CompositeTriggerState trigger, CompositeContext context)>();
             lock (_compositeLock)

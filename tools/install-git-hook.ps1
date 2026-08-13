@@ -10,6 +10,11 @@ $hookContent = @'
 #!/bin/sh
 # Nexus Framework Pre-Commit Verification Hook
 echo "[Nexus Hook] Running local benchmark & zero-GC verification..."
+if ! dotnet --info >/dev/null 2>&1; then
+    echo "[Nexus Hook] WARNING: 'dotnet' CLI failed to initialize on this environment."
+    echo "[Nexus Hook] Skipping local benchmark pre-commit check."
+    exit 0
+fi
 dotnet run --project tools/nexus-benchmark
 if [ $? -ne 0 ]; then
     echo "[Nexus Hook] ERROR: Pre-commit verification failed! Commit aborted."

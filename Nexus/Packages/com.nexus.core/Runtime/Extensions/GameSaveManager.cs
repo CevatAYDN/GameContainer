@@ -196,6 +196,16 @@ namespace Nexus.Core.Extensions
                                         File.WriteAllText(tempPath, json); // restage if Replace consumed it
                                     File.Move(tempPath, path);
                                 }
+                                catch (Exception ex) when (ex is PlatformNotSupportedException or NotImplementedException)
+                                {
+                                    // File.Replace is not implemented on some IL2CPP/mobile
+                                    // runtimes — degrade to delete+move instead of failing
+                                    // every save on those platforms.
+                                    NexusRuntime.Logger?.LogWarning(
+                                        "[GameSaveManager] File.Replace not supported on this platform; falling back to delete+move (non-atomic).");
+                                    if (File.Exists(path)) File.Delete(path);
+                                    File.Move(tempPath, path);
+                                }
                             }
                             else
                             {
@@ -314,24 +324,43 @@ namespace Nexus.Core.Extensions
             }
 
             var completion = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-            synchronizationContext.Post(_ =>
+            // Hang guard: if the posted callback is never executed — the Unity
+            // SynchronizationContext stops processing during teardown/quit — the await
+            // below would block forever. Propagate ct (the context LifetimeToken is
+            // cancelled on dispose) directly to the TCS so a torn-down context unblocks
+            // the caller as a cancellation instead of hanging. The registration is
+            // disposed once the posted callback runs (or if Post throws); a dead
+            // context leaves it registered until the token source is disposed, which is
+            // exactly the window it exists to protect.
+            CancellationTokenRegistration reg = default;
+            reg = ct.Register(() => completion.TrySetCanceled(ct));
+            try
             {
-                if (ct.IsCancellationRequested)
+                synchronizationContext.Post(_ =>
                 {
-                    completion.TrySetCanceled(ct);
-                    return;
-                }
+                    reg.Dispose();
+                    if (ct.IsCancellationRequested)
+                    {
+                        completion.TrySetCanceled(ct);
+                        return;
+                    }
 
-                try
-                {
-                    action();
-                    completion.TrySetResult(true);
-                }
-                catch (Exception ex)
-                {
-                    completion.TrySetException(ex);
-                }
-            }, null);
+                    try
+                    {
+                        action();
+                        completion.TrySetResult(true);
+                    }
+                    catch (Exception ex)
+                    {
+                        completion.TrySetException(ex);
+                    }
+                }, null);
+            }
+            catch
+            {
+                reg.Dispose();
+                throw;
+            }
             return completion.Task;
         }
 

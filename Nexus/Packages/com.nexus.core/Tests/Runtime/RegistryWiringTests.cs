@@ -34,7 +34,10 @@ namespace Nexus.Tests.Runtime
         private class WiringCounter { public int Value; }
 
         [SetUp]
-        public void SetUp() => NexusRuntime.Reset();
+        public void SetUp()
+        {
+            NexusRuntime.Reset();
+        }
 
         [TearDown]
         public void TearDown() => NexusRuntime.Reset();

@@ -225,6 +225,11 @@ namespace Nexus.Editor.Tests
                 builder => builder.BindCommandOnce<ETOnceSignal, ETOnceRetryCommand>());
             var bus = ctx.Context.SignalBus;
 
+            // The failing command is logged by ErrorCollection before the exception
+            // propagates to the caller; expect the intentional error log so Unity's
+            // test runner does not treat it as an unhandled log (same pattern as
+            // RecoveryTests.Recovery_Retry_RetriesUpToLimitThenAborts).
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, "[Nexus Error] intentional one-shot failure");
             Assert.Throws<System.InvalidOperationException>(() => bus.Fire(new ETOnceSignal(1)));
             Assert.IsTrue(bus.HasCommandHandler<ETOnceSignal>(), "Failed one-shot execution must remain retryable");
             Assert.DoesNotThrow(() => bus.Fire(new ETOnceSignal(2)));
@@ -240,6 +245,9 @@ namespace Nexus.Editor.Tests
                 builder => builder.BindAsyncCommandOnce<ETOnceAsyncSignal, ETOnceAsyncRetryCommand>());
             var bus = ctx.Context.SignalBus;
 
+            // Same expected-log pattern as the sync retry test: ErrorCollection logs
+            // the failing command's message before the exception propagates.
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, "[Nexus Error] intentional async one-shot failure");
             Assert.Throws<System.InvalidOperationException>(() => bus.FireAsync(new ETOnceAsyncSignal(1)).GetAwaiter().GetResult());
             Assert.IsTrue(bus.HasCommandHandler<ETOnceAsyncSignal>(), "Failed async one-shot must remain retryable");
             Assert.DoesNotThrow(() => bus.FireAsync(new ETOnceAsyncSignal(2)).GetAwaiter().GetResult());

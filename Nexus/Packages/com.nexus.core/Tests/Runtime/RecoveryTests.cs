@@ -172,7 +172,12 @@ namespace Nexus.Tests
 
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, "[Nexus Error] Retry limit reached for command ThrowCommand.");
 
-            var ex = Assert.Throws<InvalidOperationException>(() =>
+            // The recovery engine surfaces the retry-limit abort as the TYPED
+            // NexusRecoveryAbortException (an InvalidOperationException subclass).
+            // Assert on the exact type: NUnit's Assert.Throws<T> requires an EXACT
+            // type match, so Throws<InvalidOperationException> would reject the
+            // specialized subclass even though it IS-A InvalidOperationException.
+            var ex = Assert.Throws<NexusRecoveryAbortException>(() =>
             {
                 _signalBus.Fire(new FailSignal("RetryTest"));
             });
@@ -320,7 +325,9 @@ namespace Nexus.Tests
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.Abort();
 
-            var ex = Assert.Throws<InvalidOperationException>(() =>
+            // Same exact-type rationale as the Retry test: the Abort decision throws the
+            // typed NexusRecoveryAbortException (an InvalidOperationException subclass).
+            var ex = Assert.Throws<NexusRecoveryAbortException>(() =>
             {
                 _signalBus.Fire(new FailSignal("AbortTest"));
             });

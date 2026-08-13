@@ -1,6 +1,8 @@
 using NUnit.Framework;
 using System;
+using System.Collections.Generic;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using Nexus.Core;
 using Nexus.Editor;
 
@@ -163,6 +165,111 @@ namespace Nexus.Editor.Tests
                 BuildValidation.ErrorLogger = previousError;
                 BuildValidation.IncludeTestAssemblies = false;
             }
+        }
+
+        // --- Dummy types for the DI scan-filter predicates ---
+        public class DiScanPlainType { }
+        public class DiScanAttribute : Attribute { }
+        public delegate void DiScanDelegate();
+        [CompilerGenerated]
+        public class DiScanGeneratedType { }
+        public class DiScanMarkerFree { }
+        public class DiScanFieldInjected
+        {
+            [Inject] public ISomeModel Model;
+        }
+        public class DiScanPropertyInjected
+        {
+            [Inject] public ISomeModel Model { get; private set; }
+        }
+        public class DiScanCtorInjected
+        {
+            [Inject] public DiScanCtorInjected(ISomeModel model) { }
+        }
+        public class DiScanOptionalField
+        {
+            [OptionalInject] public ISomeModel Model;
+        }
+        public class DiScanMethodParamInjected
+        {
+            // [OptionalInject] is the only inject-marker that AttributeUsage permits on
+            // parameters (InjectAttribute targets Constructor|Field|Property|Method).
+            public void Setup([OptionalInject] ISomeModel model) { }
+        }
+        public class DiScanMissingAssemblyType { }
+
+        private static bool InvokeBool(MethodInfo method, params object[] args)
+            => (bool)method.Invoke(null, args);
+
+        private static MethodInfo GetPrivateStatic(string name)
+        {
+            var method = typeof(BuildValidation).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Static);
+            Assert.IsNotNull(method, $"{name} method not found via reflection.");
+            return method;
+        }
+
+        [Test]
+        public void IsDiInspectableType_AcceptsPlainGameTypes()
+        {
+            var method = GetPrivateStatic("IsDiInspectableType");
+            Assert.IsTrue(InvokeBool(method, typeof(DiScanPlainType)), "A plain game class must be inspectable.");
+        }
+
+        [Test]
+        public void IsDiInspectableType_RejectsAttributesAndDelegates()
+        {
+            var method = GetPrivateStatic("IsDiInspectableType");
+            Assert.IsFalse(InvokeBool(method, typeof(DiScanAttribute)), "Attribute types are never DI candidates.");
+            Assert.IsFalse(InvokeBool(method, typeof(DiScanDelegate)), "Delegate types are never DI candidates.");
+        }
+
+        [Test]
+        public void IsDiInspectableType_RejectsCompilerGeneratedTypes()
+        {
+            var method = GetPrivateStatic("IsDiInspectableType");
+            Assert.IsFalse(InvokeBool(method, typeof(DiScanGeneratedType)), "Iterator/closure/state-machine types are never DI candidates.");
+        }
+
+        [Test]
+        public void IsDiInspectableType_RejectsFrameworkNamespaces()
+        {
+            var method = GetPrivateStatic("IsDiInspectableType");
+            Assert.IsFalse(InvokeBool(method, typeof(string)), "BCL types under System.* are not inspectable.");
+            Assert.IsFalse(InvokeBool(method, typeof(UnityEngine.Object)), "Engine types under UnityEngine.* are not inspectable.");
+        }
+
+        [Test]
+        public void HasInjectionMarkers_DetectsEveryMarkerShape()
+        {
+            var method = GetPrivateStatic("HasInjectionMarkers");
+            Assert.IsFalse(InvokeBool(method, typeof(DiScanMarkerFree)), "Unmarked type must not count as a DI candidate.");
+            Assert.IsTrue(InvokeBool(method, typeof(DiScanFieldInjected)), "[Inject] field is a marker.");
+            Assert.IsTrue(InvokeBool(method, typeof(DiScanPropertyInjected)), "[Inject] property is a marker.");
+            Assert.IsTrue(InvokeBool(method, typeof(DiScanCtorInjected)), "[Inject] constructor is a marker.");
+            Assert.IsTrue(InvokeBool(method, typeof(DiScanOptionalField)), "[OptionalInject] field is a marker.");
+            Assert.IsTrue(InvokeBool(method, typeof(DiScanMethodParamInjected)), "[OptionalInject] method parameter is a marker.");
+        }
+
+        [Test]
+        public void IsTypeAvailable_UnwrapsArraysAndGenerics()
+        {
+            var method = GetPrivateStatic("IsTypeAvailable");
+            var set = new HashSet<string> { typeof(DiScanPlainType).FullName };
+
+            // Value-type array elements are always resolvable.
+            Assert.IsTrue(InvokeBool(method, typeof(int[]), new HashSet<string>()), "int[] must resolve (value element).");
+            // Array of a scanned type resolves against the element's FullName.
+            Assert.IsTrue(InvokeBool(method, typeof(DiScanPlainType[]), set), "Array of a scanned type must resolve.");
+            // Array of a missing type must NOT resolve. This relies on the editor-test
+            // assembly name not matching a framework/third-party prefix (it does not:
+            // "Nexus.Tests.Editor" is not System*/Unity*/Bee/GLTFast/etc.), so the element
+            // falls through to the assembly check and reports unavailable.
+            Assert.IsFalse(InvokeBool(method, typeof(DiScanMissingAssemblyType[]), new HashSet<string>()), "Array of a missing type must not resolve.");
+            // Closed generics check their type arguments.
+            Assert.IsTrue(InvokeBool(method, typeof(List<DiScanPlainType>), set), "List<scanned> must resolve.");
+            Assert.IsFalse(InvokeBool(method, typeof(List<DiScanMissingAssemblyType>), new HashSet<string>()), "List<missing> must not resolve.");
+            // Plain lookups still work.
+            Assert.IsTrue(InvokeBool(method, typeof(DiScanPlainType), set), "Plain scanned type must resolve.");
         }
     }
 }

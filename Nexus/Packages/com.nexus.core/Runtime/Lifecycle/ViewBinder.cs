@@ -101,8 +101,13 @@ namespace Nexus.Core
     {
         private readonly IContext _context;
         private readonly NexusDI _container;
-        private readonly Dictionary<IView, IMediator> _activeMediators = new();
-        private readonly HashSet<IMediator> _activeMediatorSet = new();
+        // Reference comparers: view/mediator implementations are USER code and may
+        // override Equals/GetHashCode (the _boundOnlyViews list already documents this
+        // concern). A default-comparer Dictionary would then treat two distinct views
+        // as the same key — ContainsKey/Remove could hit the wrong entry. Identity
+        // keys keep registration and cleanup exact. (F6 audit fix.)
+        private readonly Dictionary<IView, IMediator> _activeMediators = new(NexusDI.ReferenceComparer<IView>.Instance);
+        private readonly HashSet<IMediator> _activeMediatorSet = new(NexusDI.ReferenceComparer<IMediator>.Instance);
         // Views without a mediator still own a context binding and must be unbound
         // during unregister/dispose. Keep this as a list and compare by reference:
         // view implementations are user code and may override Equals.

@@ -159,6 +159,28 @@ namespace NexusBench
         }
     }
 
+    // Failure-retry one-shot: the first execution throws; the handler must stay
+    // registered (release, not consume) and the failure must propagate to the caller
+    // so it can retry the fire. Mirrors the EditMode StrangeStyle retry tests.
+    public sealed class BOnceRetryCommand : ICommand<BOnceSignal>
+    {
+        public static int Attempts;
+        public void Execute(BOnceSignal signal)
+        {
+            if (Attempts++ == 0) throw new InvalidOperationException("intentional one-shot failure");
+        }
+    }
+
+    public sealed class BOnceAsyncRetryCommand : IAsyncCommand<BOnceAsyncSignal>
+    {
+        public static int Attempts;
+        public ValueTask ExecuteAsync(BOnceAsyncSignal signal, CancellationToken ct)
+        {
+            if (Attempts++ == 0) throw new InvalidOperationException("intentional async one-shot failure");
+            return default;
+        }
+    }
+
     // Race-proof one-shot: counter is bumped under Interlocked so the assert counts
     // REAL executions, not torn reads, even when several threads fire concurrently.
     public readonly struct BOnceRaceSignal { public readonly int Value; public BOnceRaceSignal(int v) => Value = v; }
@@ -206,6 +228,7 @@ namespace NexusBench
                 RunDeconstruct();
                 RunConstructAlias();
                 RunOnceCommands();
+                RunOnceFailureRetry();
                 RunOnceConcurrentRace();
                 RunAsyncConcurrentOnceRace();
                 RunZeroGc();
@@ -580,6 +603,57 @@ namespace NexusBench
                 bool asyncUnreg = !bus.HasCommandHandler<BOnceAsyncSignal>();
                 Check("ON3. Async_Once_Command_Fires_Once_And_Unregisters", asyncOnce && asyncUnreg,
                     $"executions={BOnceAsyncCommand.Executions} hasHandler={bus.HasCommandHandler<BOnceAsyncSignal>()}");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        // =========================================================================
+        // ON4/ON5 — a FAILED one-shot propagates the failure to the caller and stays
+        // registered (retryable); a later successful fire consumes it. This locks the
+        // one-shot contract end-to-end: the recovery engine must not swallow the
+        // failure (default Skip), and ExecuteClaimedOneShot must release the claim
+        // instead of completing it so the handler survives for the retry.
+        // =========================================================================
+
+        private static void RunOnceFailureRetry()
+        {
+            BOnceRetryCommand.Attempts = 0;
+            BOnceAsyncRetryCommand.Attempts = 0;
+
+            var ctx = NexusTestHarness.CreateContext(
+                builder =>
+                {
+                    builder.BindCommandOnce<BOnceSignal, BOnceRetryCommand>();
+                    builder.BindAsyncCommandOnce<BOnceAsyncSignal, BOnceAsyncRetryCommand>();
+                });
+            try
+            {
+                var bus = ctx.Context.SignalBus;
+
+                bool syncThrew = false;
+                try { bus.Fire(new BOnceSignal(1)); }
+                catch (InvalidOperationException) { syncThrew = true; }
+                bool syncKept = bus.HasCommandHandler<BOnceSignal>();
+                bus.Fire(new BOnceSignal(2));
+                bool syncRetried = BOnceRetryCommand.Attempts == 2;
+                bool syncConsumed = !bus.HasCommandHandler<BOnceSignal>();
+                Check("ON4. Sync_Once_Failure_Propagates_And_Stays_Retryable",
+                    syncThrew && syncKept && syncRetried && syncConsumed,
+                    $"threw={syncThrew} kept={syncKept} attempts={BOnceRetryCommand.Attempts} consumed={syncConsumed}");
+
+                bool asyncThrew = false;
+                try { bus.FireAsync(new BOnceAsyncSignal(1)).GetAwaiter().GetResult(); }
+                catch (InvalidOperationException) { asyncThrew = true; }
+                bool asyncKept = bus.HasCommandHandler<BOnceAsyncSignal>();
+                bus.FireAsync(new BOnceAsyncSignal(2)).GetAwaiter().GetResult();
+                bool asyncRetried = BOnceAsyncRetryCommand.Attempts == 2;
+                bool asyncConsumed = !bus.HasCommandHandler<BOnceAsyncSignal>();
+                Check("ON5. Async_Once_Failure_Propagates_And_Stays_Retryable",
+                    asyncThrew && asyncKept && asyncRetried && asyncConsumed,
+                    $"threw={asyncThrew} kept={asyncKept} attempts={BOnceAsyncRetryCommand.Attempts} consumed={asyncConsumed}");
             }
             finally
             {

@@ -60,13 +60,28 @@ namespace Nexus.Core.Services
             }
         }
 
-        private readonly Dictionary<int, PoolData> _poolsByPrefabId = new();
-        private readonly Dictionary<int, PoolData> _poolsByInstanceId = new();
-        // Spawn-session generation per instance id. Incremented on every Spawn so a pending
+        // Keyed by the managed object REFERENCE (identity), not by an int id: the old
+        // int keys came from GetEntityId().GetHashCode(), whose hash collisions could map
+        // two DIFFERENT objects onto one dictionary entry (a pool would then spawn from
+        // the wrong prefab / treat one instance as another). A reference-comparer key is
+        // collision-free (ReferenceEquals disambiguates), survives Unity's fake-null
+        // destroyed objects (RuntimeHelpers.GetHashCode never touches native state), and
+        // compiles in the harness stub environment, which stubs GetEntityId() as int.
+        private readonly Dictionary<UnityEngine.Object, PoolData> _poolsByPrefabId = new(ObjectReferenceComparer.Instance);
+        private readonly Dictionary<UnityEngine.Object, PoolData> _poolsByInstanceId = new(ObjectReferenceComparer.Instance);
+        // Spawn-session generation per instance. Incremented on every Spawn so a pending
         // DespawnAfter timer can detect that the instance was despawned and RE-spawned while
         // it was waiting — despawning then would yank a live object out of the scene.
-        private readonly Dictionary<int, long> _spawnGenerations = new();
+        private readonly Dictionary<UnityEngine.Object, long> _spawnGenerations = new(ObjectReferenceComparer.Instance);
         private long _generationCounter;
+
+        private sealed class ObjectReferenceComparer : IEqualityComparer<UnityEngine.Object>
+        {
+            internal static readonly ObjectReferenceComparer Instance = new();
+            public bool Equals(UnityEngine.Object x, UnityEngine.Object y) => ReferenceEquals(x, y);
+            public int GetHashCode(UnityEngine.Object obj) =>
+                obj == null ? 0 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+        }
         private Transform _masterPoolRoot;
         private GameObject _masterRootObject;
 
@@ -192,9 +207,9 @@ namespace Nexus.Core.Services
             instance.SetActive(true);
 
             pool.Active.Add(instance);
-            int spawnedId = GetId(instance);
-            _poolsByInstanceId[spawnedId] = pool;
-            _spawnGenerations[spawnedId] = ++_generationCounter;
+            var spawnedKey = GetKey(instance);
+            _poolsByInstanceId[spawnedKey] = pool;
+            _spawnGenerations[spawnedKey] = ++_generationCounter;
 
             var poolables = _poolableCallbackDepth == 0 ? _poolableBuffer : new List<IPoolable>(8);
             poolables.Clear();
@@ -227,9 +242,9 @@ namespace Nexus.Core.Services
         public void Despawn(GameObject instance)
         {
             if (instance == null) return;
-            int instanceId = GetId(instance);
+            var instanceKey = GetKey(instance);
 
-            if (!_poolsByInstanceId.TryGetValue(instanceId, out var pool))
+            if (!_poolsByInstanceId.TryGetValue(instanceKey, out var pool))
             {
                 // The "not in any pool" branch destroyed WHATEVER was passed —
                 // including a prefab asset. Despawn(prefab) instead of Despawn(spawnedInstance)
@@ -242,7 +257,7 @@ namespace Nexus.Core.Services
                         "The prefab was NOT destroyed. Pass the instance returned by Spawn().");
                     return;
                 }
-                _spawnGenerations.Remove(instanceId);
+                _spawnGenerations.Remove(instanceKey);
                 SafeDestroyUtility.SafeDestroy(instance);
                 return;
             }
@@ -280,15 +295,15 @@ namespace Nexus.Core.Services
             {
                 SafeDestroyUtility.SafeDestroy(instance);
             }
-            _poolsByInstanceId.Remove(instanceId);
-            _spawnGenerations.Remove(instanceId);
+            _poolsByInstanceId.Remove(instanceKey);
+            _spawnGenerations.Remove(instanceKey);
         }
 
         public void DespawnAfter(GameObject instance, float seconds)
         {
             if (instance == null) return;
-            int instanceId = GetId(instance);
-            if (!_spawnGenerations.TryGetValue(instanceId, out long generation))
+            var instanceKey = GetKey(instance);
+            if (!_spawnGenerations.TryGetValue(instanceKey, out long generation))
             {
                 generation = -1L; // Unpooled GameObject fallback
             }
@@ -296,7 +311,7 @@ namespace Nexus.Core.Services
             if (_masterRootObject != null && _masterRootObject.activeInHierarchy)
             {
                 var runner = _masterRootObject.GetComponent<PoolTimerRunner>() ?? _masterRootObject.AddComponent<PoolTimerRunner>();
-                runner.StartCoroutine(DespawnCoroutine(instance, instanceId, generation, seconds));
+                runner.StartCoroutine(DespawnCoroutine(instance, instanceKey, generation, seconds));
             }
         }
 
@@ -308,7 +323,7 @@ namespace Nexus.Core.Services
         private const int MaxWaitCacheEntries = 64;
         private const float WaitBucketMs = 0.05f; // 50 ms rounding bucket
 
-        private IEnumerator DespawnCoroutine(GameObject instance, int instanceId, long generation, float delay)
+        private IEnumerator DespawnCoroutine(GameObject instance, UnityEngine.Object instanceKey, long generation, float delay)
         {
             // Round to the nearest bucket so nearby delays share a cached WaitForSeconds.
             float key = (float)(Math.Round(delay / WaitBucketMs) * WaitBucketMs);
@@ -330,7 +345,7 @@ namespace Nexus.Core.Services
             // Only despawn if the instance is still in the SAME spawn session. If it was
             // manually despawned and re-spawned while the timer was pending, the generation
             // has advanced — despawning would kill the live re-spawned object.
-            if ((_spawnGenerations.TryGetValue(instanceId, out long current) && current == generation) || (generation == -1L && instance != null))
+            if ((_spawnGenerations.TryGetValue(instanceKey, out long current) && current == generation) || (generation == -1L && instance != null))
             {
                 Despawn(instance);
             }
@@ -338,11 +353,11 @@ namespace Nexus.Core.Services
 
         private PoolData GetOrCreatePool(GameObject prefab, Transform parent = null)
         {
-            int prefabId = GetId(prefab);
-            if (!_poolsByPrefabId.TryGetValue(prefabId, out var pool))
+            var prefabKey = GetKey(prefab);
+            if (!_poolsByPrefabId.TryGetValue(prefabKey, out var pool))
             {
                 pool = new PoolData(prefab, parent ?? _masterPoolRoot);
-                _poolsByPrefabId[prefabId] = pool;
+                _poolsByPrefabId[prefabKey] = pool;
             }
             return pool;
         }
@@ -371,8 +386,8 @@ namespace Nexus.Core.Services
         public void ClearPool(GameObject prefab)
         {
             if (prefab == null) return;
-            int prefabId = GetId(prefab);
-            if (_poolsByPrefabId.TryGetValue(prefabId, out var pool))
+            var prefabKey = GetKey(prefab);
+            if (_poolsByPrefabId.TryGetValue(prefabKey, out var pool))
             {
                 while (pool.Inactive.Count > 0)
                 {
@@ -383,9 +398,9 @@ namespace Nexus.Core.Services
                 {
                     if (active != null)
                     {
-                        int activeId = GetId(active);
-                        _poolsByInstanceId.Remove(activeId);
-                        _spawnGenerations.Remove(activeId);
+                        var activeKey = GetKey(active);
+                        _poolsByInstanceId.Remove(activeKey);
+                        _spawnGenerations.Remove(activeKey);
                         var poolables = active.GetComponents<IPoolable>();
                         for (int i = 0; i < poolables.Length; i++)
                         {
@@ -397,22 +412,17 @@ namespace Nexus.Core.Services
                 }
                 pool.Active.Clear();
                 if (pool.RootTransform != null) SafeDestroyUtility.SafeDestroy(pool.RootTransform.gameObject);
-                _poolsByPrefabId.Remove(prefabId);
+                _poolsByPrefabId.Remove(prefabKey);
             }
         }
 
-        private static int GetId(UnityEngine.Object obj)
-        {
-            if (obj == null) return 0;
-            // Use the modern Unity 6 GetEntityId() instead of the legacy
-            // GetInstanceID() reflection hack — GetInstanceID is obsolete (CS0619)
-            // in Unity 6.5+, and GetEntityId() is its supported replacement.
-            // R2026-H4 correction: GetEntityId() returns an EntityId STRUCT whose implicit
-            // int conversion is obsolete ("will not be representable by an int in the
-            // future"). EntityId.GetHashCode() is the supported, future-proof way to
-            // obtain a stable int key for the pool dictionaries — keep it.
-            return obj.GetEntityId().GetHashCode();
-        }
+        /// <summary>
+        /// Identity key for the pool dictionaries. The managed object reference is the key
+        /// (see the dictionary declarations): reference equality is collision-free where
+        /// an int hash is not, works across Unity's fake-null destroyed objects, and does
+        /// not depend on the unstable GetInstanceID/GetEntityId int conventions.
+        /// </summary>
+        private static UnityEngine.Object GetKey(UnityEngine.Object obj) => obj;
 
         public void ClearAllPools()
         {
@@ -432,9 +442,9 @@ namespace Nexus.Core.Services
                         // exactly — previously the entries were only dropped by the bulk
                         // .Clear() below, so any per-instance teardown added between the loop
                         // and the final Clear would silently operate on stale registrations.
-                        int activeId = GetId(active);
-                        _poolsByInstanceId.Remove(activeId);
-                        _spawnGenerations.Remove(activeId);
+                        var activeKey = GetKey(active);
+                        _poolsByInstanceId.Remove(activeKey);
+                        _spawnGenerations.Remove(activeKey);
                         var poolables = active.GetComponents<IPoolable>();
                         for (int i = 0; i < poolables.Length; i++)
                         {

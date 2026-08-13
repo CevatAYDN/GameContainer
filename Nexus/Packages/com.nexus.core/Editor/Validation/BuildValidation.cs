@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Runtime.CompilerServices;
 using UnityEditor;
 using UnityEngine;
 using Nexus.Core;
@@ -68,25 +69,31 @@ namespace Nexus.Editor
             s_stubAttrs = new Dictionary<Type, StubServiceAttribute>();
             s_contextDependsAttrs = new Dictionary<Type, ContextDependsOnAttribute[]>();
             s_writeableModelCache = new Dictionary<Type, bool>();
-
-            foreach (var assembly in AssemblyCatalog.LoadedAssemblies)
-            {
-                // GetTypesSafe never throws (it logs + yields the partial set); materialize
-                // once per assembly so later passes iterate an array instead of re-enumerating.
-                s_assemblyTypes[assembly] = AssemblyCatalog.GetTypesSafe(assembly).ToArray();
-            }
+            // Type lists are materialized lazily per assembly by EnumerateGameTypes
+            // (once per assembly per script-reload), so framework/3rd-party assemblies
+            // that are never enumerated no longer pay a GetTypes() pass.
         }
 
-        /// <summary>All non-framework/non-test types (classes AND structs) across loaded assemblies.</summary>
+        /// <summary>
+        /// All game-relevant types (classes AND structs) across loaded assemblies,
+        /// EXCLUDING framework, third-party, test (unless includeTests) and editor
+        /// assemblies — exactly the universe defined by
+        /// <see cref="AssemblyCatalog.GameAssemblies"/>, so every validation pass sees
+        /// the same code as every other Nexus editor tool.
+        /// </summary>
         private static IEnumerable<Type> EnumerateGameTypes(bool includeTests)
         {
             EnsureCaches();
-            foreach (var kvp in s_assemblyTypes)
+            foreach (var assembly in AssemblyCatalog.GameAssemblies(includeTests))
             {
-                var name = AssemblyCatalog.GetSimpleName(kvp.Key);
-                if (IsAssemblyExcluded(name)) continue;
-                if (!includeTests && name != null && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                foreach (var t in kvp.Value) yield return t;
+                // GetTypesSafe never throws (it logs + yields the partial set); materialize
+                // once per assembly so later passes iterate an array instead of re-enumerating.
+                if (!s_assemblyTypes.TryGetValue(assembly, out var types))
+                {
+                    types = AssemblyCatalog.GetTypesSafe(assembly).ToArray();
+                    s_assemblyTypes[assembly] = types;
+                }
+                foreach (var t in types) yield return t;
             }
         }
 
@@ -1041,6 +1048,28 @@ namespace Nexus.Editor
             // 2. Its assembly is excluded by IsAssemblyExcluded (meaning it's a system/Unity/3rd-party type always present at runtime)
             if (type.FullName == null) return true;
             if (availableTypeNames.Contains(type.FullName)) return true;
+
+            // Arrays and generic instantiations are never enumerated directly — the scan
+            // yields element types and generic definitions — so check their parts instead.
+            // Without this, every array constructor parameter (e.g. GLTFast.MeshGenerator's
+            // SubMeshAssignment[], CustomHeaderDownloadProvider's HttpHeader[]) was reported
+            // as a phantom "not available in any scanned assembly" even though the element
+            // types are present. Value-type arguments are always resolvable.
+            if (type.IsArray)
+            {
+                var elementType = type.GetElementType();
+                return elementType != null && (elementType.IsValueType || IsTypeAvailable(elementType, availableTypeNames));
+            }
+            if (type.IsGenericType && !type.IsGenericTypeDefinition)
+            {
+                foreach (var arg in type.GetGenericArguments())
+                {
+                    if (arg.IsValueType) continue;
+                    if (!IsTypeAvailable(arg, availableTypeNames)) return false;
+                }
+                return true;
+            }
+
             try
             {
                 var asmName = type.Assembly.GetName().Name;
@@ -1049,6 +1078,71 @@ namespace Nexus.Editor
             catch (Exception ex)
             {
                 Debug.LogWarning($"[Nexus Warning] DI availability inspection failed for '{type.FullName}': {ex.Message}");
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// True only for types the DI validator should inspect. Compiler-generated
+        /// iterators/closures/Burst delegates, attributes, delegates, and framework- or
+        /// engine-namespaced types (System.*, Microsoft.*, Unity.*, Mono.*) can never be
+        /// dependency-injected — inspecting them only produced "metadata inspection failed"
+        /// noise (e.g. iterator state machines with a &lt;&gt;1__state constructor parameter,
+        /// NullableAttribute, Burst $PostfixBurstDelegate types hosted in non-excluded
+        /// assemblies). The host assembly is irrelevant: the namespace is authoritative.
+        /// </summary>
+        private static bool IsDiInspectableType(Type type)
+        {
+            if (typeof(Attribute).IsAssignableFrom(type)) return false;
+            if (typeof(Delegate).IsAssignableFrom(type)) return false;
+            if (type.IsDefined(typeof(CompilerGeneratedAttribute), false)) return false;
+
+            var ns = type.Namespace;
+            if (ns != null)
+            {
+                // Dot-qualified matching: a user namespace like "UnityGame" or
+                // "SystemTools" must NOT be mistaken for the engine/framework.
+                if (ns == "System" || ns.StartsWith("System.", StringComparison.Ordinal)
+                    || ns == "Microsoft" || ns.StartsWith("Microsoft.", StringComparison.Ordinal)
+                    || ns == "Mono" || ns.StartsWith("Mono.", StringComparison.Ordinal)
+                    || ns == "Unity" || ns.StartsWith("Unity.", StringComparison.Ordinal)
+                    || ns == "UnityEngine" || ns.StartsWith("UnityEngine.", StringComparison.Ordinal)
+                    || ns == "UnityEditor" || ns.StartsWith("UnityEditor.", StringComparison.Ordinal))
+                    return false;
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// True when the type or any of its members declares an injection marker
+        /// ([Inject]/[OptionalInject]/[Construct]). Only such types are DI candidates:
+        /// a metadata failure on an unmarked type means it is simply never constructed
+        /// through the container (SignalBus via instance binding, CommandPool via
+        /// factory, SecureIntCore via direct new, iterator state machines, attributes)
+        /// — not a real configuration problem. Deliberate trade-off: a type bound with
+        /// <c>Bind&lt;T&gt;()</c> but never marked and lacking an injectable ctor is also
+        /// silenced — unmarked types are outside the DI validation contract.
+        /// </summary>
+        private static bool HasInjectionMarkers(Type type)
+        {
+            const BindingFlags flags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
+            if (type.GetCustomAttributes(typeof(InjectAttribute), true).Length > 0) return true;
+            if (type.GetCustomAttributes(typeof(ConstructAttribute), true).Length > 0) return true;
+            if (type.GetCustomAttributes(typeof(OptionalInjectAttribute), true).Length > 0) return true;
+            foreach (var ctor in type.GetConstructors(flags))
+                if (ctor.GetCustomAttribute<InjectAttribute>() != null || ctor.GetCustomAttribute<ConstructAttribute>() != null) return true;
+            foreach (var field in type.GetFields(flags))
+                if (field.GetCustomAttribute<InjectAttribute>() != null || field.GetCustomAttribute<OptionalInjectAttribute>() != null) return true;
+            foreach (var prop in type.GetProperties(flags))
+                if (prop.GetCustomAttribute<InjectAttribute>() != null || prop.GetCustomAttribute<OptionalInjectAttribute>() != null) return true;
+            foreach (var method in type.GetMethods(flags))
+            {
+                if (method.GetCustomAttribute<InjectAttribute>() != null || method.GetCustomAttribute<OptionalInjectAttribute>() != null) return true;
+                // Parameter markers: [OptionalInject] is the only inject-marker the
+                // framework permits on parameters (InjectAttribute targets ctor/field/
+                // property/method), and NexusDI honors it in the optional-parameter mask.
+                foreach (var param in method.GetParameters())
+                    if (param.GetCustomAttribute<InjectAttribute>() != null || param.GetCustomAttribute<OptionalInjectAttribute>() != null) return true;
             }
             return false;
         }
@@ -1066,7 +1160,7 @@ namespace Nexus.Editor
                 if (type.FullName != null)
                 {
                     availableTypeNames.Add(type.FullName);
-                    if (!type.IsAbstract && !type.IsInterface && !type.IsEnum && !type.IsValueType)
+                    if (!type.IsAbstract && !type.IsInterface && !type.IsEnum && !type.IsValueType && IsDiInspectableType(type))
                         scannedTypes.Add(type);
                 }
             }
@@ -1082,8 +1176,20 @@ namespace Nexus.Editor
                 try { meta = NexusDI.GetOrCreateInjectMetadata(type); }
                 catch (Exception ex)
                 {
-                    Debug.LogWarning($"[Nexus Warning] DI metadata inspection failed for '{type.FullName}': {ex.Message}");
-                    warningCount++;
+                    // Report ONLY when the type actually participates in DI. An unmarked
+                    // type that cannot be metadata-built (SignalBus, CommandPool,
+                    // SecureIntCore, ViewBinder, ...) is never constructed through the
+                    // container, so its failure is expected — logging it was the bulk of
+                    // the DI-validation noise (Bee/GLTFast/Protobuf/BCL/editor types all
+                    // died at the assembly/namespace/shape filters; the remainder are
+                    // framework internals that legitimately take value-type ctor params).
+                    // Trade-off: a bound-but-unmarked type with an unsupported ctor is
+                    // also silenced — see HasInjectionMarkers.
+                    if (HasInjectionMarkers(type))
+                    {
+                        Debug.LogWarning($"[Nexus Warning] DI metadata inspection failed for '{type.FullName}': {ex.Message}");
+                        warningCount++;
+                    }
                     continue;
                 }
 

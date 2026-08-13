@@ -8,6 +8,7 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <AssemblyName>NexusBenchmark</AssemblyName>
     <RootNamespace>NexusBench</RootNamespace>
+    <DefineConstants>NEXUS_DEBUG</DefineConstants>
     <Optimize>true</Optimize>
     <TieredCompilation>false</TieredCompilation>
     <ServerGarbageCollection>false</ServerGarbageCollection>

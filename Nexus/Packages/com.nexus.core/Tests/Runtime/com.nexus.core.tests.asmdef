@@ -2,6 +2,7 @@
     "name": "com.nexus.core.tests",
     "rootNamespace": "Nexus.Tests.Runtime",
     "references": [
+        "Unity.Profiling.Core",
         "UnityEngine.TestRunner",
         "com.nexus.core",
         "com.nexus.core.dots",

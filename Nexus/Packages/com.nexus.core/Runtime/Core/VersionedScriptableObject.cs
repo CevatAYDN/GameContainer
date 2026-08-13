@@ -87,14 +87,21 @@ namespace Nexus.Core
                 EditorUtility.SetDirty(this);
             }
 #endif
-            string message = $"[Nexus] Migrated {name} ({GetType().Name}) from version {oldVersion} to {_version}.";
-            if (NexusRuntime.Logger != null)
+            // Log only for named objects (persisted assets). Freshly CreateInstance'd
+            // in-memory objects — test harness contexts, runtime-created data — have an
+            // empty name and migrate to the current version as a no-op; logging every one
+            // of them spammed test runs with "Migrated (ContextData) from version 0 to 1".
+            if (!string.IsNullOrEmpty(name))
             {
-                NexusRuntime.Logger.Log(message);
-            }
-            else
-            {
-                Debug.Log(message);
+                string message = $"[Nexus] Migrated {name} ({GetType().Name}) from version {oldVersion} to {_version}.";
+                if (NexusRuntime.Logger != null)
+                {
+                    NexusRuntime.Logger.Log(message);
+                }
+                else
+                {
+                    Debug.Log(message);
+                }
             }
         }
 

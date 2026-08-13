@@ -59,6 +59,67 @@ Nexus/Packages/com.nexus.core/*.csproj.meta
 Thumbs.db
 
 # OpenCode / IDE scratch
+# ── Nexus UPM Package ─────────────────────────────────
+# The package lives under Nexus/Packages/com.nexus.core/
+# and its Runtime/Editor/Tests are tracked by git.
+# Unity project files under Nexus/ are generated.
+
+# Unity project-specific ignores (under Nexus/)
+/[Nn]exus/[Ll]ibrary/
+/[Nn]exus/[Tt]emp/
+/[Nn]exus/[Oo]bj/
+/[Nn]exus/[Bb]uild/
+/[Nn]exus/[Bb]uilds/
+/[Nn]exus/[Ll]ogs/
+/[Nn]exus/[Uu]serSettings/
+/[Nn]exus/[Mm]emoryCaptures/
+/[Nn]exus/ProjectSettings/ProjectVersion.txt.mdown
+
+# Unity generated project files (regenerated on every import)
+*.csproj
+*.slnx
+*.sln
+
+# Ignore package-specific IDE/compilation artifacts
+Nexus/Packages/com.nexus.core/Editor/bin/
+Nexus/Packages/com.nexus.core/Editor/bin.meta
+Nexus/Packages/com.nexus.core/Editor/obj/
+Nexus/Packages/com.nexus.core/Editor/obj.meta
+Nexus/Packages/com.nexus.core/.Temp/
+Nexus/Packages/com.nexus.core/.Temp.meta
+Nexus/Packages/com.nexus.core/*.csproj
+Nexus/Packages/com.nexus.core/*.csproj.meta
+
+# Unity generated meta files are tracked (needed for Unity packages)
+# but these generated folders should not have meta commits:
+/[Nn]exus/[Ll]ibrary.meta
+/[Nn]exus/[Tt]emp.meta
+/[Nn]exus/[Oo]bj.meta
+/[Nn]exus/[Bb]uild.meta
+/[Nn]exus/[Bb]uilds.meta
+/[Nn]exus/[Ll]ogs.meta
+/[Nn]exus/[Uu]serSettings.meta
+
+# Log files (test results, runtime logs)
+*.log
+*.log.meta
+
+# Visual Studio / Rider ignores
+.vs/
+.vscode/
+.idea/
+*.sln.imsp
+*.csproj.user
+*.sln.docstate
+*.slnx.user
+*.devin
+*.trae
+
+# OS-specific ignores
+.DS_Store
+Thumbs.db
+
+# OpenCode / IDE scratch
 .omo/
 OPENCODE_CONTINUE.md
 
@@ -70,7 +131,15 @@ OPENCODE_CONTINUE.md
 tools/nexus-benchmark/bin/
 tools/nexus-benchmark/obj/
 tools/nexus-benchmark/*.txt
+# Standalone compile gate build artifacts
+tools/nexus-compile-check/bin/
+tools/nexus-compile-check/obj/
 # `*.csproj` is ignored globally above; keep the harness project tracked.
 !tools/nexus-benchmark/NexusBenchmark.csproj
 # Keep the standalone Unity runtime compile gate tracked as well.
 !tools/nexus-compile-check/nexus-compile-check.csproj
+
+# Test results and runner artifacts
+Nexus/TestResults*.xml
+Nexus/artifacts/
+tools/unity-verify/artifacts/

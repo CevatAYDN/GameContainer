@@ -11,8 +11,10 @@ namespace Nexus.Editor
 {
     /// <summary>
     /// Static C# Anti-Pattern & Architecture Analyzer for Nexus Core.
-    /// Scans project scripts for hot-path allocations, lifecycle mismatches, and dangerous async void methods.
-    /// Accessible via Editor Menu: Window -> Nexus -> Code Health Analyzer
+    /// Scans project scripts (Assets + com.nexus.core package) for hot-path allocations
+    /// (NEXUS001), async-void declarations (NEXUS002), synchronous blocking calls
+    /// (NEXUS003), and leftover debug trace logging (NEXUS004). Accessible via Editor
+    /// Menu: Window -> Nexus -> Code Health Analyzer
     /// </summary>
     public class NexusArchitectureAnalyzer : EditorWindow
     {
@@ -171,6 +173,7 @@ namespace Nexus.Editor
 
             string[] lines = File.ReadAllLines(fullPath);
             bool inHotPathMethod = false;
+            int hotPathBraceDepth = 0;
 
             for (int i = 0; i < lines.Length; i++)
             {
@@ -183,14 +186,29 @@ namespace Nexus.Editor
                     trimmed.StartsWith("Recommendation =") || trimmed.StartsWith("Message ="))
                     continue;
 
-                // Track hot-path method entry/exit
-                if (line.Contains("void Update()") || line.Contains("void Tick(") || line.Contains("void OnUpdate()") || line.Contains("void Execute("))
+                // Track hot-path method entry/exit by brace depth instead of a
+                // "line starts with }" heuristic: a nested block closed at column 0
+                // (valid C# style) used to terminate hot-path tracking early and hide
+                // later allocations, while an expression-bodied Update() never emitted a
+                // brace line at all and kept the whole file "hot". Braces are counted on
+                // comment/string-free code so doc text and string literals cannot skew it.
+                if (inHotPathMethod)
+                {
+                    hotPathBraceDepth += CountBraces(StripCommentsAndStrings(line));
+                    if (hotPathBraceDepth <= 0)
+                    {
+                        inHotPathMethod = false;
+                        hotPathBraceDepth = 0;
+                    }
+                }
+                else if (IsHotPathEntryLine(line))
                 {
                     inHotPathMethod = true;
-                }
-                else if (inHotPathMethod && line.Trim().StartsWith("}"))
-                {
-                    inHotPathMethod = false;
+                    hotPathBraceDepth = CountBraces(StripCommentsAndStrings(line));
+                    // A zero/negative depth on the entry line means a single-line or
+                    // expression-bodied method: stay hot for THIS line (its allocations
+                    // are in the hot path) and let the next line close the block.
+                    if (hotPathBraceDepth < 0) hotPathBraceDepth = 0;
                 }
 
                 // Rule NEXUS001: Hot-Path Allocations
@@ -239,6 +257,26 @@ namespace Nexus.Editor
                     });
                 }
 
+                // Rule NEXUS004: leftover debug trace logging in runtime code. A
+                // Debug.Log call whose string carries a trace marker ([SLOCK] or a
+                // "*-TRACE]" tag such as [RESET-TRACE]/[CTX-TRACE]) is the signature of
+                // lock/flow instrumentation left behind after a debugging session — it
+                // allocates on hot paths, spams the console, and ships to production
+                // builds. A trailing "// NEXUS004-exempt: <reason>" comment marks a
+                // deliberate, documented trace site and opts it out.
+                if (IsNexus004Violation(line, path))
+                {
+                    _issues.Add(new AnalysisIssue
+                    {
+                        Code = "NEXUS004",
+                        Severity = IssueSeverity.Error,
+                        FilePath = path,
+                        LineNumber = lineNum,
+                        Message = "Debug trace logging detected in runtime code ([SLOCK] / [*-TRACE] marker).",
+                        Recommendation = "Remove leftover instrumentation before committing. For a deliberate trace site, append '// NEXUS004-exempt: <reason>' to the line."
+                    });
+                }
+
             }
         }
 
@@ -277,17 +315,19 @@ namespace Nexus.Editor
         }
 
         /// <summary>
-        /// Removes double-quoted string literals and trailing <c>//</c> comments from a source
-        /// line so the text-based rules (NEXUS001) match CODE tokens only — a trailing comment
-        /// like <c>// pre-allocate: a new List&lt;int&gt;() here would be flagged</c> must not
-        /// count as an allocation. Escaped characters and a <c>//</c> inside a string
-        /// (e.g. a URL) are handled.
+        /// Removes double-quoted string literals, char literals, and trailing <c>//</c>
+        /// comments from a source line so the text-based rules (NEXUS001) match CODE tokens
+        /// only — a trailing comment like <c>// pre-allocate: a new List&lt;int&gt;() here
+        /// would be flagged</c> must not count as an allocation, and a char literal like
+        /// <c>char c = '}'</c> must not skew brace-depth counting. Escaped characters and a
+        /// <c>//</c> inside a string (e.g. a URL) are handled.
         /// </summary>
         internal static string StripCommentsAndStrings(string line)
         {
             char[] result = new char[line.Length];
             int n = 0;
             bool inString = false;
+            bool inChar = false;
             for (int i = 0; i < line.Length; i++)
             {
                 char c = line[i];
@@ -297,7 +337,14 @@ namespace Nexus.Editor
                     else if (c == '"') inString = false;
                     continue;
                 }
+                if (inChar)
+                {
+                    if (c == '\\') i++;            // skip escaped character inside the char literal
+                    else if (c == '\'') inChar = false;
+                    continue;
+                }
                 if (c == '"') { inString = true; continue; }
+                if (c == '\'') { inChar = true; continue; }
                 if (c == '/' && i + 1 < line.Length && line[i + 1] == '/') break; // trailing comment
                 result[n++] = c;
             }
@@ -305,18 +352,79 @@ namespace Nexus.Editor
         }
 
         /// <summary>
+        /// True when a line declares (or mentions declaring) a hot-path method. Matches
+        /// Unity callbacks (Update/Tick/OnUpdate) and Nexus command entry points (Execute).
+        /// </summary>
+        internal static bool IsHotPathEntryLine(string line)
+        {
+            return line.Contains("void Update()") || line.Contains("void Tick(")
+                || line.Contains("void OnUpdate()") || line.Contains("void Execute(");
+        }
+
+        /// <summary>
+        /// Net brace depth contributed by a single code line ({ = +1, } = -1). Callers pass
+        /// the comment/string-stripped line so braces inside string literals and doc text
+        /// do not skew hot-path tracking. Internal so the editor test assembly can lock it.
+        /// </summary>
+        internal static int CountBraces(string line)
+        {
+            int depth = 0;
+            for (int i = 0; i < line.Length; i++)
+            {
+                char c = line[i];
+                if (c == '{') depth++;
+                else if (c == '}') depth--;
+            }
+            return depth;
+        }
+
+        /// <summary>
         /// NEXUS003 predicate: true when a runtime (non-Editor) line contains a synchronous
         /// blocking call (Thread.Sleep or sync-over-async <c>GetAwaiter().GetResult()</c>,
         /// which still blocks the thread) that is not explicitly exempted via a trailing
-        /// <c>// NEXUS003-exempt: &lt;reason&gt;</c> comment. Comment lines and Editor paths
-        /// are filtered by the caller (<see cref="AnalyzeScriptFile"/>). Internal so the
-        /// editor test assembly can lock the rule.
+        /// <c>// NEXUS003-exempt: &lt;reason&gt;</c> comment. Full-line comments are filtered
+        /// by the caller (<see cref="AnalyzeScriptFile"/>); string literals and trailing
+        /// comments are stripped here (like NEXUS001/NEXUS002) so doc text and logging
+        /// cannot false-positive. Internal so the editor test assembly can lock the rule.
         /// </summary>
         internal static bool IsNexus003Violation(string line, string path)
         {
-            return (line.Contains("Thread.Sleep") || line.Contains("GetAwaiter().GetResult()"))
-                   && !path.Contains("/Editor/")
-                   && !line.Contains("NEXUS003-exempt");
+            if (path.Contains("/Editor/")) return false;
+            // The exemption marker is a trailing comment (// NEXUS003-exempt: <reason>),
+            // so it must be evaluated on the RAW line — StripCommentsAndStrings would
+            // erase it before the check.
+            if (line.Contains("NEXUS003-exempt")) return false;
+            // NEXUS001/NEXUS002 strip comments and string literals before matching; do
+            // the same here so a runtime line like Debug.Log("Thread.Sleep") or a
+            // trailing comment mentioning Thread.Sleep cannot false-positive.
+            string codeOnly = StripCommentsAndStrings(line);
+            return codeOnly.Contains("Thread.Sleep") || codeOnly.Contains("GetAwaiter().GetResult()");
+        }
+
+        /// <summary>
+        /// NEXUS004 predicate: true when a runtime (non-Editor) line calls Debug.Log with
+        /// a debug trace marker in its string — <c>[SLOCK]</c> or a <c>*-TRACE]</c> tag
+        /// such as <c>[RESET-TRACE]</c>/<c>[CTX-TRACE]</c> — the signature of leftover
+        /// lock/flow instrumentation. The marker lives INSIDE the string literal, so it is
+        /// matched on the RAW line (StripCommentsAndStrings would erase it), while an
+        /// actual <c>Debug.Log</c> call is required in the stripped code so a comment that
+        /// merely mentions the pattern cannot trigger. Editor paths are exempt (same as
+        /// NEXUS003) so the analyzer's own rule text cannot self-flag; a deliberate trace
+        /// log opts out with a trailing <c>// NEXUS004-exempt: &lt;reason&gt;</c> comment.
+        /// Internal so the editor test assembly can lock the rule.
+        /// </summary>
+        internal static bool IsNexus004Violation(string line, string path)
+        {
+            if (path.Contains("/Editor/")) return false;
+            // The exemption marker is a trailing comment; evaluated on the RAW line for
+            // the same reason as NEXUS003.
+            if (line.Contains("NEXUS004-exempt")) return false;
+            // Require a real Debug.Log call in CODE (comments/strings stripped) — a
+            // comment mentioning the marker pattern must never trigger.
+            string codeOnly = StripCommentsAndStrings(line);
+            if (!codeOnly.Contains("Debug.Log")) return false;
+            // The marker lives inside the string literal, so it is matched on the raw line.
+            return line.Contains("-TRACE]") || line.Contains("[SLOCK]");
         }
     }
 }

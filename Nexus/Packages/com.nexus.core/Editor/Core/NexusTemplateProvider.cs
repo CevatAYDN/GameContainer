@@ -187,18 +187,25 @@ namespace Nexus
 
         protected override void OnBind()
         {{
-            Model.Counter.OnChanged((oldVal, newVal) =>
-            {{
-                View.UpdateCounterText(newVal);
-            }});
+            // Named handlers, not inline lambdas: OnUnbind must be able to remove the
+            // EXACT delegate that was added. Inline lambdas cannot be unsubscribed, so
+            // pooled mediator reuse would stack duplicate handlers.
+            Model.Counter.OnChanged(OnCounterChanged);
             View.UpdateCounterText(Model.Counter);
             View.OnButtonClicked += OnViewButtonClicked;
         }}
 
         protected override void OnUnbind()
         {{
-            Model.Counter.ClearOnChanged();
+            // Remove only THIS mediator's handler — ClearOnChanged() would wipe every
+            // other subscriber of the shared model property.
+            Model.Counter.RemoveOnChanged(OnCounterChanged);
             if (View != null) View.OnButtonClicked -= OnViewButtonClicked;
+        }}
+
+        private void OnCounterChanged(int oldVal, int newVal)
+        {{
+            View.UpdateCounterText(newVal);
         }}
 
         private void OnViewButtonClicked()

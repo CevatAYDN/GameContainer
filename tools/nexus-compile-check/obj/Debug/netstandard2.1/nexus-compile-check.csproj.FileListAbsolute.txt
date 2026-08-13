@@ -1,6 +1,0 @@
-C:\Users\wwwla\Documents\Github\GameContainer\tools\nexus-compile-check\obj\Debug\netstandard2.1\nexus-compile-check.csproj.AssemblyReference.cache
-C:\Users\wwwla\Documents\Github\GameContainer\tools\nexus-compile-check\obj\Debug\netstandard2.1\nexus-compile-check.GeneratedMSBuildEditorConfig.editorconfig
-C:\Users\wwwla\Documents\Github\GameContainer\tools\nexus-compile-check\obj\Debug\netstandard2.1\nexus-compile-check.AssemblyInfoInputs.cache
-C:\Users\wwwla\Documents\Github\GameContainer\tools\nexus-compile-check\obj\Debug\netstandard2.1\nexus-compile-check.AssemblyInfo.cs
-C:\Users\wwwla\Documents\Github\GameContainer\tools\nexus-compile-check\obj\Debug\netstandard2.1\nexus-compile-check.csproj.CoreCompileInputs.cache
-C:\Users\wwwla\Documents\Github\GameContainer\tools\nexus-compile-check\obj\Debug\netstandard2.1\nexus-compile-check.sourcelink.json

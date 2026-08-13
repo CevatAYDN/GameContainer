@@ -21,15 +21,20 @@ namespace Nexus.Core.Services
     /// device. If your threat model includes root-level adversaries, back the seed with
     /// the platform keystore (Android Keystore / iOS Keychain) instead of PlayerPrefs.
     ///
-    /// File format (version 2):
+    /// File format (version 3, current):
     ///   [VERSION:1 byte] [IV:16 bytes] [HMAC-SHA256:32 bytes] [AES-256 ciphertext:N bytes]
+    ///   HMAC is computed over (IV || ciphertext || keyName) so a valid payload staged
+    ///   under a different key's filename fails verification (F9 fix).
+    ///
+    /// Version 2 (read-only migration): same layout, but the HMAC covered only
+    /// (IV || ciphertext) — files are re-encrypted to v3 on first read.
     ///
     /// Legacy format (version 1, read-only migration):
     ///   [IV:16 bytes] [HMAC-SHA256-truncated:16 bytes] [AES-128 ciphertext:N bytes]
     ///
-    /// HMAC-SHA256 is computed over (IV || ciphertext) using an independent key derived
-    /// from the device-bound seed. On read, HMAC is verified first — tampered payloads
-    /// are detected before decryption is even attempted.
+    /// HMAC-SHA256 uses an independent key derived from the device-bound seed. On read,
+    /// HMAC is verified first — tampered payloads are detected before decryption is even
+    /// attempted.
     ///
     /// Review fixes (2026-08-01):
     /// - A1: save writes are now atomic (single overwrite-rename) — a crash can no
@@ -44,8 +49,11 @@ namespace Nexus.Core.Services
     [Preserve]
     public class EncryptedStorageService : IPlayerPrefsService, IDisposable
     {
-        /// <summary>Current on-disk format version.</summary>
-        private const byte CurrentFormatVersion = 2;
+        /// <summary>Current on-disk format version (HMAC binds the key name).</summary>
+        private const byte CurrentFormatVersion = 3;
+
+        /// <summary>Pre-key-binding format; accepted read-only and migrated to v3 on read.</summary>
+        private const byte LegacyV2FormatVersion = 2;
 
         /// <summary>Legacy format has no version prefix; detected by header length.</summary>
         private const int LegacyHeaderSize = 32; // 16 IV + 16 HMAC
@@ -396,19 +404,27 @@ namespace Nexus.Core.Services
                 }
 
                 // Detect format from header length.
-                // Version 2: 1 (version) + 16 (IV) + 32 (HMAC) = 49 bytes minimum header.
+                // Version 2/3: 1 (version) + 16 (IV) + 32 (HMAC) = 49 bytes minimum header.
                 // Version 1 (legacy): 16 (IV) + 16 (HMAC) = 32 bytes minimum header.
-                bool isVersion2 = rawData.Length >= HeaderSize && rawData[0] == CurrentFormatVersion;
+                bool isCurrentFormat = rawData.Length >= HeaderSize
+                    && (rawData[0] == CurrentFormatVersion || rawData[0] == LegacyV2FormatVersion);
 
                 string val;
-                if (isVersion2)
+                if (isCurrentFormat)
                 {
-                    if (!TryReadVersion2(rawData, out val))
+                    if (!TryReadCurrentFormat(rawData, key, out val))
                     {
                         LogTamperWarning(key);
                         CacheNegativeResult(key);
                         return defaultValue;
                     }
+
+                    // A v2 file (pre key-name-binding) decoded successfully: re-encrypt it
+                    // under the current v3 format so the on-disk payload becomes key-bound.
+                    // Same B1 discipline as the v1 migration below — SaveKeyToDisk performs
+                    // blocking file I/O and must NOT run under the shared _lock.
+                    if (rawData[0] == LegacyV2FormatVersion)
+                        SaveKeyToDisk(key, val);
                 }
                 else
                 {
@@ -482,12 +498,20 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// Decodes a version-2 payload: VERSION(1) + IV(16) + HMAC(32) + cipherText.
-        /// Pure: performs no cache or file writes (the caller owns those).
+        /// Decodes a version-2 or version-3 payload: VERSION(1) + IV(16) + HMAC(32) + cipherText.
+        /// Version 3 HMACs (IV || ciphertext || keyName) so a valid file replayed under a
+        /// different key name fails verification; version 2 (pre key-binding) HMACs
+        /// (IV || ciphertext) and is accepted read-only for migration. The caller knows
+        /// the key, so the key name is passed in for v3 verification. Pure: performs no
+        /// cache or file writes (the caller owns those).
         /// </summary>
-        private bool TryReadVersion2(byte[] rawData, out string value)
+        private bool TryReadCurrentFormat(byte[] rawData, string key, out string value)
         {
             value = null;
+            byte version = rawData[0];
+            if (version != CurrentFormatVersion && version != LegacyV2FormatVersion)
+                return false;
+
             const int ivOffset = 1;
             const int hmacOffset = 17; // 1 + 16
             const int cipherOffset = 49; // 1 + 16 + 32
@@ -500,8 +524,10 @@ namespace Nexus.Core.Services
             Buffer.BlockCopy(rawData, hmacOffset, hmac, 0, 32);
             Buffer.BlockCopy(rawData, cipherOffset, cipherText, 0, cipherText.Length);
 
-            // Verify HMAC-SHA256 (full 32 bytes)
-            byte[] computedHmac = ComputeHmac(cipherText, iv);
+            // Verify HMAC-SHA256 (full 32 bytes). v3 binds the key name; v2 does not.
+            byte[] computedHmac = version == CurrentFormatVersion
+                ? ComputeHmac(cipherText, iv, key)
+                : ComputeHmacWithKey(cipherText, iv, _hmacKey);
             if (!CompareHashes(hmac, computedHmac))
                 return false;
 
@@ -644,7 +670,9 @@ namespace Nexus.Core.Services
 
                 using var encryptor = aes.CreateEncryptor();
                 byte[] cipherText = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-                byte[] hmac = ComputeHmac(cipherText, aes.IV);
+                // v3: bind the key name into the HMAC so a payload copied under another
+                // key's filename fails verification on read.
+                byte[] hmac = ComputeHmac(cipherText, aes.IV, key);
 
                 // VERSION(1) + IV(16) + HMAC(32) + cipherText
                 byte[] finalBuffer = new byte[HeaderSize + cipherText.Length];
@@ -699,11 +727,14 @@ namespace Nexus.Core.Services
             try
             {
                 byte[] rawData = Convert.FromBase64String(base64Data);
-                if (rawData.Length < HeaderSize || rawData[0] != CurrentFormatVersion) return false;
+                // Accept v2 (migrates to v3 on the next read) and v3; anything else is rejected.
+                if (rawData.Length < HeaderSize
+                    || (rawData[0] != CurrentFormatVersion && rawData[0] != LegacyV2FormatVersion))
+                    return false;
 
                 // Validate before replacing the local file so a corrupt cloud backup cannot
                 // destroy a valid save already stored on the device.
-                if (!TryReadVersion2(rawData, out string value)) return false;
+                if (!TryReadCurrentFormat(rawData, key, out string value)) return false;
 
                 // WriteRawDataAtomically acquires _writeLock and performs blocking
                 // File.WriteAllBytes + File.Replace — running it inside _lock would stall
@@ -760,6 +791,22 @@ namespace Nexus.Core.Services
                         // this is a sync PlayerPrefs-style API and Save() also runs on the
                         // sync quit path, so awaiting is not possible here.
                         System.Threading.Tasks.Task.Delay(1 << attempt).GetAwaiter().GetResult(); // NEXUS003-exempt: 1-2 ms sync IO backoff (sync API + quit path cannot await)
+                    }
+                    catch (Exception ex) when (ex is PlatformNotSupportedException or NotImplementedException)
+                    {
+                        // File.Replace is not implemented on some IL2CPP/mobile runtimes
+                        // (it historically threw on Android/iOS). Degrade to the best
+                        // available sequence (delete + move) rather than failing every
+                        // save on those platforms. The staged file is still written by
+                        // File.WriteAllBytes and the HMAC verification still detects torn
+                        // files on read. NOTE: degraded path — a crash between Delete and
+                        // Move can lose the previous save, the exact window the atomic
+                        // design avoids on platforms that support Replace.
+                        NexusRuntime.Logger?.LogWarning(
+                            "[EncryptedStorage] File.Replace not supported on this platform; falling back to delete+move (non-atomic).");
+                        if (File.Exists(filePath)) File.Delete(filePath);
+                        File.Move(tempPath, filePath);
+                        break;
                     }
                 }
             }
@@ -991,11 +1038,18 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// Computes a full 32-byte HMAC-SHA256 over (IV || cipherText) using the current HMAC key.
+        /// Computes a full 32-byte HMAC-SHA256 over (IV || cipherText || keyName) using the
+        /// current HMAC key. Binding the key name prevents a valid payload from being
+        /// replayed or copied under a different key (file swap) — verification fails on read.
         /// </summary>
-        private byte[] ComputeHmac(byte[] data, byte[] iv)
+        private byte[] ComputeHmac(byte[] data, byte[] iv, string key)
         {
-            return ComputeHmacWithKey(data, iv, _hmacKey);
+            using var hmac = new HMACSHA256(_hmacKey);
+            hmac.TransformBlock(iv, 0, iv.Length, null, 0);
+            byte[] keyBytes = Encoding.UTF8.GetBytes(key ?? string.Empty);
+            hmac.TransformBlock(keyBytes, 0, keyBytes.Length, null, 0);
+            hmac.TransformFinalBlock(data, 0, data.Length);
+            return hmac.Hash; // Full 32-byte HMAC-SHA256 output
         }
 
         /// <summary>

@@ -2,6 +2,7 @@
     "name": "com.nexus.core.editor",
     "rootNamespace": "Nexus.Editor",
     "references": [
+        "Unity.Profiling.Core",
         "com.nexus.core"
     ],
     "includePlatforms": [

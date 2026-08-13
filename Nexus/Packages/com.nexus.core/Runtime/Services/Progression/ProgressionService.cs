@@ -65,10 +65,18 @@ namespace Nexus.Core.Services
                 MaxUnlockedLevel.Value = PlayerPrefsService.GetInt(KeyMaxLevel, 1);
             }
 
-            CurrentLevel.OnChanged((oldVal, newVal) => SchedulePersist());
-            MaxUnlockedLevel.OnChanged((oldVal, newVal) => SchedulePersist());
+            CurrentLevel.OnChanged(OnLevelChanged);
+            MaxUnlockedLevel.OnChanged(OnLevelChanged);
 
             return default;
+        }
+
+        // Named handler so Dispose can remove EXACTLY this subscription — anonymous
+        // lambdas cannot be unsubscribed, and ClearOnChanged() would wipe every OTHER
+        // subscriber of the shared observable (house style: named handler + RemoveOnChanged).
+        private void OnLevelChanged(int oldValue, int newValue)
+        {
+            SchedulePersist();
         }
 
         /// <summary>Batch-persists both level keys, throttled when a SaveThrottler is bound.</summary>
@@ -146,8 +154,8 @@ namespace Nexus.Core.Services
                 try { SaveThrottler.ForceSave(SaveOwner, PersistNow); }
                 catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Progression] Final persist failed on dispose: {ex.Message}"); }
             }
-            CurrentLevel.ClearOnChanged();
-            MaxUnlockedLevel.ClearOnChanged();
+            CurrentLevel.RemoveOnChanged(OnLevelChanged);
+            MaxUnlockedLevel.RemoveOnChanged(OnLevelChanged);
         }
     }
 }

@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Scene-view overlay (`NexusSceneOverlay`)** — editor overlay (via `SceneView.duringSceneGui`) that draws a wireframe **context boundary** around every `Root` GameObject hierarchy (merged renderer/collider bounds, scope-tag label, parent→child dotted links) plus the live **signal wiring**: labeled signal→command spokes per context and inter-context links for `[CrossContext]` broadcasts. Toggle: Tools → Nexus → Scene Overlay (default ON, session-persisted). Data collection lives in the testable `NexusSceneOverlayData` and is locked by 8 EditMode tests; the drawing layer is throttled (0.5 s refresh + change-signature repaint) so the per-repaint cost stays at a few draw calls.
+- **PlayMode profiler benchmark lock (`NexusProfilerPlayModeTests`)** — N synchronous fires/resolves must grow each `NexusProfiler` counter by **exactly N** (SignalsDispatched, CommandsExecuted, CompositeTriggersProcessed, ResolvesPerformed); a dropped instrumentation site would under-count, a double increment would over-count. Read-before/fire/read-after runs inside one synchronous test body so the `FlushOnEndOfFrame` can never fire mid-delta.
 - **Headless analyzer gate (`NexusArchitectureAnalyzer.RunHeadless`)** — batch-mode entry point (exit 0 clean / 1 issues) usable from CI; NEXUS002 (`async void`) extracted to an `IsNexus002Violation` predicate with editor tests, completing parity with the NEXUS001/NEXUS003 predicates.
 
 ### Documentation (2026-08-06)

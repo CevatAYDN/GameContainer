@@ -16,6 +16,10 @@ namespace Nexus.Core.Services
             public float Duration;
             public float ElapsedTime;
             public float RiseHeight;
+            // Wall-clock spawn stamp (Time.unscaledTime) — drives the self-contained
+            // expiry sweep in SpawnFloatingText (R1): no external per-frame driver
+            // pumps this service, so elapsed entries would otherwise accumulate forever.
+            public float SpawnTime;
         }
 
         private readonly List<ActiveFloatingText> _activeTexts = new();
@@ -32,8 +36,22 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(text)) return;
 
+            float now = Time.unscaledTime;
             lock (_lock)
             {
+                // Wall-clock expiry sweep: UpdateService is not wired to any per-frame
+                // driver in the default runtime, so without this the expired entries
+                // would never be removed (unbounded growth + per-access ToArray cost).
+                // Sweeping on spawn keeps cleanup self-contained; UpdateService (if a
+                // consumer wires it) remains the exact delta-time pump for animation.
+                for (int i = _activeTexts.Count - 1; i >= 0; i--)
+                {
+                    if (now - _activeTexts[i].SpawnTime >= _activeTexts[i].Duration)
+                    {
+                        _activeTexts.RemoveAt(i);
+                    }
+                }
+
                 _activeTexts.Add(new ActiveFloatingText
                 {
                     Text = text,
@@ -41,7 +59,8 @@ namespace Nexus.Core.Services
                     Color = color,
                     Duration = Math.Max(0.1f, duration),
                     ElapsedTime = 0f,
-                    RiseHeight = riseHeight
+                    RiseHeight = riseHeight,
+                    SpawnTime = now
                 });
             }
         }

@@ -17,6 +17,7 @@
     }
   ],
   "dependencies": {
+    "com.unity.profiling.core": "1.0.3",
     "com.unity.ugui": "2.0.0"
   },
   "keywords": [

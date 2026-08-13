@@ -427,6 +427,10 @@ namespace NexusBench
             {
                 return PoolSplit.Run();
             }
+            if (cmdArgs.Count > 0 && cmdArgs[0] == "--hang-repro")
+            {
+                return PlayModeHangRepro.Run();
+            }
             if (cmdArgs.Count > 0 && cmdArgs[0] == "--coverage")
             {
                 int rc = CoverageReport.Run(json);

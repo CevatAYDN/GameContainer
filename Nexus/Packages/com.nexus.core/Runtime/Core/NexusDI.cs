@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
+using Unity.Profiling;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
@@ -1042,18 +1043,32 @@ namespace Nexus.Core
             return IsRegistered(type, name) ? Resolve(type, name) : null;
         }
 
+        // Profiler marker + counter on the resolve hot path. Marker is ungated (standard
+        // pattern, negligible when the profiler is off); the counter is compiled out in
+        // non-development builds by Unity. See NexusProfiler.
+        private static readonly ProfilerMarker s_ResolveMarker = new ProfilerMarker("Nexus.DI.Resolve");
+
         public object Resolve(Type type)
         {
             ThrowIfDisposed();
-            if (type == typeof(NexusDI)) return this;
-            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type))
-                return ExternalAdapter.Resolve(type);
+            NexusProfiler.ResolvesPerformed.Value += 1;
+            s_ResolveMarker.Begin();
+            try
+            {
+                if (type == typeof(NexusDI)) return this;
+                if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type))
+                    return ExternalAdapter.Resolve(type);
 
-            if (_bindings.TryGetValue(type, out var binding))
-                return ResolveAndNotifyLazy(type, binding);
+                if (_bindings.TryGetValue(type, out var binding))
+                    return ResolveAndNotifyLazy(type, binding);
 
-            if (_parent != null) return _parent.Resolve(type);
-            throw new InvalidOperationException($"Dependency of type {type.FullName} is not registered.");
+                if (_parent != null) return _parent.Resolve(type);
+                throw new InvalidOperationException($"Dependency of type {type.FullName} is not registered.");
+            }
+            finally
+            {
+                s_ResolveMarker.End();
+            }
         }
 
         private object ResolveAndNotifyLazy(Type type, Binding binding, string name = null)

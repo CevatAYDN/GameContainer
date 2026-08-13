@@ -28,10 +28,16 @@ namespace Nexus.Editor
         };
 
         // Unity-bundled / third-party assemblies that are not game code.
+        // Kept deliberately complete: every prefix here was observed spamming the DI
+        // validation with "metadata inspection failed" noise (Bee = Unity's build
+        // driver, NiceIO = Bee's path API, GLTFast/Google.Protobuf = precompiled
+        // packages, I18N = BCL locale codecs, AndroidPlayerBuildProgram = Android
+        // build pipeline). Types in these assemblies are never DI-injected.
         private static readonly string[] ThirdPartyPrefixes =
         {
             "Newtonsoft", "Grpc", "ExCSS", "log4net", "TextMateSharp", "JetBrains",
-            "Onigwrap", "unityplastic", "Codice", "Plastic", "MCPForUnity"
+            "Onigwrap", "unityplastic", "Codice", "Plastic", "MCPForUnity",
+            "Bee", "NiceIO", "GLTFast", "Google.Protobuf", "I18N", "AndroidPlayerBuildProgram"
         };
 
         /// <summary>All assemblies currently loaded in the editor domain.</summary>
@@ -85,8 +91,11 @@ namespace Nexus.Editor
 
         /// <summary>
         /// The canonical "game-relevant" assembly universe: everything that is not a
-        /// framework or third-party assembly and is not a test assembly (unless
-        /// <paramref name="includeTests"/>).
+        /// framework or third-party assembly, is not an editor-only assembly, and is
+        /// not a test assembly (unless <paramref name="includeTests"/>). Editor test
+        /// assemblies (name contains both ".editor" and "tests") ARE included when
+        /// <paramref name="includeTests"/> is true — EditMode validation fixtures
+        /// commonly live there.
         /// </summary>
         public static IEnumerable<Assembly> GameAssemblies(bool includeTests = false)
         {
@@ -95,8 +104,15 @@ namespace Nexus.Editor
                 if (assembly.IsDynamic) continue;
                 var name = GetSimpleName(assembly);
                 if (IsFrameworkAssembly(name) || IsThirdPartyAssembly(name)) continue;
-                if (!includeTests && IsTestAssembly(name)) continue;
-                if (IsEditorAssembly(name)) continue;
+                bool isTest = IsTestAssembly(name);
+                if (!includeTests && isTest) continue;
+                // Editor assemblies are out of scope for game scanning — EXCEPT editor
+                // test assemblies when test scanning is requested: validation fixtures
+                // (e.g. com.nexus.core.editor.tests) host the dummy commands/handlers
+                // that EditMode validation suites rely on. Without this exception,
+                // IncludeTestAssemblies=true runs silently saw ZERO test types (the
+                // name matches both ".editor" and "tests") and reported no violations.
+                if (IsEditorAssembly(name) && !(includeTests && isTest)) continue;
                 yield return assembly;
             }
         }

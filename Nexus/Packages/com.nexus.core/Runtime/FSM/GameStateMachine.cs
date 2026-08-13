@@ -202,6 +202,12 @@ namespace Nexus.Core.FSM
 
             if (token.IsCancellationRequested)
             {
+                // R2: never leave a disposed source published in _stateCts. This branch
+                // skips the finally that normally CompareExchanges the slot back to null;
+                // a stale disposed CTS would make Dispose()'s unguarded Cancel() throw
+                // ObjectDisposedException and would permanently bypass the same-state
+                // fast path (line 177). Clear our own slot before returning.
+                Interlocked.CompareExchange(ref _stateCts, null, myCts);
                 myCts.Cancel();
                 myCts.Dispose();
                 return;
@@ -391,7 +397,10 @@ namespace Nexus.Core.FSM
         {
             System.Threading.Interlocked.Increment(ref _transitionSequence);
             var cts = Interlocked.Exchange(ref _stateCts, null);
-            cts?.Cancel();
+            // R2 defense-in-depth: a superseded flow may have disposed its own source in
+            // its finally before Dispose() drained the slot — Cancel() on it throws.
+            try { cts?.Cancel(); }
+            catch (ObjectDisposedException) { /* superseded flow already disposed its source */ }
             cts?.Dispose();
 
             // Best-effort exit hook: give the current state a chance to clean up

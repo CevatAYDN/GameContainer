@@ -4,8 +4,10 @@
 // closing brace) that made the whole package non-compiling. It was restored from
 // git history, but the recovery behavior itself has only been compile-verified
 // (RecoveryTests can't run without Unity). This harness scenario exercises the
-// restored code paths at runtime: sync fallback dispatch, retry counting, and
-// async-only-fallback rejection (no infinite recursion).
+// restored code paths at runtime: sync fallback dispatch, retry counting,
+// async-only-fallback rejection (no infinite recursion), and [CommandTimeout]
+// cancellation of a hanging command (REC1/REC2 — the dispose-before-await bug
+// that froze Unity PlayMode in the EditMode/Runtime RecoveryTests).
 
 using System;
 using Nexus.Core;
@@ -57,6 +59,23 @@ namespace NexusBench
         }
     }
 
+    /// <summary>
+    /// Hangs until the [CommandTimeout] linked token cancels it. If the timeout CTS were
+    /// disposed before the command awaited (the bug this guards), the CancelAfter timer
+    /// would never fire and this command would block the signal line forever — which froze
+    /// Unity PlayMode in RecoveryTests.CommandTimeout_CancelsHangingCommand_DoesNotBlockRetryLoop.
+    /// </summary>
+    [CommandTimeout(50)]
+    public class HangingCommand : IAsyncCommand<FailSignal>
+    {
+        [Inject] public FailCounter Counter;
+        public async System.Threading.Tasks.ValueTask ExecuteAsync(FailSignal signal, System.Threading.CancellationToken ct)
+        {
+            Counter.Value++;
+            await System.Threading.Tasks.Task.Delay(System.Threading.Timeout.InfiniteTimeSpan, ct);
+        }
+    }
+
     public sealed class TestRecoveryStrategy : IRecoveryStrategy
     {
         public Func<CommandFailureContext, RecoveryDecision> DecisionFactory = ctx => RecoveryDecision.Skip();
@@ -77,12 +96,52 @@ namespace NexusBench
             TestRetryCounting();
             TestAsyncOnlyFallbackRejectedInSyncContext();
             TestNoStrategyRegistered_FallsThroughToSkip();
+            TestCommandTimeoutCancelsHangingCommand();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
                 ? "[Nexus Benchmark] RECOVERY REGRESSION PASSED ✓"
                 : $"[Nexus Benchmark] {_failures} RECOVERY REGRESSION(S) FAILED ✗");
             return _failures;
+        }
+
+        // Regression for the dispose-before-await timeout bug: the timeout CTS used to be
+        // scoped to the `if` block, so it was disposed before the command awaited — the
+        // CancelAfter timer never fired and a hanging command blocked the signal line
+        // forever (Unity PlayMode froze). The timeout must cancel the command (OCE) WITHOUT
+        // entering the retry loop (BuildPlan rethrows OCE before the strategy). The bounded
+        // race keeps this check a fast failure instead of a hang if the bug regresses.
+        private static void TestCommandTimeoutCancelsHangingCommand()
+        {
+            var strategy = new TestRecoveryStrategy { DecisionFactory = ctx => RecoveryDecision.Retry(10) };
+            var (container, bus, pool, counter, _) = Setup(strategy);
+            try
+            {
+                bus.RegisterCommand(typeof(FailSignal), typeof(HangingCommand), ExecutionMode.Sequential, 0, true);
+
+                var fireTask = bus.FireAsync(new FailSignal(7)).AsTask();
+                var completed = System.Threading.Tasks.Task.WhenAny(
+                    fireTask, System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(2))).GetAwaiter().GetResult();
+
+                bool completedPromptly = ReferenceEquals(fireTask, completed);
+                bool threwOce = false;
+                if (completedPromptly)
+                {
+                    try { fireTask.GetAwaiter().GetResult(); }
+                    catch (OperationCanceledException) { threwOce = true; }
+                }
+
+                Check("REC1. CommandTimeout_CancelsHangingCommand_WithinBound",
+                    completedPromptly && threwOce,
+                    $"completed={completedPromptly} oce={threwOce} executions={counter.Value}");
+                Check("REC2. CommandTimeout_DoesNotEnterRetryLoop",
+                    counter.Value == 1,
+                    $"executions={counter.Value} (must be 1 — OCE rethrows instead of retrying)");
+            }
+            finally
+            {
+                Teardown(bus, pool, container);
+            }
         }
 
         private static (NexusDI, SignalBus, CommandPoolManager, FailCounter, TestRecoveryStrategy) Setup(TestRecoveryStrategy strategy)
@@ -94,6 +153,7 @@ namespace NexusBench
             container.Bind<GenericOnlyFallbackCommand>(isSingleton: false);
             container.Bind<RetryOnceCommand>(isSingleton: false);
             container.Bind<AsyncOnlyFallbackCommand>(isSingleton: false);
+            container.Bind<HangingCommand>(isSingleton: false);
             if (strategy != null)
             {
                 container.BindInstance<IRecoveryStrategy>(strategy);

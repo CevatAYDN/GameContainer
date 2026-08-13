@@ -27,7 +27,7 @@ namespace Nexus.Editor
         private VisualElement _root;
         private VisualElement _progressFill;
         private readonly List<SetupStep> _steps = new();
-        private const string GameRoot = "Assets/Scripts/Game/Samples";
+        internal const string GameRoot = "Assets/Scripts/Game/Samples";
 
         private static readonly string[] SubFolders = {
             "Models", "Commands", "Signals", "Services",
@@ -598,10 +598,15 @@ namespace Nexus.Editor
 
         // ─── Code Generation ──────────────────────────────────
 
-        private static void GenerateAllCode()
-        {
-            WriteFile("Lifecycle/GameLifecycle.cs", @"
-using System.Threading;
+        // Each template below is a separate internal static so the editor test suite
+        // (WizardTemplateSyncTests) can lock ALL EIGHT wizard outputs byte-for-byte
+        // against the canonical Assets/Scripts/Game/Samples files. A fix applied to
+        // only one side breaks the "wizard output mirrors the canonical example"
+        // guarantee (NEXUS_READY Kapı 10) and silently ships the stale pattern to
+        // every new project. Generation is a straight copy of these strings: no
+        // trimming or transformation, so the written bytes are the tested bytes.
+
+        internal static string GameLifecycleTemplate => @"using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core;
 using UnityEngine;
@@ -625,20 +630,18 @@ namespace Game
         public ValueTask OnStartAsync(CancellationToken ct) => default;
         public void OnDispose() { }
     }
-}");
+}";
 
-            WriteFile("Signals/GameSignal.cs", @"
-namespace Game
+        internal static string GameSignalTemplate => @"namespace Game
 {
     public readonly struct GameSignal
     {
         public readonly int Value;
         public GameSignal(int value) => Value = value;
     }
-}");
+}";
 
-            WriteFile("Models/GameModel.cs", @"
-using System.Threading;
+        internal static string GameModelTemplate => @"using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core;
 
@@ -649,10 +652,9 @@ namespace Game
         public ObservableProperty<int> Counter { get; } = new(0);
         public ValueTask OnBind(CancellationToken ct) => default;
     }
-}");
+}";
 
-            WriteFile("Commands/GameCommand.cs", @"
-using Nexus.Core;
+        internal static string GameCommandTemplate => @"using Nexus.Core;
 
 namespace Game
 {
@@ -662,18 +664,16 @@ namespace Game
 
         public void Execute(GameSignal signal) => _model.Counter.Value += signal.Value;
     }
-}");
+}";
 
-            WriteFile("Services/IGameService.cs", @"
-using Nexus.Core;
+        internal static string IGameServiceTemplate => @"using Nexus.Core;
 
 namespace Game
 {
     public interface IGameService : INexusService { }
-}");
+}";
 
-            WriteFile("Services/GameService.cs", @"
-using System.Threading;
+        internal static string GameServiceTemplate => @"using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core;
 
@@ -684,10 +684,9 @@ namespace Game
         public override ValueTask InitializeAsync(CancellationToken ct) => default;
         public override void OnDispose() { }
     }
-}");
+}";
 
-            WriteFile("UI/Views/GameView.cs", @"
-using Nexus.Core;
+        internal static string GameViewTemplate => @"using Nexus.Core;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -724,10 +723,15 @@ namespace Game
                 _counterText.text = ""Counter: "" + value.ToString();
         }
     }
-}");
+}";
 
-            WriteFile("UI/Mediators/GameMediator.cs", @"
-using Nexus.Core;
+        /// <summary>
+        /// Verbatim template for the generated <c>GameMediator</c>. Kept on the wizard so
+        /// the generated sample and the canonical <c>Assets/Scripts/Game/Samples</c> file
+        /// share ONE source of truth; <c>WizardTemplateSyncTests</c> asserts the two stay
+        /// byte-identical (normalized) so a fix in one place can never orphan the other.
+        /// </summary>
+        internal static string GameMediatorTemplate => @"using Nexus.Core;
 
 namespace Game
 {
@@ -737,26 +741,155 @@ namespace Game
 
         protected override void OnBind()
         {
-            _model.Counter.OnChanged((o, n) => View.UpdateDisplay(n));
+            // Named handlers, not inline lambdas: OnUnbind must be able to remove the
+            // EXACT delegate that was added. Inline lambdas cannot be unsubscribed, so
+            // pooled mediator reuse would stack duplicate handlers.
+            _model.Counter.OnChanged(OnCounterChanged);
             View.UpdateDisplay(_model.Counter.Value);
-            View.OnIncrementClicked += () => SignalBus.Fire(new GameSignal(1));
+            View.OnIncrementClicked += OnIncrementClicked;
         }
 
         protected override void OnUnbind()
         {
-            _model.Counter.ClearOnChanged();
+            // Remove only THIS mediator's handler — ClearOnChanged() would wipe every
+            // other subscriber of the shared model property.
+            _model.Counter.RemoveOnChanged(OnCounterChanged);
+            View.OnIncrementClicked -= OnIncrementClicked;
+        }
+
+        private void OnCounterChanged(int oldValue, int newValue)
+        {
+            View.UpdateDisplay(newValue);
+        }
+
+        private void OnIncrementClicked()
+        {
+            SignalBus.Fire(new GameSignal(1));
         }
     }
-}");
+}";
+
+        /// <summary>
+        /// The complete set of files the wizard generates, as (relative path, content)
+        /// pairs. This mapping is the single source of truth for WHAT gets written WHERE:
+        /// <c>GenerateAllCode</c> writes exactly these files, and the editor test suite
+        /// asserts each entry is byte-identical to its canonical
+        /// <c>Assets/Scripts/Game/Samples</c> counterpart. A template can never be
+        /// renamed, re-pathed, or orphaned without a test failing.
+        /// </summary>
+        internal static IReadOnlyList<(string RelativePath, string Content)> GeneratedFiles()
+        {
+            return new (string, string)[]
+            {
+                ("Lifecycle/GameLifecycle.cs", GameLifecycleTemplate),
+                ("Signals/GameSignal.cs", GameSignalTemplate),
+                ("Models/GameModel.cs", GameModelTemplate),
+                ("Commands/GameCommand.cs", GameCommandTemplate),
+                ("Services/IGameService.cs", IGameServiceTemplate),
+                ("Services/GameService.cs", GameServiceTemplate),
+                ("UI/Views/GameView.cs", GameViewTemplate),
+                ("UI/Mediators/GameMediator.cs", GameMediatorTemplate)
+            };
+        }
+
+        /// <summary>
+        /// SHA-256 (lowercase hex) of each generated file's content, normalized to LF and
+        /// trimmed, so the value is stable across line-ending modes (autocrlf checkouts).
+        /// These hashes are documented in CHANGELOG.md and pinned by
+        /// <c>WizardTemplateSyncTests</c>: a template that changes without its documented
+        /// hash being updated fails the test the moment the change happens, so unintended
+        /// template edits cannot cross a release silently.
+        /// </summary>
+        internal static IReadOnlyList<(string RelativePath, string Sha256)> GeneratedFileHashes()
+        {
+            var hashes = new List<(string, string)>(GeneratedFiles().Count);
+            foreach (var (relativePath, content) in GeneratedFiles())
+            {
+                var normalized = content.Replace("\r\n", "\n").Trim();
+                var bytes = System.Text.Encoding.UTF8.GetBytes(normalized);
+                using var sha = System.Security.Cryptography.SHA256.Create();
+                var digest = sha.ComputeHash(bytes);
+                var builder = new System.Text.StringBuilder(digest.Length * 2);
+                foreach (var b in digest)
+                    builder.Append(b.ToString("x2"));
+                hashes.Add((relativePath, builder.ToString()));
+            }
+            return hashes;
+        }
+
+        /// <summary>
+        /// Writes every generated file under <paramref name="root"/> — an absolute path
+        /// outside the AssetDatabase in tests, <c>GameRoot</c> in real generation.
+        /// Separated from <c>GenerateAllCode</c> so the test suite can exercise the real
+        /// write path (directory creation + atomic file writes, exact bytes) without
+        /// touching the AssetDatabase or the project folder.
+        /// </summary>
+        internal static void WriteGeneratedFiles(string root)
+        {
+            foreach (var (relativePath, content) in GeneratedFiles())
+            {
+                var fullPath = Path.Combine(root, relativePath.Replace('/', Path.DirectorySeparatorChar));
+                var directory = Path.GetDirectoryName(fullPath);
+                if (!string.IsNullOrEmpty(directory))
+                    Directory.CreateDirectory(directory);
+                WriteFileAtomically(fullPath, content);
+            }
+        }
+
+        /// <summary>
+        /// Stages <paramref name="content"/> to a unique temp file in the target's own
+        /// directory, then atomically moves it over <paramref name="fullPath"/>. An
+        /// interrupted generation (editor crash, compile error mid-write) can never leave
+        /// a truncated or corrupt file at the destination: the target either keeps its
+        /// previous bytes or receives the complete new content. The temp file shares the
+        /// target's directory so the move is a same-volume rename, never a cross-volume
+        /// copy — the same atomic-write idiom as
+        /// <c>EncryptedStorageService.WriteRawDataAtomically</c>.
+        /// </summary>
+        private static void WriteFileAtomically(string fullPath, string content)
+        {
+            string tempPath = fullPath + ".tmp" + Guid.NewGuid().ToString("N");
+            try
+            {
+                File.WriteAllText(tempPath, content);
+
+                if (File.Exists(fullPath))
+                {
+                    try
+                    {
+                        // File.Replace is atomic (MoveFileEx REPLACE_EXISTING on Windows,
+                        // rename(2) on Unix) and preserves the destination metadata.
+                        File.Replace(tempPath, fullPath, null);
+                    }
+                    catch (Exception ex) when (ex is PlatformNotSupportedException or NotImplementedException)
+                    {
+                        // Degraded fallback for exotic host runtimes, same as the storage
+                        // service: delete + move. The temp file is fully written first, so
+                        // the target is never partial — worst case it is briefly absent.
+                        if (File.Exists(fullPath)) File.Delete(fullPath);
+                        File.Move(tempPath, fullPath);
+                    }
+                }
+                else
+                {
+                    File.Move(tempPath, fullPath);
+                }
+            }
+            finally
+            {
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
+            }
+        }
+
+        private static void GenerateAllCode()
+        {
+            // GenerateAllCode writes exactly the mapping the test suite locks against:
+            // same bytes, same paths — no trimming, no transformation.
+            WriteGeneratedFiles(GameRoot);
 
             AssetDatabase.Refresh();
             Debug.Log("[Nexus] Sample game files generated under " + GameRoot + "/");
-        }
-
-        private static void WriteFile(string relativePath, string content)
-        {
-            var fullPath = GameRoot + "/" + relativePath;
-            File.WriteAllText(fullPath, content.TrimStart('\n', '\r'));
         }
     }
 }

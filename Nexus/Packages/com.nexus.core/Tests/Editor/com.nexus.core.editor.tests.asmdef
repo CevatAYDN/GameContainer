@@ -2,6 +2,7 @@
     "name": "com.nexus.core.editor.tests",
     "rootNamespace": "Nexus.Editor.Tests.Editor",
     "references": [
+        "Unity.Profiling.Core",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner",
         "com.nexus.core",

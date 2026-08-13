@@ -211,12 +211,19 @@ namespace Nexus.Core.Services
                 try
                 {
                     await screen.OnOpeningAsync(args, LifetimeToken);
+                    // Dispose() may have destroyed the screen while the open lifecycle
+                    // was in flight (teardown during an open storm). A destroyed screen
+                    // is Unity fake-null; touching .gameObject would throw
+                    // MissingReferenceException.
+                    if (screen == null) return null;
                     screen.gameObject.SetActive(true);
                     await screen.OnOpenedAsync(LifetimeToken);
+                    if (screen == null) return null;
                 }
                 catch (Exception ex)
                 {
                     NexusRuntime.Logger?.LogException(ex);
+                    if (screen == null) return null; // already destroyed — nothing to clean up
                     if (instantiated)
                     {
                         SafeDestroy(screen.gameObject);
@@ -382,6 +389,11 @@ namespace Nexus.Core.Services
             {
                 NexusRuntime.Logger?.LogException(ex);
             }
+
+            // Dispose() may have destroyed the screen while the close lifecycle awaited
+            // above (teardown during an open/close storm). A destroyed screen is Unity
+            // fake-null; touching .gameObject would throw MissingReferenceException.
+            if (screen == null) return;
 
             lock (_lock)
             {
