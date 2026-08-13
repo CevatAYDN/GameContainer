@@ -192,7 +192,7 @@ namespace Nexus.Core
             _registeredLifecycles.Add(lifecycle);
         }
 
-        private void Awake()
+        protected virtual void Awake()
         {
             _mainThreadId = Thread.CurrentThread.ManagedThreadId;
             EnsureSupportComponents();

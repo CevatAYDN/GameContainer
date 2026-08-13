@@ -59,6 +59,25 @@ namespace Nexus.Core
         public bool StrictInjection { get; set; }
         internal readonly ConcurrentQueue<INexusService> _lazyServicesPendingInit = new();
         private readonly NexusDI _parent;
+        private object[] _fastSlots = new object[128];
+
+        private void CacheFastSlot(int typeId, object instance)
+        {
+            if (instance == null) return;
+            if (typeId >= _fastSlots.Length)
+            {
+                lock (_singletonLock)
+                {
+                    if (typeId >= _fastSlots.Length)
+                    {
+                        var newArray = new object[System.Math.Max(_fastSlots.Length * 2, typeId + 64)];
+                        System.Array.Copy(_fastSlots, newArray, _fastSlots.Length);
+                        _fastSlots = newArray;
+                    }
+                }
+            }
+            _fastSlots[typeId] = instance;
+        }
         private readonly ConcurrentDictionary<Type, bool> _crossBoundaryTypes = new();
         private readonly ConcurrentDictionary<Type, Binding> _bindings = new();
         // Named bindings (Strange-style named injection): key = (type, name).
@@ -1370,7 +1389,18 @@ namespace Nexus.Core
         }
 
         // ─── Public API: Resolve ───
-        public T Resolve<T>() where T : class => (T)Resolve(typeof(T));
+        public T Resolve<T>() where T : class
+        {
+            int typeId = TypeIdCache<T>.Id;
+            if (typeId < _fastSlots.Length)
+            {
+                var fastInstance = _fastSlots[typeId];
+                if (fastInstance != null) return (T)fastInstance;
+            }
+            var resolved = (T)Resolve(typeof(T));
+            CacheFastSlot(typeId, resolved);
+            return resolved;
+        }
         public T TryResolve<T>() where T : class => IsRegistered(typeof(T)) ? Resolve<T>() : null;
         /// <summary>Safely resolves a named binding; returns null when the name is not registered.</summary>
         public T TryResolve<T>(string name) where T : class => TryResolve(typeof(T), name) as T;
