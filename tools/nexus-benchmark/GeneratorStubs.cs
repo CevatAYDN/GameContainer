@@ -4,6 +4,7 @@
 // assembly inside Unity.
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
 
 namespace UnityEditor
@@ -43,9 +44,46 @@ namespace UnityEditor.Callbacks
 
 namespace Nexus.Editor
 {
+    /// <summary>
+    /// Mirrors the real editor AssemblyCatalog predicate (Nexus/Editor/Core/AssemblyCatalog.cs):
+    /// runtime-relevant assemblies = loaded, non-dynamic, non-framework, non-third-party,
+    /// non-editor, non-test assemblies. In the harness only the benchmark assembly qualifies,
+    /// so GenerateBinder() scans the REAL harness + compiled runtime types — the same universe
+    /// the codegen would scan inside Unity.
+    /// </summary>
     public static class AssemblyCatalog
     {
-        public static IEnumerable<Assembly> RuntimeAssemblies() => Array.Empty<Assembly>();
+        private static readonly string[] FrameworkPrefixes =
+        {
+            "System", "Microsoft", "Unity", "mscorlib", "mono", "nunit", "NUnit", "netstandard"
+        };
+
+        public static IEnumerable<Assembly> RuntimeAssemblies(bool includeTests = false)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.IsDynamic) continue;
+                string name = null;
+                try { name = assembly.GetName().Name; }
+                catch { continue; }
+                if (string.IsNullOrEmpty(name)) continue;
+
+                bool framework = false;
+                for (int i = 0; i < FrameworkPrefixes.Length; i++)
+                {
+                    if (name.StartsWith(FrameworkPrefixes[i], StringComparison.OrdinalIgnoreCase))
+                    {
+                        framework = true;
+                        break;
+                    }
+                }
+                if (framework) continue;
+                if (name.IndexOf(".editor", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                if (!includeTests && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0) continue;
+                yield return assembly;
+            }
+        }
+
         public static Type[] GetTypesSafe(Assembly assembly)
         {
             try { return assembly.GetTypes(); }
@@ -53,10 +91,16 @@ namespace Nexus.Editor
         }
     }
 
+    /// <summary>
+    /// Writes the generated binder to a temp directory so the harness can compile it with
+    /// Roslyn and boot it — the real editor writes into Assets/, which the harness must not
+    /// touch. The temp dir also lets the test verify the emitted file's contents directly.
+    /// </summary>
     public sealed class NexusEditorSettings
     {
-        public string BinderOutputPath => "Assets/Scripts/Nexus";
-        public string LinkXmlOutputPath => "Assets/Scripts/Nexus";
+        public static readonly string OutputRoot = Path.Combine(Path.GetTempPath(), "NexusCodeGenHarness");
+        public string BinderOutputPath => OutputRoot;
+        public string LinkXmlOutputPath => OutputRoot;
         public static NexusEditorSettings GetOrCreateSettings() => new NexusEditorSettings();
     }
 }

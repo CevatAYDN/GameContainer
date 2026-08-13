@@ -139,7 +139,7 @@ Raporun 4 maddesinden 3'ü önceki turlarda çözülmüştü; gerçek boşluk ol
 
 ## 🔧 Üçüncü Kod Review — Editor Plugin Denetimi (31 Temmuz 2026)
 
-**Kapsam:** `Editor/Plugins/*.cs` (15 plugin) + `Editor/Core/*` + `Editor/Inspector/*` + `Editor/LiveReload/*` + `Editor/CodeGen/*` — event subscription dengeleri, `_view.schedule` kullanımı, OnEnable/OnDisable/CreateView lifecycle uyumu, state reset.
+**Kapsam:** `Editor/Plugins/*.cs` (16 plugin) + `Editor/Core/*` + `Editor/Inspector/*` + `Editor/LiveReload/*` + `Editor/CodeGen/*` — event subscription dengeleri, `_view.schedule` kullanımı, OnEnable/OnDisable/CreateView lifecycle uyumu, state reset.
 
 ### Bulunan ve Düzeltilen Sorunlar
 
@@ -165,7 +165,7 @@ Raporun 4 maddesinden 3'ü önceki turlarda çözülmüştü; gerçek boşluk ol
 - **LiveReload:** `LiveReloadProcessor` (statik AssetPostprocessor; `catch { continue; }` satır 104 bilinçli system-boundary guard — kullanıcı property getter'ı fırlatabilir, tarama durmamalı).
 
 ### Sonuç
-15 plugin'in tamamı `INexusEditorPlugin.OnUpdate()` sözleşmesine uyuyor (recurring `_view.schedule` kalmadı — tek istisnalar tek seferlik `StartingIn` debounce/highlight desenleri). Tüm event abonelikleri CreateView/OnDisable veya flag-guard deseniyle dengeli. `NexusWindow` çift-kayıt bug'ı giderildi.
+16 plugin'in tamamı `INexusEditorPlugin.OnUpdate()` sözleşmesine uyuyor (recurring `_view.schedule` kalmadı — tek istisnalar tek seferlik `StartingIn` debounce/highlight desenleri). Tüm event abonelikleri CreateView/OnDisable veya flag-guard deseniyle dengeli. `NexusWindow` çift-kayıt bug'ı giderildi.
 
 **LSP Diagnostics:** Değiştirilen 4 dosya: **0 error**.
 **CHANGELOG:** Güncellendi — `CHANGELOG.md` Fixed bölümü (6 plugin + ExplorerPlugin + GameManagerPlugin + NexusWindow).

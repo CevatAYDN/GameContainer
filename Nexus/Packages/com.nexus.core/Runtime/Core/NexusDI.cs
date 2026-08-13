@@ -650,7 +650,13 @@ namespace Nexus.Core
                 // instantiation on every build target. The generated lambda performs the
                 // constructor calls directly (`new T(di.Resolve<A>(), ...)`), so readonly
                 // fields/immutability work and IL2CPP never falls back to ConstructorInfo.Invoke.
-                if (s_constructorFactories.TryGetValue(type, out var ctorFactory))
+                // The factory is skipped when explicit constructor overrides (fluent
+                // WithParameter) are present: the generated lambda resolves parameters from
+                // the container and would silently drop the user's supplied values. The
+                // reflection-with-overrides path is authoritative whenever the caller
+                // provided explicit constructor arguments.
+                if ((overrides == null || overrides.Count == 0)
+                    && s_constructorFactories.TryGetValue(type, out var ctorFactory))
                     return ctorFactory(_di);
 
                 var meta = MetadataCache.GetOrCreateInjectMetadata(type);
@@ -732,7 +738,12 @@ namespace Nexus.Core
                 var type = instance.GetType();
                 if (s_customInjectors.TryGetValue(type, out var injector))
                 {
+                    // A generated (AOT) injector replaces member injection, but [PostConstruct]
+                    // must still run — the reflection path always ran it, so skipping it here
+                    // would silently drop post-construction hooks on the AOT path. The metadata
+                    // is cached, so this is a one-time scan per type, not a per-resolve cost.
                     injector(instance, _di);
+                    RunPostConstructs(instance, MetadataCache.GetOrCreateInjectMetadata(type));
                     return;
                 }
 
@@ -1437,11 +1448,16 @@ namespace Nexus.Core
             try
             {
                 if (type == typeof(NexusDI)) return this;
-                if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type))
-                    return ExternalAdapter.Resolve(type);
 
+                // LOCAL bindings win over the external adapter: an explicit Bind here is a
+                // user-provided value and must never be silently shadowed by the adapter's
+                // fast path. The adapter is consulted only for types this container does not
+                // bind (the bridge contract). Parent-chain resolution stays last.
                 if (_bindings.TryGetValue(type, out var binding))
                     return ResolveAndNotifyLazy(type, binding);
+
+                if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type))
+                    return ExternalAdapter.Resolve(type);
 
                 if (_parent != null) return _parent.Resolve(type);
                 throw new InvalidOperationException($"Dependency of type {type.FullName} is not registered.");
@@ -1726,8 +1742,10 @@ namespace Nexus.Core
         // ─── Public API: Query ───
         public bool IsRegistered(Type type)
         {
-            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type)) return true;
+            // Local bindings first (an explicit Bind must never be shadowed by the adapter);
+            // adapter is a fallback for types this container does not bind.
             if (_bindings.ContainsKey(type)) return true;
+            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type)) return true;
             return _parent != null && _parent.IsRegistered(type);
         }
 
@@ -1740,8 +1758,10 @@ namespace Nexus.Core
         {
             if (type == null) return false;
             if (string.IsNullOrEmpty(name)) return IsRegistered(type);
-            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type)) return true;
             if (_namedBindings.ContainsKey((type, name))) return true;
+            // Adapter does not participate in NAMED lookup (it has no names); a local named
+            // binding must win before the parent chain is consulted.
+            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type)) return true;
             return _parent != null && _parent.IsRegistered(type, name);
         }
 
@@ -1881,6 +1901,10 @@ namespace Nexus.Core
         /// When present, <see cref="Injector.CreateInstance"/> uses it instead of reflection, so
         /// readonly/immutable constructor state works and IL2CPP never hits
         /// <c>ConstructorInfo.Invoke</c>. Field/property/method injection still runs afterwards.
+        /// Explicit constructor overrides (fluent <c>WithParameter</c>) take precedence over a
+        /// registered factory: if the caller supplied explicit constructor arguments,
+        /// <see cref="Injector.CreateInstance"/> falls back to the reflection-with-overrides
+        /// path instead of invoking the generated lambda.
         /// </summary>
         public static void RegisterConstructorFactory<T>(Func<NexusDI, T> factory) where T : class
         {

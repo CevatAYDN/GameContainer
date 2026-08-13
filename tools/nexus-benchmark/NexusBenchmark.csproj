@@ -125,6 +125,22 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Debug/NexusDebugHUD.cs" />
     <!-- AOT binder generator compile guard (editor-only file, stubbed UnityEditor APIs in GeneratorStubs.cs) -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Editor/CodeGen/NexusCodeGenerator.cs" />
+    <!-- Roslyn Source Generator (shipping assembly = Nexus.SourceGenerator~): the SAME source
+         file is compiled into the harness so CodeGenSuite CG2 drives the exact generator that
+         ships in the package (guards against drift between the two). -->
+    <Compile Include="../../Nexus/Packages/com.nexus.core/SourceGenerator~/NexusBinderGenerator.cs" />
+  </ItemGroup>
+
+  <!-- Roslyn ships inside the .NET SDK (no NuGet restore): CodeGenSuite compiles the emitted
+       binder in-process to prove the codegen output is valid C#. The path resolves from the
+       SDK root, so it works with any SDK version that has the Roslyn bincore layout. -->
+  <ItemGroup>
+    <Reference Include="Microsoft.CodeAnalysis">
+      <HintPath>$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp">
+      <HintPath>$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+    </Reference>
   </ItemGroup>
 
 </Project>

@@ -500,6 +500,9 @@ namespace NexusBench
             // Last: creates real Contexts and must not disturb earlier suites' assumptions
             // about active-context counts or trace-buffer state.
             _failures += ServiceGraphSuite.Run();
+            // Absolute last: the generated binder registers injectors and typed command
+            // dispatchers for every harness type; CodeGenSuite resets them in teardown.
+            _failures += CodeGenSuite.Run();
             return _failures;
         }
     }

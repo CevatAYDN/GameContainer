@@ -14,10 +14,24 @@
 > overload'ları, `NexusDI.CreateChildScope(configure)`, ters-oluşturma-sıralı disposal ve
 > **fluent zincir API** (`BindFluent<T>().To/AsSingleton/AsScoped/AsTransient/AsSingle/
 > AsCached/AsImplementedInterfaces/AndSelf/WithParameter`) —
-> `tools/nexus-benchmark/LifetimeScopeSuite.cs` (LT1–LT9) + `NewFeatureSuite.cs` (FL1–FL7)
-> ile kanıtlandı. Kalan Faz 1 işleri: `IFactory<T>` tamamlama, prefab component injection.
+> `tools/nexus-benchmark/LifetimeScopeSuite.cs` (LT1–LT9) + `NewFeatureSuite.cs` (FL1–FL7,
+> SF1–SF5, CF1–CF4) ile kanıtlandı. Kalan Faz 1 işleri: `IFactory<T>` tamamlama, prefab
+> component injection.
 > **Faz 2 codegen ayağı uygulandı** (`NexusCodeGenerator` → `NexusDI.RegisterConstructorFactory<T>`,
-> CF1–CF3); kabul kapısı: Unity IL2CPP build doğrulaması. **Faz 4 uygulandı**
+> CF1–CF4, CF5); harness kabul kapısı **CG1 + CG2 ile kapatıldı** (2026-08-13): gerçek
+> `NexusCodeGenerator` çalıştırılıp ürettiği binder Roslyn ile derleniyor ve uçtan uca boot
+> ediliyor (CG1); aynı kapılar **Roslyn Source Generator** (`NexusBinderGenerator`,
+> `com.nexus.core/SourceGenerator~`) için de açıldı — ürettiği binder `CSharpGeneratorDriver`
+> ile derleniyor, boot ediliyor ve uçtan uca resolve ediliyor (CG2, geçerli-derleme + başvurulan
+> derleme yollarında). Bu turda ayrıca kodgen'in gerçek hataları düzeltildi: compiler-generated
+> closure tipleri (`<>c__DisplayClass*`) ve non-visible tipler (private/internal nested) artık
+> binder'a emite edilmiyor (CS1001/CS0122); `WithParameter` override'ları kayıtlı ctor factory
+> varken artık sessizce yutulmuyor (CF4); `[PostConstruct]` kayıtlı injector varken artık
+> atlanmıyor (runtime garantisi, CG1/CG2 fixture'ları); SG, metadata (başvurulan) tipler için
+> injector üretmiyor — Roslyn metadata `GetMembers()` private/internal üyeleri gizlediği için
+> kısmi injector sessiz bozulma yaratırdı; her derleme kendi binder'ını üretir.
+> Kalan kapı: **Unity IL2CPP build doğrulaması** (`tools/unity-verify`, Unity makinesi gerektirir;
+> Mode B'de SG binder'ı da doğrulanır). **Faz 4 uygulandı**
 > (`ISignalFilter<T>` ref-based pipeline, SF1–SF5).
 > **✅ Harness doğrulaması tamamlandı (2026-08-13):** `dotnet` engeli çözüldü (kökteki
 > bozukluk: başarısız bir servicing geçişi 10.0.11 bileşen setini sıfırlamış — hostfxr, runtime,
@@ -25,8 +39,8 @@
 > çözüm: sağlam sürümlerin (10.0.9/9.0.16/8.0.27) junction ağacı olan `~/.dotnet-fixed` +
 > kopyalanan muxer). Koşu: `DOTNET_ROOT` yok — `~/.dotnet-fixed/dotnet.exe` ile
 > `build tools/nexus-benchmark -c Release` → **tüm suite'ler yeşil**: LT1–LT9, FL1–FL7,
-> SF1–SF5, CF1–CF3, 50/50 Architecture Stress, GCAudit, ServiceGraph, Fuzz, CrossThread,
-> TeardownLeak, FixVerify, Evidence. Bu turda ayrıca tespit edilip düzeltildi: harness
+> SF1–SF5, CF1–CF4, CF5, CodeGen (CG1 + CG2), 50/50 Architecture Stress, GCAudit, ServiceGraph,
+> Fuzz, CrossThread, TeardownLeak, FixVerify, Evidence. Bu turda ayrıca tespit edilip düzeltildi: harness
 > `NEXUS_DEBUG` tanımı gerçek tracing ile çelişiyordu (AsyncLocal set + TraceEvent
 > event başına ~896 B tahsis ediyor — tüm 0-GC audit ailesi bu yüzden kırmızıydı; E5 ve
 > Stress-27 zaten compiled-out kontratını test ediyor) — define kaldırıldı, stub'lar
@@ -104,9 +118,12 @@
 | UniTask interop | ❌ | ✅ | ❌ | ❌ | E7 |
 | Göç köprüsü (Zenject) | — | ❌ | ❌ | ⚠️ doküman var, araç yok | E1 (yanlış doküman!) |
 
-**Okuma:** Nexus StrangeIoC'u kapsıyor, Zenject'in çoğunu kapsıyor (göç köprüsü + araçlar eksik),
-VContainer'a karşı API ergonomisi (E2-E4) ve codegen (E5) eksik. VContainer'ın API
-yüzeyiyle parite sağlanmadan "yerini alma" iddiası savunulamaz.
+**Okuma:** Bu matris Faz 1/2/4 **öncesi** başlangıç durumudur; kapatılan hücreler için güncel,
+kanıt-atıflı durum **§9 Düzeltilmiş Rekabet Matrisi**'nde. Nexus StrangeIoC'u kapsıyor,
+Zenject'in çoğunu kapsıyor (göç köprüsü + araçlar eksik), VContainer'a karşı API ergonomisi
+(E2-E4) ve codegen (E5) Faz 1/2/4'te kapatıldı; kalan: `IFactory<T>`, prefab injection,
+Unity IL2CPP build kapısı. "Yerini alma" iddiası ancak Faz 1-2-5-7 birlikte tamamlanınca
+savunulabilir.
 
 ---
 
@@ -151,19 +168,37 @@ yüzeyiyle parite sağlanmadan "yerini alma" iddiası savunulamaz.
   başına hiçbir şey kaydetmez.
 - ⏳ `IFactory<T>` tamamlama; `Container.Instantiate(prefab)` + prefab component injection.
 - ✅ Yeni harness suite'leri: `LifetimeScopeSuite` (LT1–LT9), `NewFeatureSuite` (FL1–FL7,
-  SF1–SF5, CF1–CF3). Kalan: `FactorySuite`, `PrefabInjectionSuite`.
+  SF1–SF5, CF1–CF4, CF5), `CodeGenSuite` (CG1 + CG2). Kalan: `FactorySuite`,
+  `PrefabInjectionSuite`.
 
 ### Faz 2 — AOT Constructor Fabrikaları (3-4 hafta)
 - ✅ **Önce:** `NexusCodeGenerator` ctor'lar için `NexusDI.RegisterConstructorFactory<T>`
   üretiyor (tek public ctor veya tek `[Inject]`/`[Construct]` işaretli ctor; değer-tipli
-  parametre ve generic tanımlar reflection'a düşer). Runtime tarafı
-  `ResolveConstructorParameter<T>` ile strict/warn semantiğini birebir koruyor (CF1–CF3).
-- **Sonra (stratejik):** Roslyn Source Generator'a geçişi değerlendir — tek sınıfta
-  ctor fabrikası + assembly-scan bypass + `[Inject]` setter üretimi
-  (`docs/REFACTOR_PLAN.md` 3.1/3.3 ile aynı hedef). SG'ye geçiş büyük iş; editor-time
-  codegen çalışıyorsa acele etmeyin.
-- Kabul: Unity IL2CPP build doğrulaması (`tools/unity-verify`), harness'ta
-  AOT-simüle test.
+  parametre, generic tanımlar, compiler-generated ve non-visible tipler reflection'a düşer).
+  Runtime tarafı `ResolveConstructorParameter<T>` ile strict/warn semantiğini birebir
+  koruyor (CF1–CF4; CF4 = `WithParameter` override'ının factory'ye üstünlüğü).
+  **CG1 (2026-08-13):** gerçek kodgen çalıştırılıp ürettiği binder Roslyn ile derleniyor ve
+  boot ediliyor — kodgen çıktısının geçerli C# olduğu harness içinde kanıtlanıyor.
+- ✅ **Roslyn Source Generator'a geçiş değerlendirildi ve uygulandı** (2026-08-13):
+  `NexusBinderGenerator` (`SourceGenerator~/NexusBinderGenerator.cs`, Roslyn **4.10**'a
+  pinli — Unity 6000.5'in derleyicisi; netstandard2.0, paket içinde `SourceGenerators~/`
+  olarak dağıtılıyor). CG1 kapılarını birebir korur: görünürlük kapısı, compiler-generated
+  atlama, değer-tipli parametre atlama, all-or-nothing injector, `WithParameter` üstünlüğü.
+  Fark (bilinçli): injector/clearer **yalnızca geçerli derleme** tipleri için üretilir;
+  başvurulan (metadata) tipler yalnızca ctor fabrikası + dispatcher alır — Roslyn metadata
+  `GetMembers()` private/internal üyeleri gizler, kısmi injector reflection yolunu sessizce
+  devre dışı bırakırdı. Her asmdef kendi derlemesinde kendi binder'ını üretir.
+  **CG2 (2026-08-13):** SG'nin ürettiği binder `CSharpGeneratorDriver` ile derleniyor, boot
+  ediliyor ve uçtan uca resolve ediliyor (geçerli-derleme source yolu + başvurulan derleme
+  yolu; chain-walk base injector, `[PostConstruct]`, `WithParameter` üstünlüğü dahil).
+  **Yan düzeltmeler:** kayıtlı (AOT) injector varken `[PostConstruct]` artık çalışıyor
+  (runtime garantisi); `NexusDI` audit'inde `ExternalAdapter` yerel binding'leri sessizce
+  gölgeliyordu (CF5 — yerel binding artık kazanır, adapter yalnızca delegasyonu sahiplenir).
+- Kabul: Unity IL2CPP build doğrulaması (`tools/unity-verify`, Unity makinesi). Harness
+  ayağı kapandı: CG1 (editor codegen) + CG2 (Source Generator) üretilen binder'ları
+  derleyip boot ediyor (Roslyn, SDK içinden — NuGet bağımlılığı yok). Unity tarafında
+  editör binder'ı varsayılan dört adımlık pipeline ile, SG binder'ı `README`'deki Mode B
+  ile doğrulanır.
 
 ### Faz 3 — Ekosistem Köprüleri (4-6 hafta)
 - UniTask köprüsü: `#if NEXUS_UNITASK` (çekirdeğe opsiyonel) veya `com.nexus.unitask`
@@ -180,7 +215,8 @@ yüzeyiyle parite sağlanmadan "yerini alma" iddiası savunulamaz.
   (SF1–SF5). Mevcut object-tabanlı `ISignalInterceptor` korunur; kayıtlıyken tek box
   davranışı belgelidir.
 - ✅ İptal zinciri + sıra testleri (`NewFeatureSuite` SF1, SF4).
-- ⏳ Kabul kalan: harness `GCAuditSuite`'te filter varken 0 B ölçümü (dotnet onarılınca).
+- ✅ Kabul: `GCAuditSuite` dahil tüm harness yeşil (dotnet engeli `~/.dotnet-fixed` ile aşıldı;
+  filter varken 0 B davranışı SF1–SF5 + GCAudit'te doğrulanıyor).
 
 ### Faz 5 — Modüler Paketleme (v1.0 öncesi, 4-6 hafta)
 - Ayrım: `com.nexus.di` → `com.nexus.signals` → `com.nexus.mvcs` →
@@ -230,7 +266,11 @@ yüzeyiyle parite sağlanmadan "yerini alma" iddiası savunulamaz.
    → Öneri: **B** çekirdek olarak (Faz 1-2), dönüştürücü ile (Faz 7); tam A katmanı yalnızca
    Zenject için ve v1.1+ (en büyük pazar, en büyük maliyet). VContainer/StrangeIoC için
    doküman + örnek yeterli.
-2. **Roslyn SG vs editor-time codegen** (Faz 2) — önce editor-time, SG ayrı proje.
+2. ~~Roslyn SG vs editor-time codegen~~ (Faz 2) — **karar verildi (2026-08-13): ikisi de**.
+   Editor-time codegen (reflection ile tüm derlemeleri gören) varsayılan üretim yolu; Roslyn
+   SG (`SourceGenerator~/NexusBinderGenerator.cs`) ayrı proje olarak uygulandı, her derleme
+   için kendi binder'ını üretir, pakete `SourceGenerators~/` olarak dağıtılır (Unity IL2CPP
+   kapısı Mode B'de SG'yi doğrular). Tek dosya kuralı: iki binder aynı derlemede bulunamaz.
 3. **Paket bölme zamanı** (Faz 5) — v1.0 öncesi önerilir.
 4. **CI bütçesi** (Faz 0) — GitHub ücretli plan mı, self-hosted runner mı?
 
@@ -242,7 +282,7 @@ yüzeyiyle parite sağlanmadan "yerini alma" iddiası savunulamaz.
 |---|---|---|---|
 | 0 — Doğruluk & hijyen | 1 hafta | Yüksek (güven) | ✅ doküman tutarsızlıkları düzeltildi (E1, STRANGE_COMPARISON, canonical, quickstart); kalan: CI kararı, Unity test arşivi |
 | 1 — API + Scope | 2-3 hafta | Yüksek (VContainer paritesi) | ✅ çekirdek + fluent zincir uygulandı (LT1–LT9, FL1–FL7); ⏳ kalan: IFactory, prefab injection |
-| 2 — AOT ctor fabrikası | 3-4 hafta | Yüksek (immutability iddiası) | ✅ codegen + runtime uygulandı (CF1–CF3); ⏳ kabul: IL2CPP build doğrulaması |
+| 2 — AOT ctor fabrikası | 3-4 hafta | Yüksek (immutability iddiası) | ✅ codegen + runtime uygulandı (CF1–CF5) + **Roslyn Source Generator** (CG1 + CG2 binder derleme/boot); ⏳ kalan: Unity IL2CPP build koşusu (`tools/unity-verify`, Unity makinesi) |
 | 3 — Ekosistem köprüleri | 4-6 hafta | Orta-yüksek (adoption) | — |
 | 4 — Sinyal filtresi | 2-3 hafta | Yüksek (koşulsuz 0-GC) | ✅ `ISignalFilter<T>` uygulandı (SF1–SF5); ✅ GCAudit dahil tüm harness yeşil |
 | 5 — Modüler paketleme | 4-6 hafta | Yüksek (CTO kabulü) | v1.0 öncesi |
@@ -252,3 +292,35 @@ yüzeyiyle parite sağlanmadan "yerini alma" iddiası savunulamaz.
 **90 günlük gerçekçi hedef:** Faz 0-1-4 tamam (≈7-8 hafta), Faz 2'ye başlanmış,
 Faz 5 kararı alınmış. "Üç framework'ün yerini alma" iddiası ancak Faz 1-2-5-7 birlikte
 tamamlanınca savunulabilir.
+
+---
+
+## 9. Düzeltilmiş Rekabet Matrisi (2026-08-13, ff0f1c9 sonrası durum)
+
+Faz 1/2/4 uygulandıktan sonraki **güncel** karşılaştırma. §3'teki matris Faz öncesi
+boşluk analizidir; bu bölüm kapatılan hücreleri ve **önceki raporlardaki hatalı
+iddiaların düzeltmelerini** kanıt atıflarıyla verir. Harness kanıtı:
+`tools/nexus-benchmark` — 26 yeni test (LT1–LT9, FL1–FL7, SF1–SF5, CF1–CF5) + CodeGenSuite
+CG1 + CG2; tam pipeline çıkış kodu 0.
+
+| Yetenek | Nexus Core | VContainer | Zenject | StrangeIoC |
+|---|---|---|---|---|
+| Constructor injection | ✅ reflection + AOT factory (`new T(...)`, CF1–CF5, CG1 + CG2 — editor codegen ve Source Generator binder'ları derlenip boot ediliyor) | ✅ IL emit / expression tree (dış kaynak) | ✅ reflection + cache (dış kaynak) | ✅ `[Construct]` ile işaretlenmiş ctor — **resmî doküman**: "Perform constructor or setter injection" + "Tag your preferred constructor". Önceki raporlardaki "❌ Yok" iddiası **hatalı** |
+| `readonly`/immutable ctor state | ✅ AOT factory ctor üzerinden; field injection için destek yok (dokümante sınır) | ✅ | ✅ | ⚠️ yalnızca ctor yolu; setter/field injection readonly'e dokunamaz |
+| Lifetime scopes | ✅ `Lifetime.Singleton/Scoped/Transient` + `CreateChildScope` (LT1–LT9) | ✅ | ✅ | ⚠️ context düzeyi; gerçek child-scope yaşam döngüsü yok |
+| Ters sıralı dispose | ✅ `_resolvedSingletonOrder`, LT7 kanıtı | ✅ | ✅ | ❌ |
+| Sinyal bus + middleware | ✅ entegre 0-GC `ISignalFilter<T>` (SF1–SF5) | ❌ dahili yok — MessagePipe öneriliyor (resmî doküman) | ✅ sınıf/struct sinyaller | ✅ tip-güvenli `Signal<T>` sınıfları — **string/Enum DEĞİL**; string olan yalnızca eski `EventDispatcher`. Önceki raporlardaki "String/Enum" iddiası **yanıltıcı** |
+| Fluent binding | ✅ `BindFluent<T>().To/AsSingleton/AsScoped/AsTransient/AsSingle/AsCached/AsImplementedInterfaces/AndSelf/WithParameter` (FL1–FL7) | ✅ | ✅ | ✅ `Bind<X>().To<Y>().ToSingleton()/ToValue()/ToName()/CrossContext()` zinciri — önceki raporlardaki "❌ Yok" iddiası **hatalı** (Strange'inki opsiyon zinciri; VContainer/Zenject kadar zengin değil) |
+| Editor/teşhis araçları | ✅ 16 plugin + Scene overlay + headless analyzer | ⚠️ Diagnostics Window var (bağımlılık grafiği) — "❌ Yok" iddiası **hatalı**; 16 plugin'lik suite değil | ⚠️ object-graph görselleştirmesi kaldırıldı (Zenject ReleaseNotes); debug penceresi sınırlı | ❌ |
+| CI mimari kapısı | ✅ `NexusArchitectureAnalyzer.RunHeadless` — `EditorApplication.Exit(0/1)` | ❌ | ❌ | ❌ |
+| Kanıt durumu | ✅ 26 yeni test (LT9+FL7+SF5+CF5) + CG1+CG2 derleme/boot + tam pipeline exit 0 | — | — | — |
+
+**Notlar:**
+- VContainer/Zenject/StrangeIoC sütunlarındaki "dış kaynak" işaretleri, bu repo dışından
+teyit edilen olgulardır (resmî dokümanlar/ReleaseNotes). §6'daki dürüstlük kuralı gereği
+**karşılaştırmalı süre/GC sayıları bu matriste yayınlanmamaktadır** — Faz 6'da aynı makinede
+ölçülmeden hiçbir iddia sayısallaştırılmaz.
+- "Nexus VContainer seviyesini aşmıştır" sonucu, matrisin yukarıdaki düzeltilmiş hücreleriyle
+değerlendirilmelidir: özellikler gerçek ve testli, ama rakip framework'lerin hatalı "yok"
+olarak işaretlenen özellikleri (Strange ctor injection, VContainer diagnostics, Strange fluent
+zinciri) sayılmazsa sonuç daha ölçülü yazılmalıdır.

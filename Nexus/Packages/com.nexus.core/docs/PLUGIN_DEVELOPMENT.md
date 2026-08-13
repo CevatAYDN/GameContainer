@@ -37,7 +37,7 @@ public interface INexusEditorPlugin
 Before submitting a new plugin or refactor, verify:
 
 - [ ] Extends `NexusEditorPlugin` (not just bare `INexusEditorPlugin`).
-- [ ] `Id` is unique across all 15 plugins (e.g. `"Dashboard"`, `"Tracer"`, `"GameManager"`).
+- [ ] `Id` is unique across all 16 plugins (e.g. `"Dashboard"`, `"Tracer"`, `"GameManager"`).
 - [ ] `DisplayName` uses `NexusLang.Get("key")` for localization.
 - [ ] `Order` is specified (e.g. 0 for Dashboard, 1 for Wizard, 6 for GameManager).
 - [ ] `CreateView()` returns a non-null `VisualElement` tree.

@@ -878,9 +878,11 @@ namespace NexusBench
 
             // Positive control for the required path: a REQUIRED dep must still emit di.Resolve.
             // Without this, a future generator change flipping everything to TryResolve would
-            // silently turn required deps nullable while this test still passed.
+            // silently turn required deps nullable while this test still passed. The cache-field
+            // name follows the current generator format (keyed by declaring type so shadowed
+            // base/derived fields cannot collide).
             bool requiredStillResolves = text.Contains(
-                "s_f_Game_GameCommand__model.SetValue(instance, di.Resolve<Game.GameModel>());");
+                "s_f_Game_GameCommand_Game_GameCommand__model.SetValue(instance, di.Resolve<Game.GameModel>());");
 
             bool ok = saveThrottlerInjects >= 2 && saveThrottlerClears >= 2
                 && networkValidatorTryResolve && tableProviderTryResolve && noResolveForOptional

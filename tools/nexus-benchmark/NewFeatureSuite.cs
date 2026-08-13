@@ -50,6 +50,31 @@ namespace NexusBench
             public void Dispose() { Disposed = true; }
         }
 
+        // ─── Adapter-priority fixtures (CF5) ───
+        public sealed class ExternalAdapterDep { }
+        public sealed class ExternalBridgeValue { public static readonly ExternalBridgeValue Instance = new ExternalBridgeValue(); }
+
+        private sealed class ClaimingAdapter : IDependencyAdapter
+        {
+            public readonly object BridgeValue = new ExternalBridgeValue();
+            public int IsRegisteredCalls;
+            public int ResolveCalls;
+
+            public bool IsRegistered(Type type)
+            {
+                IsRegisteredCalls++;
+                return type == typeof(ExternalAdapterDep) || type == typeof(ExternalBridgeValue);
+            }
+
+            public object Resolve(Type type)
+            {
+                ResolveCalls++;
+                return BridgeValue;
+            }
+
+            public void Inject(object instance) { }
+        }
+
         // ─── Filter fixtures ───
         public struct FilterSignal { public int Value; }
         public struct CancelSignal { public int Value; }
@@ -94,6 +119,8 @@ namespace NexusBench
             Test_CtorFactory_TakesPrecedenceOverReflection();
             Test_CtorFactory_ReadonlyState_ResolvesParentDepFromChildScope();
             Test_CtorFactory_ClearedByNexusRuntime_Reset();
+            Test_CtorFactory_WithParameter_OverrideWins();
+            Test_ExternalAdapter_DoesNotShadowLocalBinding();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -537,6 +564,74 @@ namespace NexusBench
                 try { NexusRuntime.Reset(); } catch (Exception ex) { Console.WriteLine($"[NewFeature] NexusRuntime.Reset teardown: {ex.Message}"); }
             }
             Report("CF3. CtorFactory_ClearedByNexusRuntime_Reset", ok, detail);
+        }
+
+        private static void Test_CtorFactory_WithParameter_OverrideWins()
+        {
+            // A factory is registered for the type (exactly what the AOT binder emits), but the
+            // fluent WithParameter value must still win: explicit constructor arguments take
+            // precedence over the generated lambda's container resolution. Regression for the
+            // silent-drop bug where the factory path bypassed ParameterOverrides entirely.
+            NexusDI.RegisterConstructorFactory<CtorDep>(di => new CtorDep(999, di.Resolve<FluentDep>()));
+            var container = new NexusDI();
+            bool ok = false;
+            string detail;
+            try
+            {
+                container.BindFluent<FluentDep>().AsScoped();
+                var manual = new FluentDep();
+                container.BindFluent<CtorDep>().To<CtorDep>().AsTransient().WithParameter<FluentDep>(manual);
+                var dep = container.Resolve<CtorDep>();
+                bool overrideWon = ReferenceEquals(dep.Dep, manual);
+                bool factoryDropped = dep.Dep != null; // override value, not container resolution
+                ok = overrideWon && factoryDropped;
+                detail = $"overrideShared={overrideWon} depSet={factoryDropped} (factory would resolve the container's FluentDep instead)";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { container.Dispose(); } catch (Exception ex) { Console.WriteLine($"[NewFeature] container.Dispose teardown: {ex.Message}"); }
+            }
+            Report("CF4. CtorFactory_WithParameter_OverrideWins", ok, detail);
+        }
+
+        private static void Test_ExternalAdapter_DoesNotShadowLocalBinding()
+        {
+            // Regression: the external-adapter fast path used to be consulted BEFORE local
+            // bindings, so an explicit Bind on a type the adapter claims was silently
+            // shadowed — the adapter's value won and the local binding was unreachable.
+            var adapter = new ClaimingAdapter();
+            var container = new NexusDI { ExternalAdapter = adapter };
+            bool ok = false;
+            string detail;
+            try
+            {
+                container.Bind<ExternalAdapterDep>(Lifetime.Scoped);
+                int adapterCallsBefore = adapter.IsRegisteredCalls;
+                var a = container.Resolve<ExternalAdapterDep>();
+                var b = container.Resolve<ExternalAdapterDep>();
+                bool localWon = ReferenceEquals(a, b) && adapter.ResolveCalls == 0;
+                // A locally bound type is answered WITHOUT consulting the adapter at all.
+                bool adapterSkippedForLocal = adapter.IsRegisteredCalls == adapterCallsBefore;
+                // The bridge still works for unbound types.
+                var bridged = container.Resolve<ExternalBridgeValue>();
+                bool bridgeStillWorks = ReferenceEquals(bridged, adapter.BridgeValue) && adapter.ResolveCalls == 1;
+                bool registeredConsistent = container.IsRegistered(typeof(ExternalAdapterDep));
+                ok = localWon && adapterSkippedForLocal && bridgeStillWorks && registeredConsistent;
+                detail = $"localWon={localWon} adapterSkippedForLocal={adapterSkippedForLocal} bridgeStillWorks={bridgeStillWorks} registered={registeredConsistent} adapterResolveCalls={adapter.ResolveCalls}";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { container.Dispose(); } catch (Exception ex) { Console.WriteLine($"[NewFeature] container.Dispose teardown: {ex.Message}"); }
+            }
+            Report("CF5. ExternalAdapter_DoesNotShadowLocalBinding", ok, detail);
         }
 
         private static void Report(string name, bool ok, string detail)

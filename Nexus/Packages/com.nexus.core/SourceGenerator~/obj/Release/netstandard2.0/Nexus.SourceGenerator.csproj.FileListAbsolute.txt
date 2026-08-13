@@ -1,0 +1,11 @@
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\bin\Release\netstandard2.0\Nexus.SourceGenerator.deps.json
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\bin\Release\netstandard2.0\Nexus.SourceGenerator.dll
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\bin\Release\netstandard2.0\Nexus.SourceGenerator.pdb
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\obj\Release\netstandard2.0\Nexus.SourceGenerator.csproj.AssemblyReference.cache
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\obj\Release\netstandard2.0\Nexus.SourceGenerator.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\obj\Release\netstandard2.0\Nexus.SourceGenerator.AssemblyInfoInputs.cache
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\obj\Release\netstandard2.0\Nexus.SourceGenerator.AssemblyInfo.cs
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\obj\Release\netstandard2.0\Nexus.SourceGenerator.csproj.CoreCompileInputs.cache
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\obj\Release\netstandard2.0\Nexus.SourceGenerator.sourcelink.json
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\obj\Release\netstandard2.0\Nexus.SourceGenerator.dll
+C:\Users\wwwla\Documents\Github\GameContainer\Nexus\Packages\com.nexus.core\SourceGenerator~\obj\Release\netstandard2.0\Nexus.SourceGenerator.pdb
