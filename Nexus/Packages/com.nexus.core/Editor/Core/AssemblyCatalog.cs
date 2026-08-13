@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using UnityEngine;
+using Nexus.Core;
 
 namespace Nexus.Editor
 {
@@ -19,76 +20,26 @@ namespace Nexus.Editor
     /// The runtime-side equivalent (player builds cannot reference this editor module)
     /// lives in <see cref="Nexus.Core.Context"/> (<c>GetDefaultScanAssemblies</c> /
     /// <c>GetTypesSafely</c>).
-    /// </summary>
     public static class AssemblyCatalog
     {
-        private static readonly string[] FrameworkPrefixes =
-        {
-            "System", "Microsoft", "Unity", "mscorlib", "mono", "nunit", "NUnit", "netstandard"
-        };
-
-        // Unity-bundled / third-party assemblies that are not game code.
-        // Kept deliberately complete: every prefix here was observed spamming the DI
-        // validation with "metadata inspection failed" noise (Bee = Unity's build
-        // driver, NiceIO = Bee's path API, GLTFast/Google.Protobuf = precompiled
-        // packages, I18N = BCL locale codecs, AndroidPlayerBuildProgram = Android
-        // build pipeline). Types in these assemblies are never DI-injected.
-        private static readonly string[] ThirdPartyPrefixes =
-        {
-            "Newtonsoft", "Grpc", "ExCSS", "log4net", "TextMateSharp", "JetBrains",
-            "Onigwrap", "unityplastic", "Codice", "Plastic", "MCPForUnity",
-            "Bee", "NiceIO", "GLTFast", "Google.Protobuf", "I18N", "AndroidPlayerBuildProgram",
-            "PlayerBuildProgram", "ScriptCompilation", "WinPlayerBuildProgram", "BuildProgram"
-        };
-
         /// <summary>All assemblies currently loaded in the editor domain.</summary>
         public static IEnumerable<Assembly> LoadedAssemblies
             => UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies();
 
         /// <summary>True for framework/runtime assemblies that no Nexus tool should scan.</summary>
-        public static bool IsFrameworkAssembly(string name)
-        {
-            if (string.IsNullOrEmpty(name)) return true;
-            foreach (var prefix in FrameworkPrefixes)
-            {
-                if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return true;
-            }
-            return false;
-        }
+        public static bool IsFrameworkAssembly(string name) => NexusAssemblyPolicy.IsFrameworkAssembly(name);
 
         /// <summary>True for known third-party assemblies that are not game code.</summary>
-        public static bool IsThirdPartyAssembly(string name)
-        {
-            if (string.IsNullOrEmpty(name)) return false;
-            foreach (var prefix in ThirdPartyPrefixes)
-            {
-                if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)) return true;
-            }
-            return false;
-        }
+        public static bool IsThirdPartyAssembly(string name) => NexusAssemblyPolicy.IsThirdPartyAssembly(name);
 
         /// <summary>True for Unity test assemblies (case-insensitive "tests" in the name).</summary>
-        public static bool IsTestAssembly(string name)
-            => !string.IsNullOrEmpty(name) && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0;
+        public static bool IsTestAssembly(string name) => NexusAssemblyPolicy.IsTestAssembly(name);
 
-        /// <summary>
-        /// True for editor-only assemblies (case-insensitive ".editor" in the name,
-        /// e.g. com.nexus.core.editor). The runtime binder must never reference these.
-        /// </summary>
-        public static bool IsEditorAssembly(string name)
-            => !string.IsNullOrEmpty(name) && name.IndexOf(".editor", StringComparison.OrdinalIgnoreCase) >= 0;
+        /// <summary>True for editor-only assemblies (case-insensitive ".editor" in the name).</summary>
+        public static bool IsEditorAssembly(string name) => NexusAssemblyPolicy.IsEditorAssembly(name);
 
         /// <summary>Safe simple-name accessor (never throws on corrupt assembly metadata).</summary>
-        public static string GetSimpleName(Assembly assembly)
-        {
-            if (assembly == null || assembly.IsDynamic) return null;
-            try { return assembly.GetName().Name; }
-            catch (Exception ex)
-            {
-                Debug.LogWarning($"[Nexus] Failed to read assembly name: {ex.Message}");
-                return null;
-            }
-        }
+        public static string GetSimpleName(Assembly assembly) => NexusAssemblyPolicy.GetSimpleName(assembly);
 
         /// <summary>
         /// The canonical "game-relevant" assembly universe: everything that is not a

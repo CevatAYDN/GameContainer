@@ -49,8 +49,6 @@ namespace Nexus.Editor
         private readonly Dictionary<string, Label> _tabLabels = new();
         private bool _uiCallbacksRegistered;
 
-        private HierarchyPlugin _hierarchyPlugin; // Keep reference to update trackers in Play Mode
-
         [MenuItem("Window/Nexus/Dashboard %#n")]
         public static void ShowWindow()
         {
@@ -266,7 +264,6 @@ namespace Nexus.Editor
         private void DiscoverPlugins()
         {
             _plugins.Clear();
-            _hierarchyPlugin = null;
             _discoveryFailed = false;
             _discoveryError = null;
 
@@ -296,11 +293,6 @@ namespace Nexus.Editor
                         continue;
                     plugin.Initialize(this);
                     foundPlugins.Add(plugin);
-
-                    if (plugin is HierarchyPlugin hp)
-                    {
-                        _hierarchyPlugin = hp;
-                    }
                 }
 
                 // Sort plugins by their predefined order
@@ -445,11 +437,6 @@ namespace Nexus.Editor
 
         private void OnScheduledUpdate()
         {
-            if (_activePlugin != null && _activePlugin.Id == "Hierarchy" && Application.isPlaying)
-            {
-                _hierarchyPlugin?.UpdateVisibleTrackers();
-            }
-
             // Forward to active plugin for lightweight polling updates
             try { _activePlugin?.OnUpdate(); }
             catch (Exception ex) { UnityEngine.Debug.LogWarning($"[Nexus] Plugin OnUpdate failed: {ex.Message}"); }

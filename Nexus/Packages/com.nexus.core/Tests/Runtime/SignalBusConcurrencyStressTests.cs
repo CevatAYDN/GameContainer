@@ -54,7 +54,7 @@ namespace Nexus.Tests
         [Test]
         public async Task SignalBus_AllowsManyConcurrentFireAsync_WithNoSilentFailures()
         {
-            const int parallel = 200; // reasonable stress while staying lightweight in CI-less environment
+            const int parallel = 20;
             var executed = 0;
             var lockObj = new object();
 

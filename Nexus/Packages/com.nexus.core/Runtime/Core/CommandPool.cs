@@ -197,7 +197,11 @@ namespace Nexus.Core
         private void Cleanup(object command)
         {
             if (command != null)
+            {
+                if (command is IResettableCommand resettable)
+                    resettable.ResetState();
                 NexusDI.ClearInjectedReferences(command);
+            }
         }
 
         /// <summary>Clears all pooled instances.</summary>

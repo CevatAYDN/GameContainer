@@ -92,6 +92,14 @@ namespace Nexus.Editor
             base.OnDisable();
         }
 
+        public override void OnUpdate()
+        {
+            if (Application.isPlaying)
+            {
+                UpdateVisibleTrackers();
+            }
+        }
+
         public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
             => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
             {

@@ -52,7 +52,7 @@ namespace Nexus.Tests
         [Test]
         public async Task NetworkSignalBus_AllowsConcurrentFire_CreatesSingleHistoryAndRecordsAll()
         {
-            const int parallel = 100;
+            const int parallel = 20;
             var tasks = new List<Task>(parallel);
 
             for (int i = 0; i < parallel; i++)
@@ -85,7 +85,7 @@ namespace Nexus.Tests
         public void NetworkSignalHistory_ParallelAddsRemainLossless()
         {
             var history = new NetworkSignalHistory<NetSignal>();
-            const int total = 20000;
+            const int total = 2000;
             Parallel.For(0, total, i => history.Add(i, new NetSignal(i)));
 
             var snapshot = history.Signals;

@@ -139,7 +139,7 @@ namespace Nexus.Editor
             double now = EditorApplication.timeSinceStartup;
             if (s_cachedSceneRoots == null || now - s_lastRootCacheTime > RootCacheDuration)
             {
-                s_cachedSceneRoots = UnityEngine.Object.FindObjectsByType<Root>();
+                s_cachedSceneRoots = UnityEngine.Object.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
                 s_lastRootCacheTime = now;
             }
             return s_cachedSceneRoots;
