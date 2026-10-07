@@ -1,0 +1,57 @@
+# Base44 dev environment for the Nexus repository (com.nexus.core).
+#
+# This repo is a Unity 6 / C# framework, not a web application. The Unity editor
+# (6000.5.6f1) cannot run in this sandbox, so the runnable and verifiable artifact
+# here is the standalone .NET 10 benchmark harness in tools/nexus-benchmark: it
+# compiles the real runtime sources and asserts the framework's full contract
+# (0-GC hot paths, DI, contexts, services, storage, codegen, stress/fuzz suites).
+#
+#   harness -> one-shot job: builds the harness from the bind-mounted source and
+#              runs the full pipeline, writing its report to a shared volume
+#   preview -> nginx on host port 3000: serves the report viewer (the sandbox's
+#              user-facing entry point, since the project itself has no web UI)
+#
+# No third-party credentials are involved: the harness has no NuGet dependencies
+# and its ads/IAP/analytics adapters are in-repo mocks.
+#
+# Re-run the pipeline after changing runtime code:
+#   docker compose -f docker-compose.base44.yml run --rm harness
+
+name: nexus-dev
+
+volumes:
+  nexus-report:
+
+services:
+  harness:
+    image: mcr.microsoft.com/dotnet/sdk:10.0
+    working_dir: /src/tools/nexus-benchmark
+    volumes:
+      - ./:/src
+      - nexus-report:/report
+    environment:
+      - REPORT_DIR=/report
+    command: ["sh", "/src/tools/nexus-benchmark/preview/run-harness.sh"]
+    # One-shot job: no automatic restart, and it may exit non-zero on the build step.
+    restart: "no"
+
+  preview:
+    image: nginx:alpine
+    ports:
+      - "3000:80"
+    # The named volume is the web root and holds the harness report; the viewer page is
+    # bind-mounted over it so edits to preview/index.html show up on reload.
+    volumes:
+      - nexus-report:/usr/share/nginx/html
+      - ./tools/nexus-benchmark/preview/index.html:/usr/share/nginx/html/index.html:ro
+    depends_on:
+      harness:
+        condition: service_completed_successfully
+    restart: on-failure
+    healthcheck:
+      # Probes the viewer nginx actually serves, not just an open port.
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/index.html || exit 1"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 5s

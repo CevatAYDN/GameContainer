@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nexus — benchmark harness report</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel-2: #1c2129;
+    --line: #2b3440;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --ok: #3fb950;
+    --bad: #f85149;
+    --accent: #58a6ff;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.55 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 32px 20px 64px; }
+  header { border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 24px; }
+  h1 { font-size: 22px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); margin: 0; }
+  .sub code { color: var(--accent); }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-weight: 600; font-size: 13px; letter-spacing: .02em;
+    padding: 6px 12px; border-radius: 999px; margin: 0 0 14px;
+    border: 1px solid var(--line); background: var(--panel);
+  }
+  .badge.ok { color: var(--ok); border-color: rgba(63,185,80,.4); background: rgba(63,185,80,.08); }
+  .badge.bad { color: var(--bad); border-color: rgba(248,81,73,.4); background: rgba(248,81,73,.08); }
+  .badge.idle { color: var(--muted); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .stats { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 22px; }
+  .stat {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+    padding: 10px 14px; min-width: 132px;
+  }
+  .stat .k { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  .stat .v { font-size: 18px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 30px 0 12px; }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; }
+  tr:last-child td { border-bottom: 0; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; width: 90px; }
+  .suite { cursor: pointer; }
+  .suite:hover { background: var(--panel-2); }
+  .suite .name { font-weight: 500; }
+  .pill { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .pill.ok { color: var(--ok); border-color: rgba(63,185,80,.35); }
+  .pill.bad { color: var(--bad); border-color: rgba(248,81,73,.35); }
+  tr.tests { display: none; }
+  tr.tests.open { display: table-row; }
+  tr.tests td { background: #0f141a; padding: 0; }
+  .tests-inner { padding: 6px 12px 12px; }
+  .test { padding: 7px 0; border-bottom: 1px dashed var(--line); }
+  .test:last-child { border-bottom: 0; }
+  .test .tn { display: flex; gap: 8px; align-items: baseline; }
+  .test .detail { color: var(--muted); font-size: 12px; word-break: break-word; margin-top: 2px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .test.failed .tn { color: var(--bad); }
+  pre {
+    background: #0f141a; border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px; overflow: auto; max-height: 520px; margin: 0;
+    font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: #c9d1d9;
+  }
+  details > summary { cursor: pointer; color: var(--accent); padding: 4px 0; }
+  .env { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px;
+         font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); }
+  .note { color: var(--muted); font-size: 12px; margin-top: 26px; border-top: 1px solid var(--line); padding-top: 14px; }
+  .note code { background: var(--panel); padding: 2px 6px; border-radius: 4px; color: var(--accent); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Nexus Observable Architecture — benchmark harness</h1>
+    <p class="sub">The real <code>com.nexus.core</code> runtime sources, compiled and asserted on .NET 10.</p>
+  </header>
+
+  <div id="badge" class="badge idle"><span class="dot"></span><span>Loading report…</span></div>
+  <div id="stats" class="stats"></div>
+  <div id="env" class="env" hidden></div>
+
+  <h2>Suites</h2>
+  <div id="suites"><p class="sub">Loading…</p></div>
+
+  <h2>Raw run output</h2>
+  <details id="logbox" hidden>
+    <summary>Show console output (build.log / raw.log)</summary>
+    <h2 style="margin-top:16px">Build</h2>
+    <pre id="buildlog"></pre>
+    <h2>Harness run</h2>
+    <pre id="rawlog"></pre>
+  </details>
+
+  <p class="note">
+    Report written by the one-shot <code>harness</code> service. Re-run the pipeline after changing runtime code with
+    <code>docker compose -f docker-compose.base44.yml run --rm harness</code>, then reload this page.
+  </p>
+</div>
+
+<script>
+(function () {
+  // The harness job publishes the report into the same web root as this page.
+  var BASE = '';
+
+  function getText(name) {
+    return fetch(BASE + name, { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.text() : null; })
+      .catch(function () { return null; });
+  }
+
+  function esc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
+  // The harness prints its console log first and the --json document last, so the
+  // JSON starts at the first line that is exactly "{".
+  function splitReport(raw) {
+    if (!raw) return { json: null, log: '' };
+    var lines = raw.split('\n');
+    var start = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (lines[i].trim() === '{') { start = i; break; }
+    }
+    if (start < 0) return { json: null, log: raw };
+    var doc = null;
+    try { doc = JSON.parse(lines.slice(start).join('\n')); } catch (e) { doc = null; }
+    return { json: doc, log: lines.slice(0, start).join('\n') };
+  }
+
+  function setBadge(cls, text) {
+    var b = document.getElementById('badge');
+    b.className = 'badge ' + cls;
+    b.innerHTML = '<span class="dot"></span><span>' + esc(text) + '</span>';
+  }
+
+  function stat(k, v) {
+    return '<div class="stat"><div class="k">' + esc(k) + '</div><div class="v">' + esc(v) + '</div></div>';
+  }
+
+  function render(doc, log, exitcode, generatedAt) {
+    var failed = doc ? doc.failed : null;
+    var ok = exitcode === '0' && doc && doc.failed === 0;
+
+    if (!doc) {
+      setBadge('bad', exitcode === null ? 'No report found yet' : 'Report unreadable (exit ' + exitcode + ')');
+    } else {
+      setBadge(ok ? 'ok' : 'bad',
+        ok ? 'All suites passed' : (doc.failed + ' of ' + doc.totalTests + ' tests failed'));
+    }
+
+    document.getElementById('stats').innerHTML =
+      stat('Tests', doc ? doc.totalTests : '—') +
+      stat('Failed', doc ? doc.failed : '—') +
+      stat('Exit code', exitcode === null ? '—' : exitcode) +
+      stat('Suites', doc ? doc.suites.length : '—') +
+      stat('Finished (UTC)', generatedAt ? generatedAt : '—');
+
+    // The run header (runtime/OS/arch) is the harness lines before its first
+    // "[Nexus Benchmark] === <test> ===" marker.
+    var envLines = [];
+    log.split('\n').some(function (l) {
+      if (l.indexOf('[Nexus Benchmark] ===') === 0) return true;
+      if (l.indexOf('[Nexus Benchmark]') === 0) envLines.push(l);
+      return false;
+    });
+    if (envLines.length) {
+      var envEl = document.getElementById('env');
+      envEl.hidden = false;
+      envEl.textContent = envLines.join('\n').trim();
+    }
+
+    var host = document.getElementById('suites');
+    if (!doc || !doc.suites.length) {
+      host.innerHTML = '<p class="sub">No suite results in the report.</p>';
+    } else {
+      var html = '<table><thead><tr><th>Suite</th><th class="num">Tests</th><th class="num">Failed</th></tr></thead><tbody>';
+      doc.suites.forEach(function (s, i) {
+        var cls = s.failed === 0 ? 'ok' : 'bad';
+        html += '<tr class="suite" data-i="' + i + '">' +
+          '<td class="name">' + esc(s.name) + '</td>' +
+          '<td class="num"><span class="pill ' + cls + '">' + s.total + '</span></td>' +
+          '<td class="num"><span class="pill ' + cls + '">' + s.failed + '</span></td>' +
+          '</tr>';
+        html += '<tr class="tests" data-i="' + i + '"><td colspan="3"><div class="tests-inner">';
+        s.tests.forEach(function (t) {
+          html += '<div class="test' + (t.ok ? '' : ' failed') + '">' +
+            '<div class="tn"><span>' + (t.ok ? 'PASS' : 'FAIL') + '</span><span>' + esc(t.name) + '</span></div>' +
+            (t.detail ? '<div class="detail">' + esc(t.detail) + '</div>' : '') +
+            '</div>';
+        });
+        html += '</div></td></tr>';
+      });
+      html += '</tbody></table>';
+      host.innerHTML = html;
+
+      host.querySelectorAll('tr.suite').forEach(function (row) {
+        row.addEventListener('click', function () {
+          var t = host.querySelector('tr.tests[data-i="' + row.getAttribute('data-i') + '"]');
+          if (t) t.classList.toggle('open');
+        });
+      });
+    }
+
+    if (log || buildlog) {
+      document.getElementById('logbox').hidden = false;
+      document.getElementById('rawlog').textContent = log || '(empty)';
+    }
+  }
+
+  var buildlog = '';
+  Promise.all([
+    getText('raw.log'), getText('exitcode'), getText('generated-at.txt'), getText('build.log')
+  ]).then(function (res) {
+    var parsed = splitReport(res[0]);
+    var exitcode = res[1] === null ? null : String(res[1]).trim();
+    var generatedAt = res[2] === null ? '' : String(res[2]).trim();
+    buildlog = res[3] || '';
+    if (buildlog) {
+      document.getElementById('logbox').hidden = false;
+      document.getElementById('buildlog').textContent = buildlog;
+    }
+    render(parsed.json, parsed.log, exitcode, generatedAt);
+  });
+})();
+</script>
+</body>
+</html>

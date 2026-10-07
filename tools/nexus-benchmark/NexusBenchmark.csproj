@@ -63,6 +63,9 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ContextBuilder.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ContextData.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/DiValidationIssue.cs" />
+    <!-- NexusDI.ValidateBindings delegates to DiBindingValidator; without this file the
+         harness cannot compile the real NexusDI.cs. -->
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/DiBindingValidator.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/VersionedScriptableObject.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusRuntime.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusStaticState.cs" />
