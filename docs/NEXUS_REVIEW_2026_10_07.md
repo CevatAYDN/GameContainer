@@ -1,8 +1,9 @@
 # Nexus current commit review and improvement evidence — 7 October 2026
 
 Reviewed current commits `8c91403`, `94beec3`, `21a0b7b`, `3cd154b` and preserved
-their new runtime/editor capabilities. Fixes remain in the working tree; no commit,
-push or publication was performed. Scope: Unity 6 + UPM, mobile and PC foundation.
+their new runtime/editor capabilities. Verified fixes were committed and pushed as
+`f1b537adb0f6c22619753c888c0e5230e8cf4927`; no package release was published.
+Scope: Unity 6 + UPM, mobile and PC foundation.
 Nexus is an architecture framework; it does not supply every game's mechanics,
 art/assets, platform provider SDKs, multiplayer backend or production acceptance.
 
@@ -129,3 +130,4 @@ interruption; Windows IL2CPP; real provider/network integration; novice usabilit
 trials and representative genre games. Unity 6000.0 API branches have not been run in
 a separate 6000.0 editor. Current licensed execution is 6000.5.6f1. Next performance
 work should target transient resolve/build allocation and compare native workloads.
+[Prioritized next steps](NEXUS_NEXT_STEPS_2026_10_07.md) define the work and acceptance gates.
