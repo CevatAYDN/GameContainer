@@ -10,27 +10,43 @@ namespace Nexus.Editor.Inspector
     {
         public override void OnInspectorGUI()
         {
-            serializedObject.Update();
+            if (target == null) return;
+
+            try
+            {
+                serializedObject.Update();
+            }
+            catch
+            {
+                return;
+            }
 
             var view = (View)target;
             var viewType = view.GetType();
             var mediatorAttr = viewType.GetCustomAttribute<MediatorAttribute>();
 
-            EditorGUILayout.Space(5);
-            EditorGUILayout.LabelField("Nexus View Binding Inspector", EditorStyles.boldLabel);
+            string badge = mediatorAttr != null ? mediatorAttr.MediatorType.Name : "Unmediated View";
+            StatusType badgeType = mediatorAttr != null ? StatusType.Success : StatusType.Warning;
+            NexusInspectorGUI.DrawHeader(viewType.Name, "Nexus MVCS View Component", badge, badgeType);
 
+            // 1. Mediator Binding Card
+            NexusInspectorGUI.BeginCard("Mediator Binding");
             if (mediatorAttr != null)
             {
-                EditorGUILayout.HelpBox($"Bound Mediator: {mediatorAttr.MediatorType.Name}", MessageType.Info);
+                NexusInspectorGUI.DrawStatusRow("Bound Mediator", mediatorAttr.MediatorType.Name, StatusType.Success);
+                NexusInspectorGUI.DrawMessage($"When this GameObject activates, {mediatorAttr.MediatorType.Name} will be instantiated and bound to this view automatically.", StatusType.Info);
             }
             else
             {
-                EditorGUILayout.HelpBox($"Warning: No [Mediator(typeof(...))] attribute attached to '{viewType.Name}'. " +
-                                       "This view will bind to Context without a mediator.", MessageType.Warning);
+                NexusInspectorGUI.DrawMessage($"No [Mediator(typeof(...))] attribute declared on '{viewType.Name}'. " +
+                    "To bind a mediator, decorate your class: [Mediator(typeof(MyMediator))] public class " + viewType.Name + " : View { ... }", StatusType.Warning);
             }
+            NexusInspectorGUI.EndCard();
 
-            EditorGUILayout.Space(5);
+            // 2. Component Properties
+            NexusInspectorGUI.BeginCard("View Properties");
             DrawDefaultInspector();
+            NexusInspectorGUI.EndCard();
 
             serializedObject.ApplyModifiedProperties();
         }

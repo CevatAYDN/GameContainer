@@ -7,86 +7,148 @@ namespace Nexus.Editor.Inspector
     [CustomEditor(typeof(Root))]
     public class RootEditor : UnityEditor.Editor
     {
+        private SerializedProperty _contextDataProp;
+        private SerializedProperty _parentRootProp;
+        private SerializedProperty _isGlobalContextProp;
+        private SerializedProperty _autoBindGlobalParentProp;
+        private SerializedProperty _initializationPriorityProp;
+
+        private void OnEnable()
+        {
+            EnsureProperties();
+        }
+
+        private bool EnsureProperties()
+        {
+            if (target == null) return false;
+            try
+            {
+                _contextDataProp ??= serializedObject.FindProperty("contextData");
+                _parentRootProp ??= serializedObject.FindProperty("parentRoot");
+                _isGlobalContextProp ??= serializedObject.FindProperty("isGlobalContext");
+                _autoBindGlobalParentProp ??= serializedObject.FindProperty("autoBindGlobalParent");
+                _initializationPriorityProp ??= serializedObject.FindProperty("initializationPriority");
+                return _contextDataProp != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public override void OnInspectorGUI()
         {
-            serializedObject.Update();
+            if (target == null || !EnsureProperties()) return;
+
+            try
+            {
+                serializedObject.Update();
+            }
+            catch
+            {
+                return;
+            }
 
             var root = (Root)target;
             var data = root.ContextData;
             bool hasContext = root.Context != null;
             bool hasContextData = data != null;
             bool hasParent = root.ParentRoot != null;
-            bool hasAutoDiscovery = hasContextData && data.EnableAutoDiscovery;
+            bool isGlobal = root.IsGlobalContext;
 
-            EditorGUILayout.HelpBox("Root health", MessageType.None);
-            DrawStatusLine("Context data", hasContextData ? data.name : "Missing", hasContextData ? MessageType.Info : MessageType.Error);
-            DrawStatusLine("Parent root", hasParent ? root.ParentRoot.name : "None", hasParent ? MessageType.Info : MessageType.Warning);
-            DrawStatusLine("Context", hasContext ? "Bound" : "Not bound", hasContext ? MessageType.Info : MessageType.Error);
-            if (hasContextData)
-                DrawStatusLine("Discovery", hasAutoDiscovery ? "Auto discovery on" : "Manual registration expected", hasAutoDiscovery ? MessageType.Info : MessageType.Warning);
+            string badge = isGlobal ? "Global Root" : (hasContext ? "Bound" : "Scene Root");
+            StatusType badgeType = isGlobal ? StatusType.Success : (hasContext ? StatusType.Success : StatusType.Info);
+            NexusInspectorGUI.DrawHeader("Nexus Root", "Core Scene Context Anchor", badge, badgeType);
+
+            // 1. Health Status Overview
+            NexusInspectorGUI.BeginCard("Context Health");
+            NexusInspectorGUI.DrawStatusRow("Context Data", hasContextData ? data.name : "Missing", hasContextData ? StatusType.Success : StatusType.Error);
+            NexusInspectorGUI.DrawStatusRow("Parent Root", hasParent ? root.ParentRoot.name : (root.AutoBindGlobalParent ? "Auto-Global" : "None"), hasParent ? StatusType.Info : StatusType.Warning);
 
             if (Application.isPlaying)
             {
-                if (root.IsInitialized)
-                {
-                    EditorGUILayout.HelpBox("Status: Initialized and active", MessageType.Info);
-                }
-                else
-                {
-                    EditorGUILayout.HelpBox("Status: Starting up", MessageType.Warning);
-                }
+                NexusInspectorGUI.DrawStatusRow("Context Status", hasContext ? "Active & Bound" : "Not Bound", hasContext ? StatusType.Success : StatusType.Error);
+            }
+            NexusInspectorGUI.EndCard();
 
+            // 2. Configuration Card
+            NexusInspectorGUI.BeginCard("Configuration");
+            EditorGUILayout.PropertyField(_contextDataProp, new GUIContent("Context Data Asset", "ScriptableObject defining scope tags and discovery settings."));
+
+            if (!hasContextData)
+            {
+                NexusInspectorGUI.DrawMessage("Root requires a ContextData asset to initialize properly. Click below to create one instantly.", StatusType.Warning);
+                if (NexusInspectorGUI.DrawActionButton("✨ Create & Assign ContextData", StatusType.Success, 26))
+                {
+                    CreateAndAssignContextData(root);
+                }
+            }
+
+            if (_isGlobalContextProp != null)
+            {
+                EditorGUILayout.PropertyField(_isGlobalContextProp, new GUIContent("Is Global Root", "Marks this Root as a persistent cross-scene DontDestroyOnLoad Project Context."));
+            }
+
+            if (_autoBindGlobalParentProp != null && !isGlobal)
+            {
+                EditorGUILayout.PropertyField(_autoBindGlobalParentProp, new GUIContent("Auto-Bind Global Root", "Automatically attaches to NexusRuntime.GlobalRoot when no parent root exists in this scene."));
+            }
+
+            EditorGUILayout.PropertyField(_parentRootProp, new GUIContent("Explicit Parent Root", "Optional parent root in hierarchy."));
+            if (_initializationPriorityProp != null)
+            {
+                EditorGUILayout.PropertyField(_initializationPriorityProp, new GUIContent("Init Priority", "Lower priority values initialize first."));
+            }
+            NexusInspectorGUI.EndCard();
+
+            // 3. Live Runtime Diagnostics (PlayMode)
+            if (Application.isPlaying)
+            {
+                NexusInspectorGUI.BeginCard("Runtime Diagnostics", "Live", StatusType.Success);
                 if (hasContext)
                 {
-                    EditorGUILayout.Space(5);
-                    var lifecycleCount = root.Context.Container.IsRegistered(typeof(IContextLifecycle)) ? 1 : 0;
-                    EditorGUILayout.HelpBox($"Bound services: {root.Context.Container.ActiveSingletonsCount}\n" +
-                                           $"Command handlers: {root.Context.SignalBusInternal.CommandHandlers.Count}\n" +
-                                           $"Scope tag: {root.Context.ScopeTag ?? "Global"}\n" +
-                                           $"Lifecycle: {(lifecycleCount > 0 ? "Registered" : "Not registered")}", MessageType.Info);
+                    NexusInspectorGUI.DrawKeyValue("Scope Tag", root.Context.ScopeTag ?? "Global");
+                    NexusInspectorGUI.DrawKeyValue("Bound Services", root.Context.Container.ActiveSingletonsCount.ToString());
+                    NexusInspectorGUI.DrawKeyValue("Commands", root.Context.SignalBusInternal.CommandHandlers.Count.ToString());
+                    var hasLifecycle = root.Context.Container.IsRegistered(typeof(IContextLifecycle));
+                    NexusInspectorGUI.DrawStatusRow("Lifecycle Hook", hasLifecycle ? "Registered" : "None", hasLifecycle ? StatusType.Success : StatusType.Info);
                 }
                 else
                 {
-                    EditorGUILayout.Space(5);
-                    EditorGUILayout.HelpBox("Root does not have an active Context yet. Check the assigned ContextData, parent root order, and lifecycle registration.", MessageType.Error);
+                    NexusInspectorGUI.DrawMessage("Context is not bound yet. Ensure ContextData and parent chain are valid.", StatusType.Error);
                 }
-            }
-            else
-            {
-                if (!hasContextData)
-                {
-                    EditorGUILayout.HelpBox("Assign a ContextData asset before testing this root.", MessageType.Error);
-                }
-                else if (!hasParent && !hasAutoDiscovery)
-                {
-                    EditorGUILayout.HelpBox("This root will need explicit lifecycle registration or a parent root to resolve cleanly.", MessageType.Warning);
-                }
-                else
-                {
-                    EditorGUILayout.HelpBox("This root initializes when Play Mode starts. Keep the data asset and parent chain valid before testing.", MessageType.Info);
-                }
+                NexusInspectorGUI.EndCard();
             }
 
-            if (!Application.isPlaying && hasContextData)
-            {
-                EditorGUILayout.HelpBox($"Auto discovery: {(data.EnableAutoDiscovery ? "On" : "Off")}\nAssembly scopes: {(data.AssemblyScopes == null || data.AssemblyScopes.Length == 0 ? "Default scan" : string.Join(", ", data.AssemblyScopes))}", MessageType.None);
-            }
-
-            EditorGUILayout.Space(10);
-            DrawDefaultInspector();
-
-            EditorGUILayout.Space(15);
-            if (GUILayout.Button("Open Nexus Dashboard", GUILayout.Height(30)))
+            // 4. Quick Actions
+            NexusInspectorGUI.BeginCard("Actions");
+            if (NexusInspectorGUI.DrawActionButton("🔍 Open Nexus Dashboard", StatusType.Info, 26))
             {
                 EditorApplication.ExecuteMenuItem("Window/Nexus/Dashboard %#n");
             }
+            NexusInspectorGUI.EndCard();
 
             serializedObject.ApplyModifiedProperties();
         }
 
-        private static void DrawStatusLine(string label, string value, MessageType messageType)
+        private void CreateAndAssignContextData(Root root)
         {
-            EditorGUILayout.HelpBox($"{label}: {value}", messageType);
+            var asset = ScriptableObject.CreateInstance<ContextData>();
+            asset.ScopeTag = root.gameObject.name.Replace(" ", "_").Replace("[", "").Replace("]", "");
+            asset.EnableAutoDiscovery = true;
+
+            string folder = "Assets/Data";
+            if (!AssetDatabase.IsValidFolder(folder))
+            {
+                AssetDatabase.CreateFolder("Assets", "Data");
+            }
+            string path = AssetDatabase.GenerateUniqueAssetPath($"{folder}/{asset.ScopeTag}_ContextData.asset");
+            AssetDatabase.CreateAsset(asset, path);
+            AssetDatabase.SaveAssets();
+
+            _contextDataProp.objectReferenceValue = asset;
+            serializedObject.ApplyModifiedProperties();
+            EditorUtility.SetDirty(root);
         }
     }
 }

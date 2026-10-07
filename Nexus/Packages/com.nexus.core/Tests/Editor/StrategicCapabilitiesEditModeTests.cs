@@ -1,4 +1,6 @@
 using NUnit.Framework;
+using UnityEditor;
+using Nexus.Editor.Inspector;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
@@ -297,6 +299,105 @@ namespace Nexus.Editor.Tests
                 NexusRuntime.UnregisterContext(ctx.Context);
             }
         }
+
+        [Test]
+        public void NexusCustomInspectors_AreCorrectlyMappedAndInstantiated()
+        {
+            GameObject go = new GameObject("TestInspectorGO");
+            try
+            {
+                var root = go.AddComponent<Root>();
+                var rootEditor = UnityEditor.Editor.CreateEditor(root);
+                Assert.IsNotNull(rootEditor, "RootEditor must be mapped to Root component");
+                Assert.IsInstanceOf<RootEditor>(rootEditor);
+                Object.DestroyImmediate(rootEditor);
+
+                var binding = go.AddComponent<NexusBinding>();
+                var bindingEditor = UnityEditor.Editor.CreateEditor(binding);
+                Assert.IsNotNull(bindingEditor, "NexusBindingEditor must be mapped to NexusBinding component");
+                Assert.IsInstanceOf<NexusBindingEditor>(bindingEditor);
+                Object.DestroyImmediate(bindingEditor);
+
+                var scope = go.AddComponent<NexusLifetimeScope>();
+                var scopeEditor = UnityEditor.Editor.CreateEditor(scope);
+                Assert.IsNotNull(scopeEditor, "NexusLifetimeScopeEditor must be mapped to NexusLifetimeScope component");
+                Assert.IsInstanceOf<NexusLifetimeScopeEditor>(scopeEditor);
+                Object.DestroyImmediate(scopeEditor);
+
+                var behaviour = go.AddComponent<TestPlayerBehaviour>();
+                var behaviourEditor = UnityEditor.Editor.CreateEditor(behaviour);
+                Assert.IsNotNull(behaviourEditor, "NexusBehaviourEditor must be mapped to NexusBehaviour component");
+                Assert.IsInstanceOf<NexusBehaviourEditor>(behaviourEditor);
+                Object.DestroyImmediate(behaviourEditor);
+
+                var view = go.AddComponent<TestInspectorView>();
+                var viewEditor = UnityEditor.Editor.CreateEditor(view);
+                Assert.IsNotNull(viewEditor, "ViewEditor must be mapped to View component");
+                Assert.IsInstanceOf<ViewEditor>(viewEditor);
+                Object.DestroyImmediate(viewEditor);
+
+                var contextData = ScriptableObject.CreateInstance<ContextData>();
+                try
+                {
+                    var cdEditor = UnityEditor.Editor.CreateEditor(contextData);
+                    Assert.IsNotNull(cdEditor, "ContextDataEditor must be mapped to ContextData asset");
+                    Assert.IsInstanceOf<ContextDataEditor>(cdEditor);
+                    Object.DestroyImmediate(cdEditor);
+                }
+                finally
+                {
+                    Object.DestroyImmediate(contextData);
+                }
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
+
+        [Test]
+        public void NexusHierarchyMenus_CreateMethods_ExecuteWithoutThrowing()
+        {
+            var menuCmd = new MenuCommand(null);
+            GameObject createdGo = null;
+            try
+            {
+                NexusHierarchyMenus.CreateSceneRoot(menuCmd);
+                createdGo = Selection.activeGameObject;
+                Assert.IsNotNull(createdGo);
+                Assert.IsNotNull(createdGo.GetComponent<Root>());
+                Object.DestroyImmediate(createdGo);
+
+                NexusHierarchyMenus.CreateGlobalProjectRoot(menuCmd);
+                createdGo = Selection.activeGameObject;
+                Assert.IsNotNull(createdGo);
+                Assert.IsTrue(createdGo.GetComponent<Root>().IsGlobalContext);
+                Object.DestroyImmediate(createdGo);
+
+                NexusHierarchyMenus.CreateLifetimeScope(menuCmd);
+                createdGo = Selection.activeGameObject;
+                Assert.IsNotNull(createdGo);
+                Assert.IsNotNull(createdGo.GetComponent<NexusLifetimeScope>());
+                Object.DestroyImmediate(createdGo);
+
+                NexusHierarchyMenus.CreateEntityWithBinding(menuCmd);
+                createdGo = Selection.activeGameObject;
+                Assert.IsNotNull(createdGo);
+                Assert.IsNotNull(createdGo.GetComponent<NexusBinding>());
+                Object.DestroyImmediate(createdGo);
+
+                NexusHierarchyMenus.CreateUICanvasRootObject(menuCmd);
+                createdGo = Selection.activeGameObject;
+                Assert.IsNotNull(createdGo);
+                Assert.IsNotNull(createdGo.GetComponent<UnityEngine.Canvas>());
+                Object.DestroyImmediate(createdGo);
+                createdGo = null;
+            }
+            finally
+            {
+                if (createdGo != null) Object.DestroyImmediate(createdGo);
+            }
+        }
     }
 
     public class TestPlayerBehaviour : NexusBehaviour
@@ -319,5 +420,9 @@ namespace Nexus.Editor.Tests
         {
             LifecycleDestroyCalled = true;
         }
+    }
+
+    public class TestInspectorView : View
+    {
     }
 }

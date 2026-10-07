@@ -7,40 +7,103 @@ namespace Nexus.Editor.Inspector
     [CustomEditor(typeof(ContextData))]
     public class ContextDataEditor : UnityEditor.Editor
     {
+        private SerializedProperty _scopeTagProp;
+        private SerializedProperty _enableAutoDiscoveryProp;
+        private SerializedProperty _assemblyScopesProp;
+
+        private void OnEnable()
+        {
+            EnsureProperties();
+        }
+
+        private bool EnsureProperties()
+        {
+            if (target == null) return false;
+            try
+            {
+                _scopeTagProp ??= serializedObject.FindProperty("scopeTag");
+                _enableAutoDiscoveryProp ??= serializedObject.FindProperty("enableAutoDiscovery");
+                _assemblyScopesProp ??= serializedObject.FindProperty("assemblyScopes");
+                return _scopeTagProp != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
         public override void OnInspectorGUI()
         {
-            serializedObject.Update();
+            if (target == null || !EnsureProperties()) return;
 
+            try
+            {
+                serializedObject.Update();
+            }
+            catch
+            {
+                return;
+            }
             var data = (ContextData)target;
 
-            EditorGUILayout.HelpBox("Context setup", MessageType.None);
-            EditorGUILayout.HelpBox("This asset controls how a Root finds and configures its Context.", MessageType.Info);
+            string tag = string.IsNullOrEmpty(data.ScopeTag) ? "No Scope Tag" : data.ScopeTag;
+            StatusType tagType = string.IsNullOrEmpty(data.ScopeTag) ? StatusType.Warning : StatusType.Success;
+            NexusInspectorGUI.DrawHeader("Context Data Asset", "Nexus Scope Configuration", tag, tagType);
+
+            // 1. Scope Settings Card
+            NexusInspectorGUI.BeginCard("Scope Settings");
+            EditorGUILayout.PropertyField(_scopeTagProp, new GUIContent("Scope Tag", "Unique identifier for this context (e.g. Game, UI, Meta)."));
 
             if (string.IsNullOrEmpty(data.ScopeTag))
             {
-                EditorGUILayout.HelpBox("Scope tag is empty. The context will rely on root-based discovery and may bind more broadly than intended.", MessageType.Warning);
+                NexusInspectorGUI.DrawMessage("Scope Tag is empty. Giving this context a clear name (e.g., 'Game', 'Battle', 'Lobby') enables convention-based lifecycle discovery and scoped resolution.", StatusType.Warning);
             }
-            else
+
+            EditorGUILayout.PropertyField(_enableAutoDiscoveryProp, new GUIContent("Enable Auto-Discovery", "Automatically scans assemblies for {ScopeTag}Lifecycle and [RegisterCommand] attributes."));
+            if (data.EnableAutoDiscovery)
             {
-                EditorGUILayout.HelpBox($"Scope tag: {data.ScopeTag}", MessageType.Info);
+                NexusInspectorGUI.DrawMessage($"Auto-Discovery ON: Scans for '{tag}Lifecycle' classes and commands registered to this scope automatically.", StatusType.Info);
             }
+            NexusInspectorGUI.EndCard();
+
+            // 2. Assembly Scopes Card
+            NexusInspectorGUI.BeginCard("Assembly Scanning");
+            EditorGUILayout.PropertyField(_assemblyScopesProp, new GUIContent("Assembly Scopes", "Optional assembly filters. If empty, scans default game assemblies."));
 
             if (data.AssemblyScopes == null || data.AssemblyScopes.Length == 0)
             {
-                EditorGUILayout.HelpBox("No assembly scopes are assigned. Nexus will scan default assemblies instead, which is easier to start with but less deterministic for reusable packages.", MessageType.Warning);
+                NexusInspectorGUI.DrawMessage("Scanning default game assemblies. For larger modular codebases, specify explicit assembly names for faster startup.", StatusType.Info);
             }
-            else
+            NexusInspectorGUI.EndCard();
+
+            // 3. Quick Actions
+            NexusInspectorGUI.BeginCard("Quick Actions");
+            if (NexusInspectorGUI.DrawActionButton("✨ Create Scene Root with this Asset", StatusType.Success, 26))
             {
-                EditorGUILayout.HelpBox($"Assembly scopes: {string.Join(", ", data.AssemblyScopes)}", MessageType.None);
+                CreateSceneRootWithAsset(data);
             }
 
-            EditorGUILayout.HelpBox(data.EnableAutoDiscovery
-                ? "Auto discovery is enabled. That makes setup easier, but you should still keep the scope and parent chain intentional."
-                : "Auto discovery is disabled. The context must be reached through explicit registration or parent wiring.",
-                data.EnableAutoDiscovery ? MessageType.Info : MessageType.Warning);
-            DrawDefaultInspector();
+            if (NexusInspectorGUI.DrawActionButton("🔍 Open Nexus Dashboard", StatusType.Info, 22))
+            {
+                EditorApplication.ExecuteMenuItem("Window/Nexus/Dashboard %#n");
+            }
+            NexusInspectorGUI.EndCard();
 
             serializedObject.ApplyModifiedProperties();
+        }
+
+        private static void CreateSceneRootWithAsset(ContextData data)
+        {
+            string name = string.IsNullOrEmpty(data.ScopeTag) ? "NexusRoot" : $"[{data.ScopeTag}_Root]";
+            var go = new GameObject(name);
+            var root = go.AddComponent<Root>();
+
+            var serializedRoot = new SerializedObject(root);
+            serializedRoot.FindProperty("contextData").objectReferenceValue = data;
+            serializedRoot.ApplyModifiedProperties();
+
+            Undo.RegisterCreatedObjectUndo(go, $"Create {name}");
+            Selection.activeGameObject = go;
         }
     }
 }
