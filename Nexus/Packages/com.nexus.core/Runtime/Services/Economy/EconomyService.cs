@@ -15,6 +15,14 @@ namespace Nexus.Core.Services
         bool Spend(string currencyId, long amount, string reason = "");
         void Earn(string currencyId, long amount, string reason = "");
         void SetBalance(string currencyId, long amount);
+
+        // BigDouble API for idle, incremental, and large-scale numeric game genres
+        BigDouble GetBigBalance(string currencyId);
+        SecureObservableBigDouble GetObservableBigBalance(string currencyId);
+        bool CanAffordBig(string currencyId, BigDouble amount);
+        bool SpendBig(string currencyId, BigDouble amount, string reason = "");
+        void EarnBig(string currencyId, BigDouble amount, string reason = "");
+        void SetBigBalance(string currencyId, BigDouble amount);
     }
 
     public interface INetworkEconomyValidator
@@ -49,6 +57,7 @@ namespace Nexus.Core.Services
         // concurrent read/write even for different keys (rehash), and Dispose() mutates
         // it — the previous comment claiming lock-free reads were safe was wrong.
         private readonly ConcurrentDictionary<string, SecureObservableLong> _balances = new();
+        private readonly ConcurrentDictionary<string, SecureObservableBigDouble> _bigBalances = new();
         private volatile bool _disposed;
         private volatile bool _disposing;
 
@@ -60,7 +69,14 @@ namespace Nexus.Core.Services
         public long GetBalance(string currencyId)
         {
             var prop = GetObservableBalance(currencyId);
-            return prop?.Value ?? 0L;
+            if (prop != null) return prop.Value;
+            if (_bigBalances.TryGetValue(currencyId, out var bigProp))
+            {
+                if (bigProp.Value <= BigDouble.Zero) return 0L;
+                if (bigProp.Value >= new BigDouble(long.MaxValue)) return long.MaxValue;
+                return (long)(double)bigProp.Value;
+            }
+            return 0L;
         }
 
         public bool CanAfford(string currencyId, long amount)
@@ -157,6 +173,110 @@ namespace Nexus.Core.Services
             return prop;
         }
 
+        // ─── BigDouble Idle / Incremental API Implementation ───
+
+        public BigDouble GetBigBalance(string currencyId)
+        {
+            var prop = GetObservableBigBalance(currencyId);
+            return prop?.Value ?? BigDouble.Zero;
+        }
+
+        public bool CanAffordBig(string currencyId, BigDouble amount)
+        {
+            if (amount <= BigDouble.Zero) return true;
+            return GetBigBalance(currencyId) >= amount;
+        }
+
+        public bool SpendBig(string currencyId, BigDouble amount, string reason = "")
+        {
+            if (amount <= BigDouble.Zero) return true;
+
+            SecureObservableBigDouble prop;
+            lock (_bigBalances)
+            {
+                if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
+                prop = LazyLoadBigBalance(currencyId);
+                if (prop.Value < amount) return false;
+                prop.Value -= amount;
+            }
+
+            SchedulePersist();
+            return true;
+        }
+
+        public void EarnBig(string currencyId, BigDouble amount, string reason = "")
+        {
+            if (amount <= BigDouble.Zero) return;
+
+            SecureObservableBigDouble prop;
+            lock (_bigBalances)
+            {
+                if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
+                prop = LazyLoadBigBalance(currencyId);
+                prop.Value += amount;
+            }
+
+            SchedulePersist();
+        }
+
+        public void SetBigBalance(string currencyId, BigDouble amount)
+        {
+            SecureObservableBigDouble prop;
+            lock (_bigBalances)
+            {
+                if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
+                prop = LazyLoadBigBalance(currencyId);
+                prop.Value = amount < BigDouble.Zero ? BigDouble.Zero : amount;
+            }
+            SchedulePersist();
+        }
+
+        public SecureObservableBigDouble GetObservableBigBalance(string currencyId)
+        {
+            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return null;
+            if (_bigBalances.TryGetValue(currencyId, out var existing))
+                return existing;
+
+            lock (_bigBalances)
+            {
+                if (_disposed || _disposing) return null;
+                return LazyLoadBigBalance(currencyId);
+            }
+        }
+
+        // Must be called under _bigBalances lock.
+        private SecureObservableBigDouble LazyLoadBigBalance(string currencyId)
+        {
+            if (_bigBalances.TryGetValue(currencyId, out var prop))
+                return prop;
+
+            BigDouble savedAmount = BigDouble.Zero;
+            if (PlayerPrefsService != null)
+            {
+                if (PlayerPrefsService.HasKey($"NT_EcoBig_{currencyId}"))
+                {
+                    savedAmount = PlayerPrefsService.GetBigDouble($"NT_EcoBig_{currencyId}", BigDouble.Zero);
+                }
+                else if (PlayerPrefsService.HasKey($"NT_Eco_{currencyId}"))
+                {
+                    savedAmount = new BigDouble(PlayerPrefsService.GetLong($"NT_Eco_{currencyId}", 0L));
+                }
+            }
+            else if (_balances.TryGetValue(currencyId, out var existingLong))
+            {
+                savedAmount = new BigDouble(existingLong.Value);
+            }
+
+            prop = new SecureObservableBigDouble(savedAmount < BigDouble.Zero ? BigDouble.Zero : savedAmount, $"EcoBig_{currencyId}");
+            _bigBalances[currencyId] = prop;
+            return prop;
+        }
+
+
+
+
+
+
         /// <summary>
         /// Schedules a balance persist. With a <see cref="SaveThrottler"/> bound, per-mutation
         /// writes coalesce into one batched flush every throttle window (the action always
@@ -186,6 +306,15 @@ namespace Nexus.Core.Services
                 {
                     PlayerPrefsService.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
                 }
+            }
+            lock (_bigBalances)
+            {
+                if (_disposed) return;
+                foreach (var kvp in _bigBalances)
+                {
+                    PlayerPrefsService.SetBigDouble($"NT_EcoBig_{kvp.Key}", kvp.Value.Value);
+                }
+
             }
             // Flush outside the lock (may hit disk) — mirrors ProgressionService.PersistNow.
             PlayerPrefsService.Save();
@@ -258,6 +387,12 @@ namespace Nexus.Core.Services
                     foreach (var kvp in _balances) kvp.Value.ClearOnChanged();
                     _balances.Clear();
                 }
+                lock (_bigBalances)
+                {
+                    foreach (var kvp in _bigBalances) kvp.Value.ClearOnChanged();
+                    _bigBalances.Clear();
+                }
+
             }
         }
     }

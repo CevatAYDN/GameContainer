@@ -71,15 +71,15 @@ namespace Nexus.Core.Components
         }
 
         /// <summary>
-        /// Manually triggers dependency injection on target components.
+        /// Manually triggers dependency injection on target components using the specified or active context.
         /// Safe to call multiple times (injection is executed once).
         /// </summary>
-        public void InjectNow()
+        public void InjectNow(IContext context = null)
         {
             if (_hasInjected) return;
 
-            IContext context = FindActiveContext();
-            if (context == null)
+            IContext targetContext = context ?? FindActiveContext();
+            if (targetContext == null)
             {
                 // Fall back to waiting for a context to register if scene initialization order varies
                 NexusRuntime.OnContextRegistered -= OnContextRegistered;
@@ -87,7 +87,7 @@ namespace Nexus.Core.Components
                 return;
             }
 
-            PerformInjection(context);
+            PerformInjection(targetContext);
         }
 
         private void OnContextRegistered(IContext context)
@@ -156,7 +156,13 @@ namespace Nexus.Core.Components
                 return parentRoot.Context;
             }
 
-            // 2. Fall back to active default context in NexusRuntime
+            // 2. Try persistent global project context across scenes
+            if (NexusRuntime.GlobalContext != null)
+            {
+                return NexusRuntime.GlobalContext;
+            }
+
+            // 3. Fall back to active default context in NexusRuntime
             return NexusRuntime.GetDefaultContext();
         }
     }

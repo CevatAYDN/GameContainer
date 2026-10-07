@@ -152,15 +152,172 @@ namespace Nexus.Editor.Tests
             });
 
             var go = new GameObject("TestBindingGO");
-            var binding = go.AddComponent<NexusBinding>();
-            var target = go.AddComponent<TestInjectedComponent>();
+            try
+            {
+                var binding = go.AddComponent<NexusBinding>();
+                var target = go.AddComponent<TestInjectedComponent>();
 
-            binding.InjectNow();
+                binding.InjectNow(ctx.Context);
 
-            Assert.IsNotNull(target.State, "Dependency must be injected into target component");
-            Assert.AreSame(state, target.State);
+                Assert.IsNotNull(target.State, "Dependency must be injected into target component");
+                Assert.AreSame(state, target.State);
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+            }
+        }
 
-            Object.DestroyImmediate(go);
+        [Test]
+        public void GlobalRoot_RegistersAndAutoBindsToOrphanSceneRoot()
+        {
+            GameObject globalGo = null;
+            GameObject sceneGo = null;
+            ContextData globalData = null;
+            ContextData sceneData = null;
+            try
+            {
+                globalData = ScriptableObject.CreateInstance<ContextData>();
+                globalData.ScopeTag = "Global";
+                globalData.EnableAutoDiscovery = false;
+
+                sceneData = ScriptableObject.CreateInstance<ContextData>();
+                sceneData.ScopeTag = "Scene";
+                sceneData.EnableAutoDiscovery = false;
+
+                globalGo = new GameObject("[Global_Root]");
+                globalGo.SetActive(false);
+                var globalRoot = globalGo.AddComponent<Root>();
+                globalRoot.SetUp(globalData, null, 0);
+                globalRoot.IsGlobalContext = true;
+                globalGo.SetActive(true);
+                globalRoot.InitializeContext();
+
+                Assert.AreEqual(globalRoot, NexusRuntime.GlobalRoot);
+                Assert.IsNotNull(globalRoot.Context);
+                Assert.AreEqual(globalRoot.Context, NexusRuntime.GlobalContext);
+
+                sceneGo = new GameObject("[Scene_Root]");
+                sceneGo.SetActive(false);
+                var sceneRoot = sceneGo.AddComponent<Root>();
+                sceneRoot.SetUp(sceneData, null, 0);
+                sceneRoot.AutoBindGlobalParent = true;
+                sceneGo.SetActive(true);
+                sceneRoot.InitializeContext();
+
+                Assert.AreEqual(globalRoot, sceneRoot.ParentRoot, "Scene root should auto-bind to NexusRuntime.GlobalRoot when parentRoot is null");
+                Assert.AreEqual(globalRoot.Context, sceneRoot.Context.Parent, "Scene root context should have GlobalRoot context as its parent");
+            }
+            finally
+            {
+                if (sceneGo != null) Object.DestroyImmediate(sceneGo);
+                if (globalGo != null) Object.DestroyImmediate(globalGo);
+                if (globalData != null) Object.DestroyImmediate(globalData);
+                if (sceneData != null) Object.DestroyImmediate(sceneData);
+                NexusRuntime.UnregisterGlobalRoot(NexusRuntime.GlobalRoot);
+            }
+        }
+
+        [Test]
+        public void GlobalRoot_UnregistersWhenDestroyed()
+        {
+            GameObject globalGo = null;
+            ContextData globalData = null;
+            try
+            {
+                globalData = ScriptableObject.CreateInstance<ContextData>();
+                globalData.ScopeTag = "Global";
+                globalData.EnableAutoDiscovery = false;
+
+                globalGo = new GameObject("[Global_Root]");
+                globalGo.SetActive(false);
+                var globalRoot = globalGo.AddComponent<Root>();
+                globalRoot.SetUp(globalData, null, 0);
+                globalRoot.IsGlobalContext = true;
+                globalGo.SetActive(true);
+                globalRoot.InitializeContext();
+
+                Assert.AreEqual(globalRoot, NexusRuntime.GlobalRoot);
+
+                Object.DestroyImmediate(globalGo);
+                globalGo = null;
+                Assert.IsNull(NexusRuntime.GlobalRoot, "GlobalRoot should be null after destruction");
+            }
+            finally
+            {
+                if (globalGo != null) Object.DestroyImmediate(globalGo);
+                if (globalData != null) Object.DestroyImmediate(globalData);
+                NexusRuntime.UnregisterGlobalRoot(NexusRuntime.GlobalRoot);
+            }
+        }
+
+        [Test]
+        public void NexusBehaviour_Resolves_Subscribes_And_AutoDisposesOnDestroy()
+        {
+            var state = new TestCapState();
+            using var ctx = NexusTestHarness.CreateContext(builder =>
+            {
+                builder.BindInstance(state);
+            });
+            NexusRuntime.RegisterContext(ctx.Context);
+
+            GameObject go = new GameObject("TestNexusBehaviourGO");
+            try
+            {
+                var comp = go.AddComponent<TestPlayerBehaviour>();
+                comp.Context = ctx.Context;
+                comp.InitializeLifecycle();
+
+                Assert.IsNotNull(comp.Context, "NexusBehaviour must acquire active context");
+
+                // Injection test
+                Assert.IsNotNull(comp.State, "[Inject] must populate State on NexusBehaviour");
+                Assert.AreSame(state, comp.State);
+
+                // Resolution test
+                var resolvedState = comp.Resolve<TestCapState>();
+                Assert.AreSame(state, resolvedState);
+
+                // Signal fire and subscription test
+                comp.Fire(new TestCapSignal(100));
+                Assert.AreEqual(100, comp.ReceivedSignalAmount);
+
+                // Destroy component and verify signal unsubscription
+                comp.DestroyLifecycle();
+                Object.DestroyImmediate(go);
+                go = null;
+
+                // Dispatch signal again - destroyed behaviour must not receive it
+                ctx.Context.SignalBus.Fire(new TestCapSignal(200));
+                Assert.AreEqual(100, comp.ReceivedSignalAmount, "Unsubscribed signal handler must not fire after destruction");
+            }
+            finally
+            {
+                if (go != null) Object.DestroyImmediate(go);
+                NexusRuntime.UnregisterContext(ctx.Context);
+            }
+        }
+    }
+
+    public class TestPlayerBehaviour : NexusBehaviour
+    {
+        [Inject] public TestCapState State { get; set; }
+        public int ReceivedSignalAmount { get; private set; }
+        public bool LifecycleAwakeCalled { get; private set; }
+        public bool LifecycleDestroyCalled { get; private set; }
+
+        protected override void OnNexusAwake()
+        {
+            LifecycleAwakeCalled = true;
+            Subscribe<TestCapSignal>(sig =>
+            {
+                ReceivedSignalAmount = sig.Amount;
+            });
+        }
+
+        protected override void OnNexusDestroy()
+        {
+            LifecycleDestroyCalled = true;
         }
     }
 }

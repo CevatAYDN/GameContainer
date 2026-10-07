@@ -3,7 +3,8 @@
     "rootNamespace": "Nexus.Core",
     "references": [
         "Unity.Profiling.Core",
-        "UnityEngine.UI"
+        "UnityEngine.UI",
+        "Unity.InputSystem"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
@@ -17,6 +18,11 @@
             "name": "com.unity.collections",
             "expression": "1.0.0",
             "define": "UNITY_COLLECTIONS"
+        },
+        {
+            "name": "com.unity.inputsystem",
+            "expression": "1.0.0",
+            "define": "UNITY_INPUT_SYSTEM"
         }
     ],
     "noEngineReferences": false

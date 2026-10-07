@@ -47,7 +47,7 @@ Each of the eight wizard-generated files (and its canonical `Game/Samples` count
 
 | Generated file (under `Assets/Scripts/Game/Samples/`) | SHA-256 |
 |---|---|
-| `Lifecycle/GameLifecycle.cs` | `e7c40bd86cd844c57151ef014cefeee5fbf7e656a8588889f179133c13e3ee2d` |
+| `Lifecycle/GameLifecycle.cs` | `335873ca0c42ecc198ecefba3b0873730dc46a9bfff61b6c3b07219fa1d5369c` |
 | `Signals/GameSignal.cs` | `f6fe56895ddeace84ece2a1beb332a2e5e3c552dc0dbe336a44be2da6868d9ab` |
 | `Models/GameModel.cs` | `3528a0efef8108283360293ca42219cbd04b75ed59f8f10e43f9908701af6415` |
 | `Commands/GameCommand.cs` | `69be1e14db5f06f800edc42e8779e762577f971ee8f76592883b17a9d5449cb5` |

@@ -614,7 +614,8 @@ namespace Nexus.Editor
         // every new project. Generation is a straight copy of these strings: no
         // trimming or transformation, so the written bytes are the tested bytes.
 
-        internal static string GameLifecycleTemplate => @"using System.Threading;
+        internal static string GameLifecycleTemplate =>
+@"using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core;
 using UnityEngine;
@@ -622,8 +623,11 @@ using UnityEngine;
 namespace Game
 {
     /// <summary>
-    /// Must be a MonoBehaviour so Root.GetComponents&lt;IContextLifecycle&gt;() can discover it.
-    /// Attach this component to the GameRoot GameObject.
+    /// Lifecycle configuration for the Game context.
+    /// Supports two clean workflows:
+    /// 1. Attached as a MonoBehaviour component to the GameRoot GameObject (auto-discovered by Root.GetComponents&lt;IContextLifecycle&gt;()).
+    /// 2. Implemented as a plain C# class named '{ScopeTag}Lifecycle' (e.g., GameLifecycle) when ContextData has EnableAutoDiscovery enabled.
+
     /// </summary>
     public class GameLifecycle : MonoBehaviour, IContextLifecycle
     {

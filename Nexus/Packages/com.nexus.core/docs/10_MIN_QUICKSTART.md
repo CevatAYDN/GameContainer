@@ -224,6 +224,40 @@ Filters run in registration order on both `Fire` and `FireAsync`. The legacy obj
 
 ---
 
+## 🚀 Rapid Development & Game Jam Mode: `NexusBehaviour`
+
+For rapid prototyping or beginner developers who don't want to create separate View + Mediator classes, inherit from `NexusBehaviour`:
+
+```csharp
+using Nexus.Core;
+using UnityEngine;
+
+public class PlayerHUD : NexusBehaviour
+{
+    [Inject] public IEconomyService Economy { get; set; }
+
+    protected override void OnNexusAwake()
+    {
+        // Auto-tracked and automatically disposed on OnDestroy (zero memory leaks!)
+        Subscribe<ScoreSignal>(signal => {
+            Debug.Log($"Score updated: {signal.Points}");
+        });
+    }
+
+    public void OnButtonClick()
+    {
+        // Zero-GC signal firing
+        Fire(new ScoreSignal(50));
+        
+        // Direct service resolution
+        var balance = Economy.GetBalance("gold");
+    }
+}
+```
+Automatic dependency injection, zero memory leaks, and instant SignalBus access in a single class.
+
+---
+
 ## 📚 What's Next?
 
 | Topic | Guide |

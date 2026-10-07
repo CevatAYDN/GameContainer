@@ -24,6 +24,44 @@ namespace Nexus.Core
         public static event System.Action<IContext> OnContextUnregistered;
         public static IContextResolver DefaultContextResolver { get; } = new DefaultResolver();
 
+        private static Root s_globalRoot;
+
+        /// <summary>
+        /// Persistent global root that survives scene loads (DontDestroyOnLoad).
+        /// Scene roots automatically bind to this as their parent context.
+        /// Returns null if not set or if the underlying Unity GameObject has been destroyed.
+        /// </summary>
+        public static Root GlobalRoot
+        {
+            get => s_globalRoot != null ? s_globalRoot : null;
+            private set => s_globalRoot = value;
+        }
+
+        /// <summary>
+        /// Active context of the persistent GlobalRoot, or an active context with ScopeTag "Global" or "Project".
+        /// </summary>
+        public static IContext GlobalContext => GlobalRoot != null ? GlobalRoot.Context : (GetContext("Global") ?? GetContext("Project"));
+
+        /// <summary>
+        /// Registers a Root as the global project root.
+        /// </summary>
+        public static void RegisterGlobalRoot(Root root)
+        {
+            if (root == null) return;
+            s_globalRoot = root;
+        }
+
+        /// <summary>
+        /// Unregisters the current global project root if it matches.
+        /// </summary>
+        public static void UnregisterGlobalRoot(Root root)
+        {
+            if (s_globalRoot == root || s_globalRoot == null)
+            {
+                s_globalRoot = null;
+            }
+        }
+
         private sealed class DefaultResolver : IContextResolver
         {
             public IReadOnlyList<IContext> GetActiveContexts() => ActiveContexts;
@@ -406,6 +444,7 @@ namespace Nexus.Core
             SignalBus.ClearStaticCaches();
             QueuedSignalPoolRegistry.ClearAll();
             Root.ClearRegistry();
+            GlobalRoot = null;
             CommandPoolStatics.ClearStateLeakWarnings();
             Services.AssemblyScanService.ClearCache();
             Metrics.ResetTraceBuffer();

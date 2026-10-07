@@ -19,6 +19,12 @@ namespace Nexus.Core
 #pragma warning disable 0649 // serialized fields: assigned by the Unity inspector
         [SerializeField] private Root parentRoot;
 
+        [Header("Global / Project Scope")]
+        [Tooltip("When true, this Root persists across scene loads (DontDestroyOnLoad) and acts as the Global/Project root context.")]
+        [SerializeField] private bool isGlobalContext = false;
+        [Tooltip("When true, if parentRoot is null, this Root automatically links to NexusRuntime.GlobalRoot across scenes.")]
+        [SerializeField] private bool autoBindGlobalParent = true;
+
         [Header("Configuration")]
         [SerializeField] private ContextData contextData;
         [SerializeField] private int initializationPriority = 0;
@@ -48,6 +54,41 @@ namespace Nexus.Core
         public ContextData ContextData => contextData;
         /// <summary>Parent root in the context hierarchy (null for root contexts).</summary>
         public Root ParentRoot => parentRoot;
+        /// <summary>True if this root is marked as the persistent global/project context.</summary>
+        public bool IsGlobalContext
+        {
+            get => isGlobalContext;
+            set
+            {
+                isGlobalContext = value;
+                if (isGlobalContext)
+                {
+                    if (Application.isPlaying)
+                    {
+                        UnityEngine.Object.DontDestroyOnLoad(gameObject);
+                    }
+                    NexusRuntime.RegisterGlobalRoot(this);
+                }
+                else if (NexusRuntime.GlobalRoot == this)
+                {
+                    NexusRuntime.UnregisterGlobalRoot(this);
+                }
+            }
+        }
+
+        /// <summary>True if this root automatically binds to NexusRuntime.GlobalRoot when parentRoot is unassigned.</summary>
+        public bool AutoBindGlobalParent
+        {
+            get => autoBindGlobalParent;
+            set
+            {
+                autoBindGlobalParent = value;
+                if (autoBindGlobalParent && parentRoot == null && NexusRuntime.GlobalRoot != null && NexusRuntime.GlobalRoot != this)
+                {
+                    parentRoot = NexusRuntime.GlobalRoot;
+                }
+            }
+        }
 
         // Lifecycle components discovered during InitializeContext, cached for Start().
         // This avoids the Dictionary key collision in BindInstance<IContextLifecycle> 
@@ -217,9 +258,22 @@ namespace Nexus.Core
                 gameObject.AddComponent<MetricsSampler>();
         }
 
-        private void InitializeContext()
+        internal void InitializeContext()
         {
             if (Context != null) return;
+
+            if (isGlobalContext)
+            {
+                if (Application.isPlaying)
+                {
+                    UnityEngine.Object.DontDestroyOnLoad(gameObject);
+                }
+                NexusRuntime.RegisterGlobalRoot(this);
+            }
+            else if (parentRoot == null && autoBindGlobalParent && NexusRuntime.GlobalRoot != null && NexusRuntime.GlobalRoot != this)
+            {
+                parentRoot = NexusRuntime.GlobalRoot;
+            }
 
             if (parentRoot != null && parentRoot != this)
             {
@@ -431,6 +485,11 @@ namespace Nexus.Core
 
         private void OnDestroy()
         {
+            if (isGlobalContext)
+            {
+                NexusRuntime.UnregisterGlobalRoot(this);
+            }
+
             lock (s_rootLock)
             {
                 s_allRoots.Remove(this);

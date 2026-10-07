@@ -89,5 +89,57 @@ namespace Nexus.Editor.Tests
 
             storage.DeleteKey("User_Idle_Coins");
         }
+
+        [Test]
+        public void EconomyService_BigDouble_EarnSpendCanAfford_SupportsNumbersBeyondLongMax()
+        {
+            using var eco = new EconomyService();
+            string currency = "IdleCookies";
+
+            // 1e30 is vastly larger than long.MaxValue (~9.22e18)
+            BigDouble astronomicalAmount = new BigDouble(5.0, 30);
+            eco.EarnBig(currency, astronomicalAmount);
+
+            Assert.IsTrue(eco.CanAffordBig(currency, astronomicalAmount));
+            Assert.IsTrue(eco.CanAffordBig(currency, new BigDouble(2.0, 30)));
+            Assert.IsFalse(eco.CanAffordBig(currency, new BigDouble(6.0, 30)));
+
+            BigDouble spendAmount = new BigDouble(2.0, 30);
+            bool spendSuccess = eco.SpendBig(currency, spendAmount);
+            Assert.IsTrue(spendSuccess);
+
+            BigDouble balance = eco.GetBigBalance(currency);
+            Assert.AreEqual(3.0, balance.Mantissa, 0.001);
+            Assert.AreEqual(30, balance.Exponent);
+        }
+
+        [Test]
+        public void EconomyService_GetObservableBigBalance_ReturnsSecureObservableBigDouble_AndFiresOnChanged()
+        {
+            using var eco = new EconomyService();
+            string currency = "CosmicStardust";
+
+            var observable = eco.GetObservableBigBalance(currency);
+            Assert.IsNotNull(observable);
+
+            BigDouble receivedOld = BigDouble.Zero;
+            BigDouble receivedNew = BigDouble.Zero;
+            bool fired = false;
+
+            observable.OnChanged((oldVal, newVal) =>
+            {
+                receivedOld = oldVal;
+                receivedNew = newVal;
+                fired = true;
+            });
+
+            BigDouble earnVal = new BigDouble(7.5, 20);
+            eco.EarnBig(currency, earnVal);
+
+            Assert.IsTrue(fired);
+            Assert.AreEqual(BigDouble.Zero, receivedOld);
+            Assert.AreEqual(earnVal, receivedNew);
+            Assert.AreEqual(earnVal, observable.Value);
+        }
     }
 }

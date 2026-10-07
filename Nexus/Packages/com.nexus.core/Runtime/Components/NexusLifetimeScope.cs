@@ -26,6 +26,12 @@ namespace Nexus.Core
                 _parentScope = transform.parent.GetComponentInParent<Root>();
             }
 
+            // Fall back to persistent global root across scenes if hierarchy parent not found
+            if (_parentScope == null && AutoBindGlobalParent && NexusRuntime.GlobalRoot != null && NexusRuntime.GlobalRoot != this)
+            {
+                _parentScope = NexusRuntime.GlobalRoot;
+            }
+
             if (_parentScope != null && _parentScope != this)
             {
                 SetUp(ContextData, _parentScope, InitializationPriority);

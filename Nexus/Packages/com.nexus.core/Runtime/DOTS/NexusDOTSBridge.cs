@@ -105,17 +105,46 @@ namespace Nexus.DOTS
             _isInitialized = true;
         }
 
-        // Internal on purpose: the returned struct is a COPY sharing the same native handle —
-        // disposing the copy would invalidate this bridge's queue. Nothing outside the
-        // package needs it; callers must never Dispose the returned value.
-        internal NativeSignalQueue<T> Queue => _signalQueue;
+        /// <summary>Returns true if the bridge has been initialized and its native queue is allocated.</summary>
+        public bool IsInitialized => _isInitialized && _signalQueue.IsCreated;
 
-        private void Update()
+        /// <summary>
+        /// Enqueues a signal into the native queue. Safe to call from worker threads or jobs.
+        /// </summary>
+        public void Enqueue(T signal)
+        {
+            if (!_isInitialized || !_signalQueue.IsCreated)
+                throw new InvalidOperationException($"[Nexus DOTS] DOTSSignalBridge<{typeof(T).Name}> is not initialized.");
+            _signalQueue.Enqueue(signal);
+        }
+
+        /// <summary>
+        /// Returns a parallel writer for concurrent job execution (e.g. inside IJobParallelFor).
+        /// </summary>
+        public NativeQueue<T>.ParallelWriter AsParallelWriter()
+        {
+            if (!_isInitialized || !_signalQueue.IsCreated)
+                throw new InvalidOperationException($"[Nexus DOTS] DOTSSignalBridge<{typeof(T).Name}> is not initialized.");
+            return _signalQueue.AsParallelWriter();
+        }
+
+        /// <summary>
+        /// Manually drains all queued signals into the SignalBus on the main thread.
+        /// </summary>
+        public void Drain()
         {
             if (_isInitialized && _signalQueue.IsCreated && _signalBus != null)
             {
                 _signalQueue.Drain(_signalBus);
             }
+        }
+
+        // Internal property kept for internal/testing access.
+        internal NativeSignalQueue<T> Queue => _signalQueue;
+
+        private void Update()
+        {
+            Drain();
         }
 
         private void OnDestroy()
