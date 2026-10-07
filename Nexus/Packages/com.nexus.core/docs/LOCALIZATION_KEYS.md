@@ -16,6 +16,7 @@ This document lists all active localization key namespaces and keys used across 
 | Prefix | Component / Plugin | Description |
 |:---|:---|:---|
 | `dashboard` / `dash_` | DashboardPlugin | System status, QuickFind, framework overview |
+| `setup_` | SetupWizardPlugin | Localized setup steps, descriptions, actions and integration guide |
 | `tracer_` | TracerPlugin | Causal trace log, filters, event details |
 | `gm_` / `gamemanager_` | GameManagerPlugin | Models, signals, commands, views, services, live rates |
 | `wizard_` | WizardPlugin | Code generator templates, context creation |
@@ -67,3 +68,7 @@ This document lists all active localization key namespaces and keys used across 
 **Code version:** 0.4.0  
 **Maintainers:** Nexus Core Team  
 **Re-review trigger:** Adding or modifying any localization key.
+
+UPM locale JSON is loaded through AssetDatabase at the package asset path. Do not use
+File.Exists on Packages paths for immutable Git/tarball installs. Setup guides resolve
+PackageInfo.resolvedPath, with the current locale and English fallback.

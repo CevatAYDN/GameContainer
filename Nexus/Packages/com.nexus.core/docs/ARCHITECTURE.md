@@ -20,6 +20,14 @@
 - Command pools retain local transient factories/overrides and construct defaults in their owning DI scope. Cached DI instances are never admitted into a transient pool.
 - Runtime/AOT assembly catalogs exclude test support and editor implementation assemblies. Trace time is worker-safe monotonic elapsed time from the Nexus trace clock, independent of Unity startup time.
 
+- DI validation reads actual default/named registrations and each constructing binding's owning scope. It validates every alias, compatible constructor overrides, eager dependency cycles and captive lifetimes without executing constructors/factories. Opaque factories/instances/adapters and lazy edges retain documented limits.
+- Loading-time `Context.Prewarm<TSignal>()` populates idle command capacity and prepares injection metadata without firing commands, subscribers or one-shots. Pool ownership covers idle and active leases; Clear cannot allow a factory to hand out an already-rented object.
+- Mono/JIT caches suitable constructor delegates once, avoiding reflection argument arrays. Open generic/value/optional/override cases keep their fallback; IL2CPP/AOT never emits dynamic IL.
+- Registry registration occurs during construction; it is **not** readiness. `OnContextConfigured` follows successful bindings/validation and `OnContextInitialized` follows full async startup. NexusBehaviour defers injection/Awake hooks until configuration and Start hooks until async initialization. It clears context-owned subscriptions/injected references on replacement or disposal. A nearest parent Root is authoritative; unrelated scope events cannot redirect injection.
+- One persistent Global Root is supported. Serialized global flags are discovered on cold startup before linking orphan roots; duplicate globals are rejected. Hierarchy menus configure inactive GameObjects before Awake, and global roots stay top-level.
+- Economy currencies promote once from long to canonical BigDouble using the live balance before disk. Existing long observables become saturated/truncated projections. Big backends implement INetworkBigEconomyValidator; unsupported transactions fail closed. Storage uses finite-only invariant round-trip mantissa encoding.
+- A custom input provider owns movement including zero. Optional DOTS bridges complete registered JobHandle producers before drain, reinitialization or disposal; callers register every scheduled producer on the main thread.
+
 Implementation and verification status: [HARDENING.md](HARDENING.md).
 
 This document describes the high-level architecture, runtime pipeline, component contracts, and lifecycle sequences of the **Nexus Core** framework for Unity 6.

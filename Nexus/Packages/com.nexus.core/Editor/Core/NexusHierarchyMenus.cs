@@ -15,40 +15,29 @@ namespace Nexus.Editor
         [MenuItem("GameObject/Nexus/Scene Root", false, 10)]
         public static void CreateSceneRoot(MenuCommand menuCommand)
         {
-            var go = new GameObject("[Scene_Root]");
-            var root = go.AddComponent<Root>();
-            GameObjectUtility.SetParentAndAlign(go, menuCommand.context as GameObject);
-            Undo.RegisterCreatedObjectUndo(go, "Create Nexus Scene Root");
-            Selection.activeObject = go;
+            CreateRoot<Root>("[Scene_Root]", menuCommand?.context as GameObject, null, false, "Create Nexus Scene Root");
         }
 
         [MenuItem("GameObject/Nexus/Global Project Root (DontDestroyOnLoad)", false, 11)]
         public static void CreateGlobalProjectRoot(MenuCommand menuCommand)
         {
-            var go = new GameObject("[Global_Project_Root]");
-            var root = go.AddComponent<Root>();
-            root.IsGlobalContext = true;
-            GameObjectUtility.SetParentAndAlign(go, menuCommand.context as GameObject);
-            Undo.RegisterCreatedObjectUndo(go, "Create Global Project Root");
-            Selection.activeObject = go;
+            CreateRoot<Root>("[Global_Project_Root]", null, null, true, "Create Global Project Root");
         }
 
         [MenuItem("GameObject/Nexus/Child Lifetime Scope", false, 12)]
         public static void CreateLifetimeScope(MenuCommand menuCommand)
         {
-            var go = new GameObject("[Lifetime_Scope]");
-            var scope = go.AddComponent<NexusLifetimeScope>();
-            GameObjectUtility.SetParentAndAlign(go, menuCommand.context as GameObject);
-            Undo.RegisterCreatedObjectUndo(go, "Create Nexus Lifetime Scope");
-            Selection.activeObject = go;
+            CreateRoot<NexusLifetimeScope>("[Lifetime_Scope]", menuCommand?.context as GameObject, null, false, "Create Nexus Lifetime Scope");
         }
 
         [MenuItem("GameObject/Nexus/Entity with Nexus Binding", false, 13)]
         public static void CreateEntityWithBinding(MenuCommand menuCommand)
         {
             var go = new GameObject("NexusEntity");
+            go.SetActive(false);
+            GameObjectUtility.SetParentAndAlign(go, menuCommand?.context as GameObject);
             go.AddComponent<NexusBinding>();
-            GameObjectUtility.SetParentAndAlign(go, menuCommand.context as GameObject);
+            go.SetActive(true);
             Undo.RegisterCreatedObjectUndo(go, "Create Entity with Nexus Binding");
             Selection.activeObject = go;
         }
@@ -95,20 +84,36 @@ namespace Nexus.Editor
         [MenuItem("Nexus/Create/Scene Root in Active Scene", false, 11)]
         public static void CreateSceneRootInActiveScene()
         {
-            var go = new GameObject("[Scene_Root]");
-            go.AddComponent<Root>();
-            Undo.RegisterCreatedObjectUndo(go, "Create Nexus Scene Root");
-            Selection.activeObject = go;
+            CreateSceneRoot(null);
         }
 
         [MenuItem("Nexus/Create/Global Project Root in Active Scene", false, 12)]
         public static void CreateGlobalRootInActiveScene()
         {
-            var go = new GameObject("[Global_Project_Root]");
-            var root = go.AddComponent<Root>();
-            root.IsGlobalContext = true;
-            Undo.RegisterCreatedObjectUndo(go, "Create Global Project Root");
+            CreateGlobalProjectRoot(null);
+        }
+
+        internal static Root CreateSceneRootWithAsset(ContextData data)
+        {
+            string name = string.IsNullOrEmpty(data.ScopeTag) ? "NexusRoot" : $"[{data.ScopeTag}_Root]";
+            return CreateRoot<Root>(name, null, data, false, $"Create {name}");
+        }
+
+        private static T CreateRoot<T>(string name, GameObject parent, ContextData data, bool isGlobal, string undoName) where T : Root
+        {
+            // Parent and settings must be in place before activation invokes Root/Scope.Awake.
+            var go = new GameObject(name);
+            go.SetActive(false);
+            if (!isGlobal) GameObjectUtility.SetParentAndAlign(go, parent);
+            var root = go.AddComponent<T>();
+            root.SetUp(data);
+            var serializedRoot = new SerializedObject(root);
+            serializedRoot.FindProperty("isGlobalContext").boolValue = isGlobal;
+            serializedRoot.ApplyModifiedPropertiesWithoutUndo();
+            go.SetActive(true);
+            Undo.RegisterCreatedObjectUndo(go, undoName);
             Selection.activeObject = go;
+            return root;
         }
     }
 }

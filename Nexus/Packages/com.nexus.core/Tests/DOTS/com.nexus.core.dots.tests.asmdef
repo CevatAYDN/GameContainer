@@ -1,0 +1,30 @@
+{
+  "name": "com.nexus.core.dots.tests",
+  "rootNamespace": "Nexus.Core.Tests",
+  "references": [
+    "com.nexus.core",
+    "com.nexus.core.dots",
+    "Unity.Collections",
+    "UnityEngine.TestRunner"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS",
+    "UNITY_COLLECTIONS"
+  ],
+  "versionDefines": [
+    {
+      "name": "com.unity.collections",
+      "expression": "1.0.0",
+      "define": "UNITY_COLLECTIONS"
+    }
+  ],
+  "noEngineReferences": false
+}

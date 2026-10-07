@@ -350,20 +350,12 @@ namespace Nexus.Core.Services
 
         public BigDouble GetBigDouble(string key, BigDouble defaultValue = default)
         {
-            string valStr = GetString(key, null);
-            if (valStr == null) return defaultValue;
-            string[] parts = valStr.Split(';');
-            if (parts.Length == 2 && double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double m)
-                && long.TryParse(parts[1], out long e))
-            {
-                return new BigDouble(m, e);
-            }
-            return defaultValue;
+            return BigDoubleStorageCodec.Decode(GetString(key, null), defaultValue);
         }
 
         public void SetBigDouble(string key, BigDouble value)
         {
-            SetString(key, $"{value.Mantissa.ToString(System.Globalization.CultureInfo.InvariantCulture)};{value.Exponent}");
+            SetString(key, BigDoubleStorageCodec.Encode(value));
         }
 
         /// <summary>

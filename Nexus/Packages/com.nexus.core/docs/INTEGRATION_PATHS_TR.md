@@ -99,3 +99,32 @@ ve rollback katmanı, tek başına multiplayer backend kurmaz.
 
 Bkz. [doğrulama kapsamı](HARDENING.md), [oyun kalıpları](GAME_PATTERNS.md),
 [mimari](ARCHITECTURE.md), [sorun giderme](../TROUBLESHOOTING.md).
+
+## Sahne bileşenleri ve hazır context
+
+NexusBehaviour'ı kendi Root'unun altında kullanın; birden fazla bağımsız code-first
+context varsa Context'i açıkça atayın. OnNexusAwake binding/validation tamamlandığında,
+OnNexusStart Unity Start ve async servis başlangıcı tamamlandığında çağrılır. Context
+değişimi/disposal takip edilen abonelikleri ve inject edilmiş field/property'leri
+temizler; yeni context'e bağlanınca hook'lar yeniden çalışır. Disable abonelikleri
+sonlandırmaz. AutoInject kapalıysa elle atadığınız referansları siz yönetirsiniz.
+Bootstrap sahnesinde tek Global Root kullanın; serialized global flag sahne Root'ları
+kurulmadan keşfedilir, ikinci global reddedilir. Runtime Root'ları aktive etmeden önce
+konfigüre edin.
+
+Collections/DOTS isteğe bağlıdır. Ana thread'de AsParallelWriter alın, producer job'u
+schedule edin ve Unity'ye kontrol vermeden hemen AddProducerDependency(jobHandle)
+çağırın. Her producer'ı kaydedin. Drain/yeniden kurulum/destroy job'ları tamamlar;
+uzun job'ları kendi update planınızda daha erken bitirin. NativeSignalQueue doğrudan
+kullanılıyorsa job tamamlama sahipliği sizdedir; Enqueue tek yazarlıdır.
+
+## Büyük oyun para birimleri
+
+BigDouble API, aynı currency'nin güncel long cache'ini diskten önce kullanarak tek
+canonical bakiyeye geçer. Long gözlemlenebilir nesne aynı kalır, kesirleri keser ve
+long.MaxValue'da doyar. Bu nesneye elle long yazmak canonical bakiyeyi o tam sayıya
+ayarlar. BigDouble yaklaşık double mantissa kullanır; idle oyun sayılarını taşır,
+büyük tam sayılarda kesin muhasebe doğruluğu sağlamaz. NaN/Infinity ve negatif Big
+miktarlar reddedilir. Backend varsa INetworkBigEconomyValidator desteği gerekir;
+destek yoksa SpendBig false, EarnBig/SetBigBalance NotSupportedException döndürür.
+Yerel doğrulama/obfuscation sunucu otoritesi yerine geçmez.

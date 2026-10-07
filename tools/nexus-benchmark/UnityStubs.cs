@@ -294,6 +294,7 @@ namespace UnityEngine
     }
 
     /// <summary>Unity FindObjectsInactive filter — no-op outside Unity.</summary>
+    public enum FindObjectsSortMode { None, InstanceID }
     public enum FindObjectsInactive
     {
         Exclude = 0,
@@ -462,6 +463,8 @@ namespace UnityEngine
         }
 
         /// <summary>Finds live objects of the given type (mirrors UnityEngine.Object.FindObjectsByType).</summary>
+        public static T[] FindObjectsByType<T>(FindObjectsInactive inactive, FindObjectsSortMode sortMode) where T : Object
+            => FindObjectsByType<T>(inactive);
         public static T[] FindObjectsByType<T>(FindObjectsInactive findObjectsInactive) where T : Object
         {
             lock (s_lock)
@@ -510,7 +513,7 @@ namespace UnityEngine
         public T GetComponent<T>() => gameObject.GetComponent<T>();
         public T[] GetComponents<T>() => gameObject.GetComponents<T>();
         public T[] GetComponentsInChildren<T>(bool includeInactive = false) => gameObject.GetComponentsInChildren<T>(includeInactive);
-        public T GetComponentInParent<T>() => gameObject.GetComponentInParent<T>();
+        public T GetComponentInParent<T>(bool includeInactive = false) => gameObject.GetComponentInParent<T>();
     }
 
     /// <summary>Unity GameObject — a functional component container with hierarchy.</summary>
@@ -895,6 +898,9 @@ namespace UnityEngine
 
     public static class Input
     {
+        public static bool GetButton(string name) => false;
+        public static bool GetButtonDown(string name) => false;
+        public static bool GetButtonUp(string name) => false;
         public static bool GetKeyDown(KeyCode key) => false;
         public static float GetAxisRaw(string axisName) => 0f;
         public static float GetAxis(string axisName) => 0f;

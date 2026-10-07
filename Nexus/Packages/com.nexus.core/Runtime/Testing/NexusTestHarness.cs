@@ -58,6 +58,8 @@ namespace Nexus.Core
             if (autoInitialize)
             {
                 RunBlocking(() => context.InitializeLifecycleAsync(context.ConfiguredLifecycles, default));
+                NexusRuntime.NotifyContextInitialized(context);
+                if (context.IsDisposed) throw new ObjectDisposedException(nameof(Context), "Context was disposed by a startup observer.");
             }
 
             return new NexusTestContext(context);

@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using UnityEngine;
+using Unity.Jobs;
 using Nexus.Core;
 
 namespace Nexus.DOTS
@@ -44,7 +45,8 @@ namespace Nexus.DOTS
         public bool IsCreated => _queue.IsCreated;
 
         /// <summary>
-        /// Enqueues a signal thread-safely. Safe to call inside Job.Execute().
+        /// Enqueues from one exclusive writer. Use AsParallelWriter for concurrent jobs,
+        /// and complete all producers before draining or disposing the queue.
         /// </summary>
         public void Enqueue(T signal)
         {
@@ -97,9 +99,14 @@ namespace Nexus.DOTS
         private NativeSignalQueue<T> _signalQueue;
         private ISignalBus _signalBus;
         private bool _isInitialized;
+        private JobHandle _producers;
 
         public void Initialize(ISignalBus signalBus, Allocator allocator)
         {
+            EnsureMainThread();
+            if (signalBus == null) throw new ArgumentNullException(nameof(signalBus));
+            _producers.Complete();
+            _signalQueue.Dispose();
             _signalBus = signalBus;
             _signalQueue = new NativeSignalQueue<T>(allocator);
             _isInitialized = true;
@@ -109,23 +116,44 @@ namespace Nexus.DOTS
         public bool IsInitialized => _isInitialized && _signalQueue.IsCreated;
 
         /// <summary>
-        /// Enqueues a signal into the native queue. Safe to call from worker threads or jobs.
+        /// Enqueues on the main thread after completing registered producers.
+        /// Jobs must use AsParallelWriter and register their scheduled JobHandle.
         /// </summary>
         public void Enqueue(T signal)
         {
+            EnsureMainThread();
             if (!_isInitialized || !_signalQueue.IsCreated)
                 throw new InvalidOperationException($"[Nexus DOTS] DOTSSignalBridge<{typeof(T).Name}> is not initialized.");
+            _producers.Complete();
+            _producers = default;
             _signalQueue.Enqueue(signal);
         }
 
         /// <summary>
-        /// Returns a parallel writer for concurrent job execution (e.g. inside IJobParallelFor).
+        /// Obtains a writer on the main thread. Immediately register every scheduled
+        /// producer using AddProducerDependency before returning control to Unity.
         /// </summary>
         public NativeQueue<T>.ParallelWriter AsParallelWriter()
         {
+            EnsureMainThread();
             if (!_isInitialized || !_signalQueue.IsCreated)
                 throw new InvalidOperationException($"[Nexus DOTS] DOTSSignalBridge<{typeof(T).Name}> is not initialized.");
             return _signalQueue.AsParallelWriter();
+        }
+
+        /// <summary>Registers producer ownership so Update, reinitialization and destruction complete jobs before accessing native storage.</summary>
+        public void AddProducerDependency(JobHandle producer)
+        {
+            EnsureMainThread();
+            if (!IsInitialized) throw new InvalidOperationException("The DOTS bridge is not initialized.");
+            _producers = JobHandle.CombineDependencies(_producers, producer);
+        }
+
+        private static void EnsureMainThread()
+        {
+            int id = NexusDOTSMainThread.MainThreadId;
+            if (id != -1 && System.Threading.Thread.CurrentThread.ManagedThreadId != id)
+                throw new InvalidOperationException("DOTS bridge ownership APIs must be called on the main thread.");
         }
 
         /// <summary>
@@ -133,8 +161,11 @@ namespace Nexus.DOTS
         /// </summary>
         public void Drain()
         {
+            EnsureMainThread();
             if (_isInitialized && _signalQueue.IsCreated && _signalBus != null)
             {
+                _producers.Complete();
+                _producers = default;
                 _signalQueue.Drain(_signalBus);
             }
         }
@@ -151,7 +182,9 @@ namespace Nexus.DOTS
         {
             if (_isInitialized)
             {
+                _producers.Complete();
                 _signalQueue.Dispose();
+                _isInitialized = false;
             }
         }
     }

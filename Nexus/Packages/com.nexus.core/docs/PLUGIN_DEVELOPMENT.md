@@ -149,3 +149,13 @@ var button = new Button { text = NexusLang.Get("dash_qf_copy") };
 **Code version:** 0.4.0  
 **Maintainers:** Nexus Core Team  
 **Re-review trigger:** Any change to `INexusEditorPlugin.cs` or `Editor/Plugins/`.
+
+## Integration tooling contracts
+
+Setup Wizard has no frame polling work; OnUpdate is intentionally empty. Locale assets
+use AssetDatabase and external guides use the resolved PackageInfo path. Preserve
+existing files/scenes/settings and create sample scenes additively. Scene creation
+configures parent, ContextData and global flags on inactive GameObjects before Awake.
+Custom inspectors keep all uncustomized serialized properties accessible and previews
+must match actual runtime injection targets. Native editor regressions exercise IMGUI,
+Undo, asset property bindings, locale loading and PlayMode creation order.

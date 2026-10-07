@@ -96,3 +96,34 @@ rollback alone do not establish a multiplayer backend.
 
 See [verification scope](HARDENING.md), [game patterns](GAME_PATTERNS.md),
 [architecture](ARCHITECTURE.md), and [troubleshooting](../TROUBLESHOOTING.md).
+
+## Scene components, global scope and jobs
+
+Use NexusBehaviour for a convenient scene component: place it under its Root or assign
+Context explicitly when several independent code-first contexts exist. Registration
+alone is not readiness. OnNexusAwake runs after bindings/validation; OnNexusStart runs
+after Unity Start and async context startup. Keep hooks short. Context replacement or
+disposal cleans tracked subscriptions and injected fields/properties; reattachment
+runs hooks for the new context. Disable does not destroy subscriptions. With AutoInject
+disabled, manually assigned fields remain your responsibility. One Global Root belongs
+in the bootstrap scene; scene roots discover its serialized flag before their own
+startup. Duplicate globals fail explicitly. Configure runtime Roots before activation.
+
+Collections/DOTS is optional. Obtain AsParallelWriter on the main thread, schedule the
+producer, immediately call AddProducerDependency(jobHandle), then allow Unity Update
+to drain. Register every producer. Completing jobs can stall the main thread; finish
+long jobs earlier in your own update schedule. Dispose cannot abandon an in-flight
+producer. NativeSignalQueue itself requires the caller to complete producers before
+read/dispose; direct Enqueue is single-writer, not a parallel-write API.
+
+## Large game currencies
+
+Economy BigDouble access promotes the currency using current cached long state before
+stored state. Thereafter one BigDouble ledger drives both APIs; long reads/observables
+truncate fractions and saturate at long.MaxValue. Writing a retained mutable long
+observable explicitly sets the canonical integer amount. BigDouble uses approximate
+double mantissa arithmetic for idle/incremental games; it does not guarantee exact
+large integer accounting. NaN/infinity and negative Big amounts are rejected. An
+existing network validator must also implement INetworkBigEconomyValidator for Big
+transactions; unsupported SpendBig returns false, EarnBig/SetBigBalance throw
+NotSupportedException. Client validators/obfuscation do not provide server authority.

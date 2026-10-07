@@ -21,10 +21,10 @@ namespace Nexus.Editor.Inspector
             if (target == null) return false;
             try
             {
-                _scopeTagProp ??= serializedObject.FindProperty("scopeTag");
-                _enableAutoDiscoveryProp ??= serializedObject.FindProperty("enableAutoDiscovery");
-                _assemblyScopesProp ??= serializedObject.FindProperty("assemblyScopes");
-                return _scopeTagProp != null;
+                _scopeTagProp ??= serializedObject.FindProperty(nameof(ContextData.ScopeTag));
+                _enableAutoDiscoveryProp ??= serializedObject.FindProperty(nameof(ContextData.EnableAutoDiscovery));
+                _assemblyScopesProp ??= serializedObject.FindProperty(nameof(ContextData.AssemblyScopes));
+                return _scopeTagProp != null && _enableAutoDiscoveryProp != null && _assemblyScopesProp != null;
             }
             catch
             {
@@ -76,6 +76,11 @@ namespace Nexus.Editor.Inspector
             }
             NexusInspectorGUI.EndCard();
 
+            NexusInspectorGUI.BeginCard("Additional Settings");
+            DrawPropertiesExcluding(serializedObject, "m_Script", nameof(ContextData.ScopeTag),
+                nameof(ContextData.EnableAutoDiscovery), nameof(ContextData.AssemblyScopes));
+            NexusInspectorGUI.EndCard();
+
             // 3. Quick Actions
             NexusInspectorGUI.BeginCard("Quick Actions");
             if (NexusInspectorGUI.DrawActionButton("✨ Create Scene Root with this Asset", StatusType.Success, 26))
@@ -94,16 +99,7 @@ namespace Nexus.Editor.Inspector
 
         private static void CreateSceneRootWithAsset(ContextData data)
         {
-            string name = string.IsNullOrEmpty(data.ScopeTag) ? "NexusRoot" : $"[{data.ScopeTag}_Root]";
-            var go = new GameObject(name);
-            var root = go.AddComponent<Root>();
-
-            var serializedRoot = new SerializedObject(root);
-            serializedRoot.FindProperty("contextData").objectReferenceValue = data;
-            serializedRoot.ApplyModifiedProperties();
-
-            Undo.RegisterCreatedObjectUndo(go, $"Create {name}");
-            Selection.activeGameObject = go;
+            NexusHierarchyMenus.CreateSceneRootWithAsset(data);
         }
     }
 }

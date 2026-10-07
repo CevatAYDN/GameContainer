@@ -22,6 +22,10 @@ namespace Nexus.Core
     {
         public static event System.Action<IContext> OnContextRegistered;
         public static event System.Action<IContext> OnContextUnregistered;
+        /// <summary>Raised after binding configuration and validation succeed. Registration alone is not injection readiness.</summary>
+        public static event Action<IContext> OnContextConfigured;
+        /// <summary>Raised after asynchronous service and lifecycle startup succeeds.</summary>
+        public static event Action<IContext> OnContextInitialized;
         public static IContextResolver DefaultContextResolver { get; } = new DefaultResolver();
 
         private static Root s_globalRoot;
@@ -48,6 +52,8 @@ namespace Nexus.Core
         public static void RegisterGlobalRoot(Root root)
         {
             if (root == null) return;
+            if (s_globalRoot != null && s_globalRoot != root)
+                throw new InvalidOperationException("Only one active Global Root is supported. Keep it in the bootstrap scene.");
             s_globalRoot = root;
         }
 
@@ -258,6 +264,8 @@ namespace Nexus.Core
                 // contexts — reactive models and services are initialized before the
                 // lifecycle Init/Start phases, and ALL configured lifecycles are iterated.
                 await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, context.LifetimeToken);
+                NotifyContextInitialized(context);
+                if (context.IsDisposed) throw new ObjectDisposedException(nameof(Context), "Context was disposed by a startup observer.");
             }
             catch
             {
@@ -390,6 +398,8 @@ namespace Nexus.Core
             var onUnregistered = OnContextUnregistered;
             OnContextRegistered = null;
             OnContextUnregistered = null;
+            OnContextConfigured = null;
+            OnContextInitialized = null;
 
             IContext[] snapshot;
             lock (s_lock)
@@ -653,6 +663,21 @@ namespace Nexus.Core
                         _lastSampleTime = now;
                     }
                 }
+            }
+        }
+
+        internal static void NotifyContextConfigured(Context context) => NotifyReady(OnContextConfigured, context);
+        internal static void NotifyContextInitialized(Context context) => NotifyReady(OnContextInitialized, context);
+
+        private static void NotifyReady(Action<IContext> handlers, Context context)
+        {
+            if (handlers == null || context.IsDisposed) return;
+            // One faulty component must not prevent other waiting components from binding.
+            foreach (Action<IContext> handler in handlers.GetInvocationList())
+            {
+                if (context.IsDisposed) break;
+                try { handler(context); }
+                catch (Exception ex) { NexusLog.Error(nameof(NexusRuntime), nameof(NotifyReady), context.ScopeTag, ex); }
             }
         }
 

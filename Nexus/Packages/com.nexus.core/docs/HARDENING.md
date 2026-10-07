@@ -6,22 +6,33 @@ snapshot contract and adds an allocation-free typed alternative. Platform accept
 
 ## Verification
 
+Latest source integration/reentrancy update: 7 October 2026, based on commits
+`8c91403`, `94beec3`, `21a0b7b`, `3cd154b` and the subsequent working-tree fixes.
+Current HEAD/diff and fresh result files take precedence over earlier counts.
+
 | Check | Evidence |
 |---|---|
-| Existing host harness | 291 checks passed in the final host run; before changes 5 failed |
-| Additional NUnit/UI host checks | 51 passed; actual package sources and NUnit assertions, Unity APIs stubbed |
-| Unity 6000.5.6f1 reference compilation | Runtime, editor and Code-first sample: 0 errors / 0 warnings |
-| Full runtime/editor test-source compilation | 0 errors; intentional existing injection/analyzer test fields produce compiler warnings |
-| Real Unity EditMode execution | 290 passed / 0 failed, with a graphics device; includes architecture validation, AOT generation and editor UI tests |
-| Real Unity PlayMode execution | 151 passed / 0 failed; debug-off assertions run separately in the clean consumer configuration |
-| Clean tarball UPM consumer | Real Package Manager sample import, startup/disposal, Windows Mono player and Android ARM64 IL2CPP build |
-| Device acceptance | Android/iOS physical runtime, Windows IL2CPP, game frame budgets and device storage interruption remain unverified |
+| Existing host harness | 291 checks passed from repository root; Unity APIs are stubbed |
+| Real Unity 6000.5.6f1 EditMode | 352 passed / 0 failed / 0 skipped; includes integration metadata, source generation, actual IMGUI/Undo, editor creation and 8 ready/reentrancy cases |
+| Real Unity PlayMode | 160 passed / 0 failed; 2 debug-configuration assertions skipped here and checked in a debug-off consumer |
+| Storage numeric regressions | 13 native checks passed; concrete Unity prefs and legacy provider invariant round-trip, finite validation, cache promotion/backend ownership |
+| Optional Collections/DOTS | 3 native tests use real parallel jobs: drain, reinitialize and destroy complete registered producers; framework tests install Collections 2.6.8 without requiring it for core consumers |
+| Main-project consumer readiness | Actual Awake before code-first startup, owning-parent selection, disposed-owner reattachment, serialized global discovery, failed-global replacement and cleanup covered by native PlayMode |
+| Clean tarball and platform acceptance | Prior verified archive: real sample import, debug-off allocation checks, Windows Mono player and Android ARM64 IL2CPP build. Fresh archive identity/results are recorded outside the package under artifacts/excellence-20261007; do not transfer the older archive's result to new source |
+| Open device/platform evidence | Android/iOS physical runtime, Windows IL2CPP, actual game frame p95/p99, device storage interruption and native competitor comparison remain unverified |
 
-Permanent regressions are in `Tests/Editor/HardeningRegressionTests.cs`, `UIManagerTests.cs`,
-`WizardTemplateSyncTests.cs` and `FSMHardeningTests.cs`. They now execute in a licensed
-Unity 6000.5.6f1 editor. Independent
-source review found additional nested replay, queue ownership and callback defects; these
-were corrected and covered by host regressions. Review is not exhaustive branch coverage.
+Permanent regression fixtures include IntegrationReadinessTests,
+LatestServiceRegressionTests, LatestCommitEditorRegressionTests,
+ReadyReentrancyRegressionTests, LatestLifecycleRegressionTests and optional
+DotsOwnershipRegressionTests. Framework observer callbacks cannot double-inject a
+component or return a disposed owner as successful startup. Readiness observers stop
+when an earlier observer disposes the owner. Review is not exhaustive branch coverage.
+
+Core DI comparison and reproducibility: [PERFORMANCE_COMPARISON.md](PERFORMANCE_COMPARISON.md).
+Nexus leads cached resolves in the recorded host run; VContainer leads transient
+construction and warm register/build startup. No universal or target-device winner
+is claimed. The temporary constructor-array allocation was removed on supported
+Mono/JIT paths; 72 B remains for the three objects in the host graph.
 
 ## Measured host performance
 

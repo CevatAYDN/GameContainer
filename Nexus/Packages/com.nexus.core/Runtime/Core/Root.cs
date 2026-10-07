@@ -46,6 +46,7 @@ namespace Nexus.Core
         // Volatile: written on the main thread but polled by other Roots' startup loops,
         // which can resume on a worker thread when no SynchronizationContext is present.
         private volatile bool _isInitialized;
+        private volatile bool _startupFailed;
         /// <summary>True after async initialization (OnInitializeAsync + OnStartAsync) completes.</summary>
         public bool IsInitialized => _isInitialized;
         /// <summary>Priority for sibling sorting; higher values initialize earlier.</summary>
@@ -60,17 +61,17 @@ namespace Nexus.Core
             get => isGlobalContext;
             set
             {
-                isGlobalContext = value;
-                if (isGlobalContext)
+                if (value)
                 {
-                    if (Application.isPlaying)
-                    {
-                        UnityEngine.Object.DontDestroyOnLoad(gameObject);
-                    }
+                    if (parentRoot != null)
+                        throw new InvalidOperationException("A Global Root cannot have a parent context.");
                     NexusRuntime.RegisterGlobalRoot(this);
+                    isGlobalContext = true;
+                    MakeGlobalPersistent();
                 }
-                else if (NexusRuntime.GlobalRoot == this)
+                else
                 {
+                    isGlobalContext = false;
                     NexusRuntime.UnregisterGlobalRoot(this);
                 }
             }
@@ -83,7 +84,7 @@ namespace Nexus.Core
             set
             {
                 autoBindGlobalParent = value;
-                if (autoBindGlobalParent && parentRoot == null && NexusRuntime.GlobalRoot != null && NexusRuntime.GlobalRoot != this)
+                if (Context == null && autoBindGlobalParent && parentRoot == null && NexusRuntime.GlobalRoot != null && NexusRuntime.GlobalRoot != this)
                 {
                     parentRoot = NexusRuntime.GlobalRoot;
                 }
@@ -152,6 +153,7 @@ namespace Nexus.Core
 
         private void OnEnable()
         {
+            if (_startupFailed) return;
             lock (s_rootLock)
             {
                 s_allRoots.Add(this); // HashSet.Add is idempotent — no Contains check needed
@@ -264,16 +266,18 @@ namespace Nexus.Core
 
             if (isGlobalContext)
             {
-                if (Application.isPlaying)
-                {
-                    UnityEngine.Object.DontDestroyOnLoad(gameObject);
-                }
+                if (parentRoot != null)
+                    throw new InvalidOperationException("A Global Root cannot have a parent context.");
                 NexusRuntime.RegisterGlobalRoot(this);
+                MakeGlobalPersistent();
             }
-            else if (parentRoot == null && autoBindGlobalParent && NexusRuntime.GlobalRoot != null && NexusRuntime.GlobalRoot != this)
+            else if (parentRoot == null && autoBindGlobalParent)
             {
-                parentRoot = NexusRuntime.GlobalRoot;
+                parentRoot = FindGlobalRoot();
             }
+
+            if (HasParentCycle())
+                throw new InvalidOperationException($"Root '{name}' has a parent cycle. Fix parentRoot references before initialization.");
 
             if (parentRoot != null && parentRoot != this)
             {
@@ -301,7 +305,21 @@ namespace Nexus.Core
                 Context.Container.BindInstance(_lifecycles[i]);
             }
 
-            Context.Configure(_lifecycles);
+            try { Context.Configure(_lifecycles); }
+            catch
+            {
+                MarkStartupFailed();
+                Context.Dispose();
+                Context = null;
+                if (isGlobalContext) NexusRuntime.UnregisterGlobalRoot(this);
+                throw;
+            }
+            if (Context == null || Context.IsDisposed)
+            {
+                MarkStartupFailed();
+                Context = null;
+                return;
+            }
 
             // Flush pending views
             for (int i = 0; i < _pendingViews.Count; i++)
@@ -310,6 +328,39 @@ namespace Nexus.Core
             }
             _pendingViews.Clear();
             _pendingViewsSet.Clear();
+        }
+
+        private void MakeGlobalPersistent()
+        {
+            // Unity only preserves root GameObjects. A global scope is never a scene child.
+            if (parentRoot != null)
+                throw new InvalidOperationException("A Global Root cannot have a parent context.");
+            if (Application.isPlaying)
+            {
+                transform.SetParent(null, true);
+                UnityEngine.Object.DontDestroyOnLoad(gameObject);
+            }
+        }
+
+        private static Root FindGlobalRoot()
+        {
+            if (NexusRuntime.GlobalRoot != null) return NexusRuntime.GlobalRoot;
+            // Serialized flags must be discovered before the first scene Root's Awake.
+            // This is a cold startup scan; contexts and frames use the registry thereafter.
+            Root candidate = null;
+#if UNITY_6000_5_OR_NEWER
+            var roots = UnityEngine.Object.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
+#else
+            var roots = UnityEngine.Object.FindObjectsByType<Root>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+#endif
+            foreach (var root in roots)
+            {
+                if (!root.enabled || root._startupFailed || !root.isGlobalContext) continue;
+                if (candidate != null && candidate != root)
+                    throw new InvalidOperationException("Multiple Global Roots found. Keep one in the bootstrap scene.");
+                candidate = root;
+            }
+            return candidate;
         }
 
         private async void Start()
@@ -332,6 +383,7 @@ namespace Nexus.Core
 
         private async Task StartInternal()
         {
+            if (_startupFailed) return;
             if (Context == null)
             {
                 InitializeContext();
@@ -423,6 +475,13 @@ namespace Nexus.Core
                 }
 
                 _isInitialized = true;
+                NexusRuntime.NotifyContextInitialized(Context);
+                if (Context == null || Context.IsDisposed)
+                {
+                    MarkStartupFailed();
+                    Context = null;
+                    return;
+                }
 
                 // The last active Root to finish startup runs the cross-context phase.
                 // Per-context idempotency makes this safe when scenes add another Root later:
@@ -432,6 +491,7 @@ namespace Nexus.Core
             }
             catch (OperationCanceledException)
             {
+                MarkStartupFailed();
                 // Cancelled, dispose context safely
                 if (Context != null)
                 {
@@ -442,6 +502,7 @@ namespace Nexus.Core
             }
             catch (Exception ex)
             {
+                MarkStartupFailed();
                 NexusRuntime.Logger?.LogError($"[Nexus] Root initialization failed: {ex.Message}\n{ex.StackTrace}");
                 if (Context != null)
                 {
@@ -450,6 +511,14 @@ namespace Nexus.Core
                 }
                 _isInitialized = false;
             }
+        }
+
+        private void MarkStartupFailed()
+        {
+            _startupFailed = true;
+            _isInitialized = false;
+            lock (s_rootLock) s_allRoots.Remove(this);
+            if (isGlobalContext) NexusRuntime.UnregisterGlobalRoot(this);
         }
 
         private static bool AreAllActiveRootsInitialized()

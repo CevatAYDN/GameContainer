@@ -18,7 +18,8 @@
   ],
   "dependencies": {
     "com.unity.profiling.core": "1.0.3",
-    "com.unity.ugui": "2.0.0"
+    "com.unity.ugui": "2.0.0",
+    "com.unity.inputsystem": "1.20.0"
   },
   "keywords": [
     "nexus",

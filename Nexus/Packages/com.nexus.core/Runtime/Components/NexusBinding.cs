@@ -42,6 +42,8 @@ namespace Nexus.Core.Components
         [SerializeField] private MonoBehaviour[] _customTargets = System.Array.Empty<MonoBehaviour>();
 
         private bool _hasInjected;
+        private IContext _requestedContext;
+        private bool _injecting;
 
         /// <summary>Gets or sets the injection scope.</summary>
         public InjectionScope Scope { get => _scope; set => _scope = value; }
@@ -67,7 +69,7 @@ namespace Nexus.Core.Components
 
         private void OnDestroy()
         {
-            NexusRuntime.OnContextRegistered -= OnContextRegistered;
+            NexusRuntime.OnContextConfigured -= OnContextConfigured;
         }
 
         /// <summary>
@@ -76,25 +78,33 @@ namespace Nexus.Core.Components
         /// </summary>
         public void InjectNow(IContext context = null)
         {
-            if (_hasInjected) return;
+            if (_hasInjected || _injecting) return;
 
-            IContext targetContext = context ?? FindActiveContext();
-            if (targetContext == null)
+            if (context != null) _requestedContext = context;
+            IContext targetContext = _requestedContext ?? FindActiveContext();
+            if (!ContextAvailability.CanInject(targetContext))
             {
                 // Fall back to waiting for a context to register if scene initialization order varies
-                NexusRuntime.OnContextRegistered -= OnContextRegistered;
-                NexusRuntime.OnContextRegistered += OnContextRegistered;
+                NexusRuntime.OnContextConfigured -= OnContextConfigured;
+                NexusRuntime.OnContextConfigured += OnContextConfigured;
                 return;
             }
 
-            PerformInjection(targetContext);
+            NexusRuntime.OnContextConfigured -= OnContextConfigured;
+            _injecting = true;
+            try { PerformInjection(targetContext); }
+            catch
+            {
+                if (this != null) NexusRuntime.OnContextConfigured += OnContextConfigured;
+                throw;
+            }
+            finally { _injecting = false; }
         }
 
-        private void OnContextRegistered(IContext context)
+        private void OnContextConfigured(IContext context)
         {
             if (_hasInjected) return;
-            NexusRuntime.OnContextRegistered -= OnContextRegistered;
-            PerformInjection(context);
+            InjectNow();
         }
 
         private void PerformInjection(IContext context)
@@ -147,23 +157,6 @@ namespace Nexus.Core.Components
             _hasInjected = true;
         }
 
-        private IContext FindActiveContext()
-        {
-            // 1. Try finding parent Root component in hierarchy
-            var parentRoot = GetComponentInParent<Root>();
-            if (parentRoot != null && parentRoot.Context != null)
-            {
-                return parentRoot.Context;
-            }
-
-            // 2. Try persistent global project context across scenes
-            if (NexusRuntime.GlobalContext != null)
-            {
-                return NexusRuntime.GlobalContext;
-            }
-
-            // 3. Fall back to active default context in NexusRuntime
-            return NexusRuntime.GetDefaultContext();
-        }
+        private IContext FindActiveContext() => ContextAvailability.Find(this);
     }
 }

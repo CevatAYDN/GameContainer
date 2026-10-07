@@ -143,3 +143,10 @@ tools/nexus-compile-check/obj/
 Nexus/TestResults*.xml
 Nexus/artifacts/
 tools/unity-verify/artifacts/
+
+# Reproducible core DI comparison; clones/results are local artifacts.
+tools/nexus-comparison/competitors/
+tools/nexus-comparison/bin/
+tools/nexus-comparison/obj/
+tools/nexus-comparison/*results.json
+!tools/nexus-comparison/*.csproj

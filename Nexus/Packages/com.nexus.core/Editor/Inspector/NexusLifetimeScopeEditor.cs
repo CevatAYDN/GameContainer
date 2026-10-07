@@ -79,6 +79,10 @@ namespace Nexus.Editor.Inspector
             }
             NexusInspectorGUI.EndCard();
 
+            NexusInspectorGUI.BeginCard("Additional Settings");
+            DrawPropertiesExcluding(serializedObject, "m_Script", "_parentScope", "contextData", "autoBindGlobalParent");
+            NexusInspectorGUI.EndCard();
+
             // 3. Runtime Diagnostics (PlayMode)
             if (Application.isPlaying && scope.Context != null)
             {

@@ -56,6 +56,9 @@ namespace Nexus.Core
                 using var startup = CancellationTokenSource.CreateLinkedTokenSource(ct, context.LifetimeToken);
                 await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, startup.Token);
                 startup.Token.ThrowIfCancellationRequested();
+                NexusRuntime.NotifyContextInitialized(context);
+                startup.Token.ThrowIfCancellationRequested();
+                if (context.IsDisposed) throw new ObjectDisposedException(nameof(Context), "Context was disposed by a startup observer.");
                 return context;
             }
             catch
@@ -96,6 +99,7 @@ namespace Nexus.Core
         // Distinct from _builder != null: the harness path (GetOrCreateBuilder) creates the
         // builder WITHOUT configuring, so guarding on _builder would silently skip Configure.
         private bool _configured;
+        private volatile bool _configurationComplete;
         private int _disposeState;
         private int _lifecycleState; // 0 = not started, 1 = starting, 2 = started
         private int _lazyDrainScheduled;
@@ -149,6 +153,12 @@ namespace Nexus.Core
 
         public ISignalBus SignalBus { get; }
         public CancellationToken LifetimeToken => _cts.Token;
+        /// <summary>True once binding configuration and validation have completed successfully.</summary>
+        public bool IsInjectionReady => _configurationComplete && !IsDisposed;
+        /// <summary>True after asynchronous service and lifecycle startup completes.</summary>
+        public bool IsInitialized => Volatile.Read(ref _lifecycleState) == 2 && !IsDisposed;
+        /// <summary>True as soon as teardown starts.</summary>
+        public bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
         public IContext Parent => _parent;
         public NexusDI Container { get; }
         public CommandPoolManager PoolManager { get; }
@@ -400,6 +410,8 @@ namespace Nexus.Core
                 }
                 throw;
             }
+            _configurationComplete = true;
+            NexusRuntime.NotifyContextConfigured(this);
         }
 
         internal async ValueTask InitializeReactiveModelsAsync(CancellationToken ct)
@@ -446,6 +458,7 @@ namespace Nexus.Core
             // Previously the single drain ran before OnStartAsync, so a lazy service resolved
             // during startup would never receive InitializeAsync.
             await InitializeLazyServicesAsync(ct);
+            ct.ThrowIfCancellationRequested();
             Volatile.Write(ref _lifecycleState, 2);
             if (!Container._lazyServicesPendingInit.IsEmpty)
                 ScheduleLazyServiceDrain();

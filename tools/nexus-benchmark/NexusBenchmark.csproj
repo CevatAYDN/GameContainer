@@ -145,4 +145,6 @@
     </Reference>
   </ItemGroup>
 
+<ItemGroup><Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/DiBindingValidator.cs" /></ItemGroup>
+<ItemGroup><Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ContextAvailability.cs" /></ItemGroup>
 </Project>

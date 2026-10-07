@@ -143,3 +143,13 @@ tracing disabled and a working positive-control allocation recorder.
 | Stability & threading | [STABILITY.md](STABILITY.md) |
 | Review findings (A1–B8) | [REVIEW_FINDINGS_A1_B8.md](docs/REVIEW_FINDINGS_A1_B8.md) |
 | Troubleshooting | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
+
+## Current integration contracts
+
+NexusBehaviour injects after its owning context configures and starts after async
+startup; disposed/replaced contexts clean tracked references and subscriptions.
+Scene/global scope selection, canonical BigDouble currency promotion, producer job
+ownership and Input System configuration are described in the
+[integration paths](docs/INTEGRATION_PATHS.md). Native inspector/menu tests exercise
+Undo, actual rendering and Awake ordering. See the
+[measured DI comparison](docs/PERFORMANCE_COMPARISON.md) for workload-specific results.

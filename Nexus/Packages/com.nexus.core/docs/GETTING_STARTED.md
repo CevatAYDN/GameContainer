@@ -12,7 +12,10 @@ https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.co
 
 For a local checkout, use **Install package from disk** and select
 `Nexus/Packages/com.nexus.core/package.json`. Use a tested release tag or commit (`#<revision>`)
-when pinning a production git dependency. Unity resolves the package's uGUI/profiling dependencies.
+when pinning a production git dependency. Unity resolves the package's uGUI, profiling and Input System dependencies.
+For built-in keyboard/gamepad support, set Player Settings → Active Input Handling to
+Input System Package (New) or Both. A custom IInputProvider can supply replay, UI
+or virtual controls; its neutral input is authoritative.
 This package targets Unity 6; older Unity versions are not promised by this guide.
 
 ## Beginner: run the example

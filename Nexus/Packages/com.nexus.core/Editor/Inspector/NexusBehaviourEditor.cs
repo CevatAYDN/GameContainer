@@ -53,7 +53,7 @@ namespace Nexus.Editor.Inspector
 
             // 1. Nexus Configuration Card
             NexusInspectorGUI.BeginCard("Nexus Settings");
-            EditorGUILayout.PropertyField(_autoInjectProp, new GUIContent("Auto Inject on Awake", "Automatically resolves and injects [Inject] dependencies during Awake."));
+            EditorGUILayout.PropertyField(_autoInjectProp, new GUIContent("Auto Inject When Ready", "Injects after the owning context finishes configuring. Start hooks wait for asynchronous startup."));
             NexusInspectorGUI.EndCard();
 
             // 2. Component Properties (user fields)

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -31,6 +32,13 @@ namespace Nexus.Core.Services
         Task ValidateEarnAsync(string currencyId, long amount, string reason);
     }
 
+    /// <summary>Optional backend capability for balances beyond the long range.</summary>
+    public interface INetworkBigEconomyValidator : INetworkEconomyValidator
+    {
+        Task<bool> ValidateSpendBigAsync(string currencyId, BigDouble amount, string reason);
+        Task ValidateEarnBigAsync(string currencyId, BigDouble amount, string reason);
+    }
+
     [Preserve]
     public class EconomyService : NexusService<IEconomyService>, IEconomyService
     {
@@ -51,13 +59,17 @@ namespace Nexus.Core.Services
 
         // Anti-cheat: balances are XOR-masked in RAM (SecureObservableLong), matching the
         // project's SecureObservableInt story for the most valuable (currency) data. This
-        // defeats GameGuardian / CheatEngine memory scans on the balance dictionary itself.
+        // obscures simple memory scans of the balance dictionary. Modified clients can
+        // bypass this; server validation/authority must protect authoritative currency.
         // ConcurrentDictionary so the lock-free TryGetValue fast path in
         // GetObservableBalance is actually safe: a plain Dictionary can tear/corrupt on
         // concurrent read/write even for different keys (rehash), and Dispose() mutates
         // it — the previous comment claiming lock-free reads were safe was wrong.
         private readonly ConcurrentDictionary<string, SecureObservableLong> _balances = new();
         private readonly ConcurrentDictionary<string, SecureObservableBigDouble> _bigBalances = new();
+        // Both currency modes share _balances' mutation lock. A promoted currency's long
+        // observable remains the same instance, projecting its canonical BigDouble balance.
+        private readonly Dictionary<string, long> _projectingLegacy = new();
         private volatile bool _disposed;
         private volatile bool _disposing;
 
@@ -68,15 +80,7 @@ namespace Nexus.Core.Services
 
         public long GetBalance(string currencyId)
         {
-            var prop = GetObservableBalance(currencyId);
-            if (prop != null) return prop.Value;
-            if (_bigBalances.TryGetValue(currencyId, out var bigProp))
-            {
-                if (bigProp.Value <= BigDouble.Zero) return 0L;
-                if (bigProp.Value >= new BigDouble(long.MaxValue)) return long.MaxValue;
-                return (long)(double)bigProp.Value;
-            }
-            return 0L;
+            return GetObservableBalance(currencyId)?.Value ?? 0L;
         }
 
         public bool CanAfford(string currencyId, long amount)
@@ -94,8 +98,16 @@ namespace Nexus.Core.Services
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
                 prop = LazyLoadBalance(currencyId);
-                if (prop.Value < amount) return false;
-                prop.Value -= amount;
+                if (_bigBalances.TryGetValue(currencyId, out var big))
+                {
+                    if (big.Value < new BigDouble(amount)) return false;
+                    big.Value -= new BigDouble(amount);
+                }
+                else
+                {
+                    if (prop.Value < amount) return false;
+                    prop.Value -= amount;
+                }
             }
 
             // I/O and network calls outside the lock so slow storage or a
@@ -118,7 +130,7 @@ namespace Nexus.Core.Services
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBalance(currencyId);
-                prop.Value = amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount;
+                AddBalanceLocked(currencyId, amount);
             }
 
             SchedulePersist();
@@ -136,7 +148,8 @@ namespace Nexus.Core.Services
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBalance(currencyId);
-                prop.Value = Math.Max(0L, amount);
+                if (_bigBalances.TryGetValue(currencyId, out var big)) big.Value = new BigDouble(Math.Max(0L, amount));
+                else prop.Value = Math.Max(0L, amount);
             }
             SchedulePersist();
         }
@@ -165,11 +178,25 @@ namespace Nexus.Core.Services
             if (_balances.TryGetValue(currencyId, out var prop))
                 return prop;
 
-            long savedAmount = PlayerPrefsService != null
-                ? PlayerPrefsService.GetLong($"NT_Eco_{currencyId}", 0L)
-                : 0L;
+            // A persisted promotion remains canonical after restart, including for old
+            // callers which only use the long API.
+            if (!_bigBalances.ContainsKey(currencyId) && PlayerPrefsService?.HasKey($"NT_EcoBig_{currencyId}") == true)
+                LazyLoadBigBalance(currencyId);
+            long savedAmount = _bigBalances.TryGetValue(currencyId, out var big)
+                ? ProjectLong(big.Value)
+                : PlayerPrefsService?.GetLong($"NT_Eco_{currencyId}", 0L) ?? 0L;
             prop = new SecureObservableLong(Math.Max(0, savedAmount));
             _balances[currencyId] = prop;
+            prop.OnChanged((_, value) =>
+            {
+                lock (_balances)
+                {
+                    if (_disposed || _disposing || !_bigBalances.TryGetValue(currencyId, out var canonical)) return;
+                    if (_projectingLegacy.TryGetValue(currencyId, out long projection) && value == projection) return;
+                    // Preserve existing mutable observable ownership after promotion.
+                    canonical.Value = new BigDouble(Math.Max(0L, value));
+                }
+            });
             return prop;
         }
 
@@ -183,16 +210,21 @@ namespace Nexus.Core.Services
 
         public bool CanAffordBig(string currencyId, BigDouble amount)
         {
-            if (amount <= BigDouble.Zero) return true;
+            if (!IsFiniteNonnegative(amount)) return false;
+            if (amount.Mantissa == 0) return true;
             return GetBigBalance(currencyId) >= amount;
         }
 
         public bool SpendBig(string currencyId, BigDouble amount, string reason = "")
         {
-            if (amount <= BigDouble.Zero) return true;
+            if (!IsFiniteNonnegative(amount)) return false;
+            if (amount.Mantissa == 0) return true;
+            var validator = NetworkValidator;
+            if (validator != null && !(validator is INetworkBigEconomyValidator)) return false;
+            amount = Normalize(amount);
 
             SecureObservableBigDouble prop;
-            lock (_bigBalances)
+            lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
                 prop = LazyLoadBigBalance(currencyId);
@@ -201,32 +233,43 @@ namespace Nexus.Core.Services
             }
 
             SchedulePersist();
+            if (validator is INetworkBigEconomyValidator bigValidator)
+                _ = ReconcileBigSpendAsync(bigValidator, currencyId, amount, reason);
             return true;
         }
 
         public void EarnBig(string currencyId, BigDouble amount, string reason = "")
         {
-            if (amount <= BigDouble.Zero) return;
+            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
+            ValidateBigMutation(amount);
+            if (amount.Mantissa == 0) return;
+            var validator = RequireBigValidator();
+            amount = Normalize(amount);
 
             SecureObservableBigDouble prop;
-            lock (_bigBalances)
+            lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBigBalance(currencyId);
-                prop.Value += amount;
+                prop.Value = Normalize(prop.Value + amount);
             }
 
             SchedulePersist();
+            if (validator != null) _ = SafeValidateBigEarnAsync(validator, currencyId, amount, reason);
         }
 
         public void SetBigBalance(string currencyId, BigDouble amount)
         {
+            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
+            ValidateBigMutation(amount);
+            RequireBigValidator();
+            amount = Normalize(amount);
             SecureObservableBigDouble prop;
-            lock (_bigBalances)
+            lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBigBalance(currencyId);
-                prop.Value = amount < BigDouble.Zero ? BigDouble.Zero : amount;
+                prop.Value = amount;
             }
             SchedulePersist();
         }
@@ -237,21 +280,25 @@ namespace Nexus.Core.Services
             if (_bigBalances.TryGetValue(currencyId, out var existing))
                 return existing;
 
-            lock (_bigBalances)
+            lock (_balances)
             {
                 if (_disposed || _disposing) return null;
                 return LazyLoadBigBalance(currencyId);
             }
         }
 
-        // Must be called under _bigBalances lock.
+        // Must be called under _balances lock. Promotion is one-way per currency.
         private SecureObservableBigDouble LazyLoadBigBalance(string currencyId)
         {
             if (_bigBalances.TryGetValue(currencyId, out var prop))
                 return prop;
 
             BigDouble savedAmount = BigDouble.Zero;
-            if (PlayerPrefsService != null)
+            if (_balances.TryGetValue(currencyId, out var existingLong))
+            {
+                savedAmount = new BigDouble(existingLong.Value);
+            }
+            else if (PlayerPrefsService != null)
             {
                 if (PlayerPrefsService.HasKey($"NT_EcoBig_{currencyId}"))
                 {
@@ -262,21 +309,73 @@ namespace Nexus.Core.Services
                     savedAmount = new BigDouble(PlayerPrefsService.GetLong($"NT_Eco_{currencyId}", 0L));
                 }
             }
-            else if (_balances.TryGetValue(currencyId, out var existingLong))
-            {
-                savedAmount = new BigDouble(existingLong.Value);
-            }
-
-            prop = new SecureObservableBigDouble(savedAmount < BigDouble.Zero ? BigDouble.Zero : savedAmount, $"EcoBig_{currencyId}");
+            savedAmount = IsFiniteNonnegative(savedAmount) ? Normalize(savedAmount) : BigDouble.Zero;
+            prop = new SecureObservableBigDouble(savedAmount, $"EcoBig_{currencyId}");
             _bigBalances[currencyId] = prop;
+            prop.OnChanged((_, value) =>
+            {
+                lock (_balances)
+                {
+                    if (_disposed || _disposing) return;
+                    ProjectLegacyLocked(currencyId, value);
+                }
+            });
+            ProjectLegacyLocked(currencyId, savedAmount);
             return prop;
         }
 
+        private static bool IsFiniteNonnegative(BigDouble value)
+            => !double.IsNaN(value.Mantissa) && !double.IsInfinity(value.Mantissa) && value.Mantissa >= 0;
 
+        private static BigDouble Normalize(BigDouble value)
+        {
+            var normalized = new BigDouble(value.Mantissa, value.Exponent);
+            return normalized > BigDouble.MaxValue ? BigDouble.MaxValue : normalized;
+        }
 
+        private static void ValidateBigMutation(BigDouble amount)
+        {
+            if (!IsFiniteNonnegative(amount)) throw new ArgumentOutOfRangeException(nameof(amount), "Currency amounts must be finite and nonnegative.");
+        }
 
+        private INetworkBigEconomyValidator RequireBigValidator()
+        {
+            if (NetworkValidator == null) return null;
+            if (NetworkValidator is INetworkBigEconomyValidator validator) return validator;
+            throw new NotSupportedException("The configured economy backend does not validate BigDouble transactions.");
+        }
 
+        private static long ProjectLong(BigDouble value)
+        {
+            if (!IsFiniteNonnegative(value) || value.Mantissa == 0) return 0;
+            if (value >= new BigDouble(long.MaxValue)) return long.MaxValue;
+            double number = (double)value;
+            return number >= 9223372036854775808d ? long.MaxValue : (long)number;
+        }
 
+        private void ProjectLegacyLocked(string currencyId, BigDouble value)
+        {
+            if (!_balances.TryGetValue(currencyId, out var legacy)) return;
+            long projection = ProjectLong(value);
+            bool hadPrevious = _projectingLegacy.TryGetValue(currencyId, out long previous);
+            _projectingLegacy[currencyId] = projection;
+            try { legacy.Value = projection; }
+            finally
+            {
+                if (hadPrevious) _projectingLegacy[currencyId] = previous;
+                else _projectingLegacy.Remove(currencyId);
+            }
+        }
+
+        private void AddBalanceLocked(string currencyId, long amount)
+        {
+            var prop = LazyLoadBalance(currencyId);
+            if (_bigBalances.TryGetValue(currencyId, out var big)) big.Value = Normalize(big.Value + new BigDouble(amount));
+            else
+            {
+                prop.Value = amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount;
+            }
+        }
         /// <summary>
         /// Schedules a balance persist. With a <see cref="SaveThrottler"/> bound, per-mutation
         /// writes coalesce into one batched flush every throttle window (the action always
@@ -304,17 +403,14 @@ namespace Nexus.Core.Services
                 if (_disposed) return;
                 foreach (var kvp in _balances)
                 {
-                    PlayerPrefsService.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
+                    if (!_bigBalances.ContainsKey(kvp.Key))
+                        PlayerPrefsService.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
                 }
-            }
-            lock (_bigBalances)
-            {
-                if (_disposed) return;
                 foreach (var kvp in _bigBalances)
                 {
                     PlayerPrefsService.SetBigDouble($"NT_EcoBig_{kvp.Key}", kvp.Value.Value);
+                    PlayerPrefsService.DeleteKey($"NT_Eco_{kvp.Key}");
                 }
-
             }
             // Flush outside the lock (may hit disk) — mirrors ProgressionService.PersistNow.
             PlayerPrefsService.Save();
@@ -334,8 +430,7 @@ namespace Nexus.Core.Services
                 lock (_balances)
                 {
                     if (_disposed || _disposing) return;
-                    var prop = LazyLoadBalance(currencyId);
-                    prop.Value = amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount;
+                    AddBalanceLocked(currencyId, amount);
                 }
                 // No stale callback may schedule work after teardown. Persist actions also
                 // check the lifetime under the balance lock when a throttler invokes them.
@@ -365,6 +460,30 @@ namespace Nexus.Core.Services
             }
         }
 
+        private async Task ReconcileBigSpendAsync(INetworkBigEconomyValidator validator, string currencyId, BigDouble amount, string reason)
+        {
+            try
+            {
+                if (await validator.ValidateSpendBigAsync(currencyId, amount, reason)) return;
+                lock (_balances)
+                {
+                    if (_disposed || _disposing) return;
+                    var prop = LazyLoadBigBalance(currencyId);
+                    prop.Value = Normalize(prop.Value + amount);
+                }
+                if (_disposed || _disposing) return;
+                if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
+                else PersistAllBalancesNow();
+            }
+            catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Big spend validation failed for '{currencyId}': {ex.Message}"); }
+        }
+
+        private async Task SafeValidateBigEarnAsync(INetworkBigEconomyValidator validator, string currencyId, BigDouble amount, string reason)
+        {
+            try { await validator.ValidateEarnBigAsync(currencyId, amount, reason); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Big earn validation failed for '{currencyId}': {ex.Message}"); }
+        }
+
         public override void Dispose()
         {
             lock (_balances)
@@ -386,13 +505,10 @@ namespace Nexus.Core.Services
                     _disposed = true;
                     foreach (var kvp in _balances) kvp.Value.ClearOnChanged();
                     _balances.Clear();
-                }
-                lock (_bigBalances)
-                {
                     foreach (var kvp in _bigBalances) kvp.Value.ClearOnChanged();
                     _bigBalances.Clear();
+                    _projectingLegacy.Clear();
                 }
-
             }
         }
     }

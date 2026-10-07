@@ -113,12 +113,22 @@ namespace Nexus.Editor.Inspector
             serializedObject.ApplyModifiedProperties();
         }
 
-        private static List<(MonoBehaviour Component, List<(string Name, Type Type)> InjectedMembers)> DiscoverInjectables(NexusBinding binding)
+        internal static List<(MonoBehaviour Component, List<(string Name, Type Type)> InjectedMembers)> DiscoverInjectables(NexusBinding binding)
         {
             var results = new List<(MonoBehaviour, List<(string, Type)>)>();
             if (binding == null) return results;
 
-            MonoBehaviour[] candidates = binding.Scope switch
+            using var serializedBinding = new SerializedObject(binding);
+            var customTargets = serializedBinding.FindProperty("_customTargets");
+            bool hasCustomTargets = customTargets != null && customTargets.arraySize > 0;
+            MonoBehaviour[] candidates;
+            if (hasCustomTargets)
+            {
+                candidates = new MonoBehaviour[customTargets.arraySize];
+                for (int i = 0; i < candidates.Length; i++)
+                    candidates[i] = customTargets.GetArrayElementAtIndex(i).objectReferenceValue as MonoBehaviour;
+            }
+            else candidates = binding.Scope switch
             {
                 InjectionScope.Self => binding.GetComponents<MonoBehaviour>(),
                 InjectionScope.Children => binding.GetComponentsInChildren<MonoBehaviour>(true),
@@ -128,7 +138,9 @@ namespace Nexus.Editor.Inspector
 
             foreach (var comp in candidates)
             {
-                if (comp == null || comp == binding) continue;
+                if (comp == null) continue;
+                if (!hasCustomTargets && (comp == binding ||
+                    (binding.Scope == InjectionScope.Children && comp.gameObject == binding.gameObject))) continue;
                 var members = new List<(string, Type)>();
                 var type = comp.GetType();
 

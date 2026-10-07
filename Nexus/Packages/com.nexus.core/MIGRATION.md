@@ -512,3 +512,30 @@ If you encounter issues during migration:
 
 **Last Updated:** 2026-08-06
 **Nexus Core Version:** 0.4.0
+
+## Current scene integration and large currency update (unreleased)
+
+- NexusBehaviour hooks wait for the owning context: OnNexusAwake after successful
+  binding configuration, OnNexusStart after Unity Start plus async context startup.
+  Keep configuration hooks short; frame Update code must wait for your Start hook
+  when it needs initialized services. Context replacement cleans automatic injected
+  fields/properties and tracked subscriptions. Set Context=null to return to automatic
+  selection; multiple independent pure scopes require explicit Context assignment.
+- NexusBinding waits for configured bindings and chooses the nearest Root even when
+  that Root is still pending; it does not consume another scope's registration event.
+- Configure Root components on inactive GameObjects before activation. Keep one global
+  root in the bootstrap scene. Duplicate global registrations now fail explicitly;
+  failed startup releases global/sibling ownership so a replacement can start.
+- Input System is a declared UPM dependency. Choose New or Both Active Input Handling
+  for built-in device input. A custom provider's zero movement no longer falls through
+  to joystick/keyboard input. Disabled legacy backends are not probed every frame;
+  unavailable named legacy actions are cached after their first failure.
+- BigDouble API promotes a currency's live long balance to one canonical approximate
+  ledger; retained long observables project it (truncate/saturate). Existing network
+  validators must implement INetworkBigEconomyValidator for Big transactions. Existing
+  storage adapters implementing string methods get default numeric round-trip support;
+  concrete numeric codecs retain the mantissa;exponent format using invariant R output.
+- DOTS producer jobs use AsParallelWriter and immediately AddProducerDependency(handle)
+  on the main thread. The bridge completes registered jobs before drain/reinitialize/
+  destroy. Direct bridge Enqueue is a main-thread operation; NativeSignalQueue itself
+  requires explicit producer completion by its owner.

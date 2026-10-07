@@ -97,8 +97,13 @@ namespace Nexus.Editor.Inspector
             EditorGUILayout.PropertyField(_parentRootProp, new GUIContent("Explicit Parent Root", "Optional parent root in hierarchy."));
             if (_initializationPriorityProp != null)
             {
-                EditorGUILayout.PropertyField(_initializationPriorityProp, new GUIContent("Init Priority", "Lower priority values initialize first."));
+                EditorGUILayout.PropertyField(_initializationPriorityProp, new GUIContent("Init Priority", "Higher priority values initialize first."));
             }
+            NexusInspectorGUI.EndCard();
+
+            NexusInspectorGUI.BeginCard("Additional Settings");
+            DrawPropertiesExcluding(serializedObject, "m_Script", "contextData", "parentRoot",
+                "isGlobalContext", "autoBindGlobalParent", "initializationPriority");
             NexusInspectorGUI.EndCard();
 
             // 3. Live Runtime Diagnostics (PlayMode)

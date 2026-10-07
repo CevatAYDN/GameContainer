@@ -69,20 +69,12 @@ namespace Nexus.Core.Services
 
         public BigDouble GetBigDouble(string key, BigDouble defaultValue = default)
         {
-            string stringValue = PlayerPrefs.GetString(key, null);
-            if (stringValue == null) return defaultValue;
-            string[] parts = stringValue.Split(';');
-            if (parts.Length == 2 && double.TryParse(parts[0], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out double m)
-                && long.TryParse(parts[1], out long e))
-            {
-                return new BigDouble(m, e);
-            }
-            return defaultValue;
+            return BigDoubleStorageCodec.Decode(PlayerPrefs.GetString(key, null), defaultValue);
         }
 
         public void SetBigDouble(string key, BigDouble value)
         {
-            PlayerPrefs.SetString(key, $"{value.Mantissa.ToString(System.Globalization.CultureInfo.InvariantCulture)};{value.Exponent}");
+            PlayerPrefs.SetString(key, BigDoubleStorageCodec.Encode(value));
         }
 
         public bool HasKey(string key)

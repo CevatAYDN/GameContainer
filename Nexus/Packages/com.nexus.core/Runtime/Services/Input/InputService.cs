@@ -67,12 +67,12 @@ namespace Nexus.Core.Services
         {
             var provider = _customProvider ?? InputProvider;
             if (provider != null) return provider.GetButton(actionName);
-#if UNITY_INPUT_SYSTEM
+#if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
             if (CheckNewInputButton(actionName, ButtonQuery.Pressed)) return true;
 #endif
             if (EnableLegacyKeyboardFallback && Application.isPlaying && !_legacyAxesUnavailable)
             {
-                try { return Input.GetButton(actionName); } catch { }
+                return ReadLegacyButton(actionName, 0);
             }
             return false;
         }
@@ -81,12 +81,12 @@ namespace Nexus.Core.Services
         {
             var provider = _customProvider ?? InputProvider;
             if (provider != null) return provider.GetButtonDown(actionName);
-#if UNITY_INPUT_SYSTEM
+#if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
             if (CheckNewInputButton(actionName, ButtonQuery.Down)) return true;
 #endif
             if (EnableLegacyKeyboardFallback && Application.isPlaying && !_legacyAxesUnavailable)
             {
-                try { return Input.GetButtonDown(actionName); } catch { }
+                return ReadLegacyButton(actionName, 1);
             }
             return false;
         }
@@ -95,12 +95,12 @@ namespace Nexus.Core.Services
         {
             var provider = _customProvider ?? InputProvider;
             if (provider != null) return provider.GetButtonUp(actionName);
-#if UNITY_INPUT_SYSTEM
+#if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
             if (CheckNewInputButton(actionName, ButtonQuery.Up)) return true;
 #endif
             if (EnableLegacyKeyboardFallback && Application.isPlaying && !_legacyAxesUnavailable)
             {
-                try { return Input.GetButtonUp(actionName); } catch { }
+                return ReadLegacyButton(actionName, 2);
             }
             return false;
         }
@@ -112,19 +112,19 @@ namespace Nexus.Core.Services
 
             if (provider != null)
             {
-                var pInput = provider.GetMoveInput();
-                if (pInput.sqrMagnitude > 0.001f)
-                    input = pInput;
+                // A provider owns the complete input stream, including neutral frames.
+                // Replay/cutscene providers must not inherit stale joystick or live keys.
+                input = Vector2.ClampMagnitude(provider.GetMoveInput(), 1f);
             }
-#if UNITY_INPUT_SYSTEM
-            if (input.sqrMagnitude < 0.001f && Application.isPlaying)
+#if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
+            if (provider == null && input.sqrMagnitude < 0.001f && Application.isPlaying)
             {
                 var nisInput = ReadNewInputSystem();
                 if (nisInput.sqrMagnitude > 0.001f)
                     input = nisInput;
             }
 #endif
-            if (input.sqrMagnitude < 0.001f && EnableLegacyKeyboardFallback && Application.isPlaying)
+            if (provider == null && input.sqrMagnitude < 0.001f && EnableLegacyKeyboardFallback && Application.isPlaying)
             {
                 input = ReadLegacyAxes();
             }
@@ -137,7 +137,7 @@ namespace Nexus.Core.Services
             }
         }
 
-#if UNITY_INPUT_SYSTEM
+#if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
         private enum ButtonQuery { Pressed, Down, Up }
 
         private static bool CheckNewInputButton(string actionName, ButtonQuery query)
@@ -204,10 +204,42 @@ namespace Nexus.Core.Services
         }
 #endif
 
+#if ENABLE_LEGACY_INPUT_MANAGER
+        private System.Collections.Generic.HashSet<string> _unavailableLegacyButtons;
+#endif
+
+        private bool ReadLegacyButton(string actionName, int phase)
+        {
+#if ENABLE_LEGACY_INPUT_MANAGER
+            if (string.IsNullOrEmpty(actionName) || _unavailableLegacyButtons?.Contains(actionName) == true) return false;
+            try
+            {
+                return phase switch
+                {
+                    0 => Input.GetButton(actionName),
+                    1 => Input.GetButtonDown(actionName),
+                    _ => Input.GetButtonUp(actionName)
+                };
+            }
+            catch (Exception ex)
+            {
+                _unavailableLegacyButtons ??= new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
+                _unavailableLegacyButtons.Add(actionName);
+                NexusRuntime.Logger?.LogWarning($"[InputService] Legacy button '{actionName}' unavailable ({ex.GetType().Name}); configure the action or supply IInputProvider.");
+            }
+#endif
+            return false;
+        }
+
+#if ENABLE_LEGACY_INPUT_MANAGER
         private bool _legacyAxesUnavailable;
+#else
+        private const bool _legacyAxesUnavailable = false;
+#endif
 
         private Vector2 ReadLegacyAxes()
         {
+#if ENABLE_LEGACY_INPUT_MANAGER
             if (_legacyAxesUnavailable) return Vector2.zero;
             try
             {
@@ -225,6 +257,9 @@ namespace Nexus.Core.Services
                     "Feed input through SetVirtualJoystickInput, SetInputProvider, or New Input System.");
                 return Vector2.zero;
             }
+#else
+            return Vector2.zero;
+#endif
         }
     }
 }

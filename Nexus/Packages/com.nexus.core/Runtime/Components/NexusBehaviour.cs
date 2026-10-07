@@ -12,13 +12,24 @@ namespace Nexus.Core
     public abstract class NexusBehaviour : MonoBehaviour
     {
         [Header("Nexus Options")]
-        [Tooltip("If true, dependencies marked with [Inject] on this component are automatically injected on Awake.")]
+        [Tooltip("If true, dependencies marked with [Inject] on this component are injected once the owning context finishes configuring.")]
         [SerializeField] private bool _autoInject = true;
 
         private IContext _cachedContext;
         private List<IDisposable> _subscriptions;
+        private bool _explicitContext;
+        private bool _lifecycleRequested;
+        private bool _awakeInvoked;
+        private bool _startRequested;
+        private bool _startInvoked;
+        private bool _destroyed;
+        private bool _initializing;
+        private bool _retryInitialization;
+        private bool _injectionStarted;
+        private bool _releasingContext;
+        private int _attachmentVersion;
 
-        /// <summary>Whether this component automatically runs dependency injection on Awake.</summary>
+        /// <summary>Whether this component automatically runs dependency injection after context configuration.</summary>
         public bool AutoInject
         {
             get => _autoInject;
@@ -33,11 +44,19 @@ namespace Nexus.Core
         {
             get
             {
-                if (_cachedContext != null) return _cachedContext;
-                _cachedContext = FindActiveContext();
+                if (ContextAvailability.IsAlive(_cachedContext)) return _cachedContext;
+                if (_cachedContext != null) ReleaseContext();
+                if (!_explicitContext) _cachedContext = ContextAvailability.Find(this);
                 return _cachedContext;
             }
-            set => _cachedContext = value;
+            set
+            {
+                if (ReferenceEquals(_cachedContext, value) && _explicitContext == (value != null)) return;
+                ReleaseContext();
+                _explicitContext = value != null;
+                _cachedContext = value;
+                if (_lifecycleRequested && !_destroyed) TryInitialize();
+            }
         }
 
         /// <summary>
@@ -125,11 +144,15 @@ namespace Nexus.Core
         /// </summary>
         public void InitializeLifecycle()
         {
-            if (_autoInject)
+            if (_destroyed) return;
+            if (!_lifecycleRequested)
             {
-                Inject(this);
+                _lifecycleRequested = true;
+                NexusRuntime.OnContextConfigured += OnContextAvailable;
+                NexusRuntime.OnContextInitialized += OnContextAvailable;
+                NexusRuntime.OnContextUnregistered += OnContextLost;
             }
-            OnNexusAwake();
+            TryInitialize();
         }
 
         /// <summary>
@@ -138,13 +161,18 @@ namespace Nexus.Core
         /// </summary>
         public void DestroyLifecycle()
         {
+            if (_destroyed) return;
+            _destroyed = true;
+            NexusRuntime.OnContextConfigured -= OnContextAvailable;
+            NexusRuntime.OnContextInitialized -= OnContextAvailable;
+            NexusRuntime.OnContextUnregistered -= OnContextLost;
             try
             {
                 OnNexusDestroy();
             }
             finally
             {
-                DisposeSubscriptions();
+                ReleaseContext();
             }
         }
 
@@ -155,7 +183,8 @@ namespace Nexus.Core
 
         protected virtual void Start()
         {
-            OnNexusStart();
+            _startRequested = true;
+            TryInitialize();
         }
 
         protected virtual void OnDestroy()
@@ -163,10 +192,10 @@ namespace Nexus.Core
             DestroyLifecycle();
         }
 
-        /// <summary>Virtual lifecycle hook invoked during Awake after auto-injection.</summary>
+        /// <summary>Invoked once per context attachment after binding configuration and auto-injection.</summary>
         protected virtual void OnNexusAwake() { }
 
-        /// <summary>Virtual lifecycle hook invoked during Start.</summary>
+        /// <summary>Invoked after Unity Start and asynchronous context startup have both completed.</summary>
         protected virtual void OnNexusStart() { }
 
         /// <summary>Virtual lifecycle hook invoked during OnDestroy before subscriptions are cleared.</summary>
@@ -191,23 +220,84 @@ namespace Nexus.Core
             }
         }
 
-        private IContext FindActiveContext()
+        private void OnContextAvailable(IContext context) => TryInitialize();
+
+        private void OnContextLost(IContext context)
         {
-            // 1. Try finding parent Root in hierarchy
-            var parentRoot = GetComponentInParent<Root>();
-            if (parentRoot != null && parentRoot.Context != null)
-            {
-                return parentRoot.Context;
-            }
+            if (ReferenceEquals(_cachedContext, context)) ReleaseContext();
+        }
 
-            // 2. Try global project context across scenes
-            if (NexusRuntime.GlobalContext != null)
+        private void TryInitialize()
+        {
+            if (_destroyed) return;
+            if (_initializing || _releasingContext) { _retryInitialization = true; return; }
+            _initializing = true;
+            try
             {
-                return NexusRuntime.GlobalContext;
+                // Nested ready notifications must not re-enter injection. Attachment
+                // changes made by user hooks are retried after the old stack unwinds.
+                for (int attempt = 0; attempt < 8; attempt++)
+                {
+                    _retryInitialization = false;
+                    TryInitializeAttachment();
+                    if (!_retryInitialization || _destroyed) return;
+                }
+                throw new InvalidOperationException("NexusBehaviour context changes recursively during initialization. Keep initialization hooks stable.");
             }
+            finally { _initializing = false; }
+        }
 
-            // 3. Fall back to active default context in NexusRuntime
-            return NexusRuntime.GetDefaultContext();
+        private void TryInitializeAttachment()
+        {
+            var context = Context;
+            if (!ContextAvailability.CanInject(context)) return;
+            int version = _attachmentVersion;
+            if (!_awakeInvoked)
+            {
+                if (_autoInject)
+                {
+                    _injectionStarted = true;
+                    context.Container.Inject(this);
+                    if (!IsCurrentAttachment(context, version))
+                    {
+                        // A setter/PostConstruct callback may switch ownership midway
+                        // through Inject; remove any references the stale tail assigned.
+                        NexusDI.ClearInjectedReferences(this);
+                        return;
+                    }
+                }
+                _awakeInvoked = true;
+                OnNexusAwake();
+                if (!IsCurrentAttachment(context, version)) return;
+            }
+            if (_startRequested && !_startInvoked &&
+                (!(context is Context owned) || owned.IsInitialized))
+            {
+                _startInvoked = true;
+                OnNexusStart();
+            }
+        }
+
+        private bool IsCurrentAttachment(IContext context, int version) =>
+            !_destroyed && version == _attachmentVersion &&
+            ReferenceEquals(_cachedContext, context) && ContextAvailability.IsAlive(context);
+
+        private void ReleaseContext()
+        {
+            _attachmentVersion++;
+            bool clearReferences = _injectionStarted;
+            _injectionStarted = false;
+            _cachedContext = null;
+            _awakeInvoked = false;
+            _startInvoked = false;
+            bool alreadyReleasing = _releasingContext;
+            _releasingContext = true;
+            try
+            {
+                DisposeSubscriptions();
+                if (clearReferences) NexusDI.ClearInjectedReferences(this);
+            }
+            finally { _releasingContext = alreadyReleasing; }
         }
     }
 }

@@ -8,6 +8,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Correctness and integration hardening
+- Binding validation now follows actual named/default ownership, aliases and parameter overrides, reports invalid bindings/eager cycles, and preserves consumer command factories.
+- Added idempotent signal/command loading prewarm, injection metadata preparation, and pool ownership protection across active leases and Clear.
+- Mono/JIT suitable constructor delegates remove temporary argument arrays; open generics/value/optional/overridden constructors retain safe fallbacks and AOT emits no dynamic IL.
+- Setup Wizard locale loading and guide discovery use resolved UPM assets/paths; English/Turkish integration paths explain gradual adoption and performance decisions.
+- Latest runtime/editor commits: fixed blank ContextData inspector, hidden serialized settings, injection previews, and PlayMode menu configuration order/global persistence.
+- NexusBehaviour and NexusBinding now wait for their owning scope's configuration; behaviour Start waits for async startup, cleanup/rebinding is idempotent, and duplicate global roots are rejected.
+- Added the missing Input System UPM dependency and authoritative neutral/custom input; optional DOTS bridges track producer jobs before native access/teardown.
+- BigDouble currency promotion uses live cached balances, keeps one canonical ledger and old observable identity, validates backend capabilities/finite amounts, and persists round-trip numeric strings across legacy and concrete storage adapters.
+- Added real native lifecycle/jobs, inspector/Undo/IMGUI, economy/storage and integration regressions plus a pinned reproducible VContainer/Zenject core DI comparison under tools/nexus-comparison. Results have workload-specific limits; no universal performance claim.
 - Generic DI caching now respects transient lifetime, rebinding and disposal; stale inherited/adapter values are not cached.
 - Reentrant reactive property pairs and cross-instance list drains preserve their payloads; save requests use versioned completion.
 - Context cancellation failures no longer abandon cleanup; economy rejects stale reconciliation and saturates refund arithmetic.

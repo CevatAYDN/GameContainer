@@ -51,3 +51,10 @@ Startup, async işlemler, interceptor/decorator ve debug tracing maliyetlerini a
 Network input'larını sahibi olan thread'de drain edin; pending input varken tick ilerletme,
 top-level owner fire veya rollback açık hata verir. Rollback modelleri için senkron handler
 kullanın. [Ölçümler ve doğrulama sınırları](HARDENING.md), Unity/IL2CPP cihaz kanıtından ayrıdır.
+
+## Giriş sistemi ve entegrasyon yolları
+
+UPM, uGUI/profiling ve Input System bağımlılıklarını otomatik getirir. Yerleşik
+klavye/gamepad için Player Settings → Active Input Handling ayarını New veya Both
+seçin. Özel IInputProvider hareketin tek kaynağıdır; sıfır giriş başka kaynağa düşmez.
+[Başlangıç / mevcut oyun / takım entegrasyonu](INTEGRATION_PATHS_TR.md).
