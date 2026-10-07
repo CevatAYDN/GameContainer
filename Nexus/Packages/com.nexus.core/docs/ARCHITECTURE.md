@@ -9,6 +9,8 @@
 
 ## Hardening contracts
 
+- Optional named-binding, cross-boundary and lazy-service maps are created on first registration under the disposal lock and published with volatile memory ordering. Missing lookups/validation do not instantiate them; named lookup rules, lazy reference deduplication and standard dictionary concurrency remain unchanged.
+
 - Generic DI cache entries represent locally registered non-transient instances; local registration generations invalidate them and every resolve checks disposal. Adapters and inherited bindings retain their resolution ownership.
 - Observable notifications preserve the last delivered old/new pair. Each list owns its reentrant drain buffer; callbacks run outside its state lock.
 - SaveThrottler tracks request versions so completing an older save cannot clear a newer request. Storage migration checks the key version before its coordinated disk commit.

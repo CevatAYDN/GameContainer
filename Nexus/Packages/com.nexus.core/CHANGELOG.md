@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+- Optional named, cross-boundary and lazy-service maps now allocate on first registration with synchronized publication; unused features no longer charge every DI scope.
+- Added a local Unity Mono player comparison using the same pinned competitors and workload as the host tool. Generated Nexus registrations are cleared before warmup; an inert allocation counter is explicitly marked unavailable. No CI or GitHub Actions run is required.
+
 ### Correctness and integration hardening
 - Binding validation now follows actual named/default ownership, aliases and parameter overrides, reports invalid bindings/eager cycles, and preserves consumer command factories.
 - Added idempotent signal/command loading prewarm, injection metadata preparation, and pool ownership protection across active leases and Clear.

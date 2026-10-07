@@ -1,7 +1,9 @@
 # Nexus — sonraki geliştirme sırası
 
 Tarih: 7 Ekim 2026. Kod başlangıç noktası: `f1b537adb0f6c22619753c888c0e5230e8cf4927`.
-Bu planın maddeleri henüz uygulanmış veya kabul edilmiş değildir.
+Güncel durum: İlk Unity Mono core DI karşılaştırması ve optional-map başlangıç
+optimizasyonu uygulandı; genel Context profili, cihaz kabulü ve sonraki maddeler açık.
+CI kullanıcı isteğiyle kapsam dışıdır; doğrulamalar yereldir.
 [Güncel inceleme](NEXUS_REVIEW_2026_10_07.md), eski yol haritalarındaki durum
 iddialarından daha güncel kanıttır. Amaç: Unity 6 / UPM ile mobil ve PC için hızlı,
 güvenilir, kolay benimsenen mimari paket.
@@ -34,7 +36,7 @@ yolları, `DiBindingValidator.cs`, Context başlangıcı ve benchmark araçları
 
 Kabul: aynı yaşam döngüsü ve sonuçları doğrulayan tekrarlanabilir player ölçümü;
 transient ve başlangıç maliyetlerinin ölçülmüş kaynakları. Önce bu kanıt elde edilir,
-sonra optimizasyon seçilir. Unity lisansı/çalıştırıcısı CI için ayrıca yapılandırılır.
+sonra optimizasyon seçilir. Doğrulamalar mevcut yerel Unity ve .NET araçlarıyla yapılır.
 
 ## 2. Ölçülen maliyetleri azalt
 
@@ -74,15 +76,18 @@ bağımlılıkları isteğe bağlı modüllerde tutulur. Bu iki örnek tüm tür
 Kabul: rehberden başlayarak çalışan örnek ve temiz kapanış; gereken manuel adımlar
 belgeli, kullanıcı denemeleri sonuçları kayıtlı, sağlayıcıların hata/iptal davranışı testli.
 
-## 5. Tekrarlanabilir sürüm kapısı
+## 5. Yerel sürüm doğrulaması
 
-Mevcut `nexus-ci.yml` ve `tools/unity-verify` kapılarını güncel yerel doğrulamalarla
-eşleştir. Host testleri, Unity Edit/Play, temiz immutable UPM tüketicisi ve backend
-build/runtime kanıtlarını ayrı sonuçlar olarak sakla. Ham log erişim tokenlarını yayınlama.
+Kullanıcı kararı: CI geliştirmesi veya GitHub Actions çalıştırması yapılmaz.
+Host testleri, Unity Edit/Play, temiz immutable UPM tüketicisi ve backend build/runtime
+kanıtları yerelde çalıştırılır ve ayrı sonuçlar olarak saklanır. Ham log erişim tokenlarını yayınlama.
 
 Kabul: başarısız veya atlanan kontrol gizlenmeden raporlanır; SHA ile bağlı paket
 üretilir, migration/versioning ve EN/TR rehberleri aynı kaynakla eşleşir. Lisans veya
 cihaz erişimi olmayan kapılar başarılı ilan edilmez. Önce bu kapılar, sonra kararlı sürüm.
 
-Bir sonraki uygulama adımı **1. madde**: Unity Mono player karşılaştırması ve transient /
-Context başlangıç profili. Bu plan paket kaynaklarını veya test edilmiş tarball'ı değiştirmez.
+Bir sonraki uygulama adımı: **tam Context başlangıcı ve .NET transient maliyetinin
+profili**, ardından ölçülen darboğazın düzeltilmesi. Native core DI runner hazırdır;
+güncel sonuçlar paket içindeki PERFORMANCE_COMPARISON.md belgesindedir. Önceki tarball
+kanıtı kendi tarihli kaynak sürümüne aittir; bu optimizasyon için yeni tarball doğrulaması
+henüz yapılmış sayılmaz.

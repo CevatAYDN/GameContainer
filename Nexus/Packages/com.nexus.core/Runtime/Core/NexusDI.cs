@@ -101,11 +101,13 @@ namespace Nexus.Core
                 Volatile.Write(ref cache.Slots[typeId], instance);
             }
         }
-        private readonly ConcurrentDictionary<Type, bool> _crossBoundaryTypes = new();
+        // Optional feature maps are published on first registration, not per scope.
+        // Their standard concurrency policy is unchanged once allocated.
+        private ConcurrentDictionary<Type, bool> _crossBoundaryTypes;
         private readonly ConcurrentDictionary<Type, Binding> _bindings = new();
         // Named bindings (Strange-style named injection): key = (type, name).
-        // Resolution falls back to the default binding when a name is not registered.
-        private readonly ConcurrentDictionary<(Type Type, string Name), Binding> _namedBindings = new();
+        // Missing explicit names never fall back to the default registration.
+        private ConcurrentDictionary<(Type Type, string Name), Binding> _namedBindings;
         private readonly HashSet<object> _resolvedSingletons = new(ReferenceComparer<object>.Instance);
         // Creation-ordered list of container-owned instances so Dispose tears down in REVERSE
         // creation order (a dependency created before its consumers is disposed after them,
@@ -114,7 +116,7 @@ namespace Nexus.Core
         private readonly List<object> _resolvedSingletonOrder = new();
         private int _disposeState;
         private readonly object _disposeLock = new();
-        private readonly ConcurrentDictionary<Type, bool> _lazyServiceTypes = new();
+        private ConcurrentDictionary<Type, bool> _lazyServiceTypes;
         internal Action<INexusService> LazyServiceResolvedCallback { get; set; }
 
         internal sealed class ReferenceComparer<T> : IEqualityComparer<T> where T : class
@@ -128,6 +130,24 @@ namespace Nexus.Core
         private void ThrowIfDisposed()
         {
             if (IsDisposed) throw new ObjectDisposedException(nameof(NexusDI));
+        }
+
+        private ConcurrentDictionary<TKey, TValue> GetOrCreateOptionalMap<TKey, TValue>(
+            ref ConcurrentDictionary<TKey, TValue> map, IEqualityComparer<TKey> comparer = null)
+        {
+            var current = Volatile.Read(ref map);
+            if (current != null) return current;
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                current = map;
+                if (current == null)
+                {
+                    current = new ConcurrentDictionary<TKey, TValue>(comparer ?? EqualityComparer<TKey>.Default);
+                    Volatile.Write(ref map, current);
+                }
+                return current;
+            }
         }
 
         /// <summary>Safe editor snapshot of resolved singleton instances (thread-safe copy, no raw reference leak).</summary>
@@ -1135,12 +1155,13 @@ namespace Nexus.Core
 
         private void SetNamedBindingCore((Type Type, string Name) key, Binding binding)
         {
-            if (_namedBindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
+            var namedBindings = GetOrCreateOptionalMap(ref _namedBindings);
+            if (namedBindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
             {
                 NexusRuntime.Logger?.LogWarning(
                     $"[Nexus] Rebinding '{key.Type.FullName}' (name '{key.Name}'): an existing registration is being replaced.");
             }
-            _namedBindings[key] = binding;
+            namedBindings[key] = binding;
         }
 
         public void Bind<TInterface, TImplementation>(bool isSingleton = true) where TImplementation : class, TInterface
@@ -1323,14 +1344,14 @@ namespace Nexus.Core
             where TImplementation : class, TInterface
         {
             SetBinding(typeof(TInterface), new Binding { ConcreteType = typeof(TImplementation), IsSingleton = true });
-            _crossBoundaryTypes[typeof(TInterface)] = true;
+            GetOrCreateOptionalMap(ref _crossBoundaryTypes)[typeof(TInterface)] = true;
         }
 
         /// <summary>Binds a self-referencing type as cross-boundary.</summary>
         public void BindCrossBoundary<T>() where T : class
         {
             SetBinding(typeof(T), new Binding { ConcreteType = typeof(T), IsSingleton = true });
-            _crossBoundaryTypes[typeof(T)] = true;
+            GetOrCreateOptionalMap(ref _crossBoundaryTypes)[typeof(T)] = true;
         }
 
         /// <summary>
@@ -1343,7 +1364,7 @@ namespace Nexus.Core
         public object ResolveCrossBoundary(Type type)
         {
             // Check current container first — if the type is registered here and marked cross-boundary, resolve it
-            if (_crossBoundaryTypes.ContainsKey(type))
+            if (Volatile.Read(ref _crossBoundaryTypes)?.ContainsKey(type) == true)
             {
                 if (_bindings.TryGetValue(type, out var binding))
                     return ResolveBinding(type, binding);
@@ -1353,7 +1374,7 @@ namespace Nexus.Core
             var current = _parent;
             while (current != null)
             {
-                if (current._crossBoundaryTypes.ContainsKey(type))
+                if (Volatile.Read(ref current._crossBoundaryTypes)?.ContainsKey(type) == true)
                 {
                     if (current._bindings.TryGetValue(type, out var binding))
                         return current.ResolveBinding(type, binding);
@@ -1478,7 +1499,8 @@ namespace Nexus.Core
         {
             ThrowIfDisposed();
             if (string.IsNullOrEmpty(name)) return Resolve(type);
-            if (_namedBindings.TryGetValue((type, name), out var named))
+            var namedBindings = Volatile.Read(ref _namedBindings);
+            if (namedBindings != null && namedBindings.TryGetValue((type, name), out var named))
                 return ResolveAndNotifyLazy(type, named, name);
             if (_parent != null && _parent.IsRegistered(type, name))
                 return _parent.Resolve(type, name);
@@ -1836,7 +1858,7 @@ namespace Nexus.Core
         {
             if (type == null) return false;
             if (string.IsNullOrEmpty(name)) return IsRegistered(type);
-            if (_namedBindings.ContainsKey((type, name))) return true;
+            if (Volatile.Read(ref _namedBindings)?.ContainsKey((type, name)) == true) return true;
             // Adapter does not participate in NAMED lookup (it has no names); a local named
             // binding must win before the parent chain is consulted.
             return _parent != null && _parent.IsRegistered(type, name);
@@ -1870,8 +1892,10 @@ namespace Nexus.Core
                 ThrowIfDisposed();
                 foreach (var pair in _bindings)
                     result.Add(DescribeBinding(pair.Key, null, pair.Value));
-                foreach (var pair in _namedBindings)
-                    result.Add(DescribeBinding(pair.Key.Type, pair.Key.Name, pair.Value));
+                var namedBindings = Volatile.Read(ref _namedBindings);
+                if (namedBindings != null)
+                    foreach (var pair in namedBindings)
+                        result.Add(DescribeBinding(pair.Key.Type, pair.Key.Name, pair.Value));
                 result.Sort((a, b) =>
                 {
                     int key = string.CompareOrdinal(a.Key.FullName, b.Key.FullName);
@@ -1889,8 +1913,12 @@ namespace Nexus.Core
                 if (_bindings.TryGetValue(key, out var binding)) return DescribeBinding(key, null, binding);
                 if (ExternalAdapter != null && ExternalAdapter.IsRegistered(key)) return null;
             }
-            else if (_namedBindings.TryGetValue((key, name), out var named))
-                return DescribeBinding(key, name, named);
+            else
+            {
+                var namedBindings = Volatile.Read(ref _namedBindings);
+                if (namedBindings != null && namedBindings.TryGetValue((key, name), out var named))
+                    return DescribeBinding(key, name, named);
+            }
             return _parent?.FindValidationBinding(key, name);
         }
 
@@ -1906,7 +1934,9 @@ namespace Nexus.Core
         internal HashSet<Type> GetAllRegisteredTypes()
         {
             var types = new HashSet<Type>(_bindings.Keys);
-            foreach (var kvp in _namedBindings) types.Add(kvp.Key.Type);
+            var namedBindings = Volatile.Read(ref _namedBindings);
+            if (namedBindings != null)
+                foreach (var kvp in namedBindings) types.Add(kvp.Key.Type);
             types.Add(typeof(NexusDI));
             types.Add(typeof(IContext));
             types.Add(typeof(ISignalBus));
@@ -1986,23 +2016,25 @@ namespace Nexus.Core
             MetadataCache.GetOrCreateClearMetadata(type);
         }
 
-        private readonly ConcurrentDictionary<INexusService, bool> _lazyServicesEnqueued =
-            new(ReferenceComparer<INexusService>.Instance);
+        private ConcurrentDictionary<INexusService, bool> _lazyServicesEnqueued;
 
         internal void MarkLazyService(Type type)
         {
-            if (type != null) _lazyServiceTypes[type] = true;
+            if (type != null) GetOrCreateOptionalMap(ref _lazyServiceTypes)[type] = true;
         }
 
         private void NotifyMarkedLazyService(Type requestedType, object instance)
         {
-            if (instance is INexusService service && (_lazyServiceTypes.ContainsKey(requestedType) || _lazyServiceTypes.ContainsKey(instance.GetType())))
+            var lazyServiceTypes = Volatile.Read(ref _lazyServiceTypes);
+            if (lazyServiceTypes != null && instance is INexusService service
+                && (lazyServiceTypes.ContainsKey(requestedType) || lazyServiceTypes.ContainsKey(instance.GetType())))
                 NotifyLazyServiceResolved(instance.GetType(), service);
         }
 
         internal void NotifyLazyServiceResolved(Type type, object instance)
         {
-            if (instance is INexusService service && _lazyServicesEnqueued.TryAdd(service, true))
+            if (instance is INexusService service
+                && GetOrCreateOptionalMap(ref _lazyServicesEnqueued, ReferenceComparer<INexusService>.Instance).TryAdd(service, true))
             {
                 _lazyServicesPendingInit.Enqueue(service);
                 LazyServiceResolvedCallback?.Invoke(service);
@@ -2087,7 +2119,7 @@ namespace Nexus.Core
                     _resolvedSingletonOrder.Clear();
                 }
                 _bindings.Clear();
-                _namedBindings.Clear();
+                Volatile.Read(ref _namedBindings)?.Clear();
                 Volatile.Write(ref _fastCache, null);
             }
             return true;

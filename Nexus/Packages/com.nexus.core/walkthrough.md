@@ -9,6 +9,8 @@ This document is the **hands-on companion** to [README.md](README.md) (overview)
 
 ## 1. Setup
 
+Ordinary DI setup no longer allocates optional named/cross-boundary/lazy-service tables. They appear on first registration, without an opt-in flag or API migration. See [performance comparison](docs/PERFORMANCE_COMPARISON.md) for measured workloads; local validation requires no CI.
+
 Choose an [integration path](docs/INTEGRATION_PATHS.md) ([Türkçe](docs/INTEGRATION_PATHS_TR.md)).
 The localized Setup Wizard opens this guide from the resolved UPM package location.
 After startup, call `context.Prewarm<YourSignal>(4)` during loading to prepare pools

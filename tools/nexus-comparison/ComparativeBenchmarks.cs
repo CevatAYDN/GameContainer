@@ -1,6 +1,12 @@
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Runtime.CompilerServices;
+#if !UNITY_5_3_OR_NEWER
 using System.Text.Json;
+#endif
 using Nexus.Core;
 using VContainer;
 using Zenject;
@@ -19,6 +25,7 @@ public static class ComparativeBenchmarks
         public Action DisposeAction;
         public void Dispose() => DisposeAction?.Invoke();
     }
+    [Serializable]
     private sealed class Measurement
     {
         public string Library, Scenario;
@@ -26,6 +33,37 @@ public static class ComparativeBenchmarks
         public double MedianNsPerOperation, MinNsPerOperation, MaxNsPerOperation, BytesPerOperation;
         public double[] RoundNsPerOperation;
     }
+
+    [Serializable]
+    private sealed class Report
+    {
+        public string Runtime, OS, Architecture, Scope, UnityVersion, Backend;
+        public bool DevelopmentBuild, NexusDebug;
+        public bool AllocationCounterValid;
+        public long PositiveControlMeasuredBytes;
+        public Measurement[] Measurements;
+        public string VContainerCommit = "5401e5a7ebc4980a2b82141ffc26391a6547edd7";
+        public string ZenjectCommit = "c2e33500a84f9408a809deca2af2c55494ab2482";
+    }
+
+#if UNITY_5_3_OR_NEWER
+    [UnityEngine.RuntimeInitializeOnLoadMethod(UnityEngine.RuntimeInitializeLoadType.BeforeSceneLoad)]
+    private static void RunPlayer()
+    {
+        try
+        {
+            string destination = Environment.GetEnvironmentVariable("NEXUS_COMPARE_RESULT");
+            if (string.IsNullOrEmpty(destination)) throw new InvalidOperationException("NEXUS_COMPARE_RESULT is required.");
+            Main(new[] { destination });
+            UnityEngine.Application.Quit(0);
+        }
+        catch (Exception error)
+        {
+            UnityEngine.Debug.LogException(error);
+            UnityEngine.Application.Quit(2);
+        }
+    }
+#endif
 
     private static Candidate Create(string name, bool transient)
     {
@@ -65,9 +103,16 @@ public static class ComparativeBenchmarks
 
     public static int Main(string[] args)
     {
+        // Unity may auto-generate/register a Nexus binder when scripts reload.
+        // This isolated benchmark compares all candidates without generated bindings.
+        NexusDI.ClearCaches();
         long before = GC.GetAllocatedBytesForCurrentThread();
         var positiveControl = new byte[4096]; GC.KeepAlive(positiveControl);
-        if (GC.GetAllocatedBytesForCurrentThread() - before < 4096) throw new InvalidOperationException("Allocation counter is inert.");
+        long positiveControlBytes = GC.GetAllocatedBytesForCurrentThread() - before;
+        bool allocationCounterValid = positiveControlBytes >= 4096;
+#if !UNITY_5_3_OR_NEWER
+        if (!allocationCounterValid) throw new InvalidOperationException("Allocation counter is inert.");
+#endif
         const int rounds = 7;
         string[] names = { "Nexus", "VContainer", "Zenject" };
         var output = new List<Measurement>();
@@ -110,23 +155,42 @@ public static class ComparativeBenchmarks
                     {
                         Library = names[i], Scenario = scenario, OperationsPerRound = count, Rounds = rounds,
                         MedianNsPerOperation = sorted[rounds / 2], MinNsPerOperation = sorted[0], MaxNsPerOperation = sorted[rounds - 1],
-                        BytesPerOperation = (double)allocations[i] / count / rounds, RoundNsPerOperation = times[i].ToArray()
+                        BytesPerOperation = allocationCounterValid ? (double)allocations[i] / count / rounds : -1,
+                        RoundNsPerOperation = times[i].ToArray()
                     });
                 }
             }
             finally { foreach (var candidate in candidates) candidate.Dispose(); }
         }
-        var report = new
+        var report = new Report
         {
             Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             OS = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
             Architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
-            Scope = "Host .NET core DI only. Unity bridges excluded. No source generation/reflection baking for any library. Startup validation is outside this DI-only workload. Not Unity/IL2CPP device or game frame-time evidence.",
-            VContainer = new { Version = "1.19.0", Commit = "5401e5a7ebc4980a2b82141ffc26391a6547edd7" },
-            Zenject = new { Version = "9.2.0", Commit = "c2e33500a84f9408a809deca2af2c55494ab2482" },
-            Measurements = output
+            Scope = "Core DI only. Unity bridges excluded from competitors. Nexus registered binder/factory caches cleared before warmup; no source generation/reflection baking for any library. Register/build/first resolve includes wrapper and available disposal (Zenject has no disposal action). Full Context startup and game frame times are outside this workload.",
+            Measurements = output.ToArray(),
+            AllocationCounterValid = allocationCounterValid,
+            PositiveControlMeasuredBytes = positiveControlBytes,
+#if UNITY_5_3_OR_NEWER
+            UnityVersion = UnityEngine.Application.unityVersion,
+            DevelopmentBuild = UnityEngine.Debug.isDebugBuild,
+#if ENABLE_IL2CPP
+            Backend = "IL2CPP",
+#else
+            Backend = "Mono",
+#endif
+#if NEXUS_DEBUG
+            NexusDebug = true,
+#endif
+#else
+            Backend = ".NET host",
+#endif
         };
+#if UNITY_5_3_OR_NEWER
+        string json = UnityEngine.JsonUtility.ToJson(report, true);
+#else
         string json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
+#endif
         File.WriteAllText(args.Length > 0 ? args[0] : "comparative-results.json", json);
         foreach (var row in output)
             Console.WriteLine($"{row.Library,-12} {row.Scenario,-42} {row.MedianNsPerOperation,10:F2} ns/op {row.BytesPerOperation,10:F2} B/op");

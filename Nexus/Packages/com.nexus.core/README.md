@@ -15,6 +15,8 @@
 
 **Nexus Core** is a modern, high-performance MVCS (Model-View-Controller-Service) architecture framework for Unity 6. It provides observable reactive models, dependency injection, signal-based communication, and comprehensive editor tools with allocation-conscious synchronous hot paths.
 
+**DI startup:** Optional named, cross-boundary and lazy-service maps allocate only on first registration; default DI scopes keep their lifetime and validation rules.
+
 **Measured comparison:** [Nexus / VContainer / Zenject core DI workloads](docs/PERFORMANCE_COMPARISON.md). The fastest option depends on the workload; device evidence is tracked separately.
 
 **Integration paths:** [Beginner / existing game / team workflow](docs/INTEGRATION_PATHS.md) ([Türkçe](docs/INTEGRATION_PATHS_TR.md)). `Context.Prewarm<TSignal>()` prepares command pools during loading without firing gameplay events. `NexusDI.ValidateBindings()` inspects actual scopes, names, overrides and eager cycles without constructing objects.
