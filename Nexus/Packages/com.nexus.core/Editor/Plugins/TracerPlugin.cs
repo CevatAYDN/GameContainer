@@ -181,7 +181,7 @@ namespace Nexus.Editor
                     if (!string.IsNullOrEmpty(traces[i]))
                     {
                         _allEvents.Add(new TraceEvent(NextTraceId(), -1, TraceEventType.Signal,
-                            UnityEngine.Time.realtimeSinceStartupAsDouble, traces[i],
+                            NexusTrace.TimestampNow, traces[i],
                             TraceStatus.OK, ExecutionMode.Sequential));
                     }
                 }
@@ -267,7 +267,7 @@ namespace Nexus.Editor
                 {
                     rebuilt.Add(new TraceEvent(
                         NextTraceId(), -1, TraceEventType.Signal,
-                        UnityEngine.Time.realtimeSinceStartupAsDouble, traces[i],
+                        NexusTrace.TimestampNow, traces[i],
                         TraceStatus.OK, ExecutionMode.Sequential));
                 }
             }

@@ -94,6 +94,9 @@ namespace Nexus.Core.FSM
         // on platforms without strong memory ordering guarantees.
         private volatile IGameState _currentState;
         private Type _errorStateType;
+        private int _configurationVersion;
+        /// <summary>Changes only when state registration or the error-state configuration changes.</summary>
+        public int ConfigurationVersion => Volatile.Read(ref _configurationVersion);
         private CancellationTokenSource _stateCts;
 
         // Monotonic sequence used to serialize concurrent ChangeStateAsync calls.
@@ -143,12 +146,17 @@ namespace Nexus.Core.FSM
         public void RegisterState<TState>(TState state) where TState : class, IGameState
         {
             if (state == null) return;
-            lock (_statesLock) { _states[typeof(TState)] = state; }
+            lock (_statesLock)
+            {
+                _states[typeof(TState)] = state;
+                Interlocked.Increment(ref _configurationVersion);
+            }
         }
 
         public void SetErrorState<TState>() where TState : class, IGameState
         {
             _errorStateType = typeof(TState);
+            Interlocked.Increment(ref _configurationVersion);
         }
 
         public Task ChangeStateAsync<TState>(object args = null) where TState : class, IGameState

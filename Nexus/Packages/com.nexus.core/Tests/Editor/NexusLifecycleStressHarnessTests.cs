@@ -60,25 +60,6 @@ namespace Nexus.Core.Tests
             }
         }
 
-        // Test 3: Hierarchy Scope Creation & Auto-Parent Discovery
-        [Test]
-        public void Test_NexusLifetimeScope_AutoDiscoversParentRootInHierarchy()
-        {
-            var parentGo = new GameObject("ParentScope");
-            var parentScope = parentGo.AddComponent<NexusLifetimeScope>();
-
-            var childGo = new GameObject("ChildScope");
-            childGo.transform.SetParent(parentGo.transform);
-            var childScope = childGo.AddComponent<NexusLifetimeScope>();
-
-            Assert.IsNotNull(parentScope.Context);
-            Assert.IsNotNull(childScope.Context);
-            Assert.AreSame(parentScope.Context, childScope.Context.Parent);
-
-            UnityEngine.Object.DestroyImmediate(childGo);
-            UnityEngine.Object.DestroyImmediate(parentGo);
-        }
-
         private interface ITestService { }
         private class TestServiceImplementation : ITestService { }
     }

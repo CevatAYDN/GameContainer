@@ -28,6 +28,67 @@ namespace Nexus.Tests.Editor
     [TestFixture]
     public class WizardTemplateSyncTests
     {
+        [Test]
+        public void ImmutablePackage_AllImportedSourcesHaveMetadata()
+        {
+            var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(Nexus.Core.Context).Assembly);
+            Assert.IsNotNull(package);
+            foreach (var path in Directory.EnumerateFiles(package.resolvedPath, "*", SearchOption.AllDirectories))
+            {
+                string relative = path.Substring(package.resolvedPath.Length).TrimStart('/', '\\');
+                if (relative.Split('/', '\\').Any(part => part.EndsWith("~", StringComparison.Ordinal))) continue;
+                string extension = Path.GetExtension(path);
+                if (extension == ".cs" || extension == ".asmdef" || extension == ".uxml" || extension == ".uss")
+                    Assert.IsTrue(File.Exists(path + ".meta"), "Immutable UPM source would be ignored: " + relative);
+            }
+        }
+
+        [Test]
+        public void RuntimeBinderCatalog_ExcludesEditorHttpImplementation()
+        {
+            string dll = Path.Combine(EditorApplication.applicationContentsPath, "Managed", "StandardSocketsHttpHandler.dll");
+            Assert.IsTrue(Nexus.Core.NexusAssemblyPolicy.IsFrameworkAssembly("StandardSocketsHttpHandler"));
+            if (File.Exists(dll))
+            {
+                var assembly = System.Reflection.Assembly.LoadFrom(dll);
+                Assert.IsFalse(AssemblyCatalog.RuntimeAssemblies().Contains(assembly));
+            }
+            Assert.IsTrue(Nexus.Core.NexusAssemblyPolicy.IsEditorAssembly("Assembly-CSharp-Editor"));
+            Assert.IsFalse(AssemblyCatalog.RuntimeAssemblies().Any(assembly => assembly.GetName().Name == "Assembly-CSharp-Editor"));
+        }
+
+        [Test]
+        public void RuntimeBinderCatalog_ExcludesTestSupportAssembly()
+        {
+            var testSupport = typeof(Nexus.Core.MockContext).Assembly;
+            Assert.IsFalse(AssemblyCatalog.RuntimeAssemblies().Contains(testSupport),
+                "Generated production binders cannot reference the non-auto-referenced test-support assembly.");
+            Assert.IsTrue(AssemblyCatalog.RuntimeAssemblies(includeTests: true).Contains(testSupport));
+        }
+
+        [Test]
+        public void ScaffoldConflict_PreservesExistingUserOutputs()
+        {
+            string root = Path.Combine(Path.GetTempPath(), "NexusScaffoldSafety_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(root);
+            try
+            {
+                Assert.IsFalse(NexusSetupWizard.HasScaffoldConflict(root));
+                string folder = Path.Combine(root, NexusSetupWizard.GameRoot);
+                Directory.CreateDirectory(folder);
+                string custom = Path.Combine(folder, "UserModified.cs"); File.WriteAllText(custom, "keep");
+                Assert.IsTrue(NexusSetupWizard.HasScaffoldConflict(root));
+                Assert.AreEqual("keep", File.ReadAllText(custom));
+                Directory.Delete(folder, true);
+                string scene = Path.Combine(root, "Assets/Scenes/NexusStarter.unity"); Directory.CreateDirectory(Path.GetDirectoryName(scene));
+                File.WriteAllText(scene, "keep scene"); Assert.IsTrue(NexusSetupWizard.HasScaffoldConflict(root));
+                File.Delete(scene);
+                string settings = Path.Combine(root, "Assets/GameContextData.asset"); File.WriteAllText(settings, "keep settings");
+                Assert.IsTrue(NexusSetupWizard.HasScaffoldConflict(root)); Assert.AreEqual("keep settings", File.ReadAllText(settings));
+            }
+            finally { Directory.Delete(root, true); }
+        }
+
         private static string GetCanonicalPath(string relativePath)
         {
             string gameRoot = NexusSetupWizard.GameRoot;

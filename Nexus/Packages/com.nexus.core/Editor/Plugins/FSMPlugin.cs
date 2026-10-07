@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -25,7 +24,8 @@ namespace Nexus.Editor
         private VisualElement _view;
         private ScrollView _content;
         private Label _statusBar;
-        private bool _rebuildPending;
+        private volatile bool _rebuildPending;
+        private readonly object _historyLock = new();
         private double _lastRebuildTime;
 
         // Editor-observed transition history keyed by machine instance (weak-ish; cleared on rebind).
@@ -36,6 +36,15 @@ namespace Nexus.Editor
         // schedule stays for machine discovery + card layout, but transition history itself
         // updates in real time via OnStateChanged — nothing is missed, no diffing needed.
         private readonly Dictionary<GameStateMachine, System.Action<StateTransitionRecord>> _subscribed = new();
+        private readonly List<(string ctxLabel, IGameStateMachine machine)> _machines = new();
+        private readonly HashSet<IGameStateMachine> _live = new();
+        private readonly List<IGameStateMachine> _stale = new();
+        private readonly List<KeyValuePair<GameStateMachine, Action<StateTransitionRecord>>> _staleSubscriptions = new();
+        private readonly Dictionary<IGameStateMachine, VisualElement> _cards = new();
+        private readonly Dictionary<IGameStateMachine, int> _configVersions = new();
+        private readonly HashSet<IGameStateMachine> _dirty = new();
+        private VisualElement _emptyState;
+        private bool _emptyStatePlaying;
 
         public override VisualElement CreateView()
         {
@@ -64,32 +73,86 @@ namespace Nexus.Editor
 
         public override void OnDisable()
         {
+            lock (_historyLock) DisableView();
+            base.OnDisable();
+        }
+
+        private void DisableView()
+        {
             _rebuildPending = false;
             foreach (var kvp in _subscribed)
                 kvp.Key.OnStateChanged -= kvp.Value;
             _subscribed.Clear();
-            base.OnDisable();
+            _cards.Clear();
+            _history.Clear();
+            _lastState.Clear();
+            _configVersions.Clear();
+            _dirty.Clear();
+            _machines.Clear();
+            _live.Clear();
+            _stale.Clear();
+            _staleSubscriptions.Clear();
+            _lastRebuildTime = 0;
+            _content?.Clear();
+            _emptyState = null;
+            _emptyStatePlaying = false;
         }
 
         private void Render()
         {
+            lock (_historyLock) RenderView();
+        }
+
+        private void RenderView()
+        {
             var machines = CollectMachines();
             ObserveTransitions(machines);
 
-            _content.Clear();
+            _stale.Clear();
+            foreach (var pair in _cards)
+                if (!_live.Contains(pair.Key)) _stale.Add(pair.Key);
+            foreach (var machine in _stale)
+            {
+                _cards[machine].RemoveFromHierarchy();
+                _cards.Remove(machine);
+                _configVersions.Remove(machine);
+                _dirty.Remove(machine);
+            }
 
             if (machines.Count == 0)
             {
-                _content.Add(NexusEditorStyles.CreateEmptyState(
-                    Application.isPlaying
-                        ? NexusLang.Get("fsm_empty_playing")
-                        : NexusLang.Get("fsm_empty_editmode")));
+                if (_emptyState == null || _emptyStatePlaying != Application.isPlaying)
+                {
+                    _emptyState?.RemoveFromHierarchy();
+                    _emptyStatePlaying = Application.isPlaying;
+                    _emptyState = NexusEditorStyles.CreateEmptyState(
+                        Application.isPlaying
+                            ? NexusLang.Get("fsm_empty_playing")
+                            : NexusLang.Get("fsm_empty_editmode"));
+                    _content.Add(_emptyState);
+                }
                 if (_statusBar != null) _statusBar.text = string.Format(NexusLang.Get("fsm_status"), 0);
                 return;
             }
 
+            if (_emptyState != null) { _emptyState.RemoveFromHierarchy(); _emptyState = null; }
             foreach (var (ctxLabel, machine) in machines)
-                _content.Add(BuildMachineCard(ctxLabel, machine));
+            {
+                int version = machine is GameStateMachine concrete ? concrete.ConfigurationVersion : 0;
+                if (_cards.TryGetValue(machine, out var card) && !_dirty.Contains(machine)
+                    && _configVersions.TryGetValue(machine, out int previous) && previous == version) continue;
+                var replacement = BuildMachineCard(ctxLabel, machine);
+                if (card != null)
+                {
+                    int index = _content.contentContainer.IndexOf(card);
+                    card.RemoveFromHierarchy();
+                    _content.Insert(index, replacement);
+                }
+                else _content.Add(replacement);
+                _cards[machine] = replacement;
+                _configVersions[machine] = version;
+                _dirty.Remove(machine);
+            }
 
             if (_statusBar != null) _statusBar.text = string.Format(NexusLang.Get("fsm_status"), machines.Count);
         }
@@ -144,8 +207,8 @@ namespace Nexus.Editor
             {
                 card.Add(NexusEditorStyles.CreateSectionTitle(NexusLang.Get("fsm_transition_log")));
                 var logBox = new VisualElement { style = { paddingLeft = 4 } };
-                foreach (var line in Enumerable.Reverse(hist))
-                    logBox.Add(new Label(line) { style = { fontSize = 9, color = NexusEditorStyles.TextSecondary } });
+                for (int i = hist.Count - 1; i >= 0; i--)
+                    logBox.Add(new Label(hist[i]) { style = { fontSize = 9, color = NexusEditorStyles.TextSecondary } });
                 card.Add(logBox);
             }
 
@@ -154,11 +217,12 @@ namespace Nexus.Editor
 
         private List<(string ctxLabel, IGameStateMachine machine)> CollectMachines()
         {
-            var result = new List<(string, IGameStateMachine)>();
+            var result = _machines;
+            result.Clear();
+            _live.Clear();
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts == null) return result;
 
-            var seen = new HashSet<IGameStateMachine>();
             foreach (var ctx in contexts)
             {
                 IGameStateMachine machine = null;
@@ -168,7 +232,7 @@ namespace Nexus.Editor
                     NexusRuntime.Logger?.LogWarning($"[Nexus FSM] Machine resolution failed during collect for context '{ctx?.ScopeTag}': {ex.Message}");
                 }
 
-                if (machine == null || !seen.Add(machine)) continue;
+                if (machine == null || !_live.Add(machine)) continue;
                 result.Add((ctx.ScopeTag ?? NexusLang.Get("fsm_fallback_context"), machine));
             }
             return result;
@@ -176,7 +240,7 @@ namespace Nexus.Editor
 
         private void ObserveTransitions(List<(string ctxLabel, IGameStateMachine machine)> machines)
         {
-            var live = new HashSet<IGameStateMachine>();
+            var live = _live;
             foreach (var (_, machine) in machines)
             {
                 live.Add(machine);
@@ -189,6 +253,12 @@ namespace Nexus.Editor
                         _subscribed[concrete] = handler;
                         concrete.OnStateChanged += handler;
                     }
+                    var current = concrete.CurrentState?.GetType().Name ?? NexusLang.Get("fsm_no_state");
+                    if (!_lastState.TryGetValue(machine, out var previous) || previous != current)
+                    {
+                        _lastState[machine] = current;
+                        _dirty.Add(machine);
+                    }
                 }
                 else
                 {
@@ -198,6 +268,7 @@ namespace Nexus.Editor
                     if (!_lastState.TryGetValue(machine, out var last) || last != current)
                     {
                         _lastState[machine] = current;
+                        _dirty.Add(machine);
                         if (last != null) // skip the very first observation
                         {
                             AppendHistory(machine, $"{DateTime.Now:HH:mm:ss}  {last} → {current}");
@@ -207,7 +278,8 @@ namespace Nexus.Editor
             }
 
             // Drop bookkeeping/subscriptions for machines that are no longer active or destroyed.
-            var staleSubs = new List<KeyValuePair<GameStateMachine, System.Action<StateTransitionRecord>>>();
+            var staleSubs = _staleSubscriptions;
+            staleSubs.Clear();
             foreach (var kvp in _subscribed)
             {
                 if (kvp.Key == null || !live.Contains(kvp.Key))
@@ -226,7 +298,10 @@ namespace Nexus.Editor
                 _history.Remove(kvp.Key);
             }
 
-            var stale = _lastState.Keys.Where(m => !live.Contains(m)).ToList();
+            var stale = _stale;
+            stale.Clear();
+            foreach (var machine in _lastState.Keys)
+                if (!live.Contains(machine)) stale.Add(machine);
             foreach (var m in stale) { _lastState.Remove(m); _history.Remove(m); }
         }
 
@@ -241,10 +316,16 @@ namespace Nexus.Editor
 
         private void AppendHistory(IGameStateMachine machine, string line)
         {
-            if (!_history.TryGetValue(machine, out var hist))
-                _history[machine] = hist = new List<string>();
-            hist.Add(line);
-            if (hist.Count > MaxHistory) hist.RemoveAt(0);
+            lock (_historyLock)
+            {
+                if (machine is GameStateMachine concrete && !_subscribed.ContainsKey(concrete)) return;
+                if (!_history.TryGetValue(machine, out var hist))
+                    _history[machine] = hist = new List<string>();
+                hist.Add(line);
+                if (hist.Count > MaxHistory) hist.RemoveAt(0);
+                _dirty.Add(machine);
+                _rebuildPending = true;
+            }
         }
     }
 }

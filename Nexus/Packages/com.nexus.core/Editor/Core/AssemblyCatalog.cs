@@ -32,7 +32,7 @@ namespace Nexus.Editor
         /// <summary>True for known third-party assemblies that are not game code.</summary>
         public static bool IsThirdPartyAssembly(string name) => NexusAssemblyPolicy.IsThirdPartyAssembly(name);
 
-        /// <summary>True for Unity test assemblies (case-insensitive "tests" in the name).</summary>
+        /// <summary>True for Unity test assemblies and '.testing' support assemblies.</summary>
         public static bool IsTestAssembly(string name) => NexusAssemblyPolicy.IsTestAssembly(name);
 
         /// <summary>True for editor-only assemblies (case-insensitive ".editor" in the name).</summary>

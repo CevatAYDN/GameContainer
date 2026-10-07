@@ -13,7 +13,13 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.4.0-orange.svg)](package.json)
 
-**Nexus Core** is a modern, high-performance MVCS (Model-View-Controller-Service) architecture framework for Unity 6. It provides observable reactive models, dependency injection, signal-based communication, and comprehensive editor tools with zero-GC allocation in steady-state operations.
+**Nexus Core** is a modern, high-performance MVCS (Model-View-Controller-Service) architecture framework for Unity 6. It provides observable reactive models, dependency injection, signal-based communication, and comprehensive editor tools with allocation-conscious synchronous hot paths.
+
+**Integration paths:** [Beginner / existing game / team workflow](docs/INTEGRATION_PATHS.md) ([Türkçe](docs/INTEGRATION_PATHS_TR.md)). `Context.Prewarm<TSignal>()` prepares command pools during loading without firing gameplay events. `NexusDI.ValidateBindings()` inspects actual scopes, names, overrides and eager cycles without constructing objects.
+
+**Unity 6 + UPM:** choose the [integration guide](docs/GETTING_STARTED.md) ([Türkçe](docs/GETTING_STARTED_TR.md)) for explicit code-only startup, a scene-based setup, or the importable sample. Use `ContextFactory.StartAsync` to configure and initialize a context in one awaited call without assembly scanning.
+
+**Performance scope:** warmed generic synchronous dispatch, subscriptions and typed two-signal composites target zero managed allocation without debug tracing/interceptors/decorators. Immutable arbitrary-arity `CompositeContext` snapshots and async/debug paths have separate allocation costs. See [hardening and verification](docs/HARDENING.md); host benchmarks do not establish Unity/IL2CPP device performance.
 
 ---
 
@@ -23,7 +29,7 @@
 |------------|----------|
 | [10-Minute Quickstart Guide](docs/10_MIN_QUICKSTART.md) | [10 Dakikada Hızlı Başlangıç](docs/10_MIN_QUICKSTART_TR.md) |
 
-**Prefer a hands-on example?** Install the [Counter Sample](Samples~/Counter/README.md) via Package Manager → Nexus → Samples. It is the canonical onboarding sample; `NexusStarter` is a scaffold template for greenfield bootstrapping.
+**Prefer a hands-on example?** Import **Code-first Startup** via Package Manager → Nexus → Samples, attach `ScoreBootstrap` to a GameObject, and enter Play Mode. For a view/mediator example, use the [Counter Sample](Samples~/Counter/README.md); `NexusStarter` is the scene scaffold. Clean UPM installation and Windows Mono startup/disposal have been exercised; Android ARM64 IL2CPP compilation passed. See [verification scope](docs/HARDENING.md).
 
 ---
 
@@ -35,25 +41,24 @@ Nexus Core includes 5 strategic architectural capabilities:
 2. **Convention-Based Binding (`BindInterfacesAndSelfTo<T>()`)**: Automatically bind concrete classes under all user interfaces AND their concrete type sharing one singleton.
 3. **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Provide startup and teardown lifecycle hooks for non-service domain objects.
 4. **Scene & Prefab Auto-Injection (`NexusBinding`)**: Attach `NexusBinding` MonoBehaviour to GameObjects or Prefabs for zero-code scene injection.
-5. **Zero-GC Hot Paths**: All capabilities execute with zero-GC steady-state allocation guarantees.
+5. **Zero-GC Hot Paths**: Synchronous generic dispatch, warmed DI resolution and typed two-signal composites target zero managed allocation after warmup. See [measured scope](docs/HARDENING.md).
 
 ---
 
-## ⚡ Framework Comparison Matrix
+## Performance scope
 
-| Feature / Metric | **Nexus Core** | Zenject / Extenject | VContainer | UniRx / R3 | StrangeIoC |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Steady-State GC Allocations** | **0 Bytes** | High | Low | Low/Moderate | High |
-| **AOT / IL2CPP Binder Generator** | ✅ Built-in | ❌ Reflection | ✅ CodeGen | ❌ N/A | ❌ Reflection |
-| **SignalBus & Command Pipeline** | ✅ 4 Execution Modes | ✅ Basic | ❌ Missing | ❌ N/A | ✅ Basic |
-| **Observable Reactive Models** | ✅ `ObservableProperty` | ❌ Requires UniRx | ❌ Missing | ✅ Stream-based | ❌ Missing |
-| **Out-of-the-Box Engine Services** | ✅ 14 Core Services | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
-| **RAM Anti-Cheat & Storage Encryption** | ✅ Built-in AES-256 | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
-| **Live Editor Play-Mode Dashboard** | ✅ 16 Plugins | ❌ Basic Inspector | ❌ Basic Diagnostic | ❌ N/A | ❌ Missing |
-| **Build Validation & Diagnostics** | ✅ Pre-build Rules | ❌ Missing | ❌ Missing | ❌ N/A | ❌ Missing |
+| Path | Allocation contract |
+|---|---|
+| Generic synchronous dispatch, command pools, warmed DI | Host regressions verify zero allocation for covered paths after warmup |
+| Typed two-signal synchronous composite | Value payloads and pooled commands; measured 0 B per completion after warmup |
+| Immutable arbitrary-arity/async composite | Owns retained snapshots; payload boxing and snapshot allocation remain intentional |
+| Startup, registration, async operations, editor diagnostics | May allocate; outside the synchronous hot-path contract |
+
+Measurements and configuration are in [HARDENING.md](docs/HARDENING.md). Device frame
+budgets require Unity/IL2CPP profiling on the target hardware. Comparative performance
+claims require equivalent competitor scenarios and measurements.
 
 ---
-
 ## 📖 Glossary
 
 | Term | Definition | Concrete Example |

@@ -1,4 +1,8 @@
 using NUnit.Framework;
+using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
+using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -32,9 +36,22 @@ namespace Nexus.Editor.Tests
         [Test]
         public void NexusWindow_SidebarGroupsByCategory()
         {
-            // This test verifies the new sidebar grouping logic compiles and works.
-            // Full verification requires Unity Editor with NexusWindow open.
-            Assert.Ignore("Sidebar grouping requires an opened NexusWindow; this headless EditMode suite does not claim coverage.");
+            var window = ScriptableObject.CreateInstance<NexusWindow>();
+            try
+            {
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                typeof(NexusWindow).GetMethod("CreateGUI", flags).Invoke(window, null);
+                var plugins = (List<INexusEditorPlugin>)typeof(NexusWindow).GetField("_plugins", flags).GetValue(window);
+                Assert.IsNotEmpty(plugins);
+                var groups = plugins.GroupBy(p => p.Category).OrderBy(g => g.Min(p => p.Order)).ToArray();
+                var sidebar = (VisualElement)typeof(NexusWindow).GetField("_sidebar", flags).GetValue(window);
+                var headers = sidebar.Query<Label>(className: "nexus-category-header").ToList();
+                CollectionAssert.AreEqual(groups.Select(g => NexusLang.Get(g.Key).ToUpper()).ToArray(), headers.Select(h => h.text).ToArray());
+                var expectedButtons = groups.SelectMany(g => g.OrderBy(p => p.Order)).Select(p => "Tab_" + p.Id).ToArray();
+                var buttons = sidebar.Query<Button>(className: "nexus-sidebar-btn").ToList();
+                CollectionAssert.AreEqual(expectedButtons, buttons.Select(b => b.name).ToArray());
+            }
+            finally { Object.DestroyImmediate(window); }
         }
     }
 

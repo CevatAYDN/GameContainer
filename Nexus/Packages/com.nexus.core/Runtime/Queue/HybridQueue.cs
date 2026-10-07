@@ -263,6 +263,13 @@ namespace Nexus.Core
             System.Threading.Interlocked.Increment(ref _totalEnqueued);
         }
 
+        internal void EnqueueThreadSafe(IQueuedSignal dispatch)
+        {
+            if (dispatch == null) throw new ArgumentNullException(nameof(dispatch));
+            lock (_threadSafeLock) _threadSafeQueue.Enqueue(dispatch);
+            System.Threading.Interlocked.Increment(ref _totalEnqueued);
+        }
+
         /// <summary>Enqueues a signal to be fired at the start of the next frame (LateUpdate drain).</summary>
         /// <typeparam name="T">The signal struct type.</typeparam>
         /// <param name="signal">The signal data.</param>

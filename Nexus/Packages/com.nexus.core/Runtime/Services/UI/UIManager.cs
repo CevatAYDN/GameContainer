@@ -101,6 +101,7 @@ namespace Nexus.Core.Services
         // Keys mid-open (awaiting instantiation) so concurrent opens of the same screen
         // cannot double-instantiate. Guarded by _lock.
         private readonly HashSet<string> _pendingOpens = new();
+        private readonly HashSet<string> _pendingCloses = new();
         private readonly object _lock = new();
         private volatile bool _disposed;
 
@@ -157,6 +158,7 @@ namespace Nexus.Core.Services
             // acquisition so no concurrent OpenScreenAsync can slip between the two checks.
             lock (_lock)
             {
+                if (_pendingCloses.Contains(key)) return null;
                 // 1. Already open → bring to front, refresh, return existing instance.
                 if (_activeScreens.TryGetValue(key, out var existing) && existing != null)
                 {
@@ -256,7 +258,7 @@ namespace Nexus.Core.Services
                 }
 
                 _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
-                SignalBus?.Fire(new ScreenOpenedSignal(key, args));
+                SignalBus?.Fire(new ScreenOpenedSignal(screen.ScreenName, args));
                 return (TScreen)screen;
             }
             finally
@@ -289,7 +291,9 @@ namespace Nexus.Core.Services
             }
             else if (AssetProvider != null)
             {
-                instance = await AssetProvider.InstantiateWindowAsync(key, layerRoot);
+                // Provider addresses stay compatible; internal identities include assembly
+                // and namespace so registered same-name screen types never share a pool.
+                instance = await AssetProvider.InstantiateWindowAsync(typeof(TScreen).Name, layerRoot);
             }
             else
             {
@@ -378,63 +382,71 @@ namespace Nexus.Core.Services
             {
                 if (!_activeScreens.TryGetValue(key, out screen) || screen == null)
                     return;
+                if (!_pendingCloses.Add(key)) return;
             }
 
             try
             {
-                await screen.OnClosingAsync(LifetimeToken);
-                await screen.OnClosedAsync(LifetimeToken);
-            }
-            catch (Exception ex)
-            {
-                NexusRuntime.Logger?.LogException(ex);
-            }
-
-            // Dispose() may have destroyed the screen while the close lifecycle awaited
-            // above (teardown during an open/close storm). A destroyed screen is Unity
-            // fake-null; touching .gameObject would throw MissingReferenceException.
-            if (screen == null) return;
-
-            lock (_lock)
-            {
-                if (_activeScreens.TryGetValue(key, out var current) && ReferenceEquals(current, screen))
+                try
                 {
-                    _activeScreens.Remove(key);
-                    _history.Remove(key);
-                    _activeGameObjectsDirty = true; // R2026-M3: invalidate cache
+                    await screen.OnClosingAsync(LifetimeToken);
+                    await screen.OnClosedAsync(LifetimeToken);
                 }
-            }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogException(ex);
+                }
 
-            if (!_disposed)
-            {
-                screen.gameObject.SetActive(false);
-                bool pooled = false;
+                // Dispose() may have destroyed the screen while the close lifecycle awaited
+                // above (teardown during an open/close storm). A destroyed screen is Unity
+                // fake-null; touching .gameObject would throw MissingReferenceException.
+                if (screen == null) return;
+
                 lock (_lock)
                 {
-                    if (!_pools.TryGetValue(key, out var pool))
+                    if (_activeScreens.TryGetValue(key, out var current) && ReferenceEquals(current, screen))
                     {
-                        pool = new Stack<ScreenView>();
-                        _pools[key] = pool;
-                    }
-                    // Bound pool growth — overflow instances are destroyed, not retained.
-                    if (pool.Count < MaxPooledPerScreenKey)
-                    {
-                        pool.Push(screen);
-                        pooled = true;
+                        _activeScreens.Remove(key);
+                        _history.Remove(key);
+                        _activeGameObjectsDirty = true; // R2026-M3: invalidate cache
                     }
                 }
-                if (!pooled)
+
+                if (!_disposed)
+                {
+                    screen.gameObject.SetActive(false);
+                    bool pooled = false;
+                    lock (_lock)
+                    {
+                        if (!_pools.TryGetValue(key, out var pool))
+                        {
+                            pool = new Stack<ScreenView>();
+                            _pools[key] = pool;
+                        }
+                        // Bound pool growth — overflow instances are destroyed, not retained.
+                        if (pool.Count < MaxPooledPerScreenKey)
+                        {
+                            pool.Push(screen);
+                            pooled = true;
+                        }
+                    }
+                    if (!pooled)
+                    {
+                        SafeDestroy(screen.gameObject);
+                    }
+                }
+                else
                 {
                     SafeDestroy(screen.gameObject);
                 }
-            }
-            else
-            {
-                SafeDestroy(screen.gameObject);
-            }
 
-            _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
-            SignalBus?.Fire(new ScreenClosedSignal(key));
+                _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
+                SignalBus?.Fire(new ScreenClosedSignal(screen.ScreenName));
+            }
+            finally
+            {
+                lock (_lock) _pendingCloses.Remove(key);
+            }
         }
 
         // ── Queries ───────────────────────────────────────────────────
@@ -490,7 +502,7 @@ namespace Nexus.Core.Services
                     // dereferencing .gameObject on it would throw MissingReferenceException.
                     bool alive = kvp.Value != null;
                     UILayer layer = alive ? _canvas.ResolveLayer(kvp.Value.gameObject) : UILayer.Screen;
-                    result.Add(new ScreenInfo(kvp.Key, layer, order, alive));
+                    result.Add(new ScreenInfo(alive ? kvp.Value.ScreenName : kvp.Key, layer, order, alive));
                 }
             }
             finally
@@ -538,9 +550,7 @@ namespace Nexus.Core.Services
 
         private static string ScreenKey<TScreen>() where TScreen : ScreenView
         {
-            // Key by type name by default; screens may override ScreenName, but type-level
-            // registration keeps the API type-safe and pool keys deterministic.
-            return typeof(TScreen).Name;
+            return typeof(TScreen).AssemblyQualifiedName;
         }
 
         private static void SafeDestroy(UnityEngine.Object obj)
@@ -568,6 +578,7 @@ namespace Nexus.Core.Services
                 _pools.Clear();
                 _registeredPrefabs.Clear();
                 _pendingOpens.Clear();
+                _pendingCloses.Clear();
             }
 
             foreach (var screen in toDestroy)

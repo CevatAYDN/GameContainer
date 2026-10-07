@@ -168,6 +168,7 @@ namespace Nexus.Core
         private int _disposeState;
         private readonly object _disposeLock = new();
         private readonly NexusDI _container;
+        private readonly CommandPoolManager _poolManager;
         private readonly IContext _context;
         private readonly IContextResolver _contextResolver;
 
@@ -274,6 +275,7 @@ namespace Nexus.Core
         public SignalBus(NexusDI container, CommandPoolManager poolManager, IContext context, IContextResolver contextResolver)
         {
             _container = container;
+            _poolManager = poolManager;
             _context = context;
             _contextResolver = contextResolver ?? NexusRuntime.DefaultContextResolver;
             _commandRegistry = new CommandRegistry(container);
@@ -308,6 +310,39 @@ namespace Nexus.Core
             {
                 ThrowIfDisposed();
                 _commandRegistry.RegisterCommand(signalType, commandType, mode, priority, isAsync, oneShot);
+            }
+        }
+
+        /// <summary>
+        /// Prepares registered commands, dispatch snapshots and cross-context metadata for a
+        /// signal without firing it, consuming one-shots or calling subscribers. Constructors
+        /// and factories run during this explicit loading step. Async execution, debug tracing,
+        /// decorators and composite triggers have additional costs; prewarm those pools separately.
+        /// </summary>
+        public void Prewarm<TSignal>(int availablePerCommand = 4) where TSignal : struct
+        {
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                if (availablePerCommand < 0) throw new ArgumentOutOfRangeException(nameof(availablePerCommand));
+                _commandRegistry.GetCachedCrossContext<TSignal>();
+                if (_commandRegistry.TryGetHandlers(typeof(TSignal), out var handlers))
+                    for (int i = 0; i < handlers.Count; i++)
+                        _poolManager.Prewarm(handlers[i].CommandType, availablePerCommand);
+            }
+        }
+
+        internal IDisposable BindTypedComposite<TFirst, TSecond, TCommand>(bool oneShot)
+            where TFirst : struct where TSecond : struct
+            where TCommand : class, ICompositeCommand<TFirst, TSecond>
+        {
+            if (typeof(TFirst) == typeof(TSecond)) throw new ArgumentException("Composite signal types must be distinct.");
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                _container.EnsureCommandBinding(typeof(TCommand));
+                return new TypedCompositeRegistration<TFirst, TSecond>(this,
+                    (first, second) => _commandExecutor.ExecuteTypedComposite<TFirst, TSecond, TCommand>(first, second, oneShot), oneShot);
             }
         }
 
@@ -492,6 +527,12 @@ namespace Nexus.Core
         {
             if (IsDisposed) return;
             GetHybridQueue().EnqueueThreadSafe(signal);
+        }
+
+        internal void EnqueueDispatch(IQueuedSignal dispatch)
+        {
+            if (IsDisposed) { dispatch.Release(); return; }
+            GetHybridQueue().EnqueueThreadSafe(dispatch);
         }
 
         public void FireNextFrame<T>(T signal) where T : struct

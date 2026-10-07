@@ -16,7 +16,8 @@ namespace Nexus.Core
 
     /// <summary>
     /// Compile-time/startup static cache that holds a unique integer ID per type <typeparamref name="T"/>.
-    /// Enables <see cref="NexusDI"/> to resolve singletons in &lt; 2ns via array lookup (<c>_fastSlots[id]</c>).
+    /// Enables <see cref="NexusDI"/> to resolve locally owned cached instances by array lookup.
+    /// Resolution also checks container lifetime and the registration generation.
     /// </summary>
     public static class TypeIdCache<T>
     {

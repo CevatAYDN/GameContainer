@@ -112,7 +112,7 @@ namespace Nexus.Tests.Runtime
             using var di = new NexusDI();
             var bus = new SignalBus(di, new CommandPoolManager(di), new MockContext());
             bus.RegisterCommand(typeof(WiringSignalB), typeof(WiringAsyncCmd), ExecutionMode.Sequential, 0, true);
-            var ex = Assert.Throws<Exception>(() => bus.Fire(new WiringSignalB(1)));
+            var ex = Assert.Throws<NexusSyncAsyncMismatchException>(() => bus.Fire(new WiringSignalB(1)));
             Assert.AreEqual("NexusSyncAsyncMismatchException", ex.GetType().Name);
             bus.Dispose();
         }

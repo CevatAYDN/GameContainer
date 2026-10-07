@@ -50,6 +50,7 @@ namespace Nexus.Core.Services
             /// <summary>Set while this slot's action is executing, so two callers (Tick,
             /// ForceSave, Flush) can never run the same save concurrently.</summary>
             public bool Flushing;
+            public long RequestVersion;
         }
 
         // Owner id → slot. Guarded by _lock: services may request from different threads
@@ -125,6 +126,7 @@ namespace Nexus.Core.Services
             {
                 slot = GetSlotLocked(owner);
                 slot.LastAction = saveAction;
+                slot.RequestVersion++;
                 // Fresh slot (LastSaveTime < 0) or window elapsed → flush immediately.
                 flushNow = slot.LastSaveTime < 0f || Now - slot.LastSaveTime >= _throttleSeconds;
                 slot.Pending = !flushNow;
@@ -196,6 +198,7 @@ namespace Nexus.Core.Services
             {
                 slot = GetSlotLocked(owner);
                 slot.LastAction = saveAction;
+                slot.RequestVersion++;
                 slot.Pending = false;
             }
             FlushSlot(slot);
@@ -236,6 +239,7 @@ namespace Nexus.Core.Services
         private void FlushSlot(SaveSlot slot)
         {
             Action action;
+            long requestVersion;
             lock (_lock)
             {
                 // The action is RETAINED, not consumed: Flush()/OnDispose must be able to
@@ -255,6 +259,8 @@ namespace Nexus.Core.Services
                 }
                 action = slot.LastAction;
                 if (action == null) return;
+                requestVersion = slot.RequestVersion;
+                slot.Pending = false;
                 slot.Flushing = true;
             }
 
@@ -264,7 +270,7 @@ namespace Nexus.Core.Services
                 lock (_lock)
                 {
                     slot.LastSaveTime = Now;
-                    slot.Pending = false;
+                    slot.Pending = slot.RequestVersion != requestVersion;
                     slot.ConsecutiveFailures = 0;
                 }
             }
@@ -278,9 +284,10 @@ namespace Nexus.Core.Services
                 // silent.
                 lock (_lock)
                 {
-                    slot.ConsecutiveFailures++;
+                    bool superseded = slot.RequestVersion != requestVersion;
+                    slot.ConsecutiveFailures = superseded ? 0 : slot.ConsecutiveFailures + 1;
                     slot.LastSaveTime = Now;
-                    slot.Pending = slot.ConsecutiveFailures < MaxConsecutiveSaveFailures;
+                    slot.Pending = superseded || slot.ConsecutiveFailures < MaxConsecutiveSaveFailures;
                 }
                 NexusRuntime.Logger?.LogWarning(
                     $"[SaveThrottler] Save execution failed ({slot.ConsecutiveFailures}/{MaxConsecutiveSaveFailures} consecutive): {ex.Message}");

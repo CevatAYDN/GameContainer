@@ -57,21 +57,14 @@ namespace Nexus.Core
             get { lock (_dispatchLock) return _value; }
             set
             {
-                // Fast-path equality check OUTSIDE the lock. The previous
-                // code ran EqualityComparer<T>.Default.Equals under _dispatchLock — a
-                // virtual call that can run arbitrary user Equals code while holding the
-                // lock (longer critical section, theoretical deadlock if the custom
-                // Equals touches another lock). The unchecked double-write race is
-                // harmless: the loser simply re-dispatches the same value, which the
-                // equality re-check inside the lock suppresses.
-                if (EqualityComparer<T>.Default.Equals(_value, value))
-                    return;
-
                 // Claim-or-queue under the lock (audit fix 1.3): exactly one thread becomes
                 // the dispatcher; everyone else — including same-thread reentrant writes from
                 // inside a handler — coalesces into the pending slot.
+                T old;
+                T current = value;
                 lock (_dispatchLock)
                 {
+                    if (EqualityComparer<T>.Default.Equals(_value, value)) return;
                     if (_isNotifying)
                     {
                         _value = value;
@@ -79,11 +72,8 @@ namespace Nexus.Core
                         _hasPendingReentrantValue = true;
                         return;
                     }
-                    // Re-check under the lock: the fast-path read may have raced a writer.
-                    if (EqualityComparer<T>.Default.Equals(_value, value))
-                    {
-                        return;
-                    }
+                    old = _value;
+                    _value = current;
                     _isNotifying = true;
                 }
 
@@ -93,13 +83,6 @@ namespace Nexus.Core
                     // old/current are locals: every read of the shared _value field happens
                     // under _dispatchLock (a multi-field T would otherwise tear), and handlers
                     // always observe the exact pair this iteration committed.
-                    T old;
-                    T current = value;
-                    lock (_dispatchLock)
-                    {
-                        old = _value;
-                        _value = current;
-                    }
                     while (true)
                     {
                         Action<T, T>[] snapshot = _observers.GetSnapshot();
@@ -118,25 +101,23 @@ namespace Nexus.Core
                         bool hasPending;
                         lock (_dispatchLock)
                         {
-                            hasPending = _hasPendingReentrantValue;
+                            hasPending = _hasPendingReentrantValue &&
+                                !EqualityComparer<T>.Default.Equals(current, _pendingReentrantValue);
+                            _hasPendingReentrantValue = false;
                             if (hasPending)
                             {
                                 pending = _pendingReentrantValue;
-                                _hasPendingReentrantValue = false;
+                                old = current;
+                                current = pending;
                             }
                             else
                             {
                                 _isNotifying = false;
                                 pending = default;
                             }
+                            _pendingReentrantValue = default;
                         }
                         if (!hasPending) break;
-                        lock (_dispatchLock)
-                        {
-                            old = _value;
-                            _value = pending;
-                        }
-                        current = pending;
                     }
                     completedNormally = true;
                 }
@@ -222,19 +203,15 @@ namespace Nexus.Core
         // once. The queue only grows while a dispatch is active and is drained in the same
         // call stack, so steady state stays zero-alloc.
         private readonly List<PendingChange> _pendingChanges = new();
-        // Reusable per-thread drain buffer for DrainPendingChanges. The old `pending =
+        // Reusable instance drain buffer for DrainPendingChanges. The old `pending =
         // _pendingChanges.ToArray()` allocated a fresh array on EVERY pass whenever
         // reentrant handlers queued changes. The buffer grows only when a deeper
         // reentrancy nests more changes than any prior drain — amortized
         // zero-allocation steady state — and each pass copies under _eventLock then
         // dispatches outside it, so semantics are identical to the old code.
-        // [ThreadStatic]: under the claim protocol below only the claim holder ever
-        // drains (a non-holder mutator sees _isNotifying and queues without draining),
-        // so a plain instance buffer would already be safe. The per-thread buffer is a
-        // zero-cost second line of defense: if a future regression lets two threads
-        // drain at once, one can never dispatch the OTHER's pending change from a
-        // shared buffer (the wrong-pair/duplicate-dispatch bug locked by benchmark M4b).
-        [ThreadStatic] private static PendingChange[] t_drainBuffer;
+        // The dispatch claim gives one drain exclusive ownership of this instance.
+        // Separate lists may drain recursively on the same thread without sharing storage.
+        private PendingChange[] _drainBuffer;
 
         private enum PendingChangeOp : byte { Add = 0, Remove = 1, Clear = 2, Replace = 3 }
 
@@ -542,21 +519,22 @@ namespace Nexus.Core
                             released = true;
                             return;
                         }
-                        if (t_drainBuffer == null || t_drainBuffer.Length < drainCount)
+                        if (_drainBuffer == null || _drainBuffer.Length < drainCount)
                         {
-                            t_drainBuffer = new PendingChange[drainCount];
+                            _drainBuffer = new PendingChange[Math.Max(4, drainCount * 2)];
                         }
-                        _pendingChanges.CopyTo(t_drainBuffer);
+                        _pendingChanges.CopyTo(_drainBuffer);
                         _pendingChanges.Clear();
                     }
 
                     // Dispatch OUTSIDE the lock. Changes queued during a handler land in
-                    // _pendingChanges and are drained by the next pass; t_drainBuffer is only
+                    // _pendingChanges and are drained by the next pass; _drainBuffer is only
                     // written (and grown) under _eventLock at the top of a pass, so the read
                     // loop here never races the next copy on this thread.
                     for (int i = 0; i < drainCount; i++)
                     {
-                        var pending = t_drainBuffer[i];
+                        var pending = _drainBuffer[i];
+                        _drainBuffer[i] = default; // release removed object payloads
                         switch (pending.Op)
                         {
                             case PendingChangeOp.Add:
@@ -584,7 +562,11 @@ namespace Nexus.Core
                     // THIS pass is dropped (same semantics as a throwing direct handler
                     // skipping the rest of its snapshot); only changes queued AFTER the
                     // copy stay in the queue and are picked up by the next claimer.
-                    lock (_eventLock) _isNotifying = false;
+                    lock (_eventLock)
+                    {
+                        if (_drainBuffer != null) Array.Clear(_drainBuffer, 0, _drainBuffer.Length);
+                        _isNotifying = false;
+                    }
                 }
             }
         }

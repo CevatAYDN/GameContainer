@@ -56,13 +56,14 @@ namespace Nexus.Core.Services
         // rare, so the brief disk write under the lock is acceptable — do not "optimize"
         // this without reintroducing the cross-property invariant.
         private readonly object _levelLock = new();
+        private int _updateDepth;
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
             if (PlayerPrefsService != null)
             {
-                CurrentLevel.Value = PlayerPrefsService.GetInt(KeyCurrentLevel, 1);
-                MaxUnlockedLevel.Value = PlayerPrefsService.GetInt(KeyMaxLevel, 1);
+                CurrentLevel.Value = Math.Max(1, PlayerPrefsService.GetInt(KeyCurrentLevel, 1));
+                MaxUnlockedLevel.Value = Math.Max(CurrentLevel.Value, PlayerPrefsService.GetInt(KeyMaxLevel, 1));
             }
 
             CurrentLevel.OnChanged(OnLevelChanged);
@@ -76,7 +77,10 @@ namespace Nexus.Core.Services
         // subscriber of the shared observable (house style: named handler + RemoveOnChanged).
         private void OnLevelChanged(int oldValue, int newValue)
         {
-            SchedulePersist();
+            lock (_levelLock)
+            {
+                if (_updateDepth == 0) SchedulePersist();
+            }
         }
 
         /// <summary>Batch-persists both level keys, throttled when a SaveThrottler is bound.</summary>
@@ -98,12 +102,8 @@ namespace Nexus.Core.Services
         {
             lock (_levelLock)
             {
-                int nextLevel = CurrentLevel.Value + 1;
-                CurrentLevel.Value = nextLevel;
-                if (nextLevel > MaxUnlockedLevel.Value)
-                {
-                    MaxUnlockedLevel.Value = nextLevel;
-                }
+                if (CurrentLevel.Value == int.MaxValue) return;
+                SetLevelLocked(CurrentLevel.Value + 1);
             }
         }
 
@@ -111,12 +111,23 @@ namespace Nexus.Core.Services
         {
             lock (_levelLock)
             {
-                int nextLevel = Math.Max(1, levelIndex);
-                CurrentLevel.Value = nextLevel;
-                if (nextLevel > MaxUnlockedLevel.Value)
-                {
-                    MaxUnlockedLevel.Value = nextLevel;
-                }
+                SetLevelLocked(Math.Max(1, levelIndex));
+            }
+        }
+
+        private void SetLevelLocked(int level)
+        {
+            if (CurrentLevel.Value == level && MaxUnlockedLevel.Value >= level) return;
+            _updateDepth++;
+            try
+            {
+                // Publish the unlocked bound first so observers never see current > max.
+                if (level > MaxUnlockedLevel.Value) MaxUnlockedLevel.Value = level;
+                CurrentLevel.Value = level;
+            }
+            finally
+            {
+                if (--_updateDepth == 0) SchedulePersist();
             }
         }
 

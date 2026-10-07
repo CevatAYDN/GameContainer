@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Correctness and integration hardening
+- Generic DI caching now respects transient lifetime, rebinding and disposal; stale inherited/adapter values are not cached.
+- Reentrant reactive property pairs and cross-instance list drains preserve their payloads; save requests use versioned completion.
+- Context cancellation failures no longer abandon cleanup; economy rejects stale reconciliation and saturates refund arithmetic.
+- Progression updates persist one coherent level tuple and stop incrementing at the integer limit.
+- UI uses assembly-qualified internal identities while preserving short display/resource names, and claims close ownership before invoking user lifecycle hooks.
+- Storage migration commits conditionally; unsupported atomic-replace platforms preserve a recoverable backup rather than deleting the only committed save.
+- Rollback records cross-type and nested event identity without boxing, indexes replay once, and preserves deferred derived events and worker queue ordering. Private pooled network transport bypasses signal middleware; the real payload enters once.
+- Named parameter injection is supported by AttributeUsage; editor constructor eligibility matches the documented single-public-constructor contract.
+- Added scan-free `ContextFactory.StartAsync` and a typed synchronous two-signal composite API for allocation-sensitive code.
+- Added an importable single-component Code-first Startup UPM sample and an existing-content-safe additive Setup Wizard. Unused legacy wizard state was removed; FSM cards update only when changed.
+- Clean immutable UPM installation fixes missing metadata; runtime/AOT catalogs exclude test support, default editor and editor HTTP implementation assemblies.
+- Pooled commands preserve local transient consumer factories and child constructor dependencies while retaining transient ownership.
+- Debug tracing uses a worker-safe monotonic clock and claims pooled frame data before returning it.
+- Native lifecycle/editor UI tests replace ignored placeholders; async tests no longer block Unity's main thread.
+- Native allocation tests calibrate Unity GC.Alloc with a positive control; an inert Mono GC byte counter can no longer produce a false zero-GC pass.
+- Licensed Unity EditMode/PlayMode, clean tarball import, Windows Mono player and Android ARM64 IL2CPP build evidence is documented in `docs/HARDENING.md`; physical-device acceptance remains separate.
+
 ### Added
 - **Roslyn Source Generator for the AOT binder (`NexusBinderGenerator`)** — the editor-time `NexusCodeGenerator` scan now also ships as an incremental source generator (`SourceGenerator~/NexusBinderGenerator.cs`, pinned to Roslyn 4.10 = Unity 6000.5's compiler, netstandard2.0, deployed as `SourceGenerators~/Nexus.SourceGenerator.dll`). Same gates as CG1: visibility, compiler-generated skip, value-type-param skip, all-or-nothing injectors, `WithParameter` precedence, `[PostConstruct]` guarantee. Injectors/clearers are emitted **only for current-compilation types** (Roslyn metadata `GetMembers()` hides private/internal members of referenced assemblies — a partial generated injector would silently replace reflection injection); referenced game assemblies get ctor factories + command dispatchers and are served by their own compilation's binder, the editor-time generator, or the reflection path. One-file rule: the editor-time `NexusGeneratedBinder.g.cs` and the source-generated class cannot coexist in one assembly (both `Initialize()` registrations; the emitted file header warns).
 - **`CodeGenSuite` CG2 — the source generator's output is compiled and booted inside the harness** — the same generator source is compiled into the harness (no drift), driven via `CSharpGeneratorDriver` over a synthetic compilation (source-path fixtures in the current compilation + the harness assembly as a referenced game assembly), then the emitted binder is compiled with the SDK-shipped Roslyn and resolved through end to end: generated factory + injector, `[Construct]` selection, value-param skip, source chain-walk base-class private-field injector, `[PostConstruct]` after the generated injector, `WithParameter` precedence over the generated factory, and the metadata contract (no injectors for referenced types).

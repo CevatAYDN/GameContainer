@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using UnityEngine;
-using System.IO;
 
 namespace Nexus.Editor
 {
@@ -21,6 +20,7 @@ namespace Nexus.Editor
 
         public static void LoadLocale(string locale)
         {
+            locale = locale == "tr" ? "tr" : "en";
             s_currentLocale = locale;
             s_strings = new Dictionary<string, string>();
 
@@ -29,11 +29,14 @@ namespace Nexus.Editor
 
             // Try to load locale-specific overrides from JSON
             string path = $"Packages/com.nexus.core/Editor/Locales/{locale}.json";
-            if (File.Exists(path))
+            // AssetDatabase resolves virtual UPM paths for embedded, Git and tarball packages.
+            // File.Exists on Packages/... works only for physically embedded packages.
+            var asset = UnityEditor.AssetDatabase.LoadAssetAtPath<TextAsset>(path);
+            if (asset != null)
             {
                 try
                 {
-                    var json = File.ReadAllText(path);
+                    var json = asset.text;
                     var overrides = JsonUtility.FromJson<LocaleData>(json);
                     if (overrides?.entries != null)
                     {
@@ -66,6 +69,20 @@ namespace Nexus.Editor
 
         private static void AddDefaults()
         {
+            s_strings["setup_name"] = "Setup Wizard";
+            s_strings["setup_title"] = "Nexus Setup Wizard";
+            s_strings["setup_description"] = "Create a playable architecture sample, then use the integration guide to add Nexus gradually to your own project.";
+            s_strings["setup_install"] = "Install Nexus";
+            s_strings["setup_install_description"] = "Nexus is installed. Import Code-first Startup in Package Manager for the smallest example.";
+            s_strings["setup_package_manager"] = "Open Package Manager";
+            s_strings["setup_scaffold"] = "Create a sample scene";
+            s_strings["setup_scaffold_description"] = "Adds sample code under Assets/Scripts/Game/Samples, a ContextData asset and a counter scene. Existing output is preserved.";
+            s_strings["setup_create"] = "Create sample";
+            s_strings["setup_dashboard"] = "Open Dashboard";
+            s_strings["setup_dashboard_description"] = "Inspect contexts, signals and commands during Play Mode.";
+            s_strings["setup_tip_title"] = "Try it in Play Mode";
+            s_strings["setup_tip"] = "The counter follows Signal -> Command -> Model -> Mediator -> View. Existing games can start with one explicitly registered feature; no complete rewrite is required.";
+            s_strings["setup_guide"] = "Choose your integration path";
             s_strings["dashboard"] = "Dashboard";
             s_strings["system_active"] = "SYSTEM ACTIVE";
             s_strings["system_standby"] = "SYSTEM STANDBY";
@@ -794,14 +811,14 @@ namespace Nexus.Editor
         [System.Serializable]
         private class LocaleData
         {
-            public LocaleEntry[] entries;
+            public LocaleEntry[] entries = null;
         }
 
         [System.Serializable]
         private class LocaleEntry
         {
-            public string key;
-            public string value;
+            public string key = null;
+            public string value = null;
         }
     }
 }

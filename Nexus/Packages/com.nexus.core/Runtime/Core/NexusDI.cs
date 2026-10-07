@@ -59,24 +59,47 @@ namespace Nexus.Core
         public bool StrictInjection { get; set; }
         internal readonly ConcurrentQueue<INexusService> _lazyServicesPendingInit = new();
         private readonly NexusDI _parent;
-        private object[] _fastSlots = new object[128];
-
-        private void CacheFastSlot(int typeId, object instance)
+        // Local binding changes invalidate this cache. Inherited registrations are never
+        // cached here, so unrelated contexts retain their warmed resolution arrays.
+        private long _bindingVersion;
+        private sealed class FastResolveCache
         {
-            if (instance == null) return;
-            if (typeId >= _fastSlots.Length)
+            internal readonly long Version;
+            internal readonly object[] Slots;
+            internal FastResolveCache(long version, int capacity)
             {
-                lock (_singletonLock)
-                {
-                    if (typeId >= _fastSlots.Length)
-                    {
-                        var newArray = new object[System.Math.Max(_fastSlots.Length * 2, typeId + 64)];
-                        System.Array.Copy(_fastSlots, newArray, _fastSlots.Length);
-                        _fastSlots = newArray;
-                    }
-                }
+                Version = version;
+                Slots = new object[capacity];
             }
-            _fastSlots[typeId] = instance;
+        }
+        private FastResolveCache _fastCache;
+
+        private void CacheFastSlot(int typeId, Type type, object instance)
+        {
+            // Transients, inherited values and adapters never enter the local fast cache.
+            // Reject them before taking the disposal lock; recheck cached ownership inside
+            // the lock so concurrent rebinding cannot publish a stale instance.
+            if (instance == null || !_bindings.TryGetValue(type, out var candidate)
+                || !candidate.IsSingleton || !ReferenceEquals(candidate.Instance, instance)) return;
+            lock (_disposeLock)
+            {
+                if (IsDisposed) return;
+                // Never cache transients, adapters, or inherited registrations. Their
+                // ownership/creation rules remain in Resolve(Type), including parent teardown.
+                if (!_bindings.TryGetValue(type, out var binding)
+                    || !binding.IsSingleton || !ReferenceEquals(binding.Instance, instance)) return;
+                long version = Volatile.Read(ref _bindingVersion);
+                var cache = _fastCache;
+                if (cache == null || cache.Version != version || typeId >= cache.Slots.Length)
+                {
+                    var replacement = new FastResolveCache(version, Math.Max(128, typeId + 64));
+                    if (cache != null && cache.Version == version)
+                        Array.Copy(cache.Slots, replacement.Slots, cache.Slots.Length);
+                    cache = replacement;
+                    Volatile.Write(ref _fastCache, cache);
+                }
+                Volatile.Write(ref cache.Slots[typeId], instance);
+            }
         }
         private readonly ConcurrentDictionary<Type, bool> _crossBoundaryTypes = new();
         private readonly ConcurrentDictionary<Type, Binding> _bindings = new();
@@ -338,6 +361,7 @@ namespace Nexus.Core
             /// <summary>Parameterless [Deconstruct]-tagged cleanup methods, ascending Order.</summary>
             public InjectableMethod[] DeconstructMethods { get; set; }
             public ConstructorInfo Constructor { get; set; }
+            public Func<NexusDI, object> CompiledConstructor { get; set; }
             public Type[] ConstructorParameterTypes { get; set; }
             /// <summary>Per-parameter binding names for the injected constructor (null = default).</summary>
             public string[] ConstructorParameterNames { get; set; }
@@ -582,6 +606,7 @@ namespace Nexus.Core
                         PostConstructMethods = postConstructList.Count > 0 ? postConstructList.ToArray() : null,
                         DeconstructMethods = deconstructList.Count > 0 ? deconstructList.ToArray() : null,
                         Constructor = targetCtor,
+                        CompiledConstructor = CompiledAccessorEmitter.CompileConstructor(targetCtor),
                         ConstructorParameterTypes = ctorParamTypes,
                         ConstructorParameterNames = ctorParamNames,
                         ConstructorParameterHasDefault = ctorParamHasDefault,
@@ -679,6 +704,8 @@ namespace Nexus.Core
                     return ctorFactory(_di);
 
                 var meta = MetadataCache.GetOrCreateInjectMetadata(type);
+                if ((overrides == null || overrides.Count == 0) && meta.CompiledConstructor != null)
+                    return meta.CompiledConstructor(_di);
                 if (meta.Constructor == null)
                     return Activator.CreateInstance(type, true);
 
@@ -1093,6 +1120,7 @@ namespace Nexus.Core
                 }
             }
             _bindings[key] = binding;
+            Interlocked.Increment(ref _bindingVersion);
         }
 
         /// <summary>Named-map counterpart of <see cref="SetBinding"/>.</summary>
@@ -1391,14 +1419,17 @@ namespace Nexus.Core
         // ─── Public API: Resolve ───
         public T Resolve<T>() where T : class
         {
+            ThrowIfDisposed();
             int typeId = TypeIdCache<T>.Id;
-            if (typeId < _fastSlots.Length)
+            var cache = Volatile.Read(ref _fastCache);
+            if (cache != null && cache.Version == Volatile.Read(ref _bindingVersion)
+                && typeId < cache.Slots.Length)
             {
-                var fastInstance = _fastSlots[typeId];
+                var fastInstance = Volatile.Read(ref cache.Slots[typeId]);
                 if (fastInstance != null) return (T)fastInstance;
             }
             var resolved = (T)Resolve(typeof(T));
-            CacheFastSlot(typeId, resolved);
+            CacheFastSlot(typeId, typeof(T), resolved);
             return resolved;
         }
         public T TryResolve<T>() where T : class => IsRegistered(typeof(T)) ? Resolve<T>() : null;
@@ -1770,8 +1801,25 @@ namespace Nexus.Core
         }
 
         // ─── Public API: Query ───
+        /// <summary>
+        /// Commands are owned and reset by their pool. Keep local transient consumer
+        /// factories/overrides, but never pool a DI-owned singleton or inherit the
+        /// parent's automatic command binding (construction must use this scope).
+        /// </summary>
+        internal void EnsureCommandBinding(Type commandType)
+        {
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                if (_bindings.TryGetValue(commandType, out var binding) && !binding.IsSingleton)
+                    return;
+                SetBindingCore(commandType, new Binding { ConcreteType = commandType, IsSingleton = false });
+            }
+        }
+
         public bool IsRegistered(Type type)
         {
+            if (type == typeof(NexusDI)) return true;
             // Local bindings first (an explicit Bind must never be shadowed by the adapter);
             // adapter is a fallback for types this container does not bind.
             if (_bindings.ContainsKey(type)) return true;
@@ -1791,9 +1839,69 @@ namespace Nexus.Core
             if (_namedBindings.ContainsKey((type, name))) return true;
             // Adapter does not participate in NAMED lookup (it has no names); a local named
             // binding must win before the parent chain is consulted.
-            if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type)) return true;
             return _parent != null && _parent.IsRegistered(type, name);
         }
+
+        internal sealed class ValidationBinding
+        {
+            internal NexusDI Owner;
+            internal object Identity;
+            internal Type Key, Concrete;
+            internal string Name;
+            internal Lifetime Lifetime;
+            internal bool IsOpaque;
+            internal ParameterOverride[] Overrides;
+        }
+
+        private ValidationBinding DescribeBinding(Type key, string name, Binding binding)
+            => new ValidationBinding
+            {
+                Owner = this, Identity = binding, Key = key, Name = name,
+                Concrete = binding.ConcreteType, Lifetime = binding.Lifetime,
+                IsOpaque = binding.Factory != null || binding.Instance != null,
+                Overrides = binding.ParameterOverrides
+            };
+
+        internal List<ValidationBinding> GetValidationBindings()
+        {
+            var result = new List<ValidationBinding>();
+            lock (_disposeLock)
+            {
+                ThrowIfDisposed();
+                foreach (var pair in _bindings)
+                    result.Add(DescribeBinding(pair.Key, null, pair.Value));
+                foreach (var pair in _namedBindings)
+                    result.Add(DescribeBinding(pair.Key.Type, pair.Key.Name, pair.Value));
+                result.Sort((a, b) =>
+                {
+                    int key = string.CompareOrdinal(a.Key.FullName, b.Key.FullName);
+                    return key != 0 ? key : string.CompareOrdinal(a.Name, b.Name);
+                });
+            }
+            if (_parent != null) result.AddRange(_parent.GetValidationBindings());
+            return result;
+        }
+
+        internal ValidationBinding FindValidationBinding(Type key, string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                if (_bindings.TryGetValue(key, out var binding)) return DescribeBinding(key, null, binding);
+                if (ExternalAdapter != null && ExternalAdapter.IsRegistered(key)) return null;
+            }
+            else if (_namedBindings.TryGetValue((key, name), out var named))
+                return DescribeBinding(key, name, named);
+            return _parent?.FindValidationBinding(key, name);
+        }
+
+        /// <summary>
+        /// Inspects registered dependency graphs without constructing objects or invoking
+        /// user factories. Reports missing dependencies, invalid metadata, eager cycles and
+        /// captive transients. Factories and supplied instances are opaque graph boundaries.
+        /// Call after registration on the startup thread, before gameplay; this is not a hot path.
+        /// </summary>
+        public List<DiValidationIssue> ValidateBindings(int maxConstructorParameters = 6)
+            => DiBindingValidator.Validate(this, maxConstructorParameters);
 
         internal HashSet<Type> GetAllRegisteredTypes()
         {
@@ -1870,6 +1978,13 @@ namespace Nexus.Core
         /// Delegates to the internal MetadataCache.
         /// </summary>
         internal static InjectableMetadata GetOrCreateInjectMetadata(Type type) => MetadataCache.GetOrCreateInjectMetadata(type);
+
+        internal void PrepareInjectionMetadata(Type type)
+        {
+            ThrowIfDisposed();
+            MetadataCache.GetOrCreateInjectMetadata(type);
+            MetadataCache.GetOrCreateClearMetadata(type);
+        }
 
         private readonly ConcurrentDictionary<INexusService, bool> _lazyServicesEnqueued =
             new(ReferenceComparer<INexusService>.Instance);
@@ -1973,6 +2088,7 @@ namespace Nexus.Core
                 }
                 _bindings.Clear();
                 _namedBindings.Clear();
+                Volatile.Write(ref _fastCache, null);
             }
             return true;
         }

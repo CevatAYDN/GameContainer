@@ -49,6 +49,8 @@ namespace Nexus.Core.Services
         // concurrent read/write even for different keys (rehash), and Dispose() mutates
         // it — the previous comment claiming lock-free reads were safe was wrong.
         private readonly ConcurrentDictionary<string, SecureObservableLong> _balances = new();
+        private volatile bool _disposed;
+        private volatile bool _disposing;
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
@@ -74,6 +76,7 @@ namespace Nexus.Core.Services
             SecureObservableLong prop;
             lock (_balances)
             {
+                if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
                 prop = LazyLoadBalance(currencyId);
                 if (prop.Value < amount) return false;
                 prop.Value -= amount;
@@ -97,6 +100,7 @@ namespace Nexus.Core.Services
             SecureObservableLong prop;
             lock (_balances)
             {
+                if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBalance(currencyId);
                 prop.Value = amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount;
             }
@@ -114,6 +118,7 @@ namespace Nexus.Core.Services
             SecureObservableLong prop;
             lock (_balances)
             {
+                if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBalance(currencyId);
                 prop.Value = Math.Max(0L, amount);
             }
@@ -127,12 +132,13 @@ namespace Nexus.Core.Services
         // CanAfford check). Do NOT remove the lock from mutation paths.
         public SecureObservableLong GetObservableBalance(string currencyId)
         {
-            if (string.IsNullOrEmpty(currencyId)) return null;
+            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return null;
             if (_balances.TryGetValue(currencyId, out var existing))
                 return existing;
 
             lock (_balances)
             {
+                if (_disposed || _disposing) return null;
                 return LazyLoadBalance(currencyId);
             }
         }
@@ -146,7 +152,7 @@ namespace Nexus.Core.Services
             long savedAmount = PlayerPrefsService != null
                 ? PlayerPrefsService.GetLong($"NT_Eco_{currencyId}", 0L)
                 : 0L;
-            prop = new SecureObservableLong(savedAmount);
+            prop = new SecureObservableLong(Math.Max(0, savedAmount));
             _balances[currencyId] = prop;
             return prop;
         }
@@ -159,6 +165,7 @@ namespace Nexus.Core.Services
         /// </summary>
         private void SchedulePersist()
         {
+            if (_disposed || _disposing) return;
             if (SaveThrottler != null)
             {
                 SaveThrottler.TryRequestSave(SaveOwner, PersistAllBalancesNow);
@@ -174,6 +181,7 @@ namespace Nexus.Core.Services
             if (PlayerPrefsService == null) return;
             lock (_balances)
             {
+                if (_disposed) return;
                 foreach (var kvp in _balances)
                 {
                     PlayerPrefsService.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
@@ -190,30 +198,28 @@ namespace Nexus.Core.Services
         /// </summary>
         private async Task ReconcileSpendAsync(string currencyId, long amount, string reason)
         {
-            bool approved;
             try
             {
-                approved = await NetworkValidator.ValidateSpendAsync(currencyId, amount, reason);
+                bool approved = await NetworkValidator.ValidateSpendAsync(currencyId, amount, reason);
+                if (approved) return;
+                lock (_balances)
+                {
+                    if (_disposed || _disposing) return;
+                    var prop = LazyLoadBalance(currencyId);
+                    prop.Value = amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount;
+                }
+                // No stale callback may schedule work after teardown. Persist actions also
+                // check the lifetime under the balance lock when a throttler invokes them.
+                if (_disposed || _disposing) return;
+                if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
+                else PersistAllBalancesNow();
+                NexusRuntime.Logger?.LogWarning($"[Economy] Server rejected spend of {amount} '{currencyId}' — balance restored.");
             }
             catch (Exception ex)
             {
                 // Network failure: keep the optimistic balance; a later reconciliation (or the
                 // server's authoritative ledger) settles the difference. Surface for debugging.
                 NexusRuntime.Logger?.LogWarning($"[Economy] Spend validation failed for '{currencyId}': {ex.Message}");
-                return;
-            }
-
-            if (!approved)
-            {
-                lock (_balances)
-                {
-                    var prop = GetObservableBalance(currencyId);
-                    prop.Value = Math.Min(prop.Value + amount, long.MaxValue);
-                }
-                // Server-rejection restore is important enough to flush immediately.
-                if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
-                else PersistAllBalancesNow();
-                NexusRuntime.Logger?.LogWarning($"[Economy] Server rejected spend of {amount} '{currencyId}' — balance restored.");
             }
         }
 
@@ -232,21 +238,26 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
-            // Flush any pending throttled save BEFORE clearing balances so the final
-            // balance survives teardown even if SaveThrottler disposes after this service.
-            if (SaveThrottler != null)
-            {
-                try { SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow); }
-                catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Final persist failed on dispose: {ex.Message}"); }
-            }
-
             lock (_balances)
             {
-                foreach (var kvp in _balances)
+                if (_disposed || _disposing) return;
+                _disposing = true;
+            }
+            try
+            {
+                // ForceSave may queue behind an in-flight save. Commit the final state
+                // directly before clearing it; queued actions become harmless after disposal.
+                PersistAllBalancesNow();
+            }
+            catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Final persist failed on dispose: {ex.Message}"); }
+            finally
+            {
+                lock (_balances)
                 {
-                    kvp.Value.ClearOnChanged();
+                    _disposed = true;
+                    foreach (var kvp in _balances) kvp.Value.ClearOnChanged();
+                    _balances.Clear();
                 }
-                _balances.Clear();
             }
         }
     }

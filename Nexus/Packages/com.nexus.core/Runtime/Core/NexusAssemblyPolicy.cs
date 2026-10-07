@@ -12,7 +12,8 @@ namespace Nexus.Core
     {
         private static readonly string[] FrameworkPrefixes =
         {
-            "System", "Microsoft", "Unity", "mscorlib", "mono", "nunit", "NUnit", "netstandard"
+            "System", "Microsoft", "Unity", "mscorlib", "mono", "nunit", "NUnit", "netstandard",
+            "StandardSocketsHttpHandler"
         };
 
         private static readonly string[] ThirdPartyPrefixes =
@@ -45,13 +46,17 @@ namespace Nexus.Core
             return false;
         }
 
-        /// <summary>True for test assemblies containing 'tests' in the simple name.</summary>
+        /// <summary>True for test assemblies and test-support assemblies ending in '.testing'.</summary>
         public static bool IsTestAssembly(string name)
-            => !string.IsNullOrEmpty(name) && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0;
+            => !string.IsNullOrEmpty(name)
+                && (name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.EndsWith(".testing", StringComparison.OrdinalIgnoreCase));
 
-        /// <summary>True for editor-only assemblies containing '.editor' in the simple name.</summary>
+        /// <summary>True for editor assemblies, including Unity's default Assembly-CSharp-Editor.</summary>
         public static bool IsEditorAssembly(string name)
-            => !string.IsNullOrEmpty(name) && name.IndexOf(".editor", StringComparison.OrdinalIgnoreCase) >= 0;
+            => !string.IsNullOrEmpty(name)
+                && (name.IndexOf(".editor", StringComparison.OrdinalIgnoreCase) >= 0
+                    || name.EndsWith("-Editor", StringComparison.OrdinalIgnoreCase));
 
         /// <summary>Returns true when an assembly is part of game runtime/code (not framework/3rd-party/editor/test).</summary>
         public static bool IsGameAssembly(Assembly assembly, bool includeTests = false)

@@ -27,7 +27,11 @@ namespace Nexus.Editor.Tests
         {
             // Deliberately IGNORES cancellation: the machine must still drop a superseded
             // transition via its sequence check even when the state never cooperates.
-            public async ValueTask OnExitAsync(CancellationToken ct) => await Task.Delay(80);
+            private int _exits;
+            public readonly TaskCompletionSource<bool> FirstExit = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public readonly TaskCompletionSource<bool> SecondExit = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public ValueTask OnExitAsync(CancellationToken ct)
+                => new(Interlocked.Increment(ref _exits) == 1 ? FirstExit.Task : SecondExit.Task);
             public ValueTask OnEnterAsync(object args, CancellationToken ct) => default;
             public void OnTick(float deltaTime) { }
         }
@@ -108,9 +112,14 @@ namespace Nexus.Editor.Tests
             // Fire A, then immediately supersede it with B while A's transition is still
             // awaiting the slow OnExitAsync.
             var t1 = fsm.ChangeStateAsync<MockStateA>();
+            Assert.IsFalse(t1.IsCompleted, "The first transition must remain pending until superseded.");
             var t2 = fsm.ChangeStateAsync<MockStateB>();
-            await t2;
+            // History records completion order. Release A first so this ordering is
+            // deterministic instead of depending on two near-identical timer deadlines.
+            slow.FirstExit.SetResult(true);
             await t1;
+            slow.SecondExit.SetResult(true);
+            await t2;
 
             Assert.AreSame(stateB, fsm.CurrentState);
             // THREE records, not two: the initial null→SlowExit transition is recorded too

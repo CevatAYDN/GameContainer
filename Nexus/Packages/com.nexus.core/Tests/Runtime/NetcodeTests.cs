@@ -418,7 +418,7 @@ namespace Nexus.Tests
             System.GC.WaitForPendingFinalizers();
             System.GC.Collect();
 
-            long startAllocations = System.GC.GetAllocatedBytesForCurrentThread();
+            using var allocationProbe = new GcAllocationProbe();
 
             // Steady state: clear the previous tail (capacity stays), refill within
             // existing capacity (free), then compact down to a small tail. This exercises
@@ -433,13 +433,13 @@ namespace Nexus.Tests
                 history.Prune(tick - 10); // keeps the last 9 signals (Tick > tick-10)
             }
 
-            long allocatedBytes = System.GC.GetAllocatedBytesForCurrentThread() - startAllocations;
+            long allocationCount = allocationProbe.Stop();
 
             // BufferedNetworkSignal<T> is a struct, List.Add is free within capacity,
             // and RemoveRange on a reference-free struct list only adjusts Count. So
             // 500 cycles × (1000 adds + 2 prunes) must stay at ~0 bytes.
-            Assert.LessOrEqual(allocatedBytes, 512,
-                $"Prune steady state allocated {allocatedBytes} bytes over {cycles} cycles. Expected ~0.");
+            Assert.AreEqual(0, allocationCount,
+                $"Prune steady state allocated {allocationCount} allocation samples over {cycles} cycles. Expected zero.");
         }
     }
 }

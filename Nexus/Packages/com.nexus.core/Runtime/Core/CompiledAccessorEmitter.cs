@@ -75,6 +75,56 @@ namespace Nexus.Core
 #endif
         }
 
+        /// <summary>
+        /// Compiles required reference-type constructor parameters directly to a newobj call.
+        /// AOT targets use shipped source-generated factories or the reflection fallback.
+        /// Explicit overrides and optional/value parameters retain their authoritative fallback.
+        /// </summary>
+        internal static Func<NexusDI, object> CompileConstructor(ConstructorInfo constructor)
+        {
+#if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
+            return null;
+#else
+            if (constructor == null) return null;
+            // An open generic newobj/parameter resolver has no concrete method context.
+            // Unity Mono asserts in its JIT instead of throwing a catchable exception.
+            if (constructor.ContainsGenericParameters || constructor.DeclaringType.ContainsGenericParameters
+                || constructor.DeclaringType.IsValueType) return null;
+            var parameters = constructor.GetParameters();
+            for (int i = 0; i < parameters.Length; i++)
+                if (parameters[i].ParameterType.IsValueType || parameters[i].ParameterType.IsByRef
+                    || parameters[i].ParameterType.IsPointer || parameters[i].HasDefaultValue)
+                    return null;
+            var type = constructor.DeclaringType;
+            try
+            {
+                var method = new System.Reflection.Emit.DynamicMethod("Construct_" + type.Name,
+                    typeof(object), new[] { typeof(NexusDI) }, type.Module, true);
+                var il = method.GetILGenerator();
+                var resolve = typeof(NexusDI).GetMethod(nameof(NexusDI.ResolveConstructorParameter));
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldarg_0);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldc_I4, i);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldstr, type.FullName ?? type.Name);
+                    il.Emit(System.Reflection.Emit.OpCodes.Ldstr, parameters[i].ParameterType.FullName ?? parameters[i].ParameterType.Name);
+                    string name = parameters[i].GetCustomAttribute<InjectAttribute>()?.Name;
+                    if (string.IsNullOrEmpty(name)) il.Emit(System.Reflection.Emit.OpCodes.Ldnull);
+                    else il.Emit(System.Reflection.Emit.OpCodes.Ldstr, name);
+                    il.Emit(System.Reflection.Emit.OpCodes.Callvirt, resolve.MakeGenericMethod(parameters[i].ParameterType));
+                }
+                il.Emit(System.Reflection.Emit.OpCodes.Newobj, constructor);
+                il.Emit(System.Reflection.Emit.OpCodes.Ret);
+                return (Func<NexusDI, object>)method.CreateDelegate(typeof(Func<NexusDI, object>));
+            }
+            catch (Exception error)
+            {
+                LogSetterCompileFailureOnce(type, ".ctor", error);
+                return null;
+            }
+#endif
+        }
+
         /// <summary>Compiles a fast zero-GC setter for an injectable property using DynamicMethod IL generation.</summary>
         internal static Action<object, object> CompilePropertySetter(Type targetType, PropertyInfo prop)
         {

@@ -2,9 +2,9 @@
   "name": "com.nexus.core",
   "version": "0.4.0",
   "displayName": "Nexus Observable Architecture",
-  "description": "Open source observable MVCS architecture for Unity 6. Features: 0 GC allocation, 4 execution modes, causal tracing, build validation, reactive models, service lifecycle, Game Manager editor, and debug HUD.",
+  "description": "Open source observable MVCS architecture for Unity 6. Features: allocation-free synchronous hot paths after warmup, 4 execution modes, causal tracing, build validation, reactive models, service lifecycle, Game Manager editor, and debug HUD.",
   "unity": "6000.0",
-  "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Packages/com.nexus.core/docs/10_MIN_QUICKSTART.md",
+  "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.core/docs/10_MIN_QUICKSTART.md",
   "changelogUrl": "CHANGELOG.md",
   "quickstartUrls": {
     "en": "docs/10_MIN_QUICKSTART.md",
@@ -39,6 +39,11 @@
     "url": "https://github.com/CevatAYDN/GameContainer"
   },
   "samples": [
+    {
+      "displayName": "Code-first Startup",
+      "description": "Attach one component: explicit startup, reactive score model, command, cancellation and context ownership for Unity 6.",
+      "path": "Samples~/CodeFirst"
+    },
     {
       "displayName": "Counter Example",
       "description": "A simple counter application demonstrating generic 0-GC commands, reactive model, and mediator bindings in Nexus.",

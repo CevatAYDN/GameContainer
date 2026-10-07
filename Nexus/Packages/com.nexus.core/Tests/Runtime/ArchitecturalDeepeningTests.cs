@@ -1,10 +1,13 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using UnityEngine;
+using UnityEngine.TestTools;
 using Nexus.Core;
 
 namespace Nexus.Tests.Runtime
@@ -217,23 +220,20 @@ namespace Nexus.Tests.Runtime
         }
 
         [Test]
-        public void SignalBus_SubscriptionNodeNested_AsyncSubscription()
+        public async Task SignalBus_SubscriptionNodeNested_AsyncSubscription()
         {
-            var context = ContextFactory.Create();
+            using var context = ContextFactory.Create();
             var signalBus = context.SignalBus;
 
             bool handlerCalled = false;
-            var sub = signalBus.SubscribeAsync<TestSignal>(async (s, ct) =>
+            using var sub = signalBus.SubscribeAsync<TestSignal>(async (s, ct) =>
             {
                 await Task.Yield();
                 handlerCalled = true;
             });
 
-            signalBus.FireAsync(new TestSignal()).GetAwaiter().GetResult();
+            await signalBus.FireAsync(new TestSignal());
             Assert.IsTrue(handlerCalled);
-
-            sub.Dispose();
-            context.Dispose();
         }
 
         [Test]
@@ -269,13 +269,29 @@ namespace Nexus.Tests.Runtime
             Assert.IsNull(pendingRoot);
         }
 
-        [Test]
-        public void ViewRegistration_MonoBehaviourView_WithRootInScene_Registers()
+        [UnityTest]
+        public IEnumerator ViewRegistration_MonoBehaviourView_WithRootInScene_Registers()
         {
-            // This requires a Unity scene with a Root, so it's a PlayMode test.
-            // The test verifies the code path exists and doesn't throw.
-            // Full integration testing requires Play Mode.
-            Assert.Ignore("ViewRegistration integration requires a Play Mode scene with a Root; this EditMode suite does not claim coverage.");
+            var owner = new GameObject("ViewRegistrationOwner");
+            var data = CreateScopeData("ViewRegistrationTest");
+            try
+            {
+                owner.SetActive(false);
+                var root = owner.AddComponent<Root>();
+                root.SetUp(data);
+                var view = owner.AddComponent<RegistrationProbeView>();
+                owner.SetActive(true);
+                yield return null;
+                Root pending = null;
+                ViewRegistration.Register(view, ref pending);
+                Assert.AreSame(root.Context, view.BoundContext);
+                Assert.IsNull(pending);
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(owner);
+                UnityEngine.Object.DestroyImmediate(data);
+            }
         }
 
         // ─── Phase 5: QueueDrainer MetricsSampler ───
@@ -290,13 +306,18 @@ namespace Nexus.Tests.Runtime
             Assert.IsNotNull(typeof(MetricsSampler));
         }
 
-        [Test]
-        public void QueueDrainer_WithoutRoot_DisablesItself()
+        [UnityTest]
+        public IEnumerator QueueDrainer_WithoutRoot_DisablesItself()
         {
-            // QueueDrainer.Awake disables itself if no Root is found on the GameObject.
-            // This is a structural test - the logic is in Awake.
-            // Full verification requires a Unity scene.
-            Assert.Ignore("QueueDrainer self-disable requires a Play Mode GameObject; this EditMode suite does not claim coverage.");
+            var owner = new GameObject("QueueWithoutRoot");
+            try
+            {
+                LogAssert.Expect(LogType.Error, "[Nexus] QueueDrainer requires a Root component on the same GameObject.");
+                var drainer = owner.AddComponent<QueueDrainer>();
+                yield return null;
+                Assert.IsFalse(drainer.enabled);
+            }
+            finally { UnityEngine.Object.DestroyImmediate(owner); }
         }
 
         [Test]
@@ -448,6 +469,13 @@ namespace Nexus.Tests.Runtime
         {
             NexusRuntime.Reset();
         }
+    }
+
+    public sealed class RegistrationProbeView : MonoBehaviour, IView
+    {
+        public IContext BoundContext { get; private set; }
+        public void Bind(IContext context) => BoundContext = context;
+        public void Unbind() => BoundContext = null;
     }
 
 }

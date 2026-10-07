@@ -57,7 +57,8 @@ namespace Nexus.Generator
 
         private static readonly string[] FrameworkPrefixes =
         {
-            "System", "Microsoft", "Unity", "mscorlib", "mono", "nunit", "NUnit", "netstandard"
+            "System", "Microsoft", "Unity", "mscorlib", "mono", "nunit", "NUnit", "netstandard",
+            "StandardSocketsHttpHandler"
         };
 
         private static readonly DiagnosticDescriptor s_valueTypeMemberError = new DiagnosticDescriptor(
@@ -101,7 +102,9 @@ namespace Nexus.Generator
                 if (name.StartsWith(FrameworkPrefixes[i], StringComparison.OrdinalIgnoreCase)) return false;
             }
             if (name.IndexOf(".editor", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            if (name.EndsWith("-Editor", StringComparison.OrdinalIgnoreCase)) return false;
             if (name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0) return false;
+            if (name.EndsWith(".testing", StringComparison.OrdinalIgnoreCase)) return false;
             return true;
         }
 

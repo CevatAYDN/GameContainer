@@ -118,8 +118,22 @@ namespace Nexus.Tests
         }
 
         [Test]
+        public void AllocationCounter_DetectsKnownAllocation()
+        {
+            using var allocationProbe = new GcAllocationProbe();
+            var control = new byte[4096];
+            long allocated = allocationProbe.Stop();
+            System.GC.KeepAlive(control);
+            Assert.Greater(allocated, 0,
+                "Allocation counter must detect the control allocation before zero-GC results can be trusted.");
+        }
+
+        [Test]
         public void SteadyState_HasZeroGCAllocations()
         {
+#if NEXUS_DEBUG
+            Assert.Ignore("Zero-allocation dispatch requires NEXUS_DEBUG disabled; debug tracing has intentional allocation costs.");
+#else
             // SignalBus uses ThreadStatic for stack depth and is not thread-safe for concurrent access.
             // All framework dispatch MUST happen on the main thread. We measure allocations on the
             // calling (main) thread after warm-up to get a clean baseline.
@@ -135,14 +149,9 @@ namespace Nexus.Tests
             System.GC.WaitForPendingFinalizers();
             System.GC.Collect();
 
-            // REVIEW FIX: the per-thread API only measures the calling thread, so background
-            // thread allocations (async path / thread-pool continuations) are not captured.
-            // Unity's test assembly does not expose GC.GetTotalAllocatedBytes() (not in .NET
-            // Standard 2.0) nor Profiler.GetTotalAllocatedBytes(), so we keep the per-thread
-            // counter but tighten the assertion to exactly 0 bytes. The .NET benchmark harness
-            // (tools/nexus-benchmark) uses GC.GetTotalAllocatedBytes() for whole-process
-            // coverage — see Program.SteadyState_HasZeroGCAllocations.
-            long startAllocations = System.GC.GetAllocatedBytesForCurrentThread();
+            // Native Unity uses the GC.Alloc marker on the calling thread and verifies a
+            // known allocation before measuring. Worker/async allocations are separate.
+            using var allocationProbe = new GcAllocationProbe();
 
             // 3. Execute 5000 dispatches in steady-state on the calling thread
             for (int i = 0; i < 5000; i++)
@@ -150,8 +159,7 @@ namespace Nexus.Tests
                 _signalBus.Fire(new PerfSignal(i));
             }
 
-            long endAllocations = System.GC.GetAllocatedBytesForCurrentThread();
-            long allocatedBytes = endAllocations - startAllocations;
+            long allocationCount = allocationProbe.Stop();
 
             // REVIEW FIX: tightened the limit from 128 bytes to 0 bytes. The framework's
             // "0 GC allocation" claim means the steady-state dispatch path must allocate
@@ -159,7 +167,8 @@ namespace Nexus.Tests
             // lenient and could mask a small per-dispatch allocation. With the warm-up +
             // GC.Collect() sequence, the JIT and pool growth are already paid; any remaining
             // allocation is a genuine framework allocation.
-            Assert.AreEqual(0, allocatedBytes, $"Steady-state dispatch allocated {allocatedBytes} bytes. Expected zero allocations.");
+            Assert.AreEqual(0, allocationCount, $"Steady-state dispatch allocated {allocationCount} allocation samples. Expected zero allocations.");
+#endif
         }
 
         [Test]
@@ -267,7 +276,7 @@ namespace Nexus.Tests
             System.GC.WaitForPendingFinalizers();
             System.GC.Collect();
 
-            long startAllocations = System.GC.GetAllocatedBytesForCurrentThread();
+            using var allocationProbe = new GcAllocationProbe();
 
             for (int i = 0; i < 5000; i++)
             {
@@ -275,10 +284,10 @@ namespace Nexus.Tests
                 mgr.ReturnCommand(cmdType, cmd);
             }
 
-            long allocatedBytes = System.GC.GetAllocatedBytesForCurrentThread() - startAllocations;
+            long allocationCount = allocationProbe.Stop();
 
-            Assert.LessOrEqual(allocatedBytes, 128,
-                $"CommandPoolManager Get/Return allocated {allocatedBytes} bytes in steady state. Expected ~0.");
+            Assert.AreEqual(0, allocationCount,
+                $"CommandPoolManager Get/Return allocated {allocationCount} allocation samples in steady state. Expected zero.");
         }
 
         [Test]

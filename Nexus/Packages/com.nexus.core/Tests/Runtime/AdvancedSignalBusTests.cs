@@ -135,7 +135,7 @@ namespace Nexus.Tests
             _container.Bind<FailCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TestSignal), typeof(FailCommand), ExecutionMode.Sequential, 0, isAsync: false);
 
-            Assert.Throws<InvalidOperationException>(() =>
+            Assert.Throws<NexusRecoveryAbortException>(() =>
                 _signalBus.Fire(new TestSignal(5, "async-retry"))
             );
             Assert.AreEqual(2, _results.ExecutionCount, "1 initial + 1 retry = 2");

@@ -383,10 +383,7 @@ namespace Nexus.Editor
                             {
                                 ctorToRegister = markedCtor;
                             }
-                            else if (markedCtorCount == 0 && (hasInject
-                                || typeof(ICommand).IsAssignableFrom(type)
-                                || typeof(IAsyncCommand).IsAssignableFrom(type)
-                                || typeof(INexusService).IsAssignableFrom(type)))
+                            else if (markedCtorCount == 0)
                             {
                                 if (publicCtors.Length == 1)
                                     ctorToRegister = publicCtors[0];

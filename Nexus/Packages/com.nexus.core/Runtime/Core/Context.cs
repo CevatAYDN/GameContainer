@@ -29,6 +29,42 @@ namespace Nexus.Core
         {
             return new Context(parent, contextData, null, null);
         }
+
+        /// <summary>
+        /// Configures and starts an explicitly bound context without assembly scanning or
+        /// scene assets. Call on the Unity main thread; dispose the returned owner at shutdown.
+        /// Startup failures clean up the context and its runtime-created settings.
+        /// </summary>
+        public static async Task<Context> StartAsync(string scopeTag, Action<IContextBuilder> configure,
+            Context parent = null, CancellationToken ct = default)
+        {
+            if (string.IsNullOrWhiteSpace(scopeTag)) throw new ArgumentException("A context name is required.", nameof(scopeTag));
+            if (configure == null) throw new ArgumentNullException(nameof(configure));
+            ct.ThrowIfCancellationRequested();
+            var data = UnityEngine.ScriptableObject.CreateInstance<ContextData>();
+            data.name = scopeTag + "ContextData";
+            data.ScopeTag = scopeTag;
+            data.EnableAutoDiscovery = false;
+            data.AssemblyScopes = Array.Empty<string>();
+            data.FailOnValidationErrors = true;
+            var context = Create(parent, data).OwnsContextData();
+            try
+            {
+                var builder = new ContextBuilder(context.Container, context.SignalBusInternal);
+                configure(builder);
+                context.ConfigureWithBuilder(builder, scanAssemblies: false);
+                using var startup = CancellationTokenSource.CreateLinkedTokenSource(ct, context.LifetimeToken);
+                await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, startup.Token);
+                startup.Token.ThrowIfCancellationRequested();
+                return context;
+            }
+            catch
+            {
+                try { await context.DisposeAsync(); }
+                catch (Exception cleanupError) { NexusRuntime.Logger?.LogException(cleanupError); }
+                throw;
+            }
+        }
     }
 
     [Preserve]
@@ -121,6 +157,10 @@ namespace Nexus.Core
         public ContextData ContextData => _contextData;
         public SignalBus SignalBusInternal { get; }
 
+        /// <summary>Prepares a signal's registered command pools during loading without dispatching gameplay events.</summary>
+        public void Prewarm<TSignal>(int availablePerCommand = 4) where TSignal : struct
+            => SignalBusInternal.Prewarm<TSignal>(availablePerCommand);
+
         /// <summary>
         /// Single construction path for every Context. ContextFactory.Create and the
         /// backward-compatible public constructor both funnel through here, so module
@@ -209,12 +249,12 @@ namespace Nexus.Core
         /// BEFORE Configure() runs validation/scanning — otherwise those bindings are silently dropped
         /// because Configure() would construct its own empty builder.
         /// </summary>
-        internal void ConfigureWithBuilder(ContextBuilder builder, IContextLifecycle[] lifecycles = null)
+        internal void ConfigureWithBuilder(ContextBuilder builder, IContextLifecycle[] lifecycles = null, bool scanAssemblies = true)
         {
-            ConfigureInternal(builder, lifecycles);
+            ConfigureInternal(builder, lifecycles, scanAssemblies);
         }
 
-        private void ConfigureInternal(ContextBuilder prebuiltBuilder, IContextLifecycle[] lifecycles)
+        private void ConfigureInternal(ContextBuilder prebuiltBuilder, IContextLifecycle[] lifecycles, bool scanAssemblies = true)
         {
             if (Volatile.Read(ref _disposeState) != 0) return;
 
@@ -311,7 +351,7 @@ namespace Nexus.Core
                 foreach (var lifecycle in allLifecycles)
                     lifecycle.OnConfigure(_builder);
 
-                ScanAssembliesAndRegister(_builder);
+                if (scanAssemblies) ScanAssembliesAndRegister(_builder);
 
                 // DI validation (missing dependencies, constructor explosion, captive
                 // dependencies) must run in ALL build targets, not just the editor — production
@@ -749,17 +789,19 @@ namespace Nexus.Core
         public void Dispose()
         {
             if (Interlocked.Exchange(ref _disposeState, 1) != 0) return;
-            _cts.Cancel();
-            DisposeShared(executeStoppables: true);
-
-            // The sync teardown path never blocks on IAsyncDisposable singletons
-            // (NexusDI.Dispose schedules their DisposeAsync on a background task). Callers
-            // that can await must use DisposeAsync() for deterministic async teardown.
-            try { Container.Dispose(); }
+            try
+            {
+                try { _cts.Cancel(); }
+                finally
+                {
+                    try { DisposeShared(executeStoppables: true); }
+                    finally { Container.Dispose(); }
+                }
+            }
             finally
             {
-                CompleteTeardown();
-                _cts.Dispose();
+                try { CompleteTeardown(); }
+                finally { _cts.Dispose(); }
             }
             // UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a
@@ -775,15 +817,27 @@ namespace Nexus.Core
         public async ValueTask DisposeAsync()
         {
             if (Interlocked.Exchange(ref _disposeState, 1) != 0) return;
-            await _orchestrator.ExecuteStoppableLifecyclesAsync(Container.GetActiveSingletons(), _cts.Token);
-            _cts.Cancel();
-            DisposeShared(executeStoppables: false);
-
-            try { await Container.DisposeAsync(); }
+            try
+            {
+                try { _cts.Cancel(); }
+                finally
+                {
+                    try
+                    {
+                        using var shutdown = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        await _orchestrator.ExecuteStoppableLifecyclesAsync(Container.GetActiveSingletons(), shutdown.Token);
+                    }
+                    finally
+                    {
+                        try { DisposeShared(executeStoppables: false); }
+                        finally { await Container.DisposeAsync(); }
+                    }
+                }
+            }
             finally
             {
-                CompleteTeardown();
-                _cts.Dispose();
+                try { CompleteTeardown(); }
+                finally { _cts.Dispose(); }
             }
             // UnregisterContext is owned by DisposeShared (exactly once, after the
             // signal bus and pools are torn down) — the old trailing call here was a

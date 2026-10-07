@@ -13,6 +13,7 @@ namespace Nexus.Core
         // A singleton service capturing a transient (non-singleton, non-factory)
         // dependency in its constructor or [Inject] members.
         CaptiveDependency,
+        InvalidBinding,
     }
 
     public class DiValidationIssue

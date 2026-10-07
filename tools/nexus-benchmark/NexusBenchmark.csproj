@@ -31,6 +31,8 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/SubscriptionRegistry.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/SafeDestroyUtility.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusDI.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusTypeId.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusAssemblyPolicy.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CompiledAccessorEmitter.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandPool.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/CommandHandlerInfo.cs" />

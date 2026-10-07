@@ -424,7 +424,7 @@ namespace Nexus.Core.Services
                     // Same B1 discipline as the v1 migration below — SaveKeyToDisk performs
                     // blocking file I/O and must NOT run under the shared _lock.
                     if (rawData[0] == LegacyV2FormatVersion)
-                        SaveKeyToDisk(key, val);
+                        MigrateKeyIfCurrent(key, val, readVersion, false);
                 }
                 else
                 {
@@ -444,8 +444,7 @@ namespace Nexus.Core.Services
                     // SetString during migration leaves the key dirty, so the next Save()
                     // re-writes the fresher cached value over this file; the TOCTOU guard
                     // below keeps the cache authoritative in the meantime.
-                    SaveKeyToDisk(key, val);
-                    TryDeleteLegacyFile(key);
+                    MigrateKeyIfCurrent(key, val, readVersion, true);
                 }
 
                 lock (_lock)
@@ -489,6 +488,18 @@ namespace Nexus.Core.Services
                 if (_dirtyKeys.Contains(key)) return;
                 if (_cache.TryGetValue(key, out var existing) && existing != null) return;
                 _cache[key] = null;
+            }
+        }
+
+        private void MigrateKeyIfCurrent(string key, string value, long readVersion, bool deleteLegacy)
+        {
+            lock (_writeLock)
+            {
+                lock (_lock)
+                {
+                    if (_disposed || _disposing || !IsCurrentVersionLocked(key, readVersion)) return;
+                }
+                if (SaveKeyToDisk(key, value) && deleteLegacy) TryDeleteLegacyFile(key);
             }
         }
 
@@ -736,20 +747,30 @@ namespace Nexus.Core.Services
                 // destroy a valid save already stored on the device.
                 if (!TryReadCurrentFormat(rawData, key, out string value)) return false;
 
-                // WriteRawDataAtomically acquires _writeLock and performs blocking
-                // File.WriteAllBytes + File.Replace — running it inside _lock would stall
-                // every other cache/dirty-set operation for the full write duration.
-                // Resolve the path under a brief lock, then write outside.
                 string path;
-                lock (_lock) { path = GetFilePath(key); }
-
-                WriteRawDataAtomically(path, rawData);
-
-                // Update the cache and dirty set atomically after the write succeeds.
+                long version;
                 lock (_lock)
                 {
-                    _cache[key] = value;
-                    _dirtyKeys.Remove(key);
+                    if (_disposed || _disposing) return false;
+                    path = GetFilePath(key);
+                    _keyVersions.TryGetValue(key, out version);
+                }
+                // A queued import cannot replace a newer accepted cache mutation.
+                // Cache operations stay nonblocking while disk commits are serialized.
+                lock (_writeLock)
+                {
+                    lock (_lock)
+                        if (_disposed || _disposing || !IsCurrentVersionLocked(key, version)) return false;
+                    WriteRawDataAtomically(path, rawData);
+                    lock (_lock)
+                    {
+                        if (IsCurrentVersionLocked(key, version))
+                        {
+                            _cache[key] = value;
+                            BumpKeyVersionLocked(key);
+                            _dirtyKeys.Remove(key);
+                        }
+                    }
                 }
                 return true;
             }
@@ -780,7 +801,7 @@ namespace Nexus.Core.Services
                     try
                     {
                         if (File.Exists(filePath))
-                            File.Replace(tempPath, filePath, backupPath);
+                            ReplaceCurrentFile(tempPath, filePath, backupPath);
                         else
                             File.Move(tempPath, filePath);
                         break;
@@ -794,17 +815,16 @@ namespace Nexus.Core.Services
                     }
                     catch (Exception ex) when (ex is PlatformNotSupportedException or NotImplementedException)
                     {
-                        // File.Replace is not implemented on some IL2CPP/mobile runtimes
-                        // (it historically threw on Android/iOS). Degrade to the best
-                        // available sequence (delete + move) rather than failing every
-                        // save on those platforms. The staged file is still written by
-                        // File.WriteAllBytes and the HMAC verification still detects torn
-                        // files on read. NOTE: degraded path — a crash between Delete and
-                        // Move can lose the previous save, the exact window the atomic
-                        // design avoids on platforms that support Replace.
+                        // Platforms without replacement support use a recoverable
+                        // two-rename commit. The previous complete file stays in .bak
+                        // until the staged file reaches its final path.
                         NexusRuntime.Logger?.LogWarning(
-                            "[EncryptedStorage] File.Replace not supported on this platform; falling back to delete+move (non-atomic).");
-                        if (File.Exists(filePath)) File.Delete(filePath);
+                            "[EncryptedStorage] File.Replace not supported; preserving a recoverable backup during commit.");
+                        // Preserve a complete previous save throughout the fallback. On
+                        // restart ResolveExistingFilePath reads .bak if the final move
+                        // never happened. Never delete the only committed copy.
+                        if (File.Exists(backupPath)) File.Delete(backupPath);
+                        if (File.Exists(filePath)) File.Move(filePath, backupPath);
                         File.Move(tempPath, filePath);
                         break;
                     }
@@ -827,10 +847,15 @@ namespace Nexus.Core.Services
             // MD5-derived filename — report it as present so migration can run.
             string newPath = GetFilePath(key);
             if (File.Exists(newPath)) return true;
+            if (File.Exists(newPath + ".bak")) return true;
 
             string legacyPath = GetLegacyFilePath(key);
             return legacyPath != null && File.Exists(legacyPath);
         }
+
+        /// <summary>Platform replace seam; unsupported implementations use backup recovery.</summary>
+        protected virtual void ReplaceCurrentFile(string stagedPath, string currentPath, string backupPath)
+            => File.Replace(stagedPath, currentPath, backupPath);
 
         public void DeleteKey(string key)
         {
@@ -871,6 +896,16 @@ namespace Nexus.Core.Services
             bool ok = true;
             string path = GetFilePath(key);
             string legacyPath = GetLegacyFilePath(key);
+
+            foreach (var recoveryPath in new[] { path + ".bak", path + ".tmp" })
+            {
+                try { if (File.Exists(recoveryPath)) File.Delete(recoveryPath); }
+                catch (Exception ex)
+                {
+                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Recovery file delete failed for '{key}': {ex.Message}");
+                    ok = false;
+                }
+            }
 
             if (File.Exists(path))
             {
@@ -968,6 +1003,7 @@ namespace Nexus.Core.Services
         {
             string newPath = GetFilePath(key);
             if (File.Exists(newPath)) return newPath;
+            if (File.Exists(newPath + ".bak")) return newPath + ".bak";
 
             string legacyPath = GetLegacyFilePath(key);
             return legacyPath != null && File.Exists(legacyPath) ? legacyPath : newPath;

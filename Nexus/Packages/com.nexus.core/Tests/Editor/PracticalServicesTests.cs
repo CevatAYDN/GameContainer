@@ -28,11 +28,15 @@ namespace Nexus.Editor.Tests
             Assert.IsNotNull(exportedBase64);
             Assert.Greater(exportedBase64.Length, 0);
 
-            // Import into a new key
-            bool importSuccess = storage.ImportEncryptedSaveData("User_Cloud_Imported", exportedBase64);
+            // v3 authenticates the key name: restore the original key, rather than
+            // expecting a payload copied to another key to bypass its HMAC binding.
+            Assert.IsFalse(storage.ImportEncryptedSaveData("User_Cloud_Imported", exportedBase64));
+            Assert.IsFalse(storage.HasKey("User_Cloud_Imported"));
+            storage.DeleteKey("User_Cloud_Data");
+            bool importSuccess = storage.ImportEncryptedSaveData("User_Cloud_Data", exportedBase64);
             Assert.IsTrue(importSuccess);
 
-            string importedValue = storage.GetString("User_Cloud_Imported", null);
+            string importedValue = storage.GetString("User_Cloud_Data", null);
             Assert.AreEqual("Level_50_Player_Save", importedValue);
 
             storage.DeleteKey("User_Cloud_Data");

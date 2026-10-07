@@ -43,7 +43,7 @@ namespace Nexus.Core
         public readonly int ParentId;
         /// <summary>The type of event (Signal, Command, ModelChange).</summary>
         public readonly TraceEventType Type;
-        /// <summary>Timestamp from <c>Time.realtimeSinceStartupAsDouble</c>.</summary>
+        /// <summary>Monotonic seconds from the Nexus trace clock (<see cref="NexusTrace.TimestampNow"/>).</summary>
         public readonly double Timestamp;
         /// <summary>Type name of the signal, command, or model.</summary>
         public readonly string TypeName;
@@ -91,6 +91,13 @@ namespace Nexus.Core
     [Preserve]
     public static class NexusTrace
     {
+        private static readonly long s_clockOrigin = System.Diagnostics.Stopwatch.GetTimestamp();
+        private static readonly double s_secondsPerTick = 1d / System.Diagnostics.Stopwatch.Frequency;
+
+        /// <summary>Thread-safe monotonic seconds since the trace clock was initialized.</summary>
+        public static double TimestampNow
+            => (System.Diagnostics.Stopwatch.GetTimestamp() - s_clockOrigin) * s_secondsPerTick;
+
         private const int MaxEvents = 10000;
         private static readonly TraceEvent[] s_ringBuffer = new TraceEvent[MaxEvents];
 #if NEXUS_DEBUG
@@ -220,7 +227,7 @@ namespace Nexus.Core
             s_currentFrame.Value = RentFrame(parentId, index, s_currentFrame.Value);
             s_currentActiveEventId.Value = eventId;
 
-            var timestamp = UnityEngine.Time.realtimeSinceStartupAsDouble;
+            var timestamp = TimestampNow;
             var traceEvent = new TraceEvent(eventId, parentId, type, timestamp, typeName, TraceStatus.OK, mode);
 
             // Sinks are SNAPSHOTTED under the lock but invoked OUTSIDE it: a slow sink
@@ -283,15 +290,18 @@ namespace Nexus.Core
 
             s_currentFrame.Value = frame.Previous;
             s_currentActiveEventId.Value = frame.ParentId;
+            // Read before releasing ownership: another thread may immediately rent
+            // and mutate this pooled frame after ReturnFrame.
+            int bufferIndex = frame.BufferIndex;
             ReturnFrame(frame);
 
-            int bufferIndex = frame.BufferIndex;
-            if (bufferIndex >= 0 && bufferIndex < MaxEvents)
+            lock (s_lock)
             {
-                var ev = s_ringBuffer[bufferIndex];
-                if (ev.Id == eventId)
+                if (bufferIndex >= 0 && bufferIndex < MaxEvents)
                 {
-                    s_ringBuffer[bufferIndex] = new TraceEvent(ev.Id, ev.ParentId, ev.Type, ev.Timestamp, ev.TypeName, status, ev.Mode);
+                    var ev = s_ringBuffer[bufferIndex];
+                    if (ev.Id == eventId)
+                        s_ringBuffer[bufferIndex] = new TraceEvent(ev.Id, ev.ParentId, ev.Type, ev.Timestamp, ev.TypeName, status, ev.Mode);
                 }
             }
 #endif

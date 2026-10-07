@@ -206,7 +206,7 @@ namespace Nexus.Core
                 _handlersReadCopyDirty = true;
             }
 
-            _container.Bind(commandType, isSingleton: false);
+            _container.EnsureCommandBinding(commandType);
         }
 
         /// <summary>
@@ -349,7 +349,7 @@ namespace Nexus.Core
                 RebuildCompositeReadCopy();
             }
 
-            _container.Bind(commandType, isSingleton: false);
+            _container.EnsureCommandBinding(commandType);
         }
 
         /// <summary>Checks if a signal type has any async command handlers registered.</summary>

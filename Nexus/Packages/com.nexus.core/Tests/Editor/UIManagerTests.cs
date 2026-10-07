@@ -1,4 +1,6 @@
 using NUnit.Framework;
+using System.Collections.Generic;
+using System.Reflection;
 using System.Threading.Tasks;
 using UnityEngine;
 using Nexus.Core.Services;
@@ -21,6 +23,20 @@ namespace Nexus.Editor.Tests
         protected override void OnScreenClosed()
         {
             CloseCount++;
+        }
+    }
+
+    public class ReentrantTestScreen : ScreenView
+    {
+        [System.NonSerialized] public UIManager Manager;
+        public bool Reenter;
+        public int CloseCalls;
+        protected override void OnScreenClosing()
+        {
+            CloseCalls++;
+            if (!Reenter) return;
+            Reenter = false;
+            Manager.CloseScreenAsync<ReentrantTestScreen>().GetAwaiter().GetResult();
         }
     }
 
@@ -162,5 +178,43 @@ namespace Nexus.Editor.Tests
             Assert.IsNotNull(screen);
             Assert.AreEqual("HUD", screen.transform.parent.name);
         }
+
+        [Test]
+        public void SameNameTypes_KeepSeparatePrefabsAndActiveInstances()
+        {
+            var firstPrefab = new GameObject("first"); firstPrefab.AddComponent<ScreenA.DuplicateScreen>();
+            var secondPrefab = new GameObject("second"); secondPrefab.AddComponent<ScreenB.DuplicateScreen>();
+            try
+            {
+                _uiManager.RegisterScreenPrefab<ScreenA.DuplicateScreen>(firstPrefab);
+                _uiManager.RegisterScreenPrefab<ScreenB.DuplicateScreen>(secondPrefab);
+                var first = _uiManager.OpenScreenAsync<ScreenA.DuplicateScreen>().GetAwaiter().GetResult();
+                var second = _uiManager.OpenScreenAsync<ScreenB.DuplicateScreen>().GetAwaiter().GetResult();
+                Assert.IsNotNull(first); Assert.IsNotNull(second); Assert.AreNotSame(first, second);
+                _uiManager.CloseScreenAsync<ScreenA.DuplicateScreen>().GetAwaiter().GetResult();
+                Assert.IsTrue(_uiManager.IsScreenOpen<ScreenB.DuplicateScreen>());
+            }
+            finally { Object.DestroyImmediate(firstPrefab); Object.DestroyImmediate(secondPrefab); }
+        }
+
+        [Test]
+        public void ReentrantClose_ReturnsScreenToPoolExactlyOnce()
+        {
+            var prefab = new GameObject("reentrant"); prefab.AddComponent<ReentrantTestScreen>();
+            try
+            {
+                _uiManager.RegisterScreenPrefab<ReentrantTestScreen>(prefab);
+                var screen = _uiManager.OpenScreenAsync<ReentrantTestScreen>().GetAwaiter().GetResult();
+                screen.Manager = _uiManager; screen.Reenter = true;
+                _uiManager.CloseScreenAsync<ReentrantTestScreen>().GetAwaiter().GetResult();
+                var pools = (Dictionary<string, Stack<ScreenView>>)typeof(UIManager).GetField("_pools", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(_uiManager);
+                Assert.AreEqual(1, pools[typeof(ReentrantTestScreen).AssemblyQualifiedName].Count);
+                Assert.AreEqual(1, screen.CloseCalls);
+            }
+            finally { Object.DestroyImmediate(prefab); }
+        }
     }
 }
+
+namespace Nexus.Editor.Tests.ScreenA { public class DuplicateScreen : ScreenView { } }
+namespace Nexus.Editor.Tests.ScreenB { public class DuplicateScreen : ScreenView { } }

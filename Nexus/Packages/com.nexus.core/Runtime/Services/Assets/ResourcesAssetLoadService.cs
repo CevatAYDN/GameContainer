@@ -18,13 +18,13 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(key))
                 throw new ArgumentException("Asset key must not be null or empty.", nameof(key));
+            if (ct.IsCancellationRequested) return Task.FromCanceled<T>(ct);
 
             var request = Resources.LoadAsync<T>(key);
             var tcs = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
 
             // Propagate cancellation: the caller may abandon the load (scene teardown).
             // The request still completes in the background; the TCS stays canceled.
-            ct.Register(() => tcs.TrySetCanceled(ct));
 
             // ResourceRequest.completed fires on the main thread; continuations are
             // scheduled via RunContinuationsAsynchronously so no sync-context capture
@@ -41,7 +41,15 @@ namespace Nexus.Core.Services
                 tcs.TrySetResult(asset);
             };
 
-            return tcs.Task;
+            return AwaitCompletionAsync(tcs, ct);
+        }
+
+        private static async Task<T> AwaitCompletionAsync<T>(TaskCompletionSource<T> completion, CancellationToken ct)
+        {
+            // The registration is owned by this load, not by the context token. Using
+            // covers synchronous completion and success/failure/cancellation races.
+            using (ct.Register(() => completion.TrySetCanceled(ct)))
+                return await completion.Task;
         }
 
         public T LoadSync<T>(string key) where T : UnityEngine.Object

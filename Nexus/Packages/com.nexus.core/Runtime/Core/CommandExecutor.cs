@@ -621,6 +621,44 @@ namespace Nexus.Core
 
         // ─── Composite execution ───────────────────────────────────────────────
 
+        internal void ExecuteTypedComposite<TFirst, TSecond, TCommand>(TFirst first, TSecond second, bool oneShot)
+            where TFirst : struct where TSecond : struct
+            where TCommand : class, ICompositeCommand<TFirst, TSecond>
+        {
+            int retries = 0;
+            NexusRuntime.Metrics.RecordCommandExecuted();
+            while (true)
+            {
+                object command = null;
+                try
+                {
+                    command = _poolManager.GetCommand(typeof(TCommand));
+                    _container.Inject(command);
+                    var typed = (TCommand)command;
+                    if (_context is Context context && context.PluginsReadOnlyCopy.Count > 0)
+                        ExecuteDecoratedTypedComposite(typed, first, second);
+                    else typed.Execute(first, second);
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    var action = _recovery.HandleErrorWithDecision(ex, typeof(TCommand), null, ref retries);
+                    if (action == RecoveryAction.Skip && oneShot) throw;
+                    if (action != RecoveryAction.Retry) return;
+                    retries++;
+                }
+                finally
+                {
+                    if (command != null) _poolManager.ReturnCommand(typeof(TCommand), command);
+                }
+            }
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private void ExecuteDecoratedTypedComposite<TFirst, TSecond>(ICompositeCommand<TFirst, TSecond> command,
+            TFirst first, TSecond second) where TFirst : struct where TSecond : struct
+            => ExecuteWithDecorators(command, () => command.Execute(first, second));
+
         private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command, CompositeContext context, CancellationToken cancellationToken)
         {
             int retryCount = 0;

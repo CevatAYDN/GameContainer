@@ -1,10 +1,6 @@
 using System;
-using System.Collections.Generic;
-using System.Linq;
-using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
-using Nexus.Core;
 
 namespace Nexus.Editor
 {
@@ -23,32 +19,11 @@ namespace Nexus.Editor
             SignalCommandGen = 4
         }
 
-        // Inputs for Custom Root Context Creation
-        private string _wizardParentRootName = "None (Root Context)";
-        private readonly HashSet<string> _wizardSelectedAssemblies = new();
-
-        // Inputs for View/Mediator Gen
-        private string _wizardViewTargetRootName = "";
-
-        // Inputs for Signal/Command Gen
-        private string _wizardSignalTargetRootName = "";
-
-        // Inputs for Clean Deletion
-        private string _wizardRootToDeleteName = "";
-
         // UI Element References
         private VisualElement _contentRoot;
         private VisualElement _subTabContent;
-        private Label _validationLabel;
-        private Button _createRootButton;
-        
-        private DropdownField _parentRootDropdown;
-        private DropdownField _viewTargetRootDropdown;
-        private DropdownField _signalTargetRootDropdown;
-        private DropdownField _deleteRootDropdown;
 
-        private List<string> _wizardAvailableAssemblies = new();
-        private Root[] _cachedSceneRoots = Array.Empty<Root>();
+
 
         private SubTab _selectedSubTab = SubTab.CreateRoot;
 
@@ -71,7 +46,7 @@ namespace Nexus.Editor
 
             // Tab navigation buttons
             var tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
-            
+
             var btnCreateRoot = CreateSubTabButton(NexusLang.Get("wizard_subtab_create_root"), SubTab.CreateRoot);
             var btnServiceGen = CreateSubTabButton(NexusLang.Get("wizard_subtab_service_gen"), SubTab.ServiceGen);
             var btnViewGen = CreateSubTabButton(NexusLang.Get("wizard_subtab_view_gen"), SubTab.ViewMediatorGen);
@@ -88,26 +63,10 @@ namespace Nexus.Editor
             _subTabContent = new ScrollView { style = { flexGrow = 1, paddingLeft = 15, paddingRight = 15, paddingTop = 15, paddingBottom = 15 } };
             _contentRoot.Add(_subTabContent);
 
-            PopulateAvailableAssemblies();
-            RefreshSceneRoots();
             RenderSubTab();
 
-            // Hook scene hierarchy changes to dynamically update dropdowns
-            EditorApplication.hierarchyChanged += OnHierarchyChanged;
 
             return _contentRoot;
-        }
-
-        public override void OnDisable()
-        {
-            EditorApplication.hierarchyChanged -= OnHierarchyChanged;
-            base.OnDisable();
-        }
-
-        private void OnHierarchyChanged()
-        {
-            RefreshSceneRoots();
-            UpdateDropdownChoices();
         }
 
         private Button CreateSubTabButton(string label, SubTab tab)
@@ -117,7 +76,8 @@ namespace Nexus.Editor
                 _selectedSubTab = tab;
                 HighlightActiveSubTab();
                 RenderSubTab();
-            }) { text = label };
+            })
+            { text = label };
 
             btn.name = $"SubTab_{(int)tab}";
             btn.style.backgroundColor = new StyleColor(Color.clear);
@@ -170,84 +130,5 @@ namespace Nexus.Editor
                 _tabs[idx].BuildUI(_subTabContent);
         }
 
-        // ─── (Dead Build*Tab methods removed — migrated to WizardTabs.cs) ───
-
-        private void UpdateDropdownChoices()
-        {
-            if (_parentRootDropdown != null)
-            {
-                var choices = GetSceneRootNames();
-                _parentRootDropdown.choices = choices;
-                if (!choices.Contains(_wizardParentRootName))
-                {
-                    _wizardParentRootName = "None (Root Context)";
-                    _parentRootDropdown.value = _wizardParentRootName;
-                }
-            }
-
-            var rootNames = _cachedSceneRoots.Select(r => r.gameObject.name).ToList();
-            
-            if (_viewTargetRootDropdown != null)
-            {
-                _viewTargetRootDropdown.choices = rootNames;
-                if (rootNames.Count > 0 && !rootNames.Contains(_wizardViewTargetRootName))
-                {
-                    _wizardViewTargetRootName = rootNames[0];
-                    _viewTargetRootDropdown.value = _wizardViewTargetRootName;
-                }
-            }
-
-            if (_signalTargetRootDropdown != null)
-            {
-                _signalTargetRootDropdown.choices = rootNames;
-                if (rootNames.Count > 0 && !rootNames.Contains(_wizardSignalTargetRootName))
-                {
-                    _wizardSignalTargetRootName = rootNames[0];
-                    _signalTargetRootDropdown.value = _wizardSignalTargetRootName;
-                }
-            }
-
-            if (_deleteRootDropdown != null)
-            {
-                _deleteRootDropdown.choices = rootNames;
-                if (rootNames.Count > 0 && !rootNames.Contains(_wizardRootToDeleteName))
-                {
-                    _wizardRootToDeleteName = rootNames[0];
-                    _deleteRootDropdown.value = _wizardRootToDeleteName;
-                }
-            }
-        }
-
-        private List<string> GetSceneRootNames()
-        {
-            var names = new List<string> { "None (Root Context)" };
-            foreach (var r in _cachedSceneRoots)
-            {
-                names.Add(r.gameObject.name);
-            }
-            return names;
-        }
-
-        private void PopulateAvailableAssemblies()
-        {
-            _wizardAvailableAssemblies.Clear();
-            foreach (var assembly in AssemblyCatalog.GameAssemblies())
-            {
-                var name = AssemblyCatalog.GetSimpleName(assembly);
-                if (!_wizardAvailableAssemblies.Contains(name))
-                    _wizardAvailableAssemblies.Add(name);
-            }
-            _wizardAvailableAssemblies.Sort();
-
-            if (_wizardAvailableAssemblies.Contains("Assembly-CSharp"))
-                _wizardSelectedAssemblies.Add("Assembly-CSharp");
-        }
-
-        private void RefreshSceneRoots()
-        {
-            _cachedSceneRoots = GameObject.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
-        }
-
-        // ─── (More dead action methods removed — migrated to WizardTabs.cs + NexusSetupWizardHelper) ───
     }
 }

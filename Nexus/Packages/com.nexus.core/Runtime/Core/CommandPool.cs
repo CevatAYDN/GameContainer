@@ -18,9 +18,11 @@ namespace Nexus.Core
         public readonly long TotalCreated;
         public readonly long TotalReturns;
         public readonly long TotalDiscarded;
+        /// <summary>Instances created during explicit/startup prewarming (separate from Get misses).</summary>
+        public readonly long TotalPrewarmed;
 
         public CommandPoolStats(Type commandType, int available, int maxSize,
-            long totalGets, long totalCreated, long totalReturns, long totalDiscarded)
+            long totalGets, long totalCreated, long totalReturns, long totalDiscarded, long totalPrewarmed = 0)
         {
             CommandType = commandType;
             Available = available;
@@ -29,6 +31,7 @@ namespace Nexus.Core
             TotalCreated = totalCreated;
             TotalReturns = totalReturns;
             TotalDiscarded = totalDiscarded;
+            TotalPrewarmed = totalPrewarmed;
         }
 
         /// <summary>Fraction of Get() calls served from the pool rather than freshly created (0..1).</summary>
@@ -58,6 +61,9 @@ namespace Nexus.Core
         }
 
         private readonly HashSet<object> _pooledInstances = new(ReferenceComparer.Instance);
+        // Includes rented instances. Checked only on creation/prewarm, so warmed Get/Return
+        // do not pay another membership lookup. A factory must never hand out an active lease.
+        private readonly HashSet<object> _ownedInstances = new(ReferenceComparer.Instance);
         private readonly object _poolLock = new();
         private readonly int _maxSize;
         private static readonly HashSet<Type> s_stateLeakWarningIssued = new();
@@ -67,6 +73,8 @@ namespace Nexus.Core
         private long _totalCreated;
         private long _totalReturns;
         private long _totalDiscarded;
+        private long _totalPrewarmed;
+        private bool _isPrewarming;
 
         /// <summary>Creates a new command pool for the specified command type.</summary>
         /// <param name="commandType">The <see cref="Type"/> of the command to pool.</param>
@@ -75,18 +83,49 @@ namespace Nexus.Core
         /// <param name="maxSize">Maximum pool capacity (beyond this, returned commands are discarded).</param>
         public CommandPool(Type commandType, Func<object> factory, int initialSize = 0, int maxSize = 64)
         {
+            if (commandType == null) throw new ArgumentNullException(nameof(commandType));
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            if (maxSize < 0) throw new ArgumentOutOfRangeException(nameof(maxSize));
+            if (initialSize < 0 || initialSize > maxSize) throw new ArgumentOutOfRangeException(nameof(initialSize));
             _commandType = commandType;
             _factory = factory;
             _maxSize = maxSize;
-
-            for (int i = 0; i < initialSize; i++)
-            {
-                var instance = _factory();
-                _pool.Push(instance);
-                _pooledInstances.Add(instance);
-            }
-
+            Prewarm(initialSize);
             WarnIfStateLeakRisk(commandType);
+        }
+
+        /// <summary>
+        /// Ensures at least <paramref name="availableCount"/> idle instances, without executing
+        /// commands or resetting their state. Runs constructors/factories; call during loading.
+        /// Repeated calls are idempotent and never exceed MaxSize. Returns newly created count.
+        /// </summary>
+        public int Prewarm(int availableCount)
+        {
+            if (availableCount < 0 || availableCount > _maxSize)
+                throw new ArgumentOutOfRangeException(nameof(availableCount));
+            lock (_poolLock)
+            {
+                if (_isPrewarming) throw new InvalidOperationException("A command factory cannot recursively prewarm its own pool.");
+                _isPrewarming = true;
+                int created = 0;
+                try
+                {
+                    while (_pool.Count < availableCount)
+                    {
+                        var instance = _factory();
+                        if (instance == null || !_commandType.IsInstanceOfType(instance))
+                            throw new InvalidOperationException($"Factory for '{_commandType.FullName}' must return an assignable, non-null instance.");
+                        if (_pooledInstances.Contains(instance) || !_ownedInstances.Add(instance))
+                            throw new InvalidOperationException($"Factory for '{_commandType.FullName}' returned the same pooled instance twice. Use a transient factory.");
+                        _pooledInstances.Add(instance);
+                        _pool.Push(instance);
+                        System.Threading.Interlocked.Increment(ref _totalPrewarmed);
+                        created++;
+                    }
+                    return created;
+                }
+                finally { _isPrewarming = false; }
+            }
         }
 
         private static void WarnIfStateLeakRisk(Type type)
@@ -146,8 +185,16 @@ namespace Nexus.Core
                     return instance;
                 }
             }
+            var created = _factory();
+            if (created == null || !_commandType.IsInstanceOfType(created))
+                throw new InvalidOperationException($"Factory for '{_commandType.FullName}' must return an assignable, non-null instance.");
+            lock (_poolLock)
+            {
+                if (!_ownedInstances.Add(created))
+                    throw new InvalidOperationException($"Factory for '{_commandType.FullName}' returned an instance already owned by this pool. Use a transient factory.");
+            }
             System.Threading.Interlocked.Increment(ref _totalCreated);
-            return _factory();
+            return created;
         }
 
         /// <summary>Returns a command to the pool after cleanup. Discards if the pool is full.</summary>
@@ -178,6 +225,7 @@ namespace Nexus.Core
                     // Roll back the membership marker so the instance is not left registered
                     // as pooled while never reaching the pool stack.
                     _pooledInstances.Remove(command);
+                    _ownedInstances.Remove(command);
                     throw;
                 }
 
@@ -190,6 +238,7 @@ namespace Nexus.Core
 
                 // Pool full: roll back the membership marker before discarding.
                 _pooledInstances.Remove(command);
+                _ownedInstances.Remove(command);
                 System.Threading.Interlocked.Increment(ref _totalDiscarded);
             }
         }
@@ -209,6 +258,7 @@ namespace Nexus.Core
         {
             lock (_poolLock)
             {
+                foreach (var idle in _pool) _ownedInstances.Remove(idle);
                 _pool.Clear();
                 _pooledInstances.Clear();
             }
@@ -235,7 +285,8 @@ namespace Nexus.Core
                 System.Threading.Interlocked.Read(ref _totalGets),
                 System.Threading.Interlocked.Read(ref _totalCreated),
                 System.Threading.Interlocked.Read(ref _totalReturns),
-                System.Threading.Interlocked.Read(ref _totalDiscarded));
+                System.Threading.Interlocked.Read(ref _totalDiscarded),
+                System.Threading.Interlocked.Read(ref _totalPrewarmed));
         }
     }
 
@@ -263,6 +314,9 @@ namespace Nexus.Core
 
         public CommandPoolManager(NexusDI container, int initialSize = 4, int maxSize = 64)
         {
+            if (container == null) throw new ArgumentNullException(nameof(container));
+            if (maxSize < 0) throw new ArgumentOutOfRangeException(nameof(maxSize));
+            if (initialSize < 0 || initialSize > maxSize) throw new ArgumentOutOfRangeException(nameof(initialSize));
             _container = container;
             _initialSize = initialSize;
             _maxSize = maxSize;
@@ -276,6 +330,20 @@ namespace Nexus.Core
                 pool = _pools.GetOrAdd(commandType, _createPool);
             }
             return pool.Get();
+        }
+
+        /// <summary>Moves pool and injection metadata construction to loading time; never executes a command.</summary>
+        public void Prewarm<TCommand>(int availableCount = 4) where TCommand : class
+            => Prewarm(typeof(TCommand), availableCount);
+
+        /// <summary>Reflection-form prewarm. Instances are owned by the pool, with normal transient command semantics.</summary>
+        public void Prewarm(Type commandType, int availableCount = 4)
+        {
+            if (commandType == null) throw new ArgumentNullException(nameof(commandType));
+            if (availableCount < 0 || availableCount > _maxSize) throw new ArgumentOutOfRangeException(nameof(availableCount));
+            _container.PrepareInjectionMetadata(commandType);
+            var pool = _pools.GetOrAdd(commandType, _createPool);
+            pool.Prewarm(availableCount);
         }
 
         /// <summary>Returns a command instance to its pool.</summary>

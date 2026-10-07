@@ -21,13 +21,15 @@ namespace Nexus.Editor
     public class NexusSetupWizard : NexusEditorPlugin
     {
         public override string Id => "SetupWizard";
-        public override string DisplayName => "Setup Wizard";
+        public override string DisplayName => NexusLang.Get("setup_name");
         public override int Order => -1;
 
         private VisualElement _root;
         private VisualElement _progressFill;
         private readonly List<SetupStep> _steps = new();
         internal const string GameRoot = "Assets/Scripts/Game/Samples";
+        private const string ContextDataPath = "Assets/GameContextData.asset";
+        private const string StarterScenePath = "Assets/Scenes/NexusStarter.unity";
 
         private static readonly string[] SubFolders = {
             "Models", "Commands", "Signals", "Services",
@@ -48,7 +50,7 @@ namespace Nexus.Editor
             _root = new VisualElement { style = { paddingLeft = 24, paddingRight = 24, paddingTop = 20, paddingBottom = 20 } };
             NexusEditorStyles.LoadTheme(_root);
 
-            var title = new Label("Nexus Setup Wizard")
+            var title = new Label(NexusLang.Get("setup_title"))
             {
                 style = { fontSize = 22, unityFontStyleAndWeight = FontStyle.Bold,
                     color = new StyleColor(NexusEditorStyles.AccentBlue), marginBottom = 2 }
@@ -56,8 +58,7 @@ namespace Nexus.Editor
             _root.Add(title);
 
             var subtitle = new Label(
-                "This wizard scaffolds a complete Nexus project in one click: folder structure, ContextData asset, " +
-                "a starter scene with Root + Canvas/UI, and compilable game code with Lifecycle/Signal/Model/Command.")
+                NexusLang.Get("setup_description"))
             {
                 style = { fontSize = 11, color = new StyleColor(NexusEditorStyles.TextSecondary),
                     marginBottom = 16, whiteSpace = WhiteSpace.Normal }
@@ -84,22 +85,20 @@ namespace Nexus.Editor
 
             _steps.Clear();
 
-            AddStep("Install Nexus", "Nexus is installed. Verify in Package Manager if needed.",
-                "Open Package Manager", () => EditorApplication.ExecuteMenuItem("Window/Package Manager"),
+            AddStep(NexusLang.Get("setup_install"), NexusLang.Get("setup_install_description"),
+                NexusLang.Get("setup_package_manager"), () => EditorApplication.ExecuteMenuItem("Window/Package Manager"),
                 () => true);
 
-            AddStep("Scaffold Project", "Creates sample folder structure under Assets/Scripts/Game/Samples/, " +
-                    "a ContextData asset, a starter scene with GameRoot (Root + ContextData), " +
-                    "Canvas with Button/Text, EventSystem, and sample Lifecycle/Signal/Model/Command/Service/View/Mediator code.",
-                "Create Project",
+            AddStep(NexusLang.Get("setup_scaffold"), NexusLang.Get("setup_scaffold_description"),
+                NexusLang.Get("setup_create"),
                 () =>
                 {
                     ScaffoldProject();
                 },
                 () => File.Exists(GameRoot + "/Lifecycle/GameLifecycle.cs") && File.Exists("Assets/Scenes/NexusStarter.unity"));
 
-            AddStep("Open Dashboard", "Launch the Nexus Dashboard to inspect your live architecture.",
-                "Open Dashboard", () => EditorApplication.ExecuteMenuItem("Window/Nexus/Dashboard %#n"),
+            AddStep(NexusLang.Get("setup_dashboard"), NexusLang.Get("setup_dashboard_description"),
+                NexusLang.Get("setup_dashboard"), () => EditorApplication.ExecuteMenuItem("Window/Nexus/Dashboard %#n"),
                 () => true);
 
             foreach (var step in _steps)
@@ -117,26 +116,53 @@ namespace Nexus.Editor
                     marginTop = 12
                 }
             };
-            infoBox.Add(new Label("💡 Quick Start Tip:")
+            infoBox.Add(new Label(NexusLang.Get("setup_tip_title"))
             {
                 style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue), marginBottom = 4 }
             });
-            infoBox.Add(new Label("After creation, hit Play in Unity to see the sample scene in action. The UI Button increments a counter displayed in the Text via: Signal → Command → Model → Mediator → View flow.")
+            infoBox.Add(new Label(NexusLang.Get("setup_tip"))
             {
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), whiteSpace = WhiteSpace.Normal }
             });
             _root.Add(infoBox);
 
+            var guide = new UnityEngine.UIElements.Button(OpenIntegrationGuide)
+            {
+                text = NexusLang.Get("setup_guide"), name = "nexus-integration-guide"
+            };
+            guide.style.marginTop = 12;
+            _root.Add(guide);
+
             RefreshStepStatus();
             return _root;
+        }
+
+        private static void OpenIntegrationGuide()
+        {
+            var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(NexusSetupWizard).Assembly);
+            if (package == null) throw new InvalidOperationException("Nexus package location could not be resolved.");
+            string file = NexusLang.CurrentLocale == "tr" ? "INTEGRATION_PATHS_TR.md" : "INTEGRATION_PATHS.md";
+            EditorUtility.OpenWithDefaultApp(Path.Combine(package.resolvedPath, "docs", file));
+        }
+
+        public override void OnUpdate() { }
+
+        public override void OnDisable()
+        {
+            _steps.Clear();
+            _root = null;
+            _progressFill = null;
         }
 
         private void AddStep(string title, string description, string buttonText, Action action, Func<bool> isComplete)
         {
             _steps.Add(new SetupStep
             {
-                Title = title, Description = description,
-                ButtonText = buttonText, Action = action, IsComplete = isComplete
+                Title = title,
+                Description = description,
+                ButtonText = buttonText,
+                Action = action,
+                IsComplete = isComplete
             });
         }
 
@@ -224,14 +250,11 @@ namespace Nexus.Editor
 
         private static void CreateContextDataAsset()
         {
-            var existing = AssetDatabase.FindAssets("t:ContextData");
-            if (existing.Length > 0) return;
-
             var asset = ScriptableObject.CreateInstance<ContextData>();
             asset.name = "GameContextData";
             asset.EnableAutoDiscovery = true;
             asset.AssemblyScopes = new[] { "Assembly-CSharp" };
-            AssetDatabase.CreateAsset(asset, "Assets/GameContextData.asset");
+            AssetDatabase.CreateAsset(asset, ContextDataPath);
             AssetDatabase.SaveAssets();
         }
 
@@ -239,11 +262,10 @@ namespace Nexus.Editor
 
         private static void CreateSceneWithRootAndUI()
         {
-            var currentScene = SceneManager.GetActiveScene();
-            if (currentScene.isDirty)
-                EditorSceneManager.SaveScene(currentScene);
-
-            var newScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            if (File.Exists(StarterScenePath))
+                throw new IOException("Nexus starter scene already exists; existing content is preserved.");
+            // Add the starter scene without saving or closing the user's current scenes.
+            var newScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
             newScene.name = "NexusStarter";
             EditorSceneManager.SetActiveScene(newScene);
 
@@ -251,20 +273,15 @@ namespace Nexus.Editor
             var rootGo = new GameObject("GameRoot");
             var rootComp = rootGo.AddComponent<Root>();
 
-            var contextDataGuids = AssetDatabase.FindAssets("t:ContextData");
-            if (contextDataGuids.Length > 0)
+            var data = AssetDatabase.LoadAssetAtPath<ContextData>(ContextDataPath);
+            if (data != null)
             {
-                var dataPath = AssetDatabase.GUIDToAssetPath(contextDataGuids[0]);
-                var data = AssetDatabase.LoadAssetAtPath<ContextData>(dataPath);
-                if (data != null)
+                var so = new SerializedObject(rootComp);
+                var prop = so.FindProperty("contextData");
+                if (prop != null)
                 {
-                    var so = new SerializedObject(rootComp);
-                    var prop = so.FindProperty("contextData");
-                    if (prop != null)
-                    {
-                        prop.objectReferenceValue = data;
-                        so.ApplyModifiedProperties();
-                    }
+                    prop.objectReferenceValue = data;
+                    so.ApplyModifiedProperties();
                 }
             }
             // Add GameLifecycle component (MonoBehaviour) so Root.GetComponents<IContextLifecycle>() finds it
@@ -388,9 +405,8 @@ namespace Nexus.Editor
             Selection.activeObject = rootGo;
 
             // Save scene
-            var scenePath = "Assets/Scenes/NexusStarter.unity";
             Directory.CreateDirectory("Assets/Scenes");
-            EditorSceneManager.SaveScene(newScene, scenePath);
+            EditorSceneManager.SaveScene(newScene, StarterScenePath);
         }
 
         // ─── Main Scaffold ────────────────────────────────────
@@ -400,10 +416,13 @@ namespace Nexus.Editor
 
         private static void ScaffoldProject()
         {
+            if (HasScaffoldConflict(Directory.GetCurrentDirectory()))
+            {
+                Debug.LogWarning("[Nexus] Starter output already exists. Existing files and scenes were preserved. " +
+                    "Use the imported sample or ContextFactory.StartAsync in an existing project.");
+                return;
+            }
             Debug.Log("[Nexus] Scaffolding project...");
-
-            // Phase 0: Clean old artifacts (stale script references cause "Missing Script" errors)
-            CleanOldArtifacts();
 
             // Phase 1: Create folders + ContextData + generate all code
             CreateFolderStructure();
@@ -486,22 +505,11 @@ namespace Nexus.Editor
             EditorApplication.delayCall += ExecuteDelayedSceneCreation;
         }
 
-        private static void CleanOldArtifacts()
+        internal static bool HasScaffoldConflict(string projectRoot)
         {
-            // Delete old scene to prevent stale script references
-            var oldScenePath = "Assets/Scenes/NexusStarter.unity";
-            if (File.Exists(oldScenePath))
-            {
-                AssetDatabase.DeleteAsset(oldScenePath);
-                Debug.Log("[Nexus] Deleted old scene: " + oldScenePath);
-            }
-
-            // Delete old sample folder (AssetDatabase.DeleteAsset handles .meta too)
-            if (AssetDatabase.IsValidFolder(GameRoot))
-            {
-                AssetDatabase.DeleteAsset(GameRoot);
-                Debug.Log("[Nexus] Deleted old sample files under " + GameRoot);
-            }
+            return Directory.Exists(Path.Combine(projectRoot, GameRoot))
+                || File.Exists(Path.Combine(projectRoot, StarterScenePath))
+                || File.Exists(Path.Combine(projectRoot, ContextDataPath));
         }
 
         private static void OnDelayScaffold()

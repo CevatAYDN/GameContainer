@@ -1,4 +1,5 @@
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 using Nexus.Editor;
 
@@ -21,7 +22,8 @@ namespace Nexus.Tests.Editor
             Assert.IsTrue(BuildValidation.HasRun, "BuildValidation did not execute.");
             // Errors are blocking — must be zero.
             Assert.AreEqual(0, BuildValidation.LastErrorCount,
-                $"Architecture Validation produced {BuildValidation.LastErrorCount} error(s).");
+                $"Architecture Validation produced {BuildValidation.LastErrorCount} error(s).\n" +
+                string.Join("\n", BuildValidation.LastResults.Where(entry => entry.IsError).Select(entry => entry.Message)));
             // Warnings are non-blocking; log them for CI diagnostics but do not fail the test.
             // This allows legitimate warnings from game-assembly commands while catching regressions
             // that introduce errors.

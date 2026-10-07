@@ -113,7 +113,7 @@ namespace Nexus.Core
     /// implementations of the same interface can coexist:
     /// <code>[Inject(Name = "primary")] public IStorage Storage { get; set; }</code>
     /// </summary>
-    [AttributeUsage(AttributeTargets.Constructor | AttributeTargets.Field | AttributeTargets.Property | AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
+    [AttributeUsage(AttributeTargets.Constructor | AttributeTargets.Field | AttributeTargets.Property | AttributeTargets.Method | AttributeTargets.Parameter, AllowMultiple = false, Inherited = true)]
     [Preserve]
     public sealed class InjectAttribute : Attribute
     {

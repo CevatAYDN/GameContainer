@@ -45,44 +45,31 @@ namespace UnityEditor.Callbacks
 namespace Nexus.Editor
 {
     /// <summary>
-    /// Mirrors the real editor AssemblyCatalog predicate (Nexus/Editor/Core/AssemblyCatalog.cs):
-    /// runtime-relevant assemblies = loaded, non-dynamic, non-framework, non-third-party,
-    /// non-editor, non-test assemblies. In the harness only the benchmark assembly qualifies,
-    /// so GenerateBinder() scans the REAL harness + compiled runtime types — the same universe
-    /// the codegen would scan inside Unity.
+    /// Harness mirror of <c>Nexus/Editor/Core/AssemblyCatalog.cs</c>. Delegates predicates to
+    /// <see cref="Nexus.Core.NexusAssemblyPolicy"/> so editor codegen and runtime share one policy.
     /// </summary>
     public static class AssemblyCatalog
     {
-        private static readonly string[] FrameworkPrefixes =
-        {
-            "System", "Microsoft", "Unity", "mscorlib", "mono", "nunit", "NUnit", "netstandard"
-        };
+        public static IEnumerable<Assembly> LoadedAssemblies
+            => AppDomain.CurrentDomain.GetAssemblies();
 
-        public static IEnumerable<Assembly> RuntimeAssemblies(bool includeTests = false)
+        public static bool IsFrameworkAssembly(string name) => Nexus.Core.NexusAssemblyPolicy.IsFrameworkAssembly(name);
+        public static bool IsThirdPartyAssembly(string name) => Nexus.Core.NexusAssemblyPolicy.IsThirdPartyAssembly(name);
+        public static bool IsTestAssembly(string name) => Nexus.Core.NexusAssemblyPolicy.IsTestAssembly(name);
+        public static bool IsEditorAssembly(string name) => Nexus.Core.NexusAssemblyPolicy.IsEditorAssembly(name);
+        public static string GetSimpleName(Assembly assembly) => Nexus.Core.NexusAssemblyPolicy.GetSimpleName(assembly);
+
+        public static IEnumerable<Assembly> GameAssemblies(bool includeTests = false)
         {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in LoadedAssemblies)
             {
-                if (assembly.IsDynamic) continue;
-                string name = null;
-                try { name = assembly.GetName().Name; }
-                catch { continue; }
-                if (string.IsNullOrEmpty(name)) continue;
-
-                bool framework = false;
-                for (int i = 0; i < FrameworkPrefixes.Length; i++)
-                {
-                    if (name.StartsWith(FrameworkPrefixes[i], StringComparison.OrdinalIgnoreCase))
-                    {
-                        framework = true;
-                        break;
-                    }
-                }
-                if (framework) continue;
-                if (name.IndexOf(".editor", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                if (!includeTests && name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                yield return assembly;
+                if (Nexus.Core.NexusAssemblyPolicy.IsGameAssembly(assembly, includeTests))
+                    yield return assembly;
             }
         }
+
+        public static IEnumerable<Assembly> RuntimeAssemblies(bool includeTests = false)
+            => GameAssemblies(includeTests);
 
         public static Type[] GetTypesSafe(Assembly assembly)
         {

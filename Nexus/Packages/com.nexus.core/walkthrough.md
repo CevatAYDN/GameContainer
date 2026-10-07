@@ -9,6 +9,19 @@ This document is the **hands-on companion** to [README.md](README.md) (overview)
 
 ## 1. Setup
 
+Choose an [integration path](docs/INTEGRATION_PATHS.md) ([Türkçe](docs/INTEGRATION_PATHS_TR.md)).
+The localized Setup Wizard opens this guide from the resolved UPM package location.
+After startup, call `context.Prewarm<YourSignal>(4)` during loading to prepare pools
+without executing commands. For low-level DI, inspect `container.ValidateBindings()`
+before resolving feature objects; factories and supplied instances are opaque boundaries.
+
+
+For an existing Unity 6 project, start with [GETTING_STARTED.md](docs/GETTING_STARTED.md).
+The code-only path awaits `ContextFactory.StartAsync("Gameplay", builder => { /* bindings */ })`;
+configuration precedes validation and model/service initialization. Dispose the returned context
+when its owner ends. Do not add bindings after startup and call initialization a second time.
+
+
 1. Add the package to your Unity 6 project via **Package Manager → Add from disk**
    (or a git dependency), or open the bundled starter scene
    `Assets/Scenes/NexusStarter.unity`.
@@ -24,9 +37,11 @@ lifecycle (`OnConfigure → OnInitializeAsync → OnStartAsync`) with priority a
 parent-child support. You can also create a code-only context:
 
 ```csharp
-var context = await NexusRuntime.CreatePureContextAsync("Gameplay");
-context.GetOrCreateBuilder().BindService<IMyService, MyService>();
-await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, context.LifetimeToken);
+var context = await ContextFactory.StartAsync("Gameplay", builder =>
+{
+    builder.BindService<IMyService, MyService>();
+});
+// Keep the owner alive while the game uses it; await context.DisposeAsync() at shutdown.
 ```
 
 **Bind anything you resolve.** NexusDI requires every injected dependency to be
@@ -77,8 +92,9 @@ pools mediators and clears injected references on return.
 
 - `GameSaveManager` writes model snapshots atomically (`File.Replace` /
   overwrite-rename) — never delete-then-move.
-- `EncryptedStorageService` provides AES-256 + HMAC-SHA256 integrity,
-  device-bound keys, and atomic writes. Tampered payloads are rejected on read.
+- `EncryptedStorageService` provides AES-256 + HMAC-SHA256 integrity and device-bound
+  keys. It uses atomic replacement where available and a recoverable backup elsewhere.
+  Tampered payloads are rejected on read; device power-loss guarantees require testing.
 - `OfflineTimeCalculator` validates offline reward time against **both** the wall
   clock and hardware monotonic ticks (`Environment.TickCount64`), so a device
   clock set backwards **or forwards** cannot inflate rewards.
@@ -102,6 +118,11 @@ pools mediators and clears injected references on return.
   single `BuildPlan` decision tree; a custom `IRecoveryStrategy` can override it.
 
 ## 9. Validating your project
+
+Native Unity integration evidence and calibrated allocation measurement are recorded in
+[HARDENING.md](docs/HARDENING.md). Debug tracing uses a monotonic Nexus clock; compare trace
+timestamps with `NexusTrace.TimestampNow`, not Unity startup time. Zero-GC assertions require
+tracing disabled and a working positive-control allocation recorder.
 
 - Run the standalone harness: `dotnet run --project tools/nexus-benchmark`
   (207+ regression tests covering registry parity, zero-GC hot paths, recovery,

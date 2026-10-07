@@ -7,6 +7,21 @@
 
 # Nexus Architecture Guide
 
+## Hardening contracts
+
+- Generic DI cache entries represent locally registered non-transient instances; local registration generations invalidate them and every resolve checks disposal. Adapters and inherited bindings retain their resolution ownership.
+- Observable notifications preserve the last delivered old/new pair. Each list owns its reentrant drain buffer; callbacks run outside its state lock.
+- SaveThrottler tracks request versions so completing an older save cannot clear a newer request. Storage migration checks the key version before its coordinated disk commit.
+- Network rollback uses a cross-type tick journal, typed payload histories and parent event identities. Replay consumes nested events inline so outer handler continuations keep their original order. First execution of deferred inputs records derived events once; subsequent replays consume them. Drain incoming network work before advancing ticks, firing owner inputs or starting rollback; asynchronous handlers cannot provide deterministic snapshots.
+- Context teardown guarantees container cleanup/unregistration even when cancellation callbacks fail. Economy ignores late reconciliation once teardown begins.
+- `ContextFactory.StartAsync` is an explicit, scan-free configuration/initialization entry point. Existing Root and discovery APIs remain supported.
+- `BindComposite<TFirst,TSecond,TCommand>` uses value payloads and the existing command pool/recovery pipeline. Arbitrary-arity `CompositeContext` retains immutable snapshot semantics and its allocation cost.
+
+- Command pools retain local transient factories/overrides and construct defaults in their owning DI scope. Cached DI instances are never admitted into a transient pool.
+- Runtime/AOT assembly catalogs exclude test support and editor implementation assemblies. Trace time is worker-safe monotonic elapsed time from the Nexus trace clock, independent of Unity startup time.
+
+Implementation and verification status: [HARDENING.md](HARDENING.md).
+
 This document describes the high-level architecture, runtime pipeline, component contracts, and lifecycle sequences of the **Nexus Core** framework for Unity 6.
 
 ---
@@ -152,7 +167,7 @@ public override void OnDisable()
 
 ---
 
-**Last updated:** 2026-07-31  
+**Last updated:** 2026-10-07  
 **Code version:** 0.4.0  
 **Maintainers:** Nexus Core Team  
 **Re-review trigger:** Any change to `Runtime/Core/Context.cs` or `Runtime/Core/SignalBus.cs`.
