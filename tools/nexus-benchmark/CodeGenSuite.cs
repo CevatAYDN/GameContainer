@@ -68,6 +68,24 @@ namespace NexusBench
         public CodeGenSkippedValueParam(int count, CodeGenDep dep) { Count = count; Dep = dep; }
     }
 
+    /// <summary>MonoBehaviour: Unity owns its instantiation, so a constructor factory (`new T()`) is never
+    /// valid — but the [Inject] member must still get a generated injector.</summary>
+    public sealed class CodeGenUnityBehaviour : UnityEngine.MonoBehaviour
+    {
+        [Inject] public CodeGenDep Dep;
+    }
+
+    /// <summary>ScriptableObject: created via ScriptableObject.CreateInstance, never `new`.</summary>
+    public sealed class CodeGenUnityAsset : UnityEngine.ScriptableObject { }
+
+    /// <summary>Mediator with a single public ctor: ViewBinder resolves mediators through DI, so the
+    /// constructor factory must stay.</summary>
+    public sealed class CodeGenMediator : Mediator<CodeGenDep>
+    {
+        public readonly CodeGenDep Dep;
+        public CodeGenMediator(CodeGenDep dep) { Dep = dep; }
+    }
+
     /// <summary>Injection-hierarchy fixtures. CodeGenVisibleBase carries a PRIVATE [Inject]
     /// field (the chain walk must surface it and the generated injector must handle it via
     /// cached FieldInfo on the base type). CodeGenNonEmittableMember's [Inject] member type is
@@ -124,6 +142,8 @@ namespace NexusBench
 
             Test_Codegen_Emits_Compiles_And_Boots();
             Test_Generator_Emits_Compiles_And_Boots();
+            Test_Codegen_Skips_Factories_For_UnityObjects_And_Package_Runtime();
+            Test_ConstructorFactoryPolicy_Decisions();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -410,6 +430,79 @@ namespace NexusBench.CG2Source
                 try { if (Directory.Exists(cg2Dir)) Directory.Delete(cg2Dir, true); } catch { }
             }
             Report("CG2. SourceGenerator_Emits_Compiles_And_Boots", ok, detail);
+        }
+
+        // ─── CG3/CG4: constructor-factory gate ─────────────────────────────────
+        // A constructor factory is `new T(...)`, which is only valid for plain C# types:
+        // UnityEngine.Object types (MonoBehaviour, ScriptableObject...) are instantiated by Unity,
+        // and the package's own runtime assembly is served by the reflection path. The generator
+        // must emit no factory for either, while plain DI types and mediators (ViewBinder resolves
+        // mediators through DI) keep theirs and Unity objects keep their [Inject] injectors.
+
+        private static void Test_Codegen_Skips_Factories_For_UnityObjects_And_Package_Runtime()
+        {
+            string rootDir = NexusEditorSettings.OutputRoot;
+            string binderPath = Path.Combine(rootDir, "NexusGeneratedBinder.g.cs");
+            bool ok = false;
+            string detail;
+            try
+            {
+                if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
+                NexusCodeGenerator.GenerateBinder();
+                string source = File.ReadAllText(binderPath);
+
+                bool behaviourSkipped = !source.Contains("RegisterConstructorFactory<NexusBench.CodeGenUnityBehaviour>");
+                bool assetSkipped = !source.Contains("RegisterConstructorFactory<NexusBench.CodeGenUnityAsset>");
+                bool behaviourInjector = source.Contains("RegisterInjector<NexusBench.CodeGenUnityBehaviour>");
+                bool plainFactory = source.Contains("RegisterConstructorFactory<NexusBench.CodeGenTarget>");
+                bool mediatorFactory = source.Contains("RegisterConstructorFactory<NexusBench.CodeGenMediator>");
+
+                ok = behaviourSkipped && assetSkipped && behaviourInjector && plainFactory && mediatorFactory;
+                detail = $"behaviourFactorySkipped={behaviourSkipped} assetFactorySkipped={assetSkipped} " +
+                         $"behaviourInjectorKept={behaviourInjector} plainFactoryKept={plainFactory} mediatorFactoryKept={mediatorFactory}";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report("CG3. Codegen_Skips_Factories_For_UnityObjects", ok, detail);
+        }
+
+        private static void Test_ConstructorFactoryPolicy_Decisions()
+        {
+            bool ok = false;
+            string detail;
+            try
+            {
+                bool behaviourSkipped = !NexusCodeGenerator.CanEmitConstructorFactory(typeof(CodeGenUnityBehaviour));
+                bool assetSkipped = !NexusCodeGenerator.CanEmitConstructorFactory(typeof(CodeGenUnityAsset));
+                bool plainKept = NexusCodeGenerator.CanEmitConstructorFactory(typeof(CodeGenTarget));
+                bool mediatorKept = NexusCodeGenerator.CanEmitConstructorFactory(typeof(CodeGenMediator));
+
+                // EXACT-name match: the package's test/editor/testing assemblies share the
+                // "com.nexus.core." prefix and must keep their factories.
+                bool runtimeMatched = NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core");
+                bool siblingsKept = !NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core.tests")
+                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core.editor")
+                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core.editor.tests")
+                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core.testing")
+                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly("Gigawatt")
+                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly(string.Empty)
+                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly(null);
+
+                ok = behaviourSkipped && assetSkipped && plainKept && mediatorKept && runtimeMatched && siblingsKept;
+                detail = $"behaviourSkipped={behaviourSkipped} assetSkipped={assetSkipped} plainKept={plainKept} " +
+                         $"mediatorKept={mediatorKept} runtimeMatched={runtimeMatched} siblingsKept={siblingsKept}";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            Report("CG4. ConstructorFactoryPolicy_Decisions", ok, detail);
         }
 
         private static void Test_Codegen_Emits_Compiles_And_Boots()

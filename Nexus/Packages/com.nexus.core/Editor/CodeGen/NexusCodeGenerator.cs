@@ -244,6 +244,24 @@ namespace Nexus.Editor
             return true;
         }
 
+        /// <summary>
+        /// The package's own runtime assembly, matched by EXACT name: its test, editor and
+        /// testing assemblies share the "com.nexus.core." prefix but are ordinary generator
+        /// inputs, so a prefix match would silently drop their factories.
+        /// </summary>
+        internal static bool IsPackageRuntimeAssembly(string assemblyName)
+            => string.Equals(assemblyName, "com.nexus.core", StringComparison.Ordinal);
+
+        /// <summary>
+        /// True when a constructor factory (<c>new T(...)</c>) may be emitted for the type.
+        /// UnityEngine.Object types (MonoBehaviour, ScriptableObject, Component...) are created by
+        /// Unity and must never be constructed with <c>new</c>; the package's own runtime types
+        /// keep the reflection path.
+        /// </summary>
+        internal static bool CanEmitConstructorFactory(Type type)
+            => !typeof(UnityEngine.Object).IsAssignableFrom(type)
+                && !IsPackageRuntimeAssembly(AssemblyCatalog.GetSimpleName(type.Assembly));
+
         /// <summary>E-C1: sanitizes a C# type name into a valid identifier prefix for cache fields.</summary>
         private static string GetSafeIdentifierName(string csharpTypeName)
         {
@@ -374,9 +392,12 @@ namespace Nexus.Editor
                                 injectTypes.Add(type);
                         }
 
-                        // Constructor factory emission: ONLY for emittable types that either have an
-                        // explicit [Inject]/[Construct] constructor OR are injectable/DI types.
-                        if (codegenVisible && IsEmittableType(type) && !type.IsGenericTypeDefinition)
+                        // Constructor factory emission: emittable types that may be constructed with
+                        // `new` (CanEmitConstructorFactory) and have one [Inject]/[Construct]-marked
+                        // public ctor or a single public ctor. Whether such a type is ever bound in
+                        // DI is only known at runtime, so an unused factory is simply inert.
+                        if (codegenVisible && IsEmittableType(type) && !type.IsGenericTypeDefinition
+                            && CanEmitConstructorFactory(type))
                         {
                             ConstructorInfo ctorToRegister = null;
                             if (markedCtorCount == 1)

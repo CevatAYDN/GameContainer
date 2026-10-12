@@ -36,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Debug tracing uses a worker-safe monotonic clock and claims pooled frame data before returning it.
 - Native lifecycle/editor UI tests replace ignored placeholders; async tests no longer block Unity's main thread.
 - Native allocation tests calibrate Unity GC.Alloc with a positive control; an inert Mono GC byte counter can no longer produce a false zero-GC pass.
+- The editor AOT generator no longer emits constructor factories for `UnityEngine.Object` types (a `new MonoBehaviour()` registration is never valid) or for the package's own `com.nexus.core` runtime assembly (matched by exact name, so `com.nexus.core.*` test assemblies are unaffected); mediators and other plain types keep theirs.
 - Licensed Unity EditMode/PlayMode, clean tarball import, Windows Mono player and Android ARM64 IL2CPP build evidence is documented in `docs/HARDENING.md`; physical-device acceptance remains separate.
 
 ### Added
