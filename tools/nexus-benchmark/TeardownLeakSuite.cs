@@ -22,6 +22,20 @@ namespace NexusBench
             public void Dispose() => OnDispose();
         }
 
+        public class UnbindProbeMediator : IMediator
+        {
+            public bool Unbound;
+            public void Bind(object view, ISignalBus signalBus) { }
+            public void Unbind() => Unbound = true;
+        }
+
+        [Mediator(typeof(UnbindProbeMediator))]
+        public class ThrowingUnbindView : IView
+        {
+            public void Bind(IContext context) { }
+            public void Unbind() => throw new InvalidOperationException("view unbind failed");
+        }
+
         public static int Run()
         {
             int failures = 0;
@@ -31,6 +45,7 @@ namespace NexusBench
 
             failures += AssertPass("TL1. PureContext_Teardown_Frees_ContextAndServices", TestPureContextTeardownFreesAll);
             failures += AssertPass("TL2. DisposedContext_Removed_From_NexusRuntime_ActiveContexts", TestDisposedContextRemovedFromRegistry);
+            failures += AssertPass("TL3. ViewBinderDispose_Unbinds_Mediator_When_View_Unbind_Throws", TestViewBinderDisposeUnbindsMediatorWhenViewThrows);
 
             if (failures == 0)
                 Console.WriteLine("\n[TeardownLeak] ALL TEARDOWN LEAK AUDIT TESTS PASSED ✓");
@@ -114,6 +129,31 @@ namespace NexusBench
             modelRef = new WeakReference(model);
 
             ctx.Dispose();
+        }
+
+        private static bool TestViewBinderDisposeUnbindsMediatorWhenViewThrows()
+        {
+            var mediator = new UnbindProbeMediator();
+            using var container = new NexusDI();
+            container.BindInstance(mediator);
+            var binder = new ViewBinder(new MockContext(), container);
+            binder.RegisterView(new ThrowingUnbindView());
+
+            if (binder.ActiveMediatorCount != 1)
+            {
+                Console.WriteLine("      Setup failed: the view was not registered with its mediator");
+                return false;
+            }
+
+            binder.Dispose();
+
+            if (!mediator.Unbound)
+            {
+                Console.WriteLine("      Leak detected: the mediator kept its subscriptions because the view's Unbind threw");
+                return false;
+            }
+
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

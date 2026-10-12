@@ -392,15 +392,12 @@ namespace Nexus.Core
         {
             foreach (var kvp in _activeMediators)
             {
-                try
-                {
-                    kvp.Key.Unbind();
-                    kvp.Value.Unbind();
-                }
-                catch (Exception ex)
-                {
-                    NexusRuntime.Logger?.LogException(ex);
-                }
+                // Each unbind is guarded on its own (like UnregisterView): a throwing view must
+                // not leave its mediator's signal subscriptions alive.
+                try { kvp.Key.Unbind(); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
+                try { kvp.Value.Unbind(); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
             for (int i = _boundOnlyViews.Count - 1; i >= 0; i--)
             {
