@@ -18,5 +18,6 @@ function Get-PinnedSource([string]$Name, [string]$Url, [string]$Commit, [string[
 }
 Get-PinnedSource 'VContainer' 'https://github.com/hadashiA/VContainer.git' '5401e5a7ebc4980a2b82141ffc26391a6547edd7' @('VContainer/Assets/VContainer/Runtime')
 Get-PinnedSource 'Zenject' 'https://github.com/modesttree/Zenject.git' 'c2e33500a84f9408a809deca2af2c55494ab2482' @('UnityProject/Assets/Plugins/Zenject/Source')
+Get-PinnedSource 'Reflex' 'https://github.com/gustavopsantos/Reflex.git' '70c9b4e46a3b08ee8a13a61b71bb264f14446a7c' @('Assets/Reflex')
 & $Dotnet run --project (Join-Path $PSScriptRoot 'ComparativeBenchmarks.csproj') -c Release -- ([System.IO.Path]::GetFullPath($Output))
 if ($LASTEXITCODE -ne 0) { throw "Comparison failed: $LASTEXITCODE" }

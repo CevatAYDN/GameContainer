@@ -7,18 +7,24 @@ From the repository root in PowerShell:
 ```
 
 Requires Git and .NET 10 SDK. `-Dotnet` accepts a full SDK executable path.
-The script creates isolated sparse clones, pins VContainer 1.19.0 and Zenject 9.2.0
-by full commit, checks tracked source modifications, then writes JSON and stdout.
+The script creates isolated sparse clones, pins VContainer 1.19.0, Zenject 9.2.0 and
+Reflex 14.4.0 by full commit, checks tracked source modifications, then writes JSON and stdout.
 It refuses to silently change an existing checkout at a different revision.
 Third-party sources and build products are ignored; the libraries are not edited.
 
 The project files list excluded Unity-specific bridges/editor files; Zenject uses
-its release's shipped Usage DLL. This compares **core DI on .NET**, using real Nexus
+its release's shipped Usage DLL. Reflex compiles with `ENABLE_MONO` (what a Unity Mono
+player defines, so it uses its expression-tree activator) and `ReflexHostShims.cs`, which
+supplies the few `UnityEngine` members its core files reference (`Assert`, `ListPool<T>`,
+`Application.dataPath`, JetBrains annotations) and a silent `ReflexLogger`; scene and
+GameObject injectors, `ContainerScope` and the `ReflexSettings` asset are excluded. This compares **core DI on .NET**, using real Nexus
 sources via the existing host harness. Unity API stubs supply compile-only dependencies;
 Unity scene APIs are not exercised. No generator or reflection baking is enabled for
 any candidate. This is not Unity Mono, IL2CPP, device, full Context startup, or frame
 budget evidence. Zenject's core DiContainer has no disposal surface; the common
-wrapper includes available disposal operations for Nexus/VContainer in build samples.
+wrapper includes available disposal operations for Nexus/VContainer/Reflex in build samples.
+Reflex's `Container.Dispose` logs at Info level; the host shim logger is silent and the
+Unity project sets `ReflexSettings.LogLevel = Warning`, so no candidate pays for logging.
 
 All candidates use the same three-object readonly constructor graph. Lifetimes and
 resolved values are asserted. Each scenario warms up 4,000 times and takes seven
@@ -38,8 +44,11 @@ machines or claim a universal winner from these workloads.
 
 Windows only: requires Unity CLI, the Nexus project's installed editor and Windows
 Mono support. It creates an isolated project under `Nexus/artifacts/performance-20261007`,
-imports the current Nexus package through UPM and copies the pinned core competitors'
-netstandard2.1 DLLs. The **same ComparativeBenchmarks.cs** runs in a non-development,
+imports the current Nexus package through UPM, copies the pinned VContainer/Zenject
+netstandard2.1 DLLs and adds the pinned Reflex source as a UPM `file:` package (Unity
+compiles it as a real project would; the build script creates `Resources/ReflexSettings.asset`
+with `LogLevel = Warning`, which Reflex requires at runtime). `-ArtifactFolder` selects the
+evidence root under `Nexus/artifacts/` (default `performance-20261007`). The **same ComparativeBenchmarks.cs** runs in a non-development,
 headless Mono player with Nexus debug tracing disabled. No CI or Actions are used.
 `-PackagePath` can select a separate source snapshot for before/after measurements.
 
@@ -56,6 +65,7 @@ separate event-count evidence; this player tool measures latency, not frame budg
 
 Each run preserves JSON, build/player logs and NexusDI SHA-256; source changes during
 the run are rejected. The script redacts CLI access-token arguments in its owned logs.
-Existing result JSON is never overwritten; select a new RunName. Warm metadata core DI
+Existing result JSON is never overwritten; select a new RunName. A run has 12 measurements
+(4 libraries × 3 scenarios). Warm metadata core DI
 measurements do not establish full Context startup, cold reflection cost, input/scene
 integration, Android IL2CPP performance or a universal ranking.

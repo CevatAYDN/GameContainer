@@ -2,13 +2,14 @@ param(
     [string]$Dotnet = 'dotnet',
     [string]$UnityCli = (Join-Path $env:LOCALAPPDATA 'Unity/bin/unity.exe'),
     [string]$RunName = 'mono',
-    [string]$PackagePath = ''
+    [string]$PackagePath = '',
+    [string]$ArtifactFolder = 'performance-20261007'
 )
 $ErrorActionPreference = 'Stop'
 if ($RunName -notmatch '^[a-zA-Z0-9_-]+$') { throw 'RunName must be a simple folder name.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$evidence = Join-Path $repo ('Nexus/artifacts/performance-20261007/' + $RunName)
-$project = Join-Path $repo 'Nexus/artifacts/performance-20261007/UnityComparison'
+$evidence = Join-Path $repo ('Nexus/artifacts/' + $ArtifactFolder + '/' + $RunName)
+$project = Join-Path $repo ('Nexus/artifacts/' + $ArtifactFolder + '/UnityComparison')
 $result = Join-Path $evidence 'unity-results.json'
 $player = Join-Path $evidence 'player/Comparison.exe'
 if (Test-Path -LiteralPath $result) { throw "Refusing to overwrite evidence: $result" }
@@ -33,7 +34,9 @@ try {
     if (-not $PackagePath) { $PackagePath = Join-Path $repo 'Nexus/Packages/com.nexus.core' }
     $package = [IO.Path]::GetFullPath($PackagePath).Replace('\', '/')
     $sourceHash = (Get-FileHash -LiteralPath (Join-Path $package 'Runtime/Core/NexusDI.cs')).Hash
-    @{ dependencies = @{ 'com.nexus.core' = ('file:' + $package) } } | ConvertTo-Json -Depth 4 |
+    # Reflex is a Unity package: Unity compiles its pinned source (ENABLE_MONO defined by the player) instead of a host DLL.
+    $reflex = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'competitors/Reflex/Assets/Reflex')).Replace('\', '/')
+    @{ dependencies = @{ 'com.nexus.core' = ('file:' + $package); 'com.gustavopsantos.reflex' = ('file:' + $reflex) } } | ConvertTo-Json -Depth 4 |
         Set-Content -LiteralPath (Join-Path $project 'Packages/manifest.json') -Encoding utf8
     Copy-Item -LiteralPath (Join-Path $repo 'Nexus/ProjectSettings/ProjectVersion.txt') -Destination (Join-Path $project 'ProjectSettings')
     $env:NEXUS_COMPARE_PLAYER = $player
@@ -45,7 +48,7 @@ try {
     if (-not $process.WaitForExit(60000)) { $process.Kill(); throw 'Comparison player exceeded 60 seconds.' }
     if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $result)) { throw 'Unity comparison did not complete successfully.' }
     $report = Get-Content -LiteralPath $result -Raw | ConvertFrom-Json
-    if ($report.Backend -ne 'Mono' -or $report.DevelopmentBuild -or $report.NexusDebug -or $report.Measurements.Count -ne 9) {
+    if ($report.Backend -ne 'Mono' -or $report.DevelopmentBuild -or $report.NexusDebug -or $report.Measurements.Count -ne 12) {
         throw 'Unexpected benchmark configuration/results.'
     }
     $head = (& git -C $repo rev-parse HEAD).Trim()

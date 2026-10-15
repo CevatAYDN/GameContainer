@@ -29,8 +29,9 @@ component or return a disposed owner as successful startup. Readiness observers 
 when an earlier observer disposes the owner. Review is not exhaustive branch coverage.
 
 Core DI comparison and reproducibility: [PERFORMANCE_COMPARISON.md](PERFORMANCE_COMPARISON.md).
-Nexus leads cached resolves in the recorded host run; VContainer leads transient
-construction and warm register/build startup. No universal or target-device winner
+In the 2026-10-15 runs Nexus leads cached resolves on host and in the Unity Mono player;
+Reflex leads transient construction and warm register/build startup in the player, and
+VContainer leads transient construction on host. No universal or target-device winner
 is claimed. The temporary constructor-array allocation was removed on supported
 Mono/JIT paths; 72 B remains for the three objects in the host graph.
 

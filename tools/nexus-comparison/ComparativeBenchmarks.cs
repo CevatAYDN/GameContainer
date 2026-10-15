@@ -44,6 +44,7 @@ public static class ComparativeBenchmarks
         public Measurement[] Measurements;
         public string VContainerCommit = "5401e5a7ebc4980a2b82141ffc26391a6547edd7";
         public string ZenjectCommit = "c2e33500a84f9408a809deca2af2c55494ab2482";
+        public string ReflexCommit = "70c9b4e46a3b08ee8a13a61b71bb264f14446a7c";
     }
 
 #if UNITY_5_3_OR_NEWER
@@ -82,6 +83,17 @@ public static class ComparativeBenchmarks
             var di = builder.Build();
             return new Candidate { Name = name, Resolve = () => di.Resolve<BenchRoot>(), DisposeAction = di.Dispose };
         }
+        if (name == "Reflex")
+        {
+            // Lazy singletons match the other candidates (Transient + Eager is rejected by Reflex).
+            var builder = new Reflex.Core.ContainerBuilder();
+            var life = transient ? Reflex.Enums.Lifetime.Transient : Reflex.Enums.Lifetime.Singleton;
+            builder.RegisterType(typeof(BenchLeaf), life, Reflex.Enums.Resolution.Lazy);
+            builder.RegisterType(typeof(BenchMiddle), life, Reflex.Enums.Resolution.Lazy);
+            builder.RegisterType(typeof(BenchRoot), life, Reflex.Enums.Resolution.Lazy);
+            var di = builder.Build();
+            return new Candidate { Name = name, Resolve = () => di.Resolve<BenchRoot>(), DisposeAction = di.Dispose };
+        }
         var zen = new DiContainer();
         if (transient)
         {
@@ -114,13 +126,13 @@ public static class ComparativeBenchmarks
         if (!allocationCounterValid) throw new InvalidOperationException("Allocation counter is inert.");
 #endif
         const int rounds = 7;
-        string[] names = { "Nexus", "VContainer", "Zenject" };
+        string[] names = { "Nexus", "VContainer", "Zenject", "Reflex" };
         var output = new List<Measurement>();
         foreach (string scenario in new[] { "cached-resolve", "transient-three-node-graph", "register-build-first-resolve-warm-metadata" })
         {
             int count = scenario == "cached-resolve" ? 200000 : scenario.StartsWith("transient") ? 20000 : 1000;
             var times = names.Select(_ => new List<double>()).ToArray();
-            var allocations = new long[3];
+            var allocations = new long[names.Length];
             var candidates = names.Select(name => Create(name, scenario.StartsWith("transient"))).ToArray();
             try
             {
@@ -167,7 +179,7 @@ public static class ComparativeBenchmarks
             Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             OS = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
             Architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
-            Scope = "Core DI only. Unity bridges excluded from competitors. Nexus registered binder/factory caches cleared before warmup; no source generation/reflection baking for any library. Register/build/first resolve includes wrapper and available disposal (Zenject has no disposal action). Full Context startup and game frame times are outside this workload.",
+            Scope = "Core DI only. Unity bridges excluded from competitors. Nexus registered binder/factory caches cleared before warmup; no source generation/reflection baking for any library. Register/build/first resolve includes wrapper and available disposal (Zenject has no disposal action; Reflex's Dispose log is silenced: host shim logger / player LogLevel=Warning). Full Context startup and game frame times are outside this workload.",
             Measurements = output.ToArray(),
             AllocationCounterValid = allocationCounterValid,
             PositiveControlMeasuredBytes = positiveControlBytes,

@@ -19,13 +19,17 @@ Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/`
 | 7 | Single changelog | `Nexus/Packages/com.nexus.core/CHANGELOG.md` is the only changelog; `package.json` is the released version | Satisfied on 2026-10-15 (repository-root changelog folded in and removed) |
 | 8 | Clean UPM consumer | `tools/unity-verify` against a fresh project consuming the packed tarball | Last run 2026-10-07 on an earlier source (107 cases, 15 stages, archived); **must be re-run on the release commit** |
 | 9 | Player builds | Windows Mono player run; Android ARM64 IL2CPP build | Last run 2026-10-07 on an earlier source; **must be re-run on the release commit**. No physical Android/iOS execution has ever been recorded |
-| 10 | Consumers re-pinned | Every game that consumes Nexus points at the release commit; no embedded package copies | Open: Gigawatt still carries an embedded copy whose corrections were ported here on 2026-10-15 (`027dab2`, `dd6ffa7`, `4b007db`); it re-pins once this branch is pushed |
+| 10 | Competitor comparison current | `./tools/nexus-comparison/run.ps1` and `run-unity.ps1 -ArtifactFolder comparison-20261015` | 2026-10-15: VContainer 1.19.0, Zenject 9.2.0, Reflex 14.4.0 pinned by commit; host and Unity 6000.5.6f1 Mono player, 12 measurements each; tables in the package `docs/PERFORMANCE_COMPARISON.md`. Nexus leads cached resolve only; Reflex leads transient and startup in the player |
+| 11 | Consumers re-pinned | Every game that consumes Nexus points at the release commit; no embedded package copies | Open: Gigawatt still carries an embedded copy whose corrections were ported here on 2026-10-15 (`027dab2`, `dd6ffa7`, `4b007db`); it re-pins once this branch is pushed |
 
 ## Open work before the next tagged version
 
 - Re-run gates 8 and 9 on the release commit.
-- Add Reflex to `tools/nexus-comparison` and publish a dated, versioned Unity 6 IL2CPP
-  comparison; see `docs/research/COMPETITORS_2026-10-15.md`. Until then no "fastest" claim is made.
+- Windows IL2CPP comparison (the tool measures Mono players; IL2CPP needs the C++ build
+  tools installed) and a comparison with generated bindings enabled for every candidate.
+  No "fastest" claim is made; see the package `docs/PERFORMANCE_COMPARISON.md`.
+- Close the measured gap to Reflex on transient construction and warm register/build
+  startup in the Unity Mono player (2026-10-15: 1116 vs 588 ns and 13353 vs 5515 ns).
 - Physical-device acceptance (Android IL2CPP soak, storage interruption, background/resume).
 - Adapter guide (Ads/IAP providers) verified against the current `AdAdapterFactory` /
   `IapAdapterFactory` API; the old Turkish examples are archived in `docs/archive/INTEGRATION.md`.
