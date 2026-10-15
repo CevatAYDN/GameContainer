@@ -14,6 +14,8 @@ must be current, consistent and verifiable. Read this file before changing code 
 | `tools/nexus-comparison/` | Pinned VContainer/Zenject/Reflex DI comparison (host and Unity Mono player) |
 | `tools/nexus-consumer/` | Clean UPM consumer gate: packs the tarball, fresh project, sample import, tests, player |
 | `tools/unity-verify/` | Player builds of the development project (`NexusVerify.NexusVerifyBuild.*`) |
+| `tools/device-acceptance/` | Runs an Android player on the connected phone: soak, background/resume, kill/restart, logcat scan (gate 12) |
+| `Nexus/Packages/com.nexus.ads.admob/`, `com.nexus.iap.unity/` | Optional adapter packages (Google AdMob with UMP consent; Unity IAP 5) behind `AdService` / `IapService`; compile only when their SDK package is installed (`versionDefines`) |
 | `docs/RELEASE_GATES.md` | The gates and the latest measured numbers |
 | `docs/research/` | Dated, sourced research (competitors) |
 | `docs/archive/` | Past audits, reviews and roadmaps; evidence only, never updated |

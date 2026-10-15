@@ -108,14 +108,14 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 
 | Service | Folder under `Runtime/Services` | Purpose |
 |---|---|---|
-| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included); `RequestReward` with `AdOutcome`, `ReadyChanged`, privacy options through optional adapter capabilities |
+| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; Google AdMob in the `com.nexus.ads.admob` package); `RequestReward` with `AdOutcome`, `ReadyChanged`, privacy options through optional adapter capabilities |
 | `AnalyticsService` | `Analytics` | Event tracking abstraction with pooled parameter dictionaries and user properties |
 | `AudioService` | `Audio` | BGM playlist crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels |
 | `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator |
 | `FeedbackService` | `Feedback` | Combined audio + haptic presets |
 | `FloatingTextService` | `UI` | Pooled world-space floating numbers |
 | `HapticService` | `Haptics` | Android JNI and iOS Taptic haptics with desktop preview |
-| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (mock included); `Purchase` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
+| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (mock included; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
 | `InputService` | `Input` | Input System movement/actions behind `IInputService`; a custom `IInputProvider` is authoritative |
 | `LocalizationService` | `Localization` | Language tables, RTL formatting, fallback language |
 | `LoggerService` | `Logging` | Default `ILoggerService` |

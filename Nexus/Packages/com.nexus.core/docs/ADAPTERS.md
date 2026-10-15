@@ -85,6 +85,29 @@ and degrade predictably when an adapter lacks the capability:
 `MonetizationContractTests` (EditMode) lock every row of this table against the mock adapters
 and bool-only adapters.
 
+## Shipped adapters
+
+Two optional packages in this repository implement the full contract (base adapter plus every
+capability) against real SDKs. Each compiles only while its SDK package is installed
+(`versionDefines` in the assembly definition), so installing them without the SDK is inert.
+
+| Package | SDK | Provider name | Install |
+|---|---|---|---|
+| `com.nexus.ads.admob` ([README](../../com.nexus.ads.admob/README.md)) | Google Mobile Ads Unity plugin (`com.google.ads.mobile`, OpenUPM) with User Messaging Platform consent | `admob` | git URL `?path=/Nexus/Packages/com.nexus.ads.admob#<commit>` |
+| `com.nexus.iap.unity` ([README](../../com.nexus.iap.unity/README.md)) | Unity IAP 5 (`com.unity.purchasing`, declared dependency) | `unity` | git URL `?path=/Nexus/Packages/com.nexus.iap.unity#<commit>` |
+
+```csharp
+AdMobAdapter.Register(adFactory, new AdMobConfig { RewardedAdUnitIdAndroid = "..." });
+adService.SetNetworkAdapter(adFactory.CreateAdapter(AdMobAdapter.ProviderName));
+UnityIapAdapter.Register(iapFactory);
+iapService.SetStoreAdapter(iapFactory.CreateAdapter(UnityIapAdapter.ProviderName));
+```
+
+Both were ported from the first shipped Nexus game and are verified by compiling against the
+real SDK packages in a disposable project and by tests of their behaviour before initialization
+(`Nexus/artifacts/adapters-050/`, see the repository's `docs/RELEASE_GATES.md`); a run against
+live AdMob and Google Play inside a game is the open item.
+
 ## Writing an adapter
 
 An adapter translates the SDK's callbacks into the contract. Keep SDK types inside the adapter so

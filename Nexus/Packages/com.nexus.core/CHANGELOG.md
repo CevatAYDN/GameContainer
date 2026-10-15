@@ -10,7 +10,10 @@ released version; everything under Unreleased is in the repository but not yet i
 
 ## [Unreleased]
 
-Nothing yet.
+### Added
+- **Adapter packages** `com.nexus.ads.admob` 0.1.0 (Google AdMob through the Google Mobile Ads Unity plugin, with User Messaging Platform consent: rewarded, interstitial, banner, `AdOutcome`, `ReadyChanged`, privacy options) and `com.nexus.iap.unity` 0.1.0 (Unity IAP 5: catalog, `PurchaseOutcome`, restore, ownership, localized prices, `StoreChanged`). Each compiles only while its SDK package is installed (`versionDefines`, defines `NEXUS_ADMOB` / `NEXUS_UNITY_IAP`); ported from the first shipped Nexus game; verified by compiling against the real SDKs in a disposable project and by before-initialization tests (`docs/ADAPTERS.md`, "Shipped adapters").
+- **Device acceptance tool** `tools/device-acceptance/run.ps1`: installs an Android player on the connected phone and records cold start, a soak with memory samples, background/resume, kill/restart and a logcat scan (release gate 12). First run on the 0.5.0 player: passed (cold start, 5 min soak alive with PSS 214.8 → 255.6 MB (+19%, limit 50%), background and resume on the same process, restart after force-stop, 0 fatal exceptions / ANR / Unity exceptions in the app's own logcat lines).
+- **Release gates run on the tagged commit**: 0.5.0 = `8f19c20`, every gate green on that commit (`docs/RELEASE_GATES.md`); consumers Pixel-Flow-Clone and RingFlow pinned to it (their game code still needs the 0.5.0 migration).
 
 ## [0.5.0] - 2026-10-15
 
