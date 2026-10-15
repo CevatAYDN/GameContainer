@@ -11,7 +11,8 @@ using System.Collections.Generic;
 
 namespace UnityEngine
 {
-    public class Object { }
+    // internal: the benchmark compilation also references the harness stubs' UnityEngine.Object.
+    internal class Object { }
 
     public static class Application
     {

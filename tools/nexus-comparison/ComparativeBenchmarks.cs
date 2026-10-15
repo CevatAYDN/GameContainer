@@ -45,6 +45,13 @@ public static class ComparativeBenchmarks
         public string VContainerCommit = "5401e5a7ebc4980a2b82141ffc26391a6547edd7";
         public string ZenjectCommit = "c2e33500a84f9408a809deca2af2c55494ab2482";
         public string ReflexCommit = "70c9b4e46a3b08ee8a13a61b71bb264f14446a7c";
+        // Configuration: with NEXUS_COMPARE_GENERATED the candidates that have code generation use it
+        // (Nexus constructor factories from its binder, VContainer's source-generated injectors); the
+        // two booleans are observed at runtime, not assumed. Reflex's generator covers attribute
+        // injection only (no effect on this constructor graph); Zenject has no generator.
+        public bool Generated;
+        public bool NexusGeneratedFactories;
+        public bool VContainerGeneratedInjectors;
     }
 
 #if UNITY_5_3_OR_NEWER
@@ -120,9 +127,26 @@ public static class ComparativeBenchmarks
 
     public static int Main(string[] args)
     {
+#if NEXUS_COMPARE_GENERATED
+        const bool generated = true;
+#if !UNITY_5_3_OR_NEWER
+        // Host: the Nexus source generator emitted the binder into this compilation; Unity runs its
+        // editor-generated binder through RuntimeInitializeOnLoadMethod before this method.
+        Nexus.Generated.NexusGeneratedBinder.Initialize();
+#endif
+#else
+        const bool generated = false;
         // Unity may auto-generate/register a Nexus binder when scripts reload.
-        // This isolated benchmark compares all candidates without generated bindings.
-        NexusDI.ClearCaches();
+        // The reflection configuration compares all candidates without generated bindings.
+        NexusDI.ClearGeneratedRegistrations();
+#endif
+        bool nexusGenerated = NexusDI.HasRegisteredConstructorFactory(typeof(BenchRoot))
+            && NexusDI.HasRegisteredConstructorFactory(typeof(BenchMiddle))
+            && NexusDI.HasRegisteredConstructorFactory(typeof(BenchLeaf));
+        bool vcontainerGenerated = typeof(BenchRoot).Assembly.GetType("BenchRootGeneratedInjector", false) != null
+            && typeof(BenchRoot).Assembly.GetType("BenchMiddleGeneratedInjector", false) != null;
+        if (generated != nexusGenerated || generated != vcontainerGenerated)
+            throw new InvalidOperationException($"Configuration mismatch: generated={generated}, Nexus factories={nexusGenerated}, VContainer injectors={vcontainerGenerated}.");
         long before = GC.GetAllocatedBytesForCurrentThread();
         var positiveControl = new byte[4096]; GC.KeepAlive(positiveControl);
         long positiveControlBytes = GC.GetAllocatedBytesForCurrentThread() - before;
@@ -188,6 +212,9 @@ public static class ComparativeBenchmarks
             Measurements = output.ToArray(),
             AllocationCounterValid = allocationCounterValid,
             PositiveControlMeasuredBytes = positiveControlBytes,
+            Generated = generated,
+            NexusGeneratedFactories = nexusGenerated,
+            VContainerGeneratedInjectors = vcontainerGenerated,
 #if UNITY_5_3_OR_NEWER
             UnityVersion = UnityEngine.Application.unityVersion,
             DevelopmentBuild = UnityEngine.Debug.isDebugBuild,
@@ -209,6 +236,7 @@ public static class ComparativeBenchmarks
         string json = JsonSerializer.Serialize(report, new JsonSerializerOptions { WriteIndented = true, IncludeFields = true });
 #endif
         File.WriteAllText(args.Length > 0 ? args[0] : "comparative-results.json", json);
+        Console.WriteLine(generated ? "Configuration: generated bindings (Nexus factories, VContainer injectors)" : "Configuration: reflection (no generated bindings)");
         foreach (var row in output)
             Console.WriteLine($"{row.Library,-12} {row.Scenario,-42} {row.MedianNsPerOperation,10:F2} ns/op {row.BytesPerOperation,10:F2} B/op");
         GC.KeepAlive(s_sink);
