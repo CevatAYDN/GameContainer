@@ -39,8 +39,26 @@ namespace Nexus.Core.Services
     /// Simulates ad loading, showing, and callbacks without real SDK.
     /// </summary>
     [Preserve]
-    public sealed class MockAdNetworkAdapter : IAdNetworkAdapter
+    public sealed class MockAdNetworkAdapter : IAdNetworkAdapter, IAdOutcomeAdapter, IAdReadinessAdapter, IAdConsentAdapter
     {
+        public event Action ReadyChanged;
+        /// <summary>Test switch for the consent capability; a real adapter reads this from its consent SDK.</summary>
+        public bool PrivacyOptionsRequired { get; set; }
+        public int PrivacyOptionsShown { get; private set; }
+
+        public void RequestReward(string placement, Action<AdOutcome> onOutcome)
+        {
+            if (!IsRewardedReady(placement)) { onOutcome?.Invoke(AdOutcome.NotReady); return; }
+            NexusRuntime.Logger?.Log($"[MockAdAdapter] Showing rewarded: {placement}");
+            onOutcome?.Invoke(AdOutcome.Rewarded);
+        }
+
+        public void ShowPrivacyOptions(Action onClosed)
+        {
+            PrivacyOptionsShown++;
+            onClosed?.Invoke();
+        }
+
         private readonly System.Collections.Generic.Dictionary<string, bool> _interstitialReady = new();
         private readonly System.Collections.Generic.Dictionary<string, bool> _rewardedReady = new();
         private bool _initialized;
@@ -52,6 +70,7 @@ namespace Nexus.Core.Services
             _interstitialReady["default"] = true;
             _rewardedReady["default"] = true;
             onInitialized?.Invoke();
+            ReadyChanged?.Invoke();
         }
 
         public bool IsInterstitialReady(string placement)
@@ -100,7 +119,7 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>Manually set ad readiness for testing scenarios.</summary>
-        public void SetInterstitialReady(string placement, bool ready) => _interstitialReady[placement] = ready;
-        public void SetRewardedReady(string placement, bool ready) => _rewardedReady[placement] = ready;
+        public void SetInterstitialReady(string placement, bool ready) { _interstitialReady[placement] = ready; ReadyChanged?.Invoke(); }
+        public void SetRewardedReady(string placement, bool ready) { _rewardedReady[placement] = ready; ReadyChanged?.Invoke(); }
     }
 }

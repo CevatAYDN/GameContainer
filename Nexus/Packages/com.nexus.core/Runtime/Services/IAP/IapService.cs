@@ -38,6 +38,15 @@ namespace Nexus.Core.Services
         void RestorePurchases(Action<bool> onComplete);
         bool IsProductOwned(string productId);
         ProductDefinition GetProduct(string productId);
+
+        /// <summary>Purchase with a structured result; bool-only adapters are mapped to Purchased, Unavailable or Failed.</summary>
+        void Purchase(string productId, Action<PurchaseOutcome> onOutcome);
+        /// <summary>The store's localized price when the adapter reports one, else the catalog's <see cref="ProductDefinition.PriceString"/>, else null.</summary>
+        string GetLocalizedPrice(string productId);
+        /// <summary>True when purchases can be attempted now (adapter reports availability; without an adapter only where the mock is acceptable).</summary>
+        bool IsStoreAvailable { get; }
+        /// <summary>Raised when the adapter reports a store change (connected, products or purchases fetched, restore).</summary>
+        event Action StoreChanged;
     }
 
     [Preserve]
@@ -50,6 +59,8 @@ namespace Nexus.Core.Services
         // needs its own discipline (mirrors AdService's _lock pattern).
         private readonly object _adapterLock = new();
         private IIapStoreAdapter _adapter;
+        public event Action StoreChanged;
+        private readonly Action _forwardStoreChanged;
         private readonly Dictionary<string, ProductDefinition> _catalog = new();
         private readonly HashSet<string> _mockOwnedProducts = new();
         // Integrity checksum over _mockOwnedProducts (editor/dev mock ONLY). This is
@@ -89,6 +100,7 @@ namespace Nexus.Core.Services
             // Seed the checksum to the salted empty-set hash under the initial mask so the
             // first read does not false-positive on a 0 vs. empty-set mismatch.
             RecomputeMockOwnedChecksum();
+            _forwardStoreChanged = () => StoreChanged?.Invoke();
         }
 
         public override ValueTask InitializeAsync(CancellationToken ct)
@@ -104,11 +116,15 @@ namespace Nexus.Core.Services
             {
                 productList = new List<ProductDefinition>(_catalog.Values);
             }
+            IIapStoreAdapter previous;
             lock (_adapterLock)
             {
+                previous = _adapter;
                 _adapter = adapter;
                 toInitialize = adapter;
             }
+            if (previous is IIapStoreInfoAdapter previousInfo) previousInfo.Changed -= _forwardStoreChanged;
+            if (adapter is IIapStoreInfoAdapter info) info.Changed += _forwardStoreChanged;
             // Initialize OUTSIDE the lock: store SDKs may block or re-enter this service
             // (e.g. invoke the callback synchronously), and holding the lock across that
             // would deadlock any other caller.
@@ -184,6 +200,49 @@ namespace Nexus.Core.Services
             _mockOwnedProducts.Clear();
             RecomputeMockOwnedChecksum();
             return true;
+        }
+
+        public void Purchase(string productId, Action<PurchaseOutcome> onOutcome)
+        {
+            IIapStoreAdapter adapter;
+            lock (_adapterLock) { adapter = _adapter; }
+            if (adapter is IIapOutcomeAdapter outcomes)
+            {
+                outcomes.PurchaseWithOutcome(productId, onOutcome);
+                return;
+            }
+            // Bool-only adapters and the built-in stand-in: a failure code names the store state, everything else failed.
+            PurchaseProduct(productId, (success, info) => onOutcome?.Invoke(success ? PurchaseOutcome.Purchased
+                : info == "store_unavailable" || info == "not_initialized" ? PurchaseOutcome.Unavailable
+                : PurchaseOutcome.Failed));
+        }
+
+        public string GetLocalizedPrice(string productId)
+        {
+            IIapStoreAdapter adapter;
+            lock (_adapterLock) { adapter = _adapter; }
+            if (adapter is IIapStoreInfoAdapter info)
+            {
+                var price = info.GetLocalizedPrice(productId);
+                if (!string.IsNullOrEmpty(price)) return price;
+            }
+            return GetProduct(productId)?.PriceString;
+        }
+
+        public bool IsStoreAvailable
+        {
+            get
+            {
+                IIapStoreAdapter adapter;
+                lock (_adapterLock) { adapter = _adapter; }
+                if (adapter is IIapStoreInfoAdapter info) return info.IsAvailable;
+                if (adapter != null) return true;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                return true;
+#else
+                return false;
+#endif
+            }
         }
 
         public void PurchaseProduct(string productId, Action<bool, string> onComplete)
@@ -309,6 +368,7 @@ namespace Nexus.Core.Services
                 adapter = _adapter;
                 _adapter = null;
             }
+            if (adapter is IIapStoreInfoAdapter info) info.Changed -= _forwardStoreChanged;
             if (adapter is IDisposable disposable)
             {
                 disposable.Dispose();

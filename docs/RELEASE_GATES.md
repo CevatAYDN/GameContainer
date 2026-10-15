@@ -12,7 +12,7 @@ Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/`
 |---|---|---|---|
 | 1 | Host harness green | `dotnet run --project tools/nexus-benchmark` (also the pre-commit hook) | 294 checks PASS, exit 0 |
 | 2 | Harness coverage known | `dotnet run --project tools/nexus-benchmark -- --coverage` | 119 of 124 runtime files compiled; out of scope: `InjectScanner`, `NexusProfiler`, `IAssetLoadService`, `ResourcesAssetLoadService`, `GcAllocationProbe` |
-| 3 | Unity EditMode green | `Unity.exe -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode` | 370 passed, 0 failed, 2 skipped (need a graphics device) |
+| 3 | Unity EditMode green | `Unity.exe -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode` | 378 passed, 0 failed, 2 skipped (need a graphics device) |
 | 4 | Unity PlayMode green | `Unity.exe -batchmode -projectPath Nexus -runTests -testPlatform PlayMode` | 163 passed, 0 failed, 2 skipped (assert the `NEXUS_DEBUG`-off configuration) |
 | 5 | Generated binder current | `Unity.exe -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder` | "no file changes"; `link.xml` preserves `Assembly-CSharp` and `com.nexus.core` |
 | 6 | Documentation consistent | `python tools/check-docs.py` | 0 broken links; every number and path in `README.md`, the package `README.md` and this file verified against the code on 2026-10-15 |
@@ -32,10 +32,10 @@ Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/`
 - Device numbers for the comparison: enable "Install via USB" in the phone's developer
   options (Xiaomi 2311DRK48G, Android 16) and rerun `run-unity.ps1 -Android`; the APK is built.
 - Physical-device acceptance (Android IL2CPP soak, storage interruption, background/resume).
-- Ad and store services vs. a shipped game: Gigawatt does not use `AdService`/`IapService`; it
-  needed a consent flow (Google UMP), privacy options, readiness events and localized prices, and
-  built its own `IRewardedAds`/`IGameStore`. Either grow the package services to that contract or
-  document them as mock-level scaffolding; see the package `docs/ADAPTERS.md`.
+- Ad and store services now carry the contract a shipped game needed (structured outcomes,
+  readiness and store-change events, localized prices, privacy options; see the package
+  `docs/ADAPTERS.md`). Open: the consent flow itself (Google UMP) still has to be written inside
+  the game's adapter, and no real AdMob / Unity IAP adapter ships with the package.
 
 ## Policy
 

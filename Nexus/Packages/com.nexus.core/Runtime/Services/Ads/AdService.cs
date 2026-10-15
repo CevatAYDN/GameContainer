@@ -30,6 +30,15 @@ namespace Nexus.Core.Services
         void ShowBanner(string placement = "default", string position = "bottom");
         void HideBanner();
         event Action<string, double, string> OnImpressionRecorded; // (network, revenue, placement)
+
+        /// <summary>Rewarded flow with a structured result; NotReady when nothing is loaded, without calling the adapter.</summary>
+        void RequestReward(string placement, Action<AdOutcome> onOutcome);
+        /// <summary>Raised when ad readiness may have changed (adapter set and initialized, or the adapter reports a change).</summary>
+        event Action ReadyChanged;
+        /// <summary>True when the adapter's consent flow requires a privacy-options entry in the menu.</summary>
+        bool PrivacyOptionsRequired { get; }
+        /// <summary>Opens the consent privacy options; completes immediately when the adapter has no consent capability.</summary>
+        void ShowPrivacyOptions(Action onClosed = null);
     }
 
     // Derives from NexusService<IAdService> like every other service, so
@@ -53,6 +62,13 @@ namespace Nexus.Core.Services
         public bool IsInitialized => _isInitialized;
 
         public event Action<string, double, string> OnImpressionRecorded;
+        public event Action ReadyChanged;
+        private readonly Action _forwardReadyChanged;
+
+        public AdService()
+        {
+            _forwardReadyChanged = () => ReadyChanged?.Invoke();
+        }
 
         public void SetNetworkAdapter(IAdNetworkAdapter adapter)
         {
@@ -65,6 +81,8 @@ namespace Nexus.Core.Services
             }
 
             previous?.HideBanner();
+            if (previous is IAdReadinessAdapter previousReadiness) previousReadiness.ReadyChanged -= _forwardReadyChanged;
+            if (adapter is IAdReadinessAdapter readiness) readiness.ReadyChanged += _forwardReadyChanged;
 
             // Initialize OUTSIDE the lock: adapter SDKs may block or re-enter this service
             // (e.g. invoke callbacks synchronously), and holding the lock across that would
@@ -74,8 +92,49 @@ namespace Nexus.Core.Services
                 adapter.Initialize(() =>
                 {
                     lock (_lock) { _isInitialized = true; }
+                    ReadyChanged?.Invoke();
                 });
             }
+            else ReadyChanged?.Invoke();
+        }
+
+        public void RequestReward(string placement, Action<AdOutcome> onOutcome)
+        {
+            IAdNetworkAdapter adapter;
+            lock (_lock) { adapter = _adapter; }
+            if (adapter == null)
+            {
+                // Same rule as the bool overload: the built-in stand-in rewards only where a mock is acceptable.
+                ShowRewarded(placement, success => onOutcome?.Invoke(success ? AdOutcome.Rewarded : AdOutcome.Failed));
+                return;
+            }
+            if (!adapter.IsRewardedReady(placement))
+            {
+                onOutcome?.Invoke(AdOutcome.NotReady);
+                return;
+            }
+            if (adapter is IAdOutcomeAdapter outcomes)
+                outcomes.RequestReward(placement, onOutcome);
+            else
+                adapter.ShowRewarded(placement, success => onOutcome?.Invoke(success ? AdOutcome.Rewarded : AdOutcome.Closed));
+        }
+
+        public bool PrivacyOptionsRequired
+        {
+            get
+            {
+                IAdNetworkAdapter adapter;
+                lock (_lock) { adapter = _adapter; }
+                return adapter is IAdConsentAdapter consent && consent.PrivacyOptionsRequired;
+            }
+        }
+
+        public void ShowPrivacyOptions(Action onClosed = null)
+        {
+            IAdNetworkAdapter adapter;
+            lock (_lock) { adapter = _adapter; }
+            if (adapter is IAdConsentAdapter consent) consent.ShowPrivacyOptions(onClosed);
+            else onClosed?.Invoke();
         }
 
         public void SetInterstitialCooldown(float seconds)
@@ -218,6 +277,9 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
+            IAdNetworkAdapter adapter;
+            lock (_lock) { adapter = _adapter; }
+            if (adapter is IAdReadinessAdapter readiness) readiness.ReadyChanged -= _forwardReadyChanged;
             _interstitialCooldownSeconds.ClearOnChanged();
             _lastInterstitialTime.ClearOnChanged();
             base.Dispose();

@@ -39,8 +39,21 @@ namespace Nexus.Core.Services
     /// Simulates purchase flow, restore, and product ownership without real store SDK.
     /// </summary>
     [Preserve]
-    public sealed class MockIapStoreAdapter : IIapStoreAdapter
+    public sealed class MockIapStoreAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter
     {
+        public event Action Changed;
+        public bool IsAvailable => _initialized;
+
+        /// <summary>The catalog's price string stands in for the store's localized price.</summary>
+        public string GetLocalizedPrice(string productId) => _catalog.Find(p => p.Id == productId)?.PriceString;
+
+        public void PurchaseWithOutcome(string productId, Action<PurchaseOutcome> onOutcome)
+        {
+            Purchase(productId, (success, info) => onOutcome?.Invoke(success ? PurchaseOutcome.Purchased
+                : info == "store_unavailable" || info == "not_initialized" ? PurchaseOutcome.Unavailable
+                : PurchaseOutcome.Failed));
+        }
+
         private readonly HashSet<string> _ownedProducts = new();
         private bool _initialized;
         private List<ProductDefinition> _catalog = new();
@@ -50,6 +63,7 @@ namespace Nexus.Core.Services
             _catalog = products ?? new List<ProductDefinition>();
             _initialized = true;
             onInitialized?.Invoke(true);
+            Changed?.Invoke();
         }
 
         public void Purchase(string productId, Action<bool, string> onComplete)
@@ -105,6 +119,7 @@ namespace Nexus.Core.Services
         {
             if (owned) _ownedProducts.Add(productId);
             else _ownedProducts.Remove(productId);
+            Changed?.Invoke();
         }
     }
 }

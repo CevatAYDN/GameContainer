@@ -121,6 +121,8 @@
          factories) validates and boots under strict injection. -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/ProviderFactory.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdAdapterFactory.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdCapabilities.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapCapabilities.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapAdapterFactory.cs" />
     <!-- Fully guarded/UI-only files: NexusDOTSBridge is #if UNITY_COLLECTIONS (empty
          in the harness), NexusDebugHUD is an OnGUI debug surface backed by no-op stubs. -->
