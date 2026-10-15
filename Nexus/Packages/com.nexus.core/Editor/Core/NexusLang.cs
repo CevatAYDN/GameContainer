@@ -574,6 +574,26 @@ namespace Nexus.Editor
             s_strings["db_health_no_context"] = "No active Context detected during Play Mode. Check startup wiring and scene bindings.";
             s_strings["db_health_counts"] = "{0} context(s), {1} handler(s), {2} root(s) visible.";
             s_strings["db_health_line"] = "{0}: {1}";
+            s_strings["db_build_readiness"] = "Build readiness";
+            s_strings["db_rd_binder"] = "AOT binder";
+            s_strings["db_rd_binder_missing"] = "Not generated: injection runs by reflection and no link.xml protects it from IL2CPP stripping";
+            s_strings["db_rd_binder_current"] = "Current";
+            s_strings["db_rd_binder_stale"] = "Out of date: regenerate before building (the build guard stops a stale player build)";
+            s_strings["db_rd_binder_unknown"] = "Not checked yet";
+            s_strings["db_rd_linkxml"] = "link.xml";
+            s_strings["db_rd_present"] = "Present";
+            s_strings["db_rd_missing"] = "Missing";
+            s_strings["db_rd_target"] = "Active build target";
+            s_strings["db_rd_defines"] = "Scripting defines";
+            s_strings["db_rd_defines_none"] = "none";
+            s_strings["db_rd_stale_injectors"] = "Generated injectors replaced by reflection";
+            s_strings["db_rd_none"] = "None";
+            s_strings["db_rd_generated_live"] = "Generated registrations live (0 in Play Mode with a binder = the binder is not running)";
+            s_strings["db_rd_di_issues"] = "DI validation issues in active contexts";
+            s_strings["db_rd_play_only"] = "Available in Play Mode";
+            s_strings["db_rd_check"] = "Check now";
+            s_strings["db_rd_generate"] = "Generate binder";
+            s_strings["db_rd_note"] = "These rows mirror the release gates: a stale binder or link.xml stops a player build, and scripting defines belong to the active target.";
             s_strings["ta_enter_type"] = "Please enter a type name to analyze.";
 
             s_strings["action_error_dashboard_title"] = "Error Dashboard";

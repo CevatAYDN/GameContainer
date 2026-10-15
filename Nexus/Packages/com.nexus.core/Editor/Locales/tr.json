@@ -516,6 +516,26 @@
     {"key": "setup_dashboard_description", "value": "Play Mode sırasında context, sinyal ve komutları inceleyin."},
     {"key": "setup_tip_title", "value": "Play Mode’da deneyin"},
     {"key": "setup_tip", "value": "Sayaç akışı: Sinyal -> Komut -> Model -> Mediator -> View. Mevcut oyunlarda tek bir özelliği açıkça kaydederek başlayabilirsiniz; tüm projeyi yeniden yazmak gerekmez."},
-    {"key": "setup_guide", "value": "Entegrasyon yolunuzu seçin"}
+    {"key": "setup_guide", "value": "Entegrasyon yolunuzu seçin"},
+    {"key": "db_build_readiness", "value": "Build hazırlığı"},
+    {"key": "db_rd_binder", "value": "AOT binder"},
+    {"key": "db_rd_binder_missing", "value": "Üretilmedi: enjeksiyon reflection ile çalışır ve link.xml olmadığı için IL2CPP stripping korumaz"},
+    {"key": "db_rd_binder_current", "value": "Güncel"},
+    {"key": "db_rd_binder_stale", "value": "Eski: build'den önce yeniden üretin (build guard eski binder'lı player build'i durdurur)"},
+    {"key": "db_rd_binder_unknown", "value": "Henüz denetlenmedi"},
+    {"key": "db_rd_linkxml", "value": "link.xml"},
+    {"key": "db_rd_present", "value": "Var"},
+    {"key": "db_rd_missing", "value": "Yok"},
+    {"key": "db_rd_target", "value": "Aktif build hedefi"},
+    {"key": "db_rd_defines", "value": "Scripting define'ları"},
+    {"key": "db_rd_defines_none", "value": "yok"},
+    {"key": "db_rd_stale_injectors", "value": "Reflection'a düşen üretilmiş injector'lar"},
+    {"key": "db_rd_none", "value": "Yok"},
+    {"key": "db_rd_generated_live", "value": "Canlı üretilmiş kayıt (Play Mode'da binder varken 0 = binder çalışmıyor)"},
+    {"key": "db_rd_di_issues", "value": "Aktif context'lerde DI doğrulama sorunları"},
+    {"key": "db_rd_play_only", "value": "Play Mode'da görülebilir"},
+    {"key": "db_rd_check", "value": "Şimdi denetle"},
+    {"key": "db_rd_generate", "value": "Binder üret"},
+    {"key": "db_rd_note", "value": "Bu satırlar sürüm kapılarını yansıtır: eski binder veya link.xml player build'i durdurur; scripting define'ları aktif hedefe aittir."}
   ]
 }

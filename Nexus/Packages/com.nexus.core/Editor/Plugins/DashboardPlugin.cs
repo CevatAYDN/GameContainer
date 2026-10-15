@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.IO;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Callbacks;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -30,6 +32,9 @@ namespace Nexus.Editor
         private Label _validationSummary;
         private Label _healthSummary;
         private VisualElement _validationCard;
+        // Last "Check now" result: null = not checked, true = binder current, false = stale.
+        private static bool? s_binderCurrent;
+        private static int s_diIssueCount = -1;
         private VisualElement _runtimeCardContainer;
 
         private static int s_cachedModelCount = -1, s_cachedServiceCount = -1, s_cachedCommandCount = -1, s_cachedViewCount = -1;
@@ -123,6 +128,7 @@ namespace Nexus.Editor
 
             BuildHealthSection(scroll);
             BuildValidationSection(scroll);
+            BuildReadinessSection(scroll);
             BuildFrameworkInfo(scroll);
 
             _view.Add(scroll);
@@ -532,6 +538,97 @@ namespace Nexus.Editor
             _validationCard = card;
             PopulateValidationCard(card);
             parent.Add(card);
+        }
+
+        private void BuildReadinessSection(VisualElement parent)
+        {
+            var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
+            card.style.marginTop = 8;
+            PopulateReadinessCard(card);
+            parent.Add(card);
+        }
+
+        /// <summary>
+        /// Build readiness: the facts a release build depends on, read from the same sources the
+        /// build guard and the runtime use (binder freshness is a dry run of the generator, so it is
+        /// computed on request, not every tick).
+        /// </summary>
+        private void PopulateReadinessCard(VisualElement card)
+        {
+            card.Clear();
+            var titleRow = new VisualElement();
+            titleRow.AddToClassList("nexus-status-card-top");
+            titleRow.Add(DashboardSections.CreateSectionTitle(NexusLang.Get("db_build_readiness"), NexusEditorStyles.AccentGreen));
+            card.Add(titleRow);
+
+            bool binderExists = NexusCodeGenerator.BinderExists();
+            string binderText; Color binderColor;
+            if (!binderExists) { binderText = NexusLang.Get("db_rd_binder_missing"); binderColor = NexusEditorStyles.AccentYellow; }
+            else if (s_binderCurrent == null) { binderText = NexusLang.Get("db_rd_binder_unknown"); binderColor = NexusEditorStyles.AccentBlue; }
+            else if (s_binderCurrent == true) { binderText = NexusLang.Get("db_rd_binder_current"); binderColor = NexusEditorStyles.AccentGreen; }
+            else { binderText = NexusLang.Get("db_rd_binder_stale"); binderColor = NexusEditorStyles.AccentRed; }
+            AddReadinessRow(card, NexusLang.Get("db_rd_binder"), binderText, binderColor, "readiness-binder");
+
+            var settings = NexusEditorSettings.GetOrCreateSettings();
+            bool linkXml = File.Exists(Path.Combine(settings.LinkXmlOutputPath, "link.xml"));
+            AddReadinessRow(card, NexusLang.Get("db_rd_linkxml"), linkXml ? NexusLang.Get("db_rd_present") : NexusLang.Get("db_rd_missing"),
+                linkXml ? NexusEditorStyles.AccentGreen : NexusEditorStyles.AccentYellow, "readiness-linkxml");
+
+            var target = EditorUserBuildSettings.activeBuildTarget;
+            AddReadinessRow(card, NexusLang.Get("db_rd_target"), target.ToString(), NexusEditorStyles.AccentBlue, "readiness-target");
+            string defines = PlayerSettings.GetScriptingDefineSymbols(NamedBuildTarget.FromBuildTargetGroup(BuildPipeline.GetBuildTargetGroup(target)));
+            AddReadinessRow(card, NexusLang.Get("db_rd_defines"), string.IsNullOrEmpty(defines) ? NexusLang.Get("db_rd_defines_none") : defines,
+                NexusEditorStyles.AccentBlue, "readiness-defines");
+
+            var stale = NexusDI.GetStaleGeneratedInjectorTypes();
+            AddReadinessRow(card, NexusLang.Get("db_rd_stale_injectors"),
+                stale.Length == 0 ? NexusLang.Get("db_rd_none") : string.Join(", ", stale.Select(t => t.Name)),
+                stale.Length == 0 ? NexusEditorStyles.AccentGreen : NexusEditorStyles.AccentRed, "readiness-stale");
+
+            int live = NexusDI.GeneratedRegistrationCount;
+            bool binderDead = Application.isPlaying && binderExists && live == 0;
+            AddReadinessRow(card, NexusLang.Get("db_rd_generated_live"), live.ToString(),
+                binderDead ? NexusEditorStyles.AccentRed : NexusEditorStyles.AccentBlue, "readiness-live");
+
+            string issues = !Application.isPlaying ? NexusLang.Get("db_rd_play_only")
+                : s_diIssueCount < 0 ? NexusLang.Get("db_rd_binder_unknown") : s_diIssueCount.ToString();
+            AddReadinessRow(card, NexusLang.Get("db_rd_di_issues"), issues,
+                s_diIssueCount > 0 ? NexusEditorStyles.AccentRed : NexusEditorStyles.AccentBlue, "readiness-di");
+
+            var actions = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 6 } };
+            actions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("db_rd_check"), () =>
+            {
+                s_binderCurrent = NexusCodeGenerator.BinderExists() ? NexusCodeGenerator.IsBinderCurrent() : (bool?)null;
+                if (Application.isPlaying)
+                {
+                    int count = 0;
+                    foreach (var context in NexusRuntime.ActiveContexts)
+                        if (context?.Container != null) count += context.Container.ValidateBindings().Count;
+                    s_diIssueCount = count;
+                }
+                PopulateReadinessCard(card);
+            }, NexusEditorStyles.BtnBlue));
+            actions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("db_rd_generate"), () =>
+            {
+                NexusCodeGenerator.GenerateBinder();
+                s_binderCurrent = true;
+                PopulateReadinessCard(card);
+            }, NexusEditorStyles.BtnTeal));
+            card.Add(actions);
+            card.Add(NexusEditorStyles.CreateHint(NexusLang.Get("db_rd_note")));
+        }
+
+        private static void AddReadinessRow(VisualElement card, string label, string value, Color accent, string name)
+        {
+            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginTop = 3 } };
+            var key = NexusEditorStyles.CreateBody(label);
+            key.style.minWidth = 220;
+            key.style.color = new StyleColor(NexusEditorStyles.TextSecondary);
+            row.Add(key);
+            var pill = NexusEditorStyles.CreatePill(value, new Color(accent.r * 0.18f, accent.g * 0.18f, accent.b * 0.18f), accent);
+            pill.name = name;
+            row.Add(pill);
+            card.Add(row);
         }
 
         private void BuildHealthSection(VisualElement parent)
