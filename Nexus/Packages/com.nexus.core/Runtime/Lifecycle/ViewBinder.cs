@@ -74,15 +74,27 @@ namespace Nexus.Core
             _isBound = true;
             Context = context;
             _pendingRoot = null;
-            OnBind(context);
+            try { OnBind(context); }
+            catch
+            {
+                // Partial setup owns subscriptions too. Keep the original bind exception while cleaning it up.
+                try { Unbind(); }
+                catch (Exception cleanupException) { NexusRuntime.Logger?.LogException(cleanupException); }
+                throw;
+            }
         }
 
         /// <summary>Unbinds the view from its context. Calls <see cref="OnUnbind"/> for derived cleanup.</summary>
         public void Unbind()
         {
-            OnUnbind();
-            _isBound = false;
-            Context = null;
+            if (!_isBound) return;
+            _isBound = false; // Cleanup may disable the object and re-enter this method.
+            try { OnUnbind(); }
+            finally
+            {
+                Context = null;
+                _pendingRoot = null;
+            }
         }
 
         /// <summary>Override to perform custom setup when the view is bound to a context.</summary>
