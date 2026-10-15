@@ -1,0 +1,31 @@
+{
+    "name": "com.nexus.iap.unity.tests",
+    "rootNamespace": "Nexus.Iap.Unity.Tests",
+    "references": [
+        "com.nexus.core",
+        "com.nexus.iap.unity",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.unity.purchasing",
+            "expression": "5.0.0",
+            "define": "NEXUS_UNITY_IAP"
+        }
+    ],
+    "noEngineReferences": false
+}

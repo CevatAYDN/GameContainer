@@ -1,0 +1,14 @@
+{
+  "name": "com.nexus.ads.admob",
+  "version": "0.1.0",
+  "displayName": "Nexus AdMob Adapter",
+  "description": "Google AdMob (Google Mobile Ads Unity plugin, with User Messaging Platform consent) behind Nexus AdService: rewarded, interstitial and banner ads, structured outcomes, readiness events and privacy options.",
+  "unity": "6000.5",
+  "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.ads.admob/README.md",
+  "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
+  "dependencies": {
+    "com.nexus.core": "0.5.0"
+  },
+  "keywords": [ "nexus", "ads", "admob", "ump", "monetization" ],
+  "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" }
+}

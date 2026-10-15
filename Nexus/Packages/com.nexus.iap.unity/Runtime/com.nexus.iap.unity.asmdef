@@ -1,0 +1,23 @@
+{
+    "name": "com.nexus.iap.unity",
+    "rootNamespace": "Nexus.Iap.Unity",
+    "references": [
+        "com.nexus.core",
+        "Unity.Purchasing"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.purchasing",
+            "expression": "5.0.0",
+            "define": "NEXUS_UNITY_IAP"
+        }
+    ],
+    "noEngineReferences": false
+}

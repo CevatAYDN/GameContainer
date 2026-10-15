@@ -17,6 +17,14 @@
       },
       "hash": "aa5fc638d623f56178d50329d9ad8c541a57fe66"
     },
+    "com.nexus.ads.admob": {
+      "version": "file:com.nexus.ads.admob",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.nexus.core": "0.5.0"
+      }
+    },
     "com.nexus.core": {
       "version": "file:com.nexus.core",
       "depth": 0,
@@ -26,6 +34,15 @@
         "com.unity.ugui": "2.0.0",
         "com.unity.inputsystem": "1.20.0",
         "com.unity.modules.androidjni": "1.0.0"
+      }
+    },
+    "com.nexus.iap.unity": {
+      "version": "file:com.nexus.iap.unity",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.nexus.core": "0.5.0",
+        "com.unity.purchasing": "5.4.4"
       }
     },
     "com.unity.ai.navigation": {
@@ -149,6 +166,20 @@
       "dependencies": {},
       "url": "https://packages.unity.com"
     },
+    "com.unity.purchasing": {
+      "version": "5.4.4",
+      "depth": 1,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.ugui": "1.0.0",
+        "com.unity.services.core": "1.18.0",
+        "com.unity.modules.androidjni": "1.0.0",
+        "com.unity.services.deployment": "1.7.2",
+        "com.unity.modules.jsonserialize": "1.0.0",
+        "com.unity.modules.unitywebrequest": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
     "com.unity.render-pipelines.core": {
       "version": "17.5.0",
       "depth": 1,
@@ -181,6 +212,34 @@
     "com.unity.searcher": {
       "version": "4.9.4",
       "depth": 2,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.services.core": {
+      "version": "1.18.0",
+      "depth": 2,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.modules.androidjni": "1.0.0",
+        "com.unity.nuget.newtonsoft-json": "3.2.2",
+        "com.unity.modules.unitywebrequest": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.services.deployment": {
+      "version": "1.7.2",
+      "depth": 2,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.services.core": "1.15.1",
+        "com.unity.services.deployment.api": "1.1.2"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.services.deployment.api": {
+      "version": "1.1.3",
+      "depth": 3,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.com"
