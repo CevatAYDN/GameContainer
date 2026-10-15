@@ -270,6 +270,5 @@ namespace MyGame.Contexts
 
 ---
 
-**Last updated:** 2026-07-24  
-**Code version:** 0.4.0  
+**Code version:** 0.5.0  
 **Target AI Models:** Claude 3.5 Sonnet, GPT-4o, Gemini 1.5/3.6 Flash  

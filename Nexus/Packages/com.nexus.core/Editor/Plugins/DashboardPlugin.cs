@@ -735,7 +735,7 @@ namespace Nexus.Editor
         private void BuildFrameworkInfo(VisualElement parent)
         {
             NexusEditorStyles.CreateInfoCard(parent, NexusLang.Get("framework"), NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBgAlt,
-                NexusLang.Get("framework_desc"));
+                string.Format(NexusLang.Get("framework_desc"), NexusLang.PackageVersion));
         }
 
         private void RefreshStats()

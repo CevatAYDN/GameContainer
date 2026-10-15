@@ -1,7 +1,6 @@
 # Nexus SLO (Service Level Objectives)
 
-**Version:** 0.4.0  
-**Last Updated:** 2026-08-06  
+**Version:** 0.5.0  
 **Status:** Baseline — measured on benchmark harness (real runtime, .NET 10, 8-core)
 
 ---

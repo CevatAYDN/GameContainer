@@ -1,9 +1,9 @@
 {
   "name": "com.nexus.core",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "displayName": "Nexus Observable Architecture",
   "description": "Open source observable MVCS architecture for Unity 6. Features: allocation-free synchronous hot paths after warmup, 4 execution modes, causal tracing, build validation, reactive models, service lifecycle, Game Manager editor, and debug HUD.",
-  "unity": "6000.0",
+  "unity": "6000.5",
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.core/docs/10_MIN_QUICKSTART.md",
   "changelogUrl": "CHANGELOG.md",
   "quickstartUrls": {

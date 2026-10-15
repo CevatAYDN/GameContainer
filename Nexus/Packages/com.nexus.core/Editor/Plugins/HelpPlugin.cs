@@ -87,7 +87,7 @@ namespace Nexus.Editor
                 }
             };
 
-            card.Add(new Label(NexusLang.Get("help_version"))
+            card.Add(new Label(string.Format(NexusLang.Get("help_version"), NexusLang.PackageVersion))
             {
                 style = { fontSize = 13, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue) }
             });
@@ -97,7 +97,7 @@ namespace Nexus.Editor
                 style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), marginTop = 4 }
             });
 
-            card.Add(new Label(NexusLang.Get("help_whats_new"))
+            card.Add(new Label(string.Format(NexusLang.Get("help_whats_new"), NexusLang.PackageVersion))
             {
                 style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 4, whiteSpace = WhiteSpace.Normal }
             });

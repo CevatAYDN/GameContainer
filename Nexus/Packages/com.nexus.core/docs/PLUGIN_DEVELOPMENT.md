@@ -147,8 +147,7 @@ var button = new Button { text = NexusLang.Get("dash_qf_copy") };
 
 ---
 
-**Last updated:** 2026-07-24  
-**Code version:** 0.4.0  
+**Code version:** 0.5.0  
 **Maintainers:** Nexus Core Team  
 **Re-review trigger:** Any change to `INexusEditorPlugin.cs` or `Editor/Plugins/`.
 

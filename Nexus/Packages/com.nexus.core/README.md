@@ -9,7 +9,7 @@
 
 [![Unity](https://img.shields.io/badge/Unity-6000.0-blue.svg)](https://unity.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/Version-0.4.0-orange.svg)](package.json)
+[![Version](https://img.shields.io/badge/Version-0.5.0-orange.svg)](package.json)
 
 Nexus Core is an MVCS (Model, View, Command, Service) architecture framework for Unity 6. One
 package provides a dependency-injection container, a signal bus with pooled commands, reactive

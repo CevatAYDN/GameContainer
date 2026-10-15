@@ -4,7 +4,7 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ## Table of Contents
 
-- [Version 0.4.0 → 0.5.0 (Unreleased)](#version-040--050-unreleased)
+- [Version 0.4.0 → 0.5.0](#version-040--050)
 - [Version 0.3.2 → 0.4.0](#version-032--040)
 - [Version 0.3.0 → 0.3.1](#version-030--031)
 - [Version 0.2.0 → 0.3.0](#version-020--030)
@@ -13,7 +13,11 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ---
 
-## Version 0.4.0 → 0.5.0 (Unreleased)
+## Version 0.4.0 → 0.5.0
+
+Released 2026-10-15. Regenerate the AOT binder after upgrading (**Nexus > Generate AOT Binder**):
+the binder header carries the package version and the build guard stops a player build while it is
+out of date. In Play Mode the Dashboard's build-readiness card must show live generated registrations.
 
 ### Breaking Changes
 
@@ -55,6 +59,24 @@ await _ui.OpenScreenAsync<ShopScreen>(args, UILayer.Screen, pooled: true);
 #### 3. NEXUS004 Analyzer Rule Retired
 
 The `NEXUS004` rule (which flagged new `WindowManager` references to drive the migration) was removed together with `WindowManager`. The Code Health Analyzer now enforces NEXUS001 (hot-path allocations), NEXUS002 (async void), NEXUS003 (sync blocking); a `RunHeadless` batch-mode gate runs in CI.
+
+#### 4. `NexusDI.ClearCaches()` Keeps Generated Registrations
+
+`ClearCaches()` (and `NexusRuntime.Reset()`, which calls it at `SubsystemRegistration`) no longer removes the generated binder's constructor factories, injectors and clearers; it clears only derived caches. Code that relied on it to switch a type back to reflection injection calls the new `NexusDI.ClearGeneratedRegistrations()`.
+
+**Before:**
+```csharp
+NexusDI.ClearCaches(); // also dropped RegisterConstructorFactory / RegisterInjector entries
+```
+
+**After:**
+```csharp
+NexusDI.ClearGeneratedRegistrations(); // tests and benchmarks only; a game never needs it
+```
+
+#### 5. `IAdService` and `IIapService` Gained Members
+
+Custom implementations of the two service interfaces must add: `IAdService.RequestReward(string, Action<AdOutcome>)`, `ReadyChanged`, `PrivacyOptionsRequired`, `ShowPrivacyOptions(Action)`; `IIapService.Purchase(string, Action<PurchaseOutcome>)`, `GetLocalizedPrice(string)`, `IsStoreAvailable`, `StoreChanged`. Adapters (`IAdNetworkAdapter`, `IIapStoreAdapter`) are unchanged; the capability interfaces `IAdOutcomeAdapter`, `IAdReadinessAdapter`, `IAdConsentAdapter`, `IIapOutcomeAdapter` and `IIapStoreInfoAdapter` are optional (`docs/ADAPTERS.md`).
 
 ---
 
@@ -510,7 +532,6 @@ If you encounter issues during migration:
 
 ---
 
-**Last Updated:** 2026-08-06
 **Nexus Core Version:** 0.4.0
 
 ## Current scene integration and large currency update (unreleased)

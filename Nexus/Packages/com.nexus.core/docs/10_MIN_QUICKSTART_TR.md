@@ -249,5 +249,4 @@ Filtreler hem `Fire` hem `FireAsync` üzerinde kayıt sırasıyla çalışır. E
 
 ---
 
-> **Son güncelleme:** 2026-07-30  
-> **Nexus sürümü:** 0.4.0
+> **Nexus sürümü:** 0.5.0

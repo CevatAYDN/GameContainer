@@ -10,6 +10,13 @@ released version; everything under Unreleased is in the repository but not yet i
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.0] - 2026-10-15
+
+Breaking changes and migration steps: `BREAKING_CHANGES.md` and `MIGRATION.md` ("Version 0.4.0 → 0.5.0").
+Release evidence: the repository's `docs/RELEASE_GATES.md`.
+
 ### Performance
 - **Generated-bindings comparison** — `tools/nexus-comparison` has a second configuration (`-Generated`: Nexus's generated binder, VContainer's source-generated injectors built from the pinned commit; both verified at runtime) on host, in the Unity Mono player and on the Android device, next to the reflection configuration. Measured 2026-10-15 (`docs/PERFORMANCE_COMPARISON.md`, runs `after-reset-android-006` and `generated-android-002`): on the device the generated factories cut Nexus's transient three-node graph from 5.5 to 2.2 µs; VContainer's injectors reach 1.0 µs, Reflex (no constructor generator) stays at 4.0 µs; cached resolve stays 36.5 ns against 142 (VContainer) and 213 (Reflex).
 - Transient leaves (cached metadata says the type takes nothing from the container) skip cycle bookkeeping, and the member-injection loops run only for types with `[Inject]` members: host reflection transient 219 → 170 ns. Caching transient bindings in the generic fast cache was tried the same day and reverted: it tripled cached resolve on the IL2CPP device (31 → 94 ns, run `after-fastslot-android-005`) and bypassed the resolve counter.

@@ -129,7 +129,7 @@ Both recovery paths dispatch fallback commands through object-based `ExecuteComm
 ### 7. DI Validation Scope
 `ContextBuilder.Validate()` validates the *concrete* implementations of interface bindings (`Bind<TInterface, TImplementation>`) — not just the interface keys — so missing constructor/`[Inject]` dependencies are reported for the types that are actually constructed. `LazyInjection<T>` fields are excluded (the injector constructs them directly).
 
-### 8. Strategic Capabilities (added after 0.4.0, unreleased)
+### 8. Strategic Capabilities (added in 0.5.0)
 - **Attribute-Based Auto-Discovery (`[RegisterCommand]`)**: Commands decorated with `[RegisterCommand(typeof(TSignal))]` are auto-bound during assembly scanning.
 - **Convention-Based Binding (`BindInterfacesAndSelfTo<T>`)**: Polymorphic binding where all user-defined interfaces and the concrete type share ONE `Binding` instance.
 - **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Domain presenters and controllers receive lifecycle callbacks without implementing `INexusService`.
@@ -179,7 +179,6 @@ public override void OnDisable()
 
 ---
 
-**Last updated:** 2026-10-07  
-**Code version:** 0.4.0  
+**Code version:** 0.5.0  
 **Maintainers:** Nexus Core Team  
 **Re-review trigger:** Any change to `Runtime/Core/Context.cs` or `Runtime/Core/SignalBus.cs`.

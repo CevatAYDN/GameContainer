@@ -110,7 +110,6 @@ When reviewing or self-auditing a PR, validate every check item:
 
 ---
 
-**Last updated:** 2026-08-06  
-**Code version:** 0.4.0  
+**Code version:** 0.5.0  
 **Maintainers:** Nexus Core Team  
 **Re-review trigger:** Any pull request submission or API change.

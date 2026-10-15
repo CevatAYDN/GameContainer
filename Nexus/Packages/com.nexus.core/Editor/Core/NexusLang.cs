@@ -10,6 +10,21 @@ namespace Nexus.Editor
         private static string s_currentLocale = "en";
 
         public static string CurrentLocale => s_currentLocale;
+
+        private static string s_packageVersion;
+        /// <summary>The installed package version from the Package Manager; the only version source the editor UI uses.</summary>
+        public static string PackageVersion
+        {
+            get
+            {
+                if (s_packageVersion == null)
+                {
+                    var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(NexusLang).Assembly);
+                    s_packageVersion = package != null ? package.version : "unknown";
+                }
+                return s_packageVersion;
+            }
+        }
         public static IReadOnlyList<string> SupportedLocales => s_supportedLocales;
 
         static NexusLang()
@@ -111,7 +126,7 @@ namespace Nexus.Editor
             s_strings["quick_actions"] = "ALL TOOLS";
             s_strings["open"] = "Open";
             s_strings["framework"] = "FRAMEWORK";
-            s_strings["framework_desc"] = "Nexus Observable Architecture v0.4.0\n" +
+            s_strings["framework_desc"] = "Nexus Observable Architecture v{0}\n" +
                 "Unity 6 • UI Toolkit • MIT License\n\n" +
                 "Built on a 0-GC, JIT-free generic observable framework with:\n" +
                 "• Causal Tracing — zero-allocation causality tracking\n" +
@@ -795,9 +810,9 @@ namespace Nexus.Editor
             s_strings["typeanalyzer_no_dependents"] = "No other types are injecting this type.";
 
             s_strings["help_title"] = "NEXUS HELP & DOCUMENTATION";
-            s_strings["help_version"] = "com.nexus.core v0.4.0";
+            s_strings["help_version"] = "com.nexus.core v{0}";
             s_strings["help_platform"] = "Unity 6 (6000.x) | C# 9+ | .NET Standard 2.1 | UI Toolkit";
-            s_strings["help_whats_new"] = "New in v0.4.0: Composite trigger payloads (CompositeContext), live command-pool\nutilization stats, execution-order guarantees, and expanded editor live panels.\nRequires Unity 6000.5 or higher.";
+            s_strings["help_whats_new"] = "New in v{0}: typed factories and Construct<T>, prefab injection, the monetization contract\n(AdOutcome / PurchaseOutcome, readiness and store events), the Dashboard build-readiness card, binder build guard\nand self-heal, and a 2x faster transient resolve. Generated registrations now survive NexusRuntime.Reset().\nRequires Unity 6000.5 or higher.";
             s_strings["help_import_sample"] = "Import Counter Sample";
             s_strings["help_quickstart"] = "QUICK START";
             s_strings["help_coreapi"] = "CORE API";

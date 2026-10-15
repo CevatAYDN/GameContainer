@@ -211,7 +211,7 @@ namespace Nexus.Editor
             langContainer.Add(trBtn);
             _sidebar.Add(langContainer);
 
-            var versionLabel = new Label("v0.4.0");
+            var versionLabel = new Label("v" + NexusLang.PackageVersion);
             versionLabel.AddToClassList("nexus-version-label");
             _sidebar.Add(versionLabel);
 

@@ -284,5 +284,4 @@ Automatic dependency injection, zero memory leaks, and instant SignalBus access 
 
 ---
 
-> **Last updated:** 2026-07-30  
-> **Nexus version:** 0.4.0
+> **Nexus version:** 0.5.0

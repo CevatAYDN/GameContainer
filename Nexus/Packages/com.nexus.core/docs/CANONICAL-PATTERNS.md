@@ -276,5 +276,4 @@ This guarantees mediators/views always read post-command state.
 
 ---
 
-**Last updated:** 2026-08-06  
-**Code version:** 0.4.0
+**Code version:** 0.5.0
