@@ -1479,6 +1479,58 @@ namespace Nexus.Core
             SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), Factory = factory, IsSingleton = false });
         }
 
+        // ─── Public API: typed factories ───
+        /// <summary>
+        /// Binds <see cref="IFactory{TValue}"/>: every <c>Create()</c> constructs a new
+        /// <typeparamref name="TValue"/> through this container (constructor, members, [PostConstruct]).
+        /// The instances are not owned by the container; dispose them yourself when they are disposable.
+        /// </summary>
+        public void BindTypedFactory<TValue>() where TValue : class
+            => BindInstance<IFactory<TValue>>(new ContainerFactory<TValue>(this), disposeWithContainer: false);
+
+        /// <summary>
+        /// Binds <see cref="IFactory{TParam, TValue}"/>: the argument of <c>Create(param)</c> is passed to
+        /// the constructor parameter of type <typeparamref name="TParam"/>; everything else is resolved.
+        /// </summary>
+        public void BindTypedFactory<TParam, TValue>() where TValue : class
+            => BindInstance<IFactory<TParam, TValue>>(new ContainerFactory<TParam, TValue>(this), disposeWithContainer: false);
+
+        /// <summary>Binds <see cref="IFactory{TParam1, TParam2, TValue}"/>; arguments are matched to constructor parameters by type.</summary>
+        public void BindTypedFactory<TParam1, TParam2, TValue>() where TValue : class
+            => BindInstance<IFactory<TParam1, TParam2, TValue>>(new ContainerFactory<TParam1, TParam2, TValue>(this), disposeWithContainer: false);
+
+        /// <summary>Binds <see cref="IFactory{TValue}"/> to a delegate; the container does not construct or inject the result.</summary>
+        public void BindTypedFactory<TValue>(Func<TValue> create)
+            => BindInstance<IFactory<TValue>>(new DelegateFactory<TValue>(create), disposeWithContainer: false);
+
+        /// <summary>Binds <see cref="IFactory{TParam, TValue}"/> to a delegate.</summary>
+        public void BindTypedFactory<TParam, TValue>(Func<TParam, TValue> create)
+            => BindInstance<IFactory<TParam, TValue>>(new DelegateFactory<TParam, TValue>(create), disposeWithContainer: false);
+
+        /// <summary>Binds <see cref="IFactory{TParam1, TParam2, TValue}"/> to a delegate.</summary>
+        public void BindTypedFactory<TParam1, TParam2, TValue>(Func<TParam1, TParam2, TValue> create)
+            => BindInstance<IFactory<TParam1, TParam2, TValue>>(new DelegateFactory<TParam1, TParam2, TValue>(create), disposeWithContainer: false);
+
+        // ─── Public API: Construct ───
+        /// <summary>
+        /// Constructs and injects a <typeparamref name="T"/> that need not be bound: constructor
+        /// parameters and [Inject] members are resolved from this container, [PostConstruct] runs.
+        /// The container does not own the instance.
+        /// </summary>
+        public T Construct<T>() where T : class => (T)Construct(typeof(T), null);
+
+        /// <summary>Non-generic form of <see cref="Construct{T}"/>.</summary>
+        public object Construct(Type type) => Construct(type, null);
+
+        internal object Construct(Type type, IReadOnlyList<ParameterOverride> overrides)
+        {
+            if (type == null) throw new ArgumentNullException(nameof(type));
+            ThrowIfDisposed();
+            var instance = _injector.CreateInstance(type, overrides);
+            _injector.Inject(instance);
+            return instance;
+        }
+
         // ─── Public API: Resolve ───
         public T Resolve<T>() where T : class
         {

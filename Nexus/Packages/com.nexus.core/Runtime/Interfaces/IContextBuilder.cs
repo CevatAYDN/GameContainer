@@ -96,6 +96,23 @@ namespace Nexus.Core
         NexusDI.FluentTypeBinder<T> BindFluent<T>() where T : class;
 
         /// <summary>
+        /// Binds <see cref="IFactory{TValue}"/>: each <c>Create()</c> constructs and injects a new
+        /// <typeparamref name="TValue"/> through the container. Inject it where instances are needed:
+        /// <c>[Inject] public IFactory&lt;Enemy&gt; Enemies { get; set; }</c>.
+        /// </summary>
+        void BindTypedFactory<TValue>() where TValue : class;
+        /// <summary>Binds <see cref="IFactory{TParam, TValue}"/>; the argument goes to the constructor parameter of type <typeparamref name="TParam"/>.</summary>
+        void BindTypedFactory<TParam, TValue>() where TValue : class;
+        /// <summary>Binds <see cref="IFactory{TParam1, TParam2, TValue}"/>; arguments are matched to constructor parameters by type.</summary>
+        void BindTypedFactory<TParam1, TParam2, TValue>() where TValue : class;
+        /// <summary>Binds <see cref="IFactory{TValue}"/> to a delegate.</summary>
+        void BindTypedFactory<TValue>(Func<TValue> create);
+        /// <summary>Binds <see cref="IFactory{TParam, TValue}"/> to a delegate.</summary>
+        void BindTypedFactory<TParam, TValue>(Func<TParam, TValue> create);
+        /// <summary>Binds <see cref="IFactory{TParam1, TParam2, TValue}"/> to a delegate.</summary>
+        void BindTypedFactory<TParam1, TParam2, TValue>(Func<TParam1, TParam2, TValue> create);
+
+        /// <summary>
         /// Binds with an explicit <see cref="Lifetime"/>. <see cref="Lifetime.Singleton"/> bindings
         /// are registered on the ROOT container (one app-wide instance, disposed with the root);
         /// <see cref="Lifetime.Scoped"/> bindings live in the current container and are disposed with

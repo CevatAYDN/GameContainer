@@ -51,6 +51,12 @@ namespace Nexus.Core.Components
         /// <summary>Gets or sets the injection trigger time.</summary>
         public InjectionTime Time { get => _time; set => _time = value; }
 
+        /// <summary>
+        /// Records that this hierarchy was already injected by <c>InjectGameObject</c>/<c>Instantiate</c>, so the
+        /// Awake/Start trigger does not inject the targets a second time (which would run [PostConstruct] twice).
+        /// </summary>
+        internal void MarkInjected() => _hasInjected = true;
+
         private void Awake()
         {
             if (_time == InjectionTime.Awake)

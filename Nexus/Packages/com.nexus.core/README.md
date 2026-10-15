@@ -50,7 +50,9 @@ injection with `[Inject]`, `[Construct]`, `[OptionalInject]`, `[PostConstruct]`,
 disposal; named bindings; lazy services; fluent chain (`BindFluent<T>().To<TImpl>().AsScoped()
 .WithParameter(...)`); `BindInterfacesAndSelfTo`, `BindMultiple`, cross-boundary bindings;
 `ValidateBindings()` reports missing, ambiguous, captive and cyclic bindings without constructing
-objects.
+objects. Typed factories (`BindTypedFactory<TValue>()`, `BindTypedFactory<TParam, TValue>()`) give a
+class an `IFactory<...>` that constructs and injects new instances on demand; `Construct<T>()` builds
+an unbound type through the container.
 
 **Signals and commands** (`SignalBus`): `struct` signals; `ICommand<T>` / `IAsyncCommand<T>`
 handlers pooled per signal; execution modes `Sequential`, `Concurrent`, `Exclusive`, `Composite`
@@ -68,7 +70,9 @@ screens managed by `UIManager`.
 `OnDispose`), `IPostContextLifecycle`, `IStartable` / `IAsyncStartable` / `IStoppable` /
 `IAsyncStoppable`, `ITickable` / `IFixedTickable` / `ILateTickable`; `Root` scene anchor,
 `NexusLifetimeScope` child scopes, `NexusBehaviour` and `NexusBinding` for scene objects, one
-persistent global root; `ContextFactory.StartAsync` for scan-free code-first startup.
+persistent global root; `ContextFactory.StartAsync` for scan-free code-first startup;
+`context.Instantiate(prefab, parent)` and `container.InjectGameObject(go)` inject a prefab clone
+(inactive children included) before Unity runs its Awake.
 
 **AOT and IL2CPP**: the editor generator (Nexus → Generate AOT Binder) and the Roslyn source
 generator (`SourceGenerator~/`) emit injectors, constructor factories, typed command dispatchers
@@ -86,10 +90,9 @@ hot-reload hooks. Editor text is localized in English and Turkish.
 **Testing**: `NexusTestHarness`, `NexusTestContext`, `MockContext` and `GcAllocationProbe`
 (calibrated against a positive control) for EditMode and PlayMode tests.
 
-**Not in the package** (so that no one looks for it): a prefab instantiate-and-inject API and a
-typed `IFactory<T>` (use `BindFactory<T>(Func<T>)`); UniTask or Awaitable integration (the API is
-`ValueTask`); real advertising, store or analytics SDKs (adapters and mocks only); server
-authority for the economy and storage services.
+**Not in the package** (so that no one looks for it): UniTask or Awaitable integration (the API is
+`ValueTask`); real advertising, store or analytics SDKs (adapters and mocks only, see
+[ADAPTERS.md](docs/ADAPTERS.md)); server authority for the economy and storage services.
 
 ## Services
 
@@ -191,6 +194,7 @@ IL2CPP performance, and no universal winner is claimed.
 | [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) | Concept mapping and migration steps from Zenject/Extenject (Turkish) |
 | [STRANGE_COMPARISON.md](docs/STRANGE_COMPARISON.md) | Feature-by-feature comparison with StrangeIoC (Turkish) |
 | [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) | Implementing `IAssetLoadService` over Addressables without a package dependency |
+| [ADAPTERS.md](docs/ADAPTERS.md) | Registering real ad and store SDKs behind `AdService` / `IapService`, and what a shipped game needed beyond them |
 | [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md) | Pinned DI comparison with VContainer and Zenject |
 | [HARDENING.md](docs/HARDENING.md) | Verification evidence and measured host performance |
 | [STABILITY.md](docs/STABILITY.md) | Pre-1.0 stability policy |

@@ -71,6 +71,53 @@ constructor); prefer it when you want immutability (`readonly` fields).
 
 ---
 
+## 🥇 Canonical Factory
+
+When a class must create instances at runtime (enemies, projectiles, popups), it takes an
+`IFactory<...>` instead of the container. Bind the factory in the lifecycle; the container
+constructs each instance (constructor parameters, `[Inject]` members, `[PostConstruct]`) and does
+not own it.
+
+```csharp
+// Lifecycle
+builder.BindTypedFactory<EnemyBrain>();                 // IFactory<EnemyBrain>
+builder.BindTypedFactory<EnemyKind, EnemyBrain>();      // IFactory<EnemyKind, EnemyBrain>: the argument
+                                                        // goes to the constructor parameter of type EnemyKind
+
+// Consumer
+public sealed class WaveCommand : ICommand<WaveSignal>
+{
+    [Inject] public IFactory<EnemyKind, EnemyBrain> Enemies { get; set; }
+    public void Execute(WaveSignal signal) => Enemies.Create(signal.Kind).Spawn();
+}
+```
+
+Use the delegate form (`BindTypedFactory<T>(() => ...)`) when the object is not built by the container,
+for example an object from a pool. Two constructor parameters of the same type cannot be told apart
+by `BindTypedFactory<TParam1, TParam2, TValue>()`; use the delegate form there too.
+`container.Construct<T>()` is the one-off equivalent for a type that is not bound.
+
+---
+
+## 🥇 Canonical Prefab Instantiation
+
+Scene objects that come from prefabs are created through the context so their `[Inject]` members are
+set before Unity calls `Awake`:
+
+```csharp
+var enemy = Context.Instantiate(enemyPrefab, parent);          // T : Component, returns the clone's component
+var vfx = Context.Instantiate(vfxPrefab, position, rotation);  // GameObject overloads exist too
+Context.Container.InjectGameObject(existingObject);            // objects already in the scene
+```
+
+Every `MonoBehaviour` in the clone's hierarchy is injected, inactive children included. A
+`NexusBehaviour` with `AutoInject` keeps injecting itself from its own context, and a `NexusBinding`
+on the prefab is marked as handled so nothing is injected twice. The prefab's and the clone's active
+state are restored afterwards. `ObjectPoolService` and `UIManager` keep their own instantiation
+paths; use them for pooled objects and screens.
+
+---
+
 ## 🥇 Canonical Model Safety (for Concurrent Commands)
 
 **Recommended:** Use read-only model interfaces (e.g. `IReadOnlyPlayerModel`) for dependencies injected into `ExecutionMode.Concurrent` commands.

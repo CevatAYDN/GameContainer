@@ -478,6 +478,9 @@ namespace UnityEngine
             }
         }
 
+        public static T Instantiate<T>(T original, Transform parent, bool worldPositionStays) where T : Object => Instantiate(original, parent);
+        public static T Instantiate<T>(T original, Vector3 position, Quaternion rotation, Transform parent) where T : Object => Instantiate(original, parent);
+
         /// <summary>Clones a GameObject prefab including its components (mirrors Unity Instantiate).</summary>
         public static T Instantiate<T>(T original, Transform parent) where T : Object
         {
@@ -541,6 +544,7 @@ namespace UnityEngine
 
         public bool activeInHierarchy => IsActive && (transform.parent == null || transform.parent.gameObject.activeInHierarchy);
         internal bool IsActive => _active;
+        public bool activeSelf => _active;
         public void SetActive(bool active) { _active = active; }
 
         public T AddComponent<T>() where T : Component, new()

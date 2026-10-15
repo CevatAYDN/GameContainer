@@ -14,7 +14,8 @@ Bu rehber, Zenject/Extenject kullanan bir projenin `com.nexus.core`'a taşınmas
 | `Container.Bind<T>().AsTransient()` | `BindFluent<T>().AsTransient()` *(veya `Bind<T>(Lifetime.Transient)`)* | |
 | `Container.BindInstance(x)` | `container.BindInstance(x)` | Birebir aynı ad |
 | `BindInterfacesAndSelfTo<T>()` | `BindInterfacesAndSelfTo<T>()` | Aynı ad; singleton paritesi garantili |
-| `Container.BindFactory<T, TFactory>()` | `container.Bind<T>(Lifetime.Transient)` + `ProviderFactory` | Fabric sinyalleri Nexus'ta `ProviderFactory` ile |
+| `Container.BindFactory<T, TFactory>()` / `PlaceholderFactory<T>` | `builder.BindTypedFactory<T>()` → `[Inject] IFactory<T>`; parametreli: `BindTypedFactory<TParam, T>()` → `IFactory<TParam, T>` | Zenject'teki gibi container üretir ve enjekte eder; örnekler container'a ait değildir |
+| `Container.InstantiatePrefab(prefab)` / `InstantiatePrefabForComponent<T>(prefab)` | `context.Instantiate(prefab, parent)` / `context.Instantiate<T>(prefab, parent)` | Klonun tüm hiyerarşisi Awake'ten önce enjekte edilir; `InjectGameObject` sahnedeki nesneler için |
 | `[Inject]` constructor/field | `[Inject]` constructor/field/property (aynı) | **Nexus constructor injection'ı destekler**: `[Inject]` veya `[Construct]` işaretli ctor otomatik seçilir; işaretsiz tek public ctor da kullanılır |
 | `[Optional]` | `[OptionalInject]` | `SaveThrottler` örneğinde görüldüğü gibi |
 | `IInitializable` / `IStartable` | `IStartable` / `IAsyncStartable` / `NexusService.InitializeAsync(ct)` | `IAsyncStartable` iptal belirteci taşır — Zenject'ten ileri |

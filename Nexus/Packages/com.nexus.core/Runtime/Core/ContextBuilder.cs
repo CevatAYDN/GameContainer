@@ -90,6 +90,13 @@ namespace Nexus.Core
             return _container.BindFluent<T>();
         }
 
+        public void BindTypedFactory<TValue>() where TValue : class => _container.BindTypedFactory<TValue>();
+        public void BindTypedFactory<TParam, TValue>() where TValue : class => _container.BindTypedFactory<TParam, TValue>();
+        public void BindTypedFactory<TParam1, TParam2, TValue>() where TValue : class => _container.BindTypedFactory<TParam1, TParam2, TValue>();
+        public void BindTypedFactory<TValue>(Func<TValue> create) => _container.BindTypedFactory(create);
+        public void BindTypedFactory<TParam, TValue>(Func<TParam, TValue> create) => _container.BindTypedFactory(create);
+        public void BindTypedFactory<TParam1, TParam2, TValue>(Func<TParam1, TParam2, TValue> create) => _container.BindTypedFactory(create);
+
         /// <summary>Binds with an explicit <see cref="Lifetime"/> (see <see cref="Lifetime"/> for semantics).</summary>
         public void Bind<TInterface, TImplementation>(Lifetime lifetime) where TImplementation : class, TInterface
         {
