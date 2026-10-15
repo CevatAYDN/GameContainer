@@ -11,6 +11,7 @@ released version; everything under Unreleased is in the repository but not yet i
 ## [Unreleased]
 
 ### Performance
+- `tools/nexus-consumer` is the tracked clean-consumer gate: `NexusVerifyBuild.PackPackage` packs the embedded package with the Package Manager, a fresh project installs the tarball, imports the Code-first sample, runs smoke tests and optionally builds/runs players. `tools/unity-verify` now names the real class `NexusVerify.NexusVerifyBuild` (its README and script referred to a `NexusVerify.Build` that never existed).
 - The core DI comparison tool (`tools/nexus-comparison`) pins Reflex 14.4.0 as a fourth candidate (host build with `ENABLE_MONO` and a small shim for the `UnityEngine` members its core references; the Unity player run adds the pinned source as a UPM package and creates the `ReflexSettings` asset it requires). Results dated 2026-10-15 are in `docs/PERFORMANCE_COMPARISON.md`: Nexus leads cached resolve; Reflex leads transient construction and warm startup in the Unity Mono player.
 - Optional named, cross-boundary and lazy-service maps now allocate on first registration with synchronized publication; unused features no longer charge every DI scope.
 - Added a local Unity Mono player comparison using the same pinned competitors and workload as the host tool. Generated Nexus registrations are cleared before warmup; an inert allocation counter is explicitly marked unavailable. No CI or GitHub Actions run is required.

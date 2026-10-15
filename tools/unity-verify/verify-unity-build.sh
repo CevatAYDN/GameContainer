@@ -53,7 +53,7 @@ echo "PlayMode OK"
 
 echo "=== [3/4] Mono player build (StandaloneWindows64) ==="
 "$UNITY" -batchmode -nographics -projectPath "$PROJECT" \
-  -executeMethod NexusVerify.Build.BuildStandaloneMono \
+  -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneMono \
   -logFile "$ARTIFACTS/mono-build.log" -quit
 if [ ! -d "$PROJECT/builds/standalone-mono" ]; then
   echo "Mono build output missing"; tail -n 60 "$ARTIFACTS/mono-build.log"; exit 1
@@ -62,7 +62,7 @@ echo "Mono build OK"
 
 echo "=== [4/4] IL2CPP player build (StandaloneWindows64 — code stripping + AOT) ==="
 "$UNITY" -batchmode -nographics -projectPath "$PROJECT" \
-  -executeMethod NexusVerify.Build.BuildStandaloneIL2CPP \
+  -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneIL2CPP \
   -logFile "$ARTIFACTS/il2cpp-build.log" -quit
 if [ ! -d "$PROJECT/builds/standalone-il2cpp" ]; then
   echo "IL2CPP build output missing"; tail -n 60 "$ARTIFACTS/il2cpp-build.log"; exit 1

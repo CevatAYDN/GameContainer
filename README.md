@@ -53,8 +53,9 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 | `Nexus/Packages/com.nexus.core` | The package: `Runtime`, `Editor`, `Tests`, `Samples~`, `SourceGenerator~`, `docs`, `CHANGELOG.md` |
 | `Nexus/` | Unity 6000.5.6f1 development project that hosts the package and its EditMode/PlayMode tests |
 | `tools/nexus-benchmark` | .NET host harness: compiles the runtime against Unity stubs and runs stress, fuzz, zero-allocation, lifecycle, codegen and evidence suites; also the pre-commit hook |
-| `tools/nexus-comparison` | Pinned VContainer/Zenject core DI comparison (host and Unity Mono player) |
-| `tools/unity-verify`, `tools/nexus-device-test` | Player build verification and device test helpers |
+| `tools/nexus-comparison` | Pinned VContainer/Zenject/Reflex core DI comparison (host and Unity Mono player) |
+| `tools/nexus-consumer` | Clean UPM consumer gate: pack, fresh project, sample import, tests, player |
+| `tools/unity-verify`, `tools/nexus-device-test` | Player build verification of the development project and device test helpers |
 | `tools/check-docs.py` | Markdown link checker used by the documentation gate |
 | `docs/` | Repository-level documents: release gates, SLOs, ADRs, dated research, archive of past audits |
 

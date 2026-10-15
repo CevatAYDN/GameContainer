@@ -161,3 +161,6 @@ tools/nexus-comparison/*results.json
 /.agents/
 /opencode.json
 /playmode.pid
+
+# Unity CLI temp folder
+/[Nn]exus/.utmp/

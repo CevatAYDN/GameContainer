@@ -61,7 +61,7 @@ dispatch, pooling, storage) against the real Unity runtime.
 ```bash
 "<Unity 6000.5.6f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
-  -executeMethod NexusVerify.Build.BuildStandaloneMono \
+  -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneMono \
   -logFile "tools/unity-verify/artifacts/mono-build.log" -quit
 ```
 
@@ -73,7 +73,7 @@ Produces `Nexus/builds/standalone-mono/`. A success proves the whole game
 ```bash
 "<Unity 6000.5.6f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
-  -executeMethod NexusVerify.Build.BuildStandaloneIL2CPP \
+  -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneIL2CPP \
   -logFile "tools/unity-verify/artifacts/il2cpp-build.log" -quit
 ```
 
@@ -89,7 +89,7 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 ```bash
 "<Unity 6000.5.6f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
-  -executeMethod NexusVerify.Build.BuildAndroidIL2CPP \
+  -executeMethod NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPP \
   -logFile "tools/unity-verify/artifacts/android-il2cpp-build.log" -quit
 ```
 
