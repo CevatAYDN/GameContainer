@@ -77,6 +77,66 @@ namespace Nexus.Editor
             => GameAssemblies(includeTests);
 
         /// <summary>
+        /// Game assemblies that reference the Nexus runtime, plus the runtime itself. Only these can contain
+        /// [Inject] members, commands or network signals, so this is the exact universe for link.xml preservation.
+        /// A precompiled SDK the name policy has never seen (an ads or store plugin) cannot reference Nexus and is excluded.
+        /// </summary>
+        public static IEnumerable<Assembly> NexusReferencingAssemblies()
+        {
+            string nexusRuntime = typeof(NexusDI).Assembly.GetName().Name;
+            foreach (var assembly in GameAssemblies())
+            {
+                if (GetSimpleName(assembly) == nexusRuntime) { yield return assembly; continue; }
+                bool usesNexus = false;
+                AssemblyName[] references;
+                try { references = assembly.GetReferencedAssemblies(); }
+                catch { continue; }
+                foreach (var reference in references)
+                    if (reference.Name == nexusRuntime) { usesNexus = true; break; }
+                if (usesNexus) yield return assembly;
+            }
+        }
+
+        /// <summary>
+        /// The subset of <see cref="NexusReferencingAssemblies"/> whose types the generated binder may name: the assembly
+        /// that compiles <c>NexusGeneratedBinder.g.cs</c> itself and the assemblies it can reference. One unreferenceable
+        /// type in the binder breaks compilation, and a project that does not compile cannot run the generator.
+        /// When the compilation pipeline cannot answer, every Nexus-referencing assembly is returned.
+        /// </summary>
+        /// <param name="binderFolder">Folder of NexusGeneratedBinder.g.cs; it decides which assembly compiles the binder.</param>
+        public static IEnumerable<Assembly> BinderAssemblies(string binderFolder)
+        {
+            string binderAssembly = null;
+            HashSet<string> visible = null;
+            try
+            {
+                string binderScript = System.IO.Path.Combine(binderFolder, "NexusGeneratedBinder.g.cs").Replace('\\', '/');
+                binderAssembly = System.IO.Path.GetFileNameWithoutExtension(
+                    UnityEditor.Compilation.CompilationPipeline.GetAssemblyNameFromScriptPath(binderScript));
+                var compiled = UnityEditor.Compilation.CompilationPipeline
+                    .GetAssemblies(UnityEditor.Compilation.AssembliesType.PlayerWithoutTestAssemblies)
+                    .FirstOrDefault(a => a.name == binderAssembly);
+                if (compiled != null)
+                {
+                    visible = new HashSet<string>(compiled.assemblyReferences.Select(r => r.name));
+                    foreach (var path in compiled.compiledAssemblyReferences)
+                        visible.Add(System.IO.Path.GetFileNameWithoutExtension(path));
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus] Could not resolve the binder's assembly references ({ex.Message}); every Nexus-referencing assembly is scanned.");
+            }
+
+            foreach (var assembly in NexusReferencingAssemblies())
+            {
+                string name = GetSimpleName(assembly);
+                if (visible != null && name != binderAssembly && !visible.Contains(name)) continue;
+                yield return assembly;
+            }
+        }
+
+        /// <summary>
         /// Safely enumerates a loaded assembly's types. On a <see cref="ReflectionTypeLoadException"/>
         /// it logs a single warning (once per assembly) and yields the types that did load;
         /// it never throws.

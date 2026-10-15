@@ -71,6 +71,29 @@ namespace Nexus.Editor
         public static IEnumerable<Assembly> RuntimeAssemblies(bool includeTests = false)
             => GameAssemblies(includeTests);
 
+        /// <summary>Mirror of the editor rule: game assemblies that reference the Nexus runtime, plus the runtime itself.</summary>
+        public static IEnumerable<Assembly> NexusReferencingAssemblies()
+        {
+            string nexusRuntime = typeof(Nexus.Core.NexusDI).Assembly.GetName().Name;
+            foreach (var assembly in GameAssemblies())
+            {
+                if (GetSimpleName(assembly) == nexusRuntime) { yield return assembly; continue; }
+                bool usesNexus = false;
+                AssemblyName[] references;
+                try { references = assembly.GetReferencedAssemblies(); }
+                catch { continue; }
+                foreach (var reference in references)
+                    if (reference.Name == nexusRuntime) { usesNexus = true; break; }
+                if (usesNexus) yield return assembly;
+            }
+        }
+
+        /// <summary>
+        /// The editor narrows this to what the binder's own assembly can reference via CompilationPipeline; the harness
+        /// has no compilation pipeline, so it takes the documented fallback: every Nexus-referencing assembly.
+        /// </summary>
+        public static IEnumerable<Assembly> BinderAssemblies(string binderFolder) => NexusReferencingAssemblies();
+
         public static Type[] GetTypesSafe(Assembly assembly)
         {
             try { return assembly.GetTypes(); }

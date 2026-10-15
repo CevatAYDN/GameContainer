@@ -693,6 +693,27 @@ Check folder permissions
 
 ---
 
+### Stale Generated Binder
+
+**Symptoms:**
+- Warning: `The generated binder does not inject '<Type>.<Member>' ... Falling back to reflection for this type`
+- Build fails with `[Nexus] The generated binder or link.xml is out of date`
+
+**Cause:** an `[Inject]` member (or a new injectable type) was added after the binder was generated. A generated injector never sets members it does not know about.
+
+**What Nexus does:** at runtime it checks each generated injector once per type; a required member left null switches that type to reflection injection (with the warning above). A player build is stopped by `NexusBinderBuildGuard` so IL2CPP never strips with a stale `link.xml`.
+
+**Fix:**
+```
+Menu: Nexus > Generate AOT Binder
+Headless: -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
+```
+The guard only runs in projects that have a generated binder; a project on reflection injection is never stopped. Set `NEXUS_SKIP_BINDER_GUARD=1` only to build deliberately without regenerating.
+
+**Removed or renamed type:** the binder then fails to compile itself (`error CS0246` inside `NexusGeneratedBinder.g.cs`). In the Editor, Nexus empties the file and regenerates it after the next successful compilation. In batchmode, empty the file before `-executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder`, because Unity stops on the first failed compilation.
+
+---
+
 ### Build Validation Errors
 
 **Symptoms:**

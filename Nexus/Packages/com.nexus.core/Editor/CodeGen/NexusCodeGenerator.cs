@@ -272,9 +272,24 @@ namespace Nexus.Editor
         }
 
         [MenuItem("Nexus/Generate AOT Binder")]
-        public static void GenerateBinder()
+        public static void GenerateBinder() => GenerateBinderCore(write: true);
+
+        /// <summary>
+        /// True when the binder and link.xml on disk are exactly what generation would write now. Nothing is written.
+        /// A stale binder keeps injecting the members a type had when it was generated and a stale link.xml lets IL2CPP
+        /// strip the rest, so player builds check this first (<see cref="NexusBinderBuildGuard"/>).
+        /// </summary>
+        public static bool IsBinderCurrent() => GenerateBinderCore(write: false);
+
+        /// <summary>True when a generated binder exists at the configured output path, i.e. the project opted into AOT codegen.</summary>
+        public static bool BinderExists()
+            => File.Exists(Path.Combine(NexusEditorSettings.GetOrCreateSettings().BinderOutputPath, "NexusGeneratedBinder.g.cs"));
+
+        private static bool GenerateBinderCore(bool write)
         {
-            Debug.Log("[Nexus] Generating AOT Binder...");
+            if (write) Debug.Log("[Nexus] Generating AOT Binder...");
+            // Output settings decide which assembly compiles the binder, so they are needed before scanning.
+            var settings = NexusEditorSettings.GetOrCreateSettings();
             var injectTypes = new List<Type>();
             // Every injectable type (visible or not) + network signals: link.xml preservation
             // covers the full set so IL2CPP keeps the reflection path alive even for types the
@@ -290,9 +305,13 @@ namespace Nexus.Editor
             // Shared across all passes below so each type's members reflect exactly once.
             var memberCache = new Dictionary<Type, MemberSet>();
 
-            // Gather all types containing [Inject] and all INetworkSignal implementations
-            foreach (var assembly in AssemblyCatalog.RuntimeAssemblies())
+            // Gather all types containing [Inject] and all INetworkSignal implementations from every assembly that
+            // references Nexus (link.xml must preserve all of them). Binder code is emitted only for the assemblies the
+            // binder's own assembly can reference; the rest keep the reflection path, which link.xml keeps alive.
+            var emittableAssemblies = new HashSet<Assembly>(AssemblyCatalog.BinderAssemblies(settings.BinderOutputPath));
+            foreach (var assembly in AssemblyCatalog.NexusReferencingAssemblies())
             {
+                bool emittable = emittableAssemblies.Contains(assembly);
                 foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
                     if (type.IsValueType && typeof(Nexus.Netcode.INetworkSignal).IsAssignableFrom(type))
@@ -304,7 +323,7 @@ namespace Nexus.Editor
                     // runtime dispatcher falls back to MethodInfo.Invoke with a per-call
                     // object[] allocation. Emitting strongly-typed dispatcher registrations
                     // keeps the AOT dispatch path allocation-free.
-                    if (type.IsClass && !type.IsAbstract && !type.IsGenericTypeDefinition)
+                    if (emittable && type.IsClass && !type.IsAbstract && !type.IsGenericTypeDefinition)
                     {
                         foreach (var iface in type.GetInterfaces())
                         {
@@ -388,7 +407,7 @@ namespace Nexus.Editor
                         if (hasInject)
                         {
                             linkXmlTypes.Add(type);
-                            if (codegenVisible && IsEmittableType(type))
+                            if (emittable && codegenVisible && IsEmittableType(type))
                                 injectTypes.Add(type);
                         }
 
@@ -396,7 +415,7 @@ namespace Nexus.Editor
                         // `new` (CanEmitConstructorFactory) and have one [Inject]/[Construct]-marked
                         // public ctor or a single public ctor. Whether such a type is ever bound in
                         // DI is only known at runtime, so an unused factory is simply inert.
-                        if (codegenVisible && IsEmittableType(type) && !type.IsGenericTypeDefinition
+                        if (emittable && codegenVisible && IsEmittableType(type) && !type.IsGenericTypeDefinition
                             && CanEmitConstructorFactory(type))
                         {
                             ConstructorInfo ctorToRegister = null;
@@ -827,15 +846,14 @@ namespace Nexus.Editor
             sb.AppendLine("    }");
             sb.AppendLine("}");
 
-            // Load output settings (Issue 18)
-            var settings = NexusEditorSettings.GetOrCreateSettings();
+            // Output settings (Issue 18)
             string binderFolder = settings.BinderOutputPath;
             string linkXmlFolder = settings.LinkXmlOutputPath;
 
             // Delete old file if the path has changed
             string defaultFolder = "Assets/Scripts/Nexus";
             string defaultFile = Path.Combine(defaultFolder, "NexusGeneratedBinder.g.cs");
-            if (binderFolder != defaultFolder && File.Exists(defaultFile))
+            if (write && binderFolder != defaultFolder && File.Exists(defaultFile))
             {
                 File.Delete(defaultFile);
                 if (File.Exists(defaultFile + ".meta"))
@@ -843,9 +861,9 @@ namespace Nexus.Editor
             }
 
             // Create target folders
-            if (!Directory.Exists(binderFolder))
+            if (write && !Directory.Exists(binderFolder))
                 Directory.CreateDirectory(binderFolder);
-            if (!Directory.Exists(linkXmlFolder))
+            if (write && !Directory.Exists(linkXmlFolder))
                 Directory.CreateDirectory(linkXmlFolder);
 
             bool changed = false;
@@ -854,7 +872,7 @@ namespace Nexus.Editor
             // curated/non-auto link.xml must fail atomically; otherwise a failed codegen
             // could leave a new binder paired with stale IL2CPP stripping rules.
             string destLinkXmlFile = Path.Combine(linkXmlFolder, "link.xml");
-            if (File.Exists(destLinkXmlFile) && !File.ReadAllText(destLinkXmlFile).Contains("<auto-generated>"))
+            if (write && File.Exists(destLinkXmlFile) && !File.ReadAllText(destLinkXmlFile).Contains("<auto-generated>"))
             {
                 throw new InvalidOperationException(
                     $"[Nexus CodeGen] Overwrite blocked: the file at '{destLinkXmlFile}' " +
@@ -872,12 +890,12 @@ namespace Nexus.Editor
             }
 
             // Write an empty binder even with no inject types, so stale generated injectors are cleared.
-            if (injectTypes.Count == 0)
+            if (write && injectTypes.Count == 0)
             {
                 Debug.LogWarning("[Nexus] AOT Binder generation: no injectable types discovered. An empty binder was written to clear any previously generated injectors.");
             }
 
-            if (File.Exists(destBinderFile))
+            if (write && File.Exists(destBinderFile))
             {
                 string existingContent = File.ReadAllText(destBinderFile);
                 if (!existingContent.Contains("<auto-generated>"))
@@ -886,12 +904,13 @@ namespace Nexus.Editor
                 }
             }
 
-            if (!File.Exists(destBinderFile) || File.ReadAllText(destBinderFile) != newBinderContent)
+            bool binderCurrent = File.Exists(destBinderFile) && File.ReadAllText(destBinderFile) == newBinderContent;
+            if (write && !binderCurrent)
             {
                 File.WriteAllText(destBinderFile, newBinderContent);
                 changed = true;
             }
-            EnsureGitIgnore(binderFolder, "NexusGeneratedBinder.g.cs");
+            if (write) EnsureGitIgnore(binderFolder, "NexusGeneratedBinder.g.cs");
 
             // Write link.xml (Issue 4). Iterates linkXmlTypes — injectables that were excluded
             // from binder emission (compiler-generated/non-visible) are still preserved here so
@@ -934,6 +953,8 @@ namespace Nexus.Editor
             xmlSb.AppendLine("</linker>");
 
             string newLinkXmlContent = xmlSb.ToString();
+            if (!write)
+                return binderCurrent && File.Exists(destLinkXmlFile) && File.ReadAllText(destLinkXmlFile) == newLinkXmlContent;
 
             // Overwrite guard: a hand-curated link.xml is never silently replaced.
             // Failing loudly is important here.  Silently retaining stale preservation
@@ -972,6 +993,7 @@ namespace Nexus.Editor
             {
                 Debug.Log("[Nexus] AOT Binder generation completed with no file changes.");
             }
+            return true;
         }
 
         private static void EnsureGitIgnore(string folder, string fileNameToIgnore)
