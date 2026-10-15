@@ -150,3 +150,14 @@ tools/nexus-comparison/bin/
 tools/nexus-comparison/obj/
 tools/nexus-comparison/*results.json
 !tools/nexus-comparison/*.csproj
+
+# Local AI-tool and editor configuration (personal, not part of the project)
+/.commandcode/
+/.trae/
+/.omo/
+/.devin/
+/.freebuff/
+/.codegraph/
+/.agents/
+/opencode.json
+/playmode.pid
