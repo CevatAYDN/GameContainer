@@ -1,3 +1,5 @@
+> **Who this is for:** level 3 and contributors writing editor plugins.
+
 > **For AI Agents:** This document is the source of truth for developing, refactoring, and auditing editor plugins in the Nexus framework. Before making plugin edits:
 > 1. Verify `INexusEditorPlugin` contract requirements.
 > 2. Ensure `OnUpdate()` is overridden for polling — **DO NOT** use `_view.schedule`.

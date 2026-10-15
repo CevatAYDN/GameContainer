@@ -1,3 +1,5 @@
+> **Who this is for:** level 1, you know the basics from the quickstart and are building real features. This is the tour from setup to hardening; `docs/CANONICAL-PATTERNS.md` gives the one recommended form of each API you meet here.
+
 # Nexus Core Walkthrough
 
 A step-by-step tour of `com.nexus.core` — from first setup to production hardening.

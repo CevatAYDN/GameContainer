@@ -1,3 +1,5 @@
+> **Kimin için:** seviye 2, entegrasyonun derinliğini seçen geliştirici (ilk özellik, mevcut proje, yükleme sırasında hazırlık, doğrulama, performans kararları).
+
 # Projenize uygun entegrasyon yolu
 
 Nexus, Unity 6 mobil ve PC oyunlarının mimari temelidir. Oyun türüne ait hareket,

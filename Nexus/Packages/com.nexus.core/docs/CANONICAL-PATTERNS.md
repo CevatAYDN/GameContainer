@@ -1,3 +1,5 @@
+> **Who this is for:** levels 1–3 and code reviewers. One recommended form per API; alternatives exist for migration only.
+
 # Canonical Patterns
 
 > **For AI Agents:** This document declares the single recommended ("canonical") way to use each Nexus Core API surface. Alternatives exist for migration but should not appear in new code.

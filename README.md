@@ -33,15 +33,18 @@ Rules for games that consume Nexus:
 
 ## Start here
 
-| Goal | Document |
-|---|---|
-| First context, signal, command, model and view in 10 minutes | [10-minute quickstart](Nexus/Packages/com.nexus.core/docs/10_MIN_QUICKSTART.md) ([TR](Nexus/Packages/com.nexus.core/docs/10_MIN_QUICKSTART_TR.md)) |
-| Add Nexus to an existing project (code-first, scene-based or sample) | [Getting started](Nexus/Packages/com.nexus.core/docs/GETTING_STARTED.md) ([TR](Nexus/Packages/com.nexus.core/docs/GETTING_STARTED_TR.md)) |
-| How the runtime fits together | [Architecture](Nexus/Packages/com.nexus.core/docs/ARCHITECTURE.md) |
-| The one recommended way to use each API | [Canonical patterns](Nexus/Packages/com.nexus.core/docs/CANONICAL-PATTERNS.md) |
-| Coming from Zenject | [Zenject migration](Nexus/Packages/com.nexus.core/docs/ZENJECT_MIGRATION.md) |
-| Measured DI comparison (VContainer, Zenject) and its limits | [Performance comparison](Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md) |
-| Everything else | [Package README](Nexus/Packages/com.nexus.core/README.md) |
+| Level | You | Read, in this order |
+|---|---|---|
+| 0 | Never used dependency injection or a signal bus | [10_MIN_QUICKSTART.md](Nexus/Packages/com.nexus.core/docs/10_MIN_QUICKSTART.md) ([TR](Nexus/Packages/com.nexus.core/docs/10_MIN_QUICKSTART_TR.md)), then the **Counter Example** sample |
+| 1 | Shipping a feature in a new Nexus project | [walkthrough.md](Nexus/Packages/com.nexus.core/walkthrough.md), [CANONICAL-PATTERNS.md](Nexus/Packages/com.nexus.core/docs/CANONICAL-PATTERNS.md) |
+| 2 | Adding Nexus to an existing game | [GETTING_STARTED.md](Nexus/Packages/com.nexus.core/docs/GETTING_STARTED.md) ([TR](Nexus/Packages/com.nexus.core/docs/GETTING_STARTED_TR.md)), [INTEGRATION_PATHS.md](Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS.md) ([TR](Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS_TR.md)); from Zenject: [ZENJECT_MIGRATION.md](Nexus/Packages/com.nexus.core/docs/ZENJECT_MIGRATION.md) |
+| 3 | Studio: release builds, performance, tooling | [ARCHITECTURE.md](Nexus/Packages/com.nexus.core/docs/ARCHITECTURE.md), [HARDENING.md](Nexus/Packages/com.nexus.core/docs/HARDENING.md), [PERFORMANCE_COMPARISON.md](Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md), [ADAPTERS.md](Nexus/Packages/com.nexus.core/docs/ADAPTERS.md), [PLUGIN_DEVELOPMENT.md](Nexus/Packages/com.nexus.core/docs/PLUGIN_DEVELOPMENT.md), the Dashboard's build-readiness card |
+| AI agent | Generating game code on Nexus | [AI_GAME_DEVELOPER_GUIDE.md](Nexus/Packages/com.nexus.core/docs/AI_GAME_DEVELOPER_GUIDE.md), [GAME_PATTERNS.md](Nexus/Packages/com.nexus.core/docs/GAME_PATTERNS.md) |
+
+Turkish readers: [THE_BIG_NEXUS_HOWTO.md](Nexus/Packages/com.nexus.core/docs/THE_BIG_NEXUS_HOWTO.md) tells the same story as
+the walkthrough as a narrative; the `*_TR.md` files are translations of their English sources.
+
+Everything else: the [package README](Nexus/Packages/com.nexus.core/README.md).
 
 Three importable samples ship with the package: **Code-first Startup** (one component),
 **Counter Example** (full MVCS tour) and **Nexus Starter Package** (scene scaffold).

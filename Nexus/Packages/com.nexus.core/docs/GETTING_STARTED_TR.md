@@ -1,3 +1,5 @@
+> **Kimin için:** seviye 2, mevcut bir oyuna Nexus ekleyen geliştirici. Üç yol: tek bileşen (code-first), sahne kökü veya örnek. Zenject'ten geliyorsanız bundan sonra `ZENJECT_MIGRATION.md`.
+
 # Unity 6 oyununa Nexus ekleme
 
 Nexus, mobil ve PC oyunları için UPM paketidir. Depodaki demo Unity projesini

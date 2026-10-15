@@ -5,34 +5,37 @@ Each gate names its command and its latest measured result; a gate without a fre
 the release commit is red. Numbers here are replaced, never accumulated: the archive under
 `docs/archive/` keeps older snapshots.
 
-Latest full run: **2026-10-15**, branch `fix/gigawatt-findings`; gates 3–5 after `e3afac7` with the typed factory and prefab injection changes, gates 8–9 after `35149a3`,
-Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/` (local, ignored).
+Latest full run: **2026-10-15**, branch `fix/gigawatt-findings`; gates 1, 3–6 and 10 on the working tree after `6f8f546` with the reset fix, the readiness card and the generated-bindings comparison (committed right after the run), gates 8–9 after `35149a3`,
+Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/` (`editmode-reset.xml`, `playmode-reset.xml`, `generate-binder-reset.log`), `Nexus/artifacts/comparison-20261015/after-reset-android-006/` and `Nexus/artifacts/comparison-20261015-generated/generated-android-002/` (local, ignored).
 
 | # | Gate | How to run | Latest result |
 |---|---|---|---|
 | 1 | Host harness green | `dotnet run --project tools/nexus-benchmark` (also the pre-commit hook) | 294 checks PASS, exit 0 |
 | 2 | Harness coverage known | `dotnet run --project tools/nexus-benchmark -- --coverage` | 119 of 124 runtime files compiled; out of scope: `InjectScanner`, `NexusProfiler`, `IAssetLoadService`, `ResourcesAssetLoadService`, `GcAllocationProbe` |
-| 3 | Unity EditMode green | `Unity.exe -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode` | 378 passed, 0 failed, 2 skipped (need a graphics device) |
-| 4 | Unity PlayMode green | `Unity.exe -batchmode -projectPath Nexus -runTests -testPlatform PlayMode` | 163 passed, 0 failed, 2 skipped (assert the `NEXUS_DEBUG`-off configuration) |
+| 3 | Unity EditMode green | `Unity.exe -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode` | 379 passed, 0 failed, 2 skipped (need a graphics device) |
+| 4 | Unity PlayMode green | `Unity.exe -batchmode -projectPath Nexus -runTests -testPlatform PlayMode` | 163 passed, 0 failed, 2 skipped (assert the `NEXUS_DEBUG`-off configuration); the run before the fast-cache revert had 1 failure (`Resolve_NTimes_IncrementsResolvesPerformedByExactlyN`), which is why that change was reverted |
 | 5 | Generated binder current | `Unity.exe -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder` | "no file changes"; `link.xml` preserves `Assembly-CSharp` and `com.nexus.core` |
 | 6 | Documentation consistent | `python tools/check-docs.py` | 0 broken links; every number and path in `README.md`, the package `README.md` and this file verified against the code on 2026-10-15 |
 | 7 | Single changelog | `Nexus/Packages/com.nexus.core/CHANGELOG.md` is the only changelog; `package.json` is the released version | Satisfied on 2026-10-15 (repository-root changelog folded in and removed) |
 | 8 | Clean UPM consumer | `./tools/nexus-consumer/run.ps1 -RunName <name> -BuildPlayer` (packs the tarball, creates a fresh project, imports the sample, runs its tests, builds and runs a Mono player) | 2026-10-15 after `35149a3`, run `consumer-20261015b`: 7 stages exit 0 (pack, import, prepare, EditMode 2/2, PlayMode 1/1, Mono build, player `passed: true`). `-ValidatePerformance` and `-BuildAndroid` not run in this pass |
 | 9 | Player builds | `Unity.exe -batchmode -nographics -projectPath Nexus -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneMono -quit` and `...BuildAndroidIL2CPP` (`tools/unity-verify`) | 2026-10-15 after `35149a3`: Windows Mono player built (47 s, 5 warnings); Android ARM64 IL2CPP APK built (257 s, 6 warnings). Build evidence only; no physical Android/iOS execution has ever been recorded |
-| 10 | Competitor comparison current | `./tools/nexus-comparison/run.ps1` and `run-unity.ps1 -ArtifactFolder comparison-20261015 [-Android]` | 2026-10-15 run `after-mono-android-002`: VContainer 1.19.0, Zenject 9.2.0, Reflex 14.4.0 pinned by commit; host and Unity 6000.5.6f1 Mono player, 12 measurements each; tables in the package `docs/PERFORMANCE_COMPARISON.md`. Nexus leads all three Mono scenarios after the DI optimisation (transient 515 ns vs Reflex 580; startup 5048 vs 5367). Android IL2CPP on a Xiaomi 2311DRK48G (Android 16), run `after-tls-android-003`: cached 30.6 ns (4.5× ahead), startup 25.7 µs (Reflex 27.6, VContainer 61.2), transient 5.3 µs (VContainer 3.9, Reflex 4.2) |
+| 10 | Competitor comparison current | `./tools/nexus-comparison/run.ps1 [-Generated]` and `run-unity.ps1 -ArtifactFolder comparison-20261015[-generated] -Android [-Generated]` | 2026-10-15, VContainer 1.19.0, Zenject 9.2.0, Reflex 14.4.0 pinned by commit; host, Unity 6000.5.6f1 Mono player and Android IL2CPP on a Xiaomi 2311DRK48G (Android 16), 12 measurements each, two configurations; tables in the package `docs/PERFORMANCE_COMPARISON.md`. Reflection run `after-reset-android-006`: device cached 37.1 ns (VContainer 148, Reflex 216), transient 5.5 µs (VContainer 3.9, Reflex 4.3), startup 29.2 µs (Reflex 27.5, VContainer 66.1). Generated run `generated-android-002` (Nexus binder and VContainer injectors verified live): device cached 36.5 ns, transient 2.2 µs (VContainer 1.0, Reflex 4.0), startup 15.4 µs (Reflex 14.6, VContainer 42.2). Device startup drifts ~35% between runs for unchanged libraries; compare within a run |
 | 11 | Consumers re-pinned | Every game that consumes Nexus points at the release commit; no embedded package copies | Open: Gigawatt still carries an embedded copy whose corrections were ported here on 2026-10-15 (`027dab2`, `dd6ffa7`, `4b007db`); it re-pins once this branch is pushed |
 
 ## Open work before the next tagged version
 
 - Re-run gates 1–9 on the release commit itself (this file records runs on the commits named per gate); run gate 8 with `-ValidatePerformance -BuildAndroid`.
 - Windows IL2CPP comparison: Visual Studio's C++ toolchain is not installed on the
-  measuring machine (no `vswhere`), so only the Android IL2CPP path exists; a comparison
-  with generated bindings enabled for every candidate is also open.
+  measuring machine (no `vswhere`), so only the Android IL2CPP path exists.
   No "fastest" claim is made; see the package `docs/PERFORMANCE_COMPARISON.md`.
-- IL2CPP transient construction without generated bindings is 1.3× slower than VContainer on
-  the device (reflection `ConstructorInfo.Invoke` path; a copy-on-write binding map was tried
-  and rejected). Next lever: a comparison configuration with generated bindings enabled for
-  every candidate, which is Nexus's real IL2CPP path.
+- With generated bindings VContainer constructs the transient graph 2.2× faster than Nexus on
+  the device (1.0 vs 2.2 µs): its generated injector is one call per type, while Nexus's
+  generated factory resolves every constructor parameter through the container's full resolve
+  path. Next lever: a parameter-resolve fast path for generated factories, accepted only on a
+  device run (a fast-cache change that looked good on host was reverted on device evidence).
+- Consumers pinned at `5fe1aef` or earlier can lose the generated binder's registrations at
+  `SubsystemRegistration` (fixed after `6f8f546`); after re-pinning, confirm
+  `NexusDI.GeneratedRegistrationCount > 0` in a player or in the Dashboard's build-readiness card.
 - Physical-device acceptance (Android IL2CPP soak, storage interruption, background/resume).
 - Ad and store services now carry the contract a shipped game needed (structured outcomes,
   readiness and store-change events, localized prices, privacy options; see the package

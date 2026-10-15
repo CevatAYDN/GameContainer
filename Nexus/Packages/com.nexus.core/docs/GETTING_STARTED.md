@@ -1,3 +1,5 @@
+> **Who this is for:** level 2, adding Nexus to a game that already exists. Three paths: one component (code-first), a scene root, or the sample. Coming from Zenject, read `ZENJECT_MIGRATION.md` after this.
+
 # Add Nexus to an existing Unity 6 project
 
 Nexus is a UPM package; the repository's demo project is not required. Choose one path.

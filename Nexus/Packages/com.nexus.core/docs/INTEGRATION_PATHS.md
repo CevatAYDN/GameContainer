@@ -1,3 +1,5 @@
+> **Who this is for:** level 2, choosing how deep to integrate (first feature, existing project, loading-time preparation, validation, performance decisions).
+
 # Choose your integration path
 
 Nexus is an architecture foundation for Unity 6 mobile and PC games. Movement,

@@ -1,3 +1,5 @@
+> **Kimin için:** Zenject/Extenject'ten taşınan ekipler (seviye 2). Kavram eşleme tablosu ve adım adım geçiş.
+
 # Zenject → Nexus Geçiş Rehberi
 
 Bu rehber, Zenject/Extenject kullanan bir projenin `com.nexus.core`'a taşınması için kavram eşlemesi ve adım adım yol verir. Nexus, Zenject'in *yerine* değil, sinyal/komut/observable/editor paketiyle *tamamlayan* bir MVCS çekirdeğidir — geçişte en çok iş, binding sözdizimi ve signal sistemi farkındadır.

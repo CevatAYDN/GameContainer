@@ -28,14 +28,18 @@ Pin a commit or release tag in production. Unity resolves the declared dependenc
 (`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`). Minimum Unity is
 6000.0; the package is verified on 6000.5.6f1.
 
-## Start
+## Start: pick your level
 
-| Goal | Read |
-|---|---|
-| Context, signal, command, model, view in 10 minutes | [10_MIN_QUICKSTART.md](docs/10_MIN_QUICKSTART.md) ([TR](docs/10_MIN_QUICKSTART_TR.md)) |
-| Add Nexus to an existing project: code-first, scene-based or sample | [GETTING_STARTED.md](docs/GETTING_STARTED.md) ([TR](docs/GETTING_STARTED_TR.md)) |
-| Beginner, existing game or team workflow paths | [INTEGRATION_PATHS.md](docs/INTEGRATION_PATHS.md) ([TR](docs/INTEGRATION_PATHS_TR.md)) |
-| Hands-on tour from setup to hardening | [walkthrough.md](walkthrough.md) |
+| Level | You | Read, in this order |
+|---|---|---|
+| 0 | Never used dependency injection or a signal bus | [10_MIN_QUICKSTART.md](docs/10_MIN_QUICKSTART.md) ([TR](docs/10_MIN_QUICKSTART_TR.md)), then the **Counter Example** sample |
+| 1 | Shipping a feature in a new Nexus project | [walkthrough.md](walkthrough.md), [CANONICAL-PATTERNS.md](docs/CANONICAL-PATTERNS.md) |
+| 2 | Adding Nexus to an existing game | [GETTING_STARTED.md](docs/GETTING_STARTED.md) ([TR](docs/GETTING_STARTED_TR.md)), [INTEGRATION_PATHS.md](docs/INTEGRATION_PATHS.md) ([TR](docs/INTEGRATION_PATHS_TR.md)); from Zenject: [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) |
+| 3 | Studio: release builds, performance, tooling | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [HARDENING.md](docs/HARDENING.md), [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md), [ADAPTERS.md](docs/ADAPTERS.md), [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md), the Dashboard's build-readiness card |
+| AI agent | Generating game code on Nexus | [AI_GAME_DEVELOPER_GUIDE.md](docs/AI_GAME_DEVELOPER_GUIDE.md), [GAME_PATTERNS.md](docs/GAME_PATTERNS.md) |
+
+Turkish readers: [THE_BIG_NEXUS_HOWTO.md](docs/THE_BIG_NEXUS_HOWTO.md) tells the same story as
+the walkthrough as a narrative; the `*_TR.md` files are translations of their English sources.
 
 Samples (Package Manager → Nexus → Samples): **Code-first Startup** (attach `ScoreBootstrap` to
 a GameObject and press Play), **Counter Example** ([README](Samples~/Counter/README.md), the
@@ -83,7 +87,10 @@ falls back to reflection at runtime with a warning.
 **Editor suite** (Window → Nexus → Dashboard, `Ctrl+Shift+N`), 16 plugins: Dashboard,
 GameManager, Hierarchy, Explorer, Graph, TypeAnalyzer, ContextInspector, FSM, Tracer,
 ErrorDashboard, PerformanceDashboard, NetworkDashboard, Wizard (plus the Setup Wizard),
-CasualServices, Help. Also custom inspectors, a scene-view overlay of context boundaries, a Unity
+CasualServices, Help. The Dashboard's build-readiness card shows the AOT binder state,
+`link.xml`, the active build target and its scripting defines, generated injectors that fell back
+to reflection, and DI validation issues of the active contexts, with one-click check and
+generate. Also custom inspectors, a scene-view overlay of context boundaries, a Unity
 Profiler module, build validation rules, an architecture analyzer with a headless gate, and
 hot-reload hooks. Editor text is localized in English and Turkish.
 
@@ -200,7 +207,6 @@ IL2CPP performance, and no universal winner is claimed.
 | [STABILITY.md](docs/STABILITY.md) | Pre-1.0 stability policy |
 | [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Writing editor plugins |
 | [LOCALIZATION_KEYS.md](docs/LOCALIZATION_KEYS.md) | Editor localization keys and parity rules |
-| [DeveloperOnboarding.md](docs/DeveloperOnboarding.md) | Running tests and verification steps for a new integrator |
 | [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Coding rules, test requirements, wizard template procedure, PR checklist |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Symptoms, causes and fixes |
 | [MIGRATION.md](MIGRATION.md), [BREAKING_CHANGES.md](BREAKING_CHANGES.md) | Version-to-version migration and the breaking-change policy |

@@ -1,3 +1,5 @@
+> **Who this is for:** AI agents and architects choosing a context topology per genre.
+
 > **For AI Agents:** This document is the source of truth for selecting and configuring Nexus Core architecture patterns across different game genres (Casual, Mid-core, Hardcore RPG, Simulation, Strategy RTS).
 > Refer to [README.md](../README.md#glossary) and [ARCHITECTURE.md](ARCHITECTURE.md) for core concepts.
 

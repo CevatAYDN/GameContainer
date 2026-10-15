@@ -1,3 +1,5 @@
+> **Who this is for:** level 3, release engineering. What was verified, how, and the measured host performance; device evidence is tracked separately.
+
 # Correctness, integration and performance hardening
 
 Target: Unity 6 + UPM for mobile and PC. Audit: 6 October 2026; implementation validation:

@@ -1,3 +1,5 @@
+> **Kimin için:** Türkçe okuyan seviye 1 geliştirici. `walkthrough.md` ile aynı hikâyeyi neden-sonuç anlatımıyla verir; İngilizce kanonik belgeler güncellendiğinde bu metin de aynı commit'te güncellenir.
+
 # The Big Nexus How-To
 
 > Neden önce, nasıl sonra. Bu rehber Nexus'u *kural listesi* olarak değil, bir

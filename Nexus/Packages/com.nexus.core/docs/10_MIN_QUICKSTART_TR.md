@@ -1,3 +1,5 @@
+> **Kimin için:** seviye 0, daha önce DI container veya signal bus kullanmamış geliştirici. Sonunda tek bir sinyal → komut → model → view döngüsü çalışan bir sahneniz olur. Sonraki adım: Counter Example örneği, ardından `walkthrough.md`.
+
 # 🚀 Nexus 10 Dakikada Hızlı Başlangıç
 
 > **Sıfırdan çalışan koda 10 dakikada ulaşın.**  

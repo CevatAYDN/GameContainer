@@ -1,3 +1,5 @@
+> **Who this is for:** level 3, wiring real ad and store SDKs behind the services.
+
 # Ad and store adapters
 
 `AdService` and `IapService` carry no SDK dependency. Each talks to one adapter interface; the

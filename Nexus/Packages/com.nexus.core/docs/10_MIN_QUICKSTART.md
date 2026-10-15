@@ -1,3 +1,5 @@
+> **Who this is for:** level 0, a developer who has never used a DI container or a signal bus. You leave with a scene that runs one signal → command → model → view loop. Next: the Counter Example sample, then `walkthrough.md`.
+
 # 🚀 Nexus 10-Minute Quickstart
 
 > **From zero to running code in 10 minutes.**  

@@ -1,3 +1,5 @@
+> **Who this is for:** level 3 and contributors. How contexts, containers, the signal bus and the editor host fit together, with the hardening contracts the runtime guarantees.
+
 > **For AI Agents:** This document is the source of truth for the Nexus Core runtime architecture, container lifecycles, signal dispatch pipelines, and editor host interactions. Before making architectural changes:
 > 1. Read [README.md](../README.md#glossary) for domain terminology.
 > 2. Inspect [Context.cs](../Runtime/Core/Context.cs) and [SignalBus.cs](../Runtime/Core/SignalBus.cs).
