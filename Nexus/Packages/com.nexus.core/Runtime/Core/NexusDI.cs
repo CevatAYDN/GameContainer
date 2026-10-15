@@ -86,18 +86,22 @@ namespace Nexus.Core
         }
         private FastResolveCache _fastCache;
 
+        /// <summary>
+        /// Only resolved local singleton instances enter the fast cache. Transients were tried as cached
+        /// <see cref="Binding"/> objects on 2026-10-15: the extra type test on every hit cost more on
+        /// IL2CPP than the lookup it saved, and the shortcut bypassed the resolve accounting. Inherited
+        /// values and adapters never enter the cache; every local bind bumps <c>_bindingVersion</c>,
+        /// which drops the whole cache.
+        /// </summary>
         private void CacheFastSlot(int typeId, Type type, object instance)
         {
-            // Transients, inherited values and adapters never enter the local fast cache.
-            // Reject them before taking the disposal lock; recheck cached ownership inside
-            // the lock so concurrent rebinding cannot publish a stale instance.
+            // Reject before taking the disposal lock; recheck cached ownership inside the lock so
+            // concurrent rebinding cannot publish a stale instance.
             if (instance == null || !_bindings.TryGetValue(type, out var candidate)
                 || !candidate.IsSingleton || !ReferenceEquals(candidate.Instance, instance)) return;
             lock (_disposeLock)
             {
                 if (IsDisposed) return;
-                // Never cache transients, adapters, or inherited registrations. Their
-                // ownership/creation rules remain in Resolve(Type), including parent teardown.
                 if (!_bindings.TryGetValue(type, out var binding)
                     || !binding.IsSingleton || !ReferenceEquals(binding.Instance, instance)) return;
                 long version = Volatile.Read(ref _bindingVersion);
@@ -457,6 +461,14 @@ namespace Nexus.Core
             public bool[] ConstructorParameterHasDefault { get; set; }
             /// <summary>Per-parameter default value when <see cref="ConstructorParameterHasDefault"/> is true.</summary>
             public object[] ConstructorParameterDefaults { get; set; }
+            /// <summary>True when any [Inject] field, property or method exists (the member-injection loops have work).</summary>
+            public bool HasMembers => Fields.Length > 0 || Properties.Length > 0 || Methods.Length > 0;
+            /// <summary>
+            /// A leaf takes nothing from the container (no constructor parameters, no members, no
+            /// post-construct hooks) and therefore cannot take part in a resolution cycle.
+            /// </summary>
+            public bool IsLeaf => (ConstructorParameterTypes == null || ConstructorParameterTypes.Length == 0)
+                && !HasMembers && PostConstructMethods == null;
         }
         private class ClearableMetadata
         {
@@ -830,9 +842,12 @@ namespace Nexus.Core
                     RunPostConstructs(instance, meta);
                     return instance;
                 }
-                InjectFields(instance, type, meta);
-                InjectProperties(instance, type, meta);
-                InjectMethods(instance, type, meta);
+                if (meta.HasMembers)
+                {
+                    InjectFields(instance, type, meta);
+                    InjectProperties(instance, type, meta);
+                    InjectMethods(instance, type, meta);
+                }
                 RunPostConstructs(instance, meta);
                 return instance;
             }
@@ -1826,6 +1841,13 @@ namespace Nexus.Core
             ThrowIfDisposed();
             if (binding.Instance != null) return binding.Instance;
 
+            // A transient leaf (cached metadata says it takes nothing from the container) cannot form a
+            // cycle, so it skips the resolution-chain bookkeeping entirely.
+            if (!binding.IsSingleton && binding.Factory == null && binding.ParameterOverrides == null
+                && Volatile.Read(ref binding.CacheGeneration) == Volatile.Read(ref s_cacheGeneration)
+                && binding.CachedMeta != null && binding.CachedMeta.IsLeaf)
+                return _injector.CreateAndInject(binding);
+
             // Cycle detection must also guard factory-produced instances. Previously
             // the factory check ran BEFORE the resolution-stack push, so a factory that
             // resolved back to its own key (directly or transitively) recursed until
@@ -2347,6 +2369,18 @@ namespace Nexus.Core
             Interlocked.Increment(ref s_cacheGeneration);
         }
 
+        /// <summary>True when a generated (AOT) constructor factory is registered for <paramref name="type"/>.</summary>
+        public static bool HasRegisteredConstructorFactory(Type type) => type != null && s_constructorFactories.ContainsKey(type);
+
+        /// <summary>Types whose generated injector was found stale at runtime and replaced by reflection (regenerate the binder).</summary>
+        public static Type[] GetStaleGeneratedInjectorTypes()
+        {
+            var stale = new List<Type>();
+            foreach (var pair in s_checkedInjectors)
+                if (!pair.Value) stale.Add(pair.Key);
+            return stale.ToArray();
+        }
+
         public static void RegisterInjector<T>(Action<T, NexusDI> injector) where T : class
         {
             s_customInjectors[typeof(T)] = (instance, di) => injector((T)instance, di);
@@ -2565,15 +2599,36 @@ namespace Nexus.Core
             });
         }
 
+        /// <summary>
+        /// Drops the derived caches (reflection metadata, interface scans, the per-type check of generated
+        /// injectors) and bumps the cache generation. Generated registrations (constructor factories,
+        /// injectors, clearers) are code, not caches: they stay. <see cref="NexusRuntime.Reset"/> runs this
+        /// at <c>SubsystemRegistration</c>, in unspecified order relative to the generated binder's own
+        /// <c>SubsystemRegistration</c> method; until 2026-10-15 it also cleared the registrations, so a
+        /// binder that happened to run first was silently replaced by reflection in the player.
+        /// </summary>
         public static void ClearCaches()
         {
-            s_customInjectors.Clear();
-            s_customClearers.Clear();
             s_checkedInjectors.Clear();
-            s_constructorFactories.Clear();
             s_userDefinedInterfacesCache.Clear();
             MetadataCache.ClearAll();
             Interlocked.Increment(ref s_cacheGeneration);
         }
+
+        /// <summary>
+        /// Removes every generated registration (constructor factories, injectors, clearers) and the
+        /// derived caches, so injection runs by reflection until a binder registers again. For tests and
+        /// benchmarks that compare the reflection path; a game never needs it.
+        /// </summary>
+        public static void ClearGeneratedRegistrations()
+        {
+            s_customInjectors.Clear();
+            s_customClearers.Clear();
+            s_constructorFactories.Clear();
+            ClearCaches();
+        }
+
+        /// <summary>Generated registrations currently live (constructor factories plus injectors); zero means injection runs by reflection.</summary>
+        public static int GeneratedRegistrationCount => s_constructorFactories.Count + s_customInjectors.Count;
     }
 }

@@ -535,10 +535,10 @@ namespace NexusBench
 
         private static void Test_CtorFactory_ClearedByNexusRuntime_Reset()
         {
-            // Register a factory, then Reset (as Unity does on domain reload with
-            // Domain Reload disabled). The factory dictionary must be cleared so the type
-            // falls back to the reflection path instead of a stale lambda holding a dead
-            // assembly reference.
+            // Generated registrations are code, not caches: NexusRuntime.Reset (SubsystemRegistration,
+            // in unspecified order relative to the generated binder's own registration) must keep them,
+            // otherwise a binder that ran first is silently replaced by reflection in the player
+            // (observed 2026-10-15 in the Unity comparison). Only ClearGeneratedRegistrations drops them.
             NexusDI.RegisterConstructorFactory<CtorDep>(di => new CtorDep(999, null));
             NexusRuntime.Reset();
             var container = new NexusDI();
@@ -548,11 +548,14 @@ namespace NexusBench
             {
                 container.BindFluent<FluentDep>().AsScoped();
                 container.Bind<CtorDep>(Lifetime.Transient);
+                var kept = container.Resolve<CtorDep>();
+                bool survivedReset = kept.Value == 999 && NexusDI.GeneratedRegistrationCount >= 1;
+                NexusDI.ClearGeneratedRegistrations();
                 var dep = container.Resolve<CtorDep>();
                 // Reflection path: int param unresolvable (non-strict) -> 0, dep resolved.
                 bool fellBack = dep.Value == 0 && dep.Dep != null;
-                ok = fellBack;
-                detail = $"value={dep.Value} depNull={dep.Dep == null}";
+                ok = survivedReset && fellBack;
+                detail = $"afterReset={kept.Value} afterClear={dep.Value} depNull={dep.Dep == null}";
             }
             catch (Exception ex)
             {
@@ -561,9 +564,9 @@ namespace NexusBench
             finally
             {
                 try { container.Dispose(); } catch (Exception ex) { Console.WriteLine($"[NewFeature] container.Dispose teardown: {ex.Message}"); }
-                try { NexusRuntime.Reset(); } catch (Exception ex) { Console.WriteLine($"[NewFeature] NexusRuntime.Reset teardown: {ex.Message}"); }
+                try { NexusRuntime.Reset(); NexusDI.ClearGeneratedRegistrations(); } catch (Exception ex) { Console.WriteLine($"[NewFeature] NexusRuntime.Reset teardown: {ex.Message}"); }
             }
-            Report("CF3. CtorFactory_ClearedByNexusRuntime_Reset", ok, detail);
+            Report("CF3. CtorFactory_SurvivesReset_ClearedExplicitly", ok, detail);
         }
 
         private static void Test_CtorFactory_WithParameter_OverrideWins()

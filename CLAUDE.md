@@ -27,6 +27,8 @@ python tools/check-docs.py                                       # markdown link
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults Nexus\artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults Nexus\artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
+./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date> -Android            # reflection configuration: host, Mono player, Android device
+./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date>-generated -Android -Generated   # generated bindings (own artifact folder: the analyzer and the define stay in the project)
 ```
 
 Unity runs one instance per project: never start a Unity command while another is running on
@@ -40,6 +42,8 @@ before tests, or the Standalone define `NEXUS_DEBUG` silently drops out of edito
 **Code**
 - Runtime code must compile in the host harness too. A new public API used by `NexusCodeGenerator.cs` needs its mirror in `tools/nexus-benchmark/GeneratorStubs.cs`.
 - Keep the allocation contracts in the package README "Performance scope" table; a change on a hot path needs a harness proof (GCAudit or a suite assertion).
+- A DI hot-path change is accepted on the Android IL2CPP comparison run, never on host numbers alone (a change that cut host transient cost by a quarter tripled device cached resolve on 2026-10-15 and was reverted).
+- Generated registrations (constructor factories, injectors, clearers) are code, not caches: `NexusDI.ClearCaches()` and `NexusRuntime.Reset()` keep them. Tests and tools that want the reflection path call `NexusDI.ClearGeneratedRegistrations()`.
 - Files use CRLF line endings on disk (`core.autocrlf=true`); new `.cs` and `.md` files follow that.
 - New source files under the package need their Unity `.meta` file: run any Unity command once and commit the generated `.meta` with the file.
 

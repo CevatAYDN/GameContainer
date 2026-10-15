@@ -241,6 +241,7 @@ namespace NexusBench
             finally
             {
                 NexusRuntime.Reset();
+                NexusDI.ClearGeneratedRegistrations();
             }
 
             Console.WriteLine();

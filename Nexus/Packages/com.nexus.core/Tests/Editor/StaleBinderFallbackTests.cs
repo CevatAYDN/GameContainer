@@ -26,8 +26,8 @@ namespace Nexus.Editor.Tests
     /// </summary>
     public sealed class StaleBinderFallbackTests
     {
-        [SetUp] public void Reset() => NexusDI.ClearCaches();
-        [TearDown] public void Cleanup() => NexusDI.ClearCaches();
+        [SetUp] public void Reset() => NexusDI.ClearGeneratedRegistrations();
+        [TearDown] public void Cleanup() => NexusDI.ClearGeneratedRegistrations();
 
         [Test]
         public void StaleGeneratedInjectorFallsBackToReflection()

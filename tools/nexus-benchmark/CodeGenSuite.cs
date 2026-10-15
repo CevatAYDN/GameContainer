@@ -227,6 +227,7 @@ namespace NexusBench.CG2Source
             {
                 // Clear stale factories/injectors so the generated binder is authoritative.
                 NexusRuntime.Reset();
+                NexusDI.ClearGeneratedRegistrations();
 
                 // 1) Compile + load the stub source assembly FIRST so the emitted binder can
                 //    reference its types when it is compiled afterwards. Byte-loaded assemblies
@@ -426,7 +427,7 @@ namespace NexusBench.CG2Source
             {
                 try { container?.Dispose(); } catch (Exception ex) { Console.WriteLine($"[CodeGen] container.Dispose teardown: {ex.Message}"); }
                 container = null;
-                try { NexusRuntime.Reset(); } catch (Exception ex) { Console.WriteLine($"[CodeGen] NexusRuntime.Reset teardown: {ex.Message}"); }
+                try { NexusRuntime.Reset(); NexusDI.ClearGeneratedRegistrations(); } catch (Exception ex) { Console.WriteLine($"[CodeGen] NexusRuntime.Reset teardown: {ex.Message}"); }
                 try { if (Directory.Exists(cg2Dir)) Directory.Delete(cg2Dir, true); } catch { }
             }
             Report("CG2. SourceGenerator_Emits_Compiles_And_Boots", ok, detail);
@@ -517,6 +518,7 @@ namespace NexusBench.CG2Source
                 if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
                 // Clear any stale factories/injectors so the generated binder is authoritative.
                 NexusRuntime.Reset();
+                NexusDI.ClearGeneratedRegistrations();
 
                 NexusCodeGenerator.GenerateBinder();
 
@@ -615,7 +617,7 @@ namespace NexusBench.CG2Source
             {
                 try { container?.Dispose(); } catch (Exception ex) { Console.WriteLine($"[CodeGen] container.Dispose teardown: {ex.Message}"); }
                 container = null;
-                try { NexusRuntime.Reset(); } catch (Exception ex) { Console.WriteLine($"[CodeGen] NexusRuntime.Reset teardown: {ex.Message}"); }
+                try { NexusRuntime.Reset(); NexusDI.ClearGeneratedRegistrations(); } catch (Exception ex) { Console.WriteLine($"[CodeGen] NexusRuntime.Reset teardown: {ex.Message}"); }
                 // Keep the emitted binder on failure so the failing output can be inspected.
                 if (ok)
                 {
