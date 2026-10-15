@@ -3,7 +3,9 @@ param(
     [string]$UnityCli = (Join-Path $env:LOCALAPPDATA 'Unity/bin/unity.exe'),
     [string]$RunName = 'mono',
     [string]$PackagePath = '',
-    [string]$ArtifactFolder = 'performance-20261007'
+    [string]$ArtifactFolder = 'performance-20261007',
+    [switch]$Android,
+    [string]$AdbSerial = ''
 )
 $ErrorActionPreference = 'Stop'
 if ($RunName -notmatch '^[a-zA-Z0-9_-]+$') { throw 'RunName must be a simple folder name.' }
@@ -59,6 +61,49 @@ try {
        workingTreeDiff = ((& git -C $repo diff --stat) -join "`n"); result = $result } | ConvertTo-Json |
         Set-Content -LiteralPath (Join-Path $evidence 'source-identity.json') -Encoding utf8
     $report.Measurements | Select-Object Library, Scenario, MedianNsPerOperation, BytesPerOperation | Format-Table -AutoSize
+
+    if ($Android) {
+        # Same benchmark as an Android ARM64 IL2CPP non-development player, run on the connected device.
+        $apk = Join-Path $evidence 'player-android/Comparison.apk'
+        $androidResult = Join-Path $evidence 'android-results.json'
+        $env:NEXUS_COMPARE_PLAYER = $apk
+        & $UnityCli run $project --non-interactive --json -- -buildTarget Android -nographics -executeMethod ComparisonBuild.BuildAndroidIl2cpp -logFile (Join-Path $evidence 'build-android-editor.log') *> (Join-Path $evidence 'build-android-cli.log')
+        if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $apk)) { throw 'Unity Android IL2CPP build failed; inspect build-android logs.' }
+        $adbArgs = @(); if ($AdbSerial) { $adbArgs = @('-s', $AdbSerial) }
+        $devices = @((& adb devices) | Where-Object { $_ -match "`tdevice$" })
+        if (-not $AdbSerial -and $devices.Count -ne 1) { throw "Expected exactly one adb device, found $($devices.Count); pass -AdbSerial." }
+        $package = 'com.nexus.comparison'
+        $deviceFile = "/sdcard/Android/data/$package/files/unity-results.json"
+        & adb @adbArgs install -r $apk | Out-Null
+        if ($LASTEXITCODE -ne 0) { throw 'adb install failed.' }
+        & adb @adbArgs shell am force-stop $package | Out-Null
+        & adb @adbArgs shell rm -f $deviceFile | Out-Null
+        & adb @adbArgs logcat -c | Out-Null
+        $component = ((& adb @adbArgs shell cmd package resolve-activity --brief -c android.intent.category.LAUNCHER $package) | Where-Object { $_ -match '/' } | Select-Object -Last 1).Trim()
+        if (-not $component) { throw 'Could not resolve the comparison app launcher activity.' }
+        & adb @adbArgs shell am start -n $component | Out-Null
+        $deadline = (Get-Date).AddSeconds(240); $done = $false
+        while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Seconds 3
+            $log = (& adb @adbArgs logcat -d -s Unity:I 2>$null) -join "`n"
+            if ($log -match 'NEXUS_COMPARE_DONE') { $done = $true; break }
+        }
+        (& adb @adbArgs logcat -d -s Unity:I 2>$null) | Set-Content -LiteralPath (Join-Path $evidence 'android-logcat.log') -Encoding utf8
+        & adb @adbArgs shell am force-stop $package | Out-Null
+        if (-not $done) { throw 'The device benchmark did not report completion; see android-logcat.log.' }
+        $json = (& adb @adbArgs exec-out cat $deviceFile) -join "`n"
+        if (-not $json -or $json -notmatch 'Measurements') { throw 'Could not read the device result file.' }
+        Set-Content -LiteralPath $androidResult -Value $json -Encoding utf8
+        $androidReport = $json | ConvertFrom-Json
+        if ($androidReport.Backend -ne 'IL2CPP' -or $androidReport.DevelopmentBuild -or $androidReport.NexusDebug -or $androidReport.Measurements.Count -ne 12) {
+            throw 'Unexpected Android benchmark configuration/results.'
+        }
+        $model = (& adb @adbArgs shell getprop ro.product.model).Trim(); $release = (& adb @adbArgs shell getprop ro.build.version.release).Trim()
+        @{ model = $model; androidRelease = $release; abi = (& adb @adbArgs shell getprop ro.product.cpu.abi).Trim(); apk = $apk; apkSha256 = (Get-FileHash -LiteralPath $apk).Hash } |
+            ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'android-device.json') -Encoding utf8
+        Write-Host "Android ($model, Android $release, IL2CPP):"
+        $androidReport.Measurements | Select-Object Library, Scenario, MedianNsPerOperation | Format-Table -AutoSize
+    }
 } finally {
     $env:NEXUS_COMPARE_PLAYER = $oldPlayer
     $env:NEXUS_COMPARE_RESULT = $oldResult

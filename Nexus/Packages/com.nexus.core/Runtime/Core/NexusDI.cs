@@ -53,11 +53,23 @@ namespace Nexus.Core
             get
             {
                 lock (_singletonLock)
-                    return _resolvedSingletons.Count;
+                    return _resolvedSingletonOrder?.Count ?? 0;
             }
         }
         public bool StrictInjection { get; set; }
-        internal readonly ConcurrentQueue<INexusService> _lazyServicesPendingInit = new();
+        // Created on the first lazy-service notification; most containers never queue one.
+        private ConcurrentQueue<INexusService> _lazyServicesPendingInit;
+        internal bool HasPendingLazyServices
+        {
+            get { var queue = Volatile.Read(ref _lazyServicesPendingInit); return queue != null && !queue.IsEmpty; }
+        }
+        internal bool TryDequeuePendingLazyService(out INexusService service)
+        {
+            var queue = Volatile.Read(ref _lazyServicesPendingInit);
+            if (queue != null) return queue.TryDequeue(out service);
+            service = null;
+            return false;
+        }
         private readonly NexusDI _parent;
         // Local binding changes invalidate this cache. Inherited registrations are never
         // cached here, so unrelated contexts retain their warmed resolution arrays.
@@ -92,7 +104,7 @@ namespace Nexus.Core
                 var cache = _fastCache;
                 if (cache == null || cache.Version != version || typeId >= cache.Slots.Length)
                 {
-                    var replacement = new FastResolveCache(version, Math.Max(128, typeId + 64));
+                    var replacement = new FastResolveCache(version, Math.Max(16, typeId + 16));
                     if (cache != null && cache.Version == version)
                         Array.Copy(cache.Slots, replacement.Slots, cache.Slots.Length);
                     cache = replacement;
@@ -104,16 +116,17 @@ namespace Nexus.Core
         // Optional feature maps are published on first registration, not per scope.
         // Their standard concurrency policy is unchanged once allocated.
         private ConcurrentDictionary<Type, bool> _crossBoundaryTypes;
-        private readonly ConcurrentDictionary<Type, Binding> _bindings = new();
+        // Small striping: binds are rare and lock-striped, resolves are lock-free reads; the default
+        // (processor-count locks, 31 buckets) charged every container for concurrency it never uses.
+        private readonly ConcurrentDictionary<Type, Binding> _bindings = new(concurrencyLevel: 1, capacity: 8);
         // Named bindings (Strange-style named injection): key = (type, name).
         // Missing explicit names never fall back to the default registration.
         private ConcurrentDictionary<(Type Type, string Name), Binding> _namedBindings;
-        private readonly HashSet<object> _resolvedSingletons = new(ReferenceComparer<object>.Instance);
         // Creation-ordered list of container-owned instances so Dispose tears down in REVERSE
         // creation order (a dependency created before its consumers is disposed after them,
         // so [Deconstruct]/Dispose can still touch it). The HashSet above stays for O(1)
         // membership/count/editor snapshots; this list carries the order guarantee.
-        private readonly List<object> _resolvedSingletonOrder = new();
+        private List<object> _resolvedSingletonOrder;
         private int _disposeState;
         private readonly object _disposeLock = new();
         private ConcurrentDictionary<Type, bool> _lazyServiceTypes;
@@ -157,11 +170,9 @@ namespace Nexus.Core
             {
                 lock (_singletonLock)
                 {
-                    if (_resolvedSingletons.Count == 0)
+                    if (_resolvedSingletonOrder == null || _resolvedSingletonOrder.Count == 0)
                         return Array.Empty<object>();
-                    var array = new object[_resolvedSingletons.Count];
-                    _resolvedSingletons.CopyTo(array);
-                    return array;
+                    return _resolvedSingletonOrder.ToArray();
                 }
             }
         }
@@ -180,13 +191,12 @@ namespace Nexus.Core
         // Interface metadata is immutable per Type, so the GetInterfaces() walk runs once per type.
         private static readonly ConcurrentDictionary<Type, Type[]> s_userDefinedInterfacesCache = new();
 
-        private readonly ConditionalWeakTable<object, PendingInjection> _pendingInjections = new();
+        private ConditionalWeakTable<object, PendingInjection> _pendingInjections; // created with the first pending member
         private readonly object _pendingInjectionsLock = new();
         // Keyed by the Binding object (not the requested Type): polymorphic bindings
         // (BindMultiple) expose ONE shared Binding under several interface keys, and a
         // type-keyed guard would let two threads construct the same singleton through
         // two different interfaces concurrently.
-        private readonly HashSet<Binding> _constructingSingletons = new();
         private readonly object _singletonLock = new();
         // Background dispose task for IAsyncDisposable singletons scheduled by Dispose()
         // When Dispose() collects async disposables it runs them through DisposeAllAsyncInBackground
@@ -194,7 +204,7 @@ namespace Nexus.Core
         // for deterministic teardown when needed.
         private Task _backgroundDisposeTask;
         // Per-binding wait handles for singleton construction synchronization
-        private readonly Dictionary<Binding, ManualResetEventSlim> _constructionWaitHandles = new();
+        private Dictionary<Binding, ManualResetEventSlim> _constructionWaitHandles; // first concurrent construction
         private readonly object _constructionWaitLock = new();
         private readonly Injector _injector;
 
@@ -204,8 +214,40 @@ namespace Nexus.Core
         // supported contract (BindFactory is documented as synchronous).
         // Keyed by (type, name) so two DIFFERENT named bindings of the same type can
         // legitimately appear in one chain without a false circular-dependency error.
-        [ThreadStatic]
-        private static HashSet<(Type Type, string Name)> s_resolutionStack;
+        [ThreadStatic] private static Type[] s_resolutionTypes;
+        [ThreadStatic] private static string[] s_resolutionNames;
+        [ThreadStatic] private static int s_resolutionDepth;
+
+        /// <summary>Pushes (type, name) onto this thread's synchronous resolution chain; a repeat is a cycle.</summary>
+        private static int PushResolution(Type type, string name)
+        {
+            var types = s_resolutionTypes ??= new Type[16];
+            var names = s_resolutionNames ??= new string[16];
+            int depth = s_resolutionDepth;
+            for (int i = 0; i < depth; i++)
+            {
+                if (types[i] == type && string.Equals(names[i], name, StringComparison.Ordinal))
+                    throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}{(string.IsNullOrEmpty(name) ? "" : $" (name '{name}')")}. Resolution chain forms a cycle.");
+            }
+            if (depth == types.Length)
+            {
+                Array.Resize(ref s_resolutionTypes, depth * 2);
+                Array.Resize(ref s_resolutionNames, depth * 2);
+                types = s_resolutionTypes;
+                names = s_resolutionNames;
+            }
+            types[depth] = type;
+            names[depth] = name;
+            s_resolutionDepth = depth + 1;
+            return depth;
+        }
+
+        private static void PopResolution(int depth)
+        {
+            s_resolutionDepth = depth;
+            s_resolutionTypes[depth] = null;
+            s_resolutionNames[depth] = null;
+        }
 
         private class Binding
         {
@@ -232,7 +274,21 @@ namespace Nexus.Core
             public Func<object> Factory { get; set; }
             /// <summary>Explicit constructor parameter values (fluent <c>WithParameter</c>). Null when none.</summary>
             public ParameterOverride[] ParameterOverrides { get; set; }
+
+            // Transient fast path: the static lookups (generated factory, metadata, generated
+            // injector) are cached here and refreshed whenever s_cacheGeneration moves.
+            public int CacheGeneration = -1;
+            public InjectableMetadata CachedMeta;
+            public Func<NexusDI, object> CachedConstructor;
+            public Action<object, NexusDI> CachedInjector;
+            public bool CachedInjectorVerified;
+
+            /// <summary>1 while a thread constructs this singleton (guarded by _singletonLock; concurrent readers wait on a handle).</summary>
+            public int Constructing;
         }
+
+        /// <summary>Bumped by every change to the static caches so per-binding caches refresh.</summary>
+        private static int s_cacheGeneration;
 
         /// <summary>
         /// An explicit value for one constructor parameter of a binding's implementation,
@@ -729,6 +785,64 @@ namespace Nexus.Core
                 var meta = MetadataCache.GetOrCreateInjectMetadata(type);
                 if ((overrides == null || overrides.Count == 0) && meta.CompiledConstructor != null)
                     return meta.CompiledConstructor(_di);
+                return CreateInstanceCore(type, meta, overrides);
+            }
+
+            /// <summary>
+            /// Transient creation with the static lookups cached on the binding: no dictionary
+            /// lookups per instance once the binding has been resolved under the current cache
+            /// generation. Overrides and an external adapter keep the general path.
+            /// </summary>
+            public object CreateAndInject(Binding binding)
+            {
+                var overrides = binding.ParameterOverrides;
+                if ((overrides != null && overrides.Length > 0) || _di.ExternalAdapter != null)
+                {
+                    var general = CreateInstance(binding.ConcreteType, overrides);
+                    Inject(general);
+                    return general;
+                }
+                int generation = Volatile.Read(ref s_cacheGeneration);
+                if (Volatile.Read(ref binding.CacheGeneration) != generation)
+                    RefreshBindingCache(binding, generation);
+                var type = binding.ConcreteType;
+                var meta = binding.CachedMeta;
+                var ctor = binding.CachedConstructor;
+                object instance = ctor != null ? ctor(_di) : CreateInstanceCore(type, meta, null);
+                var injector = binding.CachedInjector;
+                if (injector != null)
+                {
+                    injector(instance, _di);
+                    if (!binding.CachedInjectorVerified)
+                    {
+                        CheckGeneratedInjectorOnce(instance, type, meta);
+                        binding.CachedInjectorVerified = Volatile.Read(ref s_cacheGeneration) == generation;
+                    }
+                    RunPostConstructs(instance, meta);
+                    return instance;
+                }
+                InjectFields(instance, type, meta);
+                InjectProperties(instance, type, meta);
+                InjectMethods(instance, type, meta);
+                RunPostConstructs(instance, meta);
+                return instance;
+            }
+
+            private static void RefreshBindingCache(Binding binding, int generation)
+            {
+                var type = binding.ConcreteType;
+                var meta = MetadataCache.GetOrCreateInjectMetadata(type);
+                s_constructorFactories.TryGetValue(type, out var factory);
+                s_customInjectors.TryGetValue(type, out var injector);
+                binding.CachedMeta = meta;
+                binding.CachedConstructor = factory ?? meta.CompiledConstructor;
+                binding.CachedInjector = injector;
+                binding.CachedInjectorVerified = false;
+                Volatile.Write(ref binding.CacheGeneration, generation); // publish after the fields
+            }
+
+            private object CreateInstanceCore(Type type, InjectableMetadata meta, IReadOnlyList<ParameterOverride> overrides)
+            {
                 if (meta.Constructor == null)
                     return Activator.CreateInstance(type, true);
 
@@ -813,22 +927,7 @@ namespace Nexus.Core
                     // is cached, so this is a one-time scan per type, not a per-resolve cost.
                     injector(instance, _di);
                     var generatedMeta = MetadataCache.GetOrCreateInjectMetadata(type);
-                    if (!s_checkedInjectors.ContainsKey(type))
-                    {
-                        string missing = FirstMemberTheInjectorSkipped(instance, generatedMeta);
-                        s_checkedInjectors[type] = missing == null;
-                        if (missing != null)
-                        {
-                            // Stale binder: stop trusting it for this type and inject by reflection, now and for every later instance.
-                            s_customInjectors.TryRemove(type, out _);
-                            s_customClearers.TryRemove(type, out _);
-                            NexusRuntime.Logger?.LogWarning($"[Nexus] The generated binder does not inject '{type.FullName}.{missing}' (it was generated before that member existed). " +
-                                "Falling back to reflection for this type; regenerate the binder (Nexus > Generate AOT Binder).");
-                            InjectFields(instance, type, generatedMeta);
-                            InjectProperties(instance, type, generatedMeta);
-                            InjectMethods(instance, type, generatedMeta);
-                        }
-                    }
+                    CheckGeneratedInjectorOnce(instance, type, generatedMeta);
                     RunPostConstructs(instance, generatedMeta);
                     return;
                 }
@@ -839,6 +938,27 @@ namespace Nexus.Core
                 InjectProperties(instance, type, meta);
                 InjectMethods(instance, type, meta);
                 RunPostConstructs(instance, meta);
+            }
+
+            /// <summary>
+            /// First instance of a type after a generated injector ran: if a required member the container could have
+            /// supplied is still null, the binder is stale for that type; the injector and clearer are dropped (every
+            /// per-binding cache refreshes through the generation bump) and this instance is injected by reflection.
+            /// </summary>
+            private void CheckGeneratedInjectorOnce(object instance, Type type, InjectableMetadata meta)
+            {
+                if (s_checkedInjectors.ContainsKey(type)) return;
+                string missing = FirstMemberTheInjectorSkipped(instance, meta);
+                s_checkedInjectors[type] = missing == null;
+                if (missing == null) return;
+                s_customInjectors.TryRemove(type, out _);
+                s_customClearers.TryRemove(type, out _);
+                Interlocked.Increment(ref s_cacheGeneration);
+                NexusRuntime.Logger?.LogWarning($"[Nexus] The generated binder does not inject '{type.FullName}.{missing}' (it was generated before that member existed). " +
+                    "Falling back to reflection for this type; regenerate the binder (Nexus > Generate AOT Binder).");
+                InjectFields(instance, type, meta);
+                InjectProperties(instance, type, meta);
+                InjectMethods(instance, type, meta);
             }
 
             /// <summary>
@@ -1443,8 +1563,7 @@ namespace Nexus.Core
                 {
                     lock (_singletonLock)
                     {
-                        _resolvedSingletons.Add(instance);
-                        _resolvedSingletonOrder.Add(instance);
+                        TrackResolvedSingleton(instance);
                     }
                 }
             }
@@ -1461,8 +1580,7 @@ namespace Nexus.Core
                 SetNamedBindingCore((typeof(T), name), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
                 lock (_singletonLock)
                 {
-                    _resolvedSingletons.Add(instance);
-                    _resolvedSingletonOrder.Add(instance);
+                    TrackResolvedSingleton(instance);
                 }
             }
         }
@@ -1543,11 +1661,30 @@ namespace Nexus.Core
                 var fastInstance = Volatile.Read(ref cache.Slots[typeId]);
                 if (fastInstance != null) return (T)fastInstance;
             }
-            var resolved = (T)Resolve(typeof(T));
-            CacheFastSlot(typeId, typeof(T), resolved);
+            var resolved = (T)ResolveCore(typeof(T), throwIfMissing: true, out var binding);
+            if (binding != null && binding.IsSingleton && ReferenceEquals(binding.Instance, resolved))
+                CacheFastSlot(typeId, typeof(T), resolved);
             return resolved;
         }
-        public T TryResolve<T>() where T : class => IsRegistered(typeof(T)) ? Resolve<T>() : null;
+
+        /// <summary>Null when the type is not registered anywhere in the chain; otherwise the same as <see cref="Resolve{T}"/>.</summary>
+        public T TryResolve<T>() where T : class
+        {
+            int typeId = TypeIdCache<T>.Id;
+            var cache = Volatile.Read(ref _fastCache);
+            if (cache != null && cache.Version == Volatile.Read(ref _bindingVersion)
+                && typeId < cache.Slots.Length)
+            {
+                var fastInstance = Volatile.Read(ref cache.Slots[typeId]);
+                if (fastInstance != null) return (T)fastInstance;
+            }
+            var resolved = ResolveCore(typeof(T), throwIfMissing: false, out var binding);
+            if (resolved == null) return null;
+            ThrowIfDisposed();
+            if (binding != null && binding.IsSingleton && ReferenceEquals(binding.Instance, resolved))
+                CacheFastSlot(typeId, typeof(T), resolved);
+            return (T)resolved;
+        }
         /// <summary>Safely resolves a named binding; returns null when the name is not registered.</summary>
         public T TryResolve<T>(string name) where T : class => TryResolve(typeof(T), name) as T;
 
@@ -1578,7 +1715,13 @@ namespace Nexus.Core
             }
             return value;
         }
-        public object TryResolve(Type type) => (type != null && IsRegistered(type)) ? Resolve(type) : null;
+        public object TryResolve(Type type)
+        {
+            if (type == null) return null;
+            var resolved = ResolveCore(type, throwIfMissing: false, out _);
+            if (resolved != null) ThrowIfDisposed();
+            return resolved;
+        }
 
         /// <summary>
         /// Resolves a named binding. An explicitly requested but unregistered name throws —
@@ -1612,36 +1755,49 @@ namespace Nexus.Core
             return IsRegistered(type, name) ? Resolve(type, name) : null;
         }
 
-        // Profiler marker + counter on the resolve hot path. Marker is ungated (standard
-        // pattern, negligible when the profiler is off); the counter is compiled out in
-        // non-development builds by Unity. See NexusProfiler.
+        // Profiler marker + counter on the resolve hot path. Both exist only where Unity enables
+        // the profiler (editor and development builds); release players pay nothing. See NexusProfiler.
+#if ENABLE_PROFILER
         private static readonly ProfilerMarker s_ResolveMarker = new ProfilerMarker("Nexus.DI.Resolve");
+#endif
 
         public object Resolve(Type type)
         {
             ThrowIfDisposed();
+            return ResolveCore(type, throwIfMissing: true, out _);
+        }
+
+        /// <summary>
+        /// One lookup per container level for both Resolve and TryResolve. LOCAL bindings win over
+        /// the external adapter (an explicit Bind is never shadowed by the adapter's fast path);
+        /// the parent chain is last. <paramref name="binding"/> is the local binding that served
+        /// the request, or null when an adapter or parent served it.
+        /// </summary>
+        private object ResolveCore(Type type, bool throwIfMissing, out Binding binding)
+        {
             NexusProfiler.ResolvesPerformed.Value += 1;
+#if ENABLE_PROFILER
             s_ResolveMarker.Begin();
+#endif
             try
             {
+                binding = null;
                 if (type == typeof(NexusDI)) return this;
-
-                // LOCAL bindings win over the external adapter: an explicit Bind here is a
-                // user-provided value and must never be silently shadowed by the adapter's
-                // fast path. The adapter is consulted only for types this container does not
-                // bind (the bridge contract). Parent-chain resolution stays last.
-                if (_bindings.TryGetValue(type, out var binding))
+                if (_bindings.TryGetValue(type, out binding))
                     return ResolveAndNotifyLazy(type, binding);
-
                 if (ExternalAdapter != null && ExternalAdapter.IsRegistered(type))
                     return ExternalAdapter.Resolve(type);
-
-                if (_parent != null) return _parent.Resolve(type);
-                throw new InvalidOperationException($"Dependency of type {type.FullName} is not registered.");
+                if (_parent != null)
+                    return throwIfMissing ? _parent.Resolve(type) : _parent.ResolveCore(type, false, out _);
+                if (throwIfMissing)
+                    throw new InvalidOperationException($"Dependency of type {type.FullName} is not registered.");
+                return null;
             }
             finally
             {
+#if ENABLE_PROFILER
                 s_ResolveMarker.End();
+#endif
             }
         }
 
@@ -1667,9 +1823,7 @@ namespace Nexus.Core
             // StackOverflowException — an uncatchable process crash. Moving the factory
             // call inside the guarded block turns that into a clear, catchable
             // InvalidOperationException naming the offending type.
-            s_resolutionStack ??= new HashSet<(Type, string)>();
-            if (!s_resolutionStack.Add((type, name)))
-                throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}{(string.IsNullOrEmpty(name) ? "" : $" (name '{name}')")}. Resolution chain forms a cycle.");
+            int depth = PushResolution(type, name);
 
             bool addedToConstructing = false;
             ManualResetEventSlim waitHandle = null;
@@ -1695,7 +1849,7 @@ namespace Nexus.Core
                                 throw new ObjectDisposedException(nameof(NexusDI), $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
 
                             if (binding.Instance != null) return binding.Instance;
-                            if (_constructingSingletons.Add(binding))
+                            if (Interlocked.CompareExchange(ref binding.Constructing, 1, 0) == 0)
                             {
                                 addedToConstructing = true;
                                 break;
@@ -1703,7 +1857,7 @@ namespace Nexus.Core
 
                             // Another thread is constructing this singleton.
                             // Get or create a wait handle for this binding.
-                            if (!_constructionWaitHandles.TryGetValue(binding, out waitHandle))
+                            if (!(_constructionWaitHandles ??= new Dictionary<Binding, ManualResetEventSlim>()).TryGetValue(binding, out waitHandle))
                             {
                                 waitHandle = new ManualResetEventSlim(false);
                                 _constructionWaitHandles[binding] = waitHandle;
@@ -1728,17 +1882,16 @@ namespace Nexus.Core
                                 throw new ObjectDisposedException(nameof(NexusDI), $"Cannot publish singleton '{type.FullName}': the container has been disposed.");
                             }
                             binding.Instance = singletonInstance;
-                            _resolvedSingletons.Add(singletonInstance);
-                            _resolvedSingletonOrder.Add(singletonInstance);
+                            TrackResolvedSingleton(singletonInstance);
                         }
                     }
                     finally
                     {
                         lock (_singletonLock)
                         {
-                            _constructingSingletons.Remove(binding);
+                            Volatile.Write(ref binding.Constructing, 0);
                             // Signal all waiting threads that construction is complete.
-                            if (_constructionWaitHandles.TryGetValue(binding, out var wh))
+                            if (_constructionWaitHandles != null && _constructionWaitHandles.TryGetValue(binding, out var wh))
                             {
                                 wh.Set();
                                 _constructionWaitHandles.Remove(binding);
@@ -1749,19 +1902,17 @@ namespace Nexus.Core
                     return singletonInstance;
                 }
 
-                var transientInstance = _injector.CreateInstance(binding.ConcreteType, binding.ParameterOverrides);
-                _injector.Inject(transientInstance);
-                return transientInstance;
+                return _injector.CreateAndInject(binding);
             }
             finally
             {
-                s_resolutionStack.Remove((type, name));
+                PopResolution(depth);
                 if (addedToConstructing)
                 {
                     lock (_singletonLock)
                     {
-                        _constructingSingletons.Remove(binding);
-                        if (_constructionWaitHandles.TryGetValue(binding, out var wh))
+                        Volatile.Write(ref binding.Constructing, 0);
+                        if (_constructionWaitHandles != null && _constructionWaitHandles.TryGetValue(binding, out var wh))
                         {
                             wh.Set();
                             _constructionWaitHandles.Remove(binding);
@@ -1796,7 +1947,7 @@ namespace Nexus.Core
 
             lock (_pendingInjectionsLock)
             {
-                if (!_pendingInjections.TryGetValue(instance, out var pending))
+                if (_pendingInjections == null || !_pendingInjections.TryGetValue(instance, out var pending))
                     return true;
 
                 bool allSucceeded = true;
@@ -1844,7 +1995,7 @@ namespace Nexus.Core
                     else { allSucceeded = false; }
                 }
 
-                if (allSucceeded) _pendingInjections.Remove(instance);
+                if (allSucceeded) _pendingInjections?.Remove(instance);
                 return allSucceeded;
             }
         }
@@ -1854,7 +2005,7 @@ namespace Nexus.Core
             var snapshot = new List<KeyValuePair<object, PendingInjection>>();
             lock (_pendingInjectionsLock)
             {
-                foreach (var kvp in _pendingInjections) snapshot.Add(kvp);
+                if (_pendingInjections != null) foreach (var kvp in _pendingInjections) snapshot.Add(kvp);
             }
 
             int resolved = 0;
@@ -1869,7 +2020,7 @@ namespace Nexus.Core
         {
             lock (_pendingInjectionsLock)
             {
-                _pendingInjections.Remove(instance);
+                _pendingInjections?.Remove(instance);
             }
         }
 
@@ -1877,7 +2028,7 @@ namespace Nexus.Core
         {
             lock (_pendingInjectionsLock)
             {
-                var pending = _pendingInjections.GetOrCreateValue(instance);
+                var pending = (_pendingInjections ??= new ConditionalWeakTable<object, PendingInjection>()).GetOrCreateValue(instance);
                 pending.Fields.Add(field);
             }
         }
@@ -1886,7 +2037,7 @@ namespace Nexus.Core
         {
             lock (_pendingInjectionsLock)
             {
-                var pending = _pendingInjections.GetOrCreateValue(instance);
+                var pending = (_pendingInjections ??= new ConditionalWeakTable<object, PendingInjection>()).GetOrCreateValue(instance);
                 pending.Properties.Add(property);
             }
         }
@@ -1895,7 +2046,7 @@ namespace Nexus.Core
         {
             lock (_pendingInjectionsLock)
             {
-                var pending = _pendingInjections.GetOrCreateValue(instance);
+                var pending = (_pendingInjections ??= new ConditionalWeakTable<object, PendingInjection>()).GetOrCreateValue(instance);
                 for (int i = 0; i < pending.Methods.Count; i++)
                 {
                     if (pending.Methods[i].Method == method)
@@ -2130,7 +2281,10 @@ namespace Nexus.Core
             if (instance is INexusService service
                 && GetOrCreateOptionalMap(ref _lazyServicesEnqueued, ReferenceComparer<INexusService>.Instance).TryAdd(service, true))
             {
-                _lazyServicesPendingInit.Enqueue(service);
+                var queue = Volatile.Read(ref _lazyServicesPendingInit)
+                    ?? Interlocked.CompareExchange(ref _lazyServicesPendingInit, new ConcurrentQueue<INexusService>(), null)
+                    ?? _lazyServicesPendingInit;
+                queue.Enqueue(service);
                 LazyServiceResolvedCallback?.Invoke(service);
             }
         }
@@ -2138,7 +2292,7 @@ namespace Nexus.Core
         public IEnumerable<object> GetActiveSingletons()
         {
             lock (_singletonLock)
-                return new List<object>(_resolvedSingletons);
+                return _resolvedSingletonOrder == null ? new List<object>() : new List<object>(_resolvedSingletonOrder);
         }
 
         public Dictionary<Type, object> GetRegisteredSingletons()
@@ -2181,19 +2335,34 @@ namespace Nexus.Core
         {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             s_constructorFactories[typeof(T)] = di => factory(di);
+            Interlocked.Increment(ref s_cacheGeneration);
         }
 
         public static void RegisterInjector<T>(Action<T, NexusDI> injector) where T : class
         {
             s_customInjectors[typeof(T)] = (instance, di) => injector((T)instance, di);
+            Interlocked.Increment(ref s_cacheGeneration);
         }
 
         public static void RegisterClearer<T>(Action<T> clearer) where T : class
         {
             s_customClearers[typeof(T)] = instance => clearer((T)instance);
+            Interlocked.Increment(ref s_cacheGeneration);
         }
 
         // ─── Disposal ───
+        /// <summary>
+        /// Caller holds <c>_singletonLock</c>. The list is creation-ordered and unique by reference
+        /// (an instance bound under several keys is tracked once), so teardown needs no extra set.
+        /// </summary>
+        private void TrackResolvedSingleton(object instance)
+        {
+            var order = _resolvedSingletonOrder ??= new List<object>(4);
+            for (int i = 0; i < order.Count; i++)
+                if (ReferenceEquals(order[i], instance)) return;
+            order.Add(instance);
+        }
+
         private bool TryBeginDispose(out List<object> singletonsInCreationOrder)
         {
             lock (_disposeLock)
@@ -2208,9 +2377,9 @@ namespace Nexus.Core
                     // Snapshot the CREATION-ORDERED list so teardown runs in reverse creation
                     // order (a dependency created before its consumers is disposed after them).
                     // The HashSet stays for O(1) membership/count/editor snapshots.
-                    singletonsInCreationOrder = new List<object>(_resolvedSingletonOrder);
-                    _resolvedSingletons.Clear();
-                    _resolvedSingletonOrder.Clear();
+                    // Hand the creation-ordered list over instead of copying it; a disposed container never tracks again.
+                    singletonsInCreationOrder = _resolvedSingletonOrder;
+                    _resolvedSingletonOrder = null;
                 }
                 _bindings.Clear();
                 Volatile.Read(ref _namedBindings)?.Clear();
@@ -2222,16 +2391,15 @@ namespace Nexus.Core
         public void Dispose()
         {
             if (!TryBeginDispose(out var singletonsCopy)) return;
+            if (singletonsCopy == null || singletonsCopy.Count == 0) return; // nothing owned: no teardown bookkeeping to allocate
 
-            var alreadyDisposed = new HashSet<object>(ReferenceComparer<object>.Instance);
             
-            var asyncDisposables = new List<IAsyncDisposable>();
+            List<IAsyncDisposable> asyncDisposables = null; // only pure IAsyncDisposable singletons need it
             // Reverse creation order: dependencies created first are disposed last, so
             // [Deconstruct]/Dispose on a consumer can still touch its dependencies.
             for (int i = singletonsCopy.Count - 1; i >= 0; i--)
             {
                 var instance = singletonsCopy[i];
-                if (!alreadyDisposed.Add(instance)) continue;
                 try
                 {
                     // INexusService lifecycle (InitializeAsync/OnDispose) is owned by the owning
@@ -2265,7 +2433,7 @@ namespace Nexus.Core
                             // awaiting sequentially on the thread pool with ConfigureAwait(false)
                             // preserves order AND prevents continuations from re-capturing the
                             // Unity SynchronizationContext of the (disposing) caller.
-                            asyncDisposables.Add(asyncDisposable);
+                            (asyncDisposables ??= new List<IAsyncDisposable>()).Add(asyncDisposable);
                         }
                     }
                     else if (instance is IDisposable disposable)
@@ -2278,7 +2446,7 @@ namespace Nexus.Core
                     NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
                 }
             }
-            if (asyncDisposables.Count > 0)
+            if (asyncDisposables != null)
                 _backgroundDisposeTask = DisposeAllAsyncInBackground(asyncDisposables);
         }
 
@@ -2331,14 +2499,14 @@ namespace Nexus.Core
         public async ValueTask DisposeAsync()
         {
             if (!TryBeginDispose(out var singletonsCopy)) return;
+            if (singletonsCopy == null || singletonsCopy.Count == 0) return; // nothing owned: no teardown bookkeeping to allocate
 
-            var alreadyDisposed = new HashSet<object>(ReferenceComparer<object>.Instance);
 
             // Reverse creation order (see Dispose).
             for (int i = singletonsCopy.Count - 1; i >= 0; i--)
             {
                 var instance = singletonsCopy[i];
-                if (alreadyDisposed.Add(instance))
+                // unique by construction (TrackResolvedSingleton)
                 {
                     try
                     {
@@ -2396,6 +2564,7 @@ namespace Nexus.Core
             s_constructorFactories.Clear();
             s_userDefinedInterfacesCache.Clear();
             MetadataCache.ClearAll();
+            Interlocked.Increment(ref s_cacheGeneration);
         }
     }
 }

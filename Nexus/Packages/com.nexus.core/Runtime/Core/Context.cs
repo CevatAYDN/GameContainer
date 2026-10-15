@@ -460,7 +460,7 @@ namespace Nexus.Core
             await InitializeLazyServicesAsync(ct);
             ct.ThrowIfCancellationRequested();
             Volatile.Write(ref _lifecycleState, 2);
-            if (!Container._lazyServicesPendingInit.IsEmpty)
+            if (Container.HasPendingLazyServices)
                 ScheduleLazyServiceDrain();
         }
 
@@ -507,7 +507,7 @@ namespace Nexus.Core
 
         internal async ValueTask InitializeLazyServicesAsync(CancellationToken ct)
         {
-            while (Container._lazyServicesPendingInit.TryDequeue(out var service))
+            while (Container.TryDequeuePendingLazyService(out var service))
             {
                 if (ct.IsCancellationRequested) break;
                 await service.InitializeAsync(ct);
@@ -536,7 +536,7 @@ namespace Nexus.Core
             finally
             {
                 Volatile.Write(ref _lazyDrainScheduled, 0);
-                if (Volatile.Read(ref _disposeState) == 0 && !Container._lazyServicesPendingInit.IsEmpty)
+                if (Volatile.Read(ref _disposeState) == 0 && Container.HasPendingLazyServices)
                     ScheduleLazyServiceDrain();
             }
         }

@@ -31,6 +31,9 @@ python tools/check-docs.py                                       # markdown link
 
 Unity runs one instance per project: never start a Unity command while another is running on
 `Nexus/`, and do not edit files under `Nexus/` while a batch run is in progress.
+A player build leaves the editor on that build target; `NexusVerifyBuild` switches back, but after any
+other Android build run `Unity.exe -batchmode -nographics -quit -projectPath Nexus -buildTarget Win64`
+before tests, or the Standalone define `NEXUS_DEBUG` silently drops out of editor compilation.
 
 ## Rules
 

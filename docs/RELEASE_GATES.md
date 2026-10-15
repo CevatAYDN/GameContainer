@@ -19,17 +19,18 @@ Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/`
 | 7 | Single changelog | `Nexus/Packages/com.nexus.core/CHANGELOG.md` is the only changelog; `package.json` is the released version | Satisfied on 2026-10-15 (repository-root changelog folded in and removed) |
 | 8 | Clean UPM consumer | `./tools/nexus-consumer/run.ps1 -RunName <name> -BuildPlayer` (packs the tarball, creates a fresh project, imports the sample, runs its tests, builds and runs a Mono player) | 2026-10-15 after `35149a3`, run `consumer-20261015b`: 7 stages exit 0 (pack, import, prepare, EditMode 2/2, PlayMode 1/1, Mono build, player `passed: true`). `-ValidatePerformance` and `-BuildAndroid` not run in this pass |
 | 9 | Player builds | `Unity.exe -batchmode -nographics -projectPath Nexus -executeMethod NexusVerify.NexusVerifyBuild.BuildStandaloneMono -quit` and `...BuildAndroidIL2CPP` (`tools/unity-verify`) | 2026-10-15 after `35149a3`: Windows Mono player built (47 s, 5 warnings); Android ARM64 IL2CPP APK built (257 s, 6 warnings). Build evidence only; no physical Android/iOS execution has ever been recorded |
-| 10 | Competitor comparison current | `./tools/nexus-comparison/run.ps1` and `run-unity.ps1 -ArtifactFolder comparison-20261015` | 2026-10-15: VContainer 1.19.0, Zenject 9.2.0, Reflex 14.4.0 pinned by commit; host and Unity 6000.5.6f1 Mono player, 12 measurements each; tables in the package `docs/PERFORMANCE_COMPARISON.md`. Nexus leads cached resolve only; Reflex leads transient and startup in the player |
+| 10 | Competitor comparison current | `./tools/nexus-comparison/run.ps1` and `run-unity.ps1 -ArtifactFolder comparison-20261015 [-Android]` | 2026-10-15 run `after-mono-android-002`: VContainer 1.19.0, Zenject 9.2.0, Reflex 14.4.0 pinned by commit; host and Unity 6000.5.6f1 Mono player, 12 measurements each; tables in the package `docs/PERFORMANCE_COMPARISON.md`. Nexus leads all three Mono scenarios after the DI optimisation (transient 515 ns vs Reflex 580; startup 5048 vs 5367). Android IL2CPP APK built; the phone refused USB installation, no device numbers |
 | 11 | Consumers re-pinned | Every game that consumes Nexus points at the release commit; no embedded package copies | Open: Gigawatt still carries an embedded copy whose corrections were ported here on 2026-10-15 (`027dab2`, `dd6ffa7`, `4b007db`); it re-pins once this branch is pushed |
 
 ## Open work before the next tagged version
 
 - Re-run gates 1–9 on the release commit itself (this file records runs on the commits named per gate); run gate 8 with `-ValidatePerformance -BuildAndroid`.
-- Windows IL2CPP comparison (the tool measures Mono players; IL2CPP needs the C++ build
-  tools installed) and a comparison with generated bindings enabled for every candidate.
+- Windows IL2CPP comparison: Visual Studio's C++ toolchain is not installed on the
+  measuring machine (no `vswhere`), so only the Android IL2CPP path exists; a comparison
+  with generated bindings enabled for every candidate is also open.
   No "fastest" claim is made; see the package `docs/PERFORMANCE_COMPARISON.md`.
-- Close the measured gap to Reflex on transient construction and warm register/build
-  startup in the Unity Mono player (2026-10-15: 1116 vs 588 ns and 13353 vs 5515 ns).
+- Device numbers for the comparison: enable "Install via USB" in the phone's developer
+  options (Xiaomi 2311DRK48G, Android 16) and rerun `run-unity.ps1 -Android`; the APK is built.
 - Physical-device acceptance (Android IL2CPP soak, storage interruption, background/resume).
 - Ad and store services vs. a shipped game: Gigawatt does not use `AdService`/`IapService`; it
   needed a consent flow (Google UMP), privacy options, readiness events and localized prices, and

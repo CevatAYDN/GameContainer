@@ -26,6 +26,10 @@ namespace NexusVerify
             // non-obsolete Unity 6 API (the BuildTargetGroup overloads are CS0618).
             var namedTarget = NamedBuildTarget.FromBuildTargetGroup(group);
             var previous = PlayerSettings.GetScriptingBackend(namedTarget);
+            // BuildPlayer switches the editor's active build target and leaves it there, which changes
+            // which scripting defines (e.g. the Standalone NEXUS_DEBUG) later editor runs compile with.
+            var previousTarget = EditorUserBuildSettings.activeBuildTarget;
+            var previousGroup = BuildPipeline.GetBuildTargetGroup(previousTarget);
             PlayerSettings.SetScriptingBackend(namedTarget, backend);
             try
             {
@@ -53,6 +57,8 @@ namespace NexusVerify
             finally
             {
                 PlayerSettings.SetScriptingBackend(namedTarget, previous);
+                if (EditorUserBuildSettings.activeBuildTarget != previousTarget)
+                    EditorUserBuildSettings.SwitchActiveBuildTarget(previousGroup, previousTarget);
             }
         }
 

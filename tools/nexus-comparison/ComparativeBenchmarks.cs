@@ -53,9 +53,14 @@ public static class ComparativeBenchmarks
     {
         try
         {
-            string destination = Environment.GetEnvironmentVariable("NEXUS_COMPARE_RESULT");
+            // Desktop players receive the result path through the environment; a device player has no
+            // environment, so it writes next to its persistent data (adb reads it back) and logs a marker.
+            string destination = UnityEngine.Application.platform == UnityEngine.RuntimePlatform.Android
+                ? Path.Combine(UnityEngine.Application.persistentDataPath, "unity-results.json")
+                : Environment.GetEnvironmentVariable("NEXUS_COMPARE_RESULT");
             if (string.IsNullOrEmpty(destination)) throw new InvalidOperationException("NEXUS_COMPARE_RESULT is required.");
             Main(new[] { destination });
+            UnityEngine.Debug.Log("NEXUS_COMPARE_DONE " + destination);
             UnityEngine.Application.Quit(0);
         }
         catch (Exception error)

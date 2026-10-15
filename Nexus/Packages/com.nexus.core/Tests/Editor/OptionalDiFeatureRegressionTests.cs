@@ -81,12 +81,12 @@ namespace Nexus.Core.Tests
             var service = new EqualService();
             di.BindInstance(service);
             Assert.AreSame(service, di.Resolve<EqualService>());
-            Assert.IsTrue(di._lazyServicesPendingInit.IsEmpty);
+            Assert.IsFalse(di.HasPendingLazyServices);
             di.MarkLazyService(typeof(EqualService));
             di.Resolve(typeof(EqualService)); di.Resolve(typeof(EqualService));
-            Assert.IsTrue(di._lazyServicesPendingInit.TryDequeue(out var queued));
+            Assert.IsTrue(di.TryDequeuePendingLazyService(out var queued));
             Assert.AreSame(service, queued);
-            Assert.IsTrue(di._lazyServicesPendingInit.IsEmpty);
+            Assert.IsFalse(di.HasPendingLazyServices);
         }
 
         [Test]
@@ -98,7 +98,9 @@ namespace Nexus.Core.Tests
             di.LazyServiceResolvedCallback = _ => Interlocked.Increment(ref notifications);
             Parallel.For(0, 64, index => di.NotifyLazyServiceResolved(typeof(EqualService), index % 2 == 0 ? first : second));
             Assert.AreEqual(2, notifications);
-            var queued = di._lazyServicesPendingInit.ToArray();
+            var queuedList = new System.Collections.Generic.List<INexusService>();
+            while (di.TryDequeuePendingLazyService(out var item)) queuedList.Add(item);
+            var queued = queuedList.ToArray();
             Assert.AreEqual(2, queued.Length);
             Assert.AreEqual(1, queued.Count(value => ReferenceEquals(value, first)));
             Assert.AreEqual(1, queued.Count(value => ReferenceEquals(value, second)));

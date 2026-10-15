@@ -31,6 +31,43 @@ public static class ComparisonBuild
         AssetDatabase.SaveAssets();
     }
 
+    /// <summary>Android ARM64 IL2CPP, non-development: the same benchmark on a real device. run-unity.ps1 -Android installs and runs it.</summary>
+    public static void BuildAndroidIl2cpp()
+    {
+        try
+        {
+            if (!File.Exists(Path.Combine(Application.dataPath, "NexusComparison.marker")))
+                throw new InvalidOperationException("Use the isolated comparison project.");
+            string target = Environment.GetEnvironmentVariable("NEXUS_COMPARE_PLAYER");
+            if (string.IsNullOrEmpty(target)) throw new InvalidOperationException("NEXUS_COMPARE_PLAYER is required.");
+            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
+            PlayerSettings.SetScriptingDefineSymbols(NamedBuildTarget.Android, "");
+            PlayerSettings.Android.targetArchitectures = AndroidArchitecture.ARM64;
+            PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.Android, "com.nexus.comparison");
+            PlayerSettings.runInBackground = true;
+            EditorUserBuildSettings.buildAppBundle = false;
+            CreateReflexSettings();
+            var scene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Single);
+            Directory.CreateDirectory("Assets/Scenes");
+            if (!EditorSceneManager.SaveScene(scene, "Assets/Scenes/Comparison.unity"))
+                throw new InvalidOperationException("Could not save comparison scene.");
+            var build = BuildPipeline.BuildPlayer(new BuildPlayerOptions
+            {
+                scenes = new[] { "Assets/Scenes/Comparison.unity" },
+                locationPathName = target,
+                target = BuildTarget.Android,
+                options = BuildOptions.None,
+            });
+            Debug.Log("NEXUS_COMPARE_ANDROID_BUILD: " + build.summary.result);
+            EditorApplication.Exit(build.summary.result == BuildResult.Succeeded ? 0 : 2);
+        }
+        catch (Exception error)
+        {
+            Debug.LogException(error);
+            EditorApplication.Exit(2);
+        }
+    }
+
     public static void BuildMono()
     {
         try
