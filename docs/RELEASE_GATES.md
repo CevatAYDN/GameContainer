@@ -5,15 +5,15 @@ Each gate names its command and its latest measured result; a gate without a fre
 the release commit is red. Numbers here are replaced, never accumulated: the archive under
 `docs/archive/` keeps older snapshots.
 
-Latest full run: **2026-10-15**, branch `fix/gigawatt-findings` after commit `4b007db`,
+Latest full run: **2026-10-15**, branch `fix/gigawatt-findings` after commit `e3afac7` (typed factories and prefab injection included),
 Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/` (local, ignored).
 
 | # | Gate | How to run | Latest result |
 |---|---|---|---|
 | 1 | Host harness green | `dotnet run --project tools/nexus-benchmark` (also the pre-commit hook) | 294 checks PASS, exit 0 |
 | 2 | Harness coverage known | `dotnet run --project tools/nexus-benchmark -- --coverage` | 119 of 124 runtime files compiled; out of scope: `InjectScanner`, `NexusProfiler`, `IAssetLoadService`, `ResourcesAssetLoadService`, `GcAllocationProbe` |
-| 3 | Unity EditMode green | `Unity.exe -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode` | 365 passed, 0 failed, 2 skipped (need a graphics device) |
-| 4 | Unity PlayMode green | `Unity.exe -batchmode -projectPath Nexus -runTests -testPlatform PlayMode` | 160 passed, 0 failed, 2 skipped (assert the `NEXUS_DEBUG`-off configuration) |
+| 3 | Unity EditMode green | `Unity.exe -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode` | 370 passed, 0 failed, 2 skipped (need a graphics device) |
+| 4 | Unity PlayMode green | `Unity.exe -batchmode -projectPath Nexus -runTests -testPlatform PlayMode` | 163 passed, 0 failed, 2 skipped (assert the `NEXUS_DEBUG`-off configuration) |
 | 5 | Generated binder current | `Unity.exe -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder` | "no file changes"; `link.xml` preserves `Assembly-CSharp` and `com.nexus.core` |
 | 6 | Documentation consistent | `python tools/check-docs.py` | 0 broken links; every number and path in `README.md`, the package `README.md` and this file verified against the code on 2026-10-15 |
 | 7 | Single changelog | `Nexus/Packages/com.nexus.core/CHANGELOG.md` is the only changelog; `package.json` is the released version | Satisfied on 2026-10-15 (repository-root changelog folded in and removed) |
@@ -31,10 +31,10 @@ Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/`
 - Close the measured gap to Reflex on transient construction and warm register/build
   startup in the Unity Mono player (2026-10-15: 1116 vs 588 ns and 13353 vs 5515 ns).
 - Physical-device acceptance (Android IL2CPP soak, storage interruption, background/resume).
-- Adapter guide (Ads/IAP providers) verified against the current `AdAdapterFactory` /
-  `IapAdapterFactory` API; the old Turkish examples are archived in `docs/archive/INTEGRATION.md`.
-- Prefab/component instantiate-and-inject API and a typed factory (`IFactory<T>`): present in
-  VContainer, Reflex and Zenject, absent here.
+- Ad and store services vs. a shipped game: Gigawatt does not use `AdService`/`IapService`; it
+  needed a consent flow (Google UMP), privacy options, readiness events and localized prices, and
+  built its own `IRewardedAds`/`IGameStore`. Either grow the package services to that contract or
+  document them as mock-level scaffolding; see the package `docs/ADAPTERS.md`.
 
 ## Policy
 
