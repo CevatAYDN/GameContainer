@@ -168,6 +168,9 @@ namespace Nexus.Core
 
         private static readonly ConcurrentDictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
         private static readonly ConcurrentDictionary<Type, Action<object>> s_customClearers = new();
+        // Generated injectors are checked once per type against the type's real [Inject] members. A binder generated
+        // before a member was added never sets that member, and no reflection pass runs while an injector exists.
+        private static readonly ConcurrentDictionary<Type, bool> s_checkedInjectors = new();
         // AOT codegen constructor factories (NexusGeneratedBinder.g.cs): zero-reflection
         // instantiation on every build target. Keyed by the CONCRETE type; the generated
         // lambda is `di => new T(di.Resolve<A>(), di.Resolve<B>())` so readonly/immutable
@@ -809,7 +812,24 @@ namespace Nexus.Core
                     // would silently drop post-construction hooks on the AOT path. The metadata
                     // is cached, so this is a one-time scan per type, not a per-resolve cost.
                     injector(instance, _di);
-                    RunPostConstructs(instance, MetadataCache.GetOrCreateInjectMetadata(type));
+                    var generatedMeta = MetadataCache.GetOrCreateInjectMetadata(type);
+                    if (!s_checkedInjectors.ContainsKey(type))
+                    {
+                        string missing = FirstMemberTheInjectorSkipped(instance, generatedMeta);
+                        s_checkedInjectors[type] = missing == null;
+                        if (missing != null)
+                        {
+                            // Stale binder: stop trusting it for this type and inject by reflection, now and for every later instance.
+                            s_customInjectors.TryRemove(type, out _);
+                            s_customClearers.TryRemove(type, out _);
+                            NexusRuntime.Logger?.LogWarning($"[Nexus] The generated binder does not inject '{type.FullName}.{missing}' (it was generated before that member existed). " +
+                                "Falling back to reflection for this type; regenerate the binder (Nexus > Generate AOT Binder).");
+                            InjectFields(instance, type, generatedMeta);
+                            InjectProperties(instance, type, generatedMeta);
+                            InjectMethods(instance, type, generatedMeta);
+                        }
+                    }
+                    RunPostConstructs(instance, generatedMeta);
                     return;
                 }
 
@@ -819,6 +839,28 @@ namespace Nexus.Core
                 InjectProperties(instance, type, meta);
                 InjectMethods(instance, type, meta);
                 RunPostConstructs(instance, meta);
+            }
+
+            /// <summary>
+            /// Name of the first required [Inject] field or property that a generated injector left null although this
+            /// container could have supplied it, or null when the injector covered every such member. Members whose
+            /// binding is absent are not counted: reflection would leave them null too, so they say nothing about the binder.
+            /// </summary>
+            private string FirstMemberTheInjectorSkipped(object instance, InjectableMetadata meta)
+            {
+                for (int i = 0; i < meta.Fields.Length; i++)
+                {
+                    var f = meta.Fields[i];
+                    if (f.IsOptional || f.IsLazy || f.Type.IsValueType || !_di.IsRegistered(f.Type, f.Name)) continue;
+                    if ((f.Getter != null ? f.Getter(instance) : f.Field.GetValue(instance)) == null) return f.Field.Name;
+                }
+                for (int i = 0; i < meta.Properties.Length; i++)
+                {
+                    var p = meta.Properties[i];
+                    if (p.IsOptional || p.IsLazy || p.Type.IsValueType || !p.Property.CanRead || !_di.IsRegistered(p.Type, p.Name)) continue;
+                    if (p.Property.GetValue(instance) == null) return p.Property.Name;
+                }
+                return null;
             }
 
             /// <summary>
@@ -2298,6 +2340,7 @@ namespace Nexus.Core
         {
             s_customInjectors.Clear();
             s_customClearers.Clear();
+            s_checkedInjectors.Clear();
             s_constructorFactories.Clear();
             s_userDefinedInterfacesCache.Clear();
             MetadataCache.ClearAll();
