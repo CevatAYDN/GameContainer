@@ -62,21 +62,24 @@ Before the DI optimisation of 15 October the same player measured Nexus at 1115.
 player (`player-android/Comparison.apk`, 26 MB) and runs it on the connected device through
 adb. Device: Xiaomi 2311DRK48G (MediaTek MT6897), Android 16, arm64-v8a; the phone owner
 accepted the USB install. Allocation bytes are unavailable in the player (`-1`). Run
-`after-mono-android-002/android-results.json`, `android-device.json`, `android-logcat.log`.
+`after-tls-android-003/android-results.json`, `android-device.json`, `android-logcat.log`
+(the previous run `after-mono-android-002`, before the cycle stack moved to one thread-static
+object, measured Nexus at 6005 ns transient and 29334 ns startup).
 
 | Workload | Nexus | VContainer | Zenject | Reflex |
 |---|---:|---:|---:|---:|
-| Cached resolve, ns/op | **32.19** | 144.28 | 652.31 | 174.03 |
-| Transient three-node graph, ns/op | 6005.48 | **3664.97** | 14091.92 | 4379.16 |
-| Register/build/first resolve (warm metadata), ns/op | 29333.60 | 63858.50 | 91213.90 | **24008.70** |
+| Cached resolve, ns/op | **30.55** | 138.77 | 677.14 | 195.46 |
+| Transient three-node graph, ns/op | 5279.32 | **3931.23** | 13690.44 | 4204.59 |
+| Register/build/first resolve (warm metadata), ns/op | **25679.40** | 61159.70 | 96745.80 | 27644.30 |
 
 On IL2CPP no candidate has generated bindings active in this configuration: Nexus builds
 objects with `ConstructorInfo.Invoke` (its compiled constructor delegates exist only where
 IL emission is available, and its generated factories are cleared), VContainer uses its
 reflection injector and Reflex its `IL2CPPActivatorFactory`. That is where the transient
-gap comes from: Nexus's reflection construction path is 1.6× slower than VContainer's and
-1.4× slower than Reflex's on this device, while cached resolution stays 4.5× ahead and
-startup sits between Reflex and VContainer. A real IL2CPP game ships Nexus's generated
+gap comes from: Nexus's reflection construction path is 1.3× slower than VContainer's and
+1.26× slower than Reflex's on this device, while cached resolution stays 4.5× ahead and
+startup leads (7% ahead of Reflex, 2.4× VContainer). A copy-on-write binding map was tried
+and rejected on this evidence (run `after-cow-android-004`: slower everywhere). A real IL2CPP game ships Nexus's generated
 binder (constructor factories without reflection); measuring that configuration for every
 candidate is the open item in the repository's `docs/RELEASE_GATES.md`.
 
@@ -89,8 +92,8 @@ candidate is the open item in the repository's `docs/RELEASE_GATES.md`.
   leads startup latency and allocation.
 - Transient object creation allocates the three objects (72 B) for Nexus, VContainer
   and Reflex; singleton caches and prewarm do not change that.
-- On the Android IL2CPP device Nexus leads cached resolution, is second on startup and
-  last of the three maintained libraries on transient construction (reflection path).
+- On the Android IL2CPP device Nexus leads cached resolution and startup and is last of the
+  three maintained libraries on transient construction (reflection path).
 
 ## Reproduce
 

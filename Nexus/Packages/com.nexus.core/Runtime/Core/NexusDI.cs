@@ -118,6 +118,8 @@ namespace Nexus.Core
         private ConcurrentDictionary<Type, bool> _crossBoundaryTypes;
         // Small striping: binds are rare and lock-striped, resolves are lock-free reads; the default
         // (processor-count locks, 31 buckets) charged every container for concurrency it never uses.
+        // A copy-on-write Dictionary snapshot was measured on 2026-10-15 and rejected: the per-bind copy
+        // doubled Mono startup and did not speed up IL2CPP transients.
         private readonly ConcurrentDictionary<Type, Binding> _bindings = new(concurrencyLevel: 1, capacity: 8);
         // Named bindings (Strange-style named injection): key = (type, name).
         // Missing explicit names never fall back to the default registration.
@@ -214,16 +216,23 @@ namespace Nexus.Core
         // supported contract (BindFactory is documented as synchronous).
         // Keyed by (type, name) so two DIFFERENT named bindings of the same type can
         // legitimately appear in one chain without a false circular-dependency error.
-        [ThreadStatic] private static Type[] s_resolutionTypes;
-        [ThreadStatic] private static string[] s_resolutionNames;
-        [ThreadStatic] private static int s_resolutionDepth;
+        // One thread-static reference: IL2CPP resolves every [ThreadStatic] access through thread-local
+        // storage, so the chain lives in a single object read once per push and passed to the pop.
+        private sealed class ResolutionStack
+        {
+            public Type[] Types = new Type[16];
+            public string[] Names = new string[16];
+            public int Depth;
+        }
+        [ThreadStatic] private static ResolutionStack s_resolution;
 
         /// <summary>Pushes (type, name) onto this thread's synchronous resolution chain; a repeat is a cycle.</summary>
-        private static int PushResolution(Type type, string name)
+        private static ResolutionStack PushResolution(Type type, string name, out int depth)
         {
-            var types = s_resolutionTypes ??= new Type[16];
-            var names = s_resolutionNames ??= new string[16];
-            int depth = s_resolutionDepth;
+            var stack = s_resolution ??= new ResolutionStack();
+            var types = stack.Types;
+            var names = stack.Names;
+            depth = stack.Depth;
             for (int i = 0; i < depth; i++)
             {
                 if (types[i] == type && string.Equals(names[i], name, StringComparison.Ordinal))
@@ -231,22 +240,22 @@ namespace Nexus.Core
             }
             if (depth == types.Length)
             {
-                Array.Resize(ref s_resolutionTypes, depth * 2);
-                Array.Resize(ref s_resolutionNames, depth * 2);
-                types = s_resolutionTypes;
-                names = s_resolutionNames;
+                Array.Resize(ref stack.Types, depth * 2);
+                Array.Resize(ref stack.Names, depth * 2);
+                types = stack.Types;
+                names = stack.Names;
             }
             types[depth] = type;
             names[depth] = name;
-            s_resolutionDepth = depth + 1;
-            return depth;
+            stack.Depth = depth + 1;
+            return stack;
         }
 
-        private static void PopResolution(int depth)
+        private static void PopResolution(ResolutionStack stack, int depth)
         {
-            s_resolutionDepth = depth;
-            s_resolutionTypes[depth] = null;
-            s_resolutionNames[depth] = null;
+            stack.Depth = depth;
+            stack.Types[depth] = null;
+            stack.Names[depth] = null;
         }
 
         private class Binding
@@ -1823,7 +1832,7 @@ namespace Nexus.Core
             // StackOverflowException — an uncatchable process crash. Moving the factory
             // call inside the guarded block turns that into a clear, catchable
             // InvalidOperationException naming the offending type.
-            int depth = PushResolution(type, name);
+            var resolution = PushResolution(type, name, out int depth);
 
             bool addedToConstructing = false;
             ManualResetEventSlim waitHandle = null;
@@ -1906,7 +1915,7 @@ namespace Nexus.Core
             }
             finally
             {
-                PopResolution(depth);
+                PopResolution(resolution, depth);
                 if (addedToConstructing)
                 {
                     lock (_singletonLock)
