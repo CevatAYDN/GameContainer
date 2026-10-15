@@ -5,6 +5,9 @@ All notable changes to the Nexus Core package will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+This is the only changelog of the Nexus repository. The package version in `package.json` is the
+released version; everything under Unreleased is in the repository but not yet in a tagged package.
+
 ## [Unreleased]
 
 ### Performance
@@ -63,11 +66,116 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`WithParameter` overrides now beat registered constructor factories (CF4 regression)** — `Injector.CreateInstance` previously returned the AOT factory result before consulting `ParameterOverrides`, so `BindFluent<T>().To<T>().WithParameter<TParam>(value)` on a codegen-covered type silently dropped the explicit value. Explicit constructor arguments now take precedence: the factory path is skipped whenever overrides are present.
 - **Codegen robustness: compiler-generated + non-visible types excluded from binder emission** — the generated binder previously emitted factories/injectors for compiler-generated closure types (`<>c__DisplayClass*`, `<>c` — names with `<`/`>` are never valid identifiers, CS1001) and for non-visible types and non-visible member types (private/internal nested — CS0122 from the generated file). Those types keep the reflection path; injectable non-visible types are still written to link.xml so IL2CPP preserves them.
 - **`CodeGenSuite` (CG1) — the emitted binder is now compiled and booted inside the harness** — the harness runs the real `NexusCodeGenerator`, compiles the generated `NexusGeneratedBinder.g.cs` with the Roslyn shipped inside the .NET SDK (no NuGet restore), invokes `Initialize()`, and resolves through the generated factories/injectors end to end (readonly ctor state, `[Construct]` selection, value-type-param skip, `WithParameter` precedence). This closes the harness side of the Faz 2 acceptance gate; the Unity IL2CPP build check remains.
-
-### Added
 - **Scene-view overlay (`NexusSceneOverlay`)** — editor overlay (via `SceneView.duringSceneGui`) that draws a wireframe **context boundary** around every `Root` GameObject hierarchy (merged renderer/collider bounds, scope-tag label, parent→child dotted links) plus the live **signal wiring**: labeled signal→command spokes per context and inter-context links for `[CrossContext]` broadcasts. Toggle: Tools → Nexus → Scene Overlay (default ON, session-persisted). Data collection lives in the testable `NexusSceneOverlayData` and is locked by 8 EditMode tests; the drawing layer is throttled (0.5 s refresh + change-signature repaint) so the per-repaint cost stays at a few draw calls.
 - **PlayMode profiler benchmark lock (`NexusProfilerPlayModeTests`)** — N synchronous fires/resolves must grow each `NexusProfiler` counter by **exactly N** (SignalsDispatched, CommandsExecuted, CompositeTriggersProcessed, ResolvesPerformed); a dropped instrumentation site would under-count, a double increment would over-count. Read-before/fire/read-after runs inside one synchronous test body so the `FlushOnEndOfFrame` can never fire mid-delta.
 - **Headless analyzer gate (`NexusArchitectureAnalyzer.RunHeadless`)** — batch-mode entry point (exit 0 clean / 1 issues) usable from CI; NEXUS002 (`async void`) extracted to an `IsNexus002Violation` predicate with editor tests, completing parity with the NEXUS001/NEXUS003 predicates.
+
+<!-- Entries below were recorded in the former repository-root CHANGELOG (removed 2026-10-15; this file is the single changelog). -->
+
+### Added (2026-08-13, former repository changelog)
+- **Doc-code consistency pass (roadmap Faz 0)** — `docs/ZENJECT_MIGRATION.md` no longer claims "constructor injection does not exist" (it does: `[Inject]`/`[Construct]`-marked or single public ctor); `STRANGE_COMPARISON.md` cross-boundary section now matches the existing `BindCrossBoundary`/`ResolveCrossBoundary` API; `CANONICAL-PATTERNS.md`/`AI_GAME_DEVELOPER_GUIDE.md` state the accurate mechanics of private-member injection (works via cached `FieldInfo.SetValue` fallback; public auto-property is the AOT-direct canonical); quickstarts (en+TR) and README examples teach the canonical public auto-property style.
+- **`IAssetLoadService` aset yükleme seam'i (studio evaluation P0)** — paket bağımlılıksız kalır: `ResourcesAssetLoadService` varsayılanı (async + iptal + açık hata mesajları), `docs/ADDRESSABLES_ADAPTER.md` Addressables adaptörünü pakete bağımlılık eklemeden projeye yapıştırma yolunu verir.
+- **`docs/ZENJECT_MIGRATION.md` (studio evaluation P0)** — Zenject/Extenject kavram eşleme tablosu, 8 adımlı geçiş yolu, doğrulama listesi ve en çok yapılan 3 hata.
+
+### Fixed (2026-08-13 audit follow-up)
+- **Leftover debug trace logging removed from production code** — `[SLOCK]`/`[RESET-TRACE]`/`[CTX-TRACE]` instrumentation left behind by a lock-debugging session (`NexusRuntime.cs`, `Context.cs`) allocated interpolated strings on every context-registry access (per-frame via `NexusDebugHUD`, per cross-context broadcast, per context lifecycle) and shipped to Release builds; test traces (`[SKIP-TRACE]`/`[RW-TRACE]`/`[AD-TRACE]`) removed from `RecoveryTests`/`RegistryWiringTests`/`ArchitecturalDeepeningTests`. `NexusRuntime`/`Context` reverted byte-identical to HEAD.
+- **Analyzer NEXUS004: debug trace logging rule (`NexusArchitectureAnalyzer.cs`)** — flags runtime `Debug.Log` calls carrying a trace marker (`[SLOCK]` or `*-TRACE]`) so instrumentation leftovers can never be committed again; Editor paths exempt (self-scan), `// NEXUS004-exempt: <reason>` opts a deliberate site out. Locked by 7 new editor tests.
+- **Subscription hygiene in the canonical example + wizard templates (`GameMediator.cs`, `NexusSetupWizard.cs`, `NexusTemplateProvider.cs`)** — `ClearOnChanged()` (which wiped every other subscriber of the shared model property) and the never-removed anonymous `OnIncrementClicked +=` lambda (which stacked duplicate handlers across pooled mediator reuse, firing N signals per click) replaced with named handlers + `RemoveOnChanged`/`-=`, matching the `NexusStartMediator`/`CounterMediator` pattern.
+- **Wizard: all eight generated files are single-source templates (`NexusSetupWizard.cs`)** — `GameLifecycleTemplate`, `GameSignalTemplate`, `GameModelTemplate`, `GameCommandTemplate`, `IGameServiceTemplate`, `GameServiceTemplate`, `GameViewTemplate`, and `GameMediatorTemplate` are separate internal static properties; the `GeneratedFiles()` mapping (relative path → content) is what `GenerateAllCode` writes, and `WriteGeneratedFiles(root)` is the real write path (directory creation + `File.WriteAllText`, no trimming) — same bytes, same paths. `WizardTemplateSyncTests` locks the sync end to end: the mapping must match the canonical `Game/Samples` files, and an invocation of the real write path into a temp directory must produce those bytes (and nothing beyond the declared set). The canonical `GameView.cs` line endings were normalized to CRLF and the `GameMediator` template's trailing newline removed, so generated bytes equal canonical bytes.
+- **Nested composite buffer leak (`SignalBus.cs`)** — the rented nested `ProcessCompositeTriggers` buffer was never returned to the free list on the no-triggers early-out, leaking one `List<>` per nested composite fire of a non-composite signal; the buffer is now handed back on every exit path.
+- **`UIManager` dispose/close race (`UIManager.cs`)** — a screen destroyed by `Dispose()` while an open/close lifecycle await was in flight now exits cleanly via Unity fake-null checks instead of throwing `MissingReferenceException` from `.gameObject` access (including inside the failure-path cleanup).
+- **`GameSaveManager` sync-context hang guard (`GameSaveManager.cs`)** — `RunOnCapturedContextAsync` now propagates the caller's `CancellationToken` to the completion TCS, so a dead `SynchronizationContext` during teardown unblocks the awaited `SaveAsync`/`LoadAsync` as cancellation instead of hanging forever.
+- **`File.Replace` mobile fallback (`EncryptedStorageService.cs`, `GameSaveManager.cs`)** — `PlatformNotSupportedException`/`NotImplementedException` (some IL2CPP/Android/iOS runtimes) now degrade to delete+move with a warning instead of failing every save; the atomic path is unchanged on platforms that support `Replace`. Device verification plan in `docs/AUDIT-2026-08-13.md`.
+- **EncryptedStorageService v3: key-name-bound HMAC** — the MAC now covers `(IV || ciphertext || keyName)` so a valid payload replayed or copied under another key's filename fails verification; v2 files (MAC over `IV || ciphertext`) are accepted read-only and migrated to v3 on first read; imports accept both versions.
+- **`ViewBinder` reference comparers (`ViewBinder.cs`)** — `_activeMediators`/`_activeMediatorSet` now key on identity (`NexusDI.ReferenceComparer`), so user views/mediators that override `Equals`/`GetHashCode` can no longer cause a wrong-entry `ContainsKey`/`Remove`.
+- **`ObjectPoolService` collision-free pool keys (`ObjectPoolService.cs`)** — the int hash keys (`GetEntityId().GetHashCode()`) that could map two different objects onto one pool entry are replaced with managed-object-reference keys (`ReferenceEquals`-based comparer), which are collision-free, survive Unity fake-null destroyed objects, and compile in the harness stub environment.
+
+### Fixed (2026-08-13 semantic review — R1–R5, see `docs/archive/REVIEW-2026-08-13.md`)
+- **`FloatingTextService` self-contained expiry (R1)** — the wall-clock expiry sweep (`Time.unscaledTime` vs a new `SpawnTime` stamp on `ActiveFloatingText`) now runs inside `SpawnFloatingText`, because nothing in the default runtime wiring pumps `UpdateService` — expired texts previously accumulated forever (unbounded growth + per-access `ToArray` allocation). `UpdateService` remains intact as the exact delta-time driver for consumers that wire it.
+- **`GameStateMachine` early-cancel cleanup (R2)** — the cancelled-token early-out now `Interlocked.CompareExchange`s its own source out of `_stateCts` before disposing, so a stale disposed `CancellationTokenSource` can no longer make `Dispose()` throw `ObjectDisposedException` from its unguarded `Cancel()` or silently disable the same-state fast path; `Dispose()` also guards `Cancel()` the same way the supersede path already did.
+- **`ErrorCollection.GetCategoryCounts` removed (R3)** — dead code, a byte-identical duplicate of `GetErrorCounts` with zero callers in the tree.
+- **`ProgressionService` subscription hygiene (R4)** — anonymous `OnChanged` lambdas replaced with a named `OnLevelChanged` handler and `Dispose` now uses `RemoveOnChanged`, matching the house pattern; other subscribers of `CurrentLevel`/`MaxUnlockedLevel` are no longer wiped on dispose.
+- **`HybridQueue.cs` line endings normalized (R5)** — mixed CRLF/LF (345/31) converted to uniform CRLF; cosmetic only.
+
+### Template content hashes (2026-08-13)
+
+Each of the eight wizard-generated files (and its canonical `Game/Samples` counterpart) is pinned by a content hash. `WizardTemplateSyncTests.GeneratedFileHashes_MatchDocumentedChangelogValues` recomputes these hashes and fails if a template's content changed without this table being updated — an unintended template edit can no longer cross a release silently. Hash input: template content, CRLF normalized to LF, trimmed, UTF-8, SHA-256 (lowercase hex). The wizard's `WriteGeneratedFiles` also writes each file atomically (temp-in-same-directory + `File.Replace`/`Move`), so an interrupted generation never leaves a truncated file behind. `WizardTemplateSyncTests.GeneratedFiles_CompileWithUnityRoslyn` additionally compiles the generated sources with the Roslyn compiler Unity ships (netstandard 2.1 + `UnityEngine.CoreModule` + `UnityEngine.UI` + `com.nexus.core` references) — the wizard output is not only byte-equal to the canonical sample but provably builds against the framework APIs. The change procedure is documented in `docs/CONTRIBUTING.md` ("Wizard template changes").
+
+| Generated file (under `Assets/Scripts/Game/Samples/`) | SHA-256 |
+|---|---|
+| `Lifecycle/GameLifecycle.cs` | `335873ca0c42ecc198ecefba3b0873730dc46a9bfff61b6c3b07219fa1d5369c` |
+| `Signals/GameSignal.cs` | `f6fe56895ddeace84ece2a1beb332a2e5e3c552dc0dbe336a44be2da6868d9ab` |
+| `Models/GameModel.cs` | `3528a0efef8108283360293ca42219cbd04b75ed59f8f10e43f9908701af6415` |
+| `Commands/GameCommand.cs` | `69be1e14db5f06f800edc42e8779e762577f971ee8f76592883b17a9d5449cb5` |
+| `Services/IGameService.cs` | `53a154243df3875fc0b2f0ab20f5afa0a00ca1dfadbd38455a9c98f0348ceeaf` |
+| `Services/GameService.cs` | `31607f7e7dd6482d54d5cc1e364f37d0e4860342ca6b1b349b1fec7de159877f` |
+| `UI/Views/GameView.cs` | `3803a24fc4e757f56f7f2d472f2e4ebd70f85133eef676c13d2cd4818844831a` |
+| `UI/Mediators/GameMediator.cs` | `addb25a64daea59112edf79c7f13e1ed09858df253dc92d680a1a50470a3e0fe` |
+
+### Fixed (2026-08-07 validation noise + analyzer consistency)
+- **DI validation warning noise eliminated (`BuildValidation.cs`, `AssemblyCatalog.cs`)** — the architecture audit's DI pass flagged every loaded assembly as an injection candidate, producing ~134 false-positive "metadata inspection failed" warnings (Bee/NiceIO/GLTFast/Google.Protobuf/I18N/AndroidPlayerBuildProgram/editor-assembly types, iterator state machines with `<>1__state` ctors, attributes, Burst delegates, BCL `System.Net.*` types hosted in non-excluded assemblies, and `SubMeshAssignment[]`-style array ctor params reported as phantom missing references). `ThirdPartyPrefixes` grew the observed non-game prefixes; `EnumerateGameTypes` now iterates the canonical `AssemblyCatalog.GameAssemblies()` universe (editor assemblies excluded — matches `TypeAnalyzerPlugin` and the `AssemblyCatalog` contract); `ValidateDiBindings` skips non-injectable shapes (attributes/delegates/compiler-generated/framework-namespaced) and only reports metadata failures for types that actually declare `[Inject]`/`[OptionalInject]`/`[Construct]` markers; `IsTypeAvailable` unwraps array elements and generic arguments. Result: 138 warnings → the 4 intentional `[StubService]` release reminders (Ads/Analytics/Feedback/IAP). Locked by 6 new reflection-based `BuildValidationTests`.
+- **Analyzer NEXUS003 comment/string parity (`NexusArchitectureAnalyzer.cs`)** — NEXUS003 now strips string literals and trailing comments like NEXUS001/NEXUS002 (`Debug.Log("Thread.Sleep")` no longer false-positives) while the `// NEXUS003-exempt` marker is still read from the raw line; `StripCommentsAndStrings` also strips char literals so `'}'` cannot skew brace counting. Locked by 6 new editor tests.
+- **Analyzer hot-path tracking via brace depth (`NexusArchitectureAnalyzer.cs`)** — NEXUS001 tracking no longer terminates on any `}`-starting line (a nested block closed at column 0 hid later allocations) and no longer keeps the whole file "hot" after an expression-bodied `Update()`; entry/exit is brace-depth based on comment/string-free code. Locked by `CountBraces` tests.
+- **Editor test assemblies included when test scanning is on (`AssemblyCatalog.cs`)** — `GameAssemblies(includeTests: true)` now also yields editor TEST assemblies (name matches both `.editor` and `tests`, e.g. `com.nexus.core.editor.tests`), which host the EditMode validation fixtures. Previously the `.editor`-name exclusion applied unconditionally, so `IncludeTestAssemblies=true` runs saw zero test types and `ValidateHandlers_DetectsViolationsInTestAssembly` reported no violations. Editor non-test assemblies stay excluded; no-arg callers are unaffected.
+- **One-shot command failure contract (`CommandExecutor.cs`)** — a failed `.Once()` command whose recovery decision is `Skip` now rethrows the original exception instead of letting `CompleteOneShot` consume the handler while the caller believed the fire succeeded. The claim is released (`ReleaseOneShot`), the handler stays registered, and a later successful fire consumes it — matching the `ExecuteClaimedOneShot` design and the `StrangeStyleCapabilitiesTests` retry contract (`Once_SyncFailure`/`Once_AsyncFailure`). `Retry` re-runs internally and `Fallback` substitutes another command, so both are exempt. Locked by new benchmark checks `ON4`/`ON5` and the EditMode retry tests (which expect the intentional `[Nexus Error]` log via `LogAssert.Expect`, matching `RecoveryTests`).
+- **`[CommandTimeout]` never fired — hanging commands froze PlayMode (`CommandExecutor.cs`)** — the timeout `CancellationTokenSource` was declared with `using var` INSIDE the `if` block, so it was disposed before the command awaited. Disposing a CTS drops its pending `CancelAfter` timer, so the token never cancelled: a command awaiting `Task.Delay(Infinite, ct)` blocked the signal line forever (`RecoveryTests.CommandTimeout_CancelsHangingCommand_DoesNotBlockRetryLoop` froze the Unity PlayMode run; the benchmark never covered this path, so it escaped). The timeout CTS is now declared at method scope and disposed in a `finally` after the command completes, in all three timeout wrappers (`ExecuteAsyncWithOptionalTimeout`, `ExecuteGenericAsyncWithOptionalTimeout`, `ExecuteAsyncDispatcherWithOptionalTimeout`). Empirically verified (dispose-before-await: HANG → fixed: cancelled) and locked by new benchmark checks `REC1`/`REC2` (hanging command cancelled within a 2 s bound, surfaces `OperationCanceledException`, never enters the retry loop).
+- **Char-literal strip test escaping (`NexusArchitectureAnalyzerTests.cs`)** — the `'\\'` char-literal input was written with two source backslashes (runtime: one), so the escape-skip consumed the closing quote and the strip swallowed the rest of the line. The literal is now written with four source backslashes (runtime: the real two-backslash C# literal) and a backslash-free `'}'` case was added.
+
+### Removed
+- **`Assets/Scripts/Demo/` scaffolding removed** — the Unity demo (`DemoGlobalLifecycle`, 4 `ScreenView` screens, demo commands/models/signals) was never wired to a scene or prefabs (no bootstrap in `NexusStarter.unity`, zero Resources prefabs). `Game/Samples` is the single canonical example: scene-wired, scaffolded by `NexusSetupWizard`, canonical in the quickstart/how-to docs. `DemoCompatibilitySuite` was removed with it; the wizard default view name and the `cs_default_window` localization key were cleaned up.
+
+### Changed
+- **Demo + tooling consolidated on `UIManager`** — demo screens derive from `ScreenView` and open via `IUIManager.OpenScreenAsync<TScreen>`; `CasualServicesPlugin` drives UIManager's new non-blocking `GetOpenScreensSnapshot`/`PendingScreenCount`; `CounterLifecycle` sample binds `IUIManager`. UIManager editor tests extended (`ScreenOpened`/`ScreenClosed` events, layer-root parenting).
+- **Service-graph regression gate restored (`tools/nexus-benchmark/ServiceGraphSuite.cs`)** — successor to the deleted `DemoCompatibilitySuite`: boots the full package service graph (all runtime services + providers + adapter factories, no demo stand-ins) under `EnableStrictInjection` + `FailOnValidationErrors`. `SVC1` validates with zero DI issues, boots, resolves every service by interface and concrete type, shares ONE `SaveThrottler` between economy and progression, and proves the validator flags a missing provider.
+
+### Performance
+- **`Binder.Unbind` O(n) scan (`Binder.cs`)**: added a secondary key index so `Unbind` removes a key's bindings directly instead of scanning the whole entry table under the exclusive write lock (which blocked every concurrent `Get`/`TryGet` reader). Reads are untouched; index entries are deduplicated on rebind.
+- **`CommandExecutor` timeout path (`CommandExecutor.cs`)**: the timeout logic (linked `CancellationTokenSource` + `CancelAfter` timer, allocated per async dispatch) was duplicated inline in the object-path dispatcher; it is now consolidated into the single `ExecuteAsyncDispatcherWithOptionalTimeout` helper, and the linked CTS is skipped entirely when the parent token is already cancelled (teardown floods allocate nothing). Commands without `[CommandTimeout]` keep the zero-allocation direct path.
+- **`NexusDebugHUD` log allocation (`NexusDebugHUD.cs`)**: `LogSignal`/`LogError`/`LogWarning` no longer build rich-text strings (interpolation + `ColorUtility.ToHtmlStringRGB`) while the HUD is hidden, the HTML color strings are cached once instead of per log line, and the `OnGUI` snapshot copy is version-gated so it only runs when new lines arrived.
+- **`CommandPool` startup reflection (`CommandPool.cs`)**: the state-leak warning scan now claims its slot under the lock then scans OUTSIDE it (pool construction no longer serializes behind a global lock), uses allocation-free `IsDefined` instead of `GetCustomAttribute`, and the dead `s_injectableTypeCache`/`s_injectableCacheLock` fields were removed.
+- **`ErrorCollection` LINQ removal (`ErrorCollection.cs`)**: `GetErrors`/`GetRecentErrors`/`GetFrequentErrors`/`GetSeverityCounts`/`GetErrorCounts`/`GetCategoryCounts`/`ClearBefore` replaced the `ToArray`+`OrderBy`+`Where`+`Take`+`GroupBy` LINQ chains with manual loops — the FIFO queue is walked backwards (newest-first), so the redundant full sort is gone and `Timestamp` is now assigned inside the write lock so queue order is exactly chronological. One snapshot array + one result array per call.
+- **`BuildValidation` shared scan caches (`BuildValidation.cs`)**: the ten validation passes each re-scanned every loaded assembly and re-instantiated every attribute. Added shared caches (per-assembly types, per-type `[SignalHandler]`/`[CompositeSignalHandler]`/`[StubService]`/`[ContextDependsOn]` attributes, writeable-model verdicts), built `BuildTypeScriptCache`/`BuildSignalTypeMap` once per script reload instead of twice/once per run, cached file reads per run, converted the O(n²) `ContextData` `DependsOn` check to an O(n) scope dictionary, and replaced `GetCustomAttribute` with `IsDefined` everywhere.
+- **`NexusCodeGenerator` reflection (`NexusCodeGenerator.cs`)**: `GetFields`/`GetProperties`/`GetMethods` now run once per type (shared `MemberSet` cache across the discovery/value-check/injector/clearer/preserve passes) and member scans use `IsDefined` instead of attribute instantiation.
+- **`PerformanceDashboardPlugin` signal/command rates (`PerformanceDashboardPlugin.cs`)**: the rates previously counted `PerformanceMonitor.OnMetricRecorded` samples with category "Signal"/"Command" — nothing records those categories (MetricsSampler records Frame/Memory/GC only), so they always read 0.0, and the subscription added per-record delegate overhead. Rates now come from deltas of `NexusRuntime.Metrics`' Interlocked totals (exact, allocation-free), each ring buffer is copied once per tick and shared between the sparkline redraw and the stats summary, and LINQ `Average`/`Min` were replaced with a single manual pass.
+- **`PerformanceDashboardPlugin` editor-heap false alarm (`PerformanceDashboardPlugin.cs`)**: the memory metric read `Profiler.GetMonoUsedSizeLong()` from the editor window, which includes the editor's own managed heap — the dashboard displayed ~800MB at startup and tripped the 512MB alarm instantly. It now prefers the runtime-recorded `MonoUsed` metric (sampled by `MetricsSampler` from the game loop; exact in builds), baselines the heap at recording start, and drives the sparkline + alarm + CSV from the session **delta** (absolute value stays in the big label). The note text and alarm labels explain the Δ semantics and that a build gives exact numbers.
+
+### Fixed
+- **GC Gen0 value never displayed (`PerformanceDashboardPlugin.cs` + `NexusLang.cs` + `tr.json`)**: the big GC label called `string.Format(NexusLang.Get("pd_gc_gen0"), ...)`, but `pd_gc_gen0` is the section title ("GC Gen0", no `{0}` placeholder) — it was defined twice in `NexusLang.cs` (a `"gen0 +{0:F0}"` value format that got overridden, then the title again) and once in `tr.json`, so the format silently dropped the argument and the label permanently read "GC Gen0". The title and the value format are now separate keys (`pd_gc_gen0` stays the title; new `pd_gc_gen0_value` = `"gen0 +{0:F0}"` added to defaults and `tr.json`), the GC summary row shows "—" when unsampled, and the label shows the per-tick Gen0 delta.
+- **Performance tab never records if open before Play (`PerformanceDashboardPlugin.cs`)**: `CreateView` only auto-started recording when `Application.isPlaying` was already true at tab creation — entering Play Mode with the tab already open never re-ran `CreateView`, so `_recording` stayed false and the whole panel showed "—" forever. The plugin now subscribes to `EditorApplication.playModeStateChanged` (unsubscribe-before-subscribe in `CreateView`, unsubscribed in `OnDisable`, mirroring `DashboardPlugin`/`ExplorerPlugin`): `EnteredPlayMode` auto-starts with a fresh baseline, `ExitingPlayMode` stops.
+- **Built-in metrics gated on recording (`PerformanceMonitor.cs`)**: `UpdateFrameMetrics`/`UpdateMemoryMetrics`/`UpdateGCMetrics` early-returned on `!s_recording`, so FPS/Memory/GC were only queryable via `GetMetric` while the dashboard was recording — a scene without the dashboard open (or before its `StartRecording` ran) showed flat 0.0/"—" even with a `MetricsSampler` present. Recording now only gates the sample queue + `OnMetricRecorded` events (which `RecordMetric` already does internally); the built-in metrics are always recorded while `Enabled`, so the Performance Dashboard reads live values the moment it opens. Harness proof E6 locks this in.
+- **No FPS without a MetricsSampler (`PerformanceDashboardPlugin.cs`)**: the dashboard read only `PerformanceMonitor.GetMetric("FPS")`; scenes without a MetricsSampler showed "—" forever. It now falls back to `Time.deltaTime` (the game frame time in play mode; `dt >= 1s` hitches are skipped, not plotted as 1 FPS).
+- **Programmatic Roots missing QueueDrainer + MetricsSampler (`Root.cs`)**: `Root` documented these as living on its GameObject but never added them — only the hand-edited starter scene carried them. Every programmatic creation path (Dashboard "Create Root", `GameObject → Nexus → Create Root`, Wizard scene scaffolding, `AddComponent<Root>()` in user code) produced a Root without them: the `HybridQueue` was NEVER drained (queued `FireThreadSafe`/`FireNextFrame` signals silently never ran) and the game never recorded FPS/memory/GC, so the Performance Dashboard read a flat 0.0. `Root.Awake` now auto-adds both when missing (`GetComponent` guard makes it idempotent); harness test L4 locks this in.
+- **Error Dashboard summary vs. list mismatch (`ErrorDashboardPlugin.cs`)**: the severity pills counted ALL errors (`GetSeverityCounts`) while the list showed only the filtered subset, so the pills disagreed with the rows whenever a severity/category/search filter was active. Summary and list now derive from one `GetErrors` call (search included), so they can never disagree.
+- **Error Dashboard duplicate `OnErrorAdded` subscriptions (`ErrorDashboardPlugin.cs`)**: `CreateView` subscribed unconditionally, and `NexusWindow` could re-invoke it (tab re-click, play-mode refresh) without an intervening `OnDisable` — each re-open leaked another subscription, so one error fired the handler N times. `CreateView` now unsubscribes before subscribing.
+- **`NexusWindow` view churn on same-tab click (`NexusWindow.cs`)**: clicking the already-active tab called `RefreshActivePlugin()` — re-running `CreateView()` without `OnDisable()`, leaking plugin event subscriptions and rebuilding the whole UI on every click. The same-tab branch now only refreshes the action bar and status text; `UpdateStatusBarText` (200ms tick + play-mode/hierarchy/context callbacks) is wrapped in try/catch so a data-provider hiccup cannot spam the console every 200ms.
+- **`Root.SetUp`/`RegisterLifecycle` silent no-op after Awake (`Root.cs`)**: both now throw `InvalidOperationException` when called after the context was already created — previously the configuration was silently dropped (the demo's boot path calls them before `SetActive(true)`, so it is unaffected).
+- **`Context` double-Configure guard conflated harness builder (`Context.cs`)**: the guard keyed on `_builder != null`, which is also set by `GetOrCreateBuilder()` (the `NexusTestContext.Builder` harness path) — so binding through the harness and then calling `Configure()` silently skipped validation/scanning/lifecycle discovery. The guard now keys on a dedicated `_configured` flag; a pre-built harness builder is reused when present.
+- **SaveThrottler Multi-Owner (`SaveThrottler.cs`)**: Replaced the single pending-slot design with per-owner slots (`TryRequestSave(owner, ...)` / `ForceSave(owner, ...)`). Previously, when two services (Economy + Progression) shared one throttler singleton, the last `TryRequestSave` silently dropped the other service's pending write — real data loss. Failure backoff/retry-cap is now isolated per owner, and `Flush()` persists every owner.
+- **`[OptionalInject]` Never Injected (`NexusDI.cs`)**: `OptionalInjectAttribute` does not derive from `InjectAttribute`, so members decorated only with `[OptionalInject]` were absent from the injectable metadata and were never injected — even when a binding existed (e.g. `EconomyService.SaveThrottler` stayed null, silently disabling write-coalescing). Injectable and clearable metadata now accept both attributes; missing optionals are still skipped by validation and strict injection.
+- **EncryptedStorageService DI Construction (`EncryptedStorageService.cs`)**: Added a parameterless constructor delegating to the default salt. The sole optional-string constructor made strict injection fail on the unresolved `System.String` parameter, breaking any container that bound the service.
+- **Harness `ValidateOnStartup` leak (`FullArchitectureStressSuite.cs`)**: the stress suite opted out of startup DI validation for its own late-binding tests but never restored the static flag, so every later suite silently ran with validation disabled. `Run()` now restores the framework default in a `finally` block.
+- **AOT Dashboard false warning (`NexusCodeGenerator.cs`)**: `HasInjectableTypes` scanned fields/properties but not method-level `[Inject]`, so a type injecting only via methods produced a false "AOT generation disabled" Dashboard warning.
+- **AOT Binder Generator (`NexusCodeGenerator.cs`)**: mirrors the `[OptionalInject]` metadata fix for the AOT/IL2CPP path — optional-only members were previously excluded from the generated injectors (never injected even when bound) and `di.Resolve<T>()` was emitted for them (throwing at boot when unbound, e.g. `INetworkEconomyValidator`/`ILocalizationTableProvider` in the demo). Optional members/params now emit `di.TryResolve<T>()` (null when unbound). `NexusGeneratedBinder.g.cs` was hand-synced to the fixed output — **regenerate it in the Unity editor** (`Nexus → Generate AOT Binder`) so the AOT path matches.
+
+### Added (2026-08-06, former repository changelog)
+- **NEXUS003 exemption policy + ADR-0001 addendum** — CONTRIBUTING §4 documents when a blocking site may be exempted (`// NEXUS003-exempt: <reason>`; awaiting genuinely impossible) vs must become a real `await`; ADR-0001 gains a dated addendum recording the UIManager-forward / WindowManager-retained reality, closing the doc-vs-code contradiction.
+- **Harness proof E6 (`EvidenceSuite.cs`)**: `PerformanceMonitor_BuiltinMetrics_WithoutRecording` — `UpdateFrameMetrics`/`UpdateMemoryMetrics`/`UpdateGCMetrics` populate `GetMetric` (FPS from `Time.deltaTime`, `TotalMemory` from `System.GC`) while recording is OFF, proving the dashboard no longer depends on its own recording state.
+- **Harness test L4 (`LifecycleSuite.cs`)**: `Root_AutoAdds_QueueDrainer_And_MetricsSampler` — a programmatically created Root (via `AddComponent<Root>()` + `SetUp` + `Awake`) must end up with exactly one `QueueDrainer` and one `MetricsSampler`, and a second `Awake` must not double-add.
+- **Harness tests 42–44 (`FullArchitectureStressSuite.cs`)**: `ContextData.DependsOn` PostContext ordering (chain invariant + cycle fallback + unknown dep), named `LazyInjection` resolving `[Inject(Name=...)]` bindings on field and property paths, and the `Root.SetUp`+`RegisterLifecycle` programmatic path incl. the new guards. Stress suite count is now 49.
+- **Harness test 41 (`SaveThrottler_MultiOwner_NoCrossClobber`)**: deterministic cross-owner pending-slot, failure-isolation, flush-all, scoped `ForceSave`, and per-owner retry-cap regression test.
+- **Harness test M4b (`AuditFixRegression.cs`)**: `ObservableList_ConcurrentReentrant_DrainIsolation` — two phases (8 threads × 4000 concurrent `Add`s, then 8 threads × 4000 indexer-set `Replace`s), each with handler-reentrant sentinels; asserts every value is notified EXACTLY once (per-index count check detects wrong-pair/dropped dispatch). Teeth proven against every pre-fix variant: 5/5 fail on the shared-buffer, ~3/4 on the flag-overwrite Add protocol, 3/3 fail on the old indexer flag-clearing pattern; passes post-fix.
+- **Harness AOT drift guard (`BinderSuite.cs`)**: conditional `AOT1. Binder_OptionalInject_TryResolveEmit` test — when `NexusGeneratedBinder.g.cs` exists it asserts the generated injectors use `TryResolve` for optional deps and inject `SaveThrottler` into Economy/Progression, failing on binder↔runtime drift.
+- **AOT binder generator compile guard (`tools/nexus-benchmark`)**: the editor-only `NexusCodeGenerator.cs` is now compiled in the harness (with small UnityEditor stubs in `GeneratorStubs.cs`) so a codegen typo that would break the `Nexus.Editor` assembly inside Unity fails the harness build.
+
+<!-- Formerly labelled 0.5.0 (2026-08-02) and 0.5.1 (2026-08-03) in the repository-root CHANGELOG. No 0.5.x package version was ever published (package.json stayed 0.4.0), so they are unreleased. -->
+
+### Added (formerly labelled 0.5.0, 2026-08-02)
+- **Attribute-Based Command Auto-Discovery (`[RegisterCommand]`)**: Decorate command classes with `[RegisterCommand(typeof(MySignal))]` for automatic signal binding during assembly scanning.
+- **Convention-Based Binding (`BindInterfacesAndSelfTo<T>()`)**: Automatically bind concrete classes under all user interfaces AND their concrete type sharing one singleton `Binding` instance.
+- **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Provide startup and teardown lifecycle hooks for non-service domain objects.
+- **Scene & Prefab Auto-Injection (`NexusBinding`)**: Attach `NexusBinding` MonoBehaviour to GameObjects or Prefabs for zero-code scene injection with event fallback listening.
+- **SafeDestroy Helper**: Safe EditMode (`DestroyImmediate`) and PlayMode (`Destroy`) object destruction across `UIManager` and `ObjectPoolService`.
+- **EditMode Test Suite (`StrategicCapabilitiesEditModeTests.cs`)**: NUnit EditMode test coverage for all strategic capabilities passing 100% in Unity TestRunner (174/174 Passed).
 
 ### Documentation (2026-08-06)
 - **Docs aligned with the current architecture.** `BREAKING_CHANGES.md` and `MIGRATION.md` gained a "0.4.0 → 0.5.0 (Unreleased)" section: `WindowManager` removal (`UIManager` is the single UI manager, with migration steps), Demo scaffolding removal (`Game/Samples` canonical), and `NEXUS004` retirement. Audit reports (`docs/AUDIT_REPORT.md`, `docs/AUDIT-2026-08-04.md`) gained resolution-status banners with the superseded WindowManager finding marked; `docs/REFACTOR_PLAN.md` gained an implementation-status banner; `docs/SLO.md` lists the CI Code Health Analyzer gate.
@@ -345,9 +453,119 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Deprecated
 - `_view.schedule` / `_root.schedule` pattern in editor plugins — plugins must override `INexusEditorPlugin.OnUpdate()` instead.
 
-## [0.3.2] - 2026-06-15
+## [0.4.0] - 2026-07-18
+
+Breaking changes are described in `MIGRATION.md` ("Version 0.3.2 → 0.4.0").
+
+### Changed
+- `NEXUS_DEBUG` is opt-in: it is no longer auto-enabled through a version define; enable it in Scripting Define Symbols or from the Tracer plugin. Without it the Tracer dashboard falls back to the production metrics ring buffer.
+- Priority semantics documented as implemented: higher priority values run first (documentation and attribute text only; no sorting change).
+- `BindCommand`/`BindAsyncCommand` reject `ExecutionMode.Composite` with `ArgumentException`; composite triggers use `[CompositeSignalHandler]` or `SignalBus.RegisterCompositeCommand`.
+- `[SignalHandler]` discovery and build validation recognise classes that implement only the generic `ICommand<T>`/`IAsyncCommand<T>`; a `[SignalHandler]` type implementing neither logs a startup error.
+
+### Security
+- `EncryptedStorageService` uses the full 32-byte SHA-256 hash as the AES-256 key and derives an independent salted HMAC key; legacy AES-128 payloads migrate automatically on first decrypt.
+
+## [0.3.2] - 2026-07-10
+
+Date corrected on 2026-10-15: this entry said 2026-06-15, which predates the first package commit; `package.json` became 0.3.2 on 2026-07-10 (`5b49b4b`).
 
 ### Added
 - Causal tracing sink (`INexusTraceSink`) for background signal logging.
 - `BuildValidation` silent rules engine for CI pipeline verification.
 - `ObservableProperty<T>` for zero-GC reactive model updates.
+
+## [0.3.1] - 2026-07-07
+
+See `MIGRATION.md` ("Version 0.3.0 → 0.3.1"). No separate release notes were recorded.
+
+## [0.3.0] - 2026-06-30
+
+See `MIGRATION.md` ("Version 0.2.0 → 0.3.0"). No separate release notes were recorded.
+
+## [0.2.0] - 2026-06-28
+
+### Added
+
+- **Nexus Package CHANGELOG**: Package-specific changelog added at `Nexus/Packages/com.nexus.core/CHANGELOG.md` with full 0.2.0 breaking changes and migration guide.
+- **CI Workflows**: GameCI-based package validation and Unity test pipelines added under `.github/workflows/`.
+- **Regression & Performance Tests**: New tests covering async/sync validation, DI disposal, circular dependency detection, IResettable integration, NetworkSignalBus rollback, and zero-GC steady-state dispatch.
+
+### Changed
+
+- Package metadata updated to version `0.2.0`.
+- Repository vs. package naming clarified in README documentation.
+
+## [0.1.0] - 2026-06-18
+
+Date corrected on 2026-10-15: the repository-root changelog said 2025-06-25; the first package commit is 2026-06-18 (`dcb8c15`). `package.json` was bumped to 0.1.1 on 2026-06-25 (`c65ecfc`) without separate notes.
+
+### Added
+
+- **Core Framework**: Feature-complete MVCS architecture for Unity 6
+  - `Context` system with automated lifecycle discovery, attribute-based signal registration, and HybridQueue integration
+  - `SignalBus` with 4 execution modes: Sequential, Concurrent, Exclusive, Composite Trigger
+  - Zero-allocation steady-state via `CommandPool` and strongly-typed generic delegates
+  - Dependency Injection container (`NexusDI`) supporting constructor, field, property, and method injection
+
+- **Execution Modes**:
+  - Sequential (default): deterministic priority-based ordering
+  - Concurrent: parallel async I/O and loading
+  - Exclusive: single handler guarantee
+  - Composite Trigger: fan-in orchestration waiting for multiple signals
+  - `ExecuteWithDecorators` / `ExecuteWithDecoratorsAsync` decorator pipeline support
+
+- **Observability & Debugging**:
+  - `NexusTracer` — zero-allocation causal tracing showing signal → command → sub-signal chains
+  - `NexusInspector` — Editor window with Time Travel Debugging UI
+  - `DashboardPlugin` — Editor dashboard for live signal monitoring
+  - `TracerPlugin` — live trace sink with real-time log view
+  - `ExplorerPlugin` — signal/callback registration explorer
+  - `HierarchyPlugin` — context hierarchy visualizer
+  - `WizardPlugin` — Root GameObject setup wizard
+  - `TypeAnalyzerPlugin` — assembly reflection analyzer
+
+- **Build Validation** (`Nexus -> Validate Architecture`):
+  - Priority conflict detection
+  - Mixed-mode execution violation checks
+  - Side-effect detection in concurrent commands
+  - Model ownership and dependency cycle validation
+  - AOT/IL2CPP compatibility
+
+- **Error Recovery**:
+  - Customizable strategies: Retry, Fallback, Abort
+  - Per-command recovery policy configuration
+
+- **AOT/IL2CPP Support**:
+  - `link.xml` with AOT preservation rules
+  - `[Preserve]` attributes on key types
+  - Generic command support for IL2CPP code-stripping
+
+- **View/Mediator System**:
+  - `View` base class with automatic `Mediator` binding via `[Mediator]` attribute
+  - `Mediator<TRootView>` with lifecycle hooks (`OnBind`, `OnUnbind`)
+  - `ViewBinder` for scene-based view registration
+  - Object-pooled mediator instances for zero-allocation view lifecycle
+
+- **Samples**:
+  - `Samples~/Counter` — minimal counter app demonstrating 0-GC commands, reactive model, and mediator bindings
+
+- **Project Infrastructure**:
+  - UPM package structure (`Packages/com.nexus.core/`)
+  - MIT License
+  - CI workflow with package validation and Unity test pipeline (GameCI)
+  - Issue templates (bug report, feature request)
+
+### Fixed
+
+- `ViewBinder.Bind` / `Unbind` and `_isBound` guard in `View`
+- `Context.Dispose` guard and `IContextLifecycle.OnDispose` call
+- Skip value types in `NexusDI.Inject` to prevent allocation
+- Thread safety in `HybridQueue.GetOrCreateNextFrameQueue`
+- `NexusTrace.EndEvent` O(1) with stored buffer index
+
+### Changed
+
+- `NEXUS_DEBUG` compile guards for conditional ProfilerMarker instrumentation
+- DI auto-bind on `ISignalBus` in `SignalBus` registration
+- Cross-context signal routing with scope tag matching

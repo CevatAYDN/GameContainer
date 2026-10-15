@@ -120,4 +120,4 @@
 
 ---
 
-*This document is the single source of truth for Nexus performance and reliability commitments. Update with each release in `CHANGELOG.md`.*
+*This document is the single source of truth for Nexus performance and reliability commitments. Update with each release in `Nexus/Packages/com.nexus.core/CHANGELOG.md`.*

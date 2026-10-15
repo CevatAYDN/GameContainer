@@ -1,0 +1,42 @@
+# Release gates
+
+A package version is tagged only when every gate below is green on the commit being tagged.
+Each gate names its command and its latest measured result; a gate without a fresh result on
+the release commit is red. Numbers here are replaced, never accumulated: the archive under
+`docs/archive/` keeps older snapshots.
+
+Latest full run: **2026-10-15**, branch `fix/gigawatt-findings` after commit `4b007db`,
+Unity **6000.5.6f1**, Windows 11. Result files: `Nexus/artifacts/port-20261015/` (local, ignored).
+
+| # | Gate | How to run | Latest result |
+|---|---|---|---|
+| 1 | Host harness green | `dotnet run --project tools/nexus-benchmark` (also the pre-commit hook) | 294 checks PASS, exit 0 |
+| 2 | Harness coverage known | `dotnet run --project tools/nexus-benchmark -- --coverage` | 119 of 124 runtime files compiled; out of scope: `InjectScanner`, `NexusProfiler`, `IAssetLoadService`, `ResourcesAssetLoadService`, `GcAllocationProbe` |
+| 3 | Unity EditMode green | `Unity.exe -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode` | 365 passed, 0 failed, 2 skipped (need a graphics device) |
+| 4 | Unity PlayMode green | `Unity.exe -batchmode -projectPath Nexus -runTests -testPlatform PlayMode` | 160 passed, 0 failed, 2 skipped (assert the `NEXUS_DEBUG`-off configuration) |
+| 5 | Generated binder current | `Unity.exe -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder` | "no file changes"; `link.xml` preserves `Assembly-CSharp` and `com.nexus.core` |
+| 6 | Documentation consistent | `python tools/check-docs.py` | 0 broken links; every number and path in `README.md`, the package `README.md` and this file verified against the code on 2026-10-15 |
+| 7 | Single changelog | `Nexus/Packages/com.nexus.core/CHANGELOG.md` is the only changelog; `package.json` is the released version | Satisfied on 2026-10-15 (repository-root changelog folded in and removed) |
+| 8 | Clean UPM consumer | `tools/unity-verify` against a fresh project consuming the packed tarball | Last run 2026-10-07 on an earlier source (107 cases, 15 stages, archived); **must be re-run on the release commit** |
+| 9 | Player builds | Windows Mono player run; Android ARM64 IL2CPP build | Last run 2026-10-07 on an earlier source; **must be re-run on the release commit**. No physical Android/iOS execution has ever been recorded |
+| 10 | Consumers re-pinned | Every game that consumes Nexus points at the release commit; no embedded package copies | Open: Gigawatt still carries an embedded copy whose corrections were ported here on 2026-10-15 (`027dab2`, `dd6ffa7`, `4b007db`); it re-pins once this branch is pushed |
+
+## Open work before the next tagged version
+
+- Re-run gates 8 and 9 on the release commit.
+- Add Reflex to `tools/nexus-comparison` and publish a dated, versioned Unity 6 IL2CPP
+  comparison; see `docs/research/COMPETITORS_2026-10-15.md`. Until then no "fastest" claim is made.
+- Physical-device acceptance (Android IL2CPP soak, storage interruption, background/resume).
+- Adapter guide (Ads/IAP providers) verified against the current `AdAdapterFactory` /
+  `IapAdapterFactory` API; the old Turkish examples are archived in `docs/archive/INTEGRATION.md`.
+- Prefab/component instantiate-and-inject API and a typed factory (`IFactory<T>`): present in
+  VContainer, Reflex and Zenject, absent here.
+
+## Policy
+
+- A test exists to lock a behaviour that was wrong or can regress. Tests that restate the
+  implementation, assert constants, or duplicate another test are removed, not added.
+- Evidence is a result file or a log from the command above, dated and tied to a commit.
+  "Verified" without that is not used in any document.
+- Performance claims name the workload, platform, Unity version, competitor versions and the
+  reproduction tool. Host benchmarks never stand in for device measurements.

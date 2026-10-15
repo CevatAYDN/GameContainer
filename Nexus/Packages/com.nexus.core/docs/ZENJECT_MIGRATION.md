@@ -8,7 +8,7 @@ Bu rehber, Zenject/Extenject kullanan bir projenin `com.nexus.core`'a taşınmas
 
 | Zenject / Extenject | Nexus | Not |
 |---|---|---|
-| `ProjectContext` / `SceneContext` | `Root` MonoBehaviour + `NexusRuntime` | Root, sahneye eklenen context giriş noktasıdır (`GameObject/Nexus/Create Root`) |
+| `ProjectContext` / `SceneContext` | `Root` MonoBehaviour + `NexusRuntime` | Root, sahneye eklenen context giriş noktasıdır (`GameObject/Nexus/Scene Root`) |
 | `DiContainer` | `NexusDI` (`Context.Container`) | Aynı görev; `Context` bir `NexusDI` sahibidir |
 | `Container.Bind<T>().AsSingle()` | `BindFluent<T>().AsSingle()` *(veya `Bind<T>(Lifetime.Scoped)`)* | Fluent zincir Zenject sözdizimine birebir en yakın yoldur; `AsSingle`/`AsCached` Scoped'a eşlenir |
 | `Container.Bind<T>().AsTransient()` | `BindFluent<T>().AsTransient()` *(veya `Bind<T>(Lifetime.Transient)`)* | |
@@ -35,7 +35,7 @@ Bu rehber, Zenject/Extenject kullanan bir projenin `com.nexus.core`'a taşınmas
 Her `ZenjectBinding` ve her `Container.Bind` çağrısını listeleyin; yukarıdaki tabloyla eşleyin. Binding **sayısı** korunmalıdır — tek `BindInterfacesAndSelfTo` Nexus'ta aynı singleton'ı üretir, çoğaltmayın.
 
 ### Adım 2 — Root kurulumu
-`ProjectContext` yerine: sahneye `Root` ekleyin (`GameObject/Nexus/Create Root`). Root'un `OnEnable`'ı root context'i otomatik kurar.
+`ProjectContext` yerine: sahneye `Root` ekleyin (`GameObject/Nexus/Scene Root`). Root'un `OnEnable`'ı root context'i otomatik kurar.
 
 ### Adım 3 — Binding sözdizimini çevir
 ```csharp
@@ -119,7 +119,7 @@ Zenject'te `Dispose` senkron çağrılırdı; Nexus `OnDispose` üzerinden non-b
 - [ ] `async void` yok; teardown'da sync-over-async yok
 - [ ] `Editor` menüsü → `NexusArchitectureAnalyzer.RunHeadless` temiz (0 sorun)
 - [ ] `BuildValidation.RunSilent()` geçiyor
-- [ ] EditMode suite'leri 100% yeşil (NEXUS_READY Kapı 10)
+- [ ] EditMode suite'leri 100% yeşil (repo: `docs/RELEASE_GATES.md`)
 
 ---
 

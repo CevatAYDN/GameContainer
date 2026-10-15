@@ -41,6 +41,14 @@ exempt is reported as an Error by the analyzer.
 
 ---
 
+### 5. Wizard template changes
+
+The Setup Wizard's eight generated files are single-source templates (`NexusSetupWizard` `*Template` properties) whose canonical copies live in the development project under `Nexus/Assets/Scripts/Game/Samples`. `WizardTemplateSyncTests` enforces four layers: the template mapping equals the canonical files byte for byte, the real write path reproduces those bytes in a temporary directory, the generated sources compile with Unity's own Roslyn, and each template's SHA-256 matches the "Template content hashes" table in `CHANGELOG.md`. To change a template:
+
+1. Change the wizard template and the canonical sample file in the same commit, with identical content.
+2. Run `WizardTemplateSyncTests`; the hash test's failure message prints the new SHA-256.
+3. Update the "Template content hashes" table in `CHANGELOG.md` and state the reason for the change in the release notes.
+
 ## 📋 PR Review Checklist for AI Agents
 
 When reviewing or self-auditing a PR, validate every check item:
@@ -98,7 +106,7 @@ When reviewing or self-auditing a PR, validate every check item:
 - 📖 [README.md](../README.md) — Framework index, decision flows, and file map
 - 📖 [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) — Plugin development & edge cases
 - 📜 [CHANGELOG.md](../CHANGELOG.md) — Release notes and changelog
-- 📋 [REVIEW_FINDINGS_A1_B8.md](REVIEW_FINDINGS_A1_B8.md) — 2026-08-01 review findings (A1–A6 + B1–B8) with per-finding fix evidence; consult it before re-flagging hardening items as new findings
+- 📋 Past review and audit reports are archived in the repository under `docs/archive/` (not shipped with the package); consult them before re-flagging hardening items as new findings
 
 ---
 

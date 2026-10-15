@@ -71,13 +71,13 @@ SHA-256: `755c974da82af2143cb0f8f0bf1b08e1107769be7a82a5c834da918b8a31f715`
 
 Local authoritative evidence:
 
-- [EditMode results](../Nexus/artifacts/excellence-20261007/release-final-editmode.xml)
-- [PlayMode results](../Nexus/artifacts/excellence-20261007/current-source-playmode.xml)
-- [Consumer stages](../Nexus/artifacts/excellence-20261007/current/consumer-results.json)
-- [Windows player result](../Nexus/artifacts/excellence-20261007/current/player-mono-result.json)
-- [Android build log](../Nexus/artifacts/excellence-20261007/current/consumer-build-android-il2cpp-editor.log)
-- [Host regression log](../Nexus/artifacts/excellence-20261007/final-host-regressions.log)
-- [Raw comparison rounds](../Nexus/artifacts/excellence-20261007/comparative-reproducible-results.json)
+- [EditMode results](../../Nexus/artifacts/excellence-20261007/release-final-editmode.xml)
+- [PlayMode results](../../Nexus/artifacts/excellence-20261007/current-source-playmode.xml)
+- [Consumer stages](../../Nexus/artifacts/excellence-20261007/current/consumer-results.json)
+- [Windows player result](../../Nexus/artifacts/excellence-20261007/current/player-mono-result.json)
+- [Android build log](../../Nexus/artifacts/excellence-20261007/current/consumer-build-android-il2cpp-editor.log)
+- [Host regression log](../../Nexus/artifacts/excellence-20261007/final-host-regressions.log)
+- [Raw comparison rounds](../../Nexus/artifacts/excellence-20261007/comparative-reproducible-results.json)
 
 Artifact paths are local/ignored evidence. CLI access tokens were removed from owned
 logs before reporting. Unity shutdown printed a native temporary-stack allocator
@@ -105,16 +105,16 @@ startup; Nexus startup allocates more than both competitors. Suitable constructo
 emission reduced the earlier same-graph Nexus allocation from 160 to 72 B (55%);
 there is no demonstrated latency improvement from that change. Transient objects
 still allocate. These are host microbenchmarks, not Unity/IL2CPP or game frame claims.
-[Reproduction tool](../tools/nexus-comparison/README.md),
-[package performance guide](../Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md).
+[Reproduction tool](../../tools/nexus-comparison/README.md),
+[package performance guide](../../Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md).
 
 ## Integration docs and remaining acceptance
 
-[English integration paths](../Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS.md),
-[Turkish integration paths](../Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS_TR.md),
-[getting started](../Nexus/Packages/com.nexus.core/docs/GETTING_STARTED.md),
-[migration contracts](../Nexus/Packages/com.nexus.core/MIGRATION.md),
-[architecture](../Nexus/Packages/com.nexus.core/docs/ARCHITECTURE.md) and changelog were
+[English integration paths](../../Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS.md),
+[Turkish integration paths](../../Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS_TR.md),
+[getting started](../../Nexus/Packages/com.nexus.core/docs/GETTING_STARTED.md),
+[migration contracts](../../Nexus/Packages/com.nexus.core/MIGRATION.md),
+[architecture](../../Nexus/Packages/com.nexus.core/docs/ARCHITECTURE.md) and changelog were
 updated to match code. Setup locales and resolved guide paths work in the tarball.
 
 BigDouble is approximate game-number arithmetic; long views truncate/saturate after

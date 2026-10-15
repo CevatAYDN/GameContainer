@@ -71,8 +71,8 @@ Zenject core container'ın disposal aksiyonu yoktur.
 
 ## Tekrar çalıştırma ve sonraki amaç
 
-[Yerel runner](../tools/nexus-comparison/README.md),
-[paket performans rehberi](../Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md),
+[Yerel runner](../../tools/nexus-comparison/README.md),
+[paket performans rehberi](../../Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md),
 [devam sırası](NEXUS_NEXT_STEPS_2026_10_07.md).
 
 Bir sonraki işin amacı **.NET transient farkının ve tam Context başlangıcının maliyet
@@ -82,14 +82,14 @@ Android IL2CPP cihaz ölçümü ve gerçek entegrasyon akışları gelir. Tüm a
 
 Yerel, gitignore kapsamındaki ham kanıtlar:
 
-- [Fair baseline Mono](../Nexus/artifacts/performance-20261007/baseline-fair-mono/unity-results.json)
-- [Fair current Mono](../Nexus/artifacts/performance-20261007/current-fair-mono/unity-results.json)
-- [Current source identity](../Nexus/artifacts/performance-20261007/current-fair-mono/source-identity.json)
-- [Original host baseline](../Nexus/artifacts/performance-20261007/before-host.json)
-- [Current host](../Nexus/artifacts/performance-20261007/current-fair-mono/host-results.json)
-- [EditMode](../Nexus/artifacts/performance-20261007/editmode-final.xml)
-- [PlayMode](../Nexus/artifacts/performance-20261007/playmode.xml)
-- [Host harness](../Nexus/artifacts/performance-20261007/host-regressions.log)
+- [Fair baseline Mono](../../Nexus/artifacts/performance-20261007/baseline-fair-mono/unity-results.json)
+- [Fair current Mono](../../Nexus/artifacts/performance-20261007/current-fair-mono/unity-results.json)
+- [Current source identity](../../Nexus/artifacts/performance-20261007/current-fair-mono/source-identity.json)
+- [Original host baseline](../../Nexus/artifacts/performance-20261007/before-host.json)
+- [Current host](../../Nexus/artifacts/performance-20261007/current-fair-mono/host-results.json)
+- [EditMode](../../Nexus/artifacts/performance-20261007/editmode-final.xml)
+- [PlayMode](../../Nexus/artifacts/performance-20261007/playmode.xml)
+- [Host harness](../../Nexus/artifacts/performance-20261007/host-regressions.log)
 
 `baseline-fair-mono/host-results.json` mevcut host kodunun yardımcı koşusudur;
 .NET before/after karşılaştırması için yukarıdaki original host baseline kullanılır.

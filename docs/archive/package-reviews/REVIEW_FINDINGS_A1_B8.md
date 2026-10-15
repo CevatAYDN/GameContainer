@@ -316,6 +316,6 @@ korumalı.
 
 ## 🔗 İlgili Dokümanlar
 
-- [CONTRIBUTING.md](CONTRIBUTING.md) — PR kontrol listesi ve standartlar
+- [CONTRIBUTING.md](../../../Nexus/Packages/com.nexus.core/docs/CONTRIBUTING.md) — PR kontrol listesi ve standartlar
 - [REVIEW_VALIDATION.md](REVIEW_VALIDATION.md) — önceki (31 Temmuz) rapor maddeleri
 - [SERVICE_AUDIT.md](SERVICE_AUDIT.md) — servis katmanı denetimi

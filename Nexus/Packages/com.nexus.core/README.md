@@ -1,11 +1,9 @@
-> **For AI Agents:** This document is the source of truth for the Nexus Core architecture, module organization, and developer workflows. Before generating game code or framework modifications:
-> 1. Read [AI_GAME_DEVELOPER_GUIDE.md](docs/AI_GAME_DEVELOPER_GUIDE.md) and [GAME_PATTERNS.md](docs/GAME_PATTERNS.md) for game creation rules
-> 2. Read [ARCHITECTURE.md](docs/ARCHITECTURE.md), [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md), and [CONTRIBUTING.md](docs/CONTRIBUTING.md) for framework core details
-> 3. Check the [Anti-Patterns](#anti-patterns-do-not-do) section below
-> 4. Run tests: Unity EditMode Test Runner (`PluginRefactorValidationTests`, `InfrastructureValidationTests`)
-> 5. Validate build: `BuildValidation.RunSilent()`
->
-> **Out of scope:** Third-party package implementations, custom game gameplay code.
+> **For AI agents:** this file is the index of the package. Before generating game code read
+> [AI_GAME_DEVELOPER_GUIDE.md](docs/AI_GAME_DEVELOPER_GUIDE.md), [CANONICAL-PATTERNS.md](docs/CANONICAL-PATTERNS.md)
+> and [GAME_PATTERNS.md](docs/GAME_PATTERNS.md); before changing the framework read
+> [ARCHITECTURE.md](docs/ARCHITECTURE.md), [CONTRIBUTING.md](docs/CONTRIBUTING.md) and
+> [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md). Verification commands and release gates
+> are in the repository's `CLAUDE.md` and `docs/RELEASE_GATES.md`.
 
 # Nexus Core
 
@@ -13,286 +11,196 @@
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.4.0-orange.svg)](package.json)
 
-**Nexus Core** is a modern, high-performance MVCS (Model-View-Controller-Service) architecture framework for Unity 6. It provides observable reactive models, dependency injection, signal-based communication, and comprehensive editor tools with allocation-conscious synchronous hot paths.
+Nexus Core is an MVCS (Model, View, Command, Service) architecture framework for Unity 6. One
+package provides a dependency-injection container, a signal bus with pooled commands, reactive
+models, a view/mediator layer, a service suite for mobile and PC games, AOT code generation and
+an editor tool suite. Version: `package.json`; changes: [CHANGELOG.md](CHANGELOG.md).
 
-**DI startup:** Optional named, cross-boundary and lazy-service maps allocate only on first registration; default DI scopes keep their lifetime and validation rules.
+## Install
 
-**Measured comparison:** [Nexus / VContainer / Zenject core DI workloads](docs/PERFORMANCE_COMPARISON.md). The fastest option depends on the workload; device evidence is tracked separately.
+Window → Package Manager → **+** → *Install package from git URL*:
 
-**Integration paths:** [Beginner / existing game / team workflow](docs/INTEGRATION_PATHS.md) ([Türkçe](docs/INTEGRATION_PATHS_TR.md)). `Context.Prewarm<TSignal>()` prepares command pools during loading without firing gameplay events. `NexusDI.ValidateBindings()` inspects actual scopes, names, overrides and eager cycles without constructing objects.
+```text
+https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<commit>
+```
 
-**Unity 6 + UPM:** choose the [integration guide](docs/GETTING_STARTED.md) ([Türkçe](docs/GETTING_STARTED_TR.md)) for explicit code-only startup, a scene-based setup, or the importable sample. Use `ContextFactory.StartAsync` to configure and initialize a context in one awaited call without assembly scanning.
+Pin a commit or release tag in production. Unity resolves the declared dependencies
+(`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`). Minimum Unity is
+6000.0; the package is verified on 6000.5.6f1.
 
-**Performance scope:** warmed generic synchronous dispatch, subscriptions and typed two-signal composites target zero managed allocation without debug tracing/interceptors/decorators. Immutable arbitrary-arity `CompositeContext` snapshots and async/debug paths have separate allocation costs. See [hardening and verification](docs/HARDENING.md); host benchmarks do not establish Unity/IL2CPP device performance.
+## Start
 
----
+| Goal | Read |
+|---|---|
+| Context, signal, command, model, view in 10 minutes | [10_MIN_QUICKSTART.md](docs/10_MIN_QUICKSTART.md) ([TR](docs/10_MIN_QUICKSTART_TR.md)) |
+| Add Nexus to an existing project: code-first, scene-based or sample | [GETTING_STARTED.md](docs/GETTING_STARTED.md) ([TR](docs/GETTING_STARTED_TR.md)) |
+| Beginner, existing game or team workflow paths | [INTEGRATION_PATHS.md](docs/INTEGRATION_PATHS.md) ([TR](docs/INTEGRATION_PATHS_TR.md)) |
+| Hands-on tour from setup to hardening | [walkthrough.md](walkthrough.md) |
 
-## 🚀 Quick Start
+Samples (Package Manager → Nexus → Samples): **Code-first Startup** (attach `ScoreBootstrap` to
+a GameObject and press Play), **Counter Example** ([README](Samples~/Counter/README.md), the
+full view/mediator tour) and **Nexus Starter Package** (scene scaffold). The Setup Wizard in the
+Nexus Dashboard generates a starter project additively.
 
-| 🇬🇧 English | 🇹🇷 Türkçe |
-|------------|----------|
-| [10-Minute Quickstart Guide](docs/10_MIN_QUICKSTART.md) | [10 Dakikada Hızlı Başlangıç](docs/10_MIN_QUICKSTART_TR.md) |
+## What is in the package
 
-**Prefer a hands-on example?** Import **Code-first Startup** via Package Manager → Nexus → Samples, attach `ScoreBootstrap` to a GameObject, and enter Play Mode. For a view/mediator example, use the [Counter Sample](Samples~/Counter/README.md); `NexusStarter` is the scene scaffold. Clean UPM installation and Windows Mono startup/disposal have been exercised; Android ARM64 IL2CPP compilation passed. See [verification scope](docs/HARDENING.md).
+**Dependency injection** (`NexusDI`, `IContextBuilder`): constructor, field, property and method
+injection with `[Inject]`, `[Construct]`, `[OptionalInject]`, `[PostConstruct]`, `[Deconstruct]`;
+`Lifetime.Singleton` / `Scoped` / `Transient`; child scopes (`CreateChildScope`) with reverse-order
+disposal; named bindings; lazy services; fluent chain (`BindFluent<T>().To<TImpl>().AsScoped()
+.WithParameter(...)`); `BindInterfacesAndSelfTo`, `BindMultiple`, cross-boundary bindings;
+`ValidateBindings()` reports missing, ambiguous, captive and cyclic bindings without constructing
+objects.
 
----
+**Signals and commands** (`SignalBus`): `struct` signals; `ICommand<T>` / `IAsyncCommand<T>`
+handlers pooled per signal; execution modes `Sequential`, `Concurrent`, `Exclusive`, `Composite`
+(fan-in of several signals); priorities; one-shot bindings; `ISignalFilter<T>` middleware by
+`ref`; cross-context broadcast; `Fire`, `FireAsync`, `FireThreadSafe`, `FireNextFrame`,
+`FireAsyncWithTimeout`; `Subscribe<T>` for plain handlers; recovery strategies (retry, fallback,
+abort) and `CommandFailedSignal`; loading-time `Context.Prewarm<TSignal>()`.
 
-## ⭐ Strategic Architecture Features
+**Models and views**: `ObservableProperty<T>` and `ObservableList<T>`; `SecureObservableProperty`
+(memory obfuscation with a tamper canary); `IReactiveModel`; `View` and `Mediator<TView>` bound by
+`[Mediator(typeof(...))]` with pooled mediators and automatic unsubscribe on unbind; `ScreenView`
+screens managed by `UIManager`.
 
-Nexus Core includes 5 strategic architectural capabilities:
+**Lifecycle**: `IContextLifecycle` (`OnConfigure`, `OnInitializeAsync`, `OnStartAsync`,
+`OnDispose`), `IPostContextLifecycle`, `IStartable` / `IAsyncStartable` / `IStoppable` /
+`IAsyncStoppable`, `ITickable` / `IFixedTickable` / `ILateTickable`; `Root` scene anchor,
+`NexusLifetimeScope` child scopes, `NexusBehaviour` and `NexusBinding` for scene objects, one
+persistent global root; `ContextFactory.StartAsync` for scan-free code-first startup.
 
-1. **Attribute-Based Command Auto-Discovery (`[RegisterCommand]`)**: Decorate command classes with `[RegisterCommand(typeof(MySignal))]` for automatic signal binding.
-2. **Convention-Based Binding (`BindInterfacesAndSelfTo<T>()`)**: Automatically bind concrete classes under all user interfaces AND their concrete type sharing one singleton.
-3. **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Provide startup and teardown lifecycle hooks for non-service domain objects.
-4. **Scene & Prefab Auto-Injection (`NexusBinding`)**: Attach `NexusBinding` MonoBehaviour to GameObjects or Prefabs for zero-code scene injection.
-5. **Zero-GC Hot Paths**: Synchronous generic dispatch, warmed DI resolution and typed two-signal composites target zero managed allocation after warmup. See [measured scope](docs/HARDENING.md).
+**AOT and IL2CPP**: the editor generator (Nexus → Generate AOT Binder) and the Roslyn source
+generator (`SourceGenerator~/`) emit injectors, constructor factories, typed command dispatchers
+and `link.xml`. `NexusBinderBuildGuard` stops a player build with a stale binder,
+`NexusBinderSelfHeal` recovers a binder that no longer compiles, and a stale generated injector
+falls back to reflection at runtime with a warning.
 
----
+**Editor suite** (Window → Nexus → Dashboard, `Ctrl+Shift+N`), 16 plugins: Dashboard,
+GameManager, Hierarchy, Explorer, Graph, TypeAnalyzer, ContextInspector, FSM, Tracer,
+ErrorDashboard, PerformanceDashboard, NetworkDashboard, Wizard (plus the Setup Wizard),
+CasualServices, Help. Also custom inspectors, a scene-view overlay of context boundaries, a Unity
+Profiler module, build validation rules, an architecture analyzer with a headless gate, and
+hot-reload hooks. Editor text is localized in English and Turkish.
+
+**Testing**: `NexusTestHarness`, `NexusTestContext`, `MockContext` and `GcAllocationProbe`
+(calibrated against a positive control) for EditMode and PlayMode tests.
+
+**Not in the package** (so that no one looks for it): a prefab instantiate-and-inject API and a
+typed `IFactory<T>` (use `BindFactory<T>(Func<T>)`); UniTask or Awaitable integration (the API is
+`ValueTask`); real advertising, store or analytics SDKs (adapters and mocks only); server
+authority for the economy and storage services.
+
+## Services
+
+Every service below lives in namespace `Nexus.Core.Services`, derives from `NexusService`, is
+bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispose` from its context.
+
+| Service | Folder under `Runtime/Services` | Purpose |
+|---|---|---|
+| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock adapter included) |
+| `AnalyticsService` | `Analytics` | Event tracking abstraction with pooled parameter dictionaries and user properties |
+| `AudioService` | `Audio` | BGM playlist crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels |
+| `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator |
+| `FeedbackService` | `Feedback` | Combined audio + haptic presets |
+| `FloatingTextService` | `UI` | Pooled world-space floating numbers |
+| `HapticService` | `Haptics` | Android JNI and iOS Taptic haptics with desktop preview |
+| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (mock store included) |
+| `InputService` | `Input` | Input System movement/actions behind `IInputService`; a custom `IInputProvider` is authoritative |
+| `LocalizationService` | `Localization` | Language tables, RTL formatting, fallback language |
+| `LoggerService` | `Logging` | Default `ILoggerService` |
+| `ObjectPoolService` | `Pool` | GameObject/component pools with prewarm, `IPoolable` callbacks and timed despawn |
+| `ProgressionService` | `Progression` | Level index, max unlocked level, upgrade cost formulas |
+| `ResourcesAssetLoadService` | `Assets` | Default `IAssetLoadService` over `Resources`; an Addressables adapter is described in [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) |
+| `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause |
+| `UIManager` | `UI` | Typed `ScreenView` stack over `HUD`, `Screen`, `Popup`, `Modal` layers with async open/close |
+
+Storage is not a `NexusService`: `EncryptedStorageService` (`Nexus.Core.Services`)
+implements `IPlayerPrefsService` with AES-256, key-bound HMAC-SHA256, device-bound seeds and
+atomic writes; `GameSaveManager` (`Nexus.Core.Extensions`) coordinates save providers with a
+`SaveThrottler`.
 
 ## Performance scope
 
 | Path | Allocation contract |
 |---|---|
-| Generic synchronous dispatch, command pools, warmed DI | Host regressions verify zero allocation for covered paths after warmup |
-| Typed two-signal synchronous composite | Value payloads and pooled commands; measured 0 B per completion after warmup |
-| Immutable arbitrary-arity/async composite | Owns retained snapshots; payload boxing and snapshot allocation remain intentional |
-| Startup, registration, async operations, editor diagnostics | May allocate; outside the synchronous hot-path contract |
+| Generic synchronous dispatch, command pools, warmed DI resolution | Host regressions verify zero allocation for covered paths after warmup |
+| Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup |
+| Immutable arbitrary-arity or async composite | Retained snapshots; payload boxing and snapshot allocation are intentional |
+| Startup, registration, async operations, editor diagnostics, `NEXUS_DEBUG` tracing | May allocate; outside the hot-path contract |
 
-Measurements and configuration are in [HARDENING.md](docs/HARDENING.md). Device frame
-budgets require Unity/IL2CPP profiling on the target hardware. Comparative performance
-claims require equivalent competitor scenarios and measurements.
+Measurements and their limits: [HARDENING.md](docs/HARDENING.md). The pinned core DI comparison
+with VContainer and Zenject, on host and in a Unity Mono player, is in
+[PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md); it does not establish device or
+IL2CPP performance, and no universal winner is claimed.
 
----
-## 📖 Glossary
+## Module map
 
-| Term | Definition | Concrete Example |
-|---|---|---|
-| **Context** | A scoped container for models, signals, commands, services. Has its own DI container and lifecycle. | `Context ctx = new Context(parentCtx, ctxData);` |
-| **ReactiveModel** | Observable data holder implementing `IReactiveModel`. State changes notify views. | `class PlayerHealth : IReactiveModel { ... }` |
-| **Signal** | A struct/class carrying event data. Fired via `SignalBus.Fire(signal)`. | `public struct DamageSignal { public int Amount; }` |
-| **Command** | A handler for a signal. Implements `ICommand<TSignal>`. | `class ApplyDamage : ICommand<DamageSignal> { ... }` |
-| **Service** | Long-lived singleton service implementing `INexusService`. | `class AudioService : INexusService { ... }` |
-| **View** | UI/MonoBehaviour bound to a context via a Mediator. | `class HudView : View { ... }` |
-| **Pure Context** | A context without a Unity MonoBehaviour anchor, created programmatically. | `NexusRuntime.CreatePureContextAsync("TestContext")` |
-| **Root Context** | A context anchored to a `Root` MonoBehaviour component in a scene. | Auto-created when `Root` component enables. |
-| **Plugin** | Editor tool extending `NexusWindow`. Implements `INexusEditorPlugin`. | `class TracerPlugin : NexusEditorPlugin { ... }` |
+| Path | Responsibility |
+|---|---|
+| `Runtime/Core` | `NexusRuntime` (context registry), `Context`, `ContextBuilder`, `NexusDI` and validation, `SignalBus`, `CommandExecutor`, `CommandPool`, `RecoveryEngine`, tracing clock, metrics |
+| `Runtime/Core/Lifecycle` | Lifecycle interfaces and the `ContextLifecycleOrchestrator` |
+| `Runtime/Interfaces`, `Runtime/Attributes` | Public contracts, attributes, execution modes, exceptions |
+| `Runtime/Lifecycle` | `View`, `Mediator<TView>`, `ViewBinder`, `ViewRegistration` |
+| `Runtime/Models` | Observable properties and lists, secure observables, `ModelData` |
+| `Runtime/Components` | `NexusBehaviour`, `NexusBinding`, `NexusLifetimeScope` |
+| `Runtime/Services` | The services above, `ProviderFactory<TAdapter>`, storage and save throttling |
+| `Runtime/Netcode`, `Runtime/DOTS` | Network signal bus with rollback journal; optional Collections/Jobs bridge (`com.nexus.core.dots`) |
+| `Runtime/FSM`, `Runtime/Queue`, `Runtime/Recovery`, `Runtime/Plugins`, `Runtime/Tracing`, `Runtime/Debug`, `Runtime/Data`, `Runtime/Extensions` | State machine, hybrid queue, recovery strategies, runtime plugin system, causal tracing, debug HUD, `BigDouble`, save manager and scene helpers |
+| `Runtime/Testing` | Test harness assembly (`com.nexus.core.testing`) |
+| `Editor/Core` | `NexusWindow` host, plugin base class, styles, localization, template provider, hierarchy menus |
+| `Editor/Plugins` | The 16 plugins |
+| `Editor/CodeGen` | Binder generator, build guard, self-heal, editor settings asset |
+| `Editor/Validation`, `Editor/Analyzer`, `Editor/Inspector`, `Editor/Overlay`, `Editor/Profiling`, `Editor/LiveReload` | Build validation rules, architecture analyzer, custom inspectors, scene overlay, profiler module, hot reload |
+| `SourceGenerator~` | Roslyn source generator project; built DLL ships in `SourceGenerators~` |
+| `Tests/Editor`, `Tests/Runtime`, `Tests/DOTS` | EditMode, PlayMode and optional DOTS tests |
 
----
+## Glossary
 
-## 🗺️ File Map
+| Term | Definition |
+|---|---|
+| **Context** | A scoped owner of a DI container, a signal bus and a lifecycle. Anchored by a `Root` in a scene or created code-first |
+| **Signal** | A `struct` carrying event data, fired through `SignalBus.Fire(signal)` |
+| **Command** | A pooled handler for one signal type, `ICommand<TSignal>` or `IAsyncCommand<TSignal>` |
+| **Model** | State holder; reactive models expose `ObservableProperty<T>` and implement `IReactiveModel` |
+| **Service** | A long-lived `NexusService` with async initialization and disposal |
+| **View** | A MonoBehaviour that draws and exposes events; it knows nothing about models |
+| **Mediator** | Connects one view to signals and models; subscriptions are released on unbind |
+| **Scope tag** | The name of a context (`ContextData.ScopeTag`) used for lifecycle discovery and cross-context broadcast |
+| **Plugin** | An editor tab derived from `NexusEditorPlugin` hosted by `NexusWindow` |
 
-| Path | Responsibility | Lines | Key Exports / API |
-|---|---|---|---|
-| `Runtime/Core/NexusRuntime.cs` | Global context registry, Reset, lifecycle orchestration | ~600 | `ActiveContexts`, `Reset()`, `CreatePureContextAsync()` |
-| `Runtime/Core/Context.cs` | Single context instance, DI container, signal bus binding | ~650 | `Configure()`, `InitializeLifecycleAsync()` |
-| `Runtime/Core/SignalBus.cs` | Signal dispatch, command execution pipelines | ~1845 | `Fire<T>()`, `BroadcastCrossContext()` |
-| `Runtime/Core/Root.cs` | Scene-anchored context entry point | ~400 | `OnEnable`, `RootContext` |
-| `Editor/Core/NexusWindow.cs` | Host shell for editor suite, tab management | ~676 | `SwitchToPlugin()`, `Instance` |
-| `Editor/Core/INexusEditorPlugin.cs` | Plugin interface contract and base class | ~56 | `INexusEditorPlugin`, `NexusEditorPlugin` |
-| `Editor/Plugins/*.cs` | 16 integrated editor plugin implementations | varies | `DashboardPlugin`, `TracerPlugin`, `GameManagerPlugin` |
-| `Editor/Core/NexusEditorStyles.cs` | Shared UI Toolkit styles, colors, stat tiles | ~650 | `CreateStatTile()`, `CreateStatusDot()` |
-| `Editor/Core/NexusLang.cs` | Framework localization manager (en + tr) | ~770 | `Get(key)`, `CurrentLocale` |
-| `Editor/Validation/BuildValidation.cs` | Pre-build checks and architectural rules engine | ~1141 | `RunSilent()`, `LastResults` |
-| `Editor/CodeGen/NexusCodeGenerator.cs` | Code generator engine for Wizard plugin | ~400 | `GenerateBinder()` |
-| `Tests/Editor/PluginRefactorValidationTests.cs` | NUnit tests for editor plugin lifecycles | ~60 | `Tracer_ListView_ConfiguredWithItemHeight` |
-| `Tests/Editor/InfrastructureValidationTests.cs` | NUnit tests for build wiring and AOT binder | ~60 | `ArchitectureValidation_Passes` |
+## Anti-patterns
 
----
+- Hard-coded editor strings instead of `NexusLang.Get(...)`: breaks the English/Turkish editor localization.
+- Custom schedulers (`schedule.Execute`, `EditorApplication.update`) in plugins instead of `OnUpdate()`: keep running while the tab is hidden.
+- Empty `catch {}` around assembly or type loading: hides broken assemblies; log the loader exceptions.
+- Uncached reflection on a hot path: allocates every call; cache `MethodInfo` and delegates.
+- Plugin state kept across `OnDisable` / `OnEnable`: reset flags, counters and queues.
+- Rebuilding a `ScrollView` every tick: use `ListView` with `makeItem` / `bindItem`.
+- Subscribing with anonymous lambdas that are never removed, or `ClearOnChanged()` on a shared property: wipes other subscribers; use named handlers and `RemoveOnChanged`.
 
-## 🚀 Decision Flows
+## Documentation
 
-### Scenario 1: "I want to add a new reactive model"
-1. Define class: `public class PlayerHealthModel : IReactiveModel { public readonly ObservableProperty<int> Health = new(100); public ValueTask OnBind(CancellationToken ct) => default; }`
-2. Registration: Handled automatically by `Context` assembly scan or bind via `builder.BindReactiveModel<PlayerHealthModel>()`.
-3. Injection: Inject where needed: `public IncrementCommand(PlayerHealthModel health) { _health = health; }`
-4. Verification: Write unit test asserting property change listeners fire correctly.
-**Reference:** [ARCHITECTURE.md §ReactiveModel](docs/ARCHITECTURE.md#key-components)
+| Document | Content |
+|---|---|
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Runtime pipeline, lifecycle sequences, hardening contracts |
+| [CANONICAL-PATTERNS.md](docs/CANONICAL-PATTERNS.md) | The one recommended way to use each API |
+| [THE_BIG_NEXUS_HOWTO.md](docs/THE_BIG_NEXUS_HOWTO.md) | Why each pattern exists and when to use it (Turkish) |
+| [GAME_PATTERNS.md](docs/GAME_PATTERNS.md) | Context topologies and budgets per genre |
+| [AI_GAME_DEVELOPER_GUIDE.md](docs/AI_GAME_DEVELOPER_GUIDE.md) | Rules for generating game code on Nexus |
+| [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) | Concept mapping and migration steps from Zenject/Extenject (Turkish) |
+| [STRANGE_COMPARISON.md](docs/STRANGE_COMPARISON.md) | Feature-by-feature comparison with StrangeIoC (Turkish) |
+| [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) | Implementing `IAssetLoadService` over Addressables without a package dependency |
+| [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md) | Pinned DI comparison with VContainer and Zenject |
+| [HARDENING.md](docs/HARDENING.md) | Verification evidence and measured host performance |
+| [STABILITY.md](docs/STABILITY.md) | Pre-1.0 stability policy |
+| [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Writing editor plugins |
+| [LOCALIZATION_KEYS.md](docs/LOCALIZATION_KEYS.md) | Editor localization keys and parity rules |
+| [DeveloperOnboarding.md](docs/DeveloperOnboarding.md) | Running tests and verification steps for a new integrator |
+| [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Coding rules, test requirements, wizard template procedure, PR checklist |
+| [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Symptoms, causes and fixes |
+| [MIGRATION.md](MIGRATION.md), [BREAKING_CHANGES.md](BREAKING_CHANGES.md) | Version-to-version migration and the breaking-change policy |
+| [ADOPTION.md](ADOPTION.md) | Fork-and-own guidance for studios |
+| [CHANGELOG.md](CHANGELOG.md) | The only changelog |
 
-### Scenario 2: "I want to add a new signal + command"
-1. Define signal struct: `public struct PlayerScoredSignal { public int Points; }`
-2. Define command:
-   ```csharp
-   public class HandlePlayerScored : ICommand<PlayerScoredSignal>
-   {
-       [Inject] public ScoreModel Score { get; set; } // Canonical AOT-optimal style
-       public void Execute(PlayerScoredSignal signal) => Score.CurrentScore.Value += signal.Points;
-   }
-   ```
-3. Register command in context: `builder.BindCommand<PlayerScoredSignal, HandlePlayerScored>(ExecutionMode.Sequential);`
-4. Dispatch signal: `context.SignalBus.Fire(new PlayerScoredSignal { Points = 10 });`
-**Reference:** [ARCHITECTURE.md §SignalBus](docs/ARCHITECTURE.md#key-components)
-
-### Scenario 3: "I want to add a new editor plugin"
-1. Create file `Editor/Plugins/MyNewPlugin.cs` extending `NexusEditorPlugin`.
-2. Set properties: `Id`, `DisplayName`, `Order`.
-3. **MUST** override `OnUpdate()` — **DO NOT** use `_view.schedule` or `EditorApplication.update`.
-4. **MUST** reset state in `OnDisable()` (flags, counters, queues).
-5. **MUST** use `NexusLang.Get(...)` for all user-facing text.
-6. **MUST** use the shared `NexusEditorStyles` stat helpers for metric cards and summary tiles, not bespoke stat components.
-7. **MUST** add NUnit lifecycle test in `Tests/Editor/PluginRefactorValidationTests.cs`.
-**Reference:** [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md)
-
-### Scenario 4: "I want to add a new localization key"
-1. Pick namespace prefix: `dash_` (Dashboard), `tracer_` (Tracer), `gm_` (GameManager), `wizard_`, `ci_` (ContextInspector).
-2. Add default English entry in `NexusLang.cs` `AddDefaults()`.
-3. Add Turkish override entry in `Editor/Locales/tr.json`.
-4. Consume in C# code: `NexusLang.Get("gm_new_key_name")`.
-**Reference:** [LOCALIZATION_KEYS.md](docs/LOCALIZATION_KEYS.md)
-
----
-
-## 🚫 Anti-Patterns (DO NOT DO)
-
-### ❌ Hardcoded User-Facing Strings
-```csharp
-// BAD:
-filterBar.Add(new Button { text = "OK" });
-
-// GOOD:
-filterBar.Add(new Button { text = NexusLang.Get("tracer_status_ok") });
-```
-*Why:* Hardcoded strings bypass `NexusLang` and break English/Turkish localization.
-
-### ❌ Custom UI Schedulers in Plugins
-```csharp
-// BAD:
-_refreshSchedule = _view.schedule.Execute(RefreshStats).Every(1000);
-
-// GOOD:
-public override void OnUpdate() => RefreshStats();
-```
-*Why:* Custom schedules continue running when tab is hidden, causing background CPU consumption. `OnUpdate` is window-managed.
-
-### ❌ Empty `catch {}` Blocks
-```csharp
-// BAD:
-try { assembly.GetTypes(); } catch { }
-
-// GOOD:
-try { assembly.GetTypes(); } 
-catch (ReflectionTypeLoadException ex) { 
-    foreach (var le in ex.LoaderExceptions.Where(e => e != null))
-        Debug.LogWarning($"[Nexus] Type load failed: {le.Message}");
-}
-catch (Exception ex) {
-    Debug.LogWarning($"[Nexus] Assembly scan failed: {ex.Message}");
-}
-```
-*Why:* Silent exception swallowing hides broken assemblies from developers during debugging.
-
-### ❌ Hot-Path Reflection Without Caching
-```csharp
-// BAD:
-private void FireSignal(Type signalType) {
-    var method = GetType().GetMethod("Fire").MakeGenericMethod(signalType); // Executed every frame
-    method.Invoke(this, new[] { Activator.CreateInstance(signalType) });
-}
-
-// GOOD:
-private static readonly Dictionary<Type, MethodInfo> s_fireCache = new();
-private void FireSignal(Type signalType) {
-    if (!s_fireCache.TryGetValue(signalType, out var method)) {
-        method = GetType().GetMethod("Fire").MakeGenericMethod(signalType);
-        s_fireCache[signalType] = method;
-    }
-    method.Invoke(this, new[] { Activator.CreateInstance(signalType) });
-}
-```
-*Why:* Uncached reflection lookups on hot paths cause major GC allocations and frame rate drops.
-
-### ❌ State Leak Across `OnDisable`/`OnEnable`
-```csharp
-// BAD:
-public override void OnDisable() { 
-    base.OnDisable();
-    // Flags, counters, and queues NOT reset
-}
-
-// GOOD:
-public override void OnDisable() { 
-    _hasLiveEvents = false;
-    _eventCounter = 0;
-    while (_queue.TryDequeue(out _)) { }
-    base.OnDisable();
-}
-```
-*Why:* Retaining stale queue or flag state across tab switches causes inconsistent behavior on re-enable.
-
-### ❌ Full `ScrollView` Rebuild on Update Tick
-```csharp
-// BAD:
-_scrollView.Clear();
-foreach (var item in items) _scrollView.Add(new ItemElement(item)); // Allocates 200 elements per tick
-
-// GOOD:
-_listView = new ListView { fixedItemHeight = 28f };
-_listView.makeItem = () => new ItemElement();
-_listView.bindItem = (el, i) => ((ItemElement)el).Bind(items[i]);
-_listView.itemsSource = items;
-_listView.Rebuild();
-```
-*Why:* Allocating hundreds of `VisualElement` nodes every update tick creates heavy GC pressure and loses scroll position.
-
----
-
-## 🛠️ Editor Plugins (Nexus Suite)
-
-Access all tools via **Window > Nexus > Dashboard** (`Ctrl+Shift+N` / `Cmd+Shift+N`).
-
-1. **Overview**: `Dashboard` (System status & QuickFind), `GameManager` (Central hub for models, signals & live metrics).
-2. **Architecture**: `Hierarchy` (Context tree), `Explorer` (Signal wiring), `Graph` (Visual graph), `TypeAnalyzer` (Assembly inspector), `ContextInspector` (Root inspector), `FSM` (State machine manager).
-3. **Diagnostics**: `Tracer` (Virtualized causal trace log), `ErrorDashboard` (Build & runtime log hub), `PerformanceDashboard` (FPS & GC profiler).
-4. **Tools & Services**: `Wizard` (Boilerplate code generator), `CasualServices` (Economy & window debug helper), `Help` (Documentation viewer).
-
----
-
----
-
-## 🛡️ Security & Adversarial Audit Fixes (v0.4.1+)
-
-Nexus Core underwent a comprehensive adversarial code audit (2026) following the **Zero-Complacency Adversarial Audit Protocol**. All critical and high-severity findings were resolved:
-
-### Critical Fixes
-- **Reentrancy Counter Drift** (`SignalBus.cs`): `enteredDepth` flag prevents negative counter drift on overflow
-- **Singleton Construction Race** (`NexusDI.cs`): `ManualResetEventSlim` replaces spin-wait for atomic publication
-- **Unsubscribe-Dispatch TOCTOU** (`SubscriptionRegistry.cs`): `SubscriptionNode.Reset()` preserves `Next` for safe iteration
-- **Exception Loss in Recovery** (`RecoveryEngine.cs`): Both strategy + original exceptions collected in `ErrorCollection`
-- **PostContext Builder Mismatch** (`Context.cs`): `_configuredBuilder` tracks exact builder used during `Configure()`
-- **Metrics Rate Race** (`NexusRuntime.cs`): `_lastSampleTime` read inside lock for ARM weak memory safety
-- **Logger Cache Race** (`NexusRuntime.cs`): Lock-based cache replaces `Volatile.Read/Write`
-- **Decorator Allocation** (`CommandExecutor.cs`): generic-sync dispatch keeps the zero-closure call pattern — an inline lambda there hoists a closure display class (~56 B/dispatch, proven by the harness + IL dump); decorator chains compose on demand
-- **LazyInjection Race** (`NexusDI.cs`): Double-checked locking for thread-safe lazy instance creation
-- **Composite Payload Sharing** (`SignalBus.cs`): Per-trigger boxing eliminates shared reference risk
-- **Fallback Infinite Loop** (`RecoveryEngine.cs`): `_fallbackDepth` counter (max 3) + negative priority
-- **One-Shot Lost Retry** (`CommandRegistry.cs`): Claim marks handler but keeps in list until success
-- **Trace Buffer Resize Race** (`NexusRuntime.cs`): Versioned buffer swap with `Volatile` for lock-free readers
-
-### Security Hardening
-- **DI Validation in ALL Builds**: `ContextBuilder.Validate()` runs in production (not just editor)
-- **Captive Dependency Detection**: `DiValidationIssueType.CaptiveDependency` reported for singleton→transient capture
-- **Reentrancy Guard Throws Everywhere**: `NexusReentrancyException` on stack overflow in Debug + Release
-- **Async Overflow Guard Throws Everywhere**: `NexusAsyncOverflowException` unified in `EnterAsyncInFlight()`
-- **Atomic Save Writes**: `EncryptedStorageService` uses `File.Replace` for crash-safe saves
-- **Hardware-Tick Anti-Cheat**: `OfflineTimeCalculator` clamps to a hardware monotonic tick (`Stopwatch.GetTimestamp()`-derived ms since boot)
-
-### Zero-GC Improvements
-- **Decorator Chain Composition**: per-plugin decorator lists flattened into one reversed chain preserving execution order (still composed per execution when decorators are present)
-- **Logger Cache Locking**: Thread-safe logger access during context lifecycle changes
-- **LazyInjection Double-Check**: Double-checked locking for lazy instance creation
-- **Fallback Depth Limit**: `MaxFallbackDepth = 3` prevents infinite fallback recursion
-
----
-
-## 🔗 Related Documentation
-- 📖 [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) — Writing editor plugins and lifecycle rules
-- 🏛️ [ARCHITECTURE.md](docs/ARCHITECTURE.md) — Core runtime architecture & diagrams
-- 🌐 [LOCALIZATION_KEYS.md](docs/LOCALIZATION_KEYS.md) — Localization key catalog & guidelines
-- 🤝 [CONTRIBUTING.md](docs/CONTRIBUTING.md) — Contribution guidelines and PR checklist
-- 📜 [CHANGELOG.md](CHANGELOG.md) — Framework change history
-
----
-
-**Last updated:** 2026-07-24  
-**Code version:** 0.4.0  
-**Maintainers:** Nexus Core Team  
-**Re-review trigger:** Any change to `Runtime/Core/`, `Editor/Core/`, or `Editor/Plugins/`.
+License: MIT ([LICENSE](LICENSE)).

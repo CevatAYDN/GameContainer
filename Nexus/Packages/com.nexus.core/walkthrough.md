@@ -142,8 +142,8 @@ tracing disabled and a working positive-control allocation recorder.
 | Architecture | [ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | Game patterns | [GAME_PATTERNS.md](docs/GAME_PATTERNS.md) |
 | Plugin development | [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) |
-| Stability & threading | [STABILITY.md](STABILITY.md) |
-| Review findings (A1–B8) | [REVIEW_FINDINGS_A1_B8.md](docs/REVIEW_FINDINGS_A1_B8.md) |
+| Stability policy | [STABILITY.md](docs/STABILITY.md) |
+| Migrating from Zenject | [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) |
 | Troubleshooting | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) |
 
 ## Current integration contracts
