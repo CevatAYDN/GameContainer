@@ -14,6 +14,8 @@ namespace Nexus.Ads.AdMob
     /// where the law requires it), then the SDK starts and one rewarded and one interstitial ad are
     /// kept loaded; a failed load is retried with a growing pause. The game stays playable without
     /// ads (offline, no consent, no fill). Ported from the first shipped Nexus game's adapter.
+    /// Every consent and SDK step is logged with <c>[AdMob]</c> through <see cref="NexusLog.WarnAlways"/>,
+    /// so a release build's logcat shows where the chain stopped.
     /// </summary>
     public sealed class AdMobAdapter : IAdNetworkAdapter, IAdOutcomeAdapter, IAdReadinessAdapter, IAdConsentAdapter
     {
@@ -28,6 +30,8 @@ namespace Nexus.Ads.AdMob
         }
 
         private readonly AdMobConfig _config;
+        private AdMobMainThread _mainThread;
+        private Action _onInitialized;
         private RewardedAd _rewarded;
         private InterstitialAd _interstitial;
         private BannerView _banner;
@@ -39,44 +43,81 @@ namespace Nexus.Ads.AdMob
 
         public AdMobAdapter(AdMobConfig config) { _config = config ?? throw new ArgumentNullException(nameof(config)); }
 
+        /// <summary>
+        /// Call on the Unity main thread. <paramref name="onInitialized"/> runs once, on the main thread,
+        /// when the SDK has started or consent was refused.
+        /// </summary>
         public void Initialize(Action onInitialized)
         {
             if (_consentAsked) { onInitialized?.Invoke(); return; }
             _consentAsked = true;
+            _onInitialized = onInitialized;
+            _mainThread ??= AdMobMainThread.Capture();
             MobileAds.RaiseAdEventsOnUnityMainThread = true;
+            Step("Consent update requested; " + ConsentState());
             var request = new ConsentRequestParameters { TagForUnderAgeOfConsent = _config.TagForUnderAgeOfConsent };
-            ConsentInformation.Update(request, updateError =>
+            ConsentInformation.Update(request, updateError => OnMainThread("Consent update", () =>
             {
                 if (updateError != null) Warn("Consent update failed: " + updateError.Message);
-                ConsentForm.LoadAndShowConsentFormIfRequired(formError =>
+                Step("Consent updated; " + ConsentState());
+                ConsentForm.LoadAndShowConsentFormIfRequired(formError => OnMainThread("Consent form", () =>
                 {
                     if (formError != null) Warn("Consent form: " + formError.Message);
+                    Step("Consent form done; " + ConsentState());
                     Changed();
-                    if (ConsentInformation.CanRequestAds()) StartSdk(onInitialized);
-                    else onInitialized?.Invoke();
-                });
-            });
+                    if (ConsentInformation.CanRequestAds()) StartSdk();
+                    else { Step("Ads cannot be requested; the game runs without ads"); CompleteInitialize(); }
+                }));
+            }));
             // Consent given in an earlier session: ads can be requested while this session's update runs.
-            if (ConsentInformation.CanRequestAds()) StartSdk(onInitialized);
+            if (ConsentInformation.CanRequestAds()) StartSdk();
         }
 
-        private void StartSdk(Action onInitialized)
+        private void StartSdk()
         {
-            if (_sdkStarted) { onInitialized?.Invoke(); return; }
+            if (_sdkStarted) return;
             _sdkStarted = true;
+            Step("Starting the Google Mobile Ads SDK");
             MobileAds.SetRequestConfiguration(new RequestConfiguration
             {
                 MaxAdContentRating = MaxAdContentRating.ToMaxAdContentRating(_config.MaxAdContentRating),
                 TagForUnderAgeOfConsent = _config.TagForUnderAgeOfConsent ? TagForUnderAgeOfConsent.True : TagForUnderAgeOfConsent.False,
             });
-            MobileAds.Initialize(_ =>
+            MobileAds.Initialize(_ => OnMainThread("SDK initialization", () =>
             {
+                Step("SDK initialized; loading ads");
                 LoadRewarded();
                 LoadInterstitial();
                 Changed();
-                onInitialized?.Invoke();
-            });
+                CompleteInitialize();
+            }));
         }
+
+        /// <summary>The service's <c>onInitialized</c> runs exactly once: the first path to finish (SDK started, or consent refused) takes it.</summary>
+        private void CompleteInitialize()
+        {
+            var callback = _onInitialized;
+            _onInitialized = null;
+            callback?.Invoke();
+        }
+
+        /// <summary>
+        /// Continues an SDK callback on the Unity main thread. The UMP Android plugin calls back on the
+        /// Android UI thread; running the chain there breaks at the first Unity API or game handler, and
+        /// with it <see cref="ReadyChanged"/> and <see cref="MobileAds.Initialize"/>, without a warning.
+        /// </summary>
+        private void OnMainThread(string step, Action action)
+        {
+            _mainThread ??= AdMobMainThread.Capture();
+            if (_mainThread.IsCurrent) { action(); return; }
+            if (_mainThread.TryPost(() => { Step(step + " callback arrived on a worker thread; continued on the main thread"); action(); })) return;
+            Warn(step + " callback arrived on a worker thread and no main-thread context was captured; running it there");
+            action();
+        }
+
+        private static string ConsentState()
+            => "status " + ConsentInformation.ConsentStatus + ", can request ads " + ConsentInformation.CanRequestAds()
+               + ", privacy options " + ConsentInformation.PrivacyOptionsRequirementStatus;
 
         private bool CanLoad => _sdkStarted && ConsentInformation.CanRequestAds();
 
@@ -188,19 +229,25 @@ namespace Nexus.Ads.AdMob
         public void HideBanner() => _banner?.Hide();
 
         // ----- consent
-        public void ShowPrivacyOptions(Action onClosed) => ConsentForm.ShowPrivacyOptionsForm(error =>
+        /// <summary>Call on the Unity main thread; <paramref name="onClosed"/> runs there.</summary>
+        public void ShowPrivacyOptions(Action onClosed)
         {
-            if (error != null) Warn("Privacy options: " + error.Message);
-            if (!ConsentInformation.CanRequestAds())
+            _mainThread ??= AdMobMainThread.Capture();
+            ConsentForm.ShowPrivacyOptionsForm(error => OnMainThread("Privacy options", () =>
             {
-                _rewarded?.Destroy(); _rewarded = null;
-                _interstitial?.Destroy(); _interstitial = null;
-                _banner?.Destroy(); _banner = null;
-            }
-            else { StartSdk(null); LoadRewarded(); LoadInterstitial(); }
-            Changed();
-            onClosed?.Invoke();
-        });
+                if (error != null) Warn("Privacy options: " + error.Message);
+                Step("Privacy options closed; " + ConsentState());
+                if (!ConsentInformation.CanRequestAds())
+                {
+                    _rewarded?.Destroy(); _rewarded = null;
+                    _interstitial?.Destroy(); _interstitial = null;
+                    _banner?.Destroy(); _banner = null;
+                }
+                else { StartSdk(); LoadRewarded(); LoadInterstitial(); }
+                Changed();
+                onClosed?.Invoke();
+            }));
+        }
 
         /// <summary>30 s, 60 s, 2 min ... up to 10 min between attempts, on the main thread. Quitting cancels the wait.</summary>
         private static async void RetryLater(int failures, Action load)
@@ -213,6 +260,7 @@ namespace Nexus.Ads.AdMob
 
         private void Changed() => ReadyChanged?.Invoke();
         private static void Warn(string message) => NexusLog.WarnAlways("[AdMob] " + message);
+        private static void Step(string message) => NexusLog.WarnAlways("[AdMob] " + message);
     }
 }
 #endif

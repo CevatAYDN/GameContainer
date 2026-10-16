@@ -130,6 +130,10 @@ the game code and tests depend only on `IAdService` / `IIapService`. Two rules t
 - `ShowRewarded` must call `onCompleted(true)` only when the SDK granted the reward, and
   `onCompleted(false)` on every other outcome (closed early, failed, no fill), or the game pays twice
   or never.
+- An SDK may call back on a worker thread: the Google Mobile Ads plugin invokes its User Messaging
+  Platform listeners on the Android UI thread. Continue on the Unity main thread before touching
+  Unity or the game's handlers; the AdMob adapter captures Unity's `SynchronizationContext` in
+  `Initialize` and posts every callback to it, and logs each step through `NexusLog.WarnAlways`.
 
 `MonetizationServiceTests` (EditMode) show the services driven through the mock adapters:
 interstitial cooldown and availability, product registration and a mock purchase.
