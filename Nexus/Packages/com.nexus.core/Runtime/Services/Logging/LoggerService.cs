@@ -111,6 +111,22 @@ namespace Nexus.Core.Services
                 Debug.LogWarning(entry.Format());
         }
 
+        /// <summary>
+        /// A warning that must reach the player log in release builds too, where
+        /// <see cref="LoggerService"/> drops <c>Log</c> and <c>LogWarning</c>: failures at an SDK
+        /// boundary (an ad that did not load, a store that is not reachable). Goes to the registered
+        /// logger while it is enabled, otherwise straight to Unity's log (logcat on Android).
+        /// </summary>
+        public static void WarnAlways(string message) => WarnAlways(NexusRuntime.Logger ?? s_instance, message);
+
+        internal static void WarnAlways(ILoggerService logger, string message)
+        {
+            if (logger != null && logger.IsEnabled)
+                logger.LogWarning(message);
+            else
+                Debug.LogWarning(message);
+        }
+
         public static void Info(string source, string operation, string contextId, string message)
         {
             var entry = new NexusLogEntry(source, operation, contextId, message);
@@ -126,6 +142,7 @@ namespace Nexus.Core.Services
     {
         public bool IsEnabled { get; set; } = true;
 
+        /// <summary>Release builds (not editor, not development) drop Log and LogWarning; errors and exceptions always pass. See <see cref="NexusLog.WarnAlways"/>.</summary>
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
 #if !UNITY_EDITOR && !DEVELOPMENT_BUILD

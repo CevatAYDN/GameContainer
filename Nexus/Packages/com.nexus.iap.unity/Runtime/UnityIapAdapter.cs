@@ -160,7 +160,7 @@ namespace Nexus.Iap.Unity
             _ => StoreProductType.NonConsumable,
         };
 
-        private static void Warn(string message) => NexusRuntime.Logger?.LogWarning("[UnityIAP] " + message);
+        private static void Warn(string message) => NexusLog.WarnAlways("[UnityIAP] " + message);
     }
 }
 #endif

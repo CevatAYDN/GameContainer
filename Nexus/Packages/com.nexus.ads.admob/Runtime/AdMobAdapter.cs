@@ -212,7 +212,7 @@ namespace Nexus.Ads.AdMob
         }
 
         private void Changed() => ReadyChanged?.Invoke();
-        private static void Warn(string message) => NexusRuntime.Logger?.LogWarning("[AdMob] " + message);
+        private static void Warn(string message) => NexusLog.WarnAlways("[AdMob] " + message);
     }
 }
 #endif
