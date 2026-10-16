@@ -18,6 +18,7 @@ released version; everything under Unreleased is in the repository but not yet i
 ### Fixed
 - `MockAdNetworkAdapter` reported only the placement `"default"` as ready, so a game's own placement (`"rewarded"`, `"level_end"`) got `NotReady` in the editor and development builds while the AdMob adapter, which treats placements as labels, shows the ad. Every placement is now ready after `Initialize` until `SetRewardedReady` / `SetInterstitialReady` overrides it (found by Gigawatt; `MonetizationContractTests.MockAdapter_EveryPlacementIsReadyUntilOverridden`).
 - Adapter warnings were invisible in release builds: `LoggerService` drops `LogWarning` outside the editor and development builds, so a release player with a product missing from Google Play logged no `[UnityIAP]` line (found by Gigawatt on the device). Both adapters now warn through the new `NexusLog.WarnAlways`, which uses the registered logger while it is enabled and Unity's log otherwise (`ReleaseLoggingTests`).
+- `docs/ADAPTERS.md` said the package ships no AdMob or Unity IAP adapter (next to the section listing both) and did not say that `NEXUS_ADMOB` / `NEXUS_UNITY_IAP` exist only inside the adapter assemblies; a review suggested guarding game code with them, which removed ads and store from Gigawatt's builds.
 
 ## [0.5.0] - 2026-10-15
 

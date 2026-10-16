@@ -91,6 +91,12 @@ Two optional packages in this repository implement the full contract (base adapt
 capability) against real SDKs. Each compiles only while its SDK package is installed
 (`versionDefines` in the assembly definition), so installing them without the SDK is inert.
 
+The defines `NEXUS_ADMOB` and `NEXUS_UNITY_IAP` exist only inside the adapter assemblies. In game
+code `#if NEXUS_ADMOB` is always false and silently removes what it guards from every build,
+release included. Game code that must compile without the SDK declares its own define: the same
+`versionDefines` entry in the game's assembly definition, or a scripting define in Player
+Settings when the code lives in `Assembly-CSharp`.
+
 | Package | SDK | Provider name | Install |
 |---|---|---|---|
 | `com.nexus.ads.admob` ([README](../../com.nexus.ads.admob/README.md)) | Google Mobile Ads Unity plugin (`com.google.ads.mobile`, OpenUPM) with User Messaging Platform consent | `admob` | git URL `?path=/Nexus/Packages/com.nexus.ads.admob#<commit>` |
@@ -105,8 +111,14 @@ iapService.SetStoreAdapter(iapFactory.CreateAdapter(UnityIapAdapter.ProviderName
 
 Both were ported from the first shipped Nexus game and are verified by compiling against the
 real SDK packages in a disposable project and by tests of their behaviour before initialization
-(`Nexus/artifacts/adapters-050/`, see the repository's `docs/RELEASE_GATES.md`); a run against
-live AdMob and Google Play inside a game is the open item.
+(`Nexus/artifacts/adapters-050/`, see the repository's `docs/RELEASE_GATES.md`). Gigawatt runs
+both in its signed Android IL2CPP release build: its device acceptance passed and a Google test
+rewarded ad paid out on the phone. A price, a purchase and a restore against Google Play are the
+open item.
+
+Adapter warnings (an ad that did not load, a store that is not reachable, products not fetched)
+go through `NexusLog.WarnAlways`, so they reach the player log (logcat on Android) in release
+builds too. `LoggerService` drops `Log` and `LogWarning` there; errors and exceptions always pass.
 
 ## Writing an adapter
 
@@ -124,12 +136,10 @@ interstitial cooldown and availability, product registration and a mock purchase
 
 ## Where the capabilities come from
 
-Gigawatt, the first game built on Nexus, did not use `AdService` or `IapService`: its own
-`IRewardedAds` / `IGameStore` (in `Assets/Scripts/Game/Services/RewardOffers.cs`, with simulated
-and real AdMob / Unity IAP implementations) needed a consent step before the SDK starts (Google
-User Messaging Platform; EEA/UK) with a privacy-options entry in the menu, a readiness event instead
-of polling, structured outcomes instead of booleans, and the store's localized prices with a
-change event. The capability interfaces above carry exactly that contract. What still lives in
-the game's adapter: the consent flow itself (an `IAdConsentAdapter` wraps the SDK's consent
-form), and the SDK-specific mapping of events to outcomes; the package ships no AdMob or Unity
-IAP adapter.
+Gigawatt, the first game built on Nexus, first shipped its own `IRewardedAds` / `IGameStore`
+with simulated and real AdMob / Unity IAP implementations instead of `AdService` and `IapService`.
+It needed a consent step before the SDK starts (Google User Messaging Platform; EEA/UK) with a
+privacy-options entry in the menu, a readiness event instead of polling, structured outcomes
+instead of booleans, and the store's localized prices with a change event. The capability
+interfaces above carry exactly that contract, the two shipped adapters are ports of its AdMob and
+Unity IAP implementations, and Gigawatt now runs on `AdService` / `IapService` with them.

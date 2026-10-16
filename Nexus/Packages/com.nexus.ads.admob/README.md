@@ -23,6 +23,8 @@ so `RequestReward`, `ReadyChanged`, `PrivacyOptionsRequired` and `ShowPrivacyOpt
 
 The adapter's assembly compiles only while `com.google.ads.mobile` is installed (assembly
 definition `versionDefines`, define `NEXUS_ADMOB`); without the plugin the package is inert.
+`NEXUS_ADMOB` exists only inside this assembly: in game code `#if NEXUS_ADMOB` is always false
+(core `docs/ADAPTERS.md`, "Shipped adapters").
 
 ## Use
 
