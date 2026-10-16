@@ -4,6 +4,7 @@
     "references": [
         "com.nexus.core",
         "com.nexus.iap.unity",
+        "Unity.Purchasing",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

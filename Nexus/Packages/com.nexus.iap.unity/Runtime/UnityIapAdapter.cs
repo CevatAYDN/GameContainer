@@ -1,6 +1,7 @@
 #if NEXUS_UNITY_IAP
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Nexus.Core;
 using Nexus.Core.Services;
 using UnityEngine.Purchasing;
@@ -8,6 +9,8 @@ using NexusProduct = Nexus.Core.Services.ProductDefinition;
 using NexusProductType = Nexus.Core.Services.ProductType;
 using StoreProduct = UnityEngine.Purchasing.ProductDefinition;
 using StoreProductType = UnityEngine.Purchasing.ProductType;
+
+[assembly: InternalsVisibleTo("com.nexus.iap.unity.tests")]
 
 namespace Nexus.Iap.Unity
 {
@@ -61,9 +64,9 @@ namespace Nexus.Iap.Unity
                 _store.OnPurchaseFailed += OnFailed;
                 _store.OnPurchaseDeferred += _ => Complete(PurchaseOutcome.Pending);
                 _store.OnPurchasesFetched += OnFetched;
-                _store.OnPurchasesFetchFailed += failure => { Warn("Purchases not fetched: " + failure); FinishRestore(false); };
+                _store.OnPurchasesFetchFailed += failure => { Warn(Describe(failure)); FinishRestore(false); };
                 _store.OnProductsFetched += _ => { _productsFetched = true; _store.FetchPurchases(); FinishInitialize(true); Changed?.Invoke(); };
-                _store.OnProductsFetchFailed += failure => { Warn("Products not fetched: " + failure); FinishInitialize(false); Changed?.Invoke(); };
+                _store.OnProductsFetchFailed += failure => { Warn(Describe(failure)); FinishInitialize(false); Changed?.Invoke(); };
                 _store.OnStoreDisconnected += failure => { _connected = false; Warn("Disconnected: " + failure?.Message); Changed?.Invoke(); };
             }
             _connecting = true;
@@ -159,6 +162,17 @@ namespace Nexus.Iap.Unity
             NexusProductType.Subscription => StoreProductType.Subscription,
             _ => StoreProductType.NonConsumable,
         };
+
+        // Neither failure type overrides ToString; concatenating one logs only its type name.
+        internal static string Describe(ProductFetchFailed failure)
+        {
+            var ids = new List<string>();
+            foreach (var product in failure?.FailedFetchProducts ?? new List<StoreProduct>()) ids.Add(product?.id);
+            return $"Products not fetched ({string.Join(", ", ids)}): {failure?.FailureReason}";
+        }
+
+        internal static string Describe(PurchasesFetchFailureDescription failure)
+            => $"Purchases not fetched: {failure?.FailureReason} {failure?.Message}";
 
         private static void Warn(string message) => NexusLog.WarnAlways("[UnityIAP] " + message);
     }
