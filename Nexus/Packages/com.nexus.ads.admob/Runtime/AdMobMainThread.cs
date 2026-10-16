@@ -13,6 +13,8 @@ namespace Nexus.Ads.AdMob
     /// Google's own sample wraps every one of them in <c>MobileAdsEventExecutor.ExecuteInUpdate</c>.
     /// Unity APIs throw off the main thread and the game's handlers must not run there, so the adapter
     /// captures this on the main thread and continues each callback through <see cref="TryPost"/>.
+    /// The consent callbacks themselves are queued in <c>MobileAdsEventExecutor</c>; the adapter creates
+    /// it before the consent update (<c>AdMobAdapter.Initialize</c>).
     /// </summary>
     internal sealed class AdMobMainThread
     {

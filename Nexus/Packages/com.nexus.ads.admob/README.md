@@ -52,10 +52,13 @@ growing pause (30 s to 10 min); the game stays playable without ads. `ShowBanner
 position)` creates one anchored banner (`position`: `top` or `bottom`). The placement strings
 are labels for the game; every placement uses the configured ad unit of its kind.
 
-Threads: the plugin invokes its User Messaging Platform callbacks on the Android UI thread, not
-Unity's main thread (Google Mobile Ads 11.6.0; Google's own sample wraps each one in
-`MobileAdsEventExecutor.ExecuteInUpdate`). The adapter captures the main thread in `Initialize`
-and continues every consent and SDK callback there, so `onInitialized`, `ReadyChanged` and the
+Threads: the plugin invokes its User Messaging Platform listeners on the Android UI thread and,
+with `MobileAds.RaiseAdEventsOnUnityMainThread` on, queues the callbacks in
+`MobileAdsEventExecutor`, which only runs once its GameObject exists (Google Mobile Ads 11.6.0
+creates it in `MobileAds.Initialize`). Consent is asked before the SDK starts, so `Initialize`
+creates the executor first (`MobileAdsEventExecutor.Initialize()`); without it the session that
+first obtains consent never got past the consent update. The adapter also captures the main thread
+in `Initialize` and continues every consent and SDK callback there, so `onInitialized`, `ReadyChanged` and the
 `ShowPrivacyOptions` callback reach the game on the main thread; call `Initialize` and
 `ShowPrivacyOptions` on the main thread. Each step is logged as `[AdMob] ...` through
 `NexusLog.WarnAlways`, which reaches logcat in release builds: a session whose log has no

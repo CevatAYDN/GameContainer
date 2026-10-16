@@ -134,6 +134,9 @@ the game code and tests depend only on `IAdService` / `IIapService`. Two rules t
   Platform listeners on the Android UI thread. Continue on the Unity main thread before touching
   Unity or the game's handlers; the AdMob adapter captures Unity's `SynchronizationContext` in
   `Initialize` and posts every callback to it, and logs each step through `NexusLog.WarnAlways`.
+  An SDK may also queue its callbacks behind an object it creates later: Google Mobile Ads queues
+  the consent callbacks in `MobileAdsEventExecutor`, created by `MobileAds.Initialize`, so the
+  AdMob adapter creates the executor before it asks for consent.
 
 `MonetizationServiceTests` (EditMode) show the services driven through the mock adapters:
 interstitial cooldown and availability, product registration and a mock purchase.

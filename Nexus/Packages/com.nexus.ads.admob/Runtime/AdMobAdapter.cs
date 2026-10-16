@@ -2,6 +2,7 @@
 using System;
 using System.Threading.Tasks;
 using GoogleMobileAds.Api;
+using GoogleMobileAds.Common;
 using GoogleMobileAds.Ump.Api;
 using Nexus.Core;
 using Nexus.Core.Services;
@@ -54,6 +55,10 @@ namespace Nexus.Ads.AdMob
             _onInitialized = onInitialized;
             _mainThread ??= AdMobMainThread.Capture();
             MobileAds.RaiseAdEventsOnUnityMainThread = true;
+            // With that flag the UMP's callbacks go through MobileAds.RaiseAction into MobileAdsEventExecutor's queue, whose
+            // GameObject only exists after MobileAds.Instance is first touched (MobileAds.Initialize). On the session that first
+            // obtains consent nothing touched it yet, so the queue never drained and the chain stopped after "Consent update requested".
+            MobileAdsEventExecutor.Initialize();
             Step("Consent update requested; " + ConsentState());
             var request = new ConsentRequestParameters { TagForUnderAgeOfConsent = _config.TagForUnderAgeOfConsent };
             ConsentInformation.Update(request, updateError => OnMainThread("Consent update", () =>
