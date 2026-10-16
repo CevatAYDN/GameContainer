@@ -55,6 +55,25 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public async Task MockAdapter_EveryPlacementIsReadyUntilOverridden()
+        {
+            using var ads = new AdService();
+            await ads.InitializeAsync(default);
+            var mock = new MockAdNetworkAdapter();
+            ads.SetNetworkAdapter(mock);
+
+            Assert.IsTrue(ads.IsRewardedAvailable("level_end"), "placements are labels, as in the shipped AdMob adapter");
+            Assert.IsTrue(ads.IsInterstitialAvailable("level_end"));
+            AdOutcome? outcome = null;
+            ads.RequestReward("level_end", o => outcome = o);
+            Assert.That(outcome, Is.EqualTo(AdOutcome.Rewarded));
+
+            mock.SetRewardedReady("level_end", false);
+            Assert.IsFalse(ads.IsRewardedAvailable("level_end"), "an explicit override still wins");
+            Assert.IsTrue(ads.IsRewardedAvailable("default"), "an override is per placement");
+        }
+
+        [Test]
         public async Task RewardedOutcome_UsesTheAdapterOutcome()
         {
             using var ads = new AdService();

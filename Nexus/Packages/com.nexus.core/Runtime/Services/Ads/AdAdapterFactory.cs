@@ -59,6 +59,7 @@ namespace Nexus.Core.Services
             onClosed?.Invoke();
         }
 
+        // Overrides set by SetInterstitialReady / SetRewardedReady; a placement without one is ready.
         private readonly System.Collections.Generic.Dictionary<string, bool> _interstitialReady = new();
         private readonly System.Collections.Generic.Dictionary<string, bool> _rewardedReady = new();
         private bool _initialized;
@@ -66,16 +67,15 @@ namespace Nexus.Core.Services
         public void Initialize(Action onInitialized)
         {
             _initialized = true;
-            // Mock: everything is ready immediately
-            _interstitialReady["default"] = true;
-            _rewardedReady["default"] = true;
+            // Mock: every placement is ready immediately. Placements are labels, as in the shipped
+            // AdMob adapter, so a game's "level_end" must behave like "default".
             onInitialized?.Invoke();
             ReadyChanged?.Invoke();
         }
 
         public bool IsInterstitialReady(string placement)
         {
-            return _initialized && _interstitialReady.TryGetValue(placement, out var ready) && ready;
+            return _initialized && (!_interstitialReady.TryGetValue(placement, out var ready) || ready);
         }
 
         public void ShowInterstitial(string placement, Action onClosed)
@@ -93,7 +93,7 @@ namespace Nexus.Core.Services
 
         public bool IsRewardedReady(string placement)
         {
-            return _initialized && _rewardedReady.TryGetValue(placement, out var ready) && ready;
+            return _initialized && (!_rewardedReady.TryGetValue(placement, out var ready) || ready);
         }
 
         public void ShowRewarded(string placement, Action<bool> onCompleted)

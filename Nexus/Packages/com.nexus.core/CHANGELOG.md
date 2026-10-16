@@ -15,6 +15,9 @@ released version; everything under Unreleased is in the repository but not yet i
 - **Device acceptance tool** `tools/device-acceptance/run.ps1`: installs an Android player on the connected phone and records cold start, a soak with memory samples, background/resume, kill/restart and a logcat scan (release gate 12). First run on the 0.5.0 player: passed (cold start, 5 min soak alive with PSS 214.8 → 255.6 MB (+19%, limit 50%), background and resume on the same process, restart after force-stop, 0 fatal exceptions / ANR / Unity exceptions in the app's own logcat lines).
 - **Release gates run on the tagged commit**: 0.5.0 = `8f19c20`, every gate green on that commit (`docs/RELEASE_GATES.md`); consumers Pixel-Flow-Clone and RingFlow pinned to it (their game code still needs the 0.5.0 migration).
 
+### Fixed
+- `MockAdNetworkAdapter` reported only the placement `"default"` as ready, so a game's own placement (`"rewarded"`, `"level_end"`) got `NotReady` in the editor and development builds while the AdMob adapter, which treats placements as labels, shows the ad. Every placement is now ready after `Initialize` until `SetRewardedReady` / `SetInterstitialReady` overrides it (found by Gigawatt; `MonetizationContractTests.MockAdapter_EveryPlacementIsReadyUntilOverridden`).
+
 ## [0.5.0] - 2026-10-15
 
 Breaking changes and migration steps: `BREAKING_CHANGES.md` and `MIGRATION.md` ("Version 0.4.0 → 0.5.0").
