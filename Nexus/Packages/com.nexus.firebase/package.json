@@ -1,0 +1,14 @@
+{
+  "name": "com.nexus.firebase",
+  "version": "0.1.0",
+  "displayName": "Nexus Firebase",
+  "description": "Firebase Analytics, Remote Config and Crashlytics behind Nexus services: the event-name and consent rules, a remote-config cache and parser, and mocks for the editor, development builds and headless tests. The SDK adapters compile only while the Firebase SDK is installed.",
+  "unity": "6000.5",
+  "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.firebase/README.md",
+  "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
+  "dependencies": {
+    "com.nexus.core": "0.5.0"
+  },
+  "keywords": [ "nexus", "firebase", "analytics", "remote-config", "crashlytics" ],
+  "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" }
+}

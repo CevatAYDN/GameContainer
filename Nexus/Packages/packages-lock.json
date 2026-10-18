@@ -36,6 +36,14 @@
         "com.unity.modules.androidjni": "1.0.0"
       }
     },
+    "com.nexus.firebase": {
+      "version": "file:com.nexus.firebase",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.nexus.core": "0.5.0"
+      }
+    },
     "com.nexus.iap.unity": {
       "version": "file:com.nexus.iap.unity",
       "depth": 0,

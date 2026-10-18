@@ -1,0 +1,16 @@
+{
+    "name": "com.nexus.firebase",
+    "rootNamespace": "Nexus.Firebase",
+    "references": [
+        "com.nexus.core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
