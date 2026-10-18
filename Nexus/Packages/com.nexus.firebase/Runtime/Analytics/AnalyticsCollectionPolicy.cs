@@ -1,15 +1,32 @@
 namespace Nexus.Firebase.Analytics
 {
     /// <summary>
-    /// Whether analytics and crash collection may run. Outside the EEA and the UK they are on once the consent update has answered
-    /// NotRequired; in the EEA and the UK they stay off until the player answers the consent form. A cached answer from an earlier
-    /// session is readable at launch, so a player who already answered gets analytics from launch (docs/ANALYTICS.md, Consent).
+    /// The decision for an analytics event, given the consent answer and the player's choice. Where consent is not required the event is
+    /// sent. Otherwise it waits until the answer is known, is sent when analytics were granted, and is dropped when they were refused.
     /// </summary>
     public static class AnalyticsCollectionPolicy
     {
-        public static bool IsCollectionAllowed(ConsentState state)
+        public static AnalyticsDecision Decide(ConsentState state, AnalyticsChoice choice)
         {
-            return state == ConsentState.NotRequired || state == ConsentState.Obtained;
+            if (state == ConsentState.NotRequired)
+            {
+                return AnalyticsDecision.Send;
+            }
+
+            if (state != ConsentState.Obtained)
+            {
+                return AnalyticsDecision.Hold;
+            }
+
+            switch (choice)
+            {
+                case AnalyticsChoice.Granted:
+                    return AnalyticsDecision.Send;
+                case AnalyticsChoice.Denied:
+                    return AnalyticsDecision.Discard;
+                default:
+                    return AnalyticsDecision.Hold;
+            }
         }
     }
 }

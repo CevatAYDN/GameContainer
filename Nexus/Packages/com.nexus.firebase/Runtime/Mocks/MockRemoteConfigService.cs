@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
+using Nexus.Core;
+using Nexus.Core.Services;
 using Nexus.Firebase.RemoteConfig;
 
 namespace Nexus.Firebase.Mocks
@@ -9,7 +11,7 @@ namespace Nexus.Firebase.Mocks
     /// <summary>
     /// Remote values held in memory: the game's fallbacks until a test or a development menu sets a value. A fetch succeeds and changes nothing.
     /// </summary>
-    public sealed class MockRemoteConfigService : IRemoteConfigService
+    public sealed class MockRemoteConfigService : NexusService<IRemoteConfigService>, IRemoteConfigService
     {
         private readonly Dictionary<string, string> _values = new();
 
