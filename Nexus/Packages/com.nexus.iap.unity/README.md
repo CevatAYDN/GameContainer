@@ -31,6 +31,8 @@ Order of events: `Initialize` connects, fetches the catalog's products and the p
 account already owns, then confirms every pending order. A purchase reports `Purchased` to the
 game first and is confirmed with the store right after, so the game records ownership before
 acknowledgement. Consumables are never reported as owned; non-consumables and subscriptions are
-owned once their order is confirmed or fetched. `Restore` fetches purchases again.
+owned once their order is confirmed or fetched. `Restore` fetches purchases again. A purchase
+whose payment the store holds (deferred) reports `Pending`, and buying that product again answers
+`Pending` without a second store call until the order completes or a fetch no longer lists it.
 
 Not covered: receipt validation on a server, subscription details, Apple-specific services.

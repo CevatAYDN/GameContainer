@@ -34,6 +34,20 @@ namespace Nexus.Iap.Unity.Tests
         }
 
         [Test]
+        public void AfterADeferredPayment_BuyingAgainAnswersPending_WithoutTheStore()
+        {
+            var adapter = new UnityIapAdapter();
+            adapter.Defer("rewards_pass", true);
+            PurchaseOutcome? outcome = null;
+            adapter.PurchaseWithOutcome("rewards_pass", o => outcome = o);
+            Assert.AreEqual(PurchaseOutcome.Pending, outcome, "a held payment is not a failure (the store answered a second call 'already owned')");
+            Assert.IsFalse(adapter.IsOwned("rewards_pass"), "a deferred payment unlocks nothing yet");
+            adapter.Defer("rewards_pass", false);
+            adapter.PurchaseWithOutcome("rewards_pass", o => outcome = o);
+            Assert.AreEqual(PurchaseOutcome.Unavailable, outcome, "once settled the purchase goes to the store again (unconnected here)");
+        }
+
+        [Test]
         public void Register_UsesTheProviderName()
         {
             var factory = new IapAdapterFactory();

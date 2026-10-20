@@ -35,6 +35,7 @@ namespace Nexus.Iap.Unity
         private bool _connected, _connecting, _productsFetched;
         private readonly Dictionary<string, NexusProductType> _catalog = new();
         private readonly HashSet<string> _owned = new();
+        private readonly HashSet<string> _deferred = new();
         private Action<PurchaseOutcome> _pending;
         private Action<bool> _restorePending;
         private Action<bool> _initializePending;
@@ -62,7 +63,7 @@ namespace Nexus.Iap.Unity
                 _store = UnityIAPServices.StoreController();
                 _store.OnPurchasePending += OnPending;
                 _store.OnPurchaseFailed += OnFailed;
-                _store.OnPurchaseDeferred += _ => Complete(PurchaseOutcome.Pending);
+                _store.OnPurchaseDeferred += order => { Defer(order, true); Complete(PurchaseOutcome.Pending); };
                 _store.OnPurchasesFetched += OnFetched;
                 _store.OnPurchasesFetchFailed += failure => { Warn(Describe(failure)); FinishRestore(false); };
                 _store.OnProductsFetched += _ => { _productsFetched = true; _store.FetchPurchases(); FinishInitialize(true); Changed?.Invoke(); };
@@ -93,6 +94,8 @@ namespace Nexus.Iap.Unity
 
         public void PurchaseWithOutcome(string productId, Action<PurchaseOutcome> onOutcome)
         {
+            // a payment the store holds (deferred) answers Pending: a second store call failed as "already owned", read as "not charged"
+            if (productId != null && _deferred.Contains(productId)) { onOutcome?.Invoke(PurchaseOutcome.Pending); return; }
             if (!IsAvailable || string.IsNullOrEmpty(productId) || !_catalog.ContainsKey(productId)) { onOutcome?.Invoke(PurchaseOutcome.Unavailable); return; }
             var product = _store.GetProductById(productId);
             if (product == null || !product.availableToPurchase) { onOutcome?.Invoke(PurchaseOutcome.Unavailable); return; }
@@ -125,6 +128,8 @@ namespace Nexus.Iap.Unity
 
         private void OnFetched(Orders orders)
         {
+            _deferred.Clear();   // a deferral the player cancelled is gone from the next fetch
+            foreach (var order in orders.DeferredOrders) Defer(order, true);
             foreach (var order in orders.ConfirmedOrders) Own(order);
             foreach (var order in orders.PendingOrders) Own(order);
             Changed?.Invoke();
@@ -143,6 +148,7 @@ namespace Nexus.Iap.Unity
         /// <summary>Consumables are never owned; non-consumables and subscriptions are owned once ordered.</summary>
         private void Own(Order order)
         {
+            Defer(order, false);
             foreach (var item in order.CartOrdered.Items())
             {
                 string id = item.Product?.definition?.id;
@@ -150,6 +156,18 @@ namespace Nexus.Iap.Unity
                 if (_catalog.TryGetValue(id, out var type) && type == NexusProductType.Consumable) continue;
                 _owned.Add(id);
             }
+        }
+
+        private void Defer(Order order, bool deferred)
+        {
+            foreach (var item in order.CartOrdered.Items()) Defer(item.Product?.definition?.id, deferred);
+        }
+
+        /// <summary>Marks a product whose payment the store holds (true) or settled (false).</summary>
+        internal void Defer(string productId, bool deferred)
+        {
+            if (string.IsNullOrEmpty(productId)) return;
+            if (deferred) _deferred.Add(productId); else _deferred.Remove(productId);
         }
 
         private void Complete(PurchaseOutcome outcome) { var done = _pending; _pending = null; done?.Invoke(outcome); }
