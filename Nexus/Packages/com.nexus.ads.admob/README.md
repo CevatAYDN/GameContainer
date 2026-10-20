@@ -52,6 +52,11 @@ growing pause (30 s to 10 min); the game stays playable without ads. `ShowBanner
 position)` creates one anchored banner (`position`: `top` or `bottom`). The placement strings
 are labels for the game; every placement uses the configured ad unit of its kind.
 
+Testing the consent form outside the EEA: set `DebugGeographyEea = true` and add the phone's
+hashed id to `TestDeviceHashedIds` (the SDK prints it in logcat on the first consent request) in a
+test build only. The form loads only when the AdMob account has a published GDPR message for the
+app ("Privacy & messaging"); without one the update ends with no form and the game runs without ads.
+
 Threads: the plugin invokes its User Messaging Platform listeners on the Android UI thread and,
 with `MobileAds.RaiseAdEventsOnUnityMainThread` on, queues the callbacks in
 `MobileAdsEventExecutor`, which only runs once its GameObject exists (Google Mobile Ads 11.6.0

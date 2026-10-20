@@ -61,6 +61,15 @@ namespace Nexus.Ads.AdMob
             MobileAdsEventExecutor.Initialize();
             Step("Consent update requested; " + ConsentState());
             var request = new ConsentRequestParameters { TagForUnderAgeOfConsent = _config.TagForUnderAgeOfConsent };
+            if (_config.WantsConsentDebug)
+            {
+                request.ConsentDebugSettings = new ConsentDebugSettings
+                {
+                    DebugGeography = _config.DebugGeographyEea ? DebugGeography.EEA : DebugGeography.Disabled,
+                    TestDeviceHashedIds = _config.TestDeviceHashedIds ?? new System.Collections.Generic.List<string>(),
+                };
+                Step("Consent debug settings: geography " + (_config.DebugGeographyEea ? "EEA" : "off") + ", test devices " + (_config.TestDeviceHashedIds?.Count ?? 0));
+            }
             ConsentInformation.Update(request, updateError => OnMainThread("Consent update", () =>
             {
                 if (updateError != null) Warn("Consent update failed: " + updateError.Message);

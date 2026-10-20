@@ -23,6 +23,15 @@ namespace Nexus.Ads.AdMob.Tests
         }
 
         [Test]
+        public void ConsentDebugSettings_OnlyWhenEeaOrATestDeviceIsSet()
+        {
+            Assert.IsFalse(new AdMobConfig().WantsConsentDebug, "an untouched config sends the consent request as before");
+            Assert.IsFalse(new AdMobConfig { TestDeviceHashedIds = new System.Collections.Generic.List<string>() }.WantsConsentDebug);
+            Assert.IsTrue(new AdMobConfig { DebugGeographyEea = true }.WantsConsentDebug);
+            Assert.IsTrue(new AdMobConfig { TestDeviceHashedIds = new System.Collections.Generic.List<string> { "HASH" } }.WantsConsentDebug);
+        }
+
+        [Test]
         public void Register_UsesTheProviderName()
         {
             var factory = new AdAdapterFactory();
