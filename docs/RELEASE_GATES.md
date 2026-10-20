@@ -36,7 +36,7 @@ Result files: `Nexus/artifacts/release-050/` (harness, coverage, binder, EditMod
   generated factory resolves every constructor parameter through the container's full resolve
   path. Next lever: a parameter-resolve fast path for generated factories, accepted only on a
   device run with repeated launches (device numbers drift up to 2× between launches).
-- Adapter packages `com.nexus.ads.admob` and `com.nexus.iap.unity` (Unreleased): compiled against the real SDKs in a disposable project and unit-tested before initialization. Gigawatt runs both in its signed Android IL2CPP release build (device acceptance passed; a Google test rewarded ad paid out on the phone); a price, purchase and restore against Google Play are still open (the product is not yet defined in Play Console).
+- Adapter packages `com.nexus.ads.admob` and `com.nexus.iap.unity` (Unreleased): compiled against the real SDKs in a disposable project and unit-tested before initialization, plus a deferred payment and the consent debug settings (`Nexus/artifacts/adapters-20261020/editmode.xml`: 10 passed, 0 failed, 0 skipped). Gigawatt runs both in its signed Android IL2CPP release build (device acceptance passed; a Google test rewarded ad paid out on the phone) and saw the consent form with the EEA debug geography on its phone (Google's test message, consent obtained, then the SDK started); a price, purchase and restore against Google Play are still open (the product is not yet defined in Play Console).
 - Device acceptance covers the framework's own player (boot and idle); a game's player goes through the same tool (`-Apk`).
 
 ## Policy

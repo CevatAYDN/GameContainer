@@ -111,9 +111,11 @@ iapService.SetStoreAdapter(iapFactory.CreateAdapter(UnityIapAdapter.ProviderName
 
 Both were ported from the first shipped Nexus game and are verified by compiling against the
 real SDK packages in a disposable project and by tests of their behaviour before initialization
-(`Nexus/artifacts/adapters-050/`, see the repository's `docs/RELEASE_GATES.md`). Gigawatt runs
+(`Nexus/artifacts/adapters-050/`; the deferred payment and the consent debug settings in
+`adapters-20261020/`; see the repository's `docs/RELEASE_GATES.md`). Gigawatt runs
 both in its signed Android IL2CPP release build: its device acceptance passed and a Google test
-rewarded ad paid out on the phone. A price, a purchase and a restore against Google Play are the
+rewarded ad paid out on the phone; with `DebugGeographyEea` and the phone's hashed id its development
+build showed the consent form outside the EEA. A price, a purchase and a restore against Google Play are the
 open item.
 
 Adapter warnings (an ad that did not load, a store that is not reachable, products not fetched)
