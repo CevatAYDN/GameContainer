@@ -458,7 +458,9 @@ namespace Nexus.Core
                     }
                 }
 
-                await Context.InitializeLifecycleAsync(_lifecycles, Context.LifetimeToken);
+                // The configured set, not _lifecycles: Configure adds the convention-discovered lifecycle only to its own
+                // list, and with the component list that lifecycle never got OnInitializeAsync/OnStartAsync.
+                await Context.InitializeLifecycleAsync(Context.ConfiguredLifecycles, Context.LifetimeToken);
 
                 // Guard: user lifecycle code may have escaped the Unity main thread
                 // (ConfigureAwait(false) / Task.Run) in environments without a
