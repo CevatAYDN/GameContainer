@@ -18,6 +18,8 @@ namespace Nexus.Ads.Editor
         private const string SettingsPath = "Project/Nexus Ads";
 
         private static int _tab, _platform;
+        private static bool _guideOpen = true;
+        private static readonly AndroidSetupView AndroidView = new AndroidSetupView();
         private static AdsValidationReport _lastReport;
         private static Vector2 _scroll;
         private static UnityProjectProbe _probe;
@@ -141,6 +143,15 @@ namespace Nexus.Ads.Editor
                     }
                     EditorGUILayout.PropertyField(so.FindProperty(nameof(AdsSettings.TestDeviceIds)), new GUIContent("Test device ids (GAID / IDFA)"), true);
                 }
+                DrawProviderGuide(catalog.Provider(kind));
+            }
+
+            if (platformSel == AdPlatform.Android && kind != AdProviderKind.None)
+            {
+                EditorGUILayout.Space();
+                EditorGUILayout.LabelField("Prepare Android (" + (release ? "Release" : "Test") + " tab)", EditorStyles.boldLabel);
+                if (so.ApplyModifiedProperties()) EditorUtility.SetDirty(settings);
+                AndroidView.Draw(settings, release ? AdsValidator.Tab.Release : AdsValidator.Tab.Test, probe, catalog, false, Refresh);
             }
 
             EditorGUILayout.Space();
@@ -182,10 +193,7 @@ namespace Nexus.Ads.Editor
                 if (GUILayout.Button("Validate Test tab")) { so.ApplyModifiedProperties(); _lastReport = AdsValidator.Validate(settings, AdsValidator.Tab.Test, platformSel, probe, catalog); }
                 if (GUILayout.Button("Validate Release tab")) { so.ApplyModifiedProperties(); _lastReport = AdsValidator.Validate(settings, AdsValidator.Tab.Release, platformSel, probe, catalog); }
             }
-            if (_lastReport != null)
-            {
-                EditorGUILayout.HelpBox(_lastReport.Summary(), _lastReport.fail > 0 ? MessageType.Error : _lastReport.warn > 0 ? MessageType.Warning : MessageType.Info);
-            }
+            DrawReport(_lastReport);
             EditorGUILayout.EndScrollView();
             if (so.ApplyModifiedProperties()) EditorUtility.SetDirty(settings);
         }
@@ -229,6 +237,75 @@ namespace Nexus.Ads.Editor
             var color = status == ProviderStatus.Active ? new Color(0.2f, 0.7f, 0.3f) : status == ProviderStatus.Invalid ? new Color(0.85f, 0.25f, 0.25f) : status == ProviderStatus.TestOnly ? new Color(0.9f, 0.6f, 0.1f) : Color.gray;
             var style = new GUIStyle(EditorStyles.helpBox) { normal = { textColor = color }, fontStyle = FontStyle.Bold };
             EditorGUILayout.LabelField(text, style);
+        }
+
+        /// <summary>A validation result as the settings page and the wizard show it: the counts, then each failing or warning check in its own box with its fix.</summary>
+        public static void DrawReport(AdsValidationReport report)
+        {
+            if (report == null) return;
+            EditorGUILayout.HelpBox(report.tab + " tab, " + report.platform + ", " + report.mediation + ": " + report.pass + " pass, " + report.warn + " warn, " + report.fail + " fail",
+                report.fail > 0 ? MessageType.Error : report.warn > 0 ? MessageType.Warning : MessageType.Info);
+            foreach (var check in report.checks)
+                if (check.Result != CheckResult.Pass)
+                    EditorGUILayout.HelpBox(check.message + (check.fix.Length > 0 ? "\nFix: " + check.fix : "") + "\n(" + check.id + ")", check.Result == CheckResult.Fail ? MessageType.Error : MessageType.Warning);
+        }
+
+        /// <summary>The selected provider's dashboard steps and test-device location, from the catalog only (no field text of the page's own).</summary>
+        private static void DrawProviderGuide(CatalogProvider provider)
+        {
+            if (provider == null) return;
+            _guideOpen = EditorGUILayout.Foldout(_guideOpen, "Where these values come from (" + provider.name + ")", true);
+            if (!_guideOpen) return;
+            var steps = provider.steps?.en;
+            if (steps != null)
+                for (int i = 0; i < steps.Length; i++) EditorGUILayout.LabelField((i + 1) + ". " + steps[i], EditorStyles.wordWrappedMiniLabel);
+            if (!string.IsNullOrEmpty(provider.sdk?.sdkKeyLocation)) EditorGUILayout.LabelField("SDK key: " + provider.sdk.sdkKeyLocation, EditorStyles.wordWrappedMiniLabel);
+            var devices = provider.testData?.testDevices;
+            string where = devices?.where ?? devices?.dashboard;
+            if (!string.IsNullOrEmpty(where)) EditorGUILayout.LabelField("Test devices: " + where, EditorStyles.wordWrappedMiniLabel);
+        }
+    }
+
+    /// <summary>
+    /// The selected mediation's Android setup (<see cref="AndroidSetup.Plan"/>) and the Prepare Android button, shared by
+    /// the settings page and the wizard. The plan reads project and package files, so it is rebuilt only when the tab,
+    /// the settings asset or the probe (Refresh) changes, never on every repaint.
+    /// </summary>
+    public sealed class AndroidSetupView
+    {
+        private List<SetupStep> _plan;
+        private AdsValidator.Tab _tab;
+        private int _settingsVersion;
+        private IProjectProbe _probe;
+
+        public void Draw(AdsSettings settings, AdsValidator.Tab tab, IProjectProbe probe, PlatformCatalog catalog, bool turkish, System.Action refresh)
+        {
+            int version = EditorUtility.GetDirtyCount(settings);
+            if (_plan == null || tab != _tab || version != _settingsVersion || !ReferenceEquals(probe, _probe))
+            {
+                _plan = AndroidSetup.Plan(settings, tab, probe, catalog);
+                _tab = tab;
+                _settingsVersion = version;
+                _probe = probe;
+            }
+            if (_plan.Count == 0) EditorGUILayout.LabelField(turkish ? "Mediation seçilmedi; hazırlanacak bir şey yok." : "No mediation selected; nothing to prepare.", EditorStyles.wordWrappedMiniLabel);
+            foreach (var step in _plan)
+            {
+                string status = step.status == SetupStatus.Done ? (turkish ? "Tamam" : "Done") : step.status == SetupStatus.Pending ? (turkish ? "Bekliyor" : "Pending") : (turkish ? "Elle" : "Manual");
+                EditorGUILayout.LabelField("[" + status + "] " + step.what, step.how, EditorStyles.wordWrappedMiniLabel);
+            }
+            using (new EditorGUI.DisabledScope(!_plan.Exists(s => s.status == SetupStatus.Pending)))
+                if (GUILayout.Button(turkish ? "Android'i hazırla" : "Prepare Android"))
+                {
+                    try
+                    {
+                        var applied = AndroidSetup.Apply(settings, tab, catalog);
+                        foreach (var line in applied.Log) Debug.Log("[Nexus Ads] Prepare Android: " + line);
+                    }
+                    catch (System.Exception e) { Debug.LogError("[Nexus Ads] Prepare Android stopped: " + e.Message + " (offline? the native SDK file comes from the mediation's server)"); }
+                    _plan = null;
+                    refresh?.Invoke();
+                }
         }
     }
 }

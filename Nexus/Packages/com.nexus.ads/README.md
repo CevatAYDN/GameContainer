@@ -127,7 +127,11 @@ it after its listeners ran, a game that saves asynchronously acknowledges it its
 
 - **Project Settings > Nexus Ads**: the asset, the Test and Release tabs per platform (AdMob's Test tab
   is locked to Google's sample ids with a reset button; LevelPlay and MAX copy the Release keys), the
-  device list, placements, floors, privacy, app-ads.txt lines, and the validator buttons. Status badges
+  device list, under the keys **Where these values come from** (the selected provider's setup steps and
+  test-device location from `PlatformCatalog.json`, nothing written by the page itself), **Prepare Android**
+  for the tab being edited (the same steps and button as the wizard), placements, floors, privacy,
+  app-ads.txt lines, and the validator buttons; a result shows the counts and each failing or warning
+  check in its own box with its fix and check id (the wizard shows results the same way). Status badges
   come from `ProviderStatusResolver`. Above the keys, **What each build does** lists the editor, a
   development build (listed and other devices) and a release build in plain words, from `BuildOutlook`,
   the decision `AdsBootstrap` runs; the setup wizard shows the same lines and the debug panel shows

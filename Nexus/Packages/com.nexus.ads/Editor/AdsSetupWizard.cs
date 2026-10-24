@@ -22,6 +22,7 @@ namespace Nexus.Ads.Editor
         private UnityProjectProbe _probe;
         private PlatformCatalog _catalog;
         private AdsValidator.Tab _androidTab = AdsValidator.Tab.Test;
+        private readonly AndroidSetupView _androidView = new AndroidSetupView();
 
         private void OnEnable() => Refresh();
         private void OnFocus() => Refresh();
@@ -147,24 +148,7 @@ namespace Nexus.Ads.Editor
             EditorGUILayout.Space();
             EditorGUILayout.LabelField(_turkish ? "5. Android (seçili mediation)" : "5. Android (selected mediation)", EditorStyles.boldLabel);
             _androidTab = (AdsValidator.Tab)GUILayout.Toolbar((int)_androidTab, _turkish ? new[] { "Test sekmesi (development build)", "Release sekmesi" } : new[] { "Test tab (development build)", "Release tab" });
-            var plan = AndroidSetup.Plan(settings, _androidTab, probe, catalog);
-            if (plan.Count == 0) EditorGUILayout.LabelField(_turkish ? "Mediation seçilmedi; hazırlanacak bir şey yok." : "No mediation selected; nothing to prepare.", EditorStyles.wordWrappedMiniLabel);
-            foreach (var step in plan)
-            {
-                string status = step.status == SetupStatus.Done ? (_turkish ? "Tamam" : "Done") : step.status == SetupStatus.Pending ? (_turkish ? "Bekliyor" : "Pending") : (_turkish ? "Elle" : "Manual");
-                EditorGUILayout.LabelField("[" + status + "] " + step.what, step.how, EditorStyles.wordWrappedMiniLabel);
-            }
-            using (new EditorGUI.DisabledScope(!plan.Exists(s => s.status == SetupStatus.Pending)))
-                if (GUILayout.Button(_turkish ? "Android'i hazırla" : "Prepare Android"))
-                {
-                    try
-                    {
-                        var applied = AndroidSetup.Apply(settings, _androidTab, catalog);
-                        foreach (var line in applied.Log) Debug.Log("[Nexus Ads] Prepare Android: " + line);
-                    }
-                    catch (System.Exception e) { Debug.LogError("[Nexus Ads] Prepare Android stopped: " + e.Message + " (offline? the native SDK file comes from the mediation's server)"); }
-                    Refresh();
-                }
+            _androidView.Draw(settings, _androidTab, probe, catalog, _turkish, Refresh);
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField(_turkish ? "6. Kodla zorlanamayan kurallar (onaylayın)" : "6. Rules the package cannot enforce (confirm each)", EditorStyles.boldLabel);
@@ -183,7 +167,7 @@ namespace Nexus.Ads.Editor
                 if (GUILayout.Button(_turkish ? "Test sekmesi" : "Test tab")) _report = AdsValidator.Validate(settings, AdsValidator.Tab.Test, AdPlatform.Android, probe, catalog);
                 if (GUILayout.Button(_turkish ? "Release sekmesi" : "Release tab")) _report = AdsValidator.Validate(settings, AdsValidator.Tab.Release, AdPlatform.Android, probe, catalog);
             }
-            if (_report != null) EditorGUILayout.HelpBox(_report.Summary(), _report.fail > 0 ? MessageType.Error : _report.warn > 0 ? MessageType.Warning : MessageType.Info);
+            AdsSettingsProvider.DrawReport(_report);
             EditorGUILayout.EndScrollView();
         }
 
