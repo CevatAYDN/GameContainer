@@ -15,6 +15,7 @@ must be current, consistent and verifiable. Read this file before changing code 
 | `tools/nexus-consumer/` | Clean UPM consumer gate: packs the tarball, fresh project, sample import, tests, player |
 | `tools/unity-verify/` | Player builds of the development project (`NexusVerify.NexusVerifyBuild.*`) |
 | `tools/device-acceptance/` | Runs an Android player on the connected phone: soak, background/resume, kill/restart, logcat scan (gate 12) |
+| `Nexus/Packages/com.nexus.ads/` | The ad package family's core (issue #8). Phase 1 holds `docs/POLICY_COMPLIANCE.md` (policy register, EN + TR) and `Editor/PlatformCatalog.json` (setup wizard data); the engine-free core, Unity layer, editor, providers and Nexus bridge follow in #10–#14 |
 | `Nexus/Packages/com.nexus.ads.admob/`, `com.nexus.iap.unity/` | Optional adapter packages (Google AdMob with UMP consent; Unity IAP 5) behind `AdService` / `IapService`; compile only when their SDK package is installed (`versionDefines`) |
 | `docs/RELEASE_GATES.md` | The gates and the latest measured numbers |
 | `docs/research/` | Dated, sourced research (competitors) |

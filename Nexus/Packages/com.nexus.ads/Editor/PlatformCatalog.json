@@ -19,7 +19,7 @@
       ],
       "familiesSelfCertified": { "listed": true, "row": "ironSource mediationsdk 7.2.1 or later", "source": "https://support.google.com/googleplay/android-developer/answer/9283445" },
       "sdk": {
-        "upm": { "package": "com.unity.services.levelplay", "registry": "Unity registry (Package Manager: Ads Mediation)", "versionSeen": "9.5.1" },
+        "upm": { "package": "com.unity.services.levelplay", "registry": "Unity registry (Package Manager: Ads Mediation)", "versionSeen": "9.5.1", "githubLatestRelease": "UnityLevelPlay_9.3.0 (2026-01-20)" },
         "unitypackage": "https://github.com/ironsource-mobile/Unity-sdk/releases",
         "define": "NEXUS_LEVELPLAY",
         "namespace": "Unity.Services.LevelPlay",
