@@ -407,6 +407,9 @@ namespace Nexus.Ads.Editor
         /// <c>-quit</c> (package requests complete on the editor loop; the method exits the editor itself). Exit 0: every step
         /// Done; 1: Pending or Manual steps remain; 2: could not run; 3: packages were added, run it again.
         /// </summary>
+        // Unity's logger, not Console: one run's Console lines never reached its -logFile while the logger's did (issue #50)
+        private static void Report(string line) => Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null, "{0}", line);
+
         public static void PrepareCli()
         {
             try
@@ -415,10 +418,10 @@ namespace Nexus.Ads.Editor
                 int i = Array.IndexOf(args, "-adsTab");
                 var tab = i >= 0 && i + 1 < args.Length && args[i + 1] == "Release" ? AdsValidator.Tab.Release : AdsValidator.Tab.Test;
                 var settings = AdsSettings.Load();
-                if (settings == null) { Console.WriteLine("[Nexus Ads] no settings asset (Resources/" + AdsSettings.ResourceName + ")"); EditorApplication.Exit(2); return; }
+                if (settings == null) { Report("[Nexus Ads] no settings asset (Resources/" + AdsSettings.ResourceName + ")"); EditorApplication.Exit(2); return; }
                 var catalog = PlatformCatalog.Load();
                 var applied = Apply(settings, tab, catalog);
-                foreach (var line in applied.Log) Console.WriteLine("[Nexus Ads] Prepare Android: " + line);
+                foreach (var line in applied.Log) Report("[Nexus Ads] Prepare Android: " + line);
                 if (applied.PackageRequest != null)
                 {
                     EditorApplication.update += WaitForPackages;
@@ -426,18 +429,18 @@ namespace Nexus.Ads.Editor
                     {
                         if (!applied.PackageRequest.IsCompleted) return;
                         EditorApplication.update -= WaitForPackages;
-                        Console.WriteLine("[Nexus Ads] Prepare Android: packages " + applied.PackageRequest.Status + (applied.PackageRequest.Error != null ? " " + applied.PackageRequest.Error.message : "") + "; run it again");
+                        Report("[Nexus Ads] Prepare Android: packages " + applied.PackageRequest.Status + (applied.PackageRequest.Error != null ? " " + applied.PackageRequest.Error.message : "") + "; run it again");
                         EditorApplication.Exit(applied.PackageRequest.Status == StatusCode.Success ? 3 : 2);
                     }
                     return;
                 }
                 var plan = Plan(settings, tab, new UnityProjectProbe(), catalog);
-                foreach (var step in plan) Console.WriteLine("[Nexus Ads] Prepare Android: " + step);
+                foreach (var step in plan) Report("[Nexus Ads] Prepare Android: " + step);
                 EditorApplication.Exit(plan.All(s => s.status == SetupStatus.Done) ? 0 : 1);
             }
             catch (Exception e)
             {
-                Console.WriteLine("[Nexus Ads] Prepare Android could not run: " + e);
+                Report("[Nexus Ads] Prepare Android could not run: " + e);
                 EditorApplication.Exit(2);
             }
         }
