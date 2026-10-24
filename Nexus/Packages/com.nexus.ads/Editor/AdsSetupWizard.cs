@@ -83,6 +83,7 @@ namespace Nexus.Ads.Editor
                 return;
             }
             if (GUILayout.Button(_turkish ? "Project Settings > Nexus Ads'i aç" : "Open Project Settings > Nexus Ads")) AdsSettingsProvider.Open();
+            AdsSettingsProvider.DrawOutlook(settings, AdPlatform.Android, probe);
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField(_turkish ? "2. Mediation sağlayıcıları" : "2. Mediation providers", EditorStyles.boldLabel);

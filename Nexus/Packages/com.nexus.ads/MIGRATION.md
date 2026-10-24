@@ -50,7 +50,7 @@ puts the family's controller behind the same service.
    | In the game | In the family |
    |---|---|
    | `AdMobConfig` ad unit ids, test ids next to release ids | Test and Release tabs; a development build reads Test, a release build Release |
-   | Mock in the editor, real adapter on devices | `AdsBootstrap`: the editor runs the simulator, a development build the SDK with test data, a release build the SDK with live ids |
+   | Mock in the editor, real adapter on devices | `AdsBootstrap`: the editor runs the simulator, a development build the SDK with test data (AdMob: Google's sample units on every device; LevelPlay and MAX: only on a device listed on the Test tab, the simulator elsewhere), a release build the SDK with live ids |
    | `AdMobConfig.DebugGeographyEea`, `TestDeviceHashedIds` | `AdMobProvider.SetTestDevices(googleIds, eeaConsentGeography)` before the bootstrap starts; applied with Google's sample units only |
    | Interstitial cooldowns and per-day caps kept in `PlayerPrefs` | Policy floors and per-placement caps in the settings (`PolicyGuard`, per-day counters in `IPacingStore`) |
    | Muting audio or pausing time while an ad shows | `AdsBootstrap` pauses audio and time between open and close |

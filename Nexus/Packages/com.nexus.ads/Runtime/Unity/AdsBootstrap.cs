@@ -93,12 +93,10 @@ namespace Nexus.Ads.Unity
             var visibility = gameObject.GetComponent<UnityAppVisibility>() ?? gameObject.AddComponent<UnityAppVisibility>();
             _telemetry = new UnityAdTelemetry(_logEvents && Build != BuildKind.Release);
 
-            Gate = _settings.AdFreeRelease && Build == BuildKind.Release
-                ? new GateResult(GateDecision.Blocked, null, "ad-free release")
-                : ProviderGate.Evaluate(Build, config.Provider, advertisingId);
-            bool selected = _settings.SelectedMediation != AdProviderKind.None;
             Factories.TryGetValue(_settings.SelectedMediation, out var factory);
-            Mode = ProviderGate.Host(Build, Gate, selected, factory != null);
+            var decision = BuildOutlook.Decide(_settings, Build, config.Provider, advertisingId, factory != null);
+            Gate = decision.Gate;
+            Mode = decision.Mode;
             IConsentFlow consent;
             if (Mode == HostMode.Provider)
             {
@@ -108,9 +106,7 @@ namespace Nexus.Ads.Unity
             else
             {
                 if (Mode == HostMode.Idle && !(Gate.Decision == GateDecision.Blocked && Gate.Rule == null)) // the rule-less block is the ad-free release
-                    Debug.LogError("[Nexus Ads] no ads run: " + (Gate.Rule != null ? Gate.Rule + ": " + Gate.Reason
-                        : !selected ? "no mediation is selected"
-                        : _settings.SelectedMediation + " is selected but its provider is not registered (the provider package is not installed, or its assembly was stripped from the player)"));
+                    Debug.LogError("[Nexus Ads] no ads run: " + BuildOutlook.IdleReason(_settings, Gate));
                 else if (Gate.Rule != null)
                     Debug.LogWarning("[Nexus Ads] " + Gate.Rule + ": " + Gate.Reason + "; the simulator runs (labelled, not a real ad)");
                 // an idle host keeps a simulator that is never started, so every show answers NotReady

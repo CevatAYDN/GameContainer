@@ -6,7 +6,8 @@ namespace Nexus.Ads.Unity
     /// <summary>
     /// The on-device panel of development builds (never compiled into a release build's behaviour:
     /// the bootstrap adds it only when the build is not Release). Opens with three fingers held for a
-    /// second, or F9 in the editor. Shows the provider, the gate decision, the build kind, test mode,
+    /// second, or F9 in the editor. Shows the provider, the gate decision, what this build does in words
+    /// (<see cref="BuildOutlook"/>), the build kind, test mode,
     /// the consent state, the device's advertising id (to paste into the Test tab and the mediation
     /// dashboard), readiness per placement, the last violations and events, and a button that opens
     /// the mediation's own test tool. Immediate-mode UI, no canvas.
@@ -67,6 +68,7 @@ namespace Nexus.Ads.Unity
             var controller = _bootstrap.Controller;
             GUILayout.Label("Nexus Ads debug — " + _bootstrap.Build + " build, " + _bootstrap.Platform);
             GUILayout.Label("provider: " + (_bootstrap.Mode == HostMode.Provider ? _bootstrap.Provider.Name : _bootstrap.Mode == HostMode.Simulator ? "simulator" : "none (no ads run)") + "   gate: " + _bootstrap.Gate.Decision + (_bootstrap.Gate.Rule != null ? " (" + _bootstrap.Gate.Rule + ": " + _bootstrap.Gate.Reason + ")" : ""));
+            if (_bootstrap.Settings != null) GUILayout.Label("this build: " + BuildOutlook.Say(_bootstrap.Settings, _bootstrap.Build, _bootstrap.Platform, new HostDecision(_bootstrap.Gate, _bootstrap.Mode), null));
             var provider = _bootstrap.Settings != null ? _bootstrap.Settings.ToProviderConfig(_bootstrap.Build, _bootstrap.Platform, _bootstrap.Settings.SelectedMediation) : null;
             if (provider != null) GUILayout.Label("test mode: " + provider.TestMode + "   published test data: " + provider.UsesPublishedTestData + "   test devices: " + provider.TestDeviceIds.Count);
             GUILayout.Label("state: " + (controller != null ? controller.State.ToString() : "no controller") + "   kill switch: " + (controller != null && controller.KillSwitch) + "   privacy options required: " + (controller != null && controller.PrivacyOptionsRequired));

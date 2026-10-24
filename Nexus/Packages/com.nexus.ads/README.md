@@ -62,9 +62,9 @@ So a development build handed to a teammate never requests a live ad.
 `ProviderGate.Host(build, gate, mediationSelected, providerRegistered)` then decides what the bootstrap
 runs. The simulator (a full-screen overlay labelled "Simulated ad") runs only where the gate chose it,
 or in the editor and development builds while no mediation is selected. A blocked gate, or a selected
-provider that is not in the player (package not installed, assembly stripped), runs nothing in every
-build: the controller is never started, every show answers `NotReady`, the rewarded button stays hidden
-and the reason is logged as an error. A release build never runs the simulator (issue #19; locked by
+provider that is not in the player (package not installed, assembly stripped) where the gate chose the
+SDK, runs nothing: the controller is never started, every show answers `NotReady`, the rewarded button
+stays hidden and the reason is logged as an error. A release build never runs the simulator (issue #19; locked by
 `AdsCoreSuite` GT10–GT13).
 
 ## Using it without Nexus
@@ -106,7 +106,11 @@ it after its listeners ran, a game that saves asynchronously acknowledges it its
 - **Project Settings > Nexus Ads**: the asset, the Test and Release tabs per platform (AdMob's Test tab
   is locked to Google's sample ids with a reset button; LevelPlay and MAX copy the Release keys), the
   device list, placements, floors, privacy, app-ads.txt lines, and the validator buttons. Status badges
-  come from `ProviderStatusResolver`.
+  come from `ProviderStatusResolver`. Above the keys, **What each build does** lists the editor, a
+  development build (listed and other devices) and a release build in plain words, from `BuildOutlook`,
+  the decision `AdsBootstrap` runs; the setup wizard shows the same lines and the debug panel shows
+  `this build:`. A line is what the build decides to run; whether the mediation's server accepts the keys
+  and fills an ad is known only from a run on a device.
 - **Tools > Nexus Ads > Setup**: the wizard. Every provider and network row from the catalog with its
   status badge, next step, registration / docs / policy links, "Install SDK" (LevelPlay from the Unity
   registry, AdMob from OpenUPM with the scoped registry written for you, MAX through AppLovin's
@@ -151,7 +155,7 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | `mediation.single` | fail: two mediation SDKs are in the project |
 | `mediation.admob` | warn: the Google Mobile Ads SDK is in the project while LevelPlay or MAX is selected (only the selected mediation starts; the SDK still ships) |
 | `mediation.selected` | fail: no mediation selected on a release that is not ad-free |
-| `mediation.status` | fail: the selected provider is not Active for a release build (warn on the Test tab when NotInstalled: development builds show no ads) |
+| `mediation.status` | fail: the selected provider is not Active for a release build (warn on the Test tab when NotInstalled: a development build runs the simulator on a device that is not listed and no ads on a listed one) |
 | `keys.release.missing`, `keys.test.missing` | fail: a required field (derived from the placements) is empty; warn on the Test tab for LevelPlay/MAX (the SDK cannot start on a listed device) |
 | `keys.release.testdata` | fail: Google's sample ids on the Release tab |
 | `keys.test.official` | fail: AdMob's Test tab differs from the catalog's sample ids |

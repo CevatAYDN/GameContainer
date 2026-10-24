@@ -127,7 +127,7 @@ namespace Nexus.Ads.Editor
             else
             {
                 report.Add(status.Status == ProviderStatus.NotInstalled
-                    ? new AdsCheck("mediation.status", CheckResult.Warn, kind + " is NotInstalled; the editor runs the simulator and development builds show no ads.", "install the SDK and the provider package (Tools > Nexus Ads > Setup).")
+                    ? new AdsCheck("mediation.status", CheckResult.Warn, kind + " is NotInstalled; the editor runs the simulator, a development build runs the simulator on a device that is not listed and no ads on a listed one.", "install the SDK and the provider package (Tools > Nexus Ads > Setup).")
                     : new AdsCheck("mediation.status", CheckResult.Pass, kind + " is " + status.Status + " on " + platform));
             }
 

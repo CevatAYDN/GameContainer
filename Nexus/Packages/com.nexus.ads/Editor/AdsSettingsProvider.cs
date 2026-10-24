@@ -86,11 +86,14 @@ namespace Nexus.Ads.Editor
             }
 
             EditorGUILayout.Space();
+            _platform = GUILayout.Toolbar(_platform, new[] { "Android", "iOS" });
+            var platformSel = _platform == 1 ? AdPlatform.Ios : AdPlatform.Android;
+            DrawOutlook(settings, platformSel, probe);
+
+            EditorGUILayout.Space();
             EditorGUILayout.LabelField("Keys", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("The editor and development builds read the Test tab; release builds read the Release tab. There is no switch.", MessageType.None);
             _tab = GUILayout.Toolbar(_tab, new[] { "Test", "Release" });
-            _platform = GUILayout.Toolbar(_platform, new[] { "Android", "iOS" });
-            var platformSel = _platform == 1 ? AdPlatform.Ios : AdPlatform.Android;
             bool release = _tab == 1;
             string tabProp = release ? nameof(AdsSettings.Release) : nameof(AdsSettings.Test);
             var kind = settings.SelectedMediation;
@@ -208,6 +211,17 @@ namespace Nexus.Ads.Editor
             bool used = settings.Uses(format);
             using (new EditorGUI.DisabledScope(!used))
                 EditorGUILayout.PropertyField(keys.FindPropertyRelative(field), new GUIContent(format + " unit id" + (used ? "" : " (no placement uses it)")));
+        }
+
+        /// <summary>What each kind of build does with ads, as <see cref="BuildOutlook"/> decides it; the settings page and the setup wizard show this and nothing else of the kind.</summary>
+        public static void DrawOutlook(AdsSettings settings, AdPlatform platform, UnityProjectProbe probe)
+        {
+            bool sdk = probe.SdkInstalled(settings.SelectedMediation) && probe.ProviderPackageInstalled(settings.SelectedMediation);
+            var status = ProviderStatusResolver.Resolve(settings, settings.SelectedMediation, platform, sdk, probe.SdkInstalled(AdProviderKind.LevelPlay) && probe.SdkInstalled(AdProviderKind.Max));
+            EditorGUILayout.LabelField("What each build does (" + platform + ")", EditorStyles.boldLabel);
+            foreach (var row in BuildOutlook.Rows(settings, platform, sdk, status))
+                EditorGUILayout.HelpBox(row.Where + ": " + row.Text, row.Problem ? MessageType.Warning : MessageType.Info);
+            EditorGUILayout.LabelField("Each line is what the build decides to run. Whether the mediation's server accepts the keys and fills an ad is known only from a run on a device.", EditorStyles.wordWrappedMiniLabel);
         }
 
         public static void Badge(string text, ProviderStatus status)

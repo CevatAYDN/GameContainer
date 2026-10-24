@@ -6,7 +6,7 @@ using Unity.Services.LevelPlay;
 using UnityEngine;
 
 // Nothing references a provider assembly; it registers itself from a RuntimeInitializeOnLoadMethod. Without this
-// attribute the IL2CPP linker drops the whole assembly and the player runs the simulator (seen on a device, 2026-10-24).
+// attribute the IL2CPP linker drops the whole assembly and the provider never registers (seen on a device, 2026-10-24, when the player then ran the simulator; since issue #19 a store build runs nothing).
 [assembly: UnityEngine.Scripting.AlwaysLinkAssembly]
 
 namespace Nexus.Ads.LevelPlay
