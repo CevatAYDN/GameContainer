@@ -164,3 +164,7 @@ tools/nexus-comparison/*results.json
 
 # Unity CLI temp folder
 /[Nn]exus/.utmp/
+
+# Roslyn source generator build output; the shipped analyzer is SourceGenerators~/Nexus.SourceGenerator.dll
+Nexus/Packages/com.nexus.core/SourceGenerator~/bin/
+Nexus/Packages/com.nexus.core/SourceGenerator~/obj/
