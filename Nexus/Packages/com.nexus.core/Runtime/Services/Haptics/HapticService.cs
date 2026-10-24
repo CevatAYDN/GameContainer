@@ -22,6 +22,7 @@ namespace Nexus.Core.Services
         private AndroidJavaClass _vibrationEffectClass;
         private int _sdkVersion;
         private bool _hasVibrator = true;
+        private bool _nativeFailureReported;
 
         // Pre-created immutable VibrationEffect per HapticType (SDK 26+). The old hot path
         // called createOneShot on EVERY Vibrate — allocating an AndroidJavaObject wrapper
@@ -161,8 +162,14 @@ namespace Nexus.Core.Services
                         _vibrator.Call("vibrate", GetHapticPattern(type).ms);
                     }
                 }
-                catch
+                catch (System.Exception ex)
                 {
+                    // The fallback still vibrates; the first failure says why the requested effect did not run.
+                    if (!_nativeFailureReported)
+                    {
+                        _nativeFailureReported = true;
+                        NexusRuntime.Logger?.LogWarning($"[HapticService] Android vibrator call failed ({ex.GetType().Name}: {ex.Message}); falling back to Handheld.Vibrate().");
+                    }
                     Handheld.Vibrate();
                 }
             }
