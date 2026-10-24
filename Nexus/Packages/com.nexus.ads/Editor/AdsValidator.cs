@@ -234,6 +234,7 @@ namespace Nexus.Ads.Editor
                 var plan = AndroidSetup.Plan(settings, release ? Tab.Release : Tab.Test, probe, catalog);
                 AddPlanCheck(report, plan, "android.nativesdk", new[] { "native.sdk", "resolve" }, "the Gradle build fails without the native SDK (LevelPlay: cannot find symbol IronSourceError)");
                 AddPlanCheck(report, plan, "android.gradle", new[] { "gradle.template", "gradle.lines" }, "the Gradle build fails without them (LevelPlay on Unity 6000.5: duplicate Kotlin classes)");
+                AddPlanCheck(report, plan, "android.adapter", new[] { "native.adapter" }, "the build succeeds but every ad request ends in 509 Mediation No fill (LevelPlay without the Unity Ads adapter, device run 2026-10-24)");
             }
 
             var provider = catalog.Provider(kind);

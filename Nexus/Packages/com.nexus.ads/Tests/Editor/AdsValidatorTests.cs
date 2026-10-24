@@ -46,11 +46,12 @@ namespace Nexus.Ads.Tests
             return this;
         }
 
-        /// <summary>What Prepare Android leaves behind for LevelPlay: the native SDK declaration and a resolved template with the Kotlin alignment.</summary>
+        /// <summary>What Prepare Android leaves behind for LevelPlay: the native SDK and Unity Ads adapter declarations and a resolved template with the Kotlin alignment.</summary>
         public FakeProbe AndroidPrepared()
         {
-            Files[AndroidSetup.MainTemplatePath] = "dependencies {\n    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')\n    implementation 'com.unity3d.ads-mediation:mediation-sdk:9.5.0'\n}\n";
+            Files[AndroidSetup.MainTemplatePath] = "dependencies {\n    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')\n    implementation 'com.unity3d.ads-mediation:mediation-sdk:9.5.0'\n    implementation 'com.unity3d.ads-mediation:unityads-adapter:5.11.0'\n}\n";
             Files["Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml"] = "<dependencies/>";
+            Files["Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml"] = "<dependencies/>";
             return this;
         }
     }

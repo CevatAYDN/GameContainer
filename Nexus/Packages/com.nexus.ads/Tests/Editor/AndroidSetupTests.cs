@@ -14,7 +14,13 @@ namespace Nexus.Ads.Tests
     public sealed class AndroidSetupTests
     {
         private const string GitManifest = "{\n  \"dependencies\": {\n    \"com.nexus.ads\": \"https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads#eee5c2f5ddffb90c6100871a1971cccfd310c1bc\"\n  }\n}\n";
-        private const string VersionsJson = "{ \"unityPackage\": { \"versions\": { \"9.5.1\": { \"ironSourceSdkVersion\": \"[9.5.0, 10.0[\" }, \"9.4.0\": { \"ironSourceSdkVersion\": \"[9.4.0, 10.0[\" } } }, \"IronSourceSdk\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/IronSource/${VERSION}/IronSourceSDKDependencies.xml\" } }";
+        private const string VersionsJson = "{ \"unityPackage\": { \"versions\": { \"9.5.1\": { \"ironSourceSdkVersion\": \"[9.5.0, 10.0[\" }, \"9.4.0\": { \"ironSourceSdkVersion\": \"[9.4.0, 10.0[\" } } }, \"IronSourceSdk\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/IronSource/${VERSION}/IronSourceSDKDependencies.xml\" }, "
+            + "\"adapters\": { \"AdMob\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/AdMob/${VERSION}/ISAdMobAdapterDependencies.xml\", \"versions\": { \"9.9.9.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\" } } }, "
+            + "\"UnityAds\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/UnityAds/${VERSION}/ISUnityAdsAdapterDependencies.xml\", \"versions\": { "
+            + "\"5.12.0.0\": { \"ironSourceSdkVersion\": \"[9.6.0, 10.0[\", \"android\": { \"adapterVersion\": \"5.12.0\" } }, "
+            + "\"5.11.0.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\", \"android\": { \"adapterVersion\": \"5.11.0\" } }, "
+            + "\"5.9.0.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\" }, "
+            + "\"4.3.49.0\": { \"ironSourceSdkVersion\": \"[8.4.0, 9.0.0[\" } } } } }";
 
         private AdsSettings _settings;
         private PlatformCatalog _catalog;
@@ -48,7 +54,7 @@ namespace Nexus.Ads.Tests
 
             var plan = AndroidSetup.Plan(_settings, AdsValidator.Tab.Test, probe, _catalog);
             Assert.AreEqual(SetupStatus.Done, Status(plan, "sdk"));
-            foreach (var id in new[] { "resolver", "native.sdk", "gradle.template", "gradle.lines", "resolve" })
+            foreach (var id in new[] { "resolver", "native.sdk", "native.adapter", "gradle.template", "gradle.lines", "resolve" })
                 Assert.AreEqual(SetupStatus.Pending, Status(plan, id), id);
             StringAssert.Contains("IronSource/9.5.0/IronSourceSDKDependencies.xml", plan.First(s => s.id == "native.sdk").how, "the native SDK the installed package pairs with");
             var report = AdsValidator.Validate(_settings, AdsValidator.Tab.Test, AdPlatform.Android, probe, _catalog);
@@ -120,6 +126,29 @@ namespace Nexus.Ads.Tests
             Assert.AreEqual("9.4.0", version);
             Assert.AreEqual("https://s3.amazonaws.com/ssa.public/Dependencies-xmls/IronSource/9.4.0/IronSourceSDKDependencies.xml", url);
             Assert.IsFalse(AndroidSetup.TryNativeSdk(VersionsJson, "8.0.0", out _, out _), "a package version the file does not list is not guessed");
+        }
+
+        [Test]
+        public void LevelPlay_UnityAdsAdapter_IsPlanned_AtTheNewestVersionTheNativeSdkFits_AndTheValidatorFailsWithoutIt()
+        {
+            // issue #16: a build with the native SDK and no Unity Ads adapter answered every request with 509 No fill
+            Assert.IsTrue(AndroidSetup.TryAdapter(VersionsJson, "9.5.1", "UnityAds", out var version, out var url));
+            Assert.AreEqual("5.11.0.0", version, "5.12.0.0 needs native 9.6.0; 4.3.49.0 is for 8.x");
+            Assert.AreEqual("https://s3.amazonaws.com/ssa.public/Dependencies-xmls/UnityAds/5.11.0.0/ISUnityAdsAdapterDependencies.xml", url, "the adapter's own URL, not the SDK's or another adapter's");
+            Assert.IsFalse(AndroidSetup.TryAdapter(VersionsJson, "8.0.0", "UnityAds", out _, out _), "a package version the file does not list is not guessed");
+
+            _settings.SelectedMediation = AdProviderKind.LevelPlay;
+            var probe = new FakeProbe().Installed(AdProviderKind.LevelPlay).AndroidPrepared();
+            probe.Packages["com.unity.services.levelplay"] = "9.5.1";
+            probe.PackageFiles["com.unity.services.levelplay/Editor/Json/LevelPlayVersions.json"] = VersionsJson;
+            probe.Files.Remove("Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml");
+            probe.Files[AndroidSetup.MainTemplatePath] = probe.Files[AndroidSetup.MainTemplatePath].Replace("unityads-adapter", "removed");
+
+            var plan = AndroidSetup.Plan(_settings, AdsValidator.Tab.Release, probe, _catalog);
+            Assert.AreEqual(SetupStatus.Pending, Status(plan, "native.adapter"));
+            Assert.AreEqual(SetupStatus.Pending, Status(plan, "resolve"), "the SDK alone in the template is not resolved");
+            var report = AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Android, probe, _catalog);
+            Assert.AreEqual(CheckResult.Fail, report.checks.First(c => c.id == "android.adapter").Result);
         }
 
         [Test]

@@ -13,20 +13,27 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
 1. **Tools > Nexus Ads > Setup > Install SDK** on the LevelPlay row adds `com.unity.services.levelplay`
    from the Unity registry (or Package Manager > Ads Mediation). The package holds only the C# side.
    **Tools > Nexus Ads > Setup > Prepare Android** does the rest of the Android setup, and the validator
-   (`android.nativesdk`, `android.gradle`) stops an Android build that misses it:
+   (`android.nativesdk`, `android.gradle`, `android.adapter`) stops an Android build that misses it:
    - the dependency resolver (`com.google.external-dependency-manager` from OpenUPM);
    - the native SDK declaration `Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml`
      (`com.unity3d.ads-mediation:mediation-sdk` 9.5.0 for package 9.5.1), the file LevelPlay's Network
      Manager installs, for the version the installed package names in its `LevelPlayVersions.json`;
      without it Gradle fails with `cannot find symbol IronSourceError`;
+   - the Unity Ads adapter declaration `Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml`
+     (`unityads-adapter` 5.11.0 and `unity-ads` 4.19.0 for native SDK 9.5.0), the newest
+     `adapters.UnityAds` version in the same file whose `ironSourceSdkVersion` range holds the native SDK;
+     LevelPlay's Network Manager shows it as a non-removable part of the SDK. Without it the build
+     succeeds and every request ends in `509 Mediation No fill` (device run 2026-10-24, issue #16);
    - the custom main Gradle template with `implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')`:
      on Unity 6000.5 mediation-sdk 9.5.0 brings `kotlin-stdlib-jdk7` / `-jdk8` 1.6.0 next to Unity's
      `kotlin-stdlib` 1.8.22 and Gradle stops on duplicate classes;
-   - the resolution into that template (Done when the template names `mediation-sdk`; a resolver set to
+   - the resolution into that template (Done when the template names `mediation-sdk` and `unityads-adapter`; a resolver set to
      write `.aar` files into `Assets/Plugins/Android` instead is not recognised yet).
 
-   Network adapters still come from **Ads Mediation > Network Manager**. Proven from a clean project on
-   2026-10-24: two presses, an Android build, the SDK reaching LevelPlay's server on a phone.
+   Other network adapters come from **Ads Mediation > Network Manager**. Proven from a clean project on
+   2026-10-24: two presses, an Android build, the SDK reaching LevelPlay's server on a phone; with the
+   owner's App Key and the Unity Ads adapter, a rewarded ad paid its reward and an interstitial closed on
+   the phone (`docs/RELEASE_GATES.md`).
 2. This package, pinned to the same commit as `com.nexus.ads` (the validator's `manifest.pins`
    check): `"com.nexus.ads.levelplay": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads.levelplay#<commit>"`.
 3. **Project Settings > Nexus Ads**: select LevelPlay, enter the App Key and the ad unit ids on the

@@ -28,7 +28,8 @@ namespace Nexus.Ads.Editor
 
     /// <summary>
     /// The Android setup of the selected mediation, driven by <c>PlatformCatalog.json</c>: the SDK and the Nexus
-    /// provider package, the dependency resolver, the native SDK declaration, the custom main Gradle template
+    /// provider package, the dependency resolver, the native SDK declaration and the network adapter the mediation
+    /// needs to fill (LevelPlay: Unity Ads), the custom main Gradle template
     /// with the catalog's Gradle lines, the resolved dependencies and the AdMob App ID. <see cref="Plan"/> is a pure
     /// function over settings, probe and catalog (the validator's <c>android.nativesdk</c> and <c>android.gradle</c>
     /// read it); <see cref="Apply"/> performs the Pending steps. Adding packages reloads the domain, so a press that
@@ -77,6 +78,18 @@ namespace Nexus.Ads.Editor
                 steps.Add(new SetupStep("native.sdk", present ? SetupStatus.Done : SetupStatus.Pending, "native SDK declaration", how));
             }
 
+            var adapter = sdk.nativeAdapter;
+            if (!string.IsNullOrEmpty(adapter?.dependencyFile))
+            {
+                bool present = probe.ProjectFileText(adapter.dependencyFile) != null;
+                string how = adapter.dependencyFile;
+                if (!present)
+                    how = TryAdapter(probe.PackageFileText(sdk.upm?.package, sdk.nativeVersionsJson), probe.PackageVersion(sdk.upm?.package), adapter.key, out var version, out var url)
+                        ? "downloads " + url + " (" + adapter.key + " adapter " + version + ") to " + adapter.dependencyFile
+                        : "needs the SDK package first (its " + sdk.nativeVersionsJson + " names the adapter)";
+                steps.Add(new SetupStep("native.adapter", present ? SetupStatus.Done : SetupStatus.Pending, adapter.key + " adapter declaration", how));
+            }
+
             bool lines = sdk.gradleLines != null && sdk.gradleLines.Length > 0;
             if (lines || !string.IsNullOrEmpty(sdk.resolvedMarker))
             {
@@ -93,9 +106,10 @@ namespace Nexus.Ads.Editor
                 // Assets/Plugins/Android instead (template patching off) builds fine but reads as Pending; accept those files when one shows up.
                 if (!string.IsNullOrEmpty(sdk.resolvedMarker))
                 {
-                    bool resolved = template != null && template.IndexOf(sdk.resolvedMarker, StringComparison.Ordinal) >= 0;
+                    var markers = ResolvedMarkers(sdk);
+                    bool resolved = template != null && markers.All(m => template.IndexOf(m, StringComparison.Ordinal) >= 0);
                     steps.Add(new SetupStep("resolve", resolved ? SetupStatus.Done : SetupStatus.Pending, "native dependencies resolved into the Gradle template",
-                        resolved ? sdk.resolvedMarker : "runs the resolver's Android resolution"));
+                        resolved ? string.Join(", ", markers) : "runs the resolver's Android resolution"));
                 }
             }
 
@@ -128,6 +142,71 @@ namespace Nexus.Ads.Editor
             if (!range.Success || !template.Success) return false;
             sdkVersion = range.Groups[1].Value;
             url = template.Groups[1].Value.Replace("${VERSION}", sdkVersion);
+            return true;
+        }
+
+        /// <summary>
+        /// The newest adapter version in LevelPlayVersions.json (<c>adapters[key].versions</c>) whose <c>ironSourceSdkVersion</c>
+        /// range holds the native SDK the package version pairs with, and its dependency file URL (from the adapter's own block).
+        /// </summary>
+        public static bool TryAdapter(string versionsJson, string packageVersion, string key, out string adapterVersion, out string url)
+        {
+            adapterVersion = url = null;
+            if (string.IsNullOrEmpty(key) || !TryNativeSdk(versionsJson, packageVersion, out var native, out _) || !TryVersion(native, out var sdk)) return false;
+            var adapters = Regex.Match(versionsJson, "\"adapters\"\\s*:\\s*\\{");
+            if (!adapters.Success) return false;
+            var start = new Regex("\"" + Regex.Escape(key) + "\"\\s*:\\s*\\{").Match(versionsJson, adapters.Index + adapters.Length);
+            if (!start.Success) return false;
+            string block = versionsJson.Substring(start.Index, ObjectEnd(versionsJson, start.Index + start.Length - 1) - start.Index);
+            var template = Regex.Match(block, "\"dependencyXmlURL\"\\s*:\\s*\"([^\"]+)\"");
+            if (!template.Success) return false;
+            Version best = null;
+            foreach (Match m in Regex.Matches(block, "\"([0-9]+(?:\\.[0-9]+)*)\"\\s*:\\s*\\{\\s*\"ironSourceSdkVersion\"\\s*:\\s*\"([^\"]*)\""))
+                if (TryVersion(m.Groups[1].Value, out var candidate) && InRange(m.Groups[2].Value, sdk) && (best == null || candidate > best)) { best = candidate; adapterVersion = m.Groups[1].Value; }
+            if (best == null) return false;
+            url = template.Groups[1].Value.Replace("${VERSION}", adapterVersion);
+            return true;
+        }
+
+        private static IEnumerable<string> ResolvedMarkers(CatalogSdk sdk)
+            => string.IsNullOrEmpty(sdk.nativeAdapter?.resolvedMarker) ? new[] { sdk.resolvedMarker } : new[] { sdk.resolvedMarker, sdk.nativeAdapter.resolvedMarker };
+
+        /// <summary>The index after the object that opens at <paramref name="open"/>; braces inside strings (<c>${VERSION}</c>) do not count.</summary>
+        private static int ObjectEnd(string json, int open)
+        {
+            int depth = 0;
+            bool inString = false;
+            for (int i = open; i < json.Length; i++)
+            {
+                char c = json[i];
+                if (inString) { if (c == '\\') i++; else if (c == '"') inString = false; continue; }
+                if (c == '"') inString = true;
+                else if (c == '{') depth++;
+                else if (c == '}' && --depth == 0) return i + 1;
+            }
+            return json.Length;
+        }
+
+        /// <summary>A Maven-style range as LevelPlayVersions.json writes it: <c>[9.0.0, 10.0[</c> (a bracket facing away excludes the bound).</summary>
+        private static bool InRange(string range, Version v)
+        {
+            var m = Regex.Match(range ?? "", @"^\s*([\[(\]])\s*([0-9.]*)\s*,\s*([0-9.]*)\s*([\])\[])\s*$");
+            if (!m.Success) return false;
+            if (TryVersion(m.Groups[2].Value, out var low) && (m.Groups[1].Value == "[" ? v < low : v <= low)) return false;
+            if (TryVersion(m.Groups[3].Value, out var high) && (m.Groups[4].Value == "]" ? v > high : v >= high)) return false;
+            return true;
+        }
+
+        /// <summary>Up to four numeric parts, padded with zeros so 9.0 and 9.0.0 compare equal.</summary>
+        private static bool TryVersion(string text, out Version version)
+        {
+            version = null;
+            if (string.IsNullOrEmpty(text)) return false;
+            var parts = text.Split('.');
+            if (parts.Length > 4) return false;
+            var n = new int[4];
+            for (int i = 0; i < parts.Length; i++) if (!int.TryParse(parts[i], out n[i])) return false;
+            version = new Version(n[0], n[1], n[2], n[3]);
             return true;
         }
 
@@ -235,15 +314,20 @@ namespace Nexus.Ads.Editor
             {
                 if (TryNativeSdk(probe.PackageFileText(sdk.upm.package, sdk.nativeVersionsJson), probe.PackageVersion(sdk.upm.package), out var version, out var url))
                 {
-                    string xml;
-                    using (var client = new System.Net.WebClient()) xml = client.DownloadString(url);
-                    if (xml.IndexOf("<dependencies>", StringComparison.Ordinal) < 0) throw new InvalidOperationException(url + " did not return a dependency file.");
-                    Directory.CreateDirectory(Path.GetDirectoryName(sdk.nativeDependencyFile));
-                    File.WriteAllText(sdk.nativeDependencyFile, xml);
-                    AssetDatabase.ImportAsset(sdk.nativeDependencyFile);
+                    DownloadDependencyFile(url, sdk.nativeDependencyFile);
                     result.Log.Add("native SDK " + version + ": " + url + " → " + sdk.nativeDependencyFile);
                 }
                 else result.Log.Add("native SDK: the SDK package's " + sdk.nativeVersionsJson + " names no version for " + probe.PackageVersion(sdk.upm.package));
+            }
+            if (Pending("native.adapter"))
+            {
+                var adapter = sdk.nativeAdapter;
+                if (TryAdapter(probe.PackageFileText(sdk.upm.package, sdk.nativeVersionsJson), probe.PackageVersion(sdk.upm.package), adapter.key, out var version, out var url))
+                {
+                    DownloadDependencyFile(url, adapter.dependencyFile);
+                    result.Log.Add(adapter.key + " adapter " + version + ": " + url + " → " + adapter.dependencyFile);
+                }
+                else result.Log.Add(adapter.key + " adapter: the SDK package's " + sdk.nativeVersionsJson + " names no version for " + probe.PackageVersion(sdk.upm.package));
             }
             if (Pending("gradle.template"))
             {
@@ -259,7 +343,7 @@ namespace Nexus.Ads.Editor
                 string updated = WithGradleLines(template, sdk.gradleLines, sdk.gradleNote);
                 if (updated != template) { File.WriteAllText(MainTemplatePath, updated); result.Log.Add("Gradle lines: " + string.Join("; ", sdk.gradleLines)); }
             }
-            if (!string.IsNullOrEmpty(sdk.resolvedMarker) && File.Exists(MainTemplatePath) && File.ReadAllText(MainTemplatePath).IndexOf(sdk.resolvedMarker, StringComparison.Ordinal) < 0)
+            if (!string.IsNullOrEmpty(sdk.resolvedMarker) && File.Exists(MainTemplatePath) && ResolvedMarkers(sdk).Any(m => File.ReadAllText(MainTemplatePath).IndexOf(m, StringComparison.Ordinal) < 0))
             {
                 var resolver = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("GooglePlayServices.PlayServicesResolver")).FirstOrDefault(t => t != null);
                 var resolveSync = resolver?.GetMethods().FirstOrDefault(m => m.Name == "ResolveSync" && m.GetParameters().Length == 1);
@@ -283,6 +367,16 @@ namespace Nexus.Ads.Editor
             }
             AssetDatabase.Refresh();
             return result;
+        }
+
+        private static void DownloadDependencyFile(string url, string path)
+        {
+            string xml;
+            using (var client = new System.Net.WebClient()) xml = client.DownloadString(url);
+            if (xml.IndexOf("<dependencies>", StringComparison.Ordinal) < 0) throw new InvalidOperationException(url + " did not return a dependency file.");
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, xml);
+            AssetDatabase.ImportAsset(path);
         }
 
         /// <summary>
