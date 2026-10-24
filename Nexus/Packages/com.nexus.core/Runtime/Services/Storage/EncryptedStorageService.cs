@@ -460,6 +460,12 @@ namespace Nexus.Core.Services
                 }
                 return val;
             }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                // Transient (file locked by another process, disk busy): not cached, the next read retries the disk.
+                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Could not read save key '{key}' this time: {ex.Message}");
+                return defaultValue;
+            }
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");

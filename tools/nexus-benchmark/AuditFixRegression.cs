@@ -13,6 +13,7 @@
 //   M-7 PerformanceMonitor / NetworkMonitor throwing subscribers isolated
 // External audit of 2026-10-25 (issue #23; ids are the report's):
 //   A23-O2 int/long saves survive a locale change (NegativeSign U+2212)
+//   A23-O3 a transient read error is not cached as "no value"
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -137,7 +138,7 @@ namespace NexusBench
         public static int Run()
         {
             Console.WriteLine();
-            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2) ===");
+            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2/O3) ===");
             _failures = 0;
 
             Test_Composite_NestedCompletion_NoLostTriggers();
@@ -155,6 +156,7 @@ namespace NexusBench
             Test_NetworkMonitor_ThrowingSubscriber_Isolated();
             Test_ObjectPoolService_BoundRetention();
             Test_A23_IntegerSaves_SurviveLocaleChange();
+            Test_A23_TransientReadError_NotCachedAsMissing();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -861,6 +863,48 @@ namespace NexusBench
             catch (Exception ex)
             {
                 Check("A23-O2. IntegerSaves_SurviveLocaleChange", false, "threw " + ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                DeleteSecureData(salt);
+            }
+        }
+
+        private static void Test_A23_TransientReadError_NotCachedAsMissing()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                Console.WriteLine("[Nexus Benchmark] SKIP  A23-O3. TransientReadError_NotCachedAsMissing: FileShare.None locks a file only on Windows");
+                return;
+            }
+            const string salt = "HarnessSalt_A23_O3";
+            string dir = System.IO.Path.Combine(Application.persistentDataPath, "SecureData_" + salt);
+            UnityEngine.PlayerPrefs.ClearAll();
+            DeleteSecureData(salt);
+            try
+            {
+                var writer = new EncryptedStorageService(salt) { AutoSave = true };
+                writer.SetLong("gems", 42);
+                writer.Dispose();
+
+                var reader = new EncryptedStorageService(salt);
+                long whileLocked;
+                var locks = new System.Collections.Generic.List<System.IO.FileStream>();
+                try
+                {
+                    foreach (var file in System.IO.Directory.GetFiles(dir))
+                        locks.Add(new System.IO.FileStream(file, System.IO.FileMode.Open, System.IO.FileAccess.Read, System.IO.FileShare.None));
+                    whileLocked = reader.GetLong("gems", -1);
+                }
+                finally
+                {
+                    foreach (var s in locks) s.Dispose();
+                }
+                long afterRelease = reader.GetLong("gems", -1);
+                reader.Dispose();
+
+                Check("A23-O3. TransientReadError_NotCachedAsMissing", locks.Count > 0 && whileLocked == -1 && afterRelease == 42,
+                    $"locked files={locks.Count}, read while locked={whileLocked} (expected -1), after release={afterRelease} (expected 42; pre-fix -1 for the session)");
             }
             finally
             {
