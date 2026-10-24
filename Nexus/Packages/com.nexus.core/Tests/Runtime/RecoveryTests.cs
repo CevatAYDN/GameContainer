@@ -164,12 +164,20 @@ namespace Nexus.Tests
             _container.Dispose();
         }
 
+        // With the logger fallback the engine's "[Nexus] Command X failed" line reaches Unity's log once per failed attempt.
+        private static void ExpectCommandFailed(string command, string message, int attempts = 1)
+        {
+            for (int i = 0; i < attempts; i++)
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Command " + command + " failed: " + message));
+        }
+
         [Test]
         public void Recovery_Retry_RetriesUpToLimitThenAborts()
         {
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.Retry(3);
 
+            ExpectCommandFailed("ThrowCommand", "Command failed intendedly: RetryTest", attempts: 4); // 1 initial + 3 retries
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, "[Nexus Error] Retry limit reached for command ThrowCommand.");
 
             // The recovery engine surfaces the retry-limit abort as the TYPED
@@ -192,6 +200,7 @@ namespace Nexus.Tests
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.Fallback<FallbackCommand>();
 
+            ExpectCommandFailed("ThrowCommand", "Command failed intendedly: FallbackTest");
             _signalBus.Fire(new FailSignal("FallbackTest"));
 
             Assert.AreEqual(1, _results.ThrowCount);
@@ -205,6 +214,7 @@ namespace Nexus.Tests
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => RecoveryDecision.FallbackAsync<AsyncFallbackCommand>();
 
+            ExpectCommandFailed("ThrowCommand", "Command failed intendedly: FallbackAsyncTest");
             await _signalBus.FireAsync(new FailSignal("FallbackAsyncTest"));
 
             Assert.AreEqual(1, _results.ThrowCount);
@@ -220,6 +230,7 @@ namespace Nexus.Tests
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => new RecoveryDecision(RecoveryAction.Fallback, typeof(GenericOnlyFallbackCommand), 0);
 
+            ExpectCommandFailed("ThrowCommand", "Command failed intendedly: GenericFallbackTest");
             _signalBus.Fire(new FailSignal("GenericFallbackTest"));
 
             Assert.AreEqual(1, _results.ThrowCount);
@@ -236,6 +247,7 @@ namespace Nexus.Tests
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(AsyncThrowCommand), ExecutionMode.Sequential, 0, true);
             _strategy.DecisionFactory = ctx => new RecoveryDecision(RecoveryAction.Fallback, typeof(GenericOnlyAsyncFallbackCommand), 0);
 
+            ExpectCommandFailed("AsyncThrowCommand", "Async command failed intendedly: GenericAsyncFallbackTest");
             await _signalBus.FireAsync(new FailSignal("GenericAsyncFallbackTest"));
 
             Assert.AreEqual(1, _results.ThrowCount);
@@ -252,6 +264,8 @@ namespace Nexus.Tests
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(ThrowCommand), ExecutionMode.Sequential, 0, false);
             _strategy.DecisionFactory = ctx => new RecoveryDecision(RecoveryAction.Fallback, typeof(GenericOnlyAsyncFallbackCommand), 0);
 
+            ExpectCommandFailed("ThrowCommand", "Command failed intendedly: SyncContextAsyncFallback");
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, "[Nexus] Fallback command 'GenericOnlyAsyncFallbackCommand' cannot execute synchronously for signal 'FailSignal'. Treating as Skip.");
             Assert.DoesNotThrow(() => _signalBus.Fire(new FailSignal("SyncContextAsyncFallback")));
 
             Assert.AreEqual(1, _results.ThrowCount);
@@ -266,6 +280,7 @@ namespace Nexus.Tests
 
             CommandFailedSignal? caughtFailedSignal = null;
             _signalBus.Subscribe<CommandFailedSignal>(sig => caughtFailedSignal = sig);
+            ExpectCommandFailed("ThrowCommand", "Command failed intendedly: SkipTest");
 
             Assert.DoesNotThrow(() =>
             {
@@ -327,6 +342,7 @@ namespace Nexus.Tests
 
             // Same exact-type rationale as the Retry test: the Abort decision throws the
             // typed NexusRecoveryAbortException (an InvalidOperationException subclass).
+            ExpectCommandFailed("ThrowCommand", "Command failed intendedly: AbortTest");
             var ex = Assert.Throws<NexusRecoveryAbortException>(() =>
             {
                 _signalBus.Fire(new FailSignal("AbortTest"));

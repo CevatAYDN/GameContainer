@@ -177,6 +177,7 @@ namespace Nexus.Core.Tests
                 failed.SetUp(data);
                 failed.RegisterLifecycle(new ThrowingStartup());
                 failed.IsGlobalContext = true;
+                LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Root initialization failed: Expected startup failure"));
                 failedGo.SetActive(true);
                 yield return null;
                 Assert.IsNull(failed.Context);

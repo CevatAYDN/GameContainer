@@ -235,6 +235,7 @@ namespace Nexus.Tests
             var view = go.AddComponent<ThrowingDecoratedView>();
             var binder = _context.Resolve<ViewBinder>();
 
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Exception, new System.Text.RegularExpressions.Regex("InvalidOperationException: bind failed"));
             Assert.DoesNotThrow(() => binder.RegisterView(view));
             Assert.IsFalse(view.IsBound);
             Assert.AreEqual(0, binder.ActiveMediatorCount);

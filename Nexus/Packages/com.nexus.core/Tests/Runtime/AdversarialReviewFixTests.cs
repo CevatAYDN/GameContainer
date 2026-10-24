@@ -97,6 +97,9 @@ namespace Nexus.Tests.Runtime
             using var container = new NexusDI();
             container.Bind<CountingService>(isSingleton: true);
 
+            // A bare container has no IContext or ISignalBus for the service's [Inject] properties; the injector says so.
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] \[Inject\] dependency 'Nexus\.Core\.IContext' for property '.*CountingService\.Context' is not registered"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] \[Inject\] dependency 'Nexus\.Core\.ISignalBus' for property '.*CountingService\.SignalBus' is not registered"));
             var service = container.Resolve<CountingService>();
             container.Dispose();
 

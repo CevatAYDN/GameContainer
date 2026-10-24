@@ -135,6 +135,9 @@ namespace Nexus.Tests
             _container.Bind<FailCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TestSignal), typeof(FailCommand), ExecutionMode.Sequential, 0, isAsync: false);
 
+            // The engine logs each failed attempt (1 initial + 1 retry) and the default strategy logs the abort.
+            for (int i = 0; i < 3; i++)
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Command FailCommand failed"));
             Assert.Throws<NexusRecoveryAbortException>(() =>
                 _signalBus.Fire(new TestSignal(5, "async-retry"))
             );
@@ -149,6 +152,9 @@ namespace Nexus.Tests
             _container.Bind<FailAsyncCommand>(isSingleton: false);
             _signalBus.RegisterCommand(typeof(TestSignal), typeof(FailAsyncCommand), ExecutionMode.Sequential, 0, isAsync: true);
 
+            // The engine logs each failed attempt (1 initial + 2 retries) and the default strategy logs the abort.
+            for (int i = 0; i < 4; i++)
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Command FailAsyncCommand failed"));
             try
             {
                 await _signalBus.FireAsync(new TestSignal(6, "async-fail"));
