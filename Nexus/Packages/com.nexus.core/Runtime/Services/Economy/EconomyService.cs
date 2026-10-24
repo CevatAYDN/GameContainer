@@ -11,6 +11,11 @@ namespace Nexus.Core.Services
     public interface IEconomyService
     {
         long GetBalance(string currencyId);
+        /// <summary>
+        /// The currency's observable balance. Its change handlers run synchronously while the service holds its balance
+        /// lock (the long view of a BigDouble balance depends on that), so a handler must not wait for another thread
+        /// that uses the economy; update UI or post the work instead. The same holds for <see cref="GetObservableBigBalance"/>.
+        /// </summary>
         SecureObservableLong GetObservableBalance(string currencyId);
         bool CanAfford(string currencyId, long amount);
         bool Spend(string currencyId, long amount, string reason = "");
@@ -71,6 +76,9 @@ namespace Nexus.Core.Services
         // Both currency modes share _balances' mutation lock. A promoted currency's long
         // observable remains the same instance, projecting its canonical BigDouble balance.
         private readonly Dictionary<string, long> _projectingLegacy = new();
+        // A currency's first touch reads storage (file I/O and decryption with EncryptedStorageService). The read
+        // runs before the balance lock (PrefetchSaved) and the create path under the lock takes its result.
+        private readonly ConcurrentDictionary<string, SavedBalance> _prefetched = new();
         private volatile bool _disposed;
         private volatile bool _disposing;
 
@@ -95,6 +103,7 @@ namespace Nexus.Core.Services
             if (amount <= 0) return true;
 
             SecureObservableLong prop;
+            PrefetchSaved(currencyId);
             lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
@@ -127,6 +136,7 @@ namespace Nexus.Core.Services
             if (amount <= 0) return;
 
             SecureObservableLong prop;
+            PrefetchSaved(currencyId);
             lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
@@ -145,6 +155,7 @@ namespace Nexus.Core.Services
         public void SetBalance(string currencyId, long amount)
         {
             SecureObservableLong prop;
+            PrefetchSaved(currencyId);
             lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
@@ -166,12 +177,45 @@ namespace Nexus.Core.Services
             if (_balances.TryGetValue(currencyId, out var existing))
                 return existing;
 
+            PrefetchSaved(currencyId);
             lock (_balances)
             {
                 if (_disposed || _disposing) return null;
                 return LazyLoadBalance(currencyId);
             }
         }
+
+        private readonly struct SavedBalance
+        {
+            public readonly bool HasBig;
+            public readonly BigDouble Big;
+            public readonly bool HasLong;
+            public readonly long Long;
+            public SavedBalance(bool hasBig, BigDouble big, bool hasLong, long value) { HasBig = hasBig; Big = big; HasLong = hasLong; Long = value; }
+        }
+
+        // Outside the lock, before every path that may create a currency. A loaded currency costs one
+        // lock-free lookup and no allocation (GCA5); the long balance decides because a big balance
+        // created next to a loaded long one starts from that long value, not from storage.
+        private void PrefetchSaved(string currencyId)
+        {
+            if (string.IsNullOrEmpty(currencyId) || _balances.ContainsKey(currencyId) || _prefetched.ContainsKey(currencyId)) return;
+            _prefetched[currencyId] = ReadSaved(currencyId);
+        }
+
+        private SavedBalance ReadSaved(string currencyId)
+        {
+            var store = PlayerPrefsService;
+            if (store == null) return default;
+            if (store.HasKey($"NT_EcoBig_{currencyId}"))
+                return new SavedBalance(true, store.GetBigDouble($"NT_EcoBig_{currencyId}", BigDouble.Zero), false, 0L);
+            bool hasLong = store.HasKey($"NT_Eco_{currencyId}");
+            return new SavedBalance(false, BigDouble.Zero, hasLong, hasLong ? store.GetLong($"NT_Eco_{currencyId}", 0L) : 0L);
+        }
+
+        // Under the lock: the prefetched read, or (a creating path that raced the prefetch) a direct read.
+        private SavedBalance TakeSaved(string currencyId)
+            => _prefetched.TryRemove(currencyId, out var saved) ? saved : ReadSaved(currencyId);
 
         // Must be called under _balances lock.
         private SecureObservableLong LazyLoadBalance(string currencyId)
@@ -181,13 +225,14 @@ namespace Nexus.Core.Services
         // parameter's closure on method entry, so in one method every Earn/Spend paid for it.
         private SecureObservableLong CreateBalanceLocked(string currencyId)
         {
+            var saved = TakeSaved(currencyId);
             // A persisted promotion remains canonical after restart, including for old
             // callers which only use the long API.
-            if (!_bigBalances.ContainsKey(currencyId) && PlayerPrefsService?.HasKey($"NT_EcoBig_{currencyId}") == true)
-                LazyLoadBigBalance(currencyId);
+            if (!_bigBalances.ContainsKey(currencyId) && saved.HasBig)
+                CreateBigBalanceLocked(currencyId, saved);
             long savedAmount = _bigBalances.TryGetValue(currencyId, out var big)
                 ? ProjectLong(big.Value)
-                : PlayerPrefsService?.GetLong($"NT_Eco_{currencyId}", 0L) ?? 0L;
+                : saved.Long;
             var prop = new SecureObservableLong(Math.Max(0, savedAmount));
             _balances[currencyId] = prop;
             prop.OnChanged((_, value) =>
@@ -227,6 +272,7 @@ namespace Nexus.Core.Services
             amount = Normalize(amount);
 
             SecureObservableBigDouble prop;
+            PrefetchSaved(currencyId);
             lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
@@ -250,6 +296,7 @@ namespace Nexus.Core.Services
             amount = Normalize(amount);
 
             SecureObservableBigDouble prop;
+            PrefetchSaved(currencyId);
             lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
@@ -268,6 +315,7 @@ namespace Nexus.Core.Services
             RequireBigValidator();
             amount = Normalize(amount);
             SecureObservableBigDouble prop;
+            PrefetchSaved(currencyId);
             lock (_balances)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
@@ -283,6 +331,7 @@ namespace Nexus.Core.Services
             if (_bigBalances.TryGetValue(currencyId, out var existing))
                 return existing;
 
+            PrefetchSaved(currencyId);
             lock (_balances)
             {
                 if (_disposed || _disposing) return null;
@@ -292,26 +341,24 @@ namespace Nexus.Core.Services
 
         // Must be called under _balances lock. Promotion is one-way per currency.
         private SecureObservableBigDouble LazyLoadBigBalance(string currencyId)
-            => _bigBalances.TryGetValue(currencyId, out var prop) ? prop : CreateBigBalanceLocked(currencyId);
+            => _bigBalances.TryGetValue(currencyId, out var prop) ? prop
+                : CreateBigBalanceLocked(currencyId, _balances.ContainsKey(currencyId) ? default : TakeSaved(currencyId));
 
         // Split from the lookup for the same closure reason as CreateBalanceLocked.
-        private SecureObservableBigDouble CreateBigBalanceLocked(string currencyId)
+        private SecureObservableBigDouble CreateBigBalanceLocked(string currencyId, SavedBalance saved)
         {
             BigDouble savedAmount = BigDouble.Zero;
             if (_balances.TryGetValue(currencyId, out var existingLong))
             {
                 savedAmount = new BigDouble(existingLong.Value);
             }
-            else if (PlayerPrefsService != null)
+            else if (saved.HasBig)
             {
-                if (PlayerPrefsService.HasKey($"NT_EcoBig_{currencyId}"))
-                {
-                    savedAmount = PlayerPrefsService.GetBigDouble($"NT_EcoBig_{currencyId}", BigDouble.Zero);
-                }
-                else if (PlayerPrefsService.HasKey($"NT_Eco_{currencyId}"))
-                {
-                    savedAmount = new BigDouble(PlayerPrefsService.GetLong($"NT_Eco_{currencyId}", 0L));
-                }
+                savedAmount = saved.Big;
+            }
+            else if (saved.HasLong)
+            {
+                savedAmount = new BigDouble(saved.Long);
             }
             savedAmount = IsFiniteNonnegative(savedAmount) ? Normalize(savedAmount) : BigDouble.Zero;
             var prop = new SecureObservableBigDouble(savedAmount, $"EcoBig_{currencyId}");
@@ -432,6 +479,7 @@ namespace Nexus.Core.Services
             {
                 bool approved = await NetworkValidator.ValidateSpendAsync(currencyId, amount, reason);
                 if (approved) return;
+                PrefetchSaved(currencyId);
                 lock (_balances)
                 {
                     if (_disposed || _disposing) return;
@@ -470,6 +518,7 @@ namespace Nexus.Core.Services
             try
             {
                 if (await validator.ValidateSpendBigAsync(currencyId, amount, reason)) return;
+                PrefetchSaved(currencyId);
                 lock (_balances)
                 {
                     if (_disposed || _disposing) return;
@@ -513,6 +562,7 @@ namespace Nexus.Core.Services
                     foreach (var kvp in _bigBalances) kvp.Value.ClearOnChanged();
                     _bigBalances.Clear();
                     _projectingLegacy.Clear();
+                    _prefetched.Clear();
                 }
             }
         }

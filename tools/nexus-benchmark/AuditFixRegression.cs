@@ -25,6 +25,7 @@
 //   I29 ReInject runs [Inject] methods outside its lock (another thread's ReInject does not deadlock)
 //   I40 a deferred [Inject] method gets every argument when ReInject calls it
 //   I30 CommandPool.Return runs ResetState outside the pool lock; Clear during a reset drops the instance
+//   I33 EconomyService reads a currency's saved balance outside its balance lock
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -248,6 +249,37 @@ namespace NexusBench
         }
     }
 
+    /// <summary>Storage whose first read of a currency waits for another thread's Earn (issue #33): a deadlock while the read ran under the balance lock.</summary>
+    public sealed class I33WaitingStorage : IPlayerPrefsService
+    {
+        private readonly System.Collections.Generic.Dictionary<string, string> _values = new();
+        public Action OnFirstRead;
+        public bool InnerFinished;
+        private void FirstRead()
+        {
+            var hook = OnFirstRead;
+            if (hook == null) return;
+            OnFirstRead = null;
+            var inner = Task.Run(hook);
+            InnerFinished = inner.Wait(2000);
+        }
+        public bool HasKey(string key) { FirstRead(); lock (_values) return _values.ContainsKey(key); }
+        public long GetLong(string key, long defaultValue = 0L) { FirstRead(); lock (_values) return _values.TryGetValue(key, out var v) ? long.Parse(v, System.Globalization.CultureInfo.InvariantCulture) : defaultValue; }
+        public void SetLong(string key, long value) { lock (_values) _values[key] = value.ToString(System.Globalization.CultureInfo.InvariantCulture); }
+        public string GetString(string key, string defaultValue = "") { lock (_values) return _values.TryGetValue(key, out var v) ? v : defaultValue; }
+        public void SetString(string key, string value) { lock (_values) _values[key] = value; }
+        public int GetInt(string key, int defaultValue = 0) => (int)GetLong(key, defaultValue);
+        public void SetInt(string key, int value) => SetLong(key, value);
+        public float GetFloat(string key, float defaultValue = 0f) => defaultValue;
+        public void SetFloat(string key, float value) { }
+        public bool GetBool(string key, bool defaultValue = false) => defaultValue;
+        public void SetBool(string key, bool value) { }
+        public BigDouble GetBigDouble(string key, BigDouble defaultValue = default) => defaultValue;
+        public void SetBigDouble(string key, BigDouble value) { }
+        public void DeleteKey(string key) { lock (_values) _values.Remove(key); }
+        public void Save() { }
+    }
+
     /// <summary>Found by name convention for scope tag "I26Convention"; counts both teardown paths (issue #26).</summary>
     public sealed class I26ConventionLifecycle : IContextLifecycle, IDisposable
     {
@@ -296,6 +328,7 @@ namespace NexusBench
             Test_I29_ReInject_RunsUserCodeOutsideItsLock();
             Test_I40_DeferredInjectMethod_GetsEveryArgument();
             Test_I30_CommandPoolReset_RunsOutsideThePoolLock();
+            Test_I33_EconomyFirstTouchRead_RunsOutsideTheBalanceLock();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -1251,6 +1284,21 @@ namespace NexusBench
 
             Check("I30. CommandPoolReset_RunsOutsideThePoolLock", I30ResettingCmd.InnerFinished && reused && once,
                 $"inner Get finished={I30ResettingCmd.InnerFinished} (pre-fix: blocked on the pool lock Return held, 2 s timeout), returned instance reused={reused}, double return pooled once={once}");
+        }
+
+        private static void Test_I33_EconomyFirstTouchRead_RunsOutsideTheBalanceLock()
+        {
+            var storage = new I33WaitingStorage();
+            storage.SetLong("NT_Eco_gems", 40);
+            var economy = new EconomyService { PlayerPrefsService = storage };
+            storage.OnFirstRead = () => economy.Earn("coins", 5); // another thread touches another currency meanwhile
+            economy.Earn("gems", 2); // first touch of gems reads storage, which waits up to 2 s for that Earn
+            long gems = economy.GetBalance("gems");
+            long coins = economy.GetBalance("coins");
+            economy.Dispose();
+
+            Check("I33. EconomyFirstTouchRead_RunsOutsideTheBalanceLock", storage.InnerFinished && gems == 42 && coins == 5,
+                $"other currency's Earn finished={storage.InnerFinished} (pre-fix: blocked on the balance lock held during the storage read, 2 s timeout), gems={gems} (expected 42), coins={coins} (expected 5)");
         }
 
         private static bool SpinUntil(Func<bool> condition)
