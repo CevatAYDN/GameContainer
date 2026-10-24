@@ -124,6 +124,10 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdCapabilities.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapCapabilities.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapAdapterFactory.cs" />
+    <!-- Ads package family core (com.nexus.ads): engine-free by contract (noEngineReferences); the
+         AdsCoreSuite proves every PolicyGuard rule, the retry, the gate and the simulator here, and scans
+         these files for UnityEngine tokens because the stubs would otherwise hide a slip. -->
+    <Compile Include="../../Nexus/Packages/com.nexus.ads/Runtime/Core/**/*.cs" />
     <!-- Fully guarded/UI-only files: NexusDOTSBridge is #if UNITY_COLLECTIONS (empty
          in the harness), NexusDebugHUD is an OnGUI debug surface backed by no-op stubs. -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/DOTS/NexusDOTSBridge.cs" />

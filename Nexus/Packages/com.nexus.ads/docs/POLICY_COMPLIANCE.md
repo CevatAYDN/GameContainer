@@ -153,13 +153,13 @@ the publisher all the same; the rows list what each one adds beyond the rules ab
 
 ## PolicyGuard rule map
 
-The rules the brief asked for, each tied to the policies above. Numeric floors are code, not this
+The rules the brief asked for plus the unknown-placement rule, each tied to the policies above. Numeric floors are code, not this
 document; they are set and tested in `Nexus.Ads.Core` (issue #10) and may be tightened by a game,
 never loosened.
 
 | Rule id | What the guard blocks | Policies |
 |---|---|---|
-| `RewardedOnRequestOnly` | A rewarded show that did not start from a user request; a reward granted for anything but the SDK's reward callback. | AdMob rewards policy; Unity Rewarded Inventory Policy; Pangle. |
+| `RewardedOnRequestOnly` | Structural: the only show path is `AdController.Show(placement)` and there is no automatic show; a placement declared with another format is refused; the reward is granted once per show and only on the SDK's reward callback. | AdMob rewards policy; Unity Rewarded Inventory Policy; Pangle. |
 | `InterstitialNaturalBreakOnly` | An interstitial on a placement without `NaturalBreak`; any interstitial while the app is starting, resuming, exiting or in gameplay. | AdMob disallowed implementations; Play Ads policy; Unity Placement Policy; Pangle. |
 | `InterstitialFrequency` | An interstitial inside the minimum gap, inside the first seconds of a session, over the per-session or per-day cap, or right after a rewarded ad. | AdMob "one interstitial after every two user actions"; Play "repeatedly". |
 | `NoStackedAds` | A second full-screen ad while one is open; a request while an ad is showing. | AppLovin visibility rule; Play Families "multiple ad placements". |
@@ -171,6 +171,7 @@ never loosened.
 | `NoAdViewInterference` | The package never hides, overlays, resizes or alters an SDK ad view or its close button. | Play 15-second close rule; AppLovin, Pangle, Chartboost, Meta "rendered as received". |
 | `TestModeRequired` | A development build without the provider's test mode or Google's sample units; a release build with them. | AdMob test ads; MAX test mode; LevelPlay test devices. |
 | `UnregisteredDevice` | A live SDK request from a development build on a device that is not in the Test tab's device list (the simulator provider runs instead). | Invalid-traffic rules of every platform. |
+| `UnknownPlacement` | A placement name that is not declared in the settings, or declared with another format, for every format. | Decision 4 of issue #8; keeps the generated constants the only way to name a placement. |
 
 ## Rules the package cannot enforce
 

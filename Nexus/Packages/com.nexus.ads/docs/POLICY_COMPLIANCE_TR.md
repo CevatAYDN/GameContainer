@@ -153,13 +153,13 @@ de bağlar; satırlar her birinin yukarıdaki kuralların ötesinde ne eklediği
 
 ## PolicyGuard kural haritası
 
-Brief'in istediği kurallar, her biri yukarıdaki politikalara bağlı. Sayısal alt sınırlar bu belgede
+Brief'in istediği kurallar ve tanımsız yer kuralı, her biri yukarıdaki politikalara bağlı. Sayısal alt sınırlar bu belgede
 değil koddadır; `Nexus.Ads.Core` içinde (issue #10) belirlenir ve test edilir, bir oyun tarafından
 sıkılaştırılabilir, asla gevşetilemez.
 
 | Kural kimliği | Korumanın engellediği | Politikalar |
 |---|---|---|
-| `RewardedOnRequestOnly` | Kullanıcı isteğiyle başlamayan ödüllü gösterim; SDK'nın ödül callback'i dışında verilen ödül. | AdMob ödül politikası; Unity Ödüllü Envanter Politikası; Pangle. |
+| `RewardedOnRequestOnly` | Yapısal: tek gösterim yolu `AdController.Show(placement)` ve otomatik gösterim yok; başka formatla tanımlanmış yer reddedilir; ödül gösterim başına bir kez ve yalnızca SDK'nın ödül callback'inde verilir. | AdMob ödül politikası; Unity Ödüllü Envanter Politikası; Pangle. |
 | `InterstitialNaturalBreakOnly` | `NaturalBreak` işaretsiz yerde geçiş reklamı; uygulama açılırken, dönerken, çıkarken ya da oyun sırasında her geçiş reklamı. | AdMob izin verilmeyen uygulamalar; Play reklam politikası; Unity Yerleşim Politikası; Pangle. |
 | `InterstitialFrequency` | En az aralığın içinde, oturumun ilk saniyelerinde, oturum ya da gün üst sınırının üstünde ya da ödüllü reklamın hemen ardından geçiş reklamı. | AdMob "her iki kullanıcı eyleminde bir"; Play "tekrar tekrar". |
 | `NoStackedAds` | Biri açıkken ikinci tam ekran reklam; reklam gösterilirken istek. | AppLovin görünürlük kuralı; Play Aileler "birden çok reklam yeri". |
@@ -171,6 +171,7 @@ sıkılaştırılabilir, asla gevşetilemez.
 | `NoAdViewInterference` | Paket bir SDK reklam görünümünü ya da kapatma düğmesini asla gizlemez, üstüne çizmez, boyutlandırmaz, değiştirmez. | Play 15 saniye kapatma kuralı; AppLovin, Pangle, Chartboost, Meta "alındığı gibi çizilir". |
 | `TestModeRequired` | Sağlayıcının test modu ya da Google'ın örnek birimleri olmayan development build; bunlarla alınan release build. | AdMob test reklamları; MAX test modu; LevelPlay test cihazları. |
 | `UnregisteredDevice` | Test sekmesinin cihaz listesinde olmayan bir cihazda development build'den canlı SDK isteği (yerine simülatör sağlayıcı çalışır). | Her platformun geçersiz trafik kuralları. |
+| `UnknownPlacement` | Ayarlarda tanımlı olmayan ya da başka formatla tanımlanmış bir yer adı, her formatta. | Issue #8 karar 4; üretilen sabitleri bir yeri adlandırmanın tek yolu olarak tutar. |
 
 ## Paketin zorlayamadığı kurallar
 
