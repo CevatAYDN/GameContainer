@@ -94,7 +94,7 @@ namespace Nexus.Ads.LevelPlay
                 _rewarded.OnAdDisplayFailed += (_, error) => Finish(AdFormat.Rewarded, AdResult.Failed);
                 _rewarded.OnAdRewarded += (_, __) => OnRewarded();
                 _rewarded.OnAdClosed += _ => OnClosed(AdFormat.Rewarded);
-                _rewarded.OnAdImpressionDataReady += OnImpression;
+                _rewarded.OnAdImpressionDataReady += data => OnImpression(AdFormat.Rewarded, data);
             }
             if (_units.TryGetValue(AdFormat.Interstitial, out var interstitialUnit) && !string.IsNullOrEmpty(interstitialUnit))
             {
@@ -104,7 +104,7 @@ namespace Nexus.Ads.LevelPlay
                 _interstitial.OnAdDisplayed += _ => Opened?.Invoke(AdFormat.Interstitial);
                 _interstitial.OnAdDisplayFailed += (_, error) => Finish(AdFormat.Interstitial, AdResult.Failed);
                 _interstitial.OnAdClosed += _ => OnClosed(AdFormat.Interstitial);
-                _interstitial.OnAdImpressionDataReady += OnImpression;
+                _interstitial.OnAdImpressionDataReady += data => OnImpression(AdFormat.Interstitial, data);
             }
             var callback = _onReady; _onReady = null;
             callback?.Invoke(true);
@@ -189,7 +189,7 @@ namespace Nexus.Ads.LevelPlay
                     .Build();
                 _banner = new LevelPlayBannerAd(unit, config);
                 _banner.OnAdLoadFailed += error => Debug.LogWarning("[Nexus Ads] LevelPlay banner did not load: " + Describe(error));
-                _banner.OnAdImpressionDataReady += OnImpression;
+                _banner.OnAdImpressionDataReady += data => OnImpression(AdFormat.Banner, data);
                 _banner.LoadAd();
                 return;
             }
@@ -200,11 +200,10 @@ namespace Nexus.Ads.LevelPlay
 
         public void OpenTestSuite() => global::Unity.Services.LevelPlay.LevelPlay.LaunchTestSuite();
 
-        private void OnImpression(LevelPlayImpressionData data)
+        // the format comes from the ad object, not data.AdFormat: the device SDK sends "rewarded_video", the editor SDK "editor_mock_format"
+        private void OnImpression(AdFormat format, LevelPlayImpressionData data)
         {
             if (data == null) return;
-            var format = string.Equals(data.AdFormat, "rewarded", StringComparison.OrdinalIgnoreCase) || string.Equals(data.AdFormat, "rewardedvideo", StringComparison.OrdinalIgnoreCase) ? AdFormat.Rewarded
-                : string.Equals(data.AdFormat, "banner", StringComparison.OrdinalIgnoreCase) ? AdFormat.Banner : AdFormat.Interstitial;
             Revenue?.Invoke(new AdRevenue(data.AdNetwork ?? ProviderName, data.Placement ?? "", format, data.Revenue ?? 0, "USD", data.Precision ?? ""));
         }
 

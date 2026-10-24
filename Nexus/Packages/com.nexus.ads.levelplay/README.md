@@ -46,7 +46,7 @@ The assembly compiles only while the LevelPlay package is installed (`versionDef
 | `Show(format, placement)` | `ShowAd(placement)`; `OnAdDisplayed` → `Opened`; `OnAdClosed` answers `Closed` after a grace period of 1.5 s unless `OnAdRewarded` arrived (the SDK documents that the reward can fire after the close); `OnAdDisplayFailed` → `Failed` |
 | `ShowBanner`, `HideBanner` | one adaptive `LevelPlayBannerAd` at the top or bottom, `ShowAd` / `HideAd` |
 | `OpenTestSuite` | `LevelPlay.LaunchTestSuite()` (needs the test suite metadata, which test mode sets) |
-| `Revenue` | each ad's `OnAdImpressionDataReady` → `AdRevenue(network, placement, format, revenue, "USD", precision)` |
+| `Revenue` | each ad's `OnAdImpressionDataReady` → `AdRevenue(network, placement, format, revenue, "USD", precision)`, the format taken from the ad object (the SDK's `AdFormat` string is `rewarded_video` on Android) |
 
 Consent: LevelPlay ships no consent form. GDPR consent collected by Google UMP or a compatible CMP is
 shared with the SDK automatically (SDK 7.7.0+); a game with another CMP forwards its answer with

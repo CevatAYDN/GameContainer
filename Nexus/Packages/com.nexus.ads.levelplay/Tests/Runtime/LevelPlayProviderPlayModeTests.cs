@@ -23,7 +23,16 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
         private GameObject _host;
 
         [TearDown]
-        public void TearDown() { if (_host != null) Object.Destroy(_host); }
+        public void TearDown()
+        {
+            if (_host != null) Object.Destroy(_host);
+            // each ad object leaves its mock prefab in the scene; a later Close would otherwise find a stale one
+            foreach (var name in new[] { "RewardedPrefab", "InterstitialPrefab" })
+                foreach (var prefab in Object.FindObjectsByType(PrefabType(name), FindObjectsSortMode.None))
+                    Object.DestroyImmediate(((MonoBehaviour)prefab).gameObject);
+        }
+
+        private static System.Type PrefabType(string name) => typeof(LevelPlayRewardedAd).Assembly.GetTypes().First(t => t.Name == name);
 
         private static ProviderConfig Config() => new ProviderConfig("key",
             new Dictionary<AdFormat, string> { { AdFormat.Rewarded, "rewarded" }, { AdFormat.Interstitial, "interstitial" } }, true, new[] { "gaid" }, false, false, false, "G");
@@ -90,9 +99,29 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
             Assert.AreEqual(AdResult.Closed, results[0]);
         }
 
+        [UnityTest]
+        public IEnumerator Revenue_CarriesTheFormatOfTheAdThatEarnedIt_WhateverFormatStringTheSdkSends()
+        {
+            _host = new GameObject("scheduler");
+            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>());
+            var revenue = new List<AdFormat>();
+            provider.Revenue += r => revenue.Add(r.Format);
+            provider.Initialize(Config(), _ => { });
+            provider.Load(AdFormat.Rewarded);
+            provider.Show(AdFormat.Rewarded, "shop_refill", _ => { });
+            yield return null;
+            Close("RewardedPrefab");
+            provider.Load(AdFormat.Interstitial);
+            provider.Show(AdFormat.Interstitial, "level_end", _ => { });
+            yield return null;
+            Close("InterstitialPrefab");
+            // the editor SDK sends "editor_mock_format" and the Android SDK "rewarded_video"; neither names the format the old parser knew
+            CollectionAssert.AreEqual(new[] { AdFormat.Rewarded, AdFormat.Interstitial }, revenue);
+        }
+
         private static void Close(string prefabTypeName)
         {
-            var prefabType = typeof(LevelPlayRewardedAd).Assembly.GetTypes().First(t => t.Name == prefabTypeName);
+            var prefabType = PrefabType(prefabTypeName);
             var prefab = Object.FindAnyObjectByType(prefabType) as MonoBehaviour;
             Assert.IsNotNull(prefab, "the editor platform instantiated its mock ad " + prefabTypeName);
             prefabType.GetMethod("HideAd", BindingFlags.Instance | BindingFlags.NonPublic).Invoke(prefab, null);
