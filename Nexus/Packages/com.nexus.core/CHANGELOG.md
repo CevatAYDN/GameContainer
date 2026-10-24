@@ -56,6 +56,7 @@ everything under Unreleased is in the repository but not yet in a tagged package
 - `docs/ADAPTERS.md` said the package ships no AdMob or Unity IAP adapter (next to the section listing both) and did not say that `NEXUS_ADMOB` / `NEXUS_UNITY_IAP` exist only inside the adapter assemblies; a review suggested guarding game code with them, which removed ads and store from Gigawatt's builds.
 
 ### Removed
+- `NexusTemplateProvider` (Editor, issue #41): none of its 16 template methods was called by the package, its samples, the dev project, `tools/` or the consumer games; the setup wizard writes its own templates, so these had drifted (a plain-class lifecycle where the wizard writes a `MonoBehaviour`).
 - `ContextLifecycleOrchestrator.ExecuteLifecyclePhasesAsync` (issue #27): the Context never called it (it runs the lifecycle phases itself), and it differed from the real startup path by logging and swallowing a lifecycle's `OnInitializeAsync`/`OnStartAsync` exception. Only harness tests used it; no consumer game calls it (Gigawatt, Wickling, ChipCrisis, Pixel-Flow-Clone, IdleProject, PuzzleGame, RingFlow checked 2026-10-25). A game that called it starts its context through `Root`, `NexusLifetimeScope` or `Context.StartAsync` instead.
 
 
