@@ -67,20 +67,22 @@ namespace Nexus.Core
                     issues.Add(new DiValidationIssue(binding.Concrete, binding.Concrete,
                         DiValidationIssueType.MissingConstructorDependency,
                         $"[ConstructorExplosion] '{Label(binding)}' has {parameters.Length} constructor parameters (> {maxParameters})."));
+                ulong usedOverrides = 0;
                 for (int i = 0; i < parameters.Length; i++)
                 {
                     bool overridden = false;
                     if (binding.Overrides != null)
                         for (int o = 0; o < binding.Overrides.Length; o++)
-                            if (binding.Overrides[o].Type == parameters[i])
+                            if (binding.Overrides[o].Type == parameters[i] && (o >= 64 || (usedOverrides & (1UL << o)) == 0))
                             {
                                 overridden = true;
+                                if (o < 64) usedOverrides |= 1UL << o;
                                 var value = binding.Overrides[o].Value;
                                 if ((value == null && parameters[i].IsValueType && Nullable.GetUnderlyingType(parameters[i]) == null)
                                     || (value != null && !parameters[i].IsInstanceOfType(value)))
                                     issues.Add(new DiValidationIssue(binding.Concrete, parameters[i], DiValidationIssueType.InvalidBinding,
                                         $"'{Label(binding)}' constructor parameter {i} has an incompatible explicit value."));
-                                break; // First override wins, matching CreateInstance.
+                                break; // Each override fills one parameter in order, matching CreateInstanceCore.
                             }
                     if (!overridden)
                         Check(parameters[i], meta.ConstructorParameterNames?[i],

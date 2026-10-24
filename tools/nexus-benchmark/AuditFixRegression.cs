@@ -16,6 +16,7 @@
 //   A23-O3 a transient read error is not cached as "no value"
 //   A23-O4 a second Despawn does not destroy the pooled instance
 //   A23-M1 a singleton built while the container is disposed is disposed
+//   A23-M8 two constructor overrides of one type fill their parameters in order
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -143,6 +144,13 @@ namespace NexusBench
         public void Dispose() => Disposed = true;
     }
 
+    public sealed class A23TwoStrings
+    {
+        public readonly string First;
+        public readonly string Second;
+        public A23TwoStrings(string first, string second) { First = first; Second = second; }
+    }
+
     public static class AuditFixRegression
     {
         private static int _failures;
@@ -150,7 +158,7 @@ namespace NexusBench
         public static int Run()
         {
             Console.WriteLine();
-            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2/O3/O4/M1) ===");
+            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2/O3/O4/M1/M8) ===");
             _failures = 0;
 
             Test_Composite_NestedCompletion_NoLostTriggers();
@@ -171,6 +179,7 @@ namespace NexusBench
             Test_A23_TransientReadError_NotCachedAsMissing();
             Test_A23_DoubleDespawn_KeepsPooledInstance();
             Test_A23_SingletonBuiltDuringDispose_IsDisposed();
+            Test_A23_SameTypeOverrides_FillInOrder();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -956,6 +965,16 @@ namespace NexusBench
 
             Check("A23-M1. SingletonBuiltDuringDispose_IsDisposed", thrown == nameof(ObjectDisposedException) && A23OrphanSingleton.Disposed,
                 $"resolve threw {thrown} (expected ObjectDisposedException), instance disposed={A23OrphanSingleton.Disposed} (pre-fix: false, nothing owned it)");
+        }
+
+        private static void Test_A23_SameTypeOverrides_FillInOrder()
+        {
+            var di = new NexusDI();
+            di.BindTypedFactory<string, string, A23TwoStrings>();
+            var made = di.Resolve<IFactory<string, string, A23TwoStrings>>().Create("x", "y");
+
+            Check("A23-M8. SameTypeOverrides_FillInOrder", made.First == "x" && made.Second == "y",
+                $"first={made.First} second={made.Second} (expected x/y; pre-fix x/x)");
         }
     }
 }

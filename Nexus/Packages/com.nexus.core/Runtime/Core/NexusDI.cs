@@ -882,6 +882,9 @@ namespace Nexus.Core
                 var paramTypes = meta.ConstructorParameterTypes;
                 var paramNames = meta.ConstructorParameterNames;
                 var args = new object[paramTypes.Length];
+                // Each override fills one parameter, in order: Create("x", "y") on (string a, string b) gave "x" to both.
+                // shortcut: overrides past the 64th cannot be marked used and match first-wins; nothing passes that many.
+                ulong usedOverrides = 0;
                 for (int i = 0; i < paramTypes.Length; i++)
                 {
                     bool overridden = false;
@@ -889,9 +892,10 @@ namespace Nexus.Core
                     {
                         for (int o = 0; o < overrides.Count; o++)
                         {
-                            if (overrides[o].Type == paramTypes[i])
+                            if (overrides[o].Type == paramTypes[i] && (o >= 64 || (usedOverrides & (1UL << o)) == 0))
                             {
                                 args[i] = overrides[o].Value;
+                                if (o < 64) usedOverrides |= 1UL << o;
                                 overridden = true;
                                 break;
                             }
