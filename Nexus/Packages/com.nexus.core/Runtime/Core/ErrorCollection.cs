@@ -189,20 +189,30 @@ namespace Nexus.Core
             // Log to Unity console for backward compatibility (unless disabled)
             if (logToConsole)
             {
-                switch (severity)
+                // This entry is already collected: keep the log callback from collecting its console line a second time.
+                bool wasInLogCallback = s_inLogCallback;
+                s_inLogCallback = true;
+                try
                 {
-                    case ErrorSeverity.Info:
-                        Debug.Log($"[Nexus Info] {message}");
-                        break;
-                    case ErrorSeverity.Warning:
-                        Debug.LogWarning($"[Nexus Warning] {message}");
-                        break;
-                    case ErrorSeverity.Error:
-                        Debug.LogError($"[Nexus Error] {message}");
-                        break;
-                    case ErrorSeverity.Critical:
-                        Debug.LogError($"[Nexus CRITICAL] {message}");
-                        break;
+                    switch (severity)
+                    {
+                        case ErrorSeverity.Info:
+                            Debug.Log($"[Nexus Info] {message}");
+                            break;
+                        case ErrorSeverity.Warning:
+                            Debug.LogWarning($"[Nexus Warning] {message}");
+                            break;
+                        case ErrorSeverity.Error:
+                            Debug.LogError($"[Nexus Error] {message}");
+                            break;
+                        case ErrorSeverity.Critical:
+                            Debug.LogError($"[Nexus CRITICAL] {message}");
+                            break;
+                    }
+                }
+                finally
+                {
+                    s_inLogCallback = wasInLogCallback;
                 }
             }
         }
