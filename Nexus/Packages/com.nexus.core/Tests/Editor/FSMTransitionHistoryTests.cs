@@ -148,6 +148,8 @@ namespace Nexus.Editor.Tests
             fsm.SetErrorState<MockStateB>();
             fsm.RegisterState(new ThrowingState());
             fsm.RegisterState(new MockStateB());
+            // The state machine logs the failed enter before falling back to the error state.
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Exception, new System.Text.RegularExpressions.Regex("InvalidOperationException: boom"));
 
             await fsm.ChangeStateAsync<ThrowingState>();
 

@@ -205,7 +205,10 @@ namespace Nexus.Core
         /// <summary>
         /// Null-safe accessor for the registered <see cref="Services.ILoggerService"/> from <see cref="CurrentContext"/>.
         /// Cached per-context to avoid a DI lookup on every log call. Invalidated on context register/unregister.
-        /// Returns null if no context or logger service is registered.
+        /// Never null: with no context or no registered logger it returns a fallback with the same contract as
+        /// <see cref="Services.LoggerService"/> (errors and exceptions always reach Unity's log; Log and LogWarning
+        /// only in the editor and development builds), so a framework error cannot vanish because a game did not
+        /// bind a logger. The fallback is not cached: a context that registers its logger later replaces it.
         /// </summary>
         public static Services.ILoggerService Logger
         {
@@ -222,13 +225,27 @@ namespace Nexus.Core
                 if (cached != null) return cached;
 
                 var resolved = CurrentContext?.TryResolve<Services.ILoggerService>();
-                if (resolved != null)
-                    System.Threading.Interlocked.CompareExchange(ref s_cachedLogger, resolved, null);
+                if (resolved == null) return s_fallbackLogger;
+                System.Threading.Interlocked.CompareExchange(ref s_cachedLogger, resolved, null);
                 return resolved;
             }
         }
 
         private static Services.ILoggerService s_cachedLogger;
+        private static readonly Services.ILoggerService s_fallbackLogger = new FallbackLogger();
+
+        private sealed class FallbackLogger : Services.ILoggerService
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            public bool IsEnabled { get; set; } = true;
+#else
+            public bool IsEnabled { get; set; }
+#endif
+            public void Log(string message) { if (IsEnabled) Debug.Log(message); }
+            public void LogWarning(string message) { if (IsEnabled) Debug.LogWarning(message); }
+            public void LogError(string message) => Debug.LogError(message);
+            public void LogException(Exception exception) => Debug.LogException(exception);
+        }
         // Removed the dead s_loggerCacheLock field — the logger cache has
         // been lock-free (Volatile/Interlocked) since audit fix 2.1, and the field was
         // never referenced anywhere.

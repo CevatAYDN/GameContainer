@@ -1,4 +1,5 @@
 using System;
+using Nexus.Core;
 using Nexus.Core.Services;
 using NUnit.Framework;
 using UnityEngine;
@@ -31,6 +32,22 @@ namespace Nexus.Editor.Tests
 
             logger.LogWarning("[UnityIAP] dropped like any release warning");
             NexusLog.WarnAlways(logger, "[UnityIAP] Products not fetched");
+
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        /// <summary>
+        /// Framework errors go through NexusRuntime.Logger. With no ILoggerService bound it returned null and
+        /// every `Logger?.LogError` dropped the error: a ChipCrisis device build stopped at a black Boot screen
+        /// with no log line. Without a registered logger the error must still reach Unity's log.
+        /// </summary>
+        [Test]
+        public void FrameworkError_ReachesTheUnityLog_WhenNoLoggerIsRegistered()
+        {
+            NexusRuntime.Reset();
+            LogAssert.Expect(LogType.Error, "[Nexus] Root initialization failed: test");
+
+            NexusRuntime.Logger?.LogError("[Nexus] Root initialization failed: test");
 
             LogAssert.NoUnexpectedReceived();
         }

@@ -454,6 +454,7 @@ namespace Nexus.Tests
             using var registration = context.SignalBus.BindComposite<First, Second, FailingTypedCommand>(oneShot: true);
             context.SignalBus.Fire(new First());
 #if UNITY_EDITOR
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Command FailingTypedCommand failed: first attempt"));
             UnityEngine.TestTools.LogAssert.Expect(LogType.Error, "[Nexus Error] first attempt");
 #endif
             Assert.Throws<InvalidOperationException>(() => context.SignalBus.Fire(new Second()));
