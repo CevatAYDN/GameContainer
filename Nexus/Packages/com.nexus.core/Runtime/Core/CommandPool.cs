@@ -215,21 +215,31 @@ namespace Nexus.Core
                     System.Threading.Interlocked.Increment(ref _totalDiscarded);
                     return;
                 }
+            }
 
-                try
-                {
-                    Cleanup(command);
-                }
-                catch
+            // Cleanup runs IResettableCommand.ResetState (user code) outside the lock: a ResetState that
+            // waited on a thread needing this pool deadlocked. The claim above keeps a second Return out,
+            // and Get only pops instances that reached the stack.
+            try
+            {
+                Cleanup(command);
+            }
+            catch
+            {
+                lock (_poolLock)
                 {
                     // Roll back the membership marker so the instance is not left registered
                     // as pooled while never reaching the pool stack.
                     _pooledInstances.Remove(command);
                     _ownedInstances.Remove(command);
-                    throw;
                 }
+                throw;
+            }
 
-                if (_pool.Count < _maxSize)
+            lock (_poolLock)
+            {
+                // Clear() during the cleanup dropped the claim: the instance is discarded like the idle ones.
+                if (_pooledInstances.Contains(command) && _pool.Count < _maxSize)
                 {
                     _pool.Push(command);
                     System.Threading.Interlocked.Increment(ref _totalReturns);

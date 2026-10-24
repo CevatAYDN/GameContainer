@@ -24,6 +24,7 @@
 //   I28 a failed async one-shot composite surfaces (FireAsync) or is released (Fire), and fires again
 //   I29 ReInject runs [Inject] methods outside its lock (another thread's ReInject does not deadlock)
 //   I40 a deferred [Inject] method gets every argument when ReInject calls it
+//   I30 CommandPool.Return runs ResetState outside the pool lock; Clear during a reset drops the instance
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -231,6 +232,22 @@ namespace NexusBench
         public void Init(I40First first, I40Second second) { First = first; Second = second; Calls++; }
     }
 
+    /// <summary>Its ResetState waits for another thread's Get on the same pool (issue #30): a deadlock while Return held the pool lock.</summary>
+    public sealed class I30ResettingCmd : ICommand, IResettableCommand
+    {
+        public static CommandPool Pool;
+        public static bool InnerFinished;
+        public void Execute() { }
+        public void ResetState()
+        {
+            var pool = Pool;
+            if (pool == null) return;
+            Pool = null;
+            var inner = Task.Run(() => pool.Get());
+            InnerFinished = inner.Wait(2000);
+        }
+    }
+
     /// <summary>Found by name convention for scope tag "I26Convention"; counts both teardown paths (issue #26).</summary>
     public sealed class I26ConventionLifecycle : IContextLifecycle, IDisposable
     {
@@ -278,6 +295,7 @@ namespace NexusBench
             Test_I28_FailedAsyncOneShotComposite_FiresAgain();
             Test_I29_ReInject_RunsUserCodeOutsideItsLock();
             Test_I40_DeferredInjectMethod_GetsEveryArgument();
+            Test_I30_CommandPoolReset_RunsOutsideThePoolLock();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -1216,6 +1234,23 @@ namespace NexusBench
             Check("I40. DeferredInjectMethod_GetsEveryArgument",
                 callsBefore == 0 && done && host.Calls == 1 && host.First != null && host.Second != null,
                 $"calls before={callsBefore}, after ReInject={host.Calls}, first={(host.First != null ? "set" : "null")}, second={(host.Second != null ? "set" : "null")} (pre-fix: first null, only the missing parameter was resolved)");
+        }
+
+        private static void Test_I30_CommandPoolReset_RunsOutsideThePoolLock()
+        {
+            var pool = new CommandPool(typeof(I30ResettingCmd), () => new I30ResettingCmd());
+            var command = pool.Get();
+            I30ResettingCmd.InnerFinished = false;
+            I30ResettingCmd.Pool = pool;
+            pool.Return(command); // ResetState waits up to 2 s for Get on another thread
+            I30ResettingCmd.Pool = null;
+            bool reused = ReferenceEquals(pool.Get(), command);
+            pool.Return(command);
+            pool.Return(command); // the double-return guard still holds
+            bool once = ReferenceEquals(pool.Get(), command) && !ReferenceEquals(pool.Get(), command);
+
+            Check("I30. CommandPoolReset_RunsOutsideThePoolLock", I30ResettingCmd.InnerFinished && reused && once,
+                $"inner Get finished={I30ResettingCmd.InnerFinished} (pre-fix: blocked on the pool lock Return held, 2 s timeout), returned instance reused={reused}, double return pooled once={once}");
         }
 
         private static bool SpinUntil(Func<bool> condition)
