@@ -348,7 +348,15 @@ namespace Nexus.Ads.Editor
                 var resolver = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("GooglePlayServices.PlayServicesResolver")).FirstOrDefault(t => t != null);
                 var resolveSync = resolver?.GetMethods().FirstOrDefault(m => m.Name == "ResolveSync" && m.GetParameters().Length == 1);
                 if (resolveSync == null) result.Log.Add("resolve: no dependency resolver in the editor yet");
-                else result.Log.Add("resolve: ResolveSync returned " + resolveSync.Invoke(null, new object[] { true }));
+                else
+                {
+                    object answer = resolveSync.Invoke(null, new object[] { true });
+                    // the resolver has answered false while writing the template (runs of 2026-10-24 and -25); the template is what Gradle reads, so report it
+                    var missing = ResolvedMarkers(sdk).Where(m => File.ReadAllText(MainTemplatePath).IndexOf(m, StringComparison.Ordinal) < 0).ToList();
+                    result.Log.Add(missing.Count == 0
+                        ? "resolve: the Gradle template now names " + string.Join(", ", ResolvedMarkers(sdk))
+                        : "resolve: the Gradle template still misses " + string.Join(", ", missing) + " (the resolver answered " + answer + "); run Assets > External Dependency Manager > Android Resolver > Force Resolve and read its log");
+                }
             }
             if (Pending("admob.appid"))
             {
