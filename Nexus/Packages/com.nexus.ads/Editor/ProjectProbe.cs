@@ -32,6 +32,12 @@ namespace Nexus.Ads.Editor
         string ConsumerManifestJson { get; }
         /// <summary>The app id in the Google Mobile Ads settings asset for the platform, or null when the asset is absent.</summary>
         string AdMobSettingsAppId(AdPlatform platform);
+        /// <summary>The installed version of a package, or null when it is not in the project.</summary>
+        string PackageVersion(string package);
+        /// <summary>Text of a file inside an installed package (path relative to the package root), or null.</summary>
+        string PackageFileText(string package, string relativePath);
+        /// <summary>Text of a project file (Assets/...), or null when it does not exist.</summary>
+        string ProjectFileText(string path);
     }
 
     /// <summary>The probe over the open project. Detection of SDKs and adapters is by package name, assembly name and well-known folders; the messages say so.</summary>
@@ -59,13 +65,14 @@ namespace Nexus.Ads.Editor
         private readonly HashSet<string> _assemblies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private readonly List<string> _networks = new List<string>();
         private readonly List<string> _linkXml = new List<string>();
+        private readonly Dictionary<string, UnityEditor.PackageManager.PackageInfo> _packages = new Dictionary<string, UnityEditor.PackageManager.PackageInfo>(StringComparer.OrdinalIgnoreCase);
 
         public UnityProjectProbe()
         {
             ConsumerManifestJson = File.Exists("Packages/manifest.json") ? File.ReadAllText("Packages/manifest.json") : "{}";
             foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(ConsumerManifestJson, "\"(com\\.[a-z0-9.\\-]+)\"\\s*:"))
                 _manifestPackages.Add(m.Groups[1].Value);
-            foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages()) _manifestPackages.Add(package.name);
+            foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages()) { _manifestPackages.Add(package.name); _packages[package.name] = package; }
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) _assemblies.Add(asm.GetName().Name);
             foreach (var pair in NetworkKeywords) if (Mentions(pair.keywords)) _networks.Add(pair.id);
             if (Directory.Exists("Assets"))
@@ -79,7 +86,15 @@ namespace Nexus.Ads.Editor
         public bool SdkViaUpm(AdProviderKind kind) => UpmPackage.TryGetValue(kind, out var name) && _manifestPackages.Contains(name);
         public bool ProviderPackageInstalled(AdProviderKind kind) => ProviderAssembly.TryGetValue(kind, out var name) && _assemblies.Contains(name);
         public IReadOnlyList<string> DetectedNetworks => _networks;
-        public bool ExternalDependencyManagerInstalled => _manifestPackages.Contains("com.google.external-dependency-manager") || _assemblies.Contains("Google.JarResolver") || Directory.Exists("Assets/ExternalDependencyManager");
+        public bool ExternalDependencyManagerInstalled => _manifestPackages.Contains("com.google.external-dependency-manager") || _manifestPackages.Contains("com.unity.external-dependency-manager") || _assemblies.Contains("Google.JarResolver") || Directory.Exists("Assets/ExternalDependencyManager");
+        public string PackageVersion(string package) => package != null && _packages.TryGetValue(package, out var info) ? info.version : null;
+        public string PackageFileText(string package, string relativePath)
+        {
+            if (package == null || relativePath == null || !_packages.TryGetValue(package, out var info)) return null;
+            string path = Path.Combine(info.resolvedPath, relativePath);
+            return File.Exists(path) ? File.ReadAllText(path) : null;
+        }
+        public string ProjectFileText(string path) => File.Exists(path) ? File.ReadAllText(path) : null;
         public string CustomAndroidManifest { get; }
         public int AndroidTargetSdk { get; }
         public int AndroidMinSdk { get; }

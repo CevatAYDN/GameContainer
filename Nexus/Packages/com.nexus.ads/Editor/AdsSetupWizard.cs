@@ -10,7 +10,8 @@ namespace Nexus.Ads.Editor
     /// Tools > Nexus Ads > Setup: from nothing to a live ad, one window. Rows come from the catalog,
     /// badges from <see cref="ProviderStatusResolver"/>, the next step from the validator's first
     /// failing check. Links open the official pages; "Install SDK" adds the UPM package where the
-    /// catalog names a registry Unity can reach.
+    /// catalog names a registry Unity can reach; "Prepare Android" performs the selected mediation's
+    /// Android setup (<see cref="AndroidSetup"/>).
     /// </summary>
     public sealed class AdsSetupWizard : EditorWindow
     {
@@ -20,6 +21,7 @@ namespace Nexus.Ads.Editor
         private AdsValidationReport _report;
         private UnityProjectProbe _probe;
         private PlatformCatalog _catalog;
+        private AdsValidator.Tab _androidTab = AdsValidator.Tab.Test;
 
         private void OnEnable() => Refresh();
         private void OnFocus() => Refresh();
@@ -142,7 +144,25 @@ namespace Nexus.Ads.Editor
             }
 
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField(_turkish ? "5. Kodla zorlanamayan kurallar (onaylayın)" : "5. Rules the package cannot enforce (confirm each)", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(_turkish ? "5. Android (seçili mediation)" : "5. Android (selected mediation)", EditorStyles.boldLabel);
+            _androidTab = (AdsValidator.Tab)GUILayout.Toolbar((int)_androidTab, _turkish ? new[] { "Test sekmesi (development build)", "Release sekmesi" } : new[] { "Test tab (development build)", "Release tab" });
+            var plan = AndroidSetup.Plan(settings, _androidTab, probe, catalog);
+            if (plan.Count == 0) EditorGUILayout.LabelField(_turkish ? "Mediation seçilmedi; hazırlanacak bir şey yok." : "No mediation selected; nothing to prepare.", EditorStyles.wordWrappedMiniLabel);
+            foreach (var step in plan)
+            {
+                string status = step.status == SetupStatus.Done ? (_turkish ? "Tamam" : "Done") : step.status == SetupStatus.Pending ? (_turkish ? "Bekliyor" : "Pending") : (_turkish ? "Elle" : "Manual");
+                EditorGUILayout.LabelField("[" + status + "] " + step.what, step.how, EditorStyles.wordWrappedMiniLabel);
+            }
+            using (new EditorGUI.DisabledScope(!plan.Exists(s => s.status == SetupStatus.Pending)))
+                if (GUILayout.Button(_turkish ? "Android'i hazırla" : "Prepare Android"))
+                {
+                    var applied = AndroidSetup.Apply(settings, _androidTab, catalog);
+                    foreach (var line in applied.Log) Debug.Log("[Nexus Ads] Prepare Android: " + line);
+                    Refresh();
+                }
+
+            EditorGUILayout.Space();
+            EditorGUILayout.LabelField(_turkish ? "6. Kodla zorlanamayan kurallar (onaylayın)" : "6. Rules the package cannot enforce (confirm each)", EditorStyles.boldLabel);
             foreach (var line in _turkish ? ChecklistTr : ChecklistEn)
             {
                 string key = PrefRegistered + Application.productName + ".check." + line.GetHashCode();
@@ -152,7 +172,7 @@ namespace Nexus.Ads.Editor
             }
 
             EditorGUILayout.Space();
-            EditorGUILayout.LabelField(_turkish ? "6. Doğrula" : "6. Validate", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField(_turkish ? "7. Doğrula" : "7. Validate", EditorStyles.boldLabel);
             using (new EditorGUILayout.HorizontalScope())
             {
                 if (GUILayout.Button(_turkish ? "Test sekmesi" : "Test tab")) _report = AdsValidator.Validate(settings, AdsValidator.Tab.Test, AdPlatform.Android, probe, catalog);
@@ -168,17 +188,12 @@ namespace Nexus.Ads.Editor
             if (provider.Kind == AdProviderKind.LevelPlay && upm != null) { Client.Add(upm.package); Debug.Log("[Nexus Ads] adding " + upm.package + " from the Unity registry"); return; }
             if (provider.Kind == AdProviderKind.AdMob && upm != null)
             {
-                // OpenUPM is a scoped registry the project may not have yet; write it, then add the package.
-                // shortcut: an existing OpenUPM registry without the com.google scope is not extended, so Client.Add fails there; extend the scopes by hand until the wizard edits registries.
+                // OpenUPM is a scoped registry the project may not have yet: add it, or extend its scopes, then add the package
                 string manifest = File.ReadAllText("Packages/manifest.json");
-                if (manifest.IndexOf("package.openupm.com", System.StringComparison.Ordinal) < 0)
-                {
-                    string registry = "  \"scopedRegistries\": [\n    { \"name\": \"package.openupm.com\", \"url\": \"https://package.openupm.com\", \"scopes\": [ \"com.google\" ] }\n  ],\n";
-                    manifest = manifest.Replace("{\n", "{\n" + registry).Replace("{\r\n", "{\r\n" + registry.Replace("\n", "\r\n"));
-                    File.WriteAllText("Packages/manifest.json", manifest);
-                }
+                string updated = AndroidSetup.WithOpenUpmScopes(manifest, upm.scopes ?? new[] { upm.package });
+                if (updated != manifest) File.WriteAllText("Packages/manifest.json", updated);
                 Client.Add(upm.package);
-                Debug.Log("[Nexus Ads] adding " + upm.package + " from OpenUPM (and com.google.external-dependency-manager comes with it)");
+                Debug.Log("[Nexus Ads] adding " + upm.package + " from OpenUPM (11.6.0 brings Unity's External Dependency Manager as its dependency)");
                 return;
             }
             // MAX: AppLovin's installer package writes its own scoped registry; the catalog points at the releases.

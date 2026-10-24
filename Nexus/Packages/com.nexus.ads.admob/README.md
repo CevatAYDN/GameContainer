@@ -18,8 +18,9 @@ Install the plugin from OpenUPM (scoped registry below; 11.6.0 brings Unity's Ex
 Manager, `com.unity.external-dependency-manager`, as its own dependency and resolves its Android
 libraries during the build), list
 `com.nexus.ads` and this package at the same commit, select **AdMob** in **Project Settings > Nexus
-Ads** and put an `AdsBootstrap` in the first scene; the provider registers itself before the first
-scene loads. A Nexus game adds `com.nexus.ads.bridge.nexus` and calls `NexusAdsBridge.Connect`.
+Ads**, press **Tools > Nexus Ads > Setup > Prepare Android** (it writes the tab's App ID into the
+plugin's settings asset) and put an `AdsBootstrap` in the first scene; the provider registers itself
+before the first scene loads. A Nexus game adds `com.nexus.ads.bridge.nexus` and calls `NexusAdsBridge.Connect`.
 
 What it does:
 - **Consent:** asks the User Messaging Platform for an update on every launch (Google's privacy page

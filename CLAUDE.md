@@ -33,6 +33,7 @@ python tools/check-docs.py                                       # markdown link
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults Nexus\artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Ads.Editor.AdsValidator.RunCli -adsTab Release -adsPlatform Android -adsReport artifacts/ads-validation.json   # ads settings check; exit 0 pass, 1 fail, 2 could not run; the report path is relative to the project folder
+& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath <consumer> -buildTarget Android -executeMethod Nexus.Ads.Editor.AndroidSetup.PrepareCli -adsTab Test   # Prepare Android for the selected mediation, without -quit; exit 0 done, 1 steps remain, 2 could not run, 3 packages added (run again)
 ./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date> -Android            # reflection configuration: host, Mono player, Android device
 ./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date>-generated -Android -Generated   # generated bindings (own artifact folder: the analyzer and the define stay in the project)
 ```

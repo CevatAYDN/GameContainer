@@ -27,7 +27,15 @@
         "assembly": "Unity.LevelPlay",
         "init": "LevelPlay.Init(appKey)",
         "minAndroidApi": 19,
-        "minIos": "13"
+        "minIos": "13",
+        "providerPackage": "com.nexus.ads.levelplay",
+        "resolver": "external",
+        "nativeDependencyFile": "Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml",
+        "nativeVersionsJson": "Editor/Json/LevelPlayVersions.json",
+        "nativeSource": "the package's own Editor/Json/LevelPlayVersions.json (ironSourceSdkVersion per package version, dependencyXmlURL): the file LevelPlay's Network Manager installs; read 2026-10-24",
+        "resolvedMarker": "com.unity3d.ads-mediation:mediation-sdk",
+        "gradleLines": [ "implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')" ],
+        "gradleNote": "mediation-sdk 9.5.0 brings kotlin-stdlib-jdk7/jdk8 1.6.0 next to Unity 6000.5's kotlin-stdlib 1.8.22; Gradle stops on duplicate classes until the BOM aligns them (device build, 2026-10-24)"
       },
       "testData": {
         "published": false,
@@ -79,7 +87,10 @@
         "init": "MaxSdk.InitializeSdk()",
         "sdkKeyLocation": "AppLovin > Integration Manager > SDK Settings",
         "jetifier": true,
-        "minUnity": "2019.4"
+        "minUnity": "2019.4",
+        "providerPackage": "com.nexus.ads.max",
+        "resolver": "bundledWithPlugin",
+        "resolverNote": "not verified: no MAX plugin or provider in this repository yet"
       },
       "testData": {
         "published": false,
@@ -130,7 +141,10 @@
         "define": "NEXUS_ADMOB",
         "settingsAsset": "Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset",
         "testDevicesApi": "RequestConfiguration.TestDeviceIds",
-        "adIdPermission": "com.google.android.gms.permission.AD_ID declared by GMA SDK 20.4.0+"
+        "adIdPermission": "com.google.android.gms.permission.AD_ID declared by GMA SDK 20.4.0+",
+        "providerPackage": "com.nexus.ads.admob",
+        "resolver": "bundledWithSdk",
+        "resolverNote": "com.google.ads.mobile 11.6.0 depends on com.unity.external-dependency-manager 2.1.0; its build pre-processor resolves the Android libraries"
       },
       "testData": {
         "published": true,

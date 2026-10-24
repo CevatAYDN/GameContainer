@@ -20,6 +20,9 @@ namespace Nexus.Ads.Tests
         public string AdMobAppId;
         public int TargetSdk = 34, MinSdk = 23;
         public string AndroidManifest;
+        public readonly Dictionary<string, string> Packages = new Dictionary<string, string>();
+        public readonly Dictionary<string, string> PackageFiles = new Dictionary<string, string>();
+        public readonly Dictionary<string, string> Files = new Dictionary<string, string>();
 
         public bool SdkInstalled(AdProviderKind kind) => Sdks.Contains(kind);
         public bool SdkViaUpm(AdProviderKind kind) => Upm.Contains(kind);
@@ -32,10 +35,22 @@ namespace Nexus.Ads.Tests
         public IReadOnlyList<string> LinkXmlTexts => LinkXml;
         public string ConsumerManifestJson => Manifest;
         public string AdMobSettingsAppId(AdPlatform platform) => AdMobAppId;
+        public string PackageVersion(string package) => package != null && Packages.TryGetValue(package, out var v) ? v : null;
+        public string PackageFileText(string package, string relativePath) => PackageFiles.TryGetValue(package + "/" + relativePath, out var t) ? t : null;
+        public string ProjectFileText(string path) => path != null && Files.TryGetValue(path, out var t) ? t : null;
 
         public FakeProbe Installed(AdProviderKind kind, bool viaUpm = true)
         {
             Sdks.Add(kind); ProviderPackages.Add(kind); if (viaUpm) Upm.Add(kind);
+            Packages[kind == AdProviderKind.LevelPlay ? "com.nexus.ads.levelplay" : kind == AdProviderKind.AdMob ? "com.nexus.ads.admob" : "com.nexus.ads.max"] = "0.1.0";
+            return this;
+        }
+
+        /// <summary>What Prepare Android leaves behind for LevelPlay: the native SDK declaration and a resolved template with the Kotlin alignment.</summary>
+        public FakeProbe AndroidPrepared()
+        {
+            Files[AndroidSetup.MainTemplatePath] = "dependencies {\n    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')\n    implementation 'com.unity3d.ads-mediation:mediation-sdk:9.5.0'\n}\n";
+            Files["Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml"] = "<dependencies/>";
             return this;
         }
     }
@@ -59,7 +74,7 @@ namespace Nexus.Ads.Tests
             _settings.Test.LevelPlay.Android.RewardedUnitId = "live-rewarded";
             _settings.TestDeviceIds.Add("gaid");
             _catalog = PlatformCatalog.Load();
-            _probe = new FakeProbe().Installed(AdProviderKind.LevelPlay);
+            _probe = new FakeProbe().Installed(AdProviderKind.LevelPlay).AndroidPrepared();
             _probe.LinkXml.Add("<linker><assembly fullname=\"Nexus.Ads.Core\" preserve=\"all\"/></linker>");
         }
 

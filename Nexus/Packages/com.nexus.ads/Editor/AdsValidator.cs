@@ -192,6 +192,16 @@ namespace Nexus.Ads.Editor
             }
         }
 
+        private static void AddPlanCheck(AdsValidationReport report, List<SetupStep> plan, string id, string[] stepIds, string consequence)
+        {
+            var steps = plan.FindAll(s => Array.IndexOf(stepIds, s.id) >= 0);
+            if (steps.Count == 0) return;
+            var open = steps.FindAll(s => s.status != SetupStatus.Done);
+            report.Add(open.Count == 0
+                ? new AdsCheck(id, CheckResult.Pass, string.Join("; ", steps.ConvertAll(s => s.what + ": " + s.how)))
+                : new AdsCheck(id, CheckResult.Fail, "Android: " + string.Join("; ", open.ConvertAll(s => s.what)) + " missing; " + consequence + ".", "press Prepare Android in Tools > Nexus Ads > Setup, or run AndroidSetup.PrepareCli."));
+        }
+
         private static void CheckSdk(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool release, IProjectProbe probe, PlatformCatalog catalog, AdsValidationReport report)
         {
             if (probe.SdkInstalled(kind) && !probe.SdkViaUpm(kind))
@@ -206,17 +216,25 @@ namespace Nexus.Ads.Editor
                 var tab = release ? settings.Release : settings.Test;
                 string expected = tab.AdMob.For(platform).AppKey?.Trim();
                 if (appId == null)
-                    report.Add(new AdsCheck("android.admob.appid", release ? CheckResult.Fail : CheckResult.Warn, "the Google Mobile Ads settings asset (Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset) is missing; the plugin writes the App ID to the manifest from it.", "open Assets > Google Mobile Ads > Settings once and enter the App ID."));
+                    report.Add(new AdsCheck("android.admob.appid", release ? CheckResult.Fail : CheckResult.Warn, "the Google Mobile Ads settings asset (Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset) is missing; the plugin writes the App ID to the manifest from it.", "press Prepare Android in Tools > Nexus Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
                 else if (string.IsNullOrWhiteSpace(appId) || (!string.IsNullOrEmpty(expected) && appId.Trim() != expected))
-                    report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "the Google Mobile Ads settings asset carries '" + appId + "' but the " + (release ? "Release" : "Test") + " tab says '" + expected + "'; the manifest would start the SDK with the wrong app.", "enter the same App ID in Assets > Google Mobile Ads > Settings."));
+                    report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "the Google Mobile Ads settings asset carries '" + appId + "' but the " + (release ? "Release" : "Test") + " tab says '" + expected + "'; the manifest would start the SDK with the wrong app.", "press Prepare Android in Tools > Nexus Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
                 else
                     report.Add(new AdsCheck("android.admob.appid", CheckResult.Pass, "Google Mobile Ads settings asset carries the tab's App ID"));
             }
 
             if (release && !probe.ExternalDependencyManagerInstalled)
-                report.Add(new AdsCheck("android.edm", CheckResult.Fail, "the External Dependency Manager is not in the project; the SDK's Android and iOS dependencies are not resolved without it.", "install com.google.external-dependency-manager (OpenUPM) and run Assets > External Dependency Manager > Android Resolver > Resolve."));
+                report.Add(new AdsCheck("android.edm", CheckResult.Fail, "the External Dependency Manager is not in the project; the SDK's Android and iOS dependencies are not resolved without it.", "press Prepare Android in Tools > Nexus Ads > Setup (it adds the resolver the selected mediation needs and resolves)."));
             else
                 report.Add(new AdsCheck("android.edm", CheckResult.Pass, probe.ExternalDependencyManagerInstalled ? "External Dependency Manager present" : "External Dependency Manager not checked for the Test tab"));
+
+            // the Android setup the build needs, from the same plan Prepare Android performs
+            if (platform == AdPlatform.Android && probe.SdkInstalled(kind) && !(release && settings.AdFreeRelease))
+            {
+                var plan = AndroidSetup.Plan(settings, release ? Tab.Release : Tab.Test, probe, catalog);
+                AddPlanCheck(report, plan, "android.nativesdk", new[] { "native.sdk", "resolve" }, "the Gradle build fails without the native SDK (LevelPlay: cannot find symbol IronSourceError)");
+                AddPlanCheck(report, plan, "android.gradle", new[] { "gradle.template", "gradle.lines" }, "the Gradle build fails without them (LevelPlay on Unity 6000.5: duplicate Kotlin classes)");
+            }
 
             var provider = catalog.Provider(kind);
             if (provider?.sdk != null && provider.sdk.minAndroidApi > 0 && probe.AndroidMinSdk > 0 && probe.AndroidMinSdk < provider.sdk.minAndroidApi)

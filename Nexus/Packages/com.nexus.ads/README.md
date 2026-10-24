@@ -101,9 +101,20 @@ it after its listeners ran, a game that saves asynchronously acknowledges it its
 - **Tools > Nexus Ads > Setup**: the wizard. Every provider and network row from the catalog with its
   status badge, next step, registration / docs / policy links, "Install SDK" (LevelPlay from the Unity
   registry, AdMob from OpenUPM with the scoped registry written for you, MAX through AppLovin's
-  installer), the setup steps in English and Turkish, the checklist of rules code cannot enforce, and
-  the project buttons (generate placements, write `Assets/NexusAds/link.xml`, pin the family packages
-  to one commit).
+  installer), the setup steps in English and Turkish, the project buttons (generate placements, write
+  `Assets/NexusAds/link.xml`, pin the family packages to one commit), **Prepare Android**, the
+  checklist of rules code cannot enforce, and the validator.
+- **Prepare Android** (`AndroidSetup`, data in `Editor/PlatformCatalog.json`): the selected mediation's
+  Android setup as a list of steps marked Done, Pending or Manual for the Test or Release tab, and one
+  button that performs the Pending ones: the SDK and the Nexus provider package (at the commit
+  `com.nexus.ads` is pinned to), the dependency resolver, the native SDK declaration (LevelPlay: the
+  version the installed package names in its own `LevelPlayVersions.json`, downloaded from LevelPlay's
+  server as its Network Manager does), the custom main Gradle template with the catalog's Gradle lines,
+  the resolution, and the AdMob App ID in the plugin's settings asset. Adding packages reloads the
+  editor, so that press stops there and the next press continues; every step is safe to repeat. MAX
+  shows Manual rows until its provider exists. Command line:
+  `Unity.exe -batchmode -nographics -projectPath <project> -buildTarget Android -executeMethod Nexus.Ads.Editor.AndroidSetup.PrepareCli -adsTab Test`
+  without `-quit` (exit 0 all Done, 1 steps remain, 2 could not run, 3 packages added: run it again).
 - **Window > Nexus Ads > Placement Tester**: in Play Mode, every placement with its readiness, a Show
   button, the result and the rule that blocked it, the simulator scenario and buttons, the pending
   reward, and the live event log.
@@ -138,6 +149,8 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | `sdk.unitypackage` | warn: the SDK is a `.unitypackage` import; names the define to set |
 | `android.admob.appid` | fail: the Google Mobile Ads settings asset disagrees with the tab's App ID |
 | `android.edm` | fail (release): External Dependency Manager missing |
+| `android.nativesdk` | fail: the selected mediation's native SDK declaration is missing or not resolved into the Gradle template (LevelPlay's Gradle build would stop at `IronSourceError`) |
+| `android.gradle` | fail: the custom main Gradle template or one of the catalog's Gradle lines is missing (LevelPlay on Unity 6000.5: duplicate Kotlin classes) |
 | `android.minsdk` | warn: minimum API below the provider's |
 | `child.mediation` | fail: child-directed with a mediation whose policies forbid children's apps (MAX) |
 | `child.networks` | warn: child-directed with an adapter of a network off Google's Families list (heuristic detection) |

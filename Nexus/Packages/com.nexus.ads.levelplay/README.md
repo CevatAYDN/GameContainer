@@ -11,19 +11,21 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
 ## Install
 
 1. **Tools > Nexus Ads > Setup > Install SDK** on the LevelPlay row adds `com.unity.services.levelplay`
-   from the Unity registry (or Package Manager > Ads Mediation). The package holds only the C# side:
-   the native Android SDK comes from **Ads Mediation > Network Manager**, whose LevelPlay SDK row
-   writes `Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml` (`com.unity3d.ads-mediation:mediation-sdk`
-   for 9.5.x), and from a dependency resolver (the Mobile Dependency Resolver LevelPlay offers on first
-   load, or `com.google.external-dependency-manager`): **Assets > External Dependency Manager > Android
-   Resolver > Resolve**. The same window installs the network adapters. Skipped, the Android build fails
-   in Gradle with `cannot find symbol IronSourceError`.
-   With Unity 6000.5, mediation-sdk 9.5.0 brings `kotlin-stdlib-jdk7` / `-jdk8` 1.6.0 next to Unity's
-   `kotlin-stdlib` 1.8.22 and Gradle stops on duplicate classes; align them in
-   `Assets/Plugins/Android/mainTemplate.gradle` (Player Settings > Publishing Settings > Custom Main
-   Gradle Template), outside the resolver's markers:
-   `implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')`. Both steps were needed for the
-   device run of 2026-10-24.
+   from the Unity registry (or Package Manager > Ads Mediation). The package holds only the C# side.
+   **Tools > Nexus Ads > Setup > Prepare Android** does the rest of the Android setup, and the validator
+   (`android.nativesdk`, `android.gradle`) stops an Android build that misses it:
+   - the dependency resolver (`com.google.external-dependency-manager` from OpenUPM);
+   - the native SDK declaration `Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml`
+     (`com.unity3d.ads-mediation:mediation-sdk` 9.5.0 for package 9.5.1), the file LevelPlay's Network
+     Manager installs, for the version the installed package names in its `LevelPlayVersions.json`;
+     without it Gradle fails with `cannot find symbol IronSourceError`;
+   - the custom main Gradle template with `implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')`:
+     on Unity 6000.5 mediation-sdk 9.5.0 brings `kotlin-stdlib-jdk7` / `-jdk8` 1.6.0 next to Unity's
+     `kotlin-stdlib` 1.8.22 and Gradle stops on duplicate classes;
+   - the resolution into that template.
+
+   Network adapters still come from **Ads Mediation > Network Manager**. Proven from a clean project on
+   2026-10-24: two presses, an Android build, the SDK reaching LevelPlay's server on a phone.
 2. This package, pinned to the same commit as `com.nexus.ads` (the validator's `manifest.pins`
    check): `"com.nexus.ads.levelplay": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads.levelplay#<commit>"`.
 3. **Project Settings > Nexus Ads**: select LevelPlay, enter the App Key and the ad unit ids on the

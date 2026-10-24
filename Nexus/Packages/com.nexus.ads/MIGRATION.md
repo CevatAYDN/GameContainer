@@ -17,9 +17,7 @@ puts the family's controller behind the same service.
    (the validator's `manifest.pins` check fails otherwise; **Tools > Nexus Ads > Pin family packages to one
    commit** rewrites them): `com.nexus.core`, `com.nexus.ads`, `com.nexus.ads.bridge.nexus`, and the provider
    of the selected mediation:
-   - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x, with the native SDK
-     installed from its Network Manager and resolved (the steps and the Kotlin alignment are in the
-     [LevelPlay README](../com.nexus.ads.levelplay/README.md#install));
+   - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x;
    - AdMob: `com.nexus.ads.admob` (its `Nexus.Ads.AdMob` assembly is the family provider) plus
      `com.google.ads.mobile` 11.3.0 or newer from OpenUPM (11.6.0 brings Unity's External Dependency
      Manager as its own dependency).
@@ -30,7 +28,9 @@ puts the family's controller behind the same service.
    **Natural Break**; an undeclared name is blocked with `UnknownPlacement`), fill the Release tab with the
    live ids, and the Test tab (AdMob: Google's sample ids, filled by the page; LevelPlay: a copy of
    the Release tab plus the test device list).
-3. **Scene.** Put an `AdsBootstrap` component in the first scene.
+3. **Android and scene.** Press **Tools > Nexus Ads > Setup > Prepare Android** until every step is
+   Done (the resolver, LevelPlay's native SDK and Gradle lines, the AdMob App ID; see the
+   [README](README.md#editor-tools)), and put an `AdsBootstrap` component in the first scene.
 4. **Wiring.** Replace the adapter registration with the bridge:
 
    ```csharp
