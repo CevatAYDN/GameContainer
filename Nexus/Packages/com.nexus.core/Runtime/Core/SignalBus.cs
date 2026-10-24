@@ -802,7 +802,8 @@ namespace Nexus.Core
 #endif
                 // Collect error information (don't log to console for expected exceptions)
                 bool shouldLog = !(ex is NexusReentrancyException || ex is NexusAsyncOverflowException || ex is OperationCanceledException)
-                    && !(ex is InvalidOperationException ioe && ioe.Message.Contains("Execution aborted"));
+                    && !(ex is InvalidOperationException ioe && ioe.Message.Contains("Execution aborted"))
+                    && !RecoveryEngine.WasLogged(ex); // the recovery engine already wrote this command failure (issue #7)
                 ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Signal, 
                     $"Signal dispatch failed for {typeof(T).FullName}", shouldLog);
                 throw;
@@ -1113,7 +1114,8 @@ namespace Nexus.Core
 #endif
                 // Collect error information (don't log to console for expected exceptions)
                 bool shouldLog = !(ex is NexusReentrancyException || ex is NexusAsyncOverflowException || ex is OperationCanceledException)
-                    && !(ex is InvalidOperationException ioe && ioe.Message.Contains("Execution aborted"));
+                    && !(ex is InvalidOperationException ioe && ioe.Message.Contains("Execution aborted"))
+                    && !RecoveryEngine.WasLogged(ex); // the recovery engine already wrote this command failure (issue #7)
                 ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Signal, 
                     $"Signal dispatch failed for {typeof(T).FullName}", shouldLog);
                 throw;

@@ -58,6 +58,23 @@ namespace Nexus.Core
             return await ExecuteAsyncPlan(plan, signal, ct);
         }
 
+        // A failure this engine logged reaches Fire's catch when it surfaces (one-shot, abort); that catch still
+        // collects it but does not write a second console line for it.
+        private const string LoggedKey = "Nexus.RecoveryEngine.Logged";
+
+        internal static bool WasLogged(Exception ex)
+        {
+            try { return ex.Data.Contains(LoggedKey); }
+            catch (NotSupportedException) { return false; } // an exception type may expose a read-only or custom Data
+        }
+
+        private static void MarkLogged(Exception ex)
+        {
+            try { ex.Data[LoggedKey] = true; }
+            catch (NotSupportedException) { } // read-only Data: the console line may then appear twice, nothing else changes
+            catch (ArgumentException) { }
+        }
+
         // ─── The single decision tree ────────────────────────────────────────────
         /// <summary>
         /// Computes the recovery outcome for a command failure. This is the ONLY place
@@ -81,10 +98,12 @@ namespace Nexus.Core
             if (signal is CommandFailedSignal)
             {
                 NexusRuntime.Logger?.LogException(ex);
+                MarkLogged(ex);
                 return RecoveryPlan.AbortPlan(failedSignal);
             }
 
             NexusRuntime.Logger?.LogError($"[Nexus] Command {commandType.Name} failed: {ex.Message}\n{ex.StackTrace}");
+            MarkLogged(ex);
 
             if (_container.IsRegistered(typeof(IRecoveryStrategy)))
             {
