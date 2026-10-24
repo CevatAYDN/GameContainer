@@ -484,6 +484,7 @@ namespace Nexus.Core
         }
         private class PendingInjection
         {
+            public bool InFlight; // a ReInject is resolving these outside the lock; guarded by _pendingInjectionsLock
             public readonly List<InjectableField> Fields = new();
             public readonly List<InjectableProperty> Properties = new();
             public readonly List<(InjectableMethod Method, int[] ParamIndices)> Methods = new();
@@ -2005,33 +2006,44 @@ namespace Nexus.Core
         {
             if (instance == null) return true;
 
+            PendingInjection pending;
+            InjectableField[] fields;
+            InjectableProperty[] properties;
+            (InjectableMethod Method, int[] ParamIndices)[] methods;
             lock (_pendingInjectionsLock)
             {
-                if (_pendingInjections == null || !_pendingInjections.TryGetValue(instance, out var pending))
+                if (_pendingInjections == null || !_pendingInjections.TryGetValue(instance, out pending))
                     return true;
+                if (pending.InFlight) return false; // another thread is re-injecting it; that pass decides
+                pending.InFlight = true;
+                fields = pending.Fields.ToArray();
+                properties = pending.Properties.ToArray();
+                methods = pending.Methods.ToArray();
+            }
 
-                bool allSucceeded = true;
-                var type = instance.GetType();
-
-                for (int i = pending.Fields.Count - 1; i >= 0; i--)
+            // Resolution (user constructors) and [Inject] methods run outside the lock: user code that waited
+            // on another thread's ReInject or Inject deadlocked on it. Applied entries are removed afterwards.
+            var appliedFields = new List<InjectableField>();
+            var appliedProperties = new List<InjectableProperty>();
+            var appliedMethods = new List<(InjectableMethod Method, int[] ParamIndices)>();
+            bool done;
+            try
+            {
+                foreach (var f in fields)
                 {
-                    var f = pending.Fields[i];
                     var resolvedValue = string.IsNullOrEmpty(f.Name) ? TryResolve(f.Type) : TryResolve(f.Type, f.Name);
-                    if (resolvedValue != null) { MetadataCache.ApplyFieldSetter(f, instance, resolvedValue); pending.Fields.RemoveAt(i); }
-                    else { allSucceeded = false; }
+                    if (resolvedValue != null) { MetadataCache.ApplyFieldSetter(f, instance, resolvedValue); appliedFields.Add(f); }
                 }
 
-                for (int i = pending.Properties.Count - 1; i >= 0; i--)
+                foreach (var p in properties)
                 {
-                    var p = pending.Properties[i];
                     var resolvedValue = string.IsNullOrEmpty(p.Name) ? TryResolve(p.Type) : TryResolve(p.Type, p.Name);
-                    if (resolvedValue != null) { MetadataCache.ApplyPropertySetter(p, instance, resolvedValue); pending.Properties.RemoveAt(i); }
-                    else { allSucceeded = false; }
+                    if (resolvedValue != null) { MetadataCache.ApplyPropertySetter(p, instance, resolvedValue); appliedProperties.Add(p); }
                 }
 
-                for (int i = pending.Methods.Count - 1; i >= 0; i--)
+                foreach (var entry in methods)
                 {
-                    var (method, paramIndices) = pending.Methods[i];
+                    var (method, paramIndices) = entry;
                     var args = new object[method.ParameterTypes.Length];
                     bool methodSucceeded = true;
                     for (int j = 0; j < method.ParameterTypes.Length; j++)
@@ -2051,13 +2063,25 @@ namespace Nexus.Core
                                 methodSucceeded = false;
                         }
                     }
-                    if (methodSucceeded) { method.Method.Invoke(instance, args); pending.Methods.RemoveAt(i); }
-                    else { allSucceeded = false; }
+                    if (methodSucceeded) { method.Method.Invoke(instance, args); appliedMethods.Add(entry); }
                 }
-
-                if (allSucceeded) _pendingInjections?.Remove(instance);
-                return allSucceeded;
             }
+            finally
+            {
+                lock (_pendingInjectionsLock)
+                {
+                    pending.InFlight = false;
+                    foreach (var f in appliedFields) pending.Fields.Remove(f);
+                    foreach (var p in appliedProperties) pending.Properties.Remove(p);
+                    // a method entry whose missing-parameter list grew meanwhile (new array) stays pending
+                    foreach (var applied in appliedMethods)
+                        pending.Methods.RemoveAll(m => m.Method == applied.Method && ReferenceEquals(m.ParamIndices, applied.ParamIndices));
+                    done = pending.Fields.Count == 0 && pending.Properties.Count == 0 && pending.Methods.Count == 0;
+                    if (done && _pendingInjections != null && _pendingInjections.TryGetValue(instance, out var current) && ReferenceEquals(current, pending))
+                        _pendingInjections.Remove(instance);
+                }
+            }
+            return done;
         }
 
         public int ReInjectAll()

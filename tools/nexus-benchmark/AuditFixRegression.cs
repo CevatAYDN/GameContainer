@@ -22,6 +22,7 @@
 //   I24 integer saves written before #23 with another culture's minus sign read back
 //   I26 a convention-found lifecycle that is IDisposable gets one teardown (OnDispose)
 //   I28 a failed async one-shot composite surfaces (FireAsync) or is released (Fire), and fires again
+//   I29 ReInject runs [Inject] methods outside its lock (another thread's ReInject does not deadlock)
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -196,6 +197,24 @@ namespace NexusBench
         }
     }
 
+    public interface I29Missing { }
+    public sealed class I29MissingImpl : I29Missing { }
+    public sealed class I29Target { [Inject] public I29Missing Dep; }
+
+    /// <summary>Its [Inject] method waits for another thread's ReInject (issue #29): a deadlock while ReInject held its lock.</summary>
+    public sealed class I29Caller
+    {
+        public static NexusDI Di;
+        public static I29Target Other;
+        public static bool InnerFinished;
+        [Inject]
+        public void Init(I29Missing dep)
+        {
+            var inner = Task.Run(() => Di.ReInject(Other));
+            InnerFinished = inner.Wait(2000);
+        }
+    }
+
     /// <summary>Found by name convention for scope tag "I26Convention"; counts both teardown paths (issue #26).</summary>
     public sealed class I26ConventionLifecycle : IContextLifecycle, IDisposable
     {
@@ -241,6 +260,7 @@ namespace NexusBench
             Test_I24_LegacyMinusSigns_ReadBack();
             Test_I26_ConventionLifecycle_TornDownOnce();
             Test_I28_FailedAsyncOneShotComposite_FiresAgain();
+            Test_I29_ReInject_RunsUserCodeOutsideItsLock();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -1143,6 +1163,27 @@ namespace NexusBench
                 awaitedThrew && awaitedRuns == 2 && awaitedAfter == 2 && firstRan && detachedRuns == 2,
                 $"FireAsync: failure reached caller={awaitedThrew}, runs after retry={awaitedRuns} (expected 2), after a third pair={awaitedAfter} (expected 2); " +
                 $"Fire: runs after retry={detachedRuns} (expected 2; pre-fix 1 and 1, failure swallowed, trigger consumed)");
+        }
+
+        private static void Test_I29_ReInject_RunsUserCodeOutsideItsLock()
+        {
+            var di = new NexusDI();
+            var caller = new I29Caller();
+            var target = new I29Target();
+            di.Inject(caller); // Init(I29Missing) waits: the dependency is not bound yet
+            di.Inject(target); // Dep waits too
+            di.Bind<I29Missing, I29MissingImpl>();
+            I29Caller.Di = di;
+            I29Caller.Other = target;
+            I29Caller.InnerFinished = false;
+
+            bool callerDone = di.ReInject(caller); // runs Init, which waits up to 2 s for ReInject(target) on another thread
+            bool targetDone = target.Dep != null;
+            I29Caller.Di = null;
+            I29Caller.Other = null;
+
+            Check("I29. ReInject_RunsUserCodeOutsideItsLock", I29Caller.InnerFinished && callerDone && targetDone,
+                $"inner ReInject finished={I29Caller.InnerFinished} (pre-fix: blocked on the lock the outer ReInject held, 2 s timeout), caller done={callerDone}, target injected={targetDone}");
         }
 
         private static bool SpinUntil(Func<bool> condition)
