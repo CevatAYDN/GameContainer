@@ -14,7 +14,7 @@ namespace Nexus.Ads.Tests.Runtime
         private AdsSettings _settings;
         private AdsBootstrap _bootstrap;
 
-        private IEnumerator Boot(SimulatorScenario scenario)
+        private IEnumerator Boot(SimulatorScenario scenario, bool logEvents = false)
         {
             _settings = ScriptableObject.CreateInstance<AdsSettings>();
             _settings.SelectedMediation = AdProviderKind.LevelPlay;
@@ -23,7 +23,7 @@ namespace Nexus.Ads.Tests.Runtime
             _root = new GameObject("AdsBootstrapTest");
             _root.SetActive(false);
             _bootstrap = _root.AddComponent<AdsBootstrap>();
-            _bootstrap.Configure(_settings, scenario, logEvents: false);
+            _bootstrap.Configure(_settings, scenario, logEvents);
             _root.SetActive(true);
             float deadline = Time.realtimeSinceStartup + 5f;
             while (_bootstrap.Controller == null && Time.realtimeSinceStartup < deadline) yield return null;
@@ -74,6 +74,18 @@ namespace Nexus.Ads.Tests.Runtime
             Assert.AreEqual(AdResult.Blocked, result);
             Assert.AreEqual(PolicyRules.InterstitialFrequency, seen?.Rule);
             Assert.AreEqual(1f, Time.timeScale, "nothing opened, nothing paused");
+        }
+
+        // Issue #36: with event logging on, the telemetry log and the bootstrap's Violation handler both wrote the
+        // block as an error; a second error line fails this test as an unexpected log.
+        [UnityTest]
+        public IEnumerator BlockedShow_IsLoggedOnce_WithEventLoggingOn()
+        {
+            yield return Boot(SimulatorScenario.Normal, logEvents: true);
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("InterstitialFrequency"));
+            AdResult? result = null;
+            _bootstrap.Controller.Show("level_end", r => result = r);
+            Assert.AreEqual(AdResult.Blocked, result);
         }
 
         [UnityTest]

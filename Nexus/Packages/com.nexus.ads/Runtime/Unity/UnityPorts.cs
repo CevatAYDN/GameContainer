@@ -93,7 +93,8 @@ namespace Nexus.Ads.Unity
 
     /// <summary>
     /// Fans every ad event out to the registered sinks (analytics bridges, the debug panel) and logs
-    /// it in the editor and development builds. Violations are errors there and silent in release.
+    /// it in the editor and development builds when event logging is on. Violations are not logged here:
+    /// <see cref="AdsBootstrap"/> writes each one as an error in every non-release build, once.
     /// </summary>
     public sealed class UnityAdTelemetry : IAdTelemetry
     {
@@ -107,11 +108,7 @@ namespace Nexus.Ads.Unity
 
         public void Record(in AdEvent e)
         {
-            if (_verbose)
-            {
-                if (e.Kind == AdEventKind.Violation) Debug.LogError("[Nexus Ads] PolicyViolation " + e);
-                else Debug.Log("[Nexus Ads] " + e);
-            }
+            if (_verbose && e.Kind != AdEventKind.Violation) Debug.Log("[Nexus Ads] " + e);
             for (int i = 0; i < _sinks.Count; i++) _sinks[i].Record(e);
         }
     }
