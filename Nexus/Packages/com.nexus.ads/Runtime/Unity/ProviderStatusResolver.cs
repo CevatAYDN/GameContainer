@@ -47,10 +47,14 @@ namespace Nexus.Ads.Unity
     {
         private static readonly Regex AdMobId = new Regex(@"^ca-app-pub-\d{16}[~/]\d{10}$", RegexOptions.CultureInvariant);
 
-        public static ProviderStatusReport Resolve(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool sdkInstalled)
+        /// <param name="sdkInstalled">The provider's SDK and its Nexus provider package are both in the project.</param>
+        /// <param name="conflictingSdk">A second mediation SDK is in the project (the validator's two-mediation finding).</param>
+        public static ProviderStatusReport Resolve(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool sdkInstalled, bool conflictingSdk = false)
         {
             if (kind == AdProviderKind.None || !sdkInstalled)
                 return new ProviderStatusReport(ProviderStatus.NotInstalled, new string[0], kind == AdProviderKind.None ? "no mediation selected" : kind + " SDK is not installed");
+            if (conflictingSdk)
+                return new ProviderStatusReport(ProviderStatus.Invalid, new[] { "a second mediation SDK is in the project" }, "a second mediation SDK is in the project; one build carries one mediation");
 
             var missing = settings.MissingFields(kind, platform, settings.Release);
             if (missing.Count > 0)

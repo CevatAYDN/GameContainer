@@ -482,6 +482,29 @@ namespace NexusBench
             }
             Check("AC30. Dispose_ReleasesLock", MediationLock.Holder == null, "lock free after dispose");
 
+            // durable reward receipt: written before the callback, survives a new controller on the same store, cleared on acknowledge
+            {
+                var store = new AdsStore();
+                RewardReceipt? seenInCallback = null;
+                var clock = new AdsClock();
+                var scheduler = new AdsScheduler(clock);
+                var provider = new AdsFakeProvider();
+                var first = new AdController(AdsRig.Config(), provider, clock, new AdsVisibility(), new AdsMainThread(), scheduler, store, new AdsTelemetry());
+                first.Start(); provider.InitCallback(true); provider.Fill(AdFormat.Rewarded);
+                first.Show("shop_refill", _ => seenInCallback = first.PendingReward);
+                provider.ShowCallback(AdResult.Rewarded);
+                Check("AC34. RewardReceipt_WrittenBeforeCallback", seenInCallback.HasValue && seenInCallback.Value.Placement == "shop_refill", seenInCallback?.Id ?? "none");
+                first.Dispose();
+                var second = new AdController(AdsRig.Config(), new AdsFakeProvider(), clock, new AdsVisibility(), new AdsMainThread(), scheduler, store, new AdsTelemetry());
+                var pending = second.PendingReward;
+                Check("AC35. RewardReceipt_SurvivesRestart", pending.HasValue && pending.Value.Id == seenInCallback.Value.Id, "same receipt on a new controller over the same store");
+                second.AcknowledgeReward("wrong-id");
+                bool kept = second.PendingReward.HasValue;
+                second.AcknowledgeReward(pending.Value.Id);
+                Check("AC36. RewardReceipt_ClearedOnlyByItsId", kept && !second.PendingReward.HasValue, "wrong id ignored, right id cleared");
+                second.Dispose();
+            }
+
             // init failure retries with the same back-off
             using (var rig = new AdsRig())
             {

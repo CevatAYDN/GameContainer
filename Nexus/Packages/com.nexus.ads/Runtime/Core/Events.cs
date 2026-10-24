@@ -22,6 +22,19 @@ namespace Nexus.Ads
         }
     }
 
+    /// <summary>One paid reward the game has not acknowledged; see <see cref="AdController.PendingReward"/>.</summary>
+    public readonly struct RewardReceipt
+    {
+        public readonly string Id;
+        public readonly string Placement;
+
+        public RewardReceipt(string id, string placement)
+        {
+            Id = id;
+            Placement = placement;
+        }
+    }
+
     public enum AdEventKind
     {
         Loaded,

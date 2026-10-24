@@ -35,7 +35,10 @@ namespace Nexus.Ads
         private readonly IAdFreeEntitlement _adFree;
         private readonly IAdsRemoteConfig _remote;
         private readonly SessionTracker _session;
+        private readonly IPacingStore _store;
         private readonly Dictionary<AdFormat, Slot> _slots = new Dictionary<AdFormat, Slot>();
+        private const string PendingRewardKey = "nexus.ads.reward.pending";
+        private int _rewardSequence;
         private bool _fullScreenOpen, _killSwitch, _disposed, _lockHeld;
         private int _initFailures;
         private IDisposable _initRetry;
@@ -61,7 +64,7 @@ namespace Nexus.Ads
             _visibility = visibility ?? throw new ArgumentNullException(nameof(visibility));
             _mainThread = mainThread ?? throw new ArgumentNullException(nameof(mainThread));
             _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
-            if (store == null) throw new ArgumentNullException(nameof(store));
+            _store = store ?? throw new ArgumentNullException(nameof(store));
             _telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
             _consent = consent;
             _adFree = adFree;
@@ -159,6 +162,7 @@ namespace Nexus.Ads
                 answered = true;
                 _fullScreenOpen = false;
                 slot.State = SlotState.Idle;
+                if (result == AdResult.Rewarded) WriteReceipt(placement); // durable before the game hears of it: a kill in between keeps the reward
                 if (result == AdResult.Rewarded || result == AdResult.Closed) _session.RecordShown(declared);
                 _telemetry.Record(new AdEvent(result == AdResult.Failed ? AdEventKind.ShowFailed : result == AdResult.Rewarded ? AdEventKind.Rewarded : AdEventKind.Closed, format, placement));
                 AdClosed?.Invoke(format, result);
@@ -169,6 +173,36 @@ namespace Nexus.Ads
         }
 
         public void HideBanner() => _provider.HideBanner();
+
+        /// <summary>
+        /// The reward the game has not acknowledged yet: written to the store before the show result is
+        /// delivered, cleared by <see cref="AcknowledgeReward"/>. A game checks it at start-up and pays
+        /// a reward the previous run was killed in the middle of. Null when nothing is pending.
+        /// </summary>
+        public RewardReceipt? PendingReward
+        {
+            get
+            {
+                string raw = _store.Get(PendingRewardKey);
+                if (string.IsNullOrEmpty(raw)) return null;
+                int bar = raw.IndexOf('|');
+                return bar <= 0 ? (RewardReceipt?)null : new RewardReceipt(raw.Substring(0, bar), raw.Substring(bar + 1));
+            }
+        }
+
+        /// <summary>Clears the pending receipt when its id matches; any other id leaves it untouched.</summary>
+        public void AcknowledgeReward(string receiptId)
+        {
+            var pending = PendingReward;
+            if (pending.HasValue && pending.Value.Id == receiptId) _store.Set(PendingRewardKey, "");
+        }
+
+        private void WriteReceipt(string placement)
+        {
+            _rewardSequence++;
+            string id = _clock.UtcDay + "-" + _rewardSequence + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            _store.Set(PendingRewardKey, id + "|" + placement);
+        }
 
         public bool PrivacyOptionsRequired => _consent != null && _consent.PrivacyOptionsRequired;
 

@@ -55,6 +55,14 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
+        public void ASecondMediationSdk_MakesTheProviderInvalid_BeforeAnyFieldIsRead()
+        {
+            var report = ProviderStatusResolver.Resolve(_settings, AdProviderKind.LevelPlay, AdPlatform.Android, true, conflictingSdk: true);
+            Assert.AreEqual(ProviderStatus.Invalid, report.Status);
+            StringAssert.Contains("second mediation", report.Reason);
+        }
+
+        [Test]
         public void SampleIdsOnTheReleaseTab_AreInvalid()
         {
             _settings.Release.AdMob.Android.AppKey = AdMobSampleIds.PublisherPrefix + "~3347511713";

@@ -63,7 +63,14 @@ namespace Nexus.Ads.Unity
             Ads.Show(_placement, result =>
             {
                 _inFlight = false;
-                if (result == AdResult.Rewarded) _onRewarded.Invoke(); else _onNotRewarded.Invoke();
+                if (result == AdResult.Rewarded)
+                {
+                    _onRewarded.Invoke();
+                    // the listeners ran: the receipt is acknowledged here, so a game that saves asynchronously should acknowledge itself instead
+                    var receipt = Ads.PendingReward;
+                    if (receipt.HasValue) Ads.AcknowledgeReward(receipt.Value.Id);
+                }
+                else _onNotRewarded.Invoke();
                 Refresh();
             });
         }

@@ -152,6 +152,7 @@ namespace Nexus.Ads.Unity
             new Thread(() =>
             {
                 string id;
+                AndroidJNI.AttachCurrentThread(); // JNI from a thread Unity did not attach aborts natively instead of throwing
                 try
                 {
                     using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
@@ -161,6 +162,7 @@ namespace Nexus.Ads.Unity
                         id = info.Call<string>("getId");
                 }
                 catch (Exception) { id = SystemInfo.deviceUniqueIdentifier; }
+                finally { AndroidJNI.DetachCurrentThread(); }
                 onFetched(id);
             }) { IsBackground = true, Name = "Nexus.Ads.AdvertisingId" }.Start();
 #else
@@ -187,6 +189,11 @@ namespace Nexus.Ads.Unity
         }
 
         public static void HideBanner() => Controller?.HideBanner();
+
+        /// <summary>A paid reward no one acknowledged yet (the previous run may have been killed); pay it, then acknowledge.</summary>
+        public static RewardReceipt? PendingReward => Controller?.PendingReward;
+
+        public static void AcknowledgeReward(string receiptId) => Controller?.AcknowledgeReward(receiptId);
 
         public static bool PrivacyOptionsRequired => Controller != null && Controller.PrivacyOptionsRequired;
 
