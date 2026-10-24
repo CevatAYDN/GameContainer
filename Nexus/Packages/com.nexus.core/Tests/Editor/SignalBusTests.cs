@@ -123,6 +123,29 @@ namespace Nexus.Editor.Tests
             _container.Dispose();
         }
 
+        public struct UnheardSignal { }
+
+        /// <summary>
+        /// The editor-only "no subscribers" warning is logged once per signal type: a game that fires an unheard signal
+        /// every frame logged, and built the message for, every fire (ChipCrisis's hot-path test counted 1705 allocations
+        /// in 60 frames from the signals its test context does not listen to, once a logger always existed).
+        /// </summary>
+        [Test]
+        public void Fire_WithoutAnyHandler_WarnsOncePerSignalType()
+        {
+            int warnings = 0;
+            Application.LogCallback count = (message, _, type) => { if (type == LogType.Warning && message.Contains("UnheardSignal")) warnings++; };
+            Application.logMessageReceived += count;
+            try
+            {
+                _signalBus.Fire(new UnheardSignal());
+                _signalBus.Fire(new UnheardSignal());
+            }
+            finally { Application.logMessageReceived -= count; }
+
+            Assert.AreEqual(1, warnings);
+        }
+
         [Test]
         public void Fire_ExecutesRegisteredCommandAndInjectsSignal()
         {

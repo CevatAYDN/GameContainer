@@ -211,6 +211,12 @@ namespace Nexus.Core
         [ThreadStatic]
         private static int s_stackDepth;
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        // One "no subscribers" warning per signal type: a signal fired every frame without a listener would otherwise
+        // log, and build its message for, every fire.
+        private readonly System.Collections.Generic.HashSet<Type> _warnedNoHandlers = new System.Collections.Generic.HashSet<Type>();
+#endif
+
         // Reentrancy guard for the async path. Must be async-local, NOT thread-static: an
         // async dispatch is incremented on the caller's thread but its continuations (and
         // the finally decrement) run on arbitrary thread-pool threads after an await. A
@@ -628,7 +634,7 @@ namespace Nexus.Core
 
             // === FAST PATH: All handlers are synchronous ===
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (!_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _))
+            if (!_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _) && _warnedNoHandlers.Add(type))
             {
                 NexusRuntime.Logger?.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
             }
