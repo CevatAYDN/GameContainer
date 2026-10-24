@@ -51,18 +51,18 @@
           "Create a Unity account or sign in at cloud.unity.com with the Play Console email.",
           "Add the app on the LevelPlay platform (an unpublished app can be added) and copy its App Key.",
           "Create one rewarded and one interstitial ad unit for Android (and iOS when needed) and copy their ids.",
-          "Add your device's advertising id under Settings > Test devices.",
-          "Install the Ads Mediation package (com.unity.services.levelplay), then press Prepare Android: it adds the native SDK and the Unity Ads adapter and resolves them. Other networks come from Ads Mediation > Network Manager.",
-          "Enter the App Key and ad unit ids on the Release tab; the Test tab copies them and keeps the device list.",
+          "Add your device's advertising id under Settings > Test devices (Google's ads settings page on the phone shows it as \"Your advertising ID\").",
+          "Enter the App Key and ad unit ids on the Release tab; the Test tab copies them and keeps the device list (the same advertising id).",
+          "Press Prepare Android twice: the first press adds the Ads Mediation package (com.unity.services.levelplay), the Nexus provider and the dependency resolver; the second adds the native SDK and the Unity Ads adapter and resolves them. Other networks come from Ads Mediation > Network Manager.",
           "Fill payment and tax details before the first payout."
         ],
         "tr": [
           "cloud.unity.com'da Play Console e-postasıyla Unity hesabı aç ya da giriş yap.",
           "LevelPlay platformuna uygulamayı ekle (yayınlanmamış uygulama eklenebilir) ve App Key'ini kopyala.",
           "Android (gerekirse iOS) için bir ödüllü ve bir geçiş reklam birimi oluştur, kimliklerini kopyala.",
-          "Cihazının reklam kimliğini Settings > Test devices altına ekle.",
-          "Ads Mediation paketini (com.unity.services.levelplay) kur, sonra Prepare Android'e bas: yerel SDK'yı ve Unity Ads adaptörünü ekler ve çözer. Diğer ağlar Ads Mediation > Network Manager'dan gelir.",
-          "App Key ve reklam birimi kimliklerini Release sekmesine gir; Test sekmesi bunları kopyalar ve cihaz listesini tutar.",
+          "Cihazının reklam kimliğini Settings > Test devices altına ekle (telefondaki Google reklam ayarları sayfası onu \"Reklam kimliğiniz\" olarak gösterir).",
+          "App Key ve reklam birimi kimliklerini Release sekmesine gir; Test sekmesi bunları kopyalar ve cihaz listesini (aynı reklam kimliği) tutar.",
+          "Prepare Android'e iki kez bas: ilk basış Ads Mediation paketini (com.unity.services.levelplay), Nexus sağlayıcısını ve bağımlılık çözücüyü ekler; ikincisi yerel SDK'yı ve Unity Ads adaptörünü ekler ve çözer. Diğer ağlar Ads Mediation > Network Manager'dan gelir.",
           "İlk ödemeden önce ödeme ve vergi bilgilerini doldur."
         ]
       }

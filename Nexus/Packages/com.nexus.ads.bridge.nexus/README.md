@@ -9,7 +9,7 @@ family's [CHANGELOG](../com.nexus.ads/CHANGELOG.md).
 
 ## Install
 
-Both packages by git URL, pinned to the same commit (the ads validator's `manifest.pins` check keeps
+Both packages by git URL, pinned to the same commit, the full 40-character hash (the ads validator's `manifest.pins` check keeps
 them together; **Tools > Nexus Ads > Pin family packages to one commit** rewrites them):
 
 ```json

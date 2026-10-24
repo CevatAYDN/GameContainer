@@ -24,7 +24,8 @@ Window → Package Manager → **+** → *Install package from git URL*:
 https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<commit>
 ```
 
-Pin a commit or release tag in production. Unity resolves the declared dependencies
+Pin a commit (the full 40-character hash: the Package Manager does not take a short one) or release
+tag in production. Unity resolves the declared dependencies
 (`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`). Minimum Unity is
 6000.0; the package is verified on 6000.5.6f1.
 

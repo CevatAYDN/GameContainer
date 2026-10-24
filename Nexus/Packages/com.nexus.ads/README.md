@@ -7,6 +7,22 @@ validator, and a simulator provider. Mediation SDKs live in separate provider pa
 [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes are in [CHANGELOG.md](CHANGELOG.md). A game on the
 legacy `AdMobAdapter` moves here with [MIGRATION.md](MIGRATION.md).
 
+## Install
+
+In `Packages/manifest.json`, by git URL pinned to a commit:
+
+```json
+"com.nexus.ads": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads#<commit>"
+```
+
+`<commit>` is the full 40-character commit hash. The Package Manager does not take a short one:
+`#9e793d5` ends in `Could not clone ... Make sure [9e793d5] is a valid branch name, tag or full commit hash`.
+The package brings `com.unity.ugui` with it. Every other family package goes in at the same commit (the
+validator's `manifest.pins` check; **Tools > Nexus Ads > Pin family packages to one commit** aligns
+them), and **Prepare Android** adds the LevelPlay or AdMob provider package at that commit itself.
+Next: the settings ([Using it without Nexus](#using-it-without-nexus)), then the mediation's README
+([LevelPlay](../com.nexus.ads.levelplay/README.md), [AdMob](../com.nexus.ads.admob/README.md)).
+
 ## What is here
 
 | Folder | Assembly | Content |
@@ -58,6 +74,11 @@ background. Locked by `AdsCoreSuite` AP1–AP7.
 | Development | test mode off | nothing runs (`TestModeRequired`) |
 
 So a development build handed to a teammate never requests a live ad.
+
+The device's advertising id, for the Test tab's list and the mediation dashboard: before the first
+build, Google's ads settings page on the phone shows it as "Your advertising ID"; the command
+`adb shell am start -a com.google.android.gms.settings.ADS_PRIVACY` opens that page. A development
+build's debug panel shows the same id with a copy button.
 
 `ProviderGate.Host(build, gate, mediationSelected, providerRegistered)` then decides what the bootstrap
 runs. The simulator (a full-screen overlay labelled "Simulated ad") runs only where the gate chose it,

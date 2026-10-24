@@ -8,7 +8,7 @@ knows (`IIapOutcomeAdapter`, `IIapStoreInfoAdapter`): `Purchase` with a `Purchas
 
 ## Install
 
-This package by git URL, pinned to a commit of the repository:
+This package by git URL, pinned to a commit of the repository (the full 40-character hash):
 `https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.iap.unity#<commit>`.
 It depends on `com.unity.purchasing` 5.4.4 (installed by the Package Manager). Unity Gaming
 Services are not started by the adapter; Google Play and App Store purchases do not need them.

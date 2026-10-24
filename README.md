@@ -22,7 +22,8 @@ Window → Package Manager → **+** → *Install package from git URL*:
 https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<commit>
 ```
 
-Pin a commit (`#<commit>`) or a release tag in production projects. The repository root is a
+Pin a commit (`#<commit>`, the full 40-character hash: the Package Manager does not take a short one)
+or a release tag in production projects. The repository root is a
 monorepo named `GameContainer`; the package name stays `com.nexus.core`.
 
 Rules for games that consume Nexus:

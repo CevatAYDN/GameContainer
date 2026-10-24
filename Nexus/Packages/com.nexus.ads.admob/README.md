@@ -72,7 +72,7 @@ so `RequestReward`, `ReadyChanged`, `PrivacyOptionsRequired` and `ShowPrivacyOpt
    "scopedRegistries": [ { "name": "package.openupm.com", "url": "https://package.openupm.com",
      "scopes": [ "com.google.ads.mobile", "com.google.external-dependency-manager" ] } ]
    ```
-2. This package by git URL, pinned to a commit of the repository:
+2. This package by git URL, pinned to a commit of the repository (the full 40-character hash):
    `https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads.admob#<commit>`
 3. The AdMob app id in **Assets > Google Mobile Ads > Settings**.
 

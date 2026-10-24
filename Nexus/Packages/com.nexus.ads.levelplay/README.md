@@ -10,11 +10,18 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
 
 ## Install
 
-1. **Tools > Nexus Ads > Setup > Install SDK** on the LevelPlay row adds `com.unity.services.levelplay`
-   from the Unity registry (or Package Manager > Ads Mediation). The package holds only the C# side.
-   **Tools > Nexus Ads > Setup > Prepare Android** does the rest of the Android setup, and the validator
-   (`android.nativesdk`, `android.gradle`, `android.adapter`) stops an Android build that misses it:
-   - the dependency resolver (`com.google.external-dependency-manager` from OpenUPM);
+1. `com.nexus.ads` by git URL at a full 40-character commit hash ([its Install section](../com.nexus.ads/README.md#install)).
+2. **Project Settings > Nexus Ads** (or **Tools > Nexus Ads > Setup > Create the settings asset**): select
+   LevelPlay, enter the App Key and the ad unit ids on the Release tab, press **Copy from Release** on
+   the Test tab, add your phone's advertising id to the device list
+   ([where to read it](../com.nexus.ads/README.md#which-build-talks-to-which-sdk)). Prepare Android reads
+   the selected mediation from this asset; without it `PrepareCli` exits 2 (`no settings asset`).
+3. **Tools > Nexus Ads > Setup > Prepare Android**, twice. The first press adds the Ads Mediation package
+   (`com.unity.services.levelplay`, which holds only the C# side) from the Unity registry, this package
+   at the commit of `com.nexus.ads` and the dependency resolver (`com.google.external-dependency-manager`
+   from OpenUPM) in one Package Manager request; the editor reloads (`PrepareCli` exits 3: run it
+   again). The second press does the rest of the Android setup, and the validator (`android.nativesdk`,
+   `android.gradle`, `android.adapter`) stops an Android build that misses any of it:
    - the native SDK declaration `Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml`
      (`com.unity3d.ads-mediation:mediation-sdk` 9.5.0 for package 9.5.1), the file LevelPlay's Network
      Manager installs, for the version the installed package names in its `LevelPlayVersions.json`;
@@ -33,12 +40,9 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
    Other network adapters come from **Ads Mediation > Network Manager**. Proven from a clean project on
    2026-10-24: two presses, an Android build, the SDK reaching LevelPlay's server on a phone; with the
    owner's App Key and the Unity Ads adapter, a rewarded ad paid its reward and an interstitial closed on
-   the phone (`docs/RELEASE_GATES.md`).
-2. This package, pinned to the same commit as `com.nexus.ads` (the validator's `manifest.pins`
-   check): `"com.nexus.ads.levelplay": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads.levelplay#<commit>"`.
-3. **Project Settings > Nexus Ads**: select LevelPlay, enter the App Key and the ad unit ids on the
-   Release tab, press **Copy from Release** on the Test tab, add your phone's advertising id to the
-   device list.
+   the phone (`docs/RELEASE_GATES.md`). Added by hand instead, this package goes in at the same full
+   commit as `com.nexus.ads` (the validator's `manifest.pins` check):
+   `"com.nexus.ads.levelplay": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads.levelplay#<commit>"`.
 
 The assembly compiles only while the LevelPlay package is installed (`versionDefines` →
 `NEXUS_LEVELPLAY`); without it the package is inert.
@@ -63,7 +67,7 @@ provider's `IConsentFlow` is therefore a pass-through: nothing waits on it.
 Test ads: LevelPlay publishes no test keys. The Test tab mirrors the Release keys; a development
 build requests live SDK ads only on a device in the Test tab's list and that device also has to be
 listed in the LevelPlay dashboard (Settings > Test devices) to receive test ads from a chosen
-network. The debug panel on the device shows the advertising id to list.
+network. The phone's advertising id: [Which build talks to which SDK](../com.nexus.ads/README.md#which-build-talks-to-which-sdk).
 
 ## Verification
 
