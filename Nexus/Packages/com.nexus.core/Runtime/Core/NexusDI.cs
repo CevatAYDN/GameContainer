@@ -1915,14 +1915,30 @@ namespace Nexus.Core
                     {
                         singletonInstance = _injector.CreateInstance(binding.ConcreteType, binding.ParameterOverrides);
                         _injector.Inject(singletonInstance);
+                        bool orphaned;
                         lock (_singletonLock)
                         {
-                            if (IsDisposed)
+                            orphaned = IsDisposed;
+                            if (!orphaned)
                             {
-                                throw new ObjectDisposedException(nameof(NexusDI), $"Cannot publish singleton '{type.FullName}': the container has been disposed.");
+                                binding.Instance = singletonInstance;
+                                TrackResolvedSingleton(singletonInstance);
                             }
-                            binding.Instance = singletonInstance;
-                            TrackResolvedSingleton(singletonInstance);
+                        }
+                        if (orphaned)
+                        {
+                            // Disposed while it was being built: nothing tracks it (nor does the Context), so release it here, outside the lock.
+                            try
+                            {
+                                RunDeconstructs(singletonInstance);
+                                if (singletonInstance is IDisposable disposable) disposable.Dispose();
+                                else if (singletonInstance is IAsyncDisposable asyncDisposable) _ = DisposeAllAsyncInBackground(new[] { asyncDisposable });
+                            }
+                            catch (Exception ex)
+                            {
+                                NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {singletonInstance.GetType().FullName} built during container disposal: {ex.Message}");
+                            }
+                            throw new ObjectDisposedException(nameof(NexusDI), $"Cannot publish singleton '{type.FullName}': the container has been disposed.");
                         }
                     }
                     finally
