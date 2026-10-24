@@ -44,6 +44,11 @@ namespace Nexus.Ads
         private bool _fullScreenOpen, _killSwitch, _disposed, _lockHeld;
         private int _initFailures;
         private IDisposable _initRetry;
+        // UI polls IsReady every frame (an OnGUI button asks twice) and each provider call crossed into the SDK,
+        // which logs every IsAdReady in test mode: an answer is reused this long; Show and Preload ask live.
+        private const double ProviderReadyWindowSeconds = 0.1;
+        private readonly double[] _providerReadyAt = { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity }; // per AdFormat
+        private readonly bool[] _providerReady = new bool[3];
 
         public PolicyGuard Guard { get; }
         public Phase State { get; private set; } = Phase.Stopped;
@@ -116,8 +121,22 @@ namespace Nexus.Ads
             if (declared == null || State != Phase.Running || _killSwitch) return false;
             if (declared.Format == AdFormat.Interstitial && _adFree != null && _adFree.AdFree) return false;
             if (declared.Format == AdFormat.Banner) return true;
-            if (!_slots.TryGetValue(declared.Format, out var slot) || slot.State != SlotState.Ready || !_provider.IsReady(declared.Format)) return false;
+            if (!_slots.TryGetValue(declared.Format, out var slot) || slot.State != SlotState.Ready || !ProviderReady(declared.Format)) return false;
             return Guard.Check(placement, declared.Format, new GuardState(_fullScreenOpen, false)).Allowed;
+        }
+
+        private bool ProviderReady(AdFormat format)
+        {
+            double age = _clock.Seconds - _providerReadyAt[(int)format];
+            return age >= 0 && age < ProviderReadyWindowSeconds ? _providerReady[(int)format] : ProviderReadyLive(format);
+        }
+
+        private bool ProviderReadyLive(AdFormat format)
+        {
+            bool ready = _provider.IsReady(format);
+            _providerReadyAt[(int)format] = _clock.Seconds;
+            _providerReady[(int)format] = ready;
+            return ready;
         }
 
         /// <summary>
@@ -149,7 +168,7 @@ namespace Nexus.Ads
                 return;
             }
             var slot = _slots[format];
-            if (slot.State != SlotState.Ready || !_provider.IsReady(format))
+            if (slot.State != SlotState.Ready || !ProviderReadyLive(format))
             {
                 NotReady(declared, "nothing loaded");
                 if (slot.State == SlotState.Idle) Preload(format);
@@ -313,7 +332,7 @@ namespace Nexus.Ads
             if (!_visibility.Visible) { slot.State = SlotState.Retrying; return; } // picked up when the app returns
             slot.Retry?.Dispose();
             slot.Retry = null;
-            if (_provider.IsReady(format)) { slot.State = SlotState.Ready; RaiseReadyChanged(); return; }
+            if (ProviderReadyLive(format)) { slot.State = SlotState.Ready; RaiseReadyChanged(); return; }
             slot.State = SlotState.Loading;
             _provider.Load(format);
         }
@@ -323,6 +342,7 @@ namespace Nexus.Ads
             if (_disposed || !_slots.TryGetValue(format, out var slot) || slot.State == SlotState.Showing) return;
             slot.Failures = 0;
             slot.State = SlotState.Ready;
+            _providerReadyAt[(int)format] = double.NegativeInfinity; // a "not ready" cached before the load is stale
             _telemetry.Record(new AdEvent(AdEventKind.Loaded, format, ""));
             RaiseReadyChanged();
         });

@@ -132,7 +132,8 @@ namespace NexusBench
 
         public void Initialize(ProviderConfig config, Action<bool> onReady) { Config = config; InitCallback = onReady; }
         public void Load(AdFormat format) => Loads.Add(format);
-        public bool IsReady(AdFormat format) => Ready.Contains(format);
+        public int IsReadyCalls;
+        public bool IsReady(AdFormat format) { IsReadyCalls++; return Ready.Contains(format); }
         public void Show(AdFormat format, string placement, Action<AdResult> onResult) { Ready.Remove(format); ShowFormat = format; ShowPlacement = placement; ShowCallback = onResult; Opened?.Invoke(format); }
         public void ShowBanner(string placement, BannerPosition position) => BannerShown = true;
         public void HideBanner() => BannerShown = false;
@@ -556,6 +557,24 @@ namespace NexusBench
                 var r = rig.Show("hud");
                 rig.Controller.HideBanner();
                 Check("AC33. Banner_ShowHide_NoPreload", r == AdResult.Closed && rig.Provider.Loads.Count == 0 && !rig.Provider.BannerShown, "banner shown then hidden, no full-screen preload");
+            }
+
+            // readiness polled every frame reaches the provider once per window; Show still asks live (issue #32)
+            using (var rig = new AdsRig().Running())
+            {
+                rig.Provider.IsReadyCalls = 0;
+                bool allReady = true;
+                for (int i = 0; i < 100; i++) allReady &= rig.Controller.IsReady("shop_refill");
+                int polled = rig.Provider.IsReadyCalls;
+                rig.Clock.Advance(1);
+                rig.Controller.IsReady("shop_refill");
+                int afterWindow = rig.Provider.IsReadyCalls;
+                rig.Provider.Ready.Remove(AdFormat.Rewarded); // the loaded ad expires inside the next window
+                bool cachedAnswer = rig.Controller.IsReady("shop_refill");
+                var r = rig.Show("shop_refill");
+                Check("AC40. IsReady_PolledEveryFrame_AsksProviderOncePerWindow",
+                    allReady && polled <= 1 && afterWindow == polled + 1 && cachedAnswer && r == AdResult.NotReady && rig.Provider.ShowPlacement == null,
+                    $"100 polls -> {polled} provider call(s) (at most 1; pre-fix 100), one more after the window ({afterWindow}); an ad that expired inside the window: IsReady={cachedAnswer}, Show={r} without reaching the provider");
             }
         }
 
