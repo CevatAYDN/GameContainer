@@ -453,6 +453,10 @@ namespace Nexus.Core
             /// <summary>Parameterless [Deconstruct]-tagged cleanup methods, ascending Order.</summary>
             public InjectableMethod[] DeconstructMethods { get; set; }
             public ConstructorInfo Constructor { get; set; }
+            /// <summary>Why the container cannot construct this type, or null. Metadata is also built for
+            /// instances it never constructs (injection, [Deconstruct] on dispose), so the error is raised
+            /// only when construction is attempted.</summary>
+            public string ConstructorError { get; set; }
             public Func<NexusDI, object> CompiledConstructor { get; set; }
             public Type[] ConstructorParameterTypes { get; set; }
             /// <summary>Per-parameter binding names for the injected constructor (null = default).</summary>
@@ -629,6 +633,7 @@ namespace Nexus.Core
                     deconstructList.Sort((a, b) => a.PostConstructOrder.CompareTo(b.PostConstructOrder));
 
                     ConstructorInfo targetCtor = null;
+                    string ctorError = null;
                     var constructors = t.GetConstructors(BindingFlags.Public | BindingFlags.Instance);
                     if (constructors.Length > 0)
                     {
@@ -665,7 +670,7 @@ namespace Nexus.Core
 
                                 if (targetCtor == null)
                                 {
-                                    throw new InvalidOperationException($"No suitable constructor found for type {t.FullName}. A type must either have a parameterless constructor or a constructor decorated with [Inject]/[Construct].");
+                                    ctorError = $"No suitable constructor found for type {t.FullName}. A type must either have a parameterless constructor or a constructor decorated with [Inject]/[Construct].";
                                 }
                             }
                         }
@@ -706,6 +711,7 @@ namespace Nexus.Core
                         PostConstructMethods = postConstructList.Count > 0 ? postConstructList.ToArray() : null,
                         DeconstructMethods = deconstructList.Count > 0 ? deconstructList.ToArray() : null,
                         Constructor = targetCtor,
+                        ConstructorError = ctorError,
                         CompiledConstructor = CompiledAccessorEmitter.CompileConstructor(targetCtor),
                         ConstructorParameterTypes = ctorParamTypes,
                         ConstructorParameterNames = ctorParamNames,
@@ -868,7 +874,10 @@ namespace Nexus.Core
             private object CreateInstanceCore(Type type, InjectableMetadata meta, IReadOnlyList<ParameterOverride> overrides)
             {
                 if (meta.Constructor == null)
+                {
+                    if (meta.ConstructorError != null) throw new InvalidOperationException(meta.ConstructorError);
                     return Activator.CreateInstance(type, true);
+                }
 
                 var paramTypes = meta.ConstructorParameterTypes;
                 var paramNames = meta.ConstructorParameterNames;

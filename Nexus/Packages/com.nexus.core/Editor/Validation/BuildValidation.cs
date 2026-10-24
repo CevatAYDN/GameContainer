@@ -1192,6 +1192,11 @@ namespace Nexus.Editor
                     }
                     continue;
                 }
+                if (meta.ConstructorError != null && HasInjectionMarkers(type))
+                {
+                    Debug.LogWarning($"[Nexus Warning] DI metadata inspection failed for '{type.FullName}': {meta.ConstructorError}");
+                    warningCount++;
+                }
 
                 // Constructor parameter validation
                 if (meta.ConstructorParameterTypes is { Length: > 0 })

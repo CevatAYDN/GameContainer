@@ -117,6 +117,15 @@ namespace NexusBench
         [Deconstruct(Order = 5)] private void CleanupMiddle() => Calls.Add(5);
     }
 
+    // Two parameterized constructors and none marked, like SignalBus: bindable as an instance only.
+    public sealed class BUnconstructible
+    {
+        public int Cleanups;
+        public BUnconstructible(int value) { }
+        public BUnconstructible(string label) { }
+        [Deconstruct] private void Cleanup() => Cleanups++;
+    }
+
     // ---------------------------------------------------------------------------
     // [Construct] preferred-constructor alias (Strange-style)
     // ---------------------------------------------------------------------------
@@ -226,6 +235,7 @@ namespace NexusBench
                 RunPostConstruct();
                 RunPolymorphicBinding();
                 RunDeconstruct();
+                RunDeconstructUnconstructible();
                 RunConstructAlias();
                 RunOnceCommands();
                 RunOnceFailureRetry();
@@ -537,6 +547,27 @@ namespace NexusBench
                 && svc.Calls[2] == 10;
             Check("DC1. Deconstruct_Runs_In_Ascending_Order_On_Dispose", injected && ran,
                 $"calls=[{string.Join(",", svc.Calls)}] (injected={injected})");
+        }
+
+        // DC2/DC3 — the container builds metadata for instances it never constructs (bound instances on
+        // dispose). A type it cannot construct still gets its [Deconstruct], and constructing it still fails.
+        // Before the fix the metadata build threw, so disposing a context logged "Error disposing singleton
+        // Nexus.Core.SignalBus: No suitable constructor found" (found by ChipCrisis once it bound a logger).
+        private static void RunDeconstructUnconstructible()
+        {
+            var di = new NexusDI();
+            var instance = new BUnconstructible(1);
+            string error = null;
+            try { di.RunDeconstructs(instance); } catch (Exception ex) { error = ex.Message; }
+            Check("DC2. Deconstruct_Runs_For_An_Instance_The_Container_Cannot_Construct", error == null && instance.Cleanups == 1,
+                $"cleanups={instance.Cleanups} error={error ?? "none"}");
+
+            di.Bind<BUnconstructible>(isSingleton: false);
+            string resolveError = null;
+            try { di.Resolve<BUnconstructible>(); }
+            catch (Exception ex) { for (var e = ex; e != null; e = e.InnerException) resolveError += e.Message + " | "; }
+            Check("DC3. Resolving_A_Type_Without_A_Usable_Constructor_Still_Throws",
+                resolveError != null && resolveError.Contains("No suitable constructor found"), $"error={resolveError ?? "none"}");
         }
 
         // =========================================================================
