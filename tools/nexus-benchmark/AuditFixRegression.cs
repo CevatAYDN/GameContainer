@@ -14,6 +14,7 @@
 // External audit of 2026-10-25 (issue #23; ids are the report's):
 //   A23-O2 int/long saves survive a locale change (NegativeSign U+2212)
 //   A23-O3 a transient read error is not cached as "no value"
+//   A23-O4 a second Despawn does not destroy the pooled instance
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -138,7 +139,7 @@ namespace NexusBench
         public static int Run()
         {
             Console.WriteLine();
-            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2/O3) ===");
+            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2/O3/O4) ===");
             _failures = 0;
 
             Test_Composite_NestedCompletion_NoLostTriggers();
@@ -157,6 +158,7 @@ namespace NexusBench
             Test_ObjectPoolService_BoundRetention();
             Test_A23_IntegerSaves_SurviveLocaleChange();
             Test_A23_TransientReadError_NotCachedAsMissing();
+            Test_A23_DoubleDespawn_KeepsPooledInstance();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -910,6 +912,23 @@ namespace NexusBench
             {
                 DeleteSecureData(salt);
             }
+        }
+
+        private static void Test_A23_DoubleDespawn_KeepsPooledInstance()
+        {
+            var pool = new ObjectPoolService();
+            var prefab = new GameObject("a23-prefab");
+            var first = pool.Spawn(prefab);
+            pool.Despawn(first);
+            pool.Despawn(first); // the second call must not destroy the instance waiting in the pool
+            var next = pool.Spawn(prefab);
+            bool alive = next;
+            bool reused = ReferenceEquals(next, first);
+            pool.Dispose();
+            UnityEngine.Object.Destroy(prefab);
+
+            Check("A23-O4. DoubleDespawn_KeepsPooledInstance", alive && reused,
+                $"next spawn alive={alive}, reused the pooled instance={reused} (pre-fix: the pooled instance was destroyed and handed out)");
         }
     }
 }

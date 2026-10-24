@@ -257,6 +257,14 @@ namespace Nexus.Core.Services
                         "The prefab was NOT destroyed. Pass the instance returned by Spawn().");
                     return;
                 }
+                // A second Despawn of the same instance: it already waits in its pool, and destroying it
+                // there handed the next Spawn a destroyed object.
+                if (IsPooledInactive(instance))
+                {
+                    NexusRuntime.Logger?.LogWarning(
+                        $"[Nexus] ObjectPoolService.Despawn was called twice for '{instance.name}'; it is already back in its pool.");
+                    return;
+                }
                 _spawnGenerations.Remove(instanceKey);
                 SafeDestroyUtility.SafeDestroy(instance);
                 return;
@@ -372,6 +380,20 @@ namespace Nexus.Core.Services
             {
                 if (ReferenceEquals(kvp.Value.Prefab, obj))
                     return true;
+            }
+            return false;
+        }
+
+        /// <summary>True when <paramref name="obj"/> waits on a pool's inactive stack (O(pooled) — invalid-call path only).</summary>
+        private bool IsPooledInactive(GameObject obj)
+        {
+            foreach (var kvp in _poolsByPrefabId)
+            {
+                foreach (var pooled in kvp.Value.Inactive)
+                {
+                    if (ReferenceEquals(pooled, obj))
+                        return true;
+                }
             }
             return false;
         }
