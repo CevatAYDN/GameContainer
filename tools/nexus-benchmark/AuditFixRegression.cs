@@ -18,6 +18,8 @@
 //   A23-M1 a singleton built while the container is disposed is disposed
 //   A23-M5 a failed one-shot composite surfaces and can fire again
 //   A23-M8 two constructor overrides of one type fill their parameters in order
+// Follow-up issues:
+//   I24 integer saves written before #23 with another culture's minus sign read back
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -195,6 +197,7 @@ namespace NexusBench
             Test_A23_SingletonBuiltDuringDispose_IsDisposed();
             Test_A23_FailedOneShotComposite_SurfacesAndFiresAgain();
             Test_A23_SameTypeOverrides_FillInOrder();
+            Test_I24_LegacyMinusSigns_ReadBack();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -1014,6 +1017,33 @@ namespace NexusBench
 
             Check("A23-M8. SameTypeOverrides_FillInOrder", made.First == "x" && made.Second == "y",
                 $"first={made.First} second={made.Second} (expected x/y; pre-fix x/x)");
+        }
+
+        // ── follow-up issues ──────────────────────────────────────────────────
+        private static void Test_I24_LegacyMinusSigns_ReadBack()
+        {
+            const string salt = "HarnessSalt_I24";
+            UnityEngine.PlayerPrefs.ClearAll();
+            DeleteSecureData(salt);
+            try
+            {
+                // what sv-SE (U+2212) and ar (U+061C ALM before the hyphen) wrote before the invariant format
+                var storage = new EncryptedStorageService(salt);
+                storage.SetString("swedish", "−5");
+                storage.SetString("arabic", "؜-7");
+                long swedish = storage.GetLong("swedish");
+                int arabic = storage.GetInt("arabic");
+                storage.Dispose();
+                UnityEngine.PlayerPrefs.SetString("persian", "‎−9");
+                long persian = new UnityPlayerPrefsService().GetLong("persian");
+
+                Check("I24. LegacyMinusSigns_ReadBack", swedish == -5 && arabic == -7 && persian == -9,
+                    $"U+2212={swedish} U+061C-={arabic} U+200E U+2212={persian} (expected -5/-7/-9; pre-fix 0/0/0)");
+            }
+            finally
+            {
+                DeleteSecureData(salt);
+            }
         }
     }
 }

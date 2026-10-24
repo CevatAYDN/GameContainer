@@ -35,7 +35,7 @@ namespace Nexus.Core.Services
     /// <summary>
     /// Integer save format: invariant culture, so a value written under one device locale reads
     /// under another (a culture whose NegativeSign is U+2212 wrote "−5", which "-" cultures cannot parse).
-    /// Reads fall back to the current culture for values saved before the format was fixed.
+    /// Reads fall back to the current culture, then to any culture's minus sign, for values saved before the format was fixed.
     /// </summary>
     internal static class IntegerStorageCodec
     {
@@ -43,7 +43,12 @@ namespace Nexus.Core.Services
 
         internal static bool TryDecode(string stored, out long value)
             => long.TryParse(stored, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out value)
-               || long.TryParse(stored, out value);
+               || long.TryParse(stored, out value)
+               || (stored != null && long.TryParse(NormalizeLegacySign(stored), System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out value));
+
+        // Legacy negatives: U+2212 MINUS SIGN (sv, nb, fi, ...) and bidi marks before the sign (ar U+061C, fa/he U+200E/U+200F).
+        private static string NormalizeLegacySign(string stored)
+            => stored.Replace("؜", "").Replace("‎", "").Replace("‏", "").Replace('−', '-');
     }
 
     /// <summary>Shared, finite-only codec for the existing mantissa;exponent save format.</summary>
