@@ -32,6 +32,20 @@ namespace Nexus.Core.Services
         void Save();
     }
 
+    /// <summary>
+    /// Integer save format: invariant culture, so a value written under one device locale reads
+    /// under another (a culture whose NegativeSign is U+2212 wrote "−5", which "-" cultures cannot parse).
+    /// Reads fall back to the current culture for values saved before the format was fixed.
+    /// </summary>
+    internal static class IntegerStorageCodec
+    {
+        internal static string Encode(long value) => value.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+        internal static bool TryDecode(string stored, out long value)
+            => long.TryParse(stored, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out value)
+               || long.TryParse(stored, out value);
+    }
+
     /// <summary>Shared, finite-only codec for the existing mantissa;exponent save format.</summary>
     internal static class BigDoubleStorageCodec
     {

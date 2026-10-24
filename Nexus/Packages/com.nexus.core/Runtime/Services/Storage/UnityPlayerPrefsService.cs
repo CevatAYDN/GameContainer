@@ -55,7 +55,7 @@ namespace Nexus.Core.Services
         public long GetLong(string key, long defaultValue = 0L)
         {
             string stringValue = PlayerPrefs.GetString(key, null);
-            if (stringValue != null && long.TryParse(stringValue, out long val))
+            if (stringValue != null && IntegerStorageCodec.TryDecode(stringValue, out long val))
             {
                 return val;
             }
@@ -64,7 +64,7 @@ namespace Nexus.Core.Services
 
         public void SetLong(string key, long value)
         {
-            PlayerPrefs.SetString(key, value.ToString());
+            PlayerPrefs.SetString(key, IntegerStorageCodec.Encode(value));
         }
 
         public BigDouble GetBigDouble(string key, BigDouble defaultValue = default)

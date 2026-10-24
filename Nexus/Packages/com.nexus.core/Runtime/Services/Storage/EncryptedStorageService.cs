@@ -319,10 +319,10 @@ namespace Nexus.Core.Services
         public int GetInt(string key, int defaultValue = 0)
         {
             string valStr = GetString(key, null);
-            return valStr != null && int.TryParse(valStr, out int res) ? res : defaultValue;
+            return valStr != null && IntegerStorageCodec.TryDecode(valStr, out long res) && res >= int.MinValue && res <= int.MaxValue ? (int)res : defaultValue;
         }
 
-        public void SetInt(string key, int value) => SetString(key, value.ToString());
+        public void SetInt(string key, int value) => SetString(key, IntegerStorageCodec.Encode(value));
 
         public bool GetBool(string key, bool defaultValue = false)
         {
@@ -343,10 +343,10 @@ namespace Nexus.Core.Services
         public long GetLong(string key, long defaultValue = 0L)
         {
             string valStr = GetString(key, null);
-            return valStr != null && long.TryParse(valStr, out long res) ? res : defaultValue;
+            return valStr != null && IntegerStorageCodec.TryDecode(valStr, out long res) ? res : defaultValue;
         }
 
-        public void SetLong(string key, long value) => SetString(key, value.ToString());
+        public void SetLong(string key, long value) => SetString(key, IntegerStorageCodec.Encode(value));
 
         public BigDouble GetBigDouble(string key, BigDouble defaultValue = default)
         {

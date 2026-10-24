@@ -11,6 +11,8 @@
 //   M-4b ObservableList concurrent multi-thread reentrant drains stay isolated (per-thread buffer)
 //   M-6 GameSaveManager concurrent SaveAsync serialized (no torn temp writes)
 //   M-7 PerformanceMonitor / NetworkMonitor throwing subscribers isolated
+// External audit of 2026-10-25 (issue #23; ids are the report's):
+//   A23-O2 int/long saves survive a locale change (NegativeSign U+2212)
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -135,7 +137,7 @@ namespace NexusBench
         public static int Run()
         {
             Console.WriteLine();
-            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7) ===");
+            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2) ===");
             _failures = 0;
 
             Test_Composite_NestedCompletion_NoLostTriggers();
@@ -152,6 +154,7 @@ namespace NexusBench
             Test_PerfMonitor_ThrowingSubscriber_Isolated();
             Test_NetworkMonitor_ThrowingSubscriber_Isolated();
             Test_ObjectPoolService_BoundRetention();
+            Test_A23_IntegerSaves_SurviveLocaleChange();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -810,6 +813,59 @@ namespace NexusBench
 
             Check("M3. ObjectPoolService_BoundRetention", inactiveCount > 0 && inactiveCount <= 128,
                 $"retained inactive={inactiveCount} after {spawnCount} despawns (cap 128, pre-fix: unbounded = {spawnCount})");
+        }
+
+        // ── #23 ───────────────────────────────────────────────────────────────
+        private static void DeleteSecureData(string salt)
+        {
+            string dir = System.IO.Path.Combine(Application.persistentDataPath, "SecureData_" + salt);
+            if (System.IO.Directory.Exists(dir)) System.IO.Directory.Delete(dir, true);
+        }
+
+        private static void Test_A23_IntegerSaves_SurviveLocaleChange()
+        {
+            const string salt = "HarnessSalt_A23_O2";
+            var unicodeMinus = (System.Globalization.CultureInfo)System.Globalization.CultureInfo.GetCultureInfo("en-US").Clone();
+            unicodeMinus.NumberFormat.NegativeSign = "−"; // as sv-SE, nb-NO, fi-FI and others write it
+            UnityEngine.PlayerPrefs.ClearAll();
+            DeleteSecureData(salt);
+            // Own thread: setting CurrentCulture on the harness thread would pin it and hide later suites'
+            // DefaultThreadCurrentCulture (ServicesSuite sets the invariant culture that way).
+            var worker = new Thread(() => RunIntegerSavesAcrossLocales(salt, unicodeMinus));
+            worker.Start();
+            worker.Join();
+        }
+
+        private static void RunIntegerSavesAcrossLocales(string salt, System.Globalization.CultureInfo unicodeMinus)
+        {
+            try
+            {
+                System.Globalization.CultureInfo.CurrentCulture = unicodeMinus;
+                var writer = new EncryptedStorageService(salt) { AutoSave = true };
+                writer.SetLong("coins", -5);
+                writer.SetInt("level", -3);
+                writer.Dispose();
+                var prefs = new UnityPlayerPrefsService();
+                prefs.SetLong("plain", -7);
+
+                System.Globalization.CultureInfo.CurrentCulture = System.Globalization.CultureInfo.GetCultureInfo("en-US");
+                var reader = new EncryptedStorageService(salt);
+                long coins = reader.GetLong("coins");
+                int level = reader.GetInt("level");
+                long plain = prefs.GetLong("plain");
+                reader.Dispose();
+
+                Check("A23-O2. IntegerSaves_SurviveLocaleChange", coins == -5 && level == -3 && plain == -7,
+                    $"coins={coins} level={level} plain={plain} (expected -5/-3/-7; pre-fix 0/0/0: \"−5\" written under one locale did not parse under another)");
+            }
+            catch (Exception ex)
+            {
+                Check("A23-O2. IntegerSaves_SurviveLocaleChange", false, "threw " + ex.GetType().Name + ": " + ex.Message);
+            }
+            finally
+            {
+                DeleteSecureData(salt);
+            }
         }
     }
 }
