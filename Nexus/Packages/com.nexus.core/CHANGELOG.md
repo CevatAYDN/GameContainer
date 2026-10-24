@@ -22,6 +22,7 @@ everything under Unreleased is in the repository but not yet in a tagged package
 - `AdMobConfig.DebugGeographyEea` and `TestDeviceHashedIds` (testing only): when either is set, the consent request carries the User Messaging Platform's debug settings, so a test phone outside the EEA sees the consent form; left unset the request is the same as before (`AdMobAdapterTests.ConsentDebugSettings_OnlyWhenEeaOrATestDeviceIsSet`). The adapter logs `[AdMob] Consent debug settings: ...` when it applies them.
 
 ### Fixed
+- The generated `link.xml` did not keep lifecycles found by name convention or unbound `AddSignalFilter<TSignal, TFilter>` types, which only `Activator` creates, so Medium/High managed stripping could remove them (issue #37). The generator now adds every `IContextLifecycle` and `ISignalFilter<T>` implementation; regenerate the binder (**Nexus > Generate AOT Binder**) before the next player build. Harness CG5 fails on the old generator.
 - `InputService` swallowed every Input System read error, so a broken setup read as no input with nothing logged (issue #35); the first failure is now logged once, as on the legacy path.
 - `SafeDestroyUtility.SafeDestroy` threw `UnityException` when a dispose ran on a worker thread (issue #34); an off-thread call is now posted to the main thread.
 - A command failure that reached `Fire`'s caller (a one-shot, an abort) was written to the console twice: by the recovery engine with its stack trace and again as `[Nexus Error]` by `ErrorCollection` (issue #7). `Fire`'s catch still collects it but writes no second line.

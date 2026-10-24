@@ -86,6 +86,23 @@ namespace NexusBench
         public CodeGenMediator(CodeGenDep dep) { Dep = dep; }
     }
 
+    /// <summary>Created only through Activator (a convention lifecycle, an unbound AddSignalFilter type) and
+    /// carrying no [Inject] member: link.xml must still keep them (issue #37).</summary>
+    public sealed class CodeGenConventionLifecycle : IContextLifecycle
+    {
+        public void OnConfigure(IContextBuilder builder) { }
+        public System.Threading.Tasks.ValueTask OnInitializeAsync(System.Threading.CancellationToken ct) => default;
+        public System.Threading.Tasks.ValueTask OnStartAsync(System.Threading.CancellationToken ct) => default;
+        public void OnDispose() { }
+    }
+
+    public struct CodeGenFilteredSignal { }
+
+    public sealed class CodeGenUnboundFilter : ISignalFilter<CodeGenFilteredSignal>
+    {
+        public bool OnFilter(ref CodeGenFilteredSignal signal) => true;
+    }
+
     /// <summary>Injection-hierarchy fixtures. CodeGenVisibleBase carries a PRIVATE [Inject]
     /// field (the chain walk must surface it and the generated injector must handle it via
     /// cached FieldInfo on the base type). CodeGenNonEmittableMember's [Inject] member type is
@@ -144,6 +161,7 @@ namespace NexusBench
             Test_Generator_Emits_Compiles_And_Boots();
             Test_Codegen_Skips_Factories_For_UnityObjects_And_Package_Runtime();
             Test_ConstructorFactoryPolicy_Decisions();
+            Test_LinkXml_Keeps_ActivatorCreatedTypes();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -471,6 +489,32 @@ namespace NexusBench.CG2Source
                 try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
             }
             Report("CG3. Codegen_Skips_Factories_For_UnityObjects", ok, detail);
+        }
+
+        private static void Test_LinkXml_Keeps_ActivatorCreatedTypes()
+        {
+            string rootDir = NexusEditorSettings.OutputRoot;
+            bool ok = false;
+            string detail;
+            try
+            {
+                if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
+                NexusCodeGenerator.GenerateBinder();
+                string linkXml = File.ReadAllText(Path.Combine(rootDir, "link.xml"));
+                bool lifecycleKept = linkXml.Contains("fullname=\"NexusBench.CodeGenConventionLifecycle\"");
+                bool filterKept = linkXml.Contains("fullname=\"NexusBench.CodeGenUnboundFilter\"");
+                ok = lifecycleKept && filterKept;
+                detail = $"convention lifecycle kept={lifecycleKept}, unbound signal filter kept={filterKept} (pre-fix: neither, they carry no [Inject])";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report("CG5. LinkXml_Keeps_ActivatorCreatedTypes", ok, detail);
         }
 
         private static void Test_ConstructorFactoryPolicy_Decisions()

@@ -227,6 +227,13 @@ namespace Nexus.Editor
             => m.GetCustomAttribute<InjectAttribute>() != null;
 
         /// <summary>True when a type can be referenced from the generated binder file.</summary>
+        private static bool ImplementsSignalFilter(Type type)
+        {
+            foreach (var iface in type.GetInterfaces())
+                if (iface.IsGenericType && iface.GetGenericTypeDefinition() == typeof(ISignalFilter<>)) return true;
+            return false;
+        }
+
         private static bool IsEmittableType(Type type)
         {
             if (type == null || !type.IsVisible || type.IsNestedPrivate || type.IsNestedAssembly) return false;
@@ -409,6 +416,13 @@ namespace Nexus.Editor
                             linkXmlTypes.Add(type);
                             if (emittable && codegenVisible && IsEmittableType(type))
                                 injectTypes.Add(type);
+                        }
+                        // Created only through Activator: a lifecycle found by name convention and an
+                        // AddSignalFilter<TSignal, TFilter> type that is not bound. Nothing references
+                        // them statically, so Medium/High stripping removed them (issue #37).
+                        else if (typeof(IContextLifecycle).IsAssignableFrom(type) || ImplementsSignalFilter(type))
+                        {
+                            linkXmlTypes.Add(type);
                         }
 
                         // Constructor factory emission: emittable types that may be constructed with

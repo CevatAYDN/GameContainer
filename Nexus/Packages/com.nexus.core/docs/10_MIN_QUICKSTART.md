@@ -110,7 +110,8 @@ public class GameLifecycle : MonoBehaviour, IContextLifecycle
 > **Discovery:** attach `GameLifecycle` to the `GameRoot` GameObject (**Add Component**) —
 > `Root` finds every `IContextLifecycle` component on it automatically. (A plain class
 > also works via the `{ScopeTag}Lifecycle` name convention when the ContextData carries a
-> matching `ScopeTag`.)
+> matching `ScopeTag`; nothing references such a class, so for IL2CPP keep it in the generated
+> `link.xml` (**Nexus > Generate AOT Binder** adds it) or mark it `[Preserve]`.)
 
 ---
 

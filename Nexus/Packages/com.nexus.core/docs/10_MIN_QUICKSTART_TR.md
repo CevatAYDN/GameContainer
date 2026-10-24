@@ -109,7 +109,9 @@ public class GameLifecycle : MonoBehaviour, IContextLifecycle
 
 > **Keşif:** `GameLifecycle`'ı `GameRoot` GameObject'ine ekleyin (**Add Component**) —
 > `Root`, üzerindeki tüm `IContextLifecycle` bileşenlerini otomatik bulur. (Düz bir sınıf da
-> ContextData'da eşleşen bir `ScopeTag` ile `{ScopeTag}Lifecycle` isim konvansiyonu üzerinden bulunur.)
+> ContextData'da eşleşen bir `ScopeTag` ile `{ScopeTag}Lifecycle` isim konvansiyonu üzerinden bulunur;
+> böyle bir sınıfa hiçbir yer başvurmadığından IL2CPP için üretilen `link.xml`'de tutun
+> (**Nexus > Generate AOT Binder** ekler) ya da `[Preserve]` ile işaretleyin.)
 
 ---
 
