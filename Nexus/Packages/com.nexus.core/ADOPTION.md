@@ -14,23 +14,29 @@
 
 ## Recommended setup
 
-1. Fork `com.nexus.core` into your studio org (e.g. `your-org/com.nexus.core`).
-2. Pin a version tag (see `docs/STABILITY.md` for the 1.0 freeze checklist).
+1. Fork `GameContainer` into your studio org (e.g. `your-org/GameContainer`). The package lives in
+   that repository at `Nexus/Packages/com.nexus.core`.
+2. Pin a version tag such as `v0.5.0`, or a full 40-character commit hash (see `docs/STABILITY.md`
+   for what stays stable before 1.0).
 3. Each game consumes the fork via a UPM git dependency:
 
 ```json
 // Packages/manifest.json
 {
   "dependencies": {
-    "com.nexus.core": "https://github.com/<your-org>/com.nexus.core.git?path=Packages/com.nexus.core#<tag>"
+    "com.nexus.core": "https://github.com/<your-org>/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<tag>"
   }
 }
 ```
 
-Git submodules work too:
+Git submodules work too: add the fork outside `Packages/` and point the manifest at the package folder.
 
 ```bash
-git submodule add https://github.com/<your-org>/com.nexus.core.git Packages/com.nexus.core
+git submodule add https://github.com/<your-org>/GameContainer.git External/GameContainer
+```
+
+```json
+"com.nexus.core": "file:../External/GameContainer/Nexus/Packages/com.nexus.core"
 ```
 
 ## What to own vs. what not to fork
@@ -46,6 +52,6 @@ git submodule add https://github.com/<your-org>/com.nexus.core.git Packages/com.
 
 ## Real-game reference
 
-The reference real-game consumer uses Nexus the same way your games should: the infrastructure lives in the
-which uses Nexus the same way your games should: the infrastructure lives in the
-fork, the game logic lives in the game repo.
+This repository's own games (Gigawatt, Wickling, ChipCrisis and others) consume the upstream repository by
+git URL pinned to a commit: the infrastructure lives in the package, the game logic lives in each game's
+repository, and a framework fix is made in the package and re-pinned, never edited in a game's copy.
