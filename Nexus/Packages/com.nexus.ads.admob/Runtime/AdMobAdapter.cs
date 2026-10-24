@@ -272,7 +272,9 @@ namespace Nexus.Ads.AdMob
             int seconds = Math.Min(600, 30 * (1 << Math.Min(5, Math.Max(0, failures - 1))));
             try { await Task.Delay(TimeSpan.FromSeconds(seconds), Application.exitCancellationToken); }
             catch (OperationCanceledException) { return; }
-            load();
+            // async void: an exception here would bypass the adapter and reach the synchronization context.
+            try { load(); }
+            catch (Exception ex) { Warn("A load retry failed: " + ex.GetType().Name + ": " + ex.Message); }
         }
 
         private void Changed() => ReadyChanged?.Invoke();
