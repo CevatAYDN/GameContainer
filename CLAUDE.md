@@ -8,14 +8,14 @@ must be current, consistent and verifiable. Read this file before changing code 
 
 | Path | Role |
 |---|---|
-| `Nexus/Packages/com.nexus.core/` | The product. `Runtime/` (player code), `Editor/` (tools, codegen, validation), `Tests/Editor` + `Tests/Runtime` (Unity NUnit), `Samples~/` (3 importable samples), `SourceGenerator~/` (Roslyn binder generator), `docs/` (user documentation), `CHANGELOG.md` (the only changelog) |
+| `Nexus/Packages/com.nexus.core/` | The product. `Runtime/` (player code), `Editor/` (tools, codegen, validation), `Tests/Editor` + `Tests/Runtime` (Unity NUnit), `Samples~/` (3 importable samples), `SourceGenerator~/` (Roslyn binder generator), `docs/` (user documentation), `CHANGELOG.md` (the changelog of the core and its adapter packages) |
 | `Nexus/` | Unity 6000.5.6f1 development project hosting the package. `Assets/Scripts/Game/Samples` holds the wizard's canonical generated files; `Assets/Scripts/Nexus/` holds the git-ignored generated binder |
 | `tools/nexus-benchmark/` | .NET host harness; compiles the runtime against stubs (`UnityStubs.cs`, `GeneratorStubs.cs`) and runs every proof suite. Runs as the git pre-commit hook |
 | `tools/nexus-comparison/` | Pinned VContainer/Zenject/Reflex DI comparison (host and Unity Mono player) |
 | `tools/nexus-consumer/` | Clean UPM consumer gate: packs the tarball, fresh project, sample import, tests, player |
 | `tools/unity-verify/` | Player builds of the development project (`NexusVerify.NexusVerifyBuild.*`) |
 | `tools/device-acceptance/` | Runs an Android player on the connected phone: soak, background/resume, kill/restart, logcat scan (gate 12) |
-| `Nexus/Packages/com.nexus.ads/` | The ad package family's core (issue #8). Phase 1 holds `docs/POLICY_COMPLIANCE.md` (policy register, EN + TR) and `Editor/PlatformCatalog.json` (setup wizard data); the engine-free core, Unity layer, editor, providers and Nexus bridge follow in #10–#14 |
+| `Nexus/Packages/com.nexus.ads/` | The ad package family's core (issue #8): `Runtime/Core` (engine-free, `noEngineReferences`; compiled and proven in the host harness), `Runtime/Unity` (settings asset, bootstrap, simulator overlay, rewarded button), `docs/POLICY_COMPLIANCE.md` (policy register, EN + TR), `Editor/PlatformCatalog.json` (setup wizard data), `CHANGELOG.md` (the family's changelog: core, providers, bridge). Editor tools, providers and the Nexus bridge follow in #11–#14 |
 | `Nexus/Packages/com.nexus.ads.admob/`, `com.nexus.iap.unity/` | Optional adapter packages (Google AdMob with UMP consent; Unity IAP 5) behind `AdService` / `IapService`; compile only when their SDK package is installed (`versionDefines`) |
 | `docs/RELEASE_GATES.md` | The gates and the latest measured numbers |
 | `docs/research/` | Dated, sourced research (competitors) |
@@ -59,7 +59,7 @@ before tests, or the Standalone define `NEXUS_DEBUG` silently drops out of edito
 - One canonical document per topic. User documentation lives in the package `docs/`; repository-level status lives in `docs/`; dated reports go to `docs/archive/` with a row in its README and are never edited afterwards.
 - English is canonical; `*_TR.md` files are translations and change in the same commit as their source.
 - Every number (test counts, file counts, versions, benchmark values) and every path or menu name in a document is checked against the code when the document is touched. No "last updated" footers; the git history is the date.
-- The package `CHANGELOG.md` is the only changelog. `package.json` is the released version; everything newer is under `[Unreleased]`.
+- Two changelogs, one per family: `com.nexus.core/CHANGELOG.md` covers the core and its adapter packages (`com.nexus.ads.admob`, `com.nexus.iap.unity`, `com.nexus.firebase`); `com.nexus.ads/CHANGELOG.md` covers the ad package family (core, providers, bridge). Each `package.json` is its released version; everything newer is under `[Unreleased]`.
 - No performance claim without workload, platform, Unity version, competitor versions and reproduction tool. "Verified" means a result file exists.
 
 **Consumers**
