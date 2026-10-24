@@ -146,6 +146,31 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(1, warnings);
         }
 
+        /// <summary>
+        /// While the logger is disabled the warning is neither logged nor built, and the type is not remembered: a test
+        /// context that binds a disabled LoggerService measures its hot path without the diagnostic, and the warning still
+        /// appears once the logger is enabled again.
+        /// </summary>
+        [Test]
+        public void Fire_WithoutAnyHandler_SkipsTheWarning_WhileTheLoggerIsDisabled()
+        {
+            int warnings = 0;
+            Application.LogCallback count = (message, _, type) => { if (type == LogType.Warning && message.Contains("UnheardSignal")) warnings++; };
+            Application.logMessageReceived += count;
+            var logger = NexusRuntime.Logger;
+            bool enabled = logger.IsEnabled;
+            try
+            {
+                logger.IsEnabled = false;
+                _signalBus.Fire(new UnheardSignal());
+                Assert.AreEqual(0, warnings);
+                logger.IsEnabled = true;
+                _signalBus.Fire(new UnheardSignal());
+                Assert.AreEqual(1, warnings);
+            }
+            finally { logger.IsEnabled = enabled; Application.logMessageReceived -= count; }
+        }
+
         [Test]
         public void Fire_ExecutesRegisteredCommandAndInjectsSignal()
         {

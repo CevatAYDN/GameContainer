@@ -634,9 +634,12 @@ namespace Nexus.Core
 
             // === FAST PATH: All handlers are synchronous ===
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (!_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _) && _warnedNoHandlers.Add(type))
+            if (!_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _))
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
+                // A disabled logger drops warnings, so the message is not built for it (a test context measuring its hot path).
+                var logger = NexusRuntime.Logger;
+                if (logger.IsEnabled && _warnedNoHandlers.Add(type))
+                    logger.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
             }
 #endif
 
