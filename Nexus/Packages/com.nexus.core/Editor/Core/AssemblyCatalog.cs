@@ -90,7 +90,14 @@ namespace Nexus.Editor
                 bool usesNexus = false;
                 AssemblyName[] references;
                 try { references = assembly.GetReferencedAssemblies(); }
-                catch { continue; }
+                catch (Exception ex)
+                {
+                    // Skipped from the binder and link.xml: say so, once per assembly (a stripped type would follow).
+                    var name = GetSimpleName(assembly);
+                    if (name != null && s_warnedAssemblies.Add(name))
+                        Debug.LogWarning($"[Nexus] Could not read the references of '{name}' ({ex.GetType().Name}: {ex.Message}); it is left out of the AOT binder and link.xml.");
+                    continue;
+                }
                 foreach (var reference in references)
                     if (reference.Name == nexusRuntime) { usesNexus = true; break; }
                 if (usesNexus) yield return assembly;
