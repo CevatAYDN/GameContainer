@@ -1,0 +1,198 @@
+{
+  "readDate": "2026-10-24",
+  "note": "Links, official test data and registration steps for the Nexus ads setup wizard. Test values come only from the provider's official documentation; a provider without published test data has testData.published = false and the unregistered-device rule applies. Policy rules per platform are in docs/POLICY_COMPLIANCE.md.",
+  "providers": [
+    {
+      "id": "levelplay",
+      "name": "Unity LevelPlay",
+      "role": "mediation",
+      "when": "now; first provider",
+      "registration": "https://cloud.unity.com",
+      "docs": "https://docs.unity.com/grow/levelplay/sdk/unity/package-integration/",
+      "policies": [
+        "https://unity.com/pages/unity-operate-policy-center",
+        "https://unity.com/legal/placement-policy",
+        "https://unity.com/legal/invalid-activity-policy",
+        "https://unity.com/legal/rewarded-inventory-policy",
+        "https://unity.com/legal/content-policy",
+        "https://unity.com/legal/monetization-services-terms-of-service"
+      ],
+      "familiesSelfCertified": { "listed": true, "row": "ironSource mediationsdk 7.2.1 or later", "source": "https://support.google.com/googleplay/android-developer/answer/9283445" },
+      "sdk": {
+        "upm": { "package": "com.unity.services.levelplay", "registry": "Unity registry (Package Manager: Ads Mediation)", "versionSeen": "9.5.1" },
+        "unitypackage": "https://github.com/ironsource-mobile/Unity-sdk/releases",
+        "define": "NEXUS_LEVELPLAY",
+        "namespace": "Unity.Services.LevelPlay",
+        "init": "LevelPlay.Init(appKey)",
+        "minAndroidApi": 19,
+        "minIos": "13"
+      },
+      "testData": {
+        "published": false,
+        "note": "No demo or test App Key is published. The editor mock mode initializes with the literal \"editor\" and mock ad unit ids such as \"editor_banner\"; it does not simulate latency, failures or reward logic. Test ads come from the account's own App Key on devices listed in the dashboard.",
+        "editorMockKey": "editor",
+        "source": "https://docs.unity.com/grow/levelplay/sdk/unity/preview-mock-ads-in-editor",
+        "testDevices": { "where": "LevelPlay dashboard > Settings > Test devices, by advertising id", "source": "https://docs.unity.com/grow/levelplay/sdk/unity/integration-testing" },
+        "testSuite": { "metadataKey": "is_test_suite", "metadataValue": "enable", "launch": "LevelPlay.LaunchTestSuite()", "minSdk": "7.3.0", "orientation": "portrait", "source": "https://docs.unity.com/grow/levelplay/sdk/unity/integration-test-suite" }
+      },
+      "steps": {
+        "en": [
+          "Create a Unity account or sign in at cloud.unity.com with the Play Console email.",
+          "Add the app on the LevelPlay platform (an unpublished app can be added) and copy its App Key.",
+          "Create one rewarded and one interstitial ad unit for Android (and iOS when needed) and copy their ids.",
+          "Add your device's advertising id under Settings > Test devices.",
+          "Install the Ads Mediation package (com.unity.services.levelplay) and run Ads Mediation > Network Manager, then the Android Resolver.",
+          "Enter the App Key and ad unit ids on the Release tab; the Test tab copies them and keeps the device list.",
+          "Fill payment and tax details before the first payout."
+        ],
+        "tr": [
+          "cloud.unity.com'da Play Console e-postasıyla Unity hesabı aç ya da giriş yap.",
+          "LevelPlay platformuna uygulamayı ekle (yayınlanmamış uygulama eklenebilir) ve App Key'ini kopyala.",
+          "Android (gerekirse iOS) için bir ödüllü ve bir geçiş reklam birimi oluştur, kimliklerini kopyala.",
+          "Cihazının reklam kimliğini Settings > Test devices altına ekle.",
+          "Ads Mediation paketini (com.unity.services.levelplay) kur, Ads Mediation > Network Manager'ı ve ardından Android Resolver'ı çalıştır.",
+          "App Key ve reklam birimi kimliklerini Release sekmesine gir; Test sekmesi bunları kopyalar ve cihaz listesini tutar.",
+          "İlk ödemeden önce ödeme ve vergi bilgilerini doldur."
+        ]
+      }
+    },
+    {
+      "id": "max",
+      "name": "AppLovin MAX",
+      "role": "mediation",
+      "when": "apply now; needs approval",
+      "registration": "https://dash.applovin.com",
+      "docs": "https://support.applovin.com/en/max/unity/overview/integration",
+      "policies": [
+        "https://legal.applovin.com/policies-publishers/",
+        "https://legal.applovin.com/introduction-to-applovins-publisher-content-policies/",
+        "https://support.applovin.com/en/max-dashboard/best-practices"
+      ],
+      "familiesSelfCertified": { "listed": false, "row": "AppLovin has left the Families Self-Certified Ads SDK Program.", "source": "https://support.google.com/googleplay/android-developer/answer/9283445" },
+      "childDirectedAllowed": false,
+      "sdk": {
+        "upm": { "package": "com.applovin.mediation.ads", "registry": "https://unity.packages.applovin.com/", "scopes": [ "com.applovin.mediation.ads", "com.applovin.mediation.adapters", "com.applovin.mediation.dsp" ], "installedBy": "AppLovin installer package (Assets > Import Package > Custom Package)", "versionSeen": "8.6.6", "versionSource": "https://github.com/AppLovin/AppLovin-MAX-Unity-Plugin/releases" },
+        "unitypackage": "https://github.com/AppLovin/AppLovin-MAX-Unity-Plugin/releases",
+        "define": "NEXUS_MAX",
+        "init": "MaxSdk.InitializeSdk()",
+        "sdkKeyLocation": "AppLovin > Integration Manager > SDK Settings",
+        "jetifier": true,
+        "minUnity": "2019.4"
+      },
+      "testData": {
+        "published": false,
+        "note": "No sample SDK key or test ad unit ids are published. Test ads use the account's SDK key and ad units with test mode on; AppLovin does not track impressions, clicks or revenue for them.",
+        "source": "https://support.applovin.com/en/max/unity/testing-networks/test-mode",
+        "testDevices": { "api": "MaxSdk.SetTestDeviceAdvertisingIdentifiers(string[]) before MaxSdk.InitializeSdk()", "dashboard": "Mediation > Manage > Test Mode", "logLine": "Test Mode On: true" },
+        "debugger": "MaxSdk.ShowMediationDebugger()"
+      },
+      "steps": {
+        "en": [
+          "Apply at dash.applovin.com with the company details and the Play Console email; wait for approval.",
+          "Add the app and copy the SDK key (Account > General > Keys).",
+          "Create one rewarded and one interstitial ad unit and copy their ids.",
+          "Install the plugin with AppLovin's installer package (adds the scoped registry), enable Jetifier in the Android Resolver settings.",
+          "Enter the SDK key and ad unit ids on the Release tab; add your device's GAID/IDFA to the Test tab's device list.",
+          "Fill payment and tax details before the first payout."
+        ],
+        "tr": [
+          "dash.applovin.com'da şirket bilgileri ve Play Console e-postasıyla başvur; onayı bekle.",
+          "Uygulamayı ekle ve SDK anahtarını kopyala (Account > General > Keys).",
+          "Bir ödüllü ve bir geçiş reklam birimi oluştur, kimliklerini kopyala.",
+          "Eklentiyi AppLovin'in yükleyici paketiyle kur (kapsamlı kayıt defterini ekler), Android Resolver ayarlarında Jetifier'ı aç.",
+          "SDK anahtarını ve reklam birimi kimliklerini Release sekmesine gir; cihazının GAID/IDFA'sını Test sekmesinin cihaz listesine ekle.",
+          "İlk ödemeden önce ödeme ve vergi bilgilerini doldur."
+        ]
+      }
+    },
+    {
+      "id": "admob",
+      "name": "Google AdMob",
+      "role": "network",
+      "when": "after the 29-day suspension; as a network inside the mediation, or as the provider of the existing com.nexus.ads.admob package",
+      "registration": "https://admob.google.com",
+      "docs": "https://developers.google.com/admob/unity/quick-start",
+      "policies": [
+        "https://support.google.com/admob/answer/6128543",
+        "https://support.google.com/admob/answer/2753860",
+        "https://support.google.com/admob/answer/3342054",
+        "https://support.google.com/admob/answer/6201362",
+        "https://support.google.com/admob/answer/7313578",
+        "https://support.google.com/admob/answer/6223431"
+      ],
+      "familiesSelfCertified": { "listed": true, "row": "Google AdMob play-services-ads 19.0.0 or later", "source": "https://support.google.com/googleplay/android-developer/answer/9283445" },
+      "sdk": {
+        "upm": { "package": "com.google.ads.mobile", "registry": "https://package.openupm.com", "scopes": [ "com.google" ], "versionSeen": "11.6.0" },
+        "unitypackage": "https://github.com/googleads/googleads-mobile-unity/releases",
+        "define": "NEXUS_ADMOB",
+        "settingsAsset": "Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset",
+        "testDevicesApi": "RequestConfiguration.TestDeviceIds",
+        "adIdPermission": "com.google.android.gms.permission.AD_ID declared by GMA SDK 20.4.0+"
+      },
+      "testData": {
+        "published": true,
+        "source": "https://developers.google.com/admob/unity/test-ads",
+        "appIdSource": { "android": "https://developers.google.com/admob/android/quick-start", "ios": "https://developers.google.com/admob/ios/quick-start" },
+        "publisherPrefix": "ca-app-pub-3940256099942544",
+        "android": {
+          "appId": "ca-app-pub-3940256099942544~3347511713",
+          "appOpen": "ca-app-pub-3940256099942544/9257395921",
+          "banner": "ca-app-pub-3940256099942544/6300978111",
+          "adaptiveBanner": "ca-app-pub-3940256099942544/9214589741",
+          "interstitial": "ca-app-pub-3940256099942544/1033173712",
+          "rewarded": "ca-app-pub-3940256099942544/5224354917",
+          "rewardedInterstitial": "ca-app-pub-3940256099942544/5354046379",
+          "native": "ca-app-pub-3940256099942544/2247696110"
+        },
+        "ios": {
+          "appId": "ca-app-pub-3940256099942544~1458002511",
+          "appOpen": "ca-app-pub-3940256099942544/5575463023",
+          "banner": "ca-app-pub-3940256099942544/2934735716",
+          "adaptiveBanner": "ca-app-pub-3940256099942544/2435281174",
+          "interstitial": "ca-app-pub-3940256099942544/4411468910",
+          "rewarded": "ca-app-pub-3940256099942544/1712485313",
+          "rewardedInterstitial": "ca-app-pub-3940256099942544/6978759866",
+          "native": "ca-app-pub-3940256099942544/3986624511"
+        }
+      },
+      "steps": {
+        "en": [
+          "Sign in at admob.google.com with the Play Console email (one account per publisher).",
+          "Add the app and copy the App ID into the Google Mobile Ads settings asset (Release tab).",
+          "Create one rewarded and one interstitial ad unit and copy their ids to the Release tab; the Test tab is filled with Google's sample units.",
+          "Add your device's hashed id to the Test tab's device list, or register it in the AdMob UI.",
+          "Fill payment and tax details before the first payout."
+        ],
+        "tr": [
+          "admob.google.com'a Play Console e-postasıyla gir (yayıncı başına tek hesap).",
+          "Uygulamayı ekle ve App ID'yi Google Mobile Ads ayar varlığına yaz (Release sekmesi).",
+          "Bir ödüllü ve bir geçiş reklam birimi oluştur, kimliklerini Release sekmesine kopyala; Test sekmesi Google'ın örnek birimleriyle dolar.",
+          "Cihazının karma kimliğini Test sekmesinin cihaz listesine ekle ya da AdMob arayüzünde kaydet.",
+          "İlk ödemeden önce ödeme ve vergi bilgilerini doldur."
+        ]
+      }
+    }
+  ],
+  "networks": [
+    { "id": "mintegral", "name": "Mintegral", "when": "when the mediation is chosen", "registration": "https://dev.mintegral.com", "policies": [ "https://helpcenter.mintegral.com/en/docs/mtg-antifraud-measures" ], "familiesSelfCertified": { "listed": false } },
+    { "id": "liftoff", "name": "Liftoff Monetize (Vungle)", "when": "when the mediation is chosen", "registration": "https://publisher.vungle.com", "policies": [ "https://support.vungle.com/hc/en-us/categories/360001994512-Publisher" ], "familiesSelfCertified": { "listed": true, "row": "Vungle publisher-sdk-android 6.10.4 or later" }, "note": "Terms of Service article answered HTTP 403 to the tool on the read date; read it at registration." },
+    { "id": "pangle", "name": "Pangle", "when": "when the mediation is chosen", "registration": "https://www.pangleglobal.com", "policies": [ "https://pangleglobal.com/knowledge/pangle-supply-policy" ], "familiesSelfCertified": { "listed": false }, "childDirectedAllowed": false },
+    { "id": "dtexchange", "name": "DT Exchange", "when": "when the mediation is chosen", "registration": "https://console.fyber.com", "policies": [ "https://www.digitalturbine.com/legal/service-order-for-publishers-fyber", "https://www.digitalturbine.com/legal/msa-supply-fyber" ], "familiesSelfCertified": { "listed": true, "row": "DT Exchange SDK marketplace-sdk 8.2.1 or later" } },
+    { "id": "meta", "name": "Meta Audience Network", "when": "when the game is live", "registration": "https://business.facebook.com", "policies": [ "https://developers.facebook.com/docs/audience-network/optimization/best-practices/an-policy" ], "familiesSelfCertified": { "listed": false }, "appAdsTxtRequired": true },
+    { "id": "inmobi", "name": "InMobi", "when": "when the game is live", "registration": "https://publisher.inmobi.com", "policies": [ "https://advertising.inmobi.com/publisher-policy/", "https://support.inmobi.com/monetize/privacy/coppa" ], "familiesSelfCertified": { "listed": true, "row": "InMobi inmobi-ads 10.5.5 or later" }, "note": "Registration link answers 401 without a session (sign-in page). Publisher Policy body was truncated by the tool on the read date; read it at registration." },
+    { "id": "chartboost", "name": "Chartboost", "when": "when the game is live", "registration": "https://dashboard.chartboost.com", "policies": [ "https://docs.chartboost.com/en/legal/terms-conditions/" ], "familiesSelfCertified": { "listed": true, "row": "Chartboost chartboost-sdk 9.1.1 or later" }, "childDirectedAllowed": false }
+  ],
+  "googlePlay": {
+    "adsPolicy": "https://support.google.com/googleplay/android-developer/answer/9857753",
+    "familiesPolicy": "https://support.google.com/googleplay/android-developer/answer/9893335",
+    "familiesSelfCertifiedSdks": "https://support.google.com/googleplay/android-developer/answer/9283445",
+    "advertisingId": "https://support.google.com/googleplay/android-developer/answer/6048248",
+    "appContentDeclarations": "https://support.google.com/googleplay/android-developer/answer/9859455",
+    "adIdPermission": "com.google.android.gms.permission.AD_ID",
+    "adIdPermissionRequiredFromTargetSdk": 33
+  },
+  "commonRules": {
+    "en": [ "Use the same company details and the Play Console email on every platform.", "One account per platform; a second account counts as a violation." ],
+    "tr": [ "Her platformda aynı şirket bilgileri ve Play Console e-postası kullanılır.", "Platform başına tek hesap açılır; ikinci hesap ihlal sayılır." ]
+  }
+}

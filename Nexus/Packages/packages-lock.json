@@ -17,6 +17,12 @@
       },
       "hash": "aa5fc638d623f56178d50329d9ad8c541a57fe66"
     },
+    "com.nexus.ads": {
+      "version": "file:com.nexus.ads",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {}
+    },
     "com.nexus.ads.admob": {
       "version": "file:com.nexus.ads.admob",
       "depth": 0,
