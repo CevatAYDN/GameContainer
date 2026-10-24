@@ -32,8 +32,8 @@ namespace Nexus.Ads
         private readonly IAdScheduler _scheduler;
         private readonly IAdTelemetry _telemetry;
         private readonly IConsentFlow _consent;
-        private readonly IAdFreeEntitlement _adFree;
-        private readonly IAdsRemoteConfig _remote;
+        private IAdFreeEntitlement _adFree;
+        private IAdsRemoteConfig _remote;
         private readonly SessionTracker _session;
         private readonly IPacingStore _store;
         private readonly Dictionary<AdFormat, Slot> _slots = new Dictionary<AdFormat, Slot>();
@@ -173,6 +173,35 @@ namespace Nexus.Ads
         }
 
         public void HideBanner() => _provider.HideBanner();
+
+        /// <summary>Shows a banner placement at a position; same guard and NotReady rules as <see cref="Show"/>.</summary>
+        public void ShowBanner(string placement, BannerPosition position, Action<AdResult> onResult = null)
+        {
+            var declared = _config.Find(placement);
+            var verdict = Guard.Check(placement, AdFormat.Banner, new GuardState(_fullScreenOpen, State == Phase.AwaitingConsent));
+            if (!verdict.Allowed) { Raise(new PolicyViolation(verdict.Rule, placement ?? "", AdFormat.Banner, verdict.Reason)); onResult?.Invoke(AdResult.Blocked); return; }
+            if (State != Phase.Running || _killSwitch) { NotReady(declared, _killSwitch ? "kill switch" : State.ToString()); onResult?.Invoke(AdResult.NotReady); return; }
+            _provider.ShowBanner(placement, position);
+            onResult?.Invoke(AdResult.Closed);
+        }
+
+        /// <summary>Attaches (or replaces) the ad-free entitlement after construction; the bridge wires it once the store exists.</summary>
+        public void SetAdFreeEntitlement(IAdFreeEntitlement adFree)
+        {
+            if (_adFree != null) _adFree.Changed -= RaiseReadyChanged;
+            _adFree = adFree;
+            if (_adFree != null) _adFree.Changed += RaiseReadyChanged;
+            RaiseReadyChanged();
+        }
+
+        /// <summary>Attaches (or replaces) the remote configuration after construction and applies it at once.</summary>
+        public void SetRemoteConfig(IAdsRemoteConfig remote)
+        {
+            if (_remote != null) _remote.Changed -= OnRemoteChanged;
+            _remote = remote;
+            if (_remote != null) { _remote.Changed += OnRemoteChanged; OnRemoteChanged(); }
+            else if (_killSwitch) { _killSwitch = false; RaiseReadyChanged(); }
+        }
 
         /// <summary>
         /// The reward the game has not acknowledged yet: written to the store before the show result is

@@ -505,6 +505,22 @@ namespace NexusBench
                 second.Dispose();
             }
 
+            // late attachment: the bridge wires the store's entitlement and remote config after the controller started
+            {
+                using var rig = new AdsRig().Running();
+                rig.Scheduler.Advance(61);
+                var adFree = new AdsAdFree { AdFree = true };
+                rig.Controller.SetAdFreeEntitlement(adFree);
+                bool blocked = !rig.Controller.IsReady("level_end") && rig.Controller.IsReady("shop_refill");
+                rig.Controller.SetAdFreeEntitlement(null);
+                Check("AC37. AdFree_AttachedLate_AppliesAndDetaches", blocked && rig.Controller.IsReady("level_end"), "interstitial off while attached, back when detached");
+                var remote = new AdsRemote { KillSwitch = true };
+                rig.Controller.SetRemoteConfig(remote);
+                bool killed = rig.Controller.KillSwitch && !rig.Controller.IsReady("shop_refill");
+                rig.Controller.SetRemoteConfig(null);
+                Check("AC38. Remote_AttachedLate_AppliesAndDetaches", killed && !rig.Controller.KillSwitch, "kill switch applied on attach, cleared on detach");
+            }
+
             // init failure retries with the same back-off
             using (var rig = new AdsRig())
             {
