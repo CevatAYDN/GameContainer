@@ -56,6 +56,7 @@ namespace Nexus.Core.Services
         // share ONE throttler singleton, so each must use its own slot — otherwise one's
         // pending write silently clobbers the other's (the pre-multi-owner data-loss bug).
         private const string SaveOwner = "economy";
+        private Action _persistAllBalancesNow;
 
         // Anti-cheat: balances are XOR-masked in RAM (SecureObservableLong), matching the
         // project's SecureObservableInt story for the most valuable (currency) data. This
@@ -174,10 +175,12 @@ namespace Nexus.Core.Services
 
         // Must be called under _balances lock.
         private SecureObservableLong LazyLoadBalance(string currencyId)
-        {
-            if (_balances.TryGetValue(currencyId, out var prop))
-                return prop;
+            => _balances.TryGetValue(currencyId, out var prop) ? prop : CreateBalanceLocked(currencyId);
 
+        // Split from the lookup: the OnChanged lambda captures currencyId, and C# allocates a captured
+        // parameter's closure on method entry, so in one method every Earn/Spend paid for it.
+        private SecureObservableLong CreateBalanceLocked(string currencyId)
+        {
             // A persisted promotion remains canonical after restart, including for old
             // callers which only use the long API.
             if (!_bigBalances.ContainsKey(currencyId) && PlayerPrefsService?.HasKey($"NT_EcoBig_{currencyId}") == true)
@@ -185,7 +188,7 @@ namespace Nexus.Core.Services
             long savedAmount = _bigBalances.TryGetValue(currencyId, out var big)
                 ? ProjectLong(big.Value)
                 : PlayerPrefsService?.GetLong($"NT_Eco_{currencyId}", 0L) ?? 0L;
-            prop = new SecureObservableLong(Math.Max(0, savedAmount));
+            var prop = new SecureObservableLong(Math.Max(0, savedAmount));
             _balances[currencyId] = prop;
             prop.OnChanged((_, value) =>
             {
@@ -289,10 +292,11 @@ namespace Nexus.Core.Services
 
         // Must be called under _balances lock. Promotion is one-way per currency.
         private SecureObservableBigDouble LazyLoadBigBalance(string currencyId)
-        {
-            if (_bigBalances.TryGetValue(currencyId, out var prop))
-                return prop;
+            => _bigBalances.TryGetValue(currencyId, out var prop) ? prop : CreateBigBalanceLocked(currencyId);
 
+        // Split from the lookup for the same closure reason as CreateBalanceLocked.
+        private SecureObservableBigDouble CreateBigBalanceLocked(string currencyId)
+        {
             BigDouble savedAmount = BigDouble.Zero;
             if (_balances.TryGetValue(currencyId, out var existingLong))
             {
@@ -310,7 +314,7 @@ namespace Nexus.Core.Services
                 }
             }
             savedAmount = IsFiniteNonnegative(savedAmount) ? Normalize(savedAmount) : BigDouble.Zero;
-            prop = new SecureObservableBigDouble(savedAmount, $"EcoBig_{currencyId}");
+            var prop = new SecureObservableBigDouble(savedAmount, $"EcoBig_{currencyId}");
             _bigBalances[currencyId] = prop;
             prop.OnChanged((_, value) =>
             {
@@ -387,7 +391,8 @@ namespace Nexus.Core.Services
             if (_disposed || _disposing) return;
             if (SaveThrottler != null)
             {
-                SaveThrottler.TryRequestSave(SaveOwner, PersistAllBalancesNow);
+                // Cached: a method group converts to a new delegate on every call.
+                SaveThrottler.TryRequestSave(SaveOwner, _persistAllBalancesNow ??= PersistAllBalancesNow);
             }
             else
             {

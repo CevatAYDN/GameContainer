@@ -136,6 +136,7 @@ atomic writes; `GameSaveManager` (`Nexus.Core.Extensions`) coordinates save prov
 |---|---|
 | Generic synchronous dispatch, command pools, warmed DI resolution | Host regressions verify zero allocation for covered paths after warmup |
 | Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup |
+| `EconomyService` `Earn` / `Spend` / `GetBalance` with a `SaveThrottler` bound | 0 B after the currency's first touch (harness GCA5); without a throttler every mutation persists synchronously and allocates |
 | Immutable arbitrary-arity or async composite | Retained snapshots; payload boxing and snapshot allocation are intentional |
 | Startup, registration, async operations, editor diagnostics, `NEXUS_DEBUG` tracing | May allocate; outside the hot-path contract |
 

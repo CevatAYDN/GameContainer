@@ -33,6 +33,7 @@ namespace NexusBench
             failures += AssertPass("GCA2. ObservableProperty_ValueMutation_ZeroGC", TestObservablePropertyValueMutationZeroGC);
             failures += AssertPass("GCA3. TickService_OnTick_ZeroGC", TestTickServiceOnTickZeroGC);
             failures += AssertPass("GCA4. CommandPoolManager_RentReturn_ZeroGC", TestCommandPoolManagerRentReturnZeroGC);
+            failures += AssertPass("GCA5. EconomyService_EarnSpendRead_WithThrottler_ZeroGC", TestEconomyWithThrottlerZeroGC);
 
             if (failures == 0)
                 Console.WriteLine("\n[GCAudit] ALL ZERO-GC AUDIT TESTS PASSED ✓");
@@ -180,6 +181,61 @@ namespace NexusBench
                 return false;
             }
             return true;
+        }
+
+        private sealed class FixedClock : ITimeProvider
+        {
+            public float Now => 0f;
+        }
+
+        private sealed class NullPrefs : IPlayerPrefsService
+        {
+            public int GetInt(string key, int defaultValue = 0) => defaultValue;
+            public void SetInt(string key, int value) { }
+            public bool GetBool(string key, bool defaultValue = false) => defaultValue;
+            public void SetBool(string key, bool value) { }
+            public string GetString(string key, string defaultValue = "") => defaultValue;
+            public void SetString(string key, string value) { }
+            public float GetFloat(string key, float defaultValue = 0f) => defaultValue;
+            public void SetFloat(string key, float value) { }
+            public long GetLong(string key, long defaultValue = 0L) => defaultValue;
+            public void SetLong(string key, long value) { }
+            public bool HasKey(string key) => false;
+            public void DeleteKey(string key) { }
+            public void Save() { }
+        }
+
+        // A game earns on the frame loop (cash pickup, per-frame purchase spend). With a SaveThrottler bound the
+        // write is deferred, so after a currency's first touch Earn/Spend/GetBalance must not allocate.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TestEconomyWithThrottlerZeroGC()
+        {
+            var economy = new EconomyService
+            {
+                PlayerPrefsService = new NullPrefs(),
+                SaveThrottler = new SaveThrottler { TimeProvider = new FixedClock() } // clock frozen: the window never elapses
+            };
+
+            // Warmup: creates the balance and flushes the fresh throttler slot once.
+            economy.Earn("gold", 1);
+            economy.Spend("gold", 1);
+
+            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 5000; i++)
+            {
+                economy.Earn("gold", 2);
+                economy.Spend("gold", 1);
+                economy.GetBalance("gold");
+            }
+            long allocAfter = GC.GetAllocatedBytesForCurrentThread();
+
+            long allocated = allocAfter - allocBefore;
+            if (allocated > 0)
+            {
+                Console.WriteLine($"      Allocated {allocated} bytes during 5000 Earn/Spend/GetBalance rounds");
+                return false;
+            }
+            return economy.GetBalance("gold") == 5000;
         }
     }
 }
