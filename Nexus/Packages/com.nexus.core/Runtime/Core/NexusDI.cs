@@ -2043,25 +2043,20 @@ namespace Nexus.Core
 
                 foreach (var entry in methods)
                 {
-                    var (method, paramIndices) = entry;
+                    var method = entry.Method;
                     var args = new object[method.ParameterTypes.Length];
                     bool methodSucceeded = true;
                     for (int j = 0; j < method.ParameterTypes.Length; j++)
                     {
-                        // Only re-resolve the parameters that were MISSING on the
-                        // original Inject pass (those in paramIndices). Parameters that were
-                        // already resolved must keep their original instance — re-resolving a
-                        // transient here would silently swap in a NEW instance, breaking the
-                        // method's captured dependency. Named bindings are honored too (D1).
-                        if (Array.IndexOf(paramIndices, j) >= 0)
-                        {
-                            string paramName = method.ParameterNames != null ? method.ParameterNames[j] : null;
-                            args[j] = string.IsNullOrEmpty(paramName)
-                                ? TryResolve(method.ParameterTypes[j])
-                                : TryResolve(method.ParameterTypes[j], paramName);
-                            if (args[j] == null)
-                                methodSucceeded = false;
-                        }
+                        // The first pass deferred the whole call (it never ran), so every parameter is
+                        // resolved here as it was there, named bindings included (D1); resolving only the
+                        // missing ones (paramIndices) passed null for the rest.
+                        string paramName = method.ParameterNames != null ? method.ParameterNames[j] : null;
+                        args[j] = string.IsNullOrEmpty(paramName)
+                            ? TryResolve(method.ParameterTypes[j])
+                            : TryResolve(method.ParameterTypes[j], paramName);
+                        if (args[j] == null && !method.OptionalParameterMask[j])
+                            methodSucceeded = false;
                     }
                     if (methodSucceeded) { method.Method.Invoke(instance, args); appliedMethods.Add(entry); }
                 }

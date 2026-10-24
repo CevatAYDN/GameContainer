@@ -23,6 +23,7 @@
 //   I26 a convention-found lifecycle that is IDisposable gets one teardown (OnDispose)
 //   I28 a failed async one-shot composite surfaces (FireAsync) or is released (Fire), and fires again
 //   I29 ReInject runs [Inject] methods outside its lock (another thread's ReInject does not deadlock)
+//   I40 a deferred [Inject] method gets every argument when ReInject calls it
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -215,6 +216,21 @@ namespace NexusBench
         }
     }
 
+    public interface I40First { }
+    public sealed class I40FirstImpl : I40First { }
+    public interface I40Second { }
+    public sealed class I40SecondImpl : I40Second { }
+
+    /// <summary>Init is deferred because I40Second is not bound on the first pass (issue #40).</summary>
+    public sealed class I40Host
+    {
+        public I40First First;
+        public I40Second Second;
+        public int Calls;
+        [Inject]
+        public void Init(I40First first, I40Second second) { First = first; Second = second; Calls++; }
+    }
+
     /// <summary>Found by name convention for scope tag "I26Convention"; counts both teardown paths (issue #26).</summary>
     public sealed class I26ConventionLifecycle : IContextLifecycle, IDisposable
     {
@@ -261,6 +277,7 @@ namespace NexusBench
             Test_I26_ConventionLifecycle_TornDownOnce();
             Test_I28_FailedAsyncOneShotComposite_FiresAgain();
             Test_I29_ReInject_RunsUserCodeOutsideItsLock();
+            Test_I40_DeferredInjectMethod_GetsEveryArgument();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -1184,6 +1201,21 @@ namespace NexusBench
 
             Check("I29. ReInject_RunsUserCodeOutsideItsLock", I29Caller.InnerFinished && callerDone && targetDone,
                 $"inner ReInject finished={I29Caller.InnerFinished} (pre-fix: blocked on the lock the outer ReInject held, 2 s timeout), caller done={callerDone}, target injected={targetDone}");
+        }
+
+        private static void Test_I40_DeferredInjectMethod_GetsEveryArgument()
+        {
+            var di = new NexusDI();
+            di.Bind<I40First, I40FirstImpl>();
+            var host = new I40Host();
+            di.Inject(host); // I40Second is missing: Init is deferred, not called
+            int callsBefore = host.Calls;
+            di.Bind<I40Second, I40SecondImpl>();
+            bool done = di.ReInject(host);
+
+            Check("I40. DeferredInjectMethod_GetsEveryArgument",
+                callsBefore == 0 && done && host.Calls == 1 && host.First != null && host.Second != null,
+                $"calls before={callsBefore}, after ReInject={host.Calls}, first={(host.First != null ? "set" : "null")}, second={(host.Second != null ? "set" : "null")} (pre-fix: first null, only the missing parameter was resolved)");
         }
 
         private static bool SpinUntil(Func<bool> condition)
