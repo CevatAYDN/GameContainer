@@ -1,6 +1,6 @@
 namespace Nexus.Ads
 {
-    /// <summary>An impression's revenue as the mediation reports it; forwarded unchanged to analytics.</summary>
+    /// <summary>An impression's revenue as the mediation reports it, forwarded to analytics; a provider that leaves <see cref="Placement"/> empty gets the placement the controller last showed for that format.</summary>
     public readonly struct AdRevenue
     {
         public readonly string Network;

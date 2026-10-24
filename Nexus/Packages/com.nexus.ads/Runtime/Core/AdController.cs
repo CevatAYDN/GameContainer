@@ -37,6 +37,8 @@ namespace Nexus.Ads
         private readonly SessionTracker _session;
         private readonly IPacingStore _store;
         private readonly Dictionary<AdFormat, Slot> _slots = new Dictionary<AdFormat, Slot>();
+        // the placement the game last asked to show per format: provider events carry the format only, and revenue arrives after Closed
+        private readonly Dictionary<AdFormat, string> _lastPlacement = new Dictionary<AdFormat, string>();
         private const string PendingRewardKey = "nexus.ads.reward.pending";
         private int _rewardSequence;
         private bool _fullScreenOpen, _killSwitch, _disposed, _lockHeld;
@@ -141,6 +143,7 @@ namespace Nexus.Ads
             }
             if (format == AdFormat.Banner)
             {
+                _lastPlacement[format] = placement;
                 _provider.ShowBanner(placement, BannerPosition.Bottom);
                 onResult?.Invoke(AdResult.Closed);
                 return;
@@ -155,6 +158,7 @@ namespace Nexus.Ads
             }
             slot.State = SlotState.Showing;
             _fullScreenOpen = true;
+            _lastPlacement[format] = placement;
             bool answered = false;
             _provider.Show(format, placement, result => OnMain(() =>
             {
@@ -181,6 +185,7 @@ namespace Nexus.Ads
             var verdict = Guard.Check(placement, AdFormat.Banner, new GuardState(_fullScreenOpen, State == Phase.AwaitingConsent));
             if (!verdict.Allowed) { Raise(new PolicyViolation(verdict.Rule, placement ?? "", AdFormat.Banner, verdict.Reason)); onResult?.Invoke(AdResult.Blocked); return; }
             if (State != Phase.Running || _killSwitch) { NotReady(declared, _killSwitch ? "kill switch" : State.ToString()); onResult?.Invoke(AdResult.NotReady); return; }
+            _lastPlacement[AdFormat.Banner] = placement;
             _provider.ShowBanner(placement, position);
             onResult?.Invoke(AdResult.Closed);
         }
@@ -354,11 +359,15 @@ namespace Nexus.Ads
 
         // ----- provider events
 
-        private void OnOpened(AdFormat format) => OnMain(() => { if (!_disposed) { _fullScreenOpen = true; _telemetry.Record(new AdEvent(AdEventKind.Shown, format, "")); AdOpened?.Invoke(format); } });
+        private void OnOpened(AdFormat format) => OnMain(() => { if (!_disposed) { _fullScreenOpen = true; _telemetry.Record(new AdEvent(AdEventKind.Shown, format, PlacementOf(format))); AdOpened?.Invoke(format); } });
+
+        private string PlacementOf(AdFormat format) => _lastPlacement.TryGetValue(format, out var placement) ? placement : "";
 
         private void OnRevenue(AdRevenue revenue) => OnMain(() =>
         {
             if (_disposed) return;
+            if (string.IsNullOrEmpty(revenue.Placement))
+                revenue = new AdRevenue(revenue.Network, PlacementOf(revenue.Format), revenue.Format, revenue.Value, revenue.Currency, revenue.Precision);
             _telemetry.Record(new AdEvent(AdEventKind.Revenue, revenue.Format, revenue.Placement, revenue.Network + " " + revenue.Value + " " + revenue.Currency));
             Revenue?.Invoke(revenue);
         });

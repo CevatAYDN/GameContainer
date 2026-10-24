@@ -521,6 +521,21 @@ namespace NexusBench
                 Check("AC38. Remote_AttachedLate_AppliesAndDetaches", killed && !rig.Controller.KillSwitch, "kill switch applied on attach, cleared on detach");
             }
 
+            // a provider's Opened and Revenue carry the format only (LevelPlay: no placement); the events still name the placement the game asked for
+            {
+                using var rig = new AdsRig().Running();
+                AdRevenue? seen = null;
+                rig.Controller.Revenue += r => seen = r;
+                rig.Show("shop_refill");
+                rig.Provider.ShowCallback(AdResult.Rewarded);
+                rig.Provider.Pay(new AdRevenue("ironsourceads", "", AdFormat.Rewarded, 0, "USD", "exact"));
+                rig.Provider.Pay(new AdRevenue("ironsourceads", "", AdFormat.Interstitial, 0, "USD", "exact"));
+                var shown = rig.Telemetry.Events.Find(e => e.Kind == AdEventKind.Shown);
+                var revenue = rig.Telemetry.Events.FindAll(e => e.Kind == AdEventKind.Revenue);
+                Check("AC39. ShownAndRevenue_CarryThePlacementTheGameAsked", shown.Placement == "shop_refill" && revenue.Count == 2 && revenue[0].Placement == "shop_refill" && revenue[1].Placement == "" && seen.HasValue && seen.Value.Format == AdFormat.Interstitial && seen.Value.Placement == "",
+                    $"shown '{shown.Placement}', rewarded revenue '{revenue[0].Placement}' after Closed, interstitial never shown stays '{revenue[1].Placement}'");
+            }
+
             // init failure retries with the same back-off
             using (var rig = new AdsRig())
             {
