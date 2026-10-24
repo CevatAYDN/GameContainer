@@ -295,6 +295,7 @@ namespace Nexus.Core
             // fallback commands can execute through the real dispatch path.
             _recoveryEngine = new RecoveryEngine(container, FireFailedSignalSafe, async fs => await FireInternalAsync(fs, isCrossContextSource: false));
             _commandExecutor = new CommandExecutor(container, poolManager, context, _commandRegistry, _recoveryEngine);
+            _commandExecutor.ReleaseOneShotComposite = ReleaseOneShotComposite;
             _recoveryEngine.AttachExecutor(_commandExecutor);
         }
 
@@ -1290,19 +1291,8 @@ namespace Nexus.Core
             }
             catch
             {
-                // A failed one-shot is released like a typed composite's (TypedCompositeRegistration.Execute): it
-                // re-arms empty, so firing its signals again runs it; one-shots this pass did not reach are released too.
-                lock (_compositeLock)
-                {
-                    for (int r = executed; r < buffer.Count; r++)
-                    {
-                        var released = buffer[r].trigger;
-                        if (!released.OneShot) continue;
-                        released.IsCompleted = false;
-                        released.CurrentMask = 0;
-                        released.ClearPayloads();
-                    }
-                }
+                // The failed one-shot and the one-shots this pass did not reach are released.
+                for (int r = executed; r < buffer.Count; r++) ReleaseOneShotComposite(buffer[r].trigger);
                 throw;
             }
             finally
@@ -1493,8 +1483,32 @@ namespace Nexus.Core
                 }
             }
 
-            for (int i = 0; i < due.Count; i++)
-                await _commandExecutor.ExecuteCompositeAwaitedAsync(due[i].trigger, due[i].context, ct);
+            int executed = 0;
+            try
+            {
+                for (; executed < due.Count; executed++)
+                    await _commandExecutor.ExecuteCompositeAwaitedAsync(due[executed].trigger, due[executed].context, ct);
+            }
+            catch
+            {
+                for (int r = executed; r < due.Count; r++) ReleaseOneShotComposite(due[r].trigger);
+                throw;
+            }
+        }
+
+        /// <summary>
+        /// Re-arms a one-shot composite whose command failed, empty, like a typed composite
+        /// (TypedCompositeRegistration.Execute): firing all its signals again runs it. Repeatable triggers are left alone.
+        /// </summary>
+        private void ReleaseOneShotComposite(CompositeTriggerState trigger)
+        {
+            if (!trigger.OneShot) return;
+            lock (_compositeLock)
+            {
+                trigger.IsCompleted = false;
+                trigger.CurrentMask = 0;
+                trigger.ClearPayloads();
+            }
         }
 
         internal static void ClearStaticCaches()

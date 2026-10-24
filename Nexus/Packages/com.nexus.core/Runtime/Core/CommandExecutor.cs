@@ -39,6 +39,12 @@ namespace Nexus.Core
         /// <summary>Token that cancels when the executor is disposed or in-flight commands are cancelled.</summary>
         internal CancellationToken ExecutorToken => _executorCts.Token;
 
+        /// <summary>
+        /// Set by the owning SignalBus (which holds the composite lock): releases a one-shot composite
+        /// trigger whose detached async command failed, since no Fire caller can catch that failure.
+        /// </summary>
+        internal Action<CompositeTriggerState> ReleaseOneShotComposite;
+
         /// <summary>Number of async commands currently in flight (for dispose diagnostics).</summary>
         public int InFlightAsyncCommands => Volatile.Read(ref _inFlightAsyncCommands);
 
@@ -660,7 +666,7 @@ namespace Nexus.Core
             TFirst first, TSecond second) where TFirst : struct where TSecond : struct
             => ExecuteWithDecorators(command, () => command.Execute(first, second));
 
-        private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command, CompositeContext context, CancellationToken cancellationToken)
+        private async ValueTask ExecuteCompositeCommandAsyncCore(CompositeTriggerState trigger, object command, CompositeContext context, CancellationToken cancellationToken, bool surfaceOneShotFailure)
         {
             int retryCount = 0;
             bool shouldRun = true;
@@ -796,6 +802,13 @@ namespace Nexus.Core
                     else
                     {
                         shouldRun = false;
+                        // One-shot contract (see Execute): an awaited caller gets the failure and SignalBus
+                        // releases the trigger; a detached run releases it here.
+                        if (trigger.OneShot && action == RecoveryAction.Skip)
+                        {
+                            if (surfaceOneShotFailure) throw;
+                            ReleaseOneShotComposite?.Invoke(trigger);
+                        }
                     }
                 }
                 finally
@@ -825,7 +838,16 @@ namespace Nexus.Core
         {
             using var linked = CancellationTokenSource.CreateLinkedTokenSource(
                 _context?.LifetimeToken ?? CancellationToken.None, _executorCts.Token);
-            await ExecuteCompositeCommandAsyncCore(trigger, command, context, linked.Token);
+            try
+            {
+                await ExecuteCompositeCommandAsyncCore(trigger, command, context, linked.Token, surfaceOneShotFailure: false);
+            }
+            catch
+            {
+                // Abort, retry limit or cancellation ended the detached run: release the one-shot too.
+                if (trigger.OneShot) ReleaseOneShotComposite?.Invoke(trigger);
+                throw;
+            }
         }
 
         /// <summary>Executes a composite trigger and awaits async composite commands.</summary>
@@ -842,7 +864,7 @@ namespace Nexus.Core
                 command = _poolManager.GetCommand(trigger.CommandType);
                 _container.Inject(command);
                 transferred = true;
-                await ExecuteCompositeCommandAsyncCore(trigger, command, context, executorLinkedCts.Token);
+                await ExecuteCompositeCommandAsyncCore(trigger, command, context, executorLinkedCts.Token, surfaceOneShotFailure: true);
             }
             finally
             {

@@ -21,6 +21,7 @@
 // Follow-up issues:
 //   I24 integer saves written before #23 with another culture's minus sign read back
 //   I26 a convention-found lifecycle that is IDisposable gets one teardown (OnDispose)
+//   I28 a failed async one-shot composite surfaces (FireAsync) or is released (Fire), and fires again
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -168,6 +169,33 @@ namespace NexusBench
         public A23TwoStrings(string first, string second) { First = first; Second = second; }
     }
 
+    public struct I28SigA { }
+    public struct I28SigB { }
+    public struct I28SigC { }
+    public struct I28SigD { }
+
+    /// <summary>Async one-shot composite whose first run fails (default recovery: Skip); fired with FireAsync (issue #28).</summary>
+    public sealed class I28AwaitedCompositeCmd : IAsyncCompositeCommand
+    {
+        public static int Attempts;
+        public async ValueTask ExecuteAsync(CompositeContext signals, CancellationToken ct)
+        {
+            await Task.Yield();
+            if (Interlocked.Increment(ref Attempts) == 1) throw new InvalidOperationException("i28-awaited-failure");
+        }
+    }
+
+    /// <summary>The same, fired with Fire: the command runs detached (issue #28).</summary>
+    public sealed class I28DetachedCompositeCmd : IAsyncCompositeCommand
+    {
+        public static int Attempts;
+        public async ValueTask ExecuteAsync(CompositeContext signals, CancellationToken ct)
+        {
+            await Task.Yield();
+            if (Interlocked.Increment(ref Attempts) == 1) throw new InvalidOperationException("i28-detached-failure");
+        }
+    }
+
     /// <summary>Found by name convention for scope tag "I26Convention"; counts both teardown paths (issue #26).</summary>
     public sealed class I26ConventionLifecycle : IContextLifecycle, IDisposable
     {
@@ -212,6 +240,7 @@ namespace NexusBench
             Test_A23_SameTypeOverrides_FillInOrder();
             Test_I24_LegacyMinusSigns_ReadBack();
             Test_I26_ConventionLifecycle_TornDownOnce();
+            Test_I28_FailedAsyncOneShotComposite_FiresAgain();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -1074,6 +1103,57 @@ namespace NexusBench
 
             Check("I26. ConventionLifecycle_TornDownOnce", found && I26ConventionLifecycle.OnDisposeCalls == 1 && I26ConventionLifecycle.DisposeCalls == 0,
                 $"found by convention={found}, OnDispose={I26ConventionLifecycle.OnDisposeCalls} Dispose={I26ConventionLifecycle.DisposeCalls} (expected 1/0, as an explicitly passed lifecycle; pre-fix 1/1)");
+        }
+
+        private static void Test_I28_FailedAsyncOneShotComposite_FiresAgain()
+        {
+            var di = new NexusDI();
+            di.Bind<I28AwaitedCompositeCmd>(isSingleton: false);
+            di.Bind<I28DetachedCompositeCmd>(isSingleton: false);
+            var pool = new CommandPoolManager(di);
+            var bus = new SignalBus(di, pool, new MockContext());
+            I28AwaitedCompositeCmd.Attempts = 0;
+            I28DetachedCompositeCmd.Attempts = 0;
+            bus.RegisterCompositeCommand(new[] { typeof(I28SigA), typeof(I28SigB) }, typeof(I28AwaitedCompositeCmd), oneShot: true, priority: 0, isAsync: true);
+            bus.RegisterCompositeCommand(new[] { typeof(I28SigC), typeof(I28SigD) }, typeof(I28DetachedCompositeCmd), oneShot: true, priority: 0, isAsync: true);
+
+            // awaited (FireAsync): the failure reaches the caller and the trigger fires again
+            bus.FireAsync(new I28SigA()).AsTask().GetAwaiter().GetResult();
+            bool awaitedThrew = false;
+            try { bus.FireAsync(new I28SigB()).AsTask().GetAwaiter().GetResult(); }
+            catch (InvalidOperationException) { awaitedThrew = true; }
+            bus.FireAsync(new I28SigA()).AsTask().GetAwaiter().GetResult();
+            bus.FireAsync(new I28SigB()).AsTask().GetAwaiter().GetResult();
+            int awaitedRuns = I28AwaitedCompositeCmd.Attempts;
+            bus.FireAsync(new I28SigA()).AsTask().GetAwaiter().GetResult();
+            bus.FireAsync(new I28SigB()).AsTask().GetAwaiter().GetResult();
+            int awaitedAfter = I28AwaitedCompositeCmd.Attempts;
+
+            // detached (Fire): nobody can catch the failure, so the trigger is released and fires again
+            bus.Fire(new I28SigC());
+            bus.Fire(new I28SigD());
+            bool firstRan = SpinUntil(() => Volatile.Read(ref I28DetachedCompositeCmd.Attempts) >= 1);
+            Thread.Sleep(100); // let the detached failure's recovery finish before the re-fire
+            bus.Fire(new I28SigC());
+            bus.Fire(new I28SigD());
+            SpinUntil(() => Volatile.Read(ref I28DetachedCompositeCmd.Attempts) >= 2);
+            int detachedRuns = Volatile.Read(ref I28DetachedCompositeCmd.Attempts);
+
+            Check("I28. FailedAsyncOneShotComposite_FiresAgain",
+                awaitedThrew && awaitedRuns == 2 && awaitedAfter == 2 && firstRan && detachedRuns == 2,
+                $"FireAsync: failure reached caller={awaitedThrew}, runs after retry={awaitedRuns} (expected 2), after a third pair={awaitedAfter} (expected 2); " +
+                $"Fire: runs after retry={detachedRuns} (expected 2; pre-fix 1 and 1, failure swallowed, trigger consumed)");
+        }
+
+        private static bool SpinUntil(Func<bool> condition)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (!condition())
+            {
+                if (DateTime.UtcNow > deadline) return false;
+                Thread.Sleep(5);
+            }
+            return true;
         }
     }
 }
