@@ -183,13 +183,14 @@ namespace Nexus.Core
         {
             using var executorLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _executorCts.Token);
             ct = executorLinkedCts.Token;
+            // Every execution allocates the executor link above (the caller's token joined with the
+            // executor's own, so TryCancelInFlightCommands reaches in-flight commands); async commands
+            // are outside the zero-allocation contract (README "Performance scope").
             // Timeout semantics require a FRESH linked CTS + CancelAfter timer PER EXECUTION:
             // concurrent in-flight commands of the same type share the context lifetime token
-            // and must not cancel each other, so the linked CTS cannot be cached per handler.
-            // The allocation is therefore only incurred when a [CommandTimeout] is configured
-            // (timeoutMs > 0); commands without one take the zero-allocation direct path below.
-            // An already-cancelled parent token also skips the linked CTS — the command observes
-            // the same cancellation either way (teardown floods allocate nothing).
+            // and must not cancel each other, so the timeout CTS cannot be cached per handler.
+            // It is created only when a [CommandTimeout] is configured (timeoutMs > 0) and the
+            // token is not already cancelled.
             //
             // The timeout CTS must OUTLIVE the command execution: scoping it to the `if` block
             // disposed it before the command awaited, which dropped the CancelAfter timer — the
@@ -225,8 +226,8 @@ namespace Nexus.Core
         {
             using var executorLinkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, _executorCts.Token);
             ct = executorLinkedCts.Token;
-            // Same fresh-per-execution linked CTS semantics as ExecuteAsyncWithOptionalTimeout
-            // (see the allocation note there); skipped when the parent token is already cancelled.
+            // Same per-execution executor link and timeout CTS as ExecuteAsyncWithOptionalTimeout
+            // (see the allocation note there).
             // The timeout CTS must OUTLIVE the command (see ExecuteAsyncWithOptionalTimeout for
             // the dispose-before-await bug this guards against).
             CancellationTokenSource timeoutCts = null;

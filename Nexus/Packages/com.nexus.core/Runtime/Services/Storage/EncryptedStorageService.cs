@@ -660,7 +660,7 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// Writes a version-2 format file: VERSION(1) + IV(16) + HMAC-SHA256(32) + cipherText.
+        /// Writes a current-format (v3, key name bound into the HMAC) file: VERSION(1) + IV(16) + HMAC-SHA256(32) + cipherText.
         /// Returns true on success, false on failure (caller retains the dirty key for retry).
         /// The write is ATOMIC — the payload is staged to a temp file and then
         /// rename/overwrite-moved into place in a single filesystem operation. A crash
@@ -950,13 +950,9 @@ namespace Nexus.Core.Services
                         if (_disposed || !_cache.TryGetValue(key, out val))
                             continue;
                         isTombstone = val == null;
+                        // Value and version are read together under the lock; a SetString/DeleteKey
+                        // that lands during the disk write below is caught by the version checks after it.
                         _keyVersions.TryGetValue(key, out version);
-
-                        // A newer SetString/DeleteKey has already superseded this snapshot.
-                        // Leave the key dirty for that newer operation instead of writing the
-                        // stale value and clearing its retry marker.
-                        if (!IsCurrentVersionLocked(key, version))
-                            continue;
                     }
 
                     bool success;
