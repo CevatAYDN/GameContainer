@@ -70,6 +70,10 @@ namespace Nexus.Core.Extensions
     /// <summary>
     /// Default implementation of <see cref="IGameSaveManager"/>.
     /// Writes JSON-encoded <see cref="GameSaveData"/> to the Unity persistent data path.
+    /// Every method may be called from a worker thread when the manager was constructed on the main
+    /// thread (it reads Unity's main-thread-only paths there). Constructed elsewhere, the first
+    /// <see cref="SaveAsync"/> reads them on its main-thread hop; until then <see cref="SaveExists"/>,
+    /// <see cref="DeleteSave"/> and <see cref="LoadAsync"/> must be called on the main thread.
     /// </summary>
     [Preserve]
     public sealed class GameSaveManager : IGameSaveManager, IDisposable
