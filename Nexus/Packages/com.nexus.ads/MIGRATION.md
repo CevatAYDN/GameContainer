@@ -17,9 +17,12 @@ puts the family's controller behind the same service.
    (the validator's `manifest.pins` check fails otherwise; **Tools > Nexus Ads > Pin family packages to one
    commit** rewrites them): `com.nexus.core`, `com.nexus.ads`, `com.nexus.ads.bridge.nexus`, and the provider
    of the selected mediation:
-   - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x;
+   - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x, with the native SDK
+     installed from its Network Manager and resolved (the steps and the Kotlin alignment are in the
+     [LevelPlay README](../com.nexus.ads.levelplay/README.md#install));
    - AdMob: `com.nexus.ads.admob` (its `Nexus.Ads.AdMob` assembly is the family provider) plus
-     `com.google.ads.mobile` 11.3.0 or newer and `com.google.external-dependency-manager` from OpenUPM.
+     `com.google.ads.mobile` 11.3.0 or newer from OpenUPM (11.6.0 brings Unity's External Dependency
+     Manager as its own dependency).
 
    UPM does not install a git package's dependencies, so each one is listed by hand.
 2. **Settings.** Open **Project Settings > Nexus Ads**: select the mediation, declare every placement

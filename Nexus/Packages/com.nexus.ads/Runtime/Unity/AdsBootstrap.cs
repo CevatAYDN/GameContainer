@@ -103,7 +103,7 @@ namespace Nexus.Ads.Unity
             else
             {
                 if (Gate.Decision == GateDecision.Provider)
-                    Debug.LogError("[Nexus Ads] " + _settings.SelectedMediation + " is selected but its provider package is not installed; the simulator runs instead.");
+                    Debug.LogError("[Nexus Ads] " + _settings.SelectedMediation + " is selected but its provider is not registered (the provider package is not installed, or its assembly was stripped from the player); the simulator runs instead.");
                 else if (Gate.Rule != null && Build != BuildKind.Release)
                     Debug.LogWarning("[Nexus Ads] " + Gate.Rule + ": " + Gate.Reason);
                 var simulator = new SimulatorProvider(scheduler, _simulatorScenario) { Interactive = true };

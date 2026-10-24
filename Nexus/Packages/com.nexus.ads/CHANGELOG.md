@@ -9,6 +9,9 @@ packages (`com.nexus.ads.levelplay`, `com.nexus.ads.max`, and the `Nexus.Ads.AdM
 
 ## [Unreleased]
 
+### Fixed
+- The IL2CPP linker removed `Nexus.Ads.AdMob` and `Nexus.Ads.LevelPlay` from Android players: nothing references a provider assembly (it registers itself from a `RuntimeInitializeOnLoadMethod`), so a development build with AdMob selected logged "provider package is not installed" and ran the simulator. Both assemblies carry `[assembly: AlwaysLinkAssembly]`; the bootstrap's message names stripping as a cause. Found and verified on a phone (2311DRK48G, Android 16): Google's test ads shown, rewarded paid once, interstitial closed; LevelPlay's SDK started and reached its server.
+
 ### Added
 - **AdMob provider** `Nexus.Ads.AdMob` in `com.nexus.ads.admob` (`Runtime/Provider`; issue #14): `AdMobProvider` over the Google Mobile Ads Unity plugin 11.3.0+ as `IAdProvider` and `IConsentFlow`; compiles only with both the plugin and `com.nexus.ads` (`versionDefines` `NEXUS_ADMOB` and `NEXUS_ADS` in its `defineConstraints`), so games that pin the package for the legacy adapter are unaffected. The User Messaging Platform update runs on every launch (consent kept from an earlier session lets ads load while it runs); `AgeRestrictedTreatment.Child` for child-directed or under-age-of-consent settings and the content rating go into `RequestConfiguration` before `MobileAds.Initialize`; `OnAdPaid` becomes `AdRevenue`; the ad inspector is the test suite; `SetTestDevices` takes Google-format test device ids (and the EEA consent geography) and applies them only with Google's sample units. `MIGRATION.md` moves a game from `AdMobAdapter` to the family, with the Gigawatt, Wickling and ChipCrisis map from #8.
 - **Validator** check `mediation.admob` (23 check ids): a warning when the Google Mobile Ads SDK is in the project while LevelPlay or MAX is selected (only the selected mediation starts; the SDK still ships).

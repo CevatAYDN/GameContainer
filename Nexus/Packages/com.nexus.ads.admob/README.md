@@ -14,7 +14,9 @@ Two assemblies, both inert until the Google Mobile Ads Unity plugin is installed
 `Nexus.Ads.AdMob` compiles only while both `com.google.ads.mobile` 11.3.0 or newer and `com.nexus.ads`
 are installed (assembly definition `versionDefines` `NEXUS_ADMOB` and `NEXUS_ADS`, both in its
 `defineConstraints`), so a game that pins this package for the old adapter alone is not affected.
-Install the plugin and its External Dependency Manager from OpenUPM (scoped registry below), list
+Install the plugin from OpenUPM (scoped registry below; 11.6.0 brings Unity's External Dependency
+Manager, `com.unity.external-dependency-manager`, as its own dependency and resolves its Android
+libraries during the build), list
 `com.nexus.ads` and this package at the same commit, select **AdMob** in **Project Settings > Nexus
 Ads** and put an `AdsBootstrap` in the first scene; the provider registers itself before the first
 scene loads. A Nexus game adds `com.nexus.ads.bridge.nexus` and calls `NexusAdsBridge.Connect`.

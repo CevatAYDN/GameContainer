@@ -23,7 +23,7 @@ if (-not $Aapt) {
 }
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 # adb installs only files named *.apk; NexusVerifyBuild writes the player without an extension.
-$Apk = [IO.Path]::GetFullPath($Apk)
+$Apk = (Resolve-Path -LiteralPath $Apk).Path  # a relative -Apk resolves against the PowerShell location, not the process directory
 if ([IO.Path]::GetExtension($Apk) -ne '.apk') { $copy = Join-Path $evidence 'player.apk'; Copy-Item -LiteralPath $Apk -Destination $copy; $Apk = $copy }
 $adbArgs = @(); if ($AdbSerial) { $adbArgs = @('-s', $AdbSerial) }
 function Invoke-Adb([string[]]$a) { $out = & adb.exe @adbArgs @a 2>&1; return ($out | ForEach-Object { "$_" }) }

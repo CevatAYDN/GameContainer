@@ -5,6 +5,10 @@ using Nexus.Ads.Unity;
 using Unity.Services.LevelPlay;
 using UnityEngine;
 
+// Nothing references a provider assembly; it registers itself from a RuntimeInitializeOnLoadMethod. Without this
+// attribute the IL2CPP linker drops the whole assembly and the player runs the simulator (seen on a device, 2026-10-24).
+[assembly: UnityEngine.Scripting.AlwaysLinkAssembly]
+
 namespace Nexus.Ads.LevelPlay
 {
     /// <summary>
