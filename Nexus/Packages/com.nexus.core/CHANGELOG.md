@@ -22,6 +22,7 @@ everything under Unreleased is in the repository but not yet in a tagged package
 - `AdMobConfig.DebugGeographyEea` and `TestDeviceHashedIds` (testing only): when either is set, the consent request carries the User Messaging Platform's debug settings, so a test phone outside the EEA sees the consent form; left unset the request is the same as before (`AdMobAdapterTests.ConsentDebugSettings_OnlyWhenEeaOrATestDeviceIsSet`). The adapter logs `[AdMob] Consent debug settings: ...` when it applies them.
 
 ### Fixed
+- The scene overlay hid every exception while collecting signal links (issue #46); the first failure is now logged once and the overlay keeps working.
 - The legacy `AdMobAdapter.RetryLater` (`async void`) let an exception from the reload escape to the synchronization context (issue #45); it is caught and logged through the adapter's warning path.
 - `HapticService` swallowed a failed Android vibrator call and fell back to `Handheld.Vibrate()` without a log line (issue #44); the first failure is now logged once.
 - Codegen left out an assembly whose references could not be read without a log line (issue #43); its types were missing from the AOT binder and `link.xml`. The skip is logged once per assembly.

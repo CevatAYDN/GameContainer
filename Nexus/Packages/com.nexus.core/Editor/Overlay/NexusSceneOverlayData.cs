@@ -60,6 +60,7 @@ namespace Nexus.Editor
     /// </summary>
     public static class NexusSceneOverlayData
     {
+        private static bool s_linkFailureReported; // a persistent collector failure is reported once per domain
         /// <summary>
         /// Distinct colors (readable on the default dark Scene view background), assigned
         /// round-robin by the node's scope tag hash. Palette order is part of the drawing
@@ -192,11 +193,16 @@ namespace Nexus.Editor
                 if (live != null && live.SignalBus != null)
                 {
                     try { links = CollectSignalLinks(live.SignalBus); }
-                    catch (Exception)
+                    catch (Exception ex)
                     {
                         // Best-effort: a context torn down between the root snapshot and this
-                        // read must never crash the overlay refresh.
+                        // read must never crash the overlay refresh; a persistent failure is reported once.
                         links = new List<NexusSceneOverlaySignalLink>();
+                        if (!s_linkFailureReported)
+                        {
+                            s_linkFailureReported = true;
+                            Debug.LogWarning($"[Nexus] Scene overlay could not read the signal links of '{live.ScopeTag}' ({ex.GetType().Name}: {ex.Message}); it shows none. Further failures are not repeated.");
+                        }
                     }
                 }
                 links ??= new List<NexusSceneOverlaySignalLink>();
