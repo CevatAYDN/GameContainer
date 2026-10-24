@@ -74,6 +74,9 @@ namespace Nexus.Ads.AdMob
             {
                 if (updateError != null) Warn("Consent update failed: " + updateError.Message);
                 Step("Consent updated; " + ConsentState());
+                // The answer may differ from the one an earlier session stored (the SDK may already run on it): readers such as an
+                // analytics consent gate re-read now, not only after the form closes.
+                Changed();
                 ConsentForm.LoadAndShowConsentFormIfRequired(formError => OnMainThread("Consent form", () =>
                 {
                     if (formError != null) Warn("Consent form: " + formError.Message);
