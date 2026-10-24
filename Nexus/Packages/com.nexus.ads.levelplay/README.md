@@ -22,7 +22,8 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
    - the custom main Gradle template with `implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')`:
      on Unity 6000.5 mediation-sdk 9.5.0 brings `kotlin-stdlib-jdk7` / `-jdk8` 1.6.0 next to Unity's
      `kotlin-stdlib` 1.8.22 and Gradle stops on duplicate classes;
-   - the resolution into that template.
+   - the resolution into that template (Done when the template names `mediation-sdk`; a resolver set to
+     write `.aar` files into `Assets/Plugins/Android` instead is not recognised yet).
 
    Network adapters still come from **Ads Mediation > Network Manager**. Proven from a clean project on
    2026-10-24: two presses, an Android build, the SDK reaching LevelPlay's server on a phone.

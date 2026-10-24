@@ -156,8 +156,12 @@ namespace Nexus.Ads.Editor
             using (new EditorGUI.DisabledScope(!plan.Exists(s => s.status == SetupStatus.Pending)))
                 if (GUILayout.Button(_turkish ? "Android'i hazırla" : "Prepare Android"))
                 {
-                    var applied = AndroidSetup.Apply(settings, _androidTab, catalog);
-                    foreach (var line in applied.Log) Debug.Log("[Nexus Ads] Prepare Android: " + line);
+                    try
+                    {
+                        var applied = AndroidSetup.Apply(settings, _androidTab, catalog);
+                        foreach (var line in applied.Log) Debug.Log("[Nexus Ads] Prepare Android: " + line);
+                    }
+                    catch (System.Exception e) { Debug.LogError("[Nexus Ads] Prepare Android stopped: " + e.Message + " (offline? the native SDK file comes from the mediation's server)"); }
                     Refresh();
                 }
 

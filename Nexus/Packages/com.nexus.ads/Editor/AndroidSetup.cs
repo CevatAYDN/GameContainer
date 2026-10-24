@@ -57,10 +57,10 @@ namespace Nexus.Ads.Editor
                 sdkInstalled ? "installed" : max ? sdk.upm?.installedBy ?? sdk.unitypackage : "adds " + sdk.upm?.package + (IsOpenUpm(sdk.upm?.registry) ? " from OpenUPM" : " from the Unity registry")));
 
             bool providerInstalled = probe.PackageVersion(sdk.providerPackage) != null;
-            string providerUrl = ProviderPackageUrl(probe.ConsumerManifestJson, sdk.providerPackage);
-            steps.Add(new SetupStep("provider", providerInstalled ? SetupStatus.Done : !max && providerUrl != null ? SetupStatus.Pending : SetupStatus.Manual, "Nexus provider " + sdk.providerPackage,
-                providerInstalled ? "installed" : max ? "the MAX provider does not exist yet (issue #14)" : providerUrl != null ? "adds " + providerUrl
-                : "add " + sdk.providerPackage + " to Packages/manifest.json at the commit of com.nexus.ads"));
+            var providerUrls = ProviderPackageUrls(probe, sdk);
+            steps.Add(new SetupStep("provider", providerInstalled ? SetupStatus.Done : !max && providerUrls != null ? SetupStatus.Pending : SetupStatus.Manual, "Nexus provider " + sdk.providerPackage,
+                providerInstalled ? "installed" : max ? "the MAX provider does not exist yet (issue #14)" : providerUrls != null ? "adds " + string.Join(", ", providerUrls)
+                : "add " + string.Join(", ", new[] { sdk.providerPackage }.Concat(sdk.providerDependencies ?? new string[0])) + " to Packages/manifest.json at the commit of com.nexus.ads"));
 
             if (sdk.resolver == "external")
                 steps.Add(new SetupStep("resolver", probe.ExternalDependencyManagerInstalled ? SetupStatus.Done : SetupStatus.Pending, "dependency resolver",
@@ -89,6 +89,8 @@ namespace Nexus.Ads.Editor
                     steps.Add(new SetupStep("gradle.lines", missing.Count == 0 ? SetupStatus.Done : SetupStatus.Pending, "Gradle lines",
                         missing.Count == 0 ? string.Join("; ", sdk.gradleLines) : "adds " + string.Join("; ", missing) + " (" + sdk.gradleNote + ")"));
                 }
+                // shortcut: resolution is judged by the marker in the main template; a project whose resolver writes .aar files into
+                // Assets/Plugins/Android instead (template patching off) builds fine but reads as Pending; accept those files when one shows up.
                 if (!string.IsNullOrEmpty(sdk.resolvedMarker))
                 {
                     bool resolved = template != null && template.IndexOf(sdk.resolvedMarker, StringComparison.Ordinal) >= 0;
@@ -140,6 +142,19 @@ namespace Nexus.Ads.Editor
             string nl = template.Contains("\r\n") ? "\r\n" : "\n";
             string block = "    // Nexus Ads: " + note + nl + string.Concat(missing.Select(l => "    " + l + nl));
             return template.Insert(open.Index + open.Length, block);
+        }
+
+        /// <summary>The provider package and its missing family dependencies as git URLs at the core's commit, or null when one cannot be derived.</summary>
+        private static List<string> ProviderPackageUrls(IProjectProbe probe, CatalogSdk sdk)
+        {
+            var urls = new List<string>();
+            foreach (var package in new[] { sdk.providerPackage }.Concat((sdk.providerDependencies ?? new string[0]).Where(d => probe.PackageVersion(d) == null)))
+            {
+                string url = ProviderPackageUrl(probe.ConsumerManifestJson, package);
+                if (url == null) return null;
+                urls.Add(url);
+            }
+            return urls;
         }
 
         /// <summary>The git URL of a family package at the commit com.nexus.ads is pinned to, or null when com.nexus.ads is not a git URL (embedded, file:, registry).</summary>
@@ -201,7 +216,7 @@ namespace Nexus.Ads.Editor
             var add = new List<string>();
             var scopes = new List<string>();
             if (Pending("sdk")) { add.Add(sdk.upm.package); if (IsOpenUpm(sdk.upm.registry)) scopes.AddRange(sdk.upm.scopes ?? new[] { sdk.upm.package }); }
-            if (Pending("provider")) add.Add(ProviderPackageUrl(probe.ConsumerManifestJson, sdk.providerPackage));
+            if (Pending("provider")) add.AddRange(ProviderPackageUrls(probe, sdk));
             if (Pending("resolver")) { add.Add(GoogleEdmPackage); scopes.Add(GoogleEdmPackage); }
             if (add.Count > 0)
             {

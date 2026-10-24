@@ -143,6 +143,8 @@
         "testDevicesApi": "RequestConfiguration.TestDeviceIds",
         "adIdPermission": "com.google.android.gms.permission.AD_ID declared by GMA SDK 20.4.0+",
         "providerPackage": "com.nexus.ads.admob",
+        "providerDependencies": [ "com.nexus.core" ],
+        "providerDependenciesNote": "com.nexus.ads.admob still declares com.nexus.core for its legacy AdMobAdapter, and UPM does not install a git package's dependencies; gone when the adapter is retired",
         "resolver": "bundledWithSdk",
         "resolverNote": "com.google.ads.mobile 11.6.0 depends on com.unity.external-dependency-manager 2.1.0; its build pre-processor resolves the Android libraries"
       },
