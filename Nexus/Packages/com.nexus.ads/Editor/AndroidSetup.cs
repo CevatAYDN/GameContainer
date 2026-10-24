@@ -38,6 +38,7 @@ namespace Nexus.Ads.Editor
     public static class AndroidSetup
     {
         public const string MainTemplatePath = "Assets/Plugins/Android/mainTemplate.gradle";
+        public const string PropertiesTemplatePath = "Assets/Plugins/Android/gradleTemplate.properties";
         public const string GoogleEdmPackage = "com.google.external-dependency-manager";
         private const string OpenUpm = "https://package.openupm.com";
 
@@ -96,6 +97,12 @@ namespace Nexus.Ads.Editor
                 string template = probe.ProjectFileText(MainTemplatePath);
                 steps.Add(new SetupStep("gradle.template", template != null ? SetupStatus.Done : SetupStatus.Pending, "custom main Gradle template",
                     template != null ? MainTemplatePath : "copies Unity's template to " + MainTemplatePath));
+                if (!string.IsNullOrEmpty(sdk.gradlePropertiesNote))
+                {
+                    bool properties = probe.ProjectFileText(PropertiesTemplatePath) != null;
+                    steps.Add(new SetupStep("gradle.properties", properties ? SetupStatus.Done : SetupStatus.Pending, "custom Gradle properties template",
+                        properties ? PropertiesTemplatePath : "copies Unity's template to " + PropertiesTemplatePath + " (" + sdk.gradlePropertiesNote + ")"));
+                }
                 if (lines)
                 {
                     var missing = sdk.gradleLines.Where(l => template == null || template.IndexOf(l, StringComparison.Ordinal) < 0).ToList();
@@ -336,6 +343,14 @@ namespace Nexus.Ads.Editor
                 File.Copy(source, MainTemplatePath);
                 AssetDatabase.ImportAsset(MainTemplatePath);
                 result.Log.Add("custom main Gradle template: " + source + " → " + MainTemplatePath);
+            }
+            if (Pending("gradle.properties"))
+            {
+                string source = Path.Combine(BuildPipeline.GetPlaybackEngineDirectory(BuildTarget.Android, BuildOptions.None), "Tools", "GradleTemplates", "gradleTemplate.properties");
+                Directory.CreateDirectory(Path.GetDirectoryName(PropertiesTemplatePath));
+                File.Copy(source, PropertiesTemplatePath);
+                AssetDatabase.ImportAsset(PropertiesTemplatePath);
+                result.Log.Add("custom Gradle properties template: " + source + " → " + PropertiesTemplatePath);
             }
             if (sdk.gradleLines != null && sdk.gradleLines.Length > 0 && File.Exists(MainTemplatePath))
             {

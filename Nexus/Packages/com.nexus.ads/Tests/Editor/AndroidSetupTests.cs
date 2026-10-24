@@ -54,7 +54,8 @@ namespace Nexus.Ads.Tests
 
             var plan = AndroidSetup.Plan(_settings, AdsValidator.Tab.Test, probe, _catalog);
             Assert.AreEqual(SetupStatus.Done, Status(plan, "sdk"));
-            foreach (var id in new[] { "resolver", "native.sdk", "native.adapter", "gradle.template", "gradle.lines", "resolve" })
+            // issue #49: without gradle.properties EDM4U reports Resolution Failed on every resolution and build
+            foreach (var id in new[] { "resolver", "native.sdk", "native.adapter", "gradle.template", "gradle.properties", "gradle.lines", "resolve" })
                 Assert.AreEqual(SetupStatus.Pending, Status(plan, id), id);
             StringAssert.Contains("IronSource/9.5.0/IronSourceSDKDependencies.xml", plan.First(s => s.id == "native.sdk").how, "the native SDK the installed package pairs with");
             var report = AdsValidator.Validate(_settings, AdsValidator.Tab.Test, AdPlatform.Android, probe, _catalog);

@@ -150,7 +150,9 @@ it after its listeners ran, a game that saves asynchronously acknowledges it its
   version the installed package names in its own `LevelPlayVersions.json`, downloaded from LevelPlay's
   server as its Network Manager does), the network adapter the mediation needs to fill (LevelPlay: the
   Unity Ads adapter, the newest version in that file whose native SDK range holds the installed one), the
-  custom main Gradle template with the catalog's Gradle lines,
+  custom main Gradle template with the catalog's Gradle lines, the custom Gradle properties template
+  (LevelPlay: without it the External Dependency Manager reports Resolution Failed on every resolution
+  and build),
   the resolution, and the AdMob App ID in the plugin's settings asset. Adding packages reloads the
   editor, so that press stops there and the next press continues; every step is safe to repeat. MAX
   shows Manual rows until its provider exists. Command line:
