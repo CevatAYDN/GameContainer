@@ -690,6 +690,25 @@ namespace NexusBench
             string asmdef = Path.Combine(dir, "Nexus.Ads.Core.asmdef");
             bool flag = File.Exists(asmdef) && File.ReadAllText(asmdef).Contains("\"noEngineReferences\": true") && File.ReadAllText(asmdef).Contains("\"references\": []");
             Check("EF2. Asmdef_NoEngineReferences_NoReferences", flag, asmdef);
+
+            // a package that compiles against uGUI brings it: a project made from the bare template has no com.unity.ugui (issue #21)
+            string packages = Path.GetFullPath(Path.Combine(dir, "../../.."));
+            var missingUgui = new List<string>();
+            int scanned = 0;
+            foreach (var package in Directory.Exists(packages) ? Directory.GetDirectories(packages, "com.nexus.*") : Array.Empty<string>())
+            {
+                scanned++;
+                bool usesUi = false;
+                foreach (var asm in Directory.GetFiles(package, "*.asmdef", SearchOption.AllDirectories))
+                {
+                    string rel = asm.Substring(package.Length).Replace('\\', '/');
+                    if (rel.Contains("/Tests/") || rel.Contains("/Samples~/")) continue;
+                    if (File.ReadAllText(asm).Contains("\"UnityEngine.UI\"")) usesUi = true;
+                }
+                string manifest = Path.Combine(package, "package.json");
+                if (usesUi && !(File.Exists(manifest) && File.ReadAllText(manifest).Contains("\"com.unity.ugui\""))) missingUgui.Add(Path.GetFileName(package));
+            }
+            Check("EF3. PackageThatReferencesUnityUi_DeclaresUgui", scanned >= 5 && missingUgui.Count == 0, $"{scanned} packages scanned" + (missingUgui.Count == 0 ? "" : ", missing com.unity.ugui: " + string.Join(",", missingUgui)));
         }
     }
 }
