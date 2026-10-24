@@ -85,6 +85,20 @@ and degrade predictably when an adapter lacks the capability:
 `MonetizationContractTests` (EditMode) lock every row of this table against the mock adapters
 and bool-only adapters.
 
+## The ad package family (recommended for ads)
+
+`com.nexus.ads` with `com.nexus.ads.bridge.nexus` replaces a hand-written ad adapter: the bridge is
+the `IAdNetworkAdapter` (with every capability) over the family's controller, and the mediation SDK
+sits behind the family's provider packages. The editor runs the family's simulator, a development
+build runs the real SDK with the **Test** tab (test mode and the test device list; an unlisted device
+gets the simulator), a release build runs the **Release** tab. The provider is never chosen by a
+`#if` in game code: the settings asset and `ProviderGate` decide. See the
+[ads package README](../../com.nexus.ads/README.md) and the
+[bridge README](../../com.nexus.ads.bridge.nexus/README.md); the lifecycle above becomes
+`NexusAdsBridge.Connect(ads, adFactory, iap, "remove_ads")` in `OnStartAsync` and loses its
+`AdProviderName` switch. The `"mock"` adapter and the `#if UNITY_EDITOR || DEVELOPMENT_BUILD` switch
+stay the pattern for the store.
+
 ## Shipped adapters
 
 Two optional packages in this repository implement the full contract (base adapter plus every

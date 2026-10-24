@@ -7,6 +7,18 @@
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.ads/docs/POLICY_COMPLIANCE.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {},
+  "samples": [
+    {
+      "displayName": "Plain Unity",
+      "description": "Ads without Nexus: one component over the static Ads facade, in-memory settings when the project has none, the simulator in the editor.",
+      "path": "Samples~/PlainUnity"
+    },
+    {
+      "displayName": "Nexus",
+      "description": "A Nexus game's wiring: AdService and the factory bound in a lifecycle, NexusAdsBridge.Connect, game code against IAdService only.",
+      "path": "Samples~/Nexus"
+    }
+  ],
   "keywords": [ "nexus", "ads", "mediation", "levelplay", "max", "admob", "policy" ],
   "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" }
 }

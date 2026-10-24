@@ -1,0 +1,23 @@
+{
+    "name": "Nexus.Ads.Bridge.Nexus.Firebase",
+    "rootNamespace": "Nexus.Ads.Bridge",
+    "references": [
+        "Nexus.Ads.Core",
+        "com.nexus.firebase"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.nexus.firebase",
+            "expression": "0.1.0",
+            "define": "NEXUS_ADS_FIREBASE"
+        }
+    ],
+    "noEngineReferences": false
+}

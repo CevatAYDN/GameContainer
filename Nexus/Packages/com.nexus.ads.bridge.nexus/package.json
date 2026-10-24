@@ -1,0 +1,15 @@
+{
+  "name": "com.nexus.ads.bridge.nexus",
+  "version": "0.1.0",
+  "displayName": "Nexus Ads Bridge",
+  "description": "Puts the com.nexus.ads controller behind com.nexus.core's AdService as its IAdNetworkAdapter (with the outcome, readiness and consent capabilities), wires the ad-free entitlement to IapService, forwards revenue to AdService.RaiseImpression, and optionally reads the kill switch and pacing from com.nexus.firebase's remote configuration. Game code written against IAdService does not change.",
+  "unity": "6000.5",
+  "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.ads.bridge.nexus/README.md",
+  "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
+  "dependencies": {
+    "com.nexus.core": "0.5.0",
+    "com.nexus.ads": "0.1.0"
+  },
+  "keywords": [ "nexus", "ads", "bridge", "mediation" ],
+  "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" }
+}

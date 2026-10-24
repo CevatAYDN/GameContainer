@@ -1,0 +1,27 @@
+{
+    "name": "com.nexus.ads.bridge.nexus.editor.tests",
+    "rootNamespace": "Nexus.Ads.Bridge.Tests",
+    "references": [
+        "Nexus.Ads.Core",
+        "Nexus.Ads.Unity",
+        "Nexus.Ads.Bridge.Nexus",
+        "com.nexus.core",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS"
+    ],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

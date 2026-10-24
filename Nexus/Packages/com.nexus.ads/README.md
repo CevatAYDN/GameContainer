@@ -14,6 +14,7 @@ validator, and a simulator provider. Mediation SDKs live in separate provider pa
 | `Runtime/Unity` | `Nexus.Ads.Unity` (references Core and `UnityEngine.UI`) | `AdsSettings` asset, `ProviderStatusResolver`, `AdsBootstrap`, the static `Ads` facade, `SimulatorOverlay`, `AdRewardedButton`, the port implementations. |
 | `Editor` | `Nexus.Ads.Editor` (references Core and Unity) | Project Settings page, setup wizard, Placement Tester, `AdsValidator` (+ `RunCli`, pre-build hook), `AdPlacements` generator, app-ads.txt, link.xml and manifest pinning helpers; `PlatformCatalog.json` (links, official test data with source, SDK distribution, setup steps EN + TR) read through `PlatformCatalog`. |
 | `docs` | | [POLICY_COMPLIANCE.md](docs/POLICY_COMPLIANCE.md) ([Türkçe](docs/POLICY_COMPLIANCE_TR.md)): every platform rule and where the package covers it. |
+| `Samples~/PlainUnity`, `Samples~/Nexus` | (imported by the Package Manager) | Ads without Nexus over the static facade; a Nexus game's lifecycle with `NexusAdsBridge.Connect`. |
 | `Tests/Editor`, `Tests/Runtime` | `com.nexus.ads.editor.tests`, `com.nexus.ads.tests` | EditMode tests of the settings, the resolver, the validator (through a fake project probe) and the text generators; PlayMode tests of the bootstrap, overlay, scheduler and button. |
 
 ## Rules the core enforces
@@ -148,6 +149,7 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 
 ## Using it with Nexus
 
-Through `com.nexus.ads.bridge.nexus` (#12): the bridge wraps the controller as the
-`IAdNetworkAdapter` of `com.nexus.core`'s `AdService`, so game code written against `IAdService`
-does not change.
+Through `com.nexus.ads.bridge.nexus`: the bridge wraps the controller as the `IAdNetworkAdapter` of
+`com.nexus.core`'s `AdService`, so game code written against `IAdService` does not change. Bind the
+service and the factory, put an `AdsBootstrap` in the scene, call `NexusAdsBridge.Connect` once; the
+[bridge README](../com.nexus.ads.bridge.nexus/README.md) and `Samples~/Nexus` show it.
