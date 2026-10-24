@@ -21,7 +21,9 @@
       "version": "file:com.nexus.ads",
       "depth": 0,
       "source": "embedded",
-      "dependencies": {}
+      "dependencies": {
+        "com.unity.ugui": "2.0.0"
+      }
     },
     "com.nexus.ads.admob": {
       "version": "file:com.nexus.ads.admob",
