@@ -42,9 +42,21 @@ namespace Nexus.Ads
         public string AdUnitId(AdFormat format) => AdUnitIds.TryGetValue(format, out var id) ? id : null;
 
         /// <summary>Case-insensitive, trimmed membership in <see cref="TestDeviceIds"/>.</summary>
+        /// <summary>
+        /// True for a missing id and for the all-zero id Android gives when the user turned off ad
+        /// personalization or deleted the id: it names no device, so it never counts as a test device.
+        /// </summary>
+        public static bool IsUnavailableAdvertisingId(string advertisingId)
+        {
+            if (string.IsNullOrWhiteSpace(advertisingId)) return true;
+            foreach (char c in advertisingId)
+                if (c != '0' && c != '-' && !char.IsWhiteSpace(c)) return false;
+            return true;
+        }
+
         public bool IsTestDevice(string advertisingId)
         {
-            if (string.IsNullOrWhiteSpace(advertisingId)) return false;
+            if (IsUnavailableAdvertisingId(advertisingId)) return false;
             string wanted = advertisingId.Trim();
             for (int i = 0; i < TestDeviceIds.Count; i++)
                 if (string.Equals(TestDeviceIds[i]?.Trim(), wanted, StringComparison.OrdinalIgnoreCase)) return true;

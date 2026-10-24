@@ -170,7 +170,11 @@ namespace Nexus.Ads.Unity
                     using (var info = client.CallStatic<AndroidJavaObject>("getAdvertisingIdInfo", activity))
                         id = info.Call<string>("getId");
                 }
-                catch (Exception) { id = SystemInfo.deviceUniqueIdentifier; }
+                catch (Exception ex)
+                {
+                    id = SystemInfo.deviceUniqueIdentifier;
+                    Debug.LogWarning("[Nexus Ads] the advertising id is unavailable (" + ex.GetType().Name + ": " + ex.Message + "); the gate uses this device's SystemInfo.deviceUniqueIdentifier instead, which a mediation dashboard's test device list does not know");
+                }
                 finally { AndroidJNI.DetachCurrentThread(); }
                 onFetched(id);
             }) { IsBackground = true, Name = "Nexus.Ads.AdvertisingId" }.Start();

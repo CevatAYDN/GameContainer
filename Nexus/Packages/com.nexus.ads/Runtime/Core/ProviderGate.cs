@@ -60,6 +60,9 @@ namespace Nexus.Ads
                         return new GateResult(GateDecision.Provider, null, null);
                     if (!config.TestMode)
                         return new GateResult(GateDecision.Blocked, PolicyRules.TestModeRequired, "a development build needs the provider's test mode");
+                    if (ProviderConfig.IsUnavailableAdvertisingId(deviceAdvertisingId))
+                        return new GateResult(GateDecision.Simulator, PolicyRules.UnregisteredDevice,
+                            "the device's advertising id is unavailable (Google Play services did not give one, or ad personalization is off and the id is all zeros), so it cannot be a test device");
                     if (config.IsTestDevice(deviceAdvertisingId))
                         return new GateResult(GateDecision.Provider, null, null);
                     return new GateResult(GateDecision.Simulator, PolicyRules.UnregisteredDevice,

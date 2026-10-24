@@ -619,6 +619,17 @@ namespace NexusBench
                 && ProviderGate.Host(BuildKind.Editor, ProviderGate.Evaluate(BuildKind.Editor, live, "x"), true, true) == HostMode.Simulator
                 && ProviderGate.Host(BuildKind.Development, devListed, false, false) == HostMode.Simulator
                 && ProviderGate.Host(BuildKind.Development, devListed, true, true) == HostMode.Provider, "unlisted device, editor, no mediation yet; a listed device gets the SDK");
+
+            // issue #42: an all-zero id (ad personalization off, id deleted) or a missing one is unavailable,
+            // never a test device even when listed, and the reason says so instead of "add it on the Test tab"
+            const string zeroId = "00000000-0000-0000-0000-000000000000";
+            var zeroListed = AdsRig.Provider_(testMode: true, devices: new[] { zeroId });
+            var zero = ProviderGate.Evaluate(BuildKind.Development, zeroListed, zeroId);
+            var missing = ProviderGate.Evaluate(BuildKind.Development, test, null);
+            Check("GT14. UnavailableAdvertisingId_NeverATestDevice_AndSaysWhy",
+                zero.Decision == GateDecision.Simulator && zero.Rule == PolicyRules.UnregisteredDevice && zero.Reason.Contains("unavailable")
+                && missing.Decision == GateDecision.Simulator && missing.Reason.Contains("unavailable") && !missing.Reason.Contains("add it on the Test tab"),
+                $"listed all-zero id: {zero.Decision} ({zero.Reason}); no id: {missing.Decision} ({missing.Reason}) (pre-fix: the listed zero id got the SDK)");
         }
 
         // ----- Simulator scenarios through the real controller

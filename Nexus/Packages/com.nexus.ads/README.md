@@ -71,6 +71,7 @@ background. Locked by `AdsCoreSuite` AP1–AP7.
 | Development | Google's sample units | the SDK on any device |
 | Development | test mode on, device in the Test tab's list | the SDK with test ads |
 | Development | test mode on, device not listed (or list empty) | simulator (`UnregisteredDevice`) |
+| Development | test mode on, advertising id unavailable (missing, or all zeros when ad personalization is off) | simulator (`UnregisteredDevice`); such an id never counts as listed |
 | Development | test mode off | nothing runs (`TestModeRequired`) |
 
 So a development build handed to a teammate never requests a live ad.
