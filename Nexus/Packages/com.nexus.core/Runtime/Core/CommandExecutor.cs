@@ -929,6 +929,8 @@ namespace Nexus.Core
                     if (action != RecoveryAction.Retry)
                     {
                         shouldRun = false;
+                        // One-shot contract (see Execute): a skipped failure surfaces so SignalBus releases the trigger.
+                        if (trigger.OneShot && action == RecoveryAction.Skip) throw;
                     }
                 }
                 finally

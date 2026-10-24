@@ -1280,12 +1280,30 @@ namespace Nexus.Core
                 return;
             }
             s_compositeDepth++;
+            int executed = 0;
             try
             {
-                for (int i = 0; i < buffer.Count; i++)
+                for (; executed < buffer.Count; executed++)
                 {
-                    _commandExecutor.ExecuteComposite(buffer[i].trigger, buffer[i].context);
+                    _commandExecutor.ExecuteComposite(buffer[executed].trigger, buffer[executed].context);
                 }
+            }
+            catch
+            {
+                // A failed one-shot is released like a typed composite's (TypedCompositeRegistration.Execute): it
+                // re-arms empty, so firing its signals again runs it; one-shots this pass did not reach are released too.
+                lock (_compositeLock)
+                {
+                    for (int r = executed; r < buffer.Count; r++)
+                    {
+                        var released = buffer[r].trigger;
+                        if (!released.OneShot) continue;
+                        released.IsCompleted = false;
+                        released.CurrentMask = 0;
+                        released.ClearPayloads();
+                    }
+                }
+                throw;
             }
             finally
             {

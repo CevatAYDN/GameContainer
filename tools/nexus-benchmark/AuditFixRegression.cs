@@ -16,6 +16,7 @@
 //   A23-O3 a transient read error is not cached as "no value"
 //   A23-O4 a second Despawn does not destroy the pooled instance
 //   A23-M1 a singleton built while the container is disposed is disposed
+//   A23-M5 a failed one-shot composite surfaces and can fire again
 //   A23-M8 two constructor overrides of one type fill their parameters in order
 // Each test FAILS if the pre-fix behavior returns.
 
@@ -135,6 +136,19 @@ namespace NexusBench
     }
 
     // ── #23 types ─────────────────────────────────────────────────────────────
+    public struct A23SigA { }
+    public struct A23SigB { }
+
+    /// <summary>One-shot composite whose first run throws (default recovery: Skip).</summary>
+    public sealed class A23OnceCompositeCmd : ICompositeCommand
+    {
+        public static int Attempts;
+        public void Execute(CompositeContext context)
+        {
+            if (Attempts++ == 0) throw new InvalidOperationException("a23-m5-composite-failure");
+        }
+    }
+
     /// <summary>Disposes its container from its constructor: the publish step then finds the container disposed.</summary>
     public sealed class A23OrphanSingleton : IDisposable
     {
@@ -158,7 +172,7 @@ namespace NexusBench
         public static int Run()
         {
             Console.WriteLine();
-            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2/O3/O4/M1/M8) ===");
+            Console.WriteLine("[Nexus Benchmark] === Audit-fix regression (C-1/C-2/T-1/T-4/T-5/T-6/T-7/M-1/M-3/M-4/M-4b/M-6/M-7, #23 O2/O3/O4/M1/M5/M8) ===");
             _failures = 0;
 
             Test_Composite_NestedCompletion_NoLostTriggers();
@@ -179,6 +193,7 @@ namespace NexusBench
             Test_A23_TransientReadError_NotCachedAsMissing();
             Test_A23_DoubleDespawn_KeepsPooledInstance();
             Test_A23_SingletonBuiltDuringDispose_IsDisposed();
+            Test_A23_FailedOneShotComposite_SurfacesAndFiresAgain();
             Test_A23_SameTypeOverrides_FillInOrder();
 
             Console.WriteLine();
@@ -965,6 +980,30 @@ namespace NexusBench
 
             Check("A23-M1. SingletonBuiltDuringDispose_IsDisposed", thrown == nameof(ObjectDisposedException) && A23OrphanSingleton.Disposed,
                 $"resolve threw {thrown} (expected ObjectDisposedException), instance disposed={A23OrphanSingleton.Disposed} (pre-fix: false, nothing owned it)");
+        }
+
+        private static void Test_A23_FailedOneShotComposite_SurfacesAndFiresAgain()
+        {
+            var di = new NexusDI();
+            di.Bind<A23OnceCompositeCmd>(isSingleton: false);
+            var pool = new CommandPoolManager(di);
+            var bus = new SignalBus(di, pool, new MockContext());
+            A23OnceCompositeCmd.Attempts = 0;
+            bus.RegisterCompositeCommand(new[] { typeof(A23SigA), typeof(A23SigB) }, typeof(A23OnceCompositeCmd), oneShot: true, priority: 0, isAsync: false);
+
+            bus.Fire(new A23SigA());
+            bool threw = false;
+            try { bus.Fire(new A23SigB()); }
+            catch (InvalidOperationException) { threw = true; }
+            bus.Fire(new A23SigA());
+            bus.Fire(new A23SigB());
+            int afterRetry = A23OnceCompositeCmd.Attempts;
+            bus.Fire(new A23SigA());
+            bus.Fire(new A23SigB());
+            int afterSuccess = A23OnceCompositeCmd.Attempts;
+
+            Check("A23-M5. FailedOneShotComposite_SurfacesAndFiresAgain", threw && afterRetry == 2 && afterSuccess == 2,
+                $"failure reached Fire={threw}, runs after a second A+B={afterRetry} (expected 2), after a third={afterSuccess} (expected 2: consumed once it succeeded; pre-fix 1 run, failure swallowed)");
         }
 
         private static void Test_A23_SameTypeOverrides_FillInOrder()
