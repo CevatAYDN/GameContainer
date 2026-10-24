@@ -20,6 +20,7 @@
 //   A23-M8 two constructor overrides of one type fill their parameters in order
 // Follow-up issues:
 //   I24 integer saves written before #23 with another culture's minus sign read back
+//   I26 a convention-found lifecycle that is IDisposable gets one teardown (OnDispose)
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -167,6 +168,18 @@ namespace NexusBench
         public A23TwoStrings(string first, string second) { First = first; Second = second; }
     }
 
+    /// <summary>Found by name convention for scope tag "I26Convention"; counts both teardown paths (issue #26).</summary>
+    public sealed class I26ConventionLifecycle : IContextLifecycle, IDisposable
+    {
+        public static int OnDisposeCalls;
+        public static int DisposeCalls;
+        public void OnConfigure(IContextBuilder builder) { }
+        public ValueTask OnInitializeAsync(CancellationToken ct) => default;
+        public ValueTask OnStartAsync(CancellationToken ct) => default;
+        public void OnDispose() => OnDisposeCalls++;
+        public void Dispose() => DisposeCalls++;
+    }
+
     public static class AuditFixRegression
     {
         private static int _failures;
@@ -198,6 +211,7 @@ namespace NexusBench
             Test_A23_FailedOneShotComposite_SurfacesAndFiresAgain();
             Test_A23_SameTypeOverrides_FillInOrder();
             Test_I24_LegacyMinusSigns_ReadBack();
+            Test_I26_ConventionLifecycle_TornDownOnce();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -1044,6 +1058,22 @@ namespace NexusBench
             {
                 DeleteSecureData(salt);
             }
+        }
+
+        private static void Test_I26_ConventionLifecycle_TornDownOnce()
+        {
+            I26ConventionLifecycle.OnDisposeCalls = 0;
+            I26ConventionLifecycle.DisposeCalls = 0;
+            var data = ScriptableObject.CreateInstance<ContextData>();
+            data.ScopeTag = "I26Convention";
+            data.EnableAutoDiscovery = true;
+            var context = new Context(parent: null, contextData: data);
+            context.ConfigureWithBuilder(new ContextBuilder(context.Container, context.SignalBusInternal));
+            bool found = context.TryResolve<IContextLifecycle>() is I26ConventionLifecycle;
+            context.Dispose();
+
+            Check("I26. ConventionLifecycle_TornDownOnce", found && I26ConventionLifecycle.OnDisposeCalls == 1 && I26ConventionLifecycle.DisposeCalls == 0,
+                $"found by convention={found}, OnDispose={I26ConventionLifecycle.OnDisposeCalls} Dispose={I26ConventionLifecycle.DisposeCalls} (expected 1/0, as an explicitly passed lifecycle; pre-fix 1/1)");
         }
     }
 }

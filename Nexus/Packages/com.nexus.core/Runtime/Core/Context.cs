@@ -318,7 +318,8 @@ namespace Nexus.Core
                                 var instance = Activator.CreateInstance(lifecycleType) as IContextLifecycle;
                                 if (instance != null)
                                 {
-                                    Container.BindInstance<IContextLifecycle>(instance);
+                                    // The Context tears lifecycles down (OnDispose); a container-owned binding also ran Dispose.
+                                    Container.BindInstance<IContextLifecycle>(instance, disposeWithContainer: false);
                                     allLifecycles.Add(instance);
                                 }
                             }
