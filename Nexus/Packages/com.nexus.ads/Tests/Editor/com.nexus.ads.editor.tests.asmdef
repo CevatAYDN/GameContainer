@@ -4,6 +4,7 @@
     "references": [
         "Nexus.Ads.Core",
         "Nexus.Ads.Unity",
+        "Nexus.Ads.Editor",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

@@ -1,8 +1,7 @@
 # Nexus Ads
 
 The ad package family's core: an engine-free ad core, a Unity layer, an editor setup wizard and
-validator (coming with [#11](https://github.com/CevatAYDN/GameContainer/issues/11)), and a simulator
-provider. Mediation SDKs live in separate provider packages (`com.nexus.ads.levelplay`,
+validator, and a simulator provider. Mediation SDKs live in separate provider packages (`com.nexus.ads.levelplay`,
 `com.nexus.ads.max`, `com.nexus.ads.admob`); Nexus games connect through `com.nexus.ads.bridge.nexus`
 ([#12](https://github.com/CevatAYDN/GameContainer/issues/12)). The plan, decisions and phases are in
 [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes are in [CHANGELOG.md](CHANGELOG.md).
@@ -13,9 +12,9 @@ provider. Mediation SDKs live in separate provider packages (`com.nexus.ads.leve
 |---|---|---|
 | `Runtime/Core` | `Nexus.Ads.Core` (`noEngineReferences: true`, no references) | Placements, `AdPolicy` floors, `PolicyGuard`, `AdController`, `RetryPolicy`, `ProviderGate`, `MediationLock`, `SimulatorProvider`, the ports in `Ports.cs`. Compiled and proven in the host harness (`dotnet run --project tools/nexus-benchmark`, suite `AdsCoreSuite`). |
 | `Runtime/Unity` | `Nexus.Ads.Unity` (references Core and `UnityEngine.UI`) | `AdsSettings` asset, `ProviderStatusResolver`, `AdsBootstrap`, the static `Ads` facade, `SimulatorOverlay`, `AdRewardedButton`, the port implementations. |
-| `Editor` | (data only) | `PlatformCatalog.json`: links, official test data with source, SDK distribution, setup steps EN + TR. |
+| `Editor` | `Nexus.Ads.Editor` (references Core and Unity) | Project Settings page, setup wizard, Placement Tester, `AdsValidator` (+ `RunCli`, pre-build hook), `AdPlacements` generator, app-ads.txt, link.xml and manifest pinning helpers; `PlatformCatalog.json` (links, official test data with source, SDK distribution, setup steps EN + TR) read through `PlatformCatalog`. |
 | `docs` | | [POLICY_COMPLIANCE.md](docs/POLICY_COMPLIANCE.md) ([Türkçe](docs/POLICY_COMPLIANCE_TR.md)): every platform rule and where the package covers it. |
-| `Tests/Editor`, `Tests/Runtime` | `com.nexus.ads.editor.tests`, `com.nexus.ads.tests` | EditMode tests of the settings and the resolver; PlayMode tests of the bootstrap, overlay, scheduler and button. |
+| `Tests/Editor`, `Tests/Runtime` | `com.nexus.ads.editor.tests`, `com.nexus.ads.tests` | EditMode tests of the settings, the resolver, the validator (through a fake project probe) and the text generators; PlayMode tests of the bootstrap, overlay, scheduler and button. |
 
 ## Rules the core enforces
 
@@ -66,24 +65,86 @@ So a development build handed to a teammate never requests a live ad.
    provider's test data and the device list (the wizard of #11 fills it).
 2. Put `AdsBootstrap` on a GameObject in the first scene (it survives scene loads). Without a
    provider package installed, or in the editor, the simulator runs with a full-screen overlay.
-3. Show ads through the facade; placements are strings for now, the generated `AdPlacements`
-   constants arrive with #11:
+3. Generate the `AdPlacements` constants (**Tools > Nexus Ads > Generate Placements**, path on the
+   settings) and show ads through the facade:
 
 ```csharp
 using Nexus.Ads;
 using Nexus.Ads.Unity;
 
-if (Ads.IsReady("shop_refill"))
-    Ads.Show("shop_refill", result => { if (result == AdResult.Rewarded) Wallet.Add(50); });
+if (Ads.IsReady(AdPlacements.ShopRefill))
+    Ads.Show(AdPlacements.ShopRefill, result => { if (result == AdResult.Rewarded) Wallet.Add(50); });
 
-Ads.Show("level_end"); // interstitial: NaturalBreak placement, paced by the guard
+Ads.Show(AdPlacements.LevelEnd); // interstitial: NaturalBreak placement, paced by the guard
+
+// at start-up: a reward the previous run was killed in the middle of
+var receipt = Ads.PendingReward;
+if (receipt.HasValue) { Wallet.Add(50); Ads.AcknowledgeReward(receipt.Value.Id); }
 ```
 
 Or drop `AdRewardedButton` on a uGUI Button with a `CanvasGroup`: it hides itself while nothing can
 show and raises `OnRewarded` once per paid ad.
 
 Full-screen ads pause `AudioListener` and set `Time.timeScale` to 0 until they close (switches on
-the bootstrap). Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`.
+the bootstrap). Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`. A paid reward is
+written to the store before the game hears of it (`PendingReward`); `AdRewardedButton` acknowledges
+it after its listeners ran, a game that saves asynchronously acknowledges it itself.
+
+## Editor tools
+
+- **Project Settings > Nexus Ads**: the asset, the Test and Release tabs per platform (AdMob's Test tab
+  is locked to Google's sample ids with a reset button; LevelPlay and MAX copy the Release keys), the
+  device list, placements, floors, privacy, app-ads.txt lines, and the validator buttons. Status badges
+  come from `ProviderStatusResolver`.
+- **Tools > Nexus Ads > Setup**: the wizard. Every provider and network row from the catalog with its
+  status badge, next step, registration / docs / policy links, "Install SDK" (LevelPlay from the Unity
+  registry, AdMob from OpenUPM with the scoped registry written for you, MAX through AppLovin's
+  installer), the setup steps in English and Turkish, the checklist of rules code cannot enforce, and
+  the project buttons (generate placements, write `Assets/NexusAds/link.xml`, pin the family packages
+  to one commit).
+- **Window > Nexus Ads > Placement Tester**: in Play Mode, every placement with its readiness, a Show
+  button, the result and the rule that blocked it, the simulator scenario and buttons, the pending
+  reward, and the live event log.
+
+## Validator
+
+`AdsValidator.Validate(settings, tab, platform, probe, catalog)` is a pure function; the settings
+page, the wizard, the CLI and the pre-build hook call it and own no rule of their own. The pre-build
+hook (`AdsBuildGuard`) runs on Android and iOS builds only, validates the Test tab for a development
+build and the Release tab otherwise, and stops the build on a fail; an ad-free release passes and is
+reported. The development project's own asset is an ad-free release for that reason. Batch mode:
+
+```powershell
+Unity.exe -batchmode -nographics -quit -projectPath <project> -executeMethod Nexus.Ads.Editor.AdsValidator.RunCli -adsTab Release -adsPlatform Android -adsReport artifacts/ads-validation.json
+```
+
+Exit code 0 = no fail (warnings allowed), 1 = at least one fail, 2 = could not run (no settings asset,
+bad arguments). The JSON report lists every check with `id`, `result` (`pass` / `warn` / `fail`),
+`message` and `fix`, plus the counts and the provider status.
+
+| Check id | Fails or warns when |
+|---|---|
+| `mediation.single` | fail: two mediation SDKs are in the project |
+| `mediation.selected` | fail: no mediation selected on a release that is not ad-free |
+| `mediation.status` | fail: the selected provider is not Active for a release build (warn on the Test tab when NotInstalled: the simulator runs) |
+| `keys.release.missing`, `keys.test.missing` | fail: a required field (derived from the placements) is empty; warn on the Test tab for LevelPlay/MAX (simulator) |
+| `keys.release.testdata` | fail: Google's sample ids on the Release tab |
+| `keys.test.official` | fail: AdMob's Test tab differs from the catalog's sample ids |
+| `keys.test.mirror` | fail: LevelPlay/MAX Test tab differs from a filled Release tab |
+| `devices.empty` | warn: no test device, every development build runs the simulator |
+| `sdk.unitypackage` | warn: the SDK is a `.unitypackage` import; names the define to set |
+| `android.admob.appid` | fail: the Google Mobile Ads settings asset disagrees with the tab's App ID |
+| `android.edm` | fail (release): External Dependency Manager missing |
+| `android.minsdk` | warn: minimum API below the provider's |
+| `child.mediation` | fail: child-directed with a mediation whose policies forbid children's apps (MAX) |
+| `child.networks` | warn: child-directed with an adapter of a network off Google's Families list (heuristic detection) |
+| `placements.names` | fail: a name that is not a C# identifier, a duplicate, or an interstitial without NaturalBreak; warn: no placements |
+| `policy.floors` | warn: a floor below the package default (raised at runtime) |
+| `privacy.url` | warn: no privacy policy URL |
+| `android.adid` | warn: custom manifest without the AD_ID permission on target 33+ |
+| `android.linkxml` | warn (release): no link.xml preserves `Nexus.Ads.Core` |
+| `appads.lines` | warn: a detected network has no app-ads.txt line |
+| `manifest.pins` | fail: the family's git-URL entries point at different commits |
 
 ## Using it with Nexus
 

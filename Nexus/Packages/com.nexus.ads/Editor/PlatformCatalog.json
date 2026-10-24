@@ -7,6 +7,7 @@
       "name": "Unity LevelPlay",
       "role": "mediation",
       "when": "now; first provider",
+      "childDirectedAllowed": true,
       "registration": "https://cloud.unity.com",
       "docs": "https://docs.unity.com/grow/levelplay/sdk/unity/package-integration/",
       "policies": [
@@ -22,7 +23,7 @@
         "upm": { "package": "com.unity.services.levelplay", "registry": "Unity registry (Package Manager: Ads Mediation)", "versionSeen": "9.5.1", "githubLatestRelease": "UnityLevelPlay_9.3.0 (2026-01-20)" },
         "unitypackage": "https://github.com/ironsource-mobile/Unity-sdk/releases",
         "define": "NEXUS_LEVELPLAY",
-        "namespace": "Unity.Services.LevelPlay",
+        "rootNamespace": "Unity.Services.LevelPlay",
         "init": "LevelPlay.Init(appKey)",
         "minAndroidApi": 19,
         "minIos": "13"
@@ -110,6 +111,7 @@
       "name": "Google AdMob",
       "role": "network",
       "when": "after the 29-day suspension; as a network inside the mediation, or as the provider of the existing com.nexus.ads.admob package",
+      "childDirectedAllowed": true,
       "registration": "https://admob.google.com",
       "docs": "https://developers.google.com/admob/unity/quick-start",
       "policies": [
@@ -174,12 +176,12 @@
     }
   ],
   "networks": [
-    { "id": "mintegral", "name": "Mintegral", "when": "when the mediation is chosen", "registration": "https://dev.mintegral.com", "policies": [ "https://helpcenter.mintegral.com/en/docs/mtg-antifraud-measures" ], "familiesSelfCertified": { "listed": false } },
-    { "id": "liftoff", "name": "Liftoff Monetize (Vungle)", "when": "when the mediation is chosen", "registration": "https://publisher.vungle.com", "policies": [ "https://support.vungle.com/hc/en-us/categories/360001994512-Publisher" ], "familiesSelfCertified": { "listed": true, "row": "Vungle publisher-sdk-android 6.10.4 or later" }, "note": "Terms of Service article answered HTTP 403 to the tool on the read date; read it at registration." },
+    { "id": "mintegral", "name": "Mintegral", "when": "when the mediation is chosen", "registration": "https://dev.mintegral.com", "policies": [ "https://helpcenter.mintegral.com/en/docs/mtg-antifraud-measures" ], "familiesSelfCertified": { "listed": false }, "childDirectedAllowed": false },
+    { "id": "liftoff", "name": "Liftoff Monetize (Vungle)", "when": "when the mediation is chosen", "registration": "https://publisher.vungle.com", "policies": [ "https://support.vungle.com/hc/en-us/categories/360001994512-Publisher" ], "familiesSelfCertified": { "listed": true, "row": "Vungle publisher-sdk-android 6.10.4 or later" }, "childDirectedAllowed": true, "note": "Terms of Service article answered HTTP 403 to the tool on the read date; read it at registration." },
     { "id": "pangle", "name": "Pangle", "when": "when the mediation is chosen", "registration": "https://www.pangleglobal.com", "policies": [ "https://pangleglobal.com/knowledge/pangle-supply-policy" ], "familiesSelfCertified": { "listed": false }, "childDirectedAllowed": false },
-    { "id": "dtexchange", "name": "DT Exchange", "when": "when the mediation is chosen", "registration": "https://console.fyber.com", "policies": [ "https://www.digitalturbine.com/legal/service-order-for-publishers-fyber", "https://www.digitalturbine.com/legal/msa-supply-fyber" ], "familiesSelfCertified": { "listed": true, "row": "DT Exchange SDK marketplace-sdk 8.2.1 or later" } },
-    { "id": "meta", "name": "Meta Audience Network", "when": "when the game is live", "registration": "https://business.facebook.com", "policies": [ "https://developers.facebook.com/docs/audience-network/optimization/best-practices/an-policy" ], "familiesSelfCertified": { "listed": false }, "appAdsTxtRequired": true },
-    { "id": "inmobi", "name": "InMobi", "when": "when the game is live", "registration": "https://publisher.inmobi.com", "policies": [ "https://advertising.inmobi.com/publisher-policy/", "https://support.inmobi.com/monetize/privacy/coppa" ], "familiesSelfCertified": { "listed": true, "row": "InMobi inmobi-ads 10.5.5 or later" }, "note": "Registration link answers 401 without a session (sign-in page). Publisher Policy body was truncated by the tool on the read date; read it at registration." },
+    { "id": "dtexchange", "name": "DT Exchange", "when": "when the mediation is chosen", "registration": "https://console.fyber.com", "policies": [ "https://www.digitalturbine.com/legal/service-order-for-publishers-fyber", "https://www.digitalturbine.com/legal/msa-supply-fyber" ], "familiesSelfCertified": { "listed": true, "row": "DT Exchange SDK marketplace-sdk 8.2.1 or later" }, "childDirectedAllowed": true },
+    { "id": "meta", "name": "Meta Audience Network", "when": "when the game is live", "registration": "https://business.facebook.com", "policies": [ "https://developers.facebook.com/docs/audience-network/optimization/best-practices/an-policy" ], "familiesSelfCertified": { "listed": false }, "childDirectedAllowed": false, "appAdsTxtRequired": true },
+    { "id": "inmobi", "name": "InMobi", "when": "when the game is live", "registration": "https://publisher.inmobi.com", "policies": [ "https://advertising.inmobi.com/publisher-policy/", "https://support.inmobi.com/monetize/privacy/coppa" ], "familiesSelfCertified": { "listed": true, "row": "InMobi inmobi-ads 10.5.5 or later" }, "childDirectedAllowed": true, "note": "Registration link answers 401 without a session (sign-in page). Publisher Policy body was truncated by the tool on the read date; read it at registration." },
     { "id": "chartboost", "name": "Chartboost", "when": "when the game is live", "registration": "https://dashboard.chartboost.com", "policies": [ "https://docs.chartboost.com/en/legal/terms-conditions/" ], "familiesSelfCertified": { "listed": true, "row": "Chartboost chartboost-sdk 9.1.1 or later" }, "childDirectedAllowed": false }
   ],
   "googlePlay": {

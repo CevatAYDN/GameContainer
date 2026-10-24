@@ -1,0 +1,99 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6eaa67cf36787da489842743bc482372, type: 3}
+  m_Name: NexusAdsSettings
+  m_EditorClassIdentifier: Nexus.Ads.Unity::Nexus.Ads.Unity.AdsSettings
+  SelectedMediation: 0
+  AdFreeRelease: 1
+  Test:
+    LevelPlay:
+      Android:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+      Ios:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+    Max:
+      Android:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+      Ios:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+    AdMob:
+      Android:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+      Ios:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+  Release:
+    LevelPlay:
+      Android:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+      Ios:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+    Max:
+      Android:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+      Ios:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+    AdMob:
+      Android:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+      Ios:
+        AppKey: 
+        RewardedUnitId: 
+        InterstitialUnitId: 
+        BannerUnitId: 
+  TestDeviceIds: []
+  Placements: []
+  Policy:
+    MinInterstitialGapSeconds: 30
+    NoInterstitialForFirstSeconds: 60
+    NoInterstitialAfterRewardedSeconds: 30
+    MaxInterstitialsPerSession: 0
+    MaxInterstitialsPerDay: 0
+    SessionResumeGapMinutes: 30
+  GeneratedPlacementsPath: Assets/Scripts/Ads/AdPlacements.g.cs
+  AppAdsTxtLines: []
+  ChildDirected: 0
+  UnderAgeOfConsent: 0
+  MaxAdContentRating: 0
+  PrivacyPolicyUrl: 

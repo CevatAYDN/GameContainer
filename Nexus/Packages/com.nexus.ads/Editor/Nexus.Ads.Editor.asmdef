@@ -1,0 +1,19 @@
+{
+    "name": "Nexus.Ads.Editor",
+    "rootNamespace": "Nexus.Ads.Editor",
+    "references": [
+        "Nexus.Ads.Core",
+        "Nexus.Ads.Unity"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

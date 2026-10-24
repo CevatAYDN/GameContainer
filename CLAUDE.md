@@ -15,7 +15,7 @@ must be current, consistent and verifiable. Read this file before changing code 
 | `tools/nexus-consumer/` | Clean UPM consumer gate: packs the tarball, fresh project, sample import, tests, player |
 | `tools/unity-verify/` | Player builds of the development project (`NexusVerify.NexusVerifyBuild.*`) |
 | `tools/device-acceptance/` | Runs an Android player on the connected phone: soak, background/resume, kill/restart, logcat scan (gate 12) |
-| `Nexus/Packages/com.nexus.ads/` | The ad package family's core (issue #8): `Runtime/Core` (engine-free, `noEngineReferences`; compiled and proven in the host harness), `Runtime/Unity` (settings asset, bootstrap, simulator overlay, rewarded button), `docs/POLICY_COMPLIANCE.md` (policy register, EN + TR), `Editor/PlatformCatalog.json` (setup wizard data), `CHANGELOG.md` (the family's changelog: core, providers, bridge). Editor tools, providers and the Nexus bridge follow in #11–#14 |
+| `Nexus/Packages/com.nexus.ads/` | The ad package family's core (issue #8): `Runtime/Core` (engine-free, `noEngineReferences`; compiled and proven in the host harness), `Runtime/Unity` (settings asset, bootstrap, simulator overlay, rewarded button), `docs/POLICY_COMPLIANCE.md` (policy register, EN + TR), `Editor/PlatformCatalog.json` (setup wizard data), `Editor/` (Project Settings page, setup wizard, Placement Tester, `AdsValidator` with `RunCli` and the pre-build hook), `CHANGELOG.md` (the family's changelog: core, providers, bridge). The Nexus bridge and the providers follow in #12–#14 |
 | `Nexus/Packages/com.nexus.ads.admob/`, `com.nexus.iap.unity/` | Optional adapter packages (Google AdMob with UMP consent; Unity IAP 5) behind `AdService` / `IapService`; compile only when their SDK package is installed (`versionDefines`) |
 | `docs/RELEASE_GATES.md` | The gates and the latest measured numbers |
 | `docs/research/` | Dated, sourced research (competitors) |
@@ -30,6 +30,7 @@ python tools/check-docs.py                                       # markdown link
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults Nexus\artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults Nexus\artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
+& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Ads.Editor.AdsValidator.RunCli -adsTab Release -adsPlatform Android -adsReport artifacts/ads-validation.json   # ads settings check; exit 0 pass, 1 fail, 2 could not run; the report path is relative to the project folder
 ./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date> -Android            # reflection configuration: host, Mono player, Android device
 ./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date>-generated -Android -Generated   # generated bindings (own artifact folder: the analyzer and the define stay in the project)
 ```
