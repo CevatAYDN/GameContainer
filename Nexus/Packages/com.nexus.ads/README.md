@@ -4,7 +4,8 @@ The ad package family's core: an engine-free ad core, a Unity layer, an editor s
 validator, and a simulator provider. Mediation SDKs live in separate provider packages (`com.nexus.ads.levelplay`,
 `com.nexus.ads.max`, `com.nexus.ads.admob`); Nexus games connect through `com.nexus.ads.bridge.nexus`
 ([#12](https://github.com/CevatAYDN/GameContainer/issues/12)). The plan, decisions and phases are in
-[issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes are in [CHANGELOG.md](CHANGELOG.md).
+[issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes are in [CHANGELOG.md](CHANGELOG.md). A game on the
+legacy `AdMobAdapter` moves here with [MIGRATION.md](MIGRATION.md).
 
 ## What is here
 
@@ -126,6 +127,7 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | Check id | Fails or warns when |
 |---|---|
 | `mediation.single` | fail: two mediation SDKs are in the project |
+| `mediation.admob` | warn: the Google Mobile Ads SDK is in the project while LevelPlay or MAX is selected (only the selected mediation starts; the SDK still ships) |
 | `mediation.selected` | fail: no mediation selected on a release that is not ad-free |
 | `mediation.status` | fail: the selected provider is not Active for a release build (warn on the Test tab when NotInstalled: the simulator runs) |
 | `keys.release.missing`, `keys.test.missing` | fail: a required field (derived from the placements) is empty; warn on the Test tab for LevelPlay/MAX (simulator) |

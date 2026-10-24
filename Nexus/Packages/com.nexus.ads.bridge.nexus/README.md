@@ -10,7 +10,7 @@ family's [CHANGELOG](../com.nexus.ads/CHANGELOG.md).
 ## Install
 
 Both packages by git URL, pinned to the same commit (the ads validator's `manifest.pins` check keeps
-them together; **Tools > Nexus Ads > Pin family packages** rewrites them):
+them together; **Tools > Nexus Ads > Pin family packages to one commit** rewrites them):
 
 ```json
 "com.nexus.ads": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads#<commit>",

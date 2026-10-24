@@ -15,7 +15,7 @@ namespace Nexus.Ads.Unity
     [DefaultExecutionOrder(-1000)]
     public sealed class AdsBootstrap : MonoBehaviour
     {
-        private static readonly Dictionary<AdProviderKind, Func<IAdScheduler, IAdProvider>> Factories = new Dictionary<AdProviderKind, Func<IAdScheduler, IAdProvider>>();
+        private static readonly Dictionary<AdProviderKind, Func<IAdScheduler, ProviderConfig, IAdProvider>> Factories = new Dictionary<AdProviderKind, Func<IAdScheduler, ProviderConfig, IAdProvider>>();
 
         [Tooltip("Left empty, Resources/NexusAdsSettings is loaded")]
         [SerializeField] private AdsSettings _settings;
@@ -53,8 +53,11 @@ namespace Nexus.Ads.Unity
             _logEvents = logEvents;
         }
 
-        /// <summary>A provider package registers its factory here (from a RuntimeInitializeOnLoadMethod); the bootstrap hands it its scheduler.</summary>
-        public static void RegisterProvider(AdProviderKind kind, Func<IAdScheduler, IAdProvider> factory)
+        /// <summary>
+        /// A provider package registers its factory here (from a RuntimeInitializeOnLoadMethod); the bootstrap hands it
+        /// its scheduler and the configuration it will be initialized with (a consent flow runs before Initialize).
+        /// </summary>
+        public static void RegisterProvider(AdProviderKind kind, Func<IAdScheduler, ProviderConfig, IAdProvider> factory)
         {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             Factories[kind] = factory;
@@ -94,7 +97,7 @@ namespace Nexus.Ads.Unity
             IConsentFlow consent = null;
             if (Gate.Decision == GateDecision.Provider && Factories.TryGetValue(_settings.SelectedMediation, out var factory))
             {
-                Provider = factory(scheduler);
+                Provider = factory(scheduler, config.Provider);
                 consent = Provider as IConsentFlow;
             }
             else

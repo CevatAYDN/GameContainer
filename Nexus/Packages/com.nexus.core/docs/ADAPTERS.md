@@ -97,7 +97,9 @@ gets the simulator), a release build runs the **Release** tab. The provider is n
 [bridge README](../../com.nexus.ads.bridge.nexus/README.md); the lifecycle above becomes
 `NexusAdsBridge.Connect(ads, adFactory, iap, "remove_ads")` in `OnStartAsync` and loses its
 `AdProviderName` switch. The `"mock"` adapter and the `#if UNITY_EDITOR || DEVELOPMENT_BUILD` switch
-stay the pattern for the store.
+stay the pattern for the store. A game on `AdMobAdapter` moves with the family's
+[MIGRATION.md](../../com.nexus.ads/MIGRATION.md); AdMob itself stays available there as the
+`Nexus.Ads.AdMob` provider in `com.nexus.ads.admob`.
 
 ## Shipped adapters
 
@@ -113,7 +115,7 @@ Settings when the code lives in `Assembly-CSharp`.
 
 | Package | SDK | Provider name | Install |
 |---|---|---|---|
-| `com.nexus.ads.admob` ([README](../../com.nexus.ads.admob/README.md)) | Google Mobile Ads Unity plugin (`com.google.ads.mobile`, OpenUPM) with User Messaging Platform consent | `admob` | git URL `?path=/Nexus/Packages/com.nexus.ads.admob#<commit>` |
+| `com.nexus.ads.admob` ([README](../../com.nexus.ads.admob/README.md)) | Google Mobile Ads Unity plugin (`com.google.ads.mobile`, OpenUPM) with User Messaging Platform consent | `admob` | git URL `?path=/Nexus/Packages/com.nexus.ads.admob#<commit>`; legacy, kept until its three games moved to the family |
 | `com.nexus.iap.unity` ([README](../../com.nexus.iap.unity/README.md)) | Unity IAP 5 (`com.unity.purchasing`, declared dependency) | `unity` | git URL `?path=/Nexus/Packages/com.nexus.iap.unity#<commit>` |
 
 ```csharp

@@ -98,6 +98,12 @@ namespace Nexus.Ads.Editor
                 ? new AdsCheck("mediation.single", CheckResult.Fail, "two mediation SDKs are in the project (" + string.Join(", ", installedMediations) + "); one build carries one mediation.", "remove the SDK of the mediation that is not selected (LevelPlay and MAX bring the same network adapters in different versions).")
                 : new AdsCheck("mediation.single", CheckResult.Pass, installedMediations.Count == 0 ? "no mediation SDK in the project" : installedMediations[0] + " is the only mediation SDK"));
 
+            // the Google Mobile Ads SDK next to another mediation: only the selected provider starts, yet the SDK ships in the build
+            if (kind == AdProviderKind.LevelPlay || kind == AdProviderKind.Max)
+                report.Add(probe.SdkInstalled(AdProviderKind.AdMob)
+                    ? new AdsCheck("mediation.admob", CheckResult.Warn, "the Google Mobile Ads SDK is in the project while " + kind + " is selected; the AdMob provider never starts (only the selected mediation does), but the SDK ships in the build.", "keep com.google.ads.mobile when a network adapter or Google's consent form (UMP) needs it; remove it otherwise.")
+                    : new AdsCheck("mediation.admob", CheckResult.Pass, "no Google Mobile Ads SDK next to " + kind));
+
             // status from the single resolver
             bool sdk = probe.SdkInstalled(kind) && probe.ProviderPackageInstalled(kind);
             var status = ProviderStatusResolver.Resolve(settings, kind, platform, sdk, conflict);

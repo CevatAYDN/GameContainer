@@ -226,7 +226,7 @@ namespace Nexus.Ads.LevelPlay
     public static class LevelPlayRegistration
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void Register() => AdsBootstrap.RegisterProvider(AdProviderKind.LevelPlay, scheduler => new LevelPlayProvider(scheduler));
+        private static void Register() => AdsBootstrap.RegisterProvider(AdProviderKind.LevelPlay, (scheduler, _) => new LevelPlayProvider(scheduler));
     }
 }
 #endif

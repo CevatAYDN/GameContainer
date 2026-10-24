@@ -1,0 +1,31 @@
+{
+    "name": "Nexus.Ads.AdMob",
+    "rootNamespace": "Nexus.Ads.AdMob",
+    "references": [
+        "Nexus.Ads.Core",
+        "Nexus.Ads.Unity"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "NEXUS_ADMOB",
+        "NEXUS_ADS"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.google.ads.mobile",
+            "expression": "11.3.0",
+            "define": "NEXUS_ADMOB"
+        },
+        {
+            "name": "com.nexus.ads",
+            "expression": "0.1.0",
+            "define": "NEXUS_ADS"
+        }
+    ],
+    "noEngineReferences": false
+}

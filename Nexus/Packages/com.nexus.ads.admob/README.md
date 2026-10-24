@@ -1,6 +1,58 @@
-# Nexus AdMob Adapter (`com.nexus.ads.admob`)
+# Nexus AdMob (`com.nexus.ads.admob`)
 
-> **Who this is for:** level 3, shipping a game with Google AdMob behind Nexus `AdService`.
+> **Who this is for:** level 3, shipping a game with Google AdMob.
+
+Two assemblies, both inert until the Google Mobile Ads Unity plugin is installed:
+
+| Assembly | What | Status |
+|---|---|---|
+| `Nexus.Ads.AdMob` (`Runtime/Provider`) | `AdMobProvider`, the ad family's `IAdProvider` over `com.nexus.ads` | Current; changes in the family's [CHANGELOG](../com.nexus.ads/CHANGELOG.md) |
+| `com.nexus.ads.admob` (`Runtime`) | `AdMobAdapter`, an `IAdNetworkAdapter` for `com.nexus.core`'s `AdService` | Kept compiling until Gigawatt, Wickling and ChipCrisis have re-pinned to the family, then retired; changes in the core's [CHANGELOG](../com.nexus.core/CHANGELOG.md). Moving a game: [MIGRATION.md](../com.nexus.ads/MIGRATION.md) |
+
+## AdMob provider for the ad family
+
+`Nexus.Ads.AdMob` compiles only while both `com.google.ads.mobile` 11.3.0 or newer and `com.nexus.ads`
+are installed (assembly definition `versionDefines` `NEXUS_ADMOB` and `NEXUS_ADS`, both in its
+`defineConstraints`), so a game that pins this package for the old adapter alone is not affected.
+Install the plugin and its External Dependency Manager from OpenUPM (scoped registry below), list
+`com.nexus.ads` and this package at the same commit, select **AdMob** in **Project Settings > Nexus
+Ads** and put an `AdsBootstrap` in the first scene; the provider registers itself before the first
+scene loads. A Nexus game adds `com.nexus.ads.bridge.nexus` and calls `NexusAdsBridge.Connect`.
+
+What it does:
+- **Consent:** asks the User Messaging Platform for an update on every launch (Google's privacy page
+  requires it) and shows the form where the law needs it; consent kept from an earlier session lets ads
+  load while this session's update runs. The privacy options form is `ShowPrivacyOptions`; a withdrawal
+  destroys the loaded ads and further loads report "consent does not allow ad requests".
+- **Request configuration** before `MobileAds.Initialize`: `AgeRestrictedTreatment.Child` when the
+  settings mark the app child-directed or its users under the age of consent (Google's replacement for
+  the deprecated `TagForChildDirectedTreatment` and `TagForUnderAgeOfConsent`, plugin 11.3.0), and the
+  content rating. The App ID comes from the plugin's own settings asset (**Assets > Google Mobile Ads >
+  Settings**); the validator's `android.admob.appid` check keeps it equal to the tab.
+- **Ads:** one rewarded and one interstitial ad from the tab's units, an anchored adaptive banner;
+  `OnAdPaid` reaches the family as `AdRevenue` (micros / 1,000,000, the network from the response
+  info); the ad inspector is the test suite. Every SDK callback continues on the main thread.
+- **Test ads:** Google has no test-mode flag. A development build reaches the SDK only with Google's
+  sample units on the Test tab (the page fills them; the gate runs the simulator otherwise), so every
+  device gets test ads. To test the consent form outside the EEA, register the device with Google's
+  own id before the bootstrap starts (the id the SDK prints in logcat as `setTestDeviceIds`, or in the
+  Xcode console as `testDeviceIdentifiers`; on iOS add the id UMP prints as well):
+
+  ```csharp
+  #if DEVELOPMENT_BUILD
+  Nexus.Ads.AdMob.AdMobProvider.SetTestDevices(new[] { "33BE2250B43518CCDA7DE426D04EE231" }, eeaConsentGeography: true);
+  #endif
+  ```
+
+  The ids reach `RequestConfiguration.TestDeviceIds` and the consent debug settings only while the
+  configuration runs on Google's sample units, so a release build never carries them.
+
+Proven against Google Mobile Ads 11.6.0 in a disposable project (`Nexus/artifacts/admob-<date>/`, gate
+row in [`docs/RELEASE_GATES.md`](../../../docs/RELEASE_GATES.md)): the plugin's editor placeholders
+load, show, pay and close through the provider. Not covered: app-open, native and rewarded
+interstitial ads, mediation setup inside AdMob.
+
+## Legacy adapter behind `AdService`
 
 Google AdMob through the Google Mobile Ads Unity plugin, with the User Messaging Platform
 consent flow, as an `IAdNetworkAdapter` for `AdService`. The adapter implements every
@@ -8,7 +60,7 @@ capability the service knows (`IAdOutcomeAdapter`, `IAdReadinessAdapter`, `IAdCo
 so `RequestReward`, `ReadyChanged`, `PrivacyOptionsRequired` and `ShowPrivacyOptions` work as
 `docs/ADAPTERS.md` of the core package describes.
 
-## Install
+### Install
 
 1. Google Mobile Ads Unity plugin as a UPM package (`com.google.ads.mobile`, 9.0 or newer; the
    adapter was written against 11.6.0) from the OpenUPM registry, plus its External Dependency
@@ -26,7 +78,7 @@ definition `versionDefines`, define `NEXUS_ADMOB`); without the plugin the packa
 `NEXUS_ADMOB` exists only inside this assembly: in game code `#if NEXUS_ADMOB` is always false
 (core `docs/ADAPTERS.md`, "Shipped adapters").
 
-## Use
+### Use
 
 ```csharp
 using Nexus.Ads.AdMob;

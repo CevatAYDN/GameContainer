@@ -101,6 +101,16 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
+        public void GoogleSdk_NextToTheSelectedMediation_Warns_AndIsNotASecondMediation()
+        {
+            _probe.Installed(AdProviderKind.AdMob);
+            var report = Run(AdsValidator.Tab.Release);
+            Assert.AreEqual(CheckResult.Warn, Check(report, "mediation.admob").Result);
+            Assert.AreEqual(CheckResult.Pass, Check(report, "mediation.single").Result, "AdMob is not counted as a second mediation");
+            Assert.AreEqual("Active", report.status);
+        }
+
+        [Test]
         public void GoogleSampleIds_OnTheReleaseTab_Fail()
         {
             _settings.SelectedMediation = AdProviderKind.AdMob;
