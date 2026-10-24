@@ -119,7 +119,8 @@ namespace Nexus.Ads.Unity
             Controller = new AdController(config, Provider, new UnityAdClock(), visibility, mainThread, scheduler, new PlayerPrefsPacingStore(), _telemetry, consent);
             Controller.AdOpened += OnAdOpened;
             Controller.AdClosed += OnAdClosed;
-            if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] " + v);
+            // tools/device-acceptance counts "[Nexus Ads] PolicyViolation" lines; keep the token
+            if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] PolicyViolation " + v);
             if (Mode != HostMode.Idle) Controller.Start(); // an idle host (ad-free, blocked, provider missing) builds the controller and never starts it
             if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
             Started?.Invoke();

@@ -78,11 +78,12 @@ namespace Nexus.Ads.Tests.Runtime
 
         // Issue #36: with event logging on, the telemetry log and the bootstrap's Violation handler both wrote the
         // block as an error; a second error line fails this test as an unexpected log.
+        // Issue #48: the one line keeps the text tools/device-acceptance/run.ps1 counts as a policy violation.
         [UnityTest]
-        public IEnumerator BlockedShow_IsLoggedOnce_WithEventLoggingOn()
+        public IEnumerator BlockedShow_IsLoggedOnce_WithTheTokenTheAcceptanceScanCounts()
         {
             yield return Boot(SimulatorScenario.Normal, logEvents: true);
-            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("InterstitialFrequency"));
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] PolicyViolation InterstitialFrequency"));
             AdResult? result = null;
             _bootstrap.Controller.Show("level_end", r => result = r);
             Assert.AreEqual(AdResult.Blocked, result);
