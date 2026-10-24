@@ -140,6 +140,16 @@ namespace Nexus.Core.Services
 #if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
         private enum ButtonQuery { Pressed, Down, Up }
 
+        // The legacy path logs its first failure; this path swallowed every one, so a broken Input System setup read as "no input".
+        private static bool s_inputSystemFailureReported;
+
+        private static void ReportInputSystemFailure(Exception ex)
+        {
+            if (s_inputSystemFailureReported) return;
+            s_inputSystemFailureReported = true;
+            NexusRuntime.Logger?.LogWarning($"[InputService] Input System read failed ({ex.GetType().Name}: {ex.Message}); input reads as none. Check the Input System setup or supply IInputProvider.");
+        }
+
         private static bool CheckNewInputButton(string actionName, ButtonQuery query)
         {
             if (!Application.isPlaying) return false;
@@ -172,7 +182,7 @@ namespace Nexus.Core.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) { ReportInputSystemFailure(ex); }
             return false;
         }
 
@@ -199,7 +209,7 @@ namespace Nexus.Core.Services
                     if (stick.sqrMagnitude > 0.001f) return stick;
                 }
             }
-            catch { }
+            catch (Exception ex) { ReportInputSystemFailure(ex); }
             return Vector2.zero;
         }
 #endif
