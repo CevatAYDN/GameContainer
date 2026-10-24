@@ -24,48 +24,6 @@ namespace Nexus.Core.Lifecycle
                 $"Implement only one unless the two hooks genuinely do different work.");
         }
 
-        public async ValueTask ExecuteLifecyclePhasesAsync(IReadOnlyList<IContextLifecycle> lifecycles, CancellationToken ct)
-        {
-            if (lifecycles == null || lifecycles.Count == 0) return;
-
-            for (int i = 0; i < lifecycles.Count; i++)
-            {
-                if (ct.IsCancellationRequested) break;
-                if (lifecycles[i] != null)
-                {
-                    try
-                    {
-                        await lifecycles[i].OnInitializeAsync(ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        // Route through NexusRuntime.Logger (the framework's
-                        // logging abstraction) instead of raw Debug.LogError so log
-                        // filtering/sinks stay consistent with the rest of the runtime.
-                        NexusRuntime.Logger?.LogError($"[Nexus] Lifecycle OnInitializeAsync exception in {lifecycles[i].GetType().Name}: {ex.Message}");
-                        NexusRuntime.Logger?.LogException(ex);
-                    }
-                }
-            }
-
-            for (int i = 0; i < lifecycles.Count; i++)
-            {
-                if (ct.IsCancellationRequested) break;
-                if (lifecycles[i] != null)
-                {
-                    try
-                    {
-                        await lifecycles[i].OnStartAsync(ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        NexusRuntime.Logger?.LogError($"[Nexus] Lifecycle OnStartAsync exception in {lifecycles[i].GetType().Name}: {ex.Message}");
-                        NexusRuntime.Logger?.LogException(ex);
-                    }
-                }
-            }
-        }
-
         public async ValueTask ExecuteStartableLifecyclesAsync(IEnumerable<object> instances, CancellationToken ct)
         {
             if (instances == null) return;

@@ -44,6 +44,10 @@ everything under Unreleased is in the repository but not yet in a tagged package
 - Adapter warnings were invisible in release builds: `LoggerService` drops `LogWarning` outside the editor and development builds, so a release player with a product missing from Google Play logged no `[UnityIAP]` line (found by Gigawatt on the device). Both adapters now warn through the new `NexusLog.WarnAlways`, which uses the registered logger while it is enabled and Unity's log otherwise (`ReleaseLoggingTests`).
 - `docs/ADAPTERS.md` said the package ships no AdMob or Unity IAP adapter (next to the section listing both) and did not say that `NEXUS_ADMOB` / `NEXUS_UNITY_IAP` exist only inside the adapter assemblies; a review suggested guarding game code with them, which removed ads and store from Gigawatt's builds.
 
+### Removed
+- `ContextLifecycleOrchestrator.ExecuteLifecyclePhasesAsync` (issue #27): the Context never called it (it runs the lifecycle phases itself), and it differed from the real startup path by logging and swallowing a lifecycle's `OnInitializeAsync`/`OnStartAsync` exception. Only harness tests used it; no consumer game calls it (Gigawatt, Wickling, ChipCrisis, Pixel-Flow-Clone, IdleProject, PuzzleGame, RingFlow checked 2026-10-25). A game that called it starts its context through `Root`, `NexusLifetimeScope` or `Context.StartAsync` instead.
+
+
 ## [0.5.0] - 2026-10-15
 
 Breaking changes and migration steps: `BREAKING_CHANGES.md` and `MIGRATION.md` ("Version 0.4.0 → 0.5.0").

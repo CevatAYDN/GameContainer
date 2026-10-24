@@ -78,27 +78,6 @@ namespace NexusBench
         public void Execute(PipelineMissingSignal signal) => Interlocked.Increment(ref FiredCount);
     }
 
-    internal sealed class TestLifecycle : IContextLifecycle
-    {
-        public readonly List<string> Log = new List<string>();
-        public bool ThrowOnInit;
-        public bool ThrowOnStart;
-        public void OnConfigure(IContextBuilder builder) { Log.Add("configure"); }
-        public ValueTask OnInitializeAsync(CancellationToken ct)
-        {
-            Log.Add("init");
-            if (ThrowOnInit) throw new InvalidOperationException("init-boom");
-            return default;
-        }
-        public ValueTask OnStartAsync(CancellationToken ct)
-        {
-            Log.Add("start");
-            if (ThrowOnStart) throw new InvalidOperationException("start-boom");
-            return default;
-        }
-        public void OnDispose() { Log.Add("dispose"); }
-    }
-
     public struct BenchPluginSignal { public int Val; }
     public class BenchPluginCmd : ICommand<BenchPluginSignal>
     {
@@ -373,7 +352,6 @@ namespace NexusBench
             Test_DoubleDispose_And_FireAfterDispose();
             Test_Dispose_During_Dispatch();
             Test_CrossContext_RealPath_ScopedBroadcast();
-            Test_ContextLifecycleOrchestrator_Phases_Isolation();
             TraceRegistry("after 39");
             Test_TraceRingBuffer_ResizeRace_NoOOB();
             Test_SaveThrottler_MultiOwner_NoCrossClobber();
@@ -2078,42 +2056,6 @@ namespace NexusBench
             bool ok = delivered && missingNoThrow && missingStillZero && fallbackNoThrow;
             Report("38. CrossContext_RealPath_ScopedBroadcast", ok,
                 $"scoped-case-insensitive=delivered({delivered}), missing-tag=no-throw({missingNoThrow}) no-delivery({missingStillZero}), default-resolver=no-throw({fallbackNoThrow})");
-        }
-
-        // ── 39. ContextLifecycleOrchestrator phase ordering + isolation + cancel ──
-
-        private static void Test_ContextLifecycleOrchestrator_Phases_Isolation()
-        {
-            var orchestrator = new ContextLifecycleOrchestrator();
-
-            var a = new TestLifecycle();
-            var b = new TestLifecycle { ThrowOnInit = true };
-            var c = new TestLifecycle { ThrowOnStart = true };
-            orchestrator.ExecuteLifecyclePhasesAsync(new List<IContextLifecycle> { a, b, c }, CancellationToken.None)
-                .AsTask().GetAwaiter().GetResult();
-
-            // All inits run first (b's init exception isolated), then all starts (c's start exception isolated).
-            bool orderOk = string.Join(",", a.Log) == "init,start"
-                        && string.Join(",", b.Log) == "init,start"
-                        && string.Join(",", c.Log) == "init,start";
-
-            var cancelled = new CancellationToken(canceled: true);
-            var d = new TestLifecycle();
-            orchestrator.ExecuteLifecyclePhasesAsync(new List<IContextLifecycle> { d }, cancelled)
-                .AsTask().GetAwaiter().GetResult();
-            bool cancelOk = d.Log.Count == 0;
-
-            bool emptyNoThrow = true;
-            try
-            {
-                orchestrator.ExecuteLifecyclePhasesAsync(null, CancellationToken.None).AsTask().GetAwaiter().GetResult();
-                orchestrator.ExecuteLifecyclePhasesAsync(new List<IContextLifecycle>(), CancellationToken.None).AsTask().GetAwaiter().GetResult();
-            }
-            catch { emptyNoThrow = false; }
-
-            bool ok = orderOk && cancelOk && emptyNoThrow;
-            Report("39. ContextLifecycleOrchestrator_Phases_Isolation", ok,
-                $"phases=all-init-then-all-start ({orderOk}), exception-isolated, pre-cancelled=zero-calls({cancelOk}), null/empty=no-throw({emptyNoThrow})");
         }
 
         // ── 21. Context factory full lifecycle ──────────────────────────────────
