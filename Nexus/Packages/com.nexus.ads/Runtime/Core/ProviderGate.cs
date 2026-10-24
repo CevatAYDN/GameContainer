@@ -8,6 +8,14 @@ namespace Nexus.Ads
         Blocked,
     }
 
+    /// <summary>What the host runs after the gate: the real SDK, the labelled simulator, or nothing (the controller never starts and every show answers NotReady).</summary>
+    public enum HostMode
+    {
+        Provider,
+        Simulator,
+        Idle,
+    }
+
     public readonly struct GateResult
     {
         public readonly GateDecision Decision;
@@ -57,6 +65,17 @@ namespace Nexus.Ads
                     return new GateResult(GateDecision.Simulator, PolicyRules.UnregisteredDevice,
                         "device '" + (deviceAdvertisingId ?? "") + "' is not in the test device list; add it on the Test tab");
             }
+        }
+
+        /// <summary>
+        /// The simulator runs only where the gate chose it or, outside a release build, while no mediation is
+        /// selected. A blocked gate, or a selected provider that is not in the player (package missing, assembly
+        /// stripped), runs nothing: a simulated ad never stands in for a real one, and a release build never simulates.
+        /// </summary>
+        public static HostMode Host(BuildKind build, GateResult gate, bool mediationSelected, bool providerRegistered)
+        {
+            if (build != BuildKind.Release && (gate.Decision == GateDecision.Simulator || !mediationSelected)) return HostMode.Simulator;
+            return gate.Decision == GateDecision.Provider && mediationSelected && providerRegistered ? HostMode.Provider : HostMode.Idle;
         }
     }
 }

@@ -50,14 +50,22 @@ background. Locked by `AdsCoreSuite` AP1–AP7.
 | Build | Configuration | Result |
 |---|---|---|
 | Editor | any | simulator |
-| Release | test mode, test devices or sample units present | blocked (`TestModeRequired`): the validator stops the build first |
+| Release | test mode, test devices or sample units present | nothing runs (`TestModeRequired`, logged as an error): the validator stops the build first |
 | Release | live keys | the SDK |
 | Development | Google's sample units | the SDK on any device |
 | Development | test mode on, device in the Test tab's list | the SDK with test ads |
 | Development | test mode on, device not listed (or list empty) | simulator (`UnregisteredDevice`) |
-| Development | test mode off | blocked (`TestModeRequired`) |
+| Development | test mode off | nothing runs (`TestModeRequired`) |
 
 So a development build handed to a teammate never requests a live ad.
+
+`ProviderGate.Host(build, gate, mediationSelected, providerRegistered)` then decides what the bootstrap
+runs. The simulator (a full-screen overlay labelled "Simulated ad") runs only where the gate chose it,
+or in the editor and development builds while no mediation is selected. A blocked gate, or a selected
+provider that is not in the player (package not installed, assembly stripped), runs nothing in every
+build: the controller is never started, every show answers `NotReady`, the rewarded button stays hidden
+and the reason is logged as an error. A release build never runs the simulator (issue #19; locked by
+`AdsCoreSuite` GT10–GT13).
 
 ## Using it without Nexus
 
@@ -65,8 +73,9 @@ So a development build handed to a teammate never requests a live ad.
    `Assets/Resources/NexusAdsSettings.asset`. Declare the placements (name, format, `NaturalBreak`,
    cooldown, caps), the privacy flags and, on the Release tab, the live keys. The Test tab holds the
    provider's test data and the device list (the wizard of #11 fills it).
-2. Put `AdsBootstrap` on a GameObject in the first scene (it survives scene loads). Without a
-   provider package installed, or in the editor, the simulator runs with a full-screen overlay.
+2. Put `AdsBootstrap` on a GameObject in the first scene (it survives scene loads). In the editor,
+   and in a development build while no mediation is selected, the simulator runs with a full-screen
+   overlay; a selected provider that is not installed runs nothing.
 3. Generate the `AdPlacements` constants (**Tools > Nexus Ads > Generate Placements**, path on the
    settings) and show ads through the facade:
 
@@ -140,8 +149,8 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | `mediation.single` | fail: two mediation SDKs are in the project |
 | `mediation.admob` | warn: the Google Mobile Ads SDK is in the project while LevelPlay or MAX is selected (only the selected mediation starts; the SDK still ships) |
 | `mediation.selected` | fail: no mediation selected on a release that is not ad-free |
-| `mediation.status` | fail: the selected provider is not Active for a release build (warn on the Test tab when NotInstalled: the simulator runs) |
-| `keys.release.missing`, `keys.test.missing` | fail: a required field (derived from the placements) is empty; warn on the Test tab for LevelPlay/MAX (simulator) |
+| `mediation.status` | fail: the selected provider is not Active for a release build (warn on the Test tab when NotInstalled: development builds show no ads) |
+| `keys.release.missing`, `keys.test.missing` | fail: a required field (derived from the placements) is empty; warn on the Test tab for LevelPlay/MAX (the SDK cannot start on a listed device) |
 | `keys.release.testdata` | fail: Google's sample ids on the Release tab |
 | `keys.test.official` | fail: AdMob's Test tab differs from the catalog's sample ids |
 | `keys.test.mirror` | fail: LevelPlay/MAX Test tab differs from a filled Release tab |

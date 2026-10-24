@@ -10,6 +10,7 @@ packages (`com.nexus.ads.levelplay`, `com.nexus.ads.max`, and the `Nexus.Ads.AdM
 ## [Unreleased]
 
 ### Fixed
+- A store build could run the ad simulator (issue #19): `AdsBootstrap` ran the interactive simulator, overlay and rewards included, and started the controller when the gate blocked with a rule (a release build with test configuration, a development build without test mode) or when the selected provider was not registered (package missing, assembly stripped), although the README called those cases blocked. `ProviderGate.Host` now decides what runs: the simulator only where the gate chose it or while no mediation is selected outside a release build; every other case runs nothing (controller never started, shows answer `NotReady`) and logs the reason as an error. `AdsBootstrap.Mode` exposes the decision. Host harness `AdsCoreSuite` GT10–GT13.
 - The IL2CPP linker removed `Nexus.Ads.AdMob` and `Nexus.Ads.LevelPlay` from Android players: nothing references a provider assembly (it registers itself from a `RuntimeInitializeOnLoadMethod`), so a development build with AdMob selected logged "provider package is not installed" and ran the simulator. Both assemblies carry `[assembly: AlwaysLinkAssembly]`; the bootstrap's message names stripping as a cause. Found and verified on a phone (2311DRK48G, Android 16): Google's test ads shown, rewarded paid once, interstitial closed; LevelPlay's SDK started and reached its server.
 
 ### Added

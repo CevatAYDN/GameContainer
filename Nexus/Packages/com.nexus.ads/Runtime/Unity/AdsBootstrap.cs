@@ -36,8 +36,10 @@ namespace Nexus.Ads.Unity
         public BuildKind Build { get; private set; }
         public AdPlatform Platform { get; private set; }
         public GateResult Gate { get; private set; }
+        /// <summary>What runs: the SDK, the labelled simulator, or nothing (<see cref="ProviderGate.Host"/>).</summary>
+        public HostMode Mode { get; private set; }
         public IAdProvider Provider { get; private set; }
-        public SimulatorProvider Simulator => Provider as SimulatorProvider;
+        public SimulatorProvider Simulator => Mode == HostMode.Simulator ? Provider as SimulatorProvider : null;
         public AdController Controller { get; private set; }
         public UnityAdTelemetry Telemetry => _telemetry;
         public string DeviceAdvertisingId { get; private set; }
@@ -94,20 +96,26 @@ namespace Nexus.Ads.Unity
             Gate = _settings.AdFreeRelease && Build == BuildKind.Release
                 ? new GateResult(GateDecision.Blocked, null, "ad-free release")
                 : ProviderGate.Evaluate(Build, config.Provider, advertisingId);
-            IConsentFlow consent = null;
-            if (Gate.Decision == GateDecision.Provider && Factories.TryGetValue(_settings.SelectedMediation, out var factory))
+            bool selected = _settings.SelectedMediation != AdProviderKind.None;
+            Factories.TryGetValue(_settings.SelectedMediation, out var factory);
+            Mode = ProviderGate.Host(Build, Gate, selected, factory != null);
+            IConsentFlow consent;
+            if (Mode == HostMode.Provider)
             {
                 Provider = factory(scheduler, config.Provider);
                 consent = Provider as IConsentFlow;
             }
             else
             {
-                if (Gate.Decision == GateDecision.Provider)
-                    Debug.LogError("[Nexus Ads] " + _settings.SelectedMediation + " is selected but its provider is not registered (the provider package is not installed, or its assembly was stripped from the player); the simulator runs instead.");
-                else if (Gate.Rule != null && Build != BuildKind.Release)
-                    Debug.LogWarning("[Nexus Ads] " + Gate.Rule + ": " + Gate.Reason);
-                var simulator = new SimulatorProvider(scheduler, _simulatorScenario) { Interactive = true };
-                gameObject.AddComponent<SimulatorOverlay>().Bind(simulator);
+                if (Mode == HostMode.Idle && !(Gate.Decision == GateDecision.Blocked && Gate.Rule == null)) // the rule-less block is the ad-free release
+                    Debug.LogError("[Nexus Ads] no ads run: " + (Gate.Rule != null ? Gate.Rule + ": " + Gate.Reason
+                        : !selected ? "no mediation is selected"
+                        : _settings.SelectedMediation + " is selected but its provider is not registered (the provider package is not installed, or its assembly was stripped from the player)"));
+                else if (Gate.Rule != null)
+                    Debug.LogWarning("[Nexus Ads] " + Gate.Rule + ": " + Gate.Reason + "; the simulator runs (labelled, not a real ad)");
+                // an idle host keeps a simulator that is never started, so every show answers NotReady
+                var simulator = new SimulatorProvider(scheduler, _simulatorScenario) { Interactive = Mode == HostMode.Simulator };
+                if (Mode == HostMode.Simulator) gameObject.AddComponent<SimulatorOverlay>().Bind(simulator);
                 Provider = simulator;
                 consent = simulator;
             }
@@ -116,7 +124,7 @@ namespace Nexus.Ads.Unity
             Controller.AdOpened += OnAdOpened;
             Controller.AdClosed += OnAdClosed;
             if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] " + v);
-            if (!(Gate.Decision == GateDecision.Blocked && Gate.Rule == null)) Controller.Start(); // an ad-free release builds the controller and never starts it
+            if (Mode != HostMode.Idle) Controller.Start(); // an idle host (ad-free, blocked, provider missing) builds the controller and never starts it
             if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
             Started?.Invoke();
         }

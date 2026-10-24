@@ -127,7 +127,7 @@ namespace Nexus.Ads.Editor
             else
             {
                 report.Add(status.Status == ProviderStatus.NotInstalled
-                    ? new AdsCheck("mediation.status", CheckResult.Warn, kind + " is NotInstalled; the editor and development builds run the simulator.", "install the SDK and the provider package (Tools > Nexus Ads > Setup).")
+                    ? new AdsCheck("mediation.status", CheckResult.Warn, kind + " is NotInstalled; the editor runs the simulator and development builds show no ads.", "install the SDK and the provider package (Tools > Nexus Ads > Setup).")
                     : new AdsCheck("mediation.status", CheckResult.Pass, kind + " is " + status.Status + " on " + platform));
             }
 
@@ -150,7 +150,7 @@ namespace Nexus.Ads.Editor
             {
                 bool fatal = release || kind == AdProviderKind.AdMob;
                 report.Add(new AdsCheck("keys." + tabName.ToLowerInvariant() + ".missing", fatal ? CheckResult.Fail : CheckResult.Warn,
-                    tabName + " tab, " + platform + ": " + string.Join(", ", missing) + " missing" + (fatal ? "." : "; the simulator runs on development builds."),
+                    tabName + " tab, " + platform + ": " + string.Join(", ", missing) + " missing" + (fatal ? "." : "; the SDK cannot start, so a development build on a listed device shows no ads."),
                     kind == AdProviderKind.AdMob && !release ? "press Reset to official test data on the Test tab." : release ? "enter the account's keys on the Release tab." : "press Copy from Release on the Test tab once the Release tab is filled."));
             }
             else report.Add(new AdsCheck("keys." + tabName.ToLowerInvariant() + ".missing", CheckResult.Pass, tabName + " tab, " + platform + ": every required field is filled"));

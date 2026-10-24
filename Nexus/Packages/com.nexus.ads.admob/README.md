@@ -36,7 +36,7 @@ What it does:
   `OnAdPaid` reaches the family as `AdRevenue` (micros / 1,000,000, the network from the response
   info); the ad inspector is the test suite. Every SDK callback continues on the main thread.
 - **Test ads:** Google has no test-mode flag. A development build reaches the SDK only with Google's
-  sample units on the Test tab (the page fills them; the gate runs the simulator otherwise), so every
+  sample units on the Test tab (the page fills them; otherwise the gate blocks and the build shows no ads), so every
   device gets test ads. To test the consent form outside the EEA, register the device with Google's
   own id before the bootstrap starts (the id the SDK prints in logcat as `setTestDeviceIds`, or in the
   Xcode console as `testDeviceIdentifiers`; on iOS add the id UMP prints as well):

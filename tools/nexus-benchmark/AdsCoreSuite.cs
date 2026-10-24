@@ -570,6 +570,21 @@ namespace NexusBench
             Check("GT8. Development_UnlistedDevice_Simulator", g.Decision == GateDecision.Simulator && g.Rule == PolicyRules.UnregisteredDevice, g.Reason);
             g = ProviderGate.Evaluate(BuildKind.Development, AdsRig.Provider_(testMode: true), "other");
             Check("GT9. Development_EmptyList_Simulator", g.Decision == GateDecision.Simulator && g.Rule == PolicyRules.UnregisteredDevice, "empty device list = simulator everywhere");
+
+            // issue #19: the bootstrap ran the simulator, overlay and free rewards included, for these in a store build
+            var blocked = ProviderGate.Evaluate(BuildKind.Release, test, "x");
+            var provider = ProviderGate.Evaluate(BuildKind.Release, live, "x");
+            Check("GT10. Release_Blocked_RunsNothing", ProviderGate.Host(BuildKind.Release, blocked, true, true) == HostMode.Idle, "no simulated ad in a store build");
+            Check("GT11. Release_ProviderMissing_RunsNothing", ProviderGate.Host(BuildKind.Release, provider, true, false) == HostMode.Idle
+                && ProviderGate.Host(BuildKind.Release, provider, false, false) == HostMode.Idle, "package missing, assembly stripped, or no mediation");
+            var devBlocked = ProviderGate.Evaluate(BuildKind.Development, live, "x");
+            var devListed = ProviderGate.Evaluate(BuildKind.Development, test, "abc-123");
+            Check("GT12. Development_BlockedOrProviderMissing_RunsNothing", ProviderGate.Host(BuildKind.Development, devBlocked, true, true) == HostMode.Idle
+                && ProviderGate.Host(BuildKind.Development, devListed, true, false) == HostMode.Idle, "a tester never sees a simulated ad standing in for a real one");
+            Check("GT13. Simulator_OnlyWhereTheGateChoseIt_OrNoMediation", ProviderGate.Host(BuildKind.Development, ProviderGate.Evaluate(BuildKind.Development, test, "other"), true, true) == HostMode.Simulator
+                && ProviderGate.Host(BuildKind.Editor, ProviderGate.Evaluate(BuildKind.Editor, live, "x"), true, true) == HostMode.Simulator
+                && ProviderGate.Host(BuildKind.Development, devListed, false, false) == HostMode.Simulator
+                && ProviderGate.Host(BuildKind.Development, devListed, true, true) == HostMode.Provider, "unlisted device, editor, no mediation yet; a listed device gets the SDK");
         }
 
         // ----- Simulator scenarios through the real controller
