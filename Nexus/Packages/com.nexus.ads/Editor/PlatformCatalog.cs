@@ -11,7 +11,7 @@ namespace Nexus.Ads.Editor
 
     [Serializable] public sealed class CatalogFamilies { public bool listed; public string row; public string source; }
     [Serializable] public sealed class CatalogUpm { public string package; public string registry; public string[] scopes; public string installedBy; public string versionSeen; public string versionSource; public string githubLatestRelease; }
-    [Serializable] public sealed class CatalogSdk { public CatalogUpm upm; public string unitypackage; public string define; public string rootNamespace; public string init; public int minAndroidApi; public string minIos; public string sdkKeyLocation; public bool jetifier; public string minUnity; public string settingsAsset; public string testDevicesApi; public string adIdPermission; }
+    [Serializable] public sealed class CatalogSdk { public CatalogUpm upm; public string unitypackage; public string define; public string rootNamespace; public string assembly; public string init; public int minAndroidApi; public string minIos; public string sdkKeyLocation; public bool jetifier; public string minUnity; public string settingsAsset; public string testDevicesApi; public string adIdPermission; }
     [Serializable] public sealed class CatalogAdMobIds { public string appId; public string appOpen; public string banner; public string adaptiveBanner; public string interstitial; public string rewarded; public string rewardedInterstitial; public string native; }
     [Serializable] public sealed class CatalogAppIdSource { public string android; public string ios; }
     [Serializable] public sealed class CatalogTestDevices { public string where; public string source; public string api; public string dashboard; public string logLine; }

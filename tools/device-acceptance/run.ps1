@@ -110,10 +110,13 @@ $log | Set-Content -LiteralPath (Join-Path $evidence 'logcat.log') -Encoding utf
 $fatal = @($own | Where-Object { $_ -match 'FATAL EXCEPTION' }).Count
 $anr = @($log | Where-Object { $_ -match ('ANR in ' + [regex]::Escape($package)) }).Count
 $unityExceptions = @($own | Where-Object { $_ -match '\bUnity\b' -and $_ -match '(^|\s)[A-Za-z.]+Exception(:|\s)' -and $_ -notmatch 'ExceptionHelpers|Exceptions/' -and $_ -notmatch 'AssetPackManager' }).Count  # Unity's own Play Asset Delivery probe logs ClassNotFoundException on every APK without Play Core
-$result.phases.logcat = [ordered]@{ pids = $pids; ownLines = $own.Count; fatalExceptions = $fatal; anr = $anr; unityExceptionLines = $unityExceptions }
+$adsViolations = @($own | Where-Object { $_ -match '\[Nexus Ads\] PolicyViolation' }).Count
+$adsLines = @($own | Where-Object { $_ -match '\[Nexus Ads\]' }).Count
+$result.phases.logcat = [ordered]@{ pids = $pids; ownLines = $own.Count; fatalExceptions = $fatal; anr = $anr; unityExceptionLines = $unityExceptions; adsLines = $adsLines; adsPolicyViolations = $adsViolations }
 if ($fatal -gt 0) { Fail "$fatal FATAL EXCEPTION line(s) in logcat" }
 if ($anr -gt 0) { Fail "$anr ANR line(s) in logcat" }
 if ($unityExceptions -gt 0) { Fail "$unityExceptions Unity exception line(s) in logcat" }
+if ($adsViolations -gt 0) { Fail "$adsViolations Nexus Ads policy violation line(s) in logcat" }
 
 $result.passed = ($result.failures.Count -eq 0)
 $result.sourceCommit = (& git -C $repo rev-parse HEAD).Trim()

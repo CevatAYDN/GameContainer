@@ -23,7 +23,8 @@
         "upm": { "package": "com.unity.services.levelplay", "registry": "Unity registry (Package Manager: Ads Mediation)", "versionSeen": "9.5.1", "githubLatestRelease": "UnityLevelPlay_9.3.0 (2026-01-20)" },
         "unitypackage": "https://github.com/ironsource-mobile/Unity-sdk/releases",
         "define": "NEXUS_LEVELPLAY",
-        "rootNamespace": "Unity.Services.LevelPlay",
+        "rootNamespace": "Unity.Services.LevelPlay",
+        "assembly": "Unity.LevelPlay",
         "init": "LevelPlay.Init(appKey)",
         "minAndroidApi": 19,
         "minIos": "13"

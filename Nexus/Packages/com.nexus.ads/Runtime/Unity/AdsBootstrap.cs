@@ -15,7 +15,7 @@ namespace Nexus.Ads.Unity
     [DefaultExecutionOrder(-1000)]
     public sealed class AdsBootstrap : MonoBehaviour
     {
-        private static readonly Dictionary<AdProviderKind, Func<IAdProvider>> Factories = new Dictionary<AdProviderKind, Func<IAdProvider>>();
+        private static readonly Dictionary<AdProviderKind, Func<IAdScheduler, IAdProvider>> Factories = new Dictionary<AdProviderKind, Func<IAdScheduler, IAdProvider>>();
 
         [Tooltip("Left empty, Resources/NexusAdsSettings is loaded")]
         [SerializeField] private AdsSettings _settings;
@@ -53,7 +53,8 @@ namespace Nexus.Ads.Unity
             _logEvents = logEvents;
         }
 
-        public static void RegisterProvider(AdProviderKind kind, Func<IAdProvider> factory)
+        /// <summary>A provider package registers its factory here (from a RuntimeInitializeOnLoadMethod); the bootstrap hands it its scheduler.</summary>
+        public static void RegisterProvider(AdProviderKind kind, Func<IAdScheduler, IAdProvider> factory)
         {
             if (factory == null) throw new ArgumentNullException(nameof(factory));
             Factories[kind] = factory;
@@ -93,7 +94,7 @@ namespace Nexus.Ads.Unity
             IConsentFlow consent = null;
             if (Gate.Decision == GateDecision.Provider && Factories.TryGetValue(_settings.SelectedMediation, out var factory))
             {
-                Provider = factory();
+                Provider = factory(scheduler);
                 consent = Provider as IConsentFlow;
             }
             else
@@ -113,6 +114,7 @@ namespace Nexus.Ads.Unity
             Controller.AdClosed += OnAdClosed;
             if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] " + v);
             if (!(Gate.Decision == GateDecision.Blocked && Gate.Rule == null)) Controller.Start(); // an ad-free release builds the controller and never starts it
+            if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
             Started?.Invoke();
         }
 
