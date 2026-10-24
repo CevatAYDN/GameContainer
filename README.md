@@ -81,7 +81,8 @@ python tools/check-docs.py
 
 The gates a release must pass, with the latest measured numbers, are in
 [docs/RELEASE_GATES.md](docs/RELEASE_GATES.md). Documentation rules and the project map for
-contributors and AI agents are in [CLAUDE.md](CLAUDE.md).
+contributors and AI agents are in [CLAUDE.md](CLAUDE.md). A problem or a request starts as an
+issue in this repository; nobody changes the repository without one.
 
 ## Türkçe
 
@@ -94,7 +95,8 @@ projelerinde bir commit'e sabitleyin. Türkçe rehberler:
 [mevcut projeye ekleme](Nexus/Packages/com.nexus.core/docs/GETTING_STARTED_TR.md),
 [entegrasyon yolları](Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS_TR.md).
 Çatı düzeltmeleri yalnızca bu depoda yapılır; oyunlar paketin düzenlenmiş bir kopyasını
-taşımaz, yeni commit'e sabitlenir.
+taşımaz, yeni commit'e sabitlenir. Sorun ya da istek önce bu depoda issue olarak açılır; kimse depoyu
+kendi başına değiştirmez.
 
 ## License
 
