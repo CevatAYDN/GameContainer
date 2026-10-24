@@ -77,14 +77,25 @@ namespace Nexus.Core.Extensions
         // For tests, allow overriding the persistent save directory. When null, the
         // implementation falls back to Application.persistentDataPath/saves.
         internal static string TestSaveDirectory { get; set; }
-        private static string SaveDirectory => Path.Combine(TestSaveDirectory ?? Application.persistentDataPath, "saves");
+        private string SaveDirectory => Path.Combine(TestSaveDirectory ?? _persistentDataPath ?? Application.persistentDataPath, "saves");
 
         private volatile ISaveDataProvider _model;
         private SynchronizationContext _mainThreadContext;
+        // Unity's Application properties are main-thread only; read once there (constructor or SaveAsync's
+        // main-thread hop) so worker-thread saves, loads and slot checks never touch them.
+        private volatile string _persistentDataPath;
+        private volatile string _version;
 
         public GameSaveManager()
         {
             _mainThreadContext = SynchronizationContext.Current;
+            if (_mainThreadContext != null) CaptureMainThreadValues();
+        }
+
+        private void CaptureMainThreadValues()
+        {
+            _persistentDataPath ??= Application.persistentDataPath;
+            _version ??= Application.version;
         }
 
         private SynchronizationContext MainThreadContext
@@ -128,24 +139,25 @@ namespace Nexus.Core.Extensions
 
             ct.ThrowIfCancellationRequested();
 
-            string dir = SaveDirectory;
-            if (!Directory.Exists(dir))
-                Directory.CreateDirectory(dir);
-
             byte[] modelData = null;
             var ctx = MainThreadContext;
             if (ctx != null && SynchronizationContext.Current != ctx)
             {
-                await RunOnCapturedContextAsync(() => modelData = model.CaptureSaveData(), ctx, ct);
+                await RunOnCapturedContextAsync(() => { CaptureMainThreadValues(); modelData = model.CaptureSaveData(); }, ctx, ct);
             }
             else
             {
+                CaptureMainThreadValues();
                 modelData = model.CaptureSaveData();
             }
 
+            string dir = SaveDirectory;
+            if (!Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
             var data = new GameSaveData
             {
-                Version = Application.version,
+                Version = _version,
                 Timestamp = DateTime.UtcNow.ToString("O"),
                 ModelData = modelData
             };
@@ -244,7 +256,8 @@ namespace Nexus.Core.Extensions
         public Task<bool> LoadAsync(string slotName, CancellationToken ct = default)
         {
             ValidateSlotName(slotName);
-            if (_model == null)
+            var model = _model;
+            if (model == null)
             {
                 NexusRuntime.Logger?.LogWarning("[Nexus] No save model registered. Skipping load.");
                 return Task.FromResult(false);
@@ -254,10 +267,10 @@ namespace Nexus.Core.Extensions
             if (!File.Exists(path))
                 return Task.FromResult(false);
 
-            return LoadAndRestoreAsync(path, MainThreadContext, ct);
+            return LoadAndRestoreAsync(model, path, MainThreadContext, ct);
         }
 
-        private async Task<bool> LoadAndRestoreAsync(string path, SynchronizationContext synchronizationContext, CancellationToken ct)
+        private async Task<bool> LoadAndRestoreAsync(ISaveDataProvider model, string path, SynchronizationContext synchronizationContext, CancellationToken ct)
         {
             byte[] modelData = await Task.Run(() =>
             {
@@ -280,7 +293,7 @@ namespace Nexus.Core.Extensions
 
             ct.ThrowIfCancellationRequested();
             await RunOnCapturedContextAsync(
-                () => _model.RestoreSaveData(modelData),
+                () => model.RestoreSaveData(modelData),
                 synchronizationContext,
                 ct);
             return true;

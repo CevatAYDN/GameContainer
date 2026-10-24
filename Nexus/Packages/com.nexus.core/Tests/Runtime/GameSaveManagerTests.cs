@@ -55,6 +55,22 @@ namespace Nexus.Tests
             manager.Dispose();
         }
 
+        // Issue #23 (O1): SaveAsync marshals the model capture to the main thread for worker callers, but read
+        // Application.persistentDataPath and Application.version on the worker.
+        [Test]
+        public async Task GameSaveManager_SaveFromWorkerThread_WritesTheSave()
+        {
+            var manager = new GameSaveManager();
+            var model = new TestSaveModel();
+            manager.RegisterModel(model);
+
+            await Task.Run(() => manager.SaveAsync("workerSlot", CancellationToken.None));
+
+            Assert.IsTrue(manager.SaveExists("workerSlot"));
+            manager.DeleteSave("workerSlot");
+            manager.Dispose();
+        }
+
         [TestCase(null)]
         [TestCase("")]
         [TestCase(".")]
