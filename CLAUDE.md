@@ -62,7 +62,7 @@ before tests, or the Standalone define `NEXUS_DEBUG` silently drops out of edito
 - No performance claim without workload, platform, Unity version, competitor versions and reproduction tool. "Verified" means a result file exists.
 
 **Consumers**
-- Games consume the package by git URL pinned to a commit. Framework fixes are made here with a regression test and the game re-pins; a game never keeps an edited copy of the package. Known consumers: Gigawatt, Pixel-Flow-Clone, IdleProject, PuzzleGame, RingFlow (sibling folders under `..\`).
+- Games consume the package by git URL pinned to a commit. Framework fixes are made here with a regression test and the game re-pins; a game never keeps an edited copy of the package. Known consumers: Gigawatt, Wickling, ChipCrisis, Pixel-Flow-Clone, IdleProject, PuzzleGame, RingFlow (sibling folders under `..\`).
 
 **Commits**
 - Conventional prefixes used here: `fix(di):`, `fix(codegen):`, `fix(lifecycle):`, `feat:`, `docs:`, `test:`, `chore:`. One logical change per commit; the message states what was wrong and how it was verified.
