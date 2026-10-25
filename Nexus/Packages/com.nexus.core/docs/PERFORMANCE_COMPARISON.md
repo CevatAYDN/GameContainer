@@ -105,8 +105,8 @@ factories cut its transient cost by 2.5× (5.5 → 2.2 µs) and VContainer's gen
 cut its own by 3.9× (3.9 → 1.0 µs). VContainer's injector constructs the graph with one
 generated call per type; Nexus's factory resolves each constructor parameter through the
 container's full resolve path (lookup, lifetime, cycle bookkeeping), which is where the
-remaining 2.2× comes from and is the next lever. Cached resolution stays 3.9× ahead of
-VContainer and 5.8× ahead of Reflex in both configurations.
+remaining 2.2× comes from and is the next lever. Cached resolution stays ahead in both
+configurations: 4.0× / 3.9× VContainer and 5.8× Reflex (reflection / generated).
 
 Device runs drift between launches: Zenject, which has no generator and did not change,
 measured 99.1 µs and 64.3 µs startup in the two runs a few minutes apart (thermal and clock
@@ -115,18 +115,28 @@ generated-bindings gain (Reflex moved 27.5 → 14.6 µs in the same runs). A cop
 binding map (run `after-cow-android-004`) and transient bindings in the generic fast cache
 (run `after-fastslot-android-005`: cached resolve 94 ns) were tried on this device and rejected.
 
+After the issue #23 DI fixes (M1: a singleton built while its container is disposed is
+disposed; M8: constructor arguments of one type fill their parameters in order; both
+Unreleased), two reflection runs on `b423ac4`, `audit23-android-007` and `audit23-android-008`,
+measured Nexus at 31.1 / 29.8 ns cached, 5376 / 5200 ns transient and 29521 / 29047 ns startup.
+Every value lies within the two runs before the change (`rc-050`, `after-reset-android-006`:
+27.8–37.1 ns, 4890–5512 ns, 12872–29180 ns): no regression shows on this device. In those two
+runs Reflex's startup was 13% and 10% faster than Nexus's (in `rc-050` Nexus was 11% faster),
+the launch-to-launch drift described above.
+
 ## Reading
 
-- Nexus leads cached resolution everywhere (3.2–3.9× VContainer, 3.6–5.8× Reflex).
+- Nexus leads cached resolution everywhere (2.9–4.0× VContainer, 3.6–5.8× Reflex).
 - Reflection configuration: Nexus leads transient construction on host (17% ahead of
   VContainer) and in the Mono player (25% ahead of Reflex, 3.6× VContainer); on the device it
   is last of the three maintained libraries (reflection construction). Startup: Nexus and
-  Reflex are within 5% of each other on host and device, Nexus 5% ahead in the Mono player;
-  VContainer is 2.3–3.5× behind.
+  Reflex are within 1% of each other on host, Nexus is 5% faster in the Mono player and Reflex
+  6% faster on the device; VContainer is 2.3–3.5× behind.
 - Generated configuration: VContainer's generated injectors lead transient construction on
   every runtime (2.8× Nexus on host, 1.9× in the Mono player, 2.2× on the device); Nexus is
-  second, ahead of Reflex (1.5× on host, 1.2× in the Mono player, 1.8× on the device). Startup
-  as above.
+  second, ahead of Reflex (1.5× on host, 1.2× in the Mono player, 1.8× on the device).
+  Startup: Nexus and Reflex are within 2% of each other on host, Nexus is 10% faster in the
+  Mono player and Reflex 5% faster on the device; VContainer is 2.3–3.1× behind.
 - Transient object creation allocates the three objects (72 B) for Nexus, VContainer
   and Reflex; singleton caches and prewarm do not change that.
 
