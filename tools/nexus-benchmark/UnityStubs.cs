@@ -39,6 +39,7 @@ namespace UnityEngine
         public static event Action quitting;
 #pragma warning restore 0067
 
+        public static SystemLanguage systemLanguage => SystemLanguage.English;
         public static string identifier => "com.nexus.benchmark";
         public static string version => "9.9.9";
         // Distinct from persistentDataPath so tests that need data-vs-save path
@@ -830,6 +831,10 @@ namespace UnityEngine
             completed?.Invoke(this);
         }
     }
+
+    public enum SystemLanguage { English = 10, Turkish = 37, Unknown = 43 }
+
+    public class TextAsset : Object { public string text => string.Empty; }
 
     /// <summary>Unity Resources — always-miss outside Unity (harness injects mock providers).</summary>
     public static class Resources

@@ -120,13 +120,21 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 | `HapticService` | `Haptics` | Android JNI and iOS Taptic haptics with desktop preview |
 | `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (mock included; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
 | `InputService` | `Input` | Input System movement/actions behind `IInputService`; a custom `IInputProvider` is authoritative |
-| `LocalizationService` | `Localization` | Language tables, RTL formatting, fallback language |
+| `LocalizationService` | `Localization` | Language tables (a game's JSON tables through `JsonLocalizationTableProvider`), first-run device language, the language's culture and `Format`, RTL formatting, English fallback |
 | `LoggerService` | `Logging` | Default `ILoggerService` |
 | `ObjectPoolService` | `Pool` | GameObject/component pools with prewarm, `IPoolable` callbacks and timed despawn |
 | `ProgressionService` | `Progression` | Level index, max unlocked level, upgrade cost formulas |
 | `ResourcesAssetLoadService` | `Assets` | Default `IAssetLoadService` over `Resources`; an Addressables adapter is described in [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) |
 | `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause |
 | `UIManager` | `UI` | Typed `ScreenView` stack over the seven `UILayer` layers (`Background`, `HUD`, `Screen`, `Popup`, `Modal`, `Overlay`, `System`) with async open/close |
+
+Localization: a game supplies its tables with
+`builder.BindInstance<ILocalizationTableProvider>(JsonLocalizationTableProvider.FromResources("Localization", "en", "tr"))`
+(one flat `{"key": "text"}` file per language under `Resources/Localization/`). Binding a
+`LocalizationOptions` makes the first run pick the device language when the game has a table for it
+(`pt` finds `pt-BR`), else `DefaultLanguage`; the pick is not saved, `SetLanguage` is. `Culture` is the
+current language's culture (`LocalizationOptions.Cultures` fixes a game's own separators) and
+`Format(key, args)` fills a table text with it. Without options the first run is English, as before.
 
 Storage is not a `NexusService`: `EncryptedStorageService` (`Nexus.Core.Services`)
 implements `IPlayerPrefsService` with AES-256, key-bound HMAC-SHA256, device-bound seeds and

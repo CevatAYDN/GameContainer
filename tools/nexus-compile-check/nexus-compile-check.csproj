@@ -44,6 +44,8 @@
     <Reference Include="$(UNITY_MODULES)UnityEngine.InputLegacyModule.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.InputForUIModule.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.JSONSerializeModule.dll" />
+    <!-- System.Text.Json ships with the editor for netstandard2.1 (JsonLocalizationTableProvider). -->
+    <Reference Include="$(UNITY_MODULES)..\..\BCLExtensions\TargetingPacks\netstandard2.1\ref\System.Text.Json.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.UnityWebRequestModule.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.UnityWebRequestWWWModule.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.ScreenCaptureModule.dll" />

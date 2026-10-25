@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 
 namespace Nexus.Core.Services
 {
@@ -22,6 +23,10 @@ namespace Nexus.Core.Services
         bool IsRTL { get; }
         void SetLanguage(string langCode);
         string GetString(string key, string fallback = "");
+        /// <summary>The culture of the current language, for numbers and dates in player text.</summary>
+        CultureInfo Culture { get; }
+        /// <summary>The key's text (or the key) as a <c>string.Format</c> pattern, formatted with <see cref="Culture"/>.</summary>
+        string Format(string key, params object[] args);
         string FormatRTLIfNeeded(string text);
         void RegisterLanguageTable(System.Collections.Generic.IDictionary<string, string> dictionary) => RegisterLanguageTable("en", dictionary);
         void RegisterLanguageTable(string langCode, System.Collections.Generic.IDictionary<string, string> dictionary);

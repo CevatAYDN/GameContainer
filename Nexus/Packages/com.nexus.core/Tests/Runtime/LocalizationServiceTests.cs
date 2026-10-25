@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+using System.Globalization;
 using NUnit.Framework;
 using Nexus.Core;
 using Nexus.Core.Services;
@@ -69,6 +71,96 @@ namespace Nexus.Tests
             Assert.AreEqual("\U0001F600" + "ابحرم", formatted);
             Assert.AreEqual(input.Length, formatted.Length,
                 "The surrogate pair must survive the reversal intact (same UTF-16 length).");
+        }
+
+        // ── Issue #72: first-run language, a shipped JSON table provider, culture and formatting ──
+
+        private static JsonLocalizationTableProvider Tables(params string[] languages)
+        {
+            var json = new Dictionary<string, string>();
+            foreach (var language in languages) json[language] = "{\"title\": \"" + language + "\", \"score\": \"{0:N1}\"}";
+            return new JsonLocalizationTableProvider(json);
+        }
+
+        private static LocalizationService Started(TestPlayerPrefsService prefs, ILocalizationTableProvider tables, string device, LocalizationOptions options)
+        {
+            var service = new LocalizationService(prefs, tables) { Options = options, DeviceLanguageSource = () => device };
+            service.InitializeAsync(default).GetAwaiter().GetResult();
+            return service;
+        }
+
+        [TestCase("tr", "tr")]
+        [TestCase("pt", "pt-br")]
+        [TestCase("ja", "en")]
+        public void FirstRun_PicksTheDeviceLanguageThatHasATable_ElseTheDefault(string device, string expected)
+        {
+            var prefs = new TestPlayerPrefsService();
+            var service = Started(prefs, Tables("en", "tr", "pt-BR"), device, new LocalizationOptions());
+
+            Assert.AreEqual(expected, service.CurrentLanguage);
+            Assert.IsFalse(prefs.HasKey("NT_Language"), "The first-run pick is not saved; the player's own choice is.");
+        }
+
+        [Test]
+        public void FirstRun_IgnoresTheBuiltInTurkishSeedWhenTheGameShipsOnlyEnglish()
+        {
+            var service = Started(new TestPlayerPrefsService(), Tables("en"), "tr", new LocalizationOptions());
+            Assert.AreEqual("en", service.CurrentLanguage);
+        }
+
+        [Test]
+        public void SavedLanguage_WinsOverTheDeviceLanguage()
+        {
+            var prefs = new TestPlayerPrefsService();
+            prefs.SetString("NT_Language", "en");
+            var service = Started(prefs, Tables("en", "tr"), "tr", new LocalizationOptions());
+            Assert.AreEqual("en", service.CurrentLanguage);
+        }
+
+        [Test]
+        public void JsonTableProvider_ReadsFlatTablesWithEscapesAndSkipsNonStrings()
+        {
+            var provider = new JsonLocalizationTableProvider(new Dictionary<string, string>
+            {
+                ["en"] = "{\"quote\": \"say \\\"hi\\\"\\nnow\", \"count\": 3, \"nested\": {\"a\": \"b\"}}",
+            });
+
+            Assert.IsTrue(provider.TryGetTable("en", out var table));
+            Assert.AreEqual("say \"hi\"\nnow", table["quote"]);
+            Assert.AreEqual(1, table.Count, "Numbers and objects are not texts.");
+            Assert.IsFalse(provider.TryGetTable("de", out _));
+        }
+
+        [Test]
+        public void Format_UsesTheCultureOfTheCurrentLanguage()
+        {
+            var service = Started(new TestPlayerPrefsService(), Tables("en", "tr"), "en", new LocalizationOptions());
+            Assert.AreEqual("1,234.5", service.Format("score", 1234.5));
+
+            service.SetLanguage("tr");
+            Assert.AreEqual("tr-TR", service.Culture.Name);
+            Assert.AreEqual("1.234,5", service.Format("score", 1234.5));
+        }
+
+        [Test]
+        public void Format_UsesTheGamesOwnCultureWhenOneIsSet()
+        {
+            var fixedSeparators = (CultureInfo)CultureInfo.InvariantCulture.Clone();
+            fixedSeparators.NumberFormat.NumberDecimalSeparator = "'";
+            var options = new LocalizationOptions { Cultures = new Dictionary<string, CultureInfo> { ["EN"] = fixedSeparators } };
+            var service = Started(new TestPlayerPrefsService(), Tables("en"), "en", options);
+
+            Assert.AreEqual("1,234'5", service.Format("score", 1234.5));
+        }
+
+        [Test]
+        public void Format_FillsPlaceholdersBeforeTheRtlReversal()
+        {
+            var service = new LocalizationService(new TestPlayerPrefsService());
+            service.RegisterKey("ar", "points", "{0} نقاط");
+            service.SetLanguage("ar");
+
+            Assert.AreEqual(service.FormatRTLIfNeeded("7 نقاط"), service.Format("points", 7));
         }
     }
 }

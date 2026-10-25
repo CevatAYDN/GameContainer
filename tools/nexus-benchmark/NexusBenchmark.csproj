@@ -101,8 +101,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Haptics/IHapticService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/IInputService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/InputService.cs" />
-    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Localization/ILocalizationService.cs" />
-    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Localization/LocalizationService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Localization/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Network/INetworkAdapter.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/FloatingTextService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IFloatingTextService.cs" />

@@ -15,6 +15,13 @@ namespace Nexus.Core.Services
         // Optional: built-in "en"/"tr" tables work without it; LoadExternalTables()
         // null-checks. A missing binding must not fail strict injection / validation.
         [OptionalInject] public ILocalizationTableProvider TableProvider { get; set; }
+        // Optional: without it the first run is English and the culture follows the language code.
+        [OptionalInject] public LocalizationOptions Options { get; set; }
+
+        private const string LanguageKey = "NT_Language";
+
+        // The device language as a code ("tr", "pt", "zh-hans"); tests replace it.
+        internal Func<string> DeviceLanguageSource = DeviceLanguageCode;
 
         // CurrentLanguage is accessed from multiple threads (editor main, async tasks,
         // and potential worker threads). Mark volatile to ensure reads always observe the
@@ -24,6 +31,9 @@ namespace Nexus.Core.Services
         public string CurrentLanguage { get => _currentLanguage; private set => _currentLanguage = value; }
 
         public event Action<string> OnLanguageChanged;
+
+        private CultureInfo _culture;
+        public CultureInfo Culture => _culture ?? (_culture = CultureFor(_currentLanguage));
 
         public bool IsRTL
         {
@@ -44,12 +54,14 @@ namespace Nexus.Core.Services
 
         private readonly Dictionary<string, Dictionary<string, string>> _localizedTable = new Dictionary<string, Dictionary<string, string>>();
         private readonly object _tableLock = new();
+        // Languages the game supplied (provider, RegisterLanguageTable, RegisterKey), not the built-in en/tr seeds.
+        private readonly HashSet<string> _suppliedLanguages = new HashSet<string>();
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
-            LoadSavedLanguage();
             BuildLocalizationDictionary();
             LoadExternalTables();
+            LoadSavedLanguage();
             return default;
         }
 
@@ -59,16 +71,71 @@ namespace Nexus.Core.Services
             lock (_tableLock)
             {
                 _localizedTable.Clear();
+                _suppliedLanguages.Clear();
             }
         }
 
         private void LoadSavedLanguage()
         {
-            if (PlayerPrefsService != null)
+            if (PlayerPrefsService != null && PlayerPrefsService.HasKey(LanguageKey))
+                CurrentLanguage = PlayerPrefsService.GetString(LanguageKey, "en");
+            else if (Options != null)
+                CurrentLanguage = FirstRunLanguage(Options); // not saved: the device language is followed until the player picks one
+            _culture = CultureFor(_currentLanguage);
+        }
+
+        private string FirstRunLanguage(LocalizationOptions options)
+        {
+            string fallback = string.IsNullOrEmpty(options.DefaultLanguage) ? "en" : options.DefaultLanguage.ToLowerInvariant();
+            if (!options.UseDeviceLanguage) return fallback;
+            string device = null;
+            try { device = DeviceLanguageSource?.Invoke(); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[LocalizationService] Reading the device language failed: {ex.Message}"); }
+            if (string.IsNullOrEmpty(device)) return fallback;
+            device = device.ToLowerInvariant();
+            int dash = device.IndexOf('-');
+            string baseLanguage = dash > 0 ? device.Substring(0, dash) : null;
+            lock (_tableLock)
             {
-                CurrentLanguage = PlayerPrefsService.GetString("NT_Language", "en");
+                IEnumerable<string> languages = _suppliedLanguages.Count > 0 ? _suppliedLanguages : _localizedTable.Keys;
+                string regional = null;
+                foreach (var language in languages)
+                {
+                    if (language == device) return language;
+                    if (regional == null && (language == baseLanguage || language.StartsWith(device + "-", StringComparison.Ordinal))) regional = language;
+                }
+                return regional ?? fallback;
             }
         }
+
+        private CultureInfo CultureFor(string language)
+        {
+            var cultures = Options?.Cultures;
+            if (cultures != null)
+            {
+                foreach (var entry in cultures)
+                    if (entry.Value != null && string.Equals(entry.Key, language, StringComparison.OrdinalIgnoreCase)) return entry.Value;
+            }
+            try { return CultureInfo.CreateSpecificCulture(language); }
+            catch (ArgumentException) { return CultureInfo.InvariantCulture; }
+        }
+
+        private static readonly Dictionary<string, string> s_systemLanguageCodes = new Dictionary<string, string>
+        {
+            { "Afrikaans", "af" }, { "Arabic", "ar" }, { "Basque", "eu" }, { "Belarusian", "be" }, { "Bulgarian", "bg" },
+            { "Catalan", "ca" }, { "Chinese", "zh" }, { "ChineseSimplified", "zh-hans" }, { "ChineseTraditional", "zh-hant" },
+            { "Czech", "cs" }, { "Danish", "da" }, { "Dutch", "nl" }, { "English", "en" }, { "Estonian", "et" },
+            { "Faroese", "fo" }, { "Finnish", "fi" }, { "French", "fr" }, { "German", "de" }, { "Greek", "el" },
+            { "Hebrew", "he" }, { "Hindi", "hi" }, { "Hungarian", "hu" }, { "Icelandic", "is" }, { "Indonesian", "id" },
+            { "Italian", "it" }, { "Japanese", "ja" }, { "Korean", "ko" }, { "Latvian", "lv" }, { "Lithuanian", "lt" },
+            { "Norwegian", "no" }, { "Polish", "pl" }, { "Portuguese", "pt" }, { "Romanian", "ro" }, { "Russian", "ru" },
+            { "SerboCroatian", "sr" }, { "Slovak", "sk" }, { "Slovenian", "sl" }, { "Spanish", "es" }, { "Swedish", "sv" },
+            { "Thai", "th" }, { "Turkish", "tr" }, { "Ukrainian", "uk" }, { "Vietnamese", "vi" },
+        };
+
+        // By name, so a SystemLanguage member an older or newer engine lacks cannot break compilation.
+        private static string DeviceLanguageCode() =>
+            s_systemLanguageCodes.TryGetValue(Application.systemLanguage.ToString(), out var code) ? code : null;
 
         public void SetLanguage(string langCode)
         {
@@ -83,9 +150,10 @@ namespace Nexus.Core.Services
             {
                 if (_currentLanguage == normalized) return;
                 _currentLanguage = normalized;
+                _culture = CultureFor(normalized);
                 if (PlayerPrefsService != null)
                 {
-                    PlayerPrefsService.SetString("NT_Language", _currentLanguage);
+                    PlayerPrefsService.SetString(LanguageKey, _currentLanguage);
                     PlayerPrefsService.Save();
                 }
                 // Capture delegate snapshot while under lock to ensure a consistent view
@@ -113,23 +181,34 @@ namespace Nexus.Core.Services
         public string GetString(string key, string fallback = "")
         {
             if (string.IsNullOrEmpty(key)) return fallback;
+            return FormatRTLIfNeeded(TryLookup(key, out var text) ? text : (!string.IsNullOrEmpty(fallback) ? fallback : key));
+        }
 
+        public string Format(string key, params object[] args)
+        {
+            if (string.IsNullOrEmpty(key)) return string.Empty;
+            string pattern = TryLookup(key, out var text) ? text : key;
+            string formatted;
+            try { formatted = string.Format(Culture, pattern, args ?? Array.Empty<object>()); }
+            catch (FormatException ex)
+            {
+                NexusRuntime.Logger?.LogWarning($"[LocalizationService] '{key}' is not a valid format for {(args == null ? 0 : args.Length)} argument(s): {ex.Message}");
+                formatted = pattern;
+            }
+            // Formatted before the RTL reversal, which would otherwise turn "{0}" into "}0{".
+            return FormatRTLIfNeeded(formatted);
+        }
+
+        private bool TryLookup(string key, out string text)
+        {
             // Capture current language and use it within the lock to avoid TOCTOU.
-            string lang;
             lock (_tableLock)
             {
-                lang = _currentLanguage;
-                if (_localizedTable.TryGetValue(lang, out var dict) && dict.TryGetValue(key, out var val))
-                {
-                    return FormatRTLIfNeeded(val);
-                }
-                if (_localizedTable.TryGetValue("en", out var enDict) && enDict.TryGetValue(key, out var enVal))
-                {
-                    return FormatRTLIfNeeded(enVal);
-                }
+                if (_localizedTable.TryGetValue(_currentLanguage, out var dict) && dict.TryGetValue(key, out text)) return true;
+                if (_localizedTable.TryGetValue("en", out var enDict) && enDict.TryGetValue(key, out text)) return true;
             }
-
-            return FormatRTLIfNeeded(!string.IsNullOrEmpty(fallback) ? fallback : key);
+            text = null;
+            return false;
         }
 
         public string FormatRTLIfNeeded(string text)
@@ -246,6 +325,7 @@ namespace Nexus.Core.Services
             string key = langCode.ToLower();
             lock (_tableLock)
             {
+                _suppliedLanguages.Add(key);
                 if (!_localizedTable.TryGetValue(key, out var table))
                 {
                     table = new Dictionary<string, string>();
@@ -265,6 +345,7 @@ namespace Nexus.Core.Services
             string langKey = langCode.ToLower();
             lock (_tableLock)
             {
+                _suppliedLanguages.Add(langKey);
                 if (!_localizedTable.TryGetValue(langKey, out var table))
                 {
                     table = new Dictionary<string, string>();
