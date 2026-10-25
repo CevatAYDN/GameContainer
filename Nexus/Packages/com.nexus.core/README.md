@@ -7,7 +7,7 @@
 
 # Nexus Core
 
-[![Unity](https://img.shields.io/badge/Unity-6000.0-blue.svg)](https://unity.com/)
+[![Unity](https://img.shields.io/badge/Unity-6000.5-blue.svg)](https://unity.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.5.0-orange.svg)](package.json)
 
@@ -26,8 +26,8 @@ https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.co
 
 Pin a commit (the full 40-character hash: the Package Manager does not take a short one) or release
 tag in production. Unity resolves the declared dependencies
-(`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`). Minimum Unity is
-6000.0; the package is verified on 6000.5.6f1.
+(`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`,
+`com.unity.modules.androidjni`). Minimum Unity is 6000.5; the package is verified on 6000.5.6f1.
 
 ## Start: pick your level
 
@@ -35,17 +35,18 @@ tag in production. Unity resolves the declared dependencies
 |---|---|---|
 | 0 | Never used dependency injection or a signal bus | [10_MIN_QUICKSTART.md](docs/10_MIN_QUICKSTART.md) ([TR](docs/10_MIN_QUICKSTART_TR.md)), then the **Counter Example** sample |
 | 1 | Shipping a feature in a new Nexus project | [walkthrough.md](walkthrough.md), [CANONICAL-PATTERNS.md](docs/CANONICAL-PATTERNS.md) |
-| 2 | Adding Nexus to an existing game | [GETTING_STARTED.md](docs/GETTING_STARTED.md) ([TR](docs/GETTING_STARTED_TR.md)), [INTEGRATION_PATHS.md](docs/INTEGRATION_PATHS.md) ([TR](docs/INTEGRATION_PATHS_TR.md)); from Zenject: [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) |
-| 3 | Studio: release builds, performance, tooling | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [HARDENING.md](docs/HARDENING.md), [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md), [ADAPTERS.md](docs/ADAPTERS.md), [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md), the Dashboard's build-readiness card |
+| 2 | Adding Nexus to an existing game | [GETTING_STARTED.md](docs/GETTING_STARTED.md) ([TR](docs/GETTING_STARTED_TR.md)), [INTEGRATION_PATHS.md](docs/INTEGRATION_PATHS.md) ([TR](docs/INTEGRATION_PATHS_TR.md)); from Zenject: [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) ([TR](docs/ZENJECT_MIGRATION_TR.md)) |
+| 3 | Studio: release builds, performance, tooling | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md), [ADAPTERS.md](docs/ADAPTERS.md), [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md), the Dashboard's build-readiness card |
 | AI agent | Generating game code on Nexus | [AI_GAME_DEVELOPER_GUIDE.md](docs/AI_GAME_DEVELOPER_GUIDE.md), [GAME_PATTERNS.md](docs/GAME_PATTERNS.md) |
 
-Turkish readers: [THE_BIG_NEXUS_HOWTO.md](docs/THE_BIG_NEXUS_HOWTO.md) tells the same story as
+[THE_BIG_NEXUS_HOWTO.md](docs/THE_BIG_NEXUS_HOWTO.md) ([TR](docs/THE_BIG_NEXUS_HOWTO_TR.md)) tells the same story as
 the walkthrough as a narrative; the `*_TR.md` files are translations of their English sources.
 
-Samples (Package Manager → Nexus → Samples): **Code-first Startup** (attach `ScoreBootstrap` to
-a GameObject and press Play), **Counter Example** ([README](Samples~/Counter/README.md), the
-full view/mediator tour) and **Nexus Starter Package** (scene scaffold). The Setup Wizard in the
-Nexus Dashboard generates a starter project additively.
+Samples (Package Manager → Nexus Observable Architecture → Samples): **Code-first Startup**
+(attach `ScoreBootstrap` to a GameObject and press Play), **Counter Example**
+([README](Samples~/Counter/README.md), the full view/mediator tour) and **Nexus Starter Package**
+(six scripts: lifecycle, signal, model, command, view and mediator; no scene). The Setup Wizard in
+the Nexus Dashboard generates a starter project additively.
 
 ## What is in the package
 
@@ -66,8 +67,9 @@ handlers pooled per signal; execution modes `Sequential`, `Concurrent`, `Exclusi
 `FireAsyncWithTimeout`; `Subscribe<T>` for plain handlers; recovery strategies (retry, fallback,
 abort) and `CommandFailedSignal`; loading-time `Context.Prewarm<TSignal>()`.
 
-**Models and views**: `ObservableProperty<T>` and `ObservableList<T>`; `SecureObservableProperty`
-(memory obfuscation with a tamper canary); `IReactiveModel`; `View` and `Mediator<TView>` bound by
+**Models and views**: `ObservableProperty<T>` and `ObservableList<T>`; `SecureObservableInt`,
+`SecureObservableLong`, `SecureObservableFloat`, `SecureObservableString` and
+`SecureObservableBigDouble` (memory obfuscation with a tamper canary); `IReactiveModel`; `View` and `Mediator<TView>` bound by
 `[Mediator(typeof(...))]` with pooled mediators and automatic unsubscribe on unbind; `ScreenView`
 screens managed by `UIManager`.
 
@@ -80,15 +82,15 @@ persistent global root; `ContextFactory.StartAsync` for scan-free code-first sta
 (inactive children included) before Unity runs its Awake.
 
 **AOT and IL2CPP**: the editor generator (Nexus → Generate AOT Binder) and the Roslyn source
-generator (`SourceGenerator~/`) emit injectors, constructor factories, typed command dispatchers
-and `link.xml`. `NexusBinderBuildGuard` stops a player build with a stale binder,
+generator (`SourceGenerator~/`) emit injectors, constructor factories and typed command
+dispatchers; only the editor generator writes `link.xml`. `NexusBinderBuildGuard` stops a player build with a stale binder,
 `NexusBinderSelfHeal` recovers a binder that no longer compiles, and a stale generated injector
 falls back to reflection at runtime with a warning.
 
-**Editor suite** (Window → Nexus → Dashboard, `Ctrl+Shift+N`), 16 plugins: Dashboard,
-GameManager, Hierarchy, Explorer, Graph, TypeAnalyzer, ContextInspector, FSM, Tracer,
-ErrorDashboard, PerformanceDashboard, NetworkDashboard, Wizard (plus the Setup Wizard),
-CasualServices, Help. The Dashboard's build-readiness card shows the AOT binder state,
+**Editor suite** (Window → Nexus → Dashboard, `Ctrl+Shift+N`): 16 plugins, one tab each:
+Dashboard, GameManager, Hierarchy, Explorer, Graph, TypeAnalyzer, ContextInspector, FSM, Tracer,
+ErrorDashboard, PerformanceDashboard, NetworkDashboard, Setup Wizard (project scaffolding), Context
+Wizard (Root, Service, View/Mediator and Signal/Command generators), CasualServices, Help. The Dashboard's build-readiness card shows the AOT binder state,
 `link.xml`, the active build target and its scripting defines, generated injectors that fell back
 to reflection, and DI validation issues of the active contexts, with one-click check and
 generate. Also custom inspectors, a scene-view overlay of context boundaries, a Unity
@@ -124,7 +126,7 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 | `ProgressionService` | `Progression` | Level index, max unlocked level, upgrade cost formulas |
 | `ResourcesAssetLoadService` | `Assets` | Default `IAssetLoadService` over `Resources`; an Addressables adapter is described in [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) |
 | `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause |
-| `UIManager` | `UI` | Typed `ScreenView` stack over `HUD`, `Screen`, `Popup`, `Modal` layers with async open/close |
+| `UIManager` | `UI` | Typed `ScreenView` stack over the seven `UILayer` layers (`Background`, `HUD`, `Screen`, `Popup`, `Modal`, `Overlay`, `System`) with async open/close |
 
 Storage is not a `NexusService`: `EncryptedStorageService` (`Nexus.Core.Services`)
 implements `IPlayerPrefsService` with AES-256, key-bound HMAC-SHA256, device-bound seeds and
@@ -141,7 +143,8 @@ atomic writes; `GameSaveManager` (`Nexus.Core.Extensions`) coordinates save prov
 | Immutable arbitrary-arity or async composite | Retained snapshots; payload boxing and snapshot allocation are intentional |
 | Startup, registration, async operations, editor diagnostics, `NEXUS_DEBUG` tracing | May allocate; outside the hot-path contract |
 
-Measurements and their limits: [HARDENING.md](docs/HARDENING.md). The pinned core DI comparison
+The repository's host harness (`tools/nexus-benchmark`) and the Unity `PerformanceTests` assert these
+contracts; their latest numbers are in the repository's `docs/RELEASE_GATES.md`. The pinned core DI comparison
 with VContainer and Zenject, on host and in a Unity Mono player, is in
 [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md); it does not establish device or
 IL2CPP performance, and no universal winner is claimed.
@@ -150,7 +153,7 @@ IL2CPP performance, and no universal winner is claimed.
 
 | Path | Responsibility |
 |---|---|
-| `Runtime/Core` | `NexusRuntime` (context registry), `Context`, `ContextBuilder`, `NexusDI` and validation, `SignalBus`, `CommandExecutor`, `CommandPool`, `RecoveryEngine`, tracing clock, metrics |
+| `Runtime/Core` | `NexusRuntime` (context registry), `Context`, `ContextBuilder`, `NexusDI` and validation, `SignalBus`, `CommandExecutor`, `CommandPool`, `RecoveryEngine`, metrics |
 | `Runtime/Core/Lifecycle` | Lifecycle interfaces and the `ContextLifecycleOrchestrator` |
 | `Runtime/Interfaces`, `Runtime/Attributes` | Public contracts, attributes, execution modes, exceptions |
 | `Runtime/Lifecycle` | `View`, `Mediator<TView>`, `ViewBinder`, `ViewRegistration` |
@@ -160,8 +163,8 @@ IL2CPP performance, and no universal winner is claimed.
 | `Runtime/Netcode`, `Runtime/DOTS` | Network signal bus with rollback journal; optional Collections/Jobs bridge (`com.nexus.core.dots`) |
 | `Runtime/FSM`, `Runtime/Queue`, `Runtime/Recovery`, `Runtime/Plugins`, `Runtime/Tracing`, `Runtime/Debug`, `Runtime/Data`, `Runtime/Extensions` | State machine, hybrid queue, recovery strategies, runtime plugin system, causal tracing, debug HUD, `BigDouble`, save manager and scene helpers |
 | `Runtime/Testing` | Test harness assembly (`com.nexus.core.testing`) |
-| `Editor/Core` | `NexusWindow` host, plugin base class, styles, localization, template provider, hierarchy menus |
-| `Editor/Plugins` | The 16 plugins |
+| `Editor/Core` | `NexusWindow` host, plugin base class, styles, localization, hierarchy menus |
+| `Editor/Plugins` | The 16 plugins, one Dashboard tab each |
 | `Editor/CodeGen` | Binder generator, build guard, self-heal, editor settings asset |
 | `Editor/Validation`, `Editor/Analyzer`, `Editor/Inspector`, `Editor/Overlay`, `Editor/Profiling`, `Editor/LiveReload` | Build validation rules, architecture analyzer, custom inspectors, scene overlay, profiler module, hot reload |
 | `SourceGenerator~` | Roslyn source generator project; built DLL ships in `SourceGenerators~` |
@@ -197,22 +200,21 @@ IL2CPP performance, and no universal winner is claimed.
 |---|---|
 | [ARCHITECTURE.md](docs/ARCHITECTURE.md) | Runtime pipeline, lifecycle sequences, hardening contracts |
 | [CANONICAL-PATTERNS.md](docs/CANONICAL-PATTERNS.md) | The one recommended way to use each API |
-| [THE_BIG_NEXUS_HOWTO.md](docs/THE_BIG_NEXUS_HOWTO.md) | Why each pattern exists and when to use it (Turkish) |
+| [THE_BIG_NEXUS_HOWTO.md](docs/THE_BIG_NEXUS_HOWTO.md) ([TR](docs/THE_BIG_NEXUS_HOWTO_TR.md)) | Why each pattern exists and when to use it |
 | [GAME_PATTERNS.md](docs/GAME_PATTERNS.md) | Context topologies and budgets per genre |
 | [AI_GAME_DEVELOPER_GUIDE.md](docs/AI_GAME_DEVELOPER_GUIDE.md) | Rules for generating game code on Nexus |
-| [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) | Concept mapping and migration steps from Zenject/Extenject (Turkish) |
-| [STRANGE_COMPARISON.md](docs/STRANGE_COMPARISON.md) | Feature-by-feature comparison with StrangeIoC (Turkish) |
-| [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) | Implementing `IAssetLoadService` over Addressables without a package dependency |
+| [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) ([TR](docs/ZENJECT_MIGRATION_TR.md)) | Concept mapping and migration steps from Zenject/Extenject |
+| [STRANGE_COMPARISON.md](docs/STRANGE_COMPARISON.md) ([TR](docs/STRANGE_COMPARISON_TR.md)) | Feature-by-feature comparison with StrangeIoC |
+| [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) ([TR](docs/ADDRESSABLES_ADAPTER_TR.md)) | Implementing `IAssetLoadService` over Addressables without a package dependency |
 | [ADAPTERS.md](docs/ADAPTERS.md) | Registering real ad and store SDKs behind `AdService` / `IapService`, and what a shipped game needed beyond them |
 | [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md) | Pinned DI comparison with VContainer and Zenject |
-| [HARDENING.md](docs/HARDENING.md) | Verification evidence and measured host performance |
 | [STABILITY.md](docs/STABILITY.md) | Pre-1.0 stability policy |
 | [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Writing editor plugins |
 | [LOCALIZATION_KEYS.md](docs/LOCALIZATION_KEYS.md) | Editor localization keys and parity rules |
-| [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Coding rules, test requirements, wizard template procedure, PR checklist |
+| [CONTRIBUTING.md](docs/CONTRIBUTING.md) | Coding rules, concurrency rules, test requirements, wizard template procedure, PR checklist |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Symptoms, causes and fixes |
 | [MIGRATION.md](MIGRATION.md), [BREAKING_CHANGES.md](BREAKING_CHANGES.md) | Version-to-version migration and the breaking-change policy |
 | [ADOPTION.md](ADOPTION.md) | Fork-and-own guidance for studios |
-| [CHANGELOG.md](CHANGELOG.md) | The only changelog |
+| [CHANGELOG.md](CHANGELOG.md) | The changelog of the core and its adapter packages |
 
 License: MIT ([LICENSE](LICENSE)).

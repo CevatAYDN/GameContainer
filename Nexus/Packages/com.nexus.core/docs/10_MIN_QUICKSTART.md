@@ -9,7 +9,7 @@
 
 ## ✅ Before You Begin
 
-- Unity **6000.0+** (Unity 6)
+- Unity **6000.5+** (Unity 6)
 - A new or existing Unity project (any template works)
 - Basic familiarity with C# and Unity Editor
 
@@ -32,7 +32,7 @@ A **Context** is Nexus's central container — it holds models, services, comman
 
 ### 2a. Create a ContextData asset
 
-1. In the Project window, right-click **Create > Nexus > ContextData**
+1. In the Project window, right-click **Create > Nexus > Context Data**
 2. Name it `GameContextData`
 3. Select it and check **Enable Auto-Discovery**
    - Enables the `{ScopeTag}Lifecycle` name-convention scan (see Step 3c). The `Root` component additionally discovers every `IContextLifecycle` component attached to its GameObject.
@@ -40,7 +40,7 @@ A **Context** is Nexus's central container — it holds models, services, comman
 ### 2b. Add the Root component
 
 1. Create an empty **GameObject** in your scene → name it `GameRoot`
-2. Add the `Root` component (**Add Component → Nexus → Root**)
+2. Add the `Root` component (**Add Component**, then search for `Root`). **GameObject > Nexus > Scene Root** instead creates a new `[Scene_Root]` object that already has it
 3. Drag `GameContextData` into the **Context Data** field on the Root component
 
 > ✅ **Done.** At runtime, the `Root` component will:
@@ -153,7 +153,7 @@ public class ScoreView : View
     public Text scoreText;
     public Button addButton;
 
-    protected override void OnBind()
+    protected override void OnBind(IContext context)
     {
         var model = Context.Resolve<ScoreModel>();
         model.Total.OnChanged((oldVal, newVal) =>
@@ -218,8 +218,8 @@ public sealed class CapDamageFilter : ISignalFilter<DamageSignal>
     }
 }
 // Register:
-bus.AddSignalFilter(new CapDamageFilter());                    // instance form
-builder.AddSignalFilter<DamageSignal, CapDamageFilter>();      // type form (resolved from DI or activated)
+builder.AddSignalFilter<DamageSignal, CapDamageFilter>();      // type form, in OnConfigure (resolved from DI or activated)
+((SignalBus)context.SignalBus).AddSignalFilter(new CapDamageFilter()); // instance form: on the concrete SignalBus, not on ISignalBus
 ```
 Filters run in registration order on both `Fire` and `FireAsync`. The legacy object-based `ISignalInterceptor` still works; when registered it boxes once per fire.
 
@@ -233,6 +233,7 @@ For rapid prototyping or beginner developers who don't want to create separate V
 
 ```csharp
 using Nexus.Core;
+using Nexus.Core.Services;
 using UnityEngine;
 
 public class PlayerHUD : NexusBehaviour
@@ -278,7 +279,7 @@ Automatic dependency injection, zero memory leaks, and instant SignalBus access 
 
 | Symptom | Fix |
 |---------|-----|
-| **"No lifecycle found"** | Make sure your lifecycle class implements `IContextLifecycle` and is **attached to the Root GameObject as a component** (or matches the `{ScopeTag}Lifecycle` convention with a non-empty ContextData `ScopeTag`) |
+| **"No IContextLifecycle was discovered or registered"** | Make sure your lifecycle class implements `IContextLifecycle` and is **attached to the Root GameObject as a component** (or matches the `{ScopeTag}Lifecycle` convention with a non-empty ContextData `ScopeTag`) |
 | **"Type not registered"** | Add `builder.Bind<MyType>()` in `OnConfigure`, or check that the type is in a non-system assembly |
 | **Signal not dispatched** | Verify the command implements `ICommand<YourSignal>` and is registered via `builder.BindSignal<>()` |
 | **Test won't run** | Open EditMode Test Runner, select `InfrastructureValidationTests` and `PluginRefactorValidationTests` |

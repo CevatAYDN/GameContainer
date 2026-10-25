@@ -134,7 +134,7 @@ namespace Nexus.Editor
                 "• Build Validation — catches priority conflicts before compile\n" +
                 "• Auto-Discovery — Lifecycle, Commands, Views and Mediators\n" +
                 "• Command Pooling — automatic pooling for 0-GC steady-state\n\n" +
-                "Editor Suite: 15 plugins, Code Generator, Live Tracer, Graph Viewer, Type Analyzer";
+                "Editor Suite: 16 plugins, Code Generator, Live Tracer, Graph Viewer, Type Analyzer";
             s_strings["signals"] = "Signals";
             s_strings["total_sigs"] = "Total Sigs";
             s_strings["gc_memory"] = "GC Memory";
@@ -192,12 +192,10 @@ namespace Nexus.Editor
             s_strings["cat_other"] = "Other";
 
             // NexusWindow — sidebar, status bar, discovery, actions
-            s_strings["window_title"] = "Nexus Dashboard";
             s_strings["brand_title"] = "NEXUS";
             s_strings["brand_subtitle"] = "Architecture Suite";
             s_strings["sidebar_discovery_failed"] = "Plugin discovery failed: {0}";
             s_strings["sidebar_no_plugins"] = "No Nexus plugins found";
-            s_strings["discovery_diagnostics"] = "Plugin discovery partially failed:\n{0}";
             s_strings["error_plugin_view"] = "Error loading plugin view: {0}";
             s_strings["actions_label"] = "ACTIONS ({0})";
             s_strings["status_play_mode_active"] = "PLAY MODE ACTIVE";
@@ -287,9 +285,6 @@ namespace Nexus.Editor
             s_strings["tracer_sig"] = "SIG";
             s_strings["tracer_cmd"] = "CMD";
             s_strings["tracer_mod"] = "MOD";
-            s_strings["tracer_ok"] = "OK";
-            s_strings["tracer_fail"] = "FAIL";
-            s_strings["tracer_cancel"] = "CANCEL";
             s_strings["tracer_time_suffix"] = "s";
 
             // GameManager plugin
@@ -572,7 +567,6 @@ namespace Nexus.Editor
 
             // Explorer kalan
             s_strings["exp_unnamed_context"] = "Unnamed Context";
-            s_strings["exp_all_assemblies_fallback"] = "All Assemblies";
             s_strings["exp_target_context_label"] = "Target Context";
             s_strings["exp_tooltip_ctx_dropdown"] = "Fire the test signal into the selected context";
             s_strings["exp_tooltip_fire_btn"] = "Fire the selected signal into the target context";
@@ -832,7 +826,7 @@ namespace Nexus.Editor
             s_strings["help_step6_title"] = "6. Fire Signals";
             s_strings["help_step6_desc"] = "SignalBus.Fire(new MySignal(data)) — from mediators, commands, or any [Inject]ed class.\nThis is the runtime entry point for signal → command execution.";
             s_strings["help_card_signalbus"] = "SignalBus";
-            s_strings["help_card_signalbus_content"] = "Fire<T>(T signal) — synchronous dispatch\nFireAsync<T>(T signal) — awaitable async dispatch\nFireAsyncWithTimeout<T>(T, ms) — with timeout\nFireAsyncAndForget<T>(T, onError?) — fire-and-forget\nFireThreadSafe<T>(T) — from any thread\nFireNextFrame<T>(T) — deferred to next frame\nSubscribe<T>(Action<T>) / SubscribeAsync<T>(Func<T,CT,ValueTask>)\nOrder: dispatch → handlers → commands → model/view updates.";
+            s_strings["help_card_signalbus_content"] = "Fire<T>(T signal) — synchronous dispatch\nFireAsync<T>(T signal) — awaitable async dispatch\nFireAsyncWithTimeout<T>(T, ms) — with timeout\nFireAsyncAndForget<T>(T, onError?) — fire-and-forget\nFireThreadSafe<T>(T) — from any thread\nFireNextFrame<T>(T) — deferred to next frame\nSubscribe<T>(Action<T>) / SubscribeAsync<T>(Func<T,CT,ValueTask>)\nOrder: filters → interceptors → cross-context → commands → subscriptions → composite triggers.";
             s_strings["help_card_contextbuilder"] = "ContextBuilder";
             s_strings["help_card_contextbuilder_content"] = "BindModel<T,I>() / BindReactiveModel<T,I>() — singleton models\nBindService<T,I>() — managed services with lifecycle\nBindSignal<T>().To<TCmd>() — fluent command binding\nBindCommand<T,TCmd>(mode, priority) — imperative binding\nBindAsyncCommand<T,TCmd>(mode, priority) — async binding\nEverything here belongs in OnConfigure().";
             s_strings["help_card_execmodes"] = "Execution Modes";

@@ -83,10 +83,15 @@ public class ScoreHUDMediator : Mediator<ScoreHUDView>
 
     protected override void OnBind()
     {
-        ScoreModel.Score.Subscribe(HandleScoreChanged);
+        ScoreModel.Score.OnChanged(HandleScoreChanged);
     }
 
-    private void HandleScoreChanged(int newScore)
+    protected override void OnUnbind()
+    {
+        ScoreModel.Score.RemoveOnChanged(HandleScoreChanged);
+    }
+
+    private void HandleScoreChanged(int oldScore, int newScore)
     {
         View.SetScoreText(newScore);
     }
@@ -134,10 +139,13 @@ public interface IScoreModel : IReactiveModel
     ObservableProperty<int> HighScore { get; }
 }
 
-public class ScoreModel : ReactiveModel, IScoreModel
+public class ScoreModel : IScoreModel
 {
     public ObservableProperty<int> Score { get; } = new(0);
     public ObservableProperty<int> HighScore { get; } = new(0);
+
+    // IReactiveModel: called once after injection (BindReactiveModel registers it).
+    public ValueTask OnBind(CancellationToken ct) => default;
 }
 ```
 
@@ -170,10 +178,12 @@ namespace MyGame.Models
         ObservableProperty<int> MaxHealth { get; }
     }
 
-    public class HealthModel : ReactiveModel, IHealthModel
+    public class HealthModel : IHealthModel
     {
         public ObservableProperty<int> CurrentHealth { get; } = new(100);
         public ObservableProperty<int> MaxHealth { get; } = new(100);
+
+        public ValueTask OnBind(CancellationToken ct) => default;
     }
 }
 ```
@@ -203,7 +213,8 @@ namespace MyGame.Commands
 ```csharp
 namespace MyGame.Views
 {
-    public class HealthBarView : MonoBehaviour
+    [Mediator(typeof(HealthBarMediator))]
+    public class HealthBarView : View
     {
         [SerializeField] private Image _healthFill;
 
@@ -219,10 +230,15 @@ namespace MyGame.Views
 
         protected override void OnBind()
         {
-            HealthModel.CurrentHealth.Subscribe(OnHealthChanged);
+            HealthModel.CurrentHealth.OnChanged(OnHealthChanged);
         }
 
-        private void OnHealthChanged(int currentHealth)
+        protected override void OnUnbind()
+        {
+            HealthModel.CurrentHealth.RemoveOnChanged(OnHealthChanged);
+        }
+
+        private void OnHealthChanged(int previousHealth, int currentHealth)
         {
             float ratio = (float)currentHealth / HealthModel.MaxHealth.Value;
             View.SetHealthRatio(ratio);
@@ -235,16 +251,19 @@ namespace MyGame.Views
 ```csharp
 namespace MyGame.Contexts
 {
-    public class GameplayContextLifecycle : ContextLifecycle
+    public class GameplayContextLifecycle : IContextLifecycle
     {
-        [Inject] public IHealthModel HealthModel { get; set; }
-
-        public override void OnConfigure(IContextBuilder builder)
+        public void OnConfigure(IContextBuilder builder)
         {
-            builder.BindModel<IHealthModel, HealthModel>();
-            builder.BindSignal<TakeDamageSignal>().ToCommand<TakeDamageCommand>();
-            builder.BindMediator<HealthBarMediator, HealthBarView>();
+            builder.BindReactiveModel<IHealthModel, HealthModel>();
+            builder.BindSignal<TakeDamageSignal>().To<TakeDamageCommand>();
+            // No mediator registration: HealthBarView's [Mediator] attribute attaches
+            // HealthBarMediator when the view registers with the context.
         }
+
+        public ValueTask OnInitializeAsync(CancellationToken ct) => default;
+        public ValueTask OnStartAsync(CancellationToken ct) => default;
+        public void OnDispose() { }
     }
 }
 ```
@@ -266,7 +285,7 @@ namespace MyGame.Contexts
 ## 🔗 Related Documentation
 - 📖 [README.md](../README.md) — Main framework index and decision flows
 - 🏛️ [ARCHITECTURE.md](ARCHITECTURE.md) — Core runtime architecture & sequence diagrams
-- 🎮 [GAME_PATTERNS.md](GAME_PATTERNS.md) — Architecture patterns for 5 game genres
+- 🎮 [GAME_PATTERNS.md](GAME_PATTERNS.md) — Architecture patterns for 6 game genres
 
 ---
 

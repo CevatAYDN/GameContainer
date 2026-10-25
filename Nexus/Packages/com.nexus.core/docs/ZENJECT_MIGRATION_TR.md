@@ -1,0 +1,139 @@
+> **Kimin için:** Zenject/Extenject'ten taşınan ekipler (seviye 2). Kavram eşleme tablosu ve adım adım geçiş.
+
+# Zenject → Nexus Geçiş Rehberi
+
+Bu rehber, Zenject/Extenject kullanan bir projenin `com.nexus.core`'a taşınması için kavram eşlemesi ve adım adım yol verir. Nexus, Zenject'in *yerine* değil, sinyal/komut/observable/editor paketiyle *tamamlayan* bir MVCS çekirdeğidir — geçişte en çok iş, binding sözdizimi ve signal sistemi farkındadır.
+
+---
+
+## 1. Kavram Eşleme Tablosu
+
+| Zenject / Extenject | Nexus | Not |
+|---|---|---|
+| `ProjectContext` / `SceneContext` | `Root` MonoBehaviour + `NexusRuntime` | Root, sahneye eklenen context giriş noktasıdır (`GameObject/Nexus/Scene Root`) |
+| `DiContainer` | `NexusDI` (`Context.Container`) | Aynı görev; `Context` bir `NexusDI` sahibidir |
+| `Container.Bind<T>().AsSingle()` | `BindFluent<T>().AsSingle()` *(veya `Bind<T>(Lifetime.Scoped)`)* | Fluent zincir Zenject sözdizimine birebir en yakın yoldur; `AsSingle`/`AsCached` Scoped'a eşlenir |
+| `Container.Bind<T>().AsTransient()` | `BindFluent<T>().AsTransient()` *(veya `Bind<T>(Lifetime.Transient)`)* | |
+| `Container.BindInstance(x)` | `container.BindInstance(x)` | Birebir aynı ad |
+| `BindInterfacesAndSelfTo<T>()` | `BindInterfacesAndSelfTo<T>()` | Aynı ad; singleton paritesi garantili |
+| `Container.BindFactory<T, TFactory>()` / `PlaceholderFactory<T>` | `builder.BindTypedFactory<T>()` → `[Inject] IFactory<T>`; parametreli: `BindTypedFactory<TParam, T>()` → `IFactory<TParam, T>` | Zenject'teki gibi container üretir ve enjekte eder; örnekler container'a ait değildir |
+| `Container.InstantiatePrefab(prefab)` / `InstantiatePrefabForComponent<T>(prefab)` | `context.Instantiate(prefab, parent)` / `context.Instantiate<T>(prefab, parent)` | Klonun tüm hiyerarşisi Awake'ten önce enjekte edilir; `InjectGameObject` sahnedeki nesneler için |
+| `[Inject]` constructor/field | `[Inject]` constructor/field/property (aynı) | **Nexus constructor injection'ı destekler**: `[Inject]` veya `[Construct]` işaretli ctor otomatik seçilir; işaretsiz tek public ctor da kullanılır |
+| `[Optional]` | `[OptionalInject]` | Örnek: `EconomyService.SaveThrottler` |
+| `IInitializable` / `IStartable` | `IStartable` / `IAsyncStartable` / `NexusService.InitializeAsync(ct)` | `IAsyncStartable` iptal belirteci taşır — Zenject'ten ileri |
+| `SignalBus.Fire<T>()` (Zenject Signals) | `SignalBus.Fire<T>(signal)` (Nexus) | Nexus'ta sinyal **struct** olmalı (`where T : struct`) |
+| `SignalBus.Subscribe<T>(handler)` | `SignalBus.Subscribe<T>(handler)` (gözlem için; `ISignalSubscription` döner) veya `builder.BindCommand<TSignal, TCommand>()` + `ICommand<T>` | Durumu değiştiren handler'lar Nexus'ta komut sınıflarıdır (komut kalıbı) |
+| `[Inject] SignalBus` | `[Inject] SignalBus` | Aynı |
+| `ZenjectBinding` (scene binding) | `NexusBinding` MonoBehaviour | Aynı fikir: sahneye sıfır kod bağlama |
+| `IViewModel` / `Model` | `ObservableProperty<T>` / `SecureObservableInt` (ve `SecureObservableLong`/`Float`/`String`/`BigDouble`) | Nexus'ta reactive model gömülü; UniRx gerekmez |
+| `ITickable` / `IFixedTickable` | `ITickable` / `IFixedTickable` / `ILateTickable` | Aynı isimler |
+| `IInitializable.Initialize()` | `IStartable.Start()` / `IAsyncStartable.StartAsync(ct)` | |
+| `Disposable` / `IDisposable` | `IDisposable` + `OnDispose()` | Context teardown'ı non-blocking |
+
+---
+
+## 2. Adım Adım Geçiş
+
+### Adım 1 — Envanter çıkar
+Her `ZenjectBinding` ve her `Container.Bind` çağrısını listeleyin; yukarıdaki tabloyla eşleyin. Binding **sayısı** korunmalıdır — tek `BindInterfacesAndSelfTo` Nexus'ta aynı singleton'ı üretir, çoğaltmayın.
+
+### Adım 2 — Root kurulumu
+`ProjectContext` yerine: sahneye `Root` ekleyin (`GameObject/Nexus/Scene Root`). Root'un `Awake`'i root context'i otomatik oluşturur (`InitializeContext`), `Start`'ı onu başlatır.
+
+### Adım 3 — Binding sözdizimini çevir
+```csharp
+// Zenject
+Container.Bind<IPlayerData>().To<PlayerData>().AsSingle();
+Container.Bind<IMusicPlayer>().To<MusicPlayer>().AsTransient();
+Container.BindInstance(_settings);
+
+// Nexus (ContextBuilder içinde) — en yakın sözdizimi fluent zincirdir:
+builder.BindFluent<IPlayerData>().To<PlayerData>().AsSingle();      // AsSingle karşılığı (Scoped)
+builder.BindFluent<IMusicPlayer>().To<MusicPlayer>().AsTransient(); // AsTransient karşılığı
+builder.BindInstance(_settings);
+// Native eşdeğerleri de aynı davranışı verir:
+//   builder.Bind<IPlayerData, PlayerData>(Lifetime.Scoped);
+//   builder.Bind<IMusicPlayer, MusicPlayer>(Lifetime.Transient);
+// isSingleton overload'ları (Bind<T>(isSingleton: true/false)) yalnızca container'dadır (NexusDI); builder'da Lifetime kullanın.
+// WithParameter, Zenject'in WithArguments/WithParameter karşılığıdır:
+//   builder.BindFluent<ScoreService>().WithParameter<int>(100);
+```
+> **Constructor enjeksiyonu:** Nexus constructor injection'ı **destekler** — Zenject'teki
+> constructor'ınız aynen kalabilir. `[Inject]` veya `[Construct]` işaretli constructor otomatik
+> seçilir; işaret yoksa ve sınıfta tek public constructor varsa o kullanılır. Parametreler
+> sırasıyla karşılanır: açık override (`WithParameter<TParam>` / Zenject `WithArguments`),
+> kayıtlı binding, son olarak C# **opsiyonel parametre default'u** (ör. `int initialSize = 4`
+> gibi değer-tipli parametreler default'larıyla enjekte edilir).
+> ```csharp
+> // Zenject:
+> public PlayerService(IPlayerData data) { ... }
+> // Nexus — aynen kalır:
+> public PlayerService(IPlayerData data) { ... }
+> ```
+> **Dikkat:** Birden çok constructor varsa DI hangisini kullanacağını bilemez — amaçlananı
+> `[Inject]`/`[Construct]` ile işaretleyin; işaretlenmemiş çoklu ctor'da parametresiz olan seçilir.
+> AOT-optimal stil için `CANONICAL-PATTERNS.md`'ye bakın (public auto-property injection).
+
+### Adım 4 — Signal'leri çevir
+```csharp
+// Zenject: SignalBus.Subscribe<LevelUpSignal>(OnLevelUp); SignalBus.Fire(new LevelUpSignal(5));
+// Nexus:
+public struct LevelUpSignal { public int NewLevel; public LevelUpSignal(int level) { NewLevel = level; } }
+
+// handler bir komut sınıfı olur:
+public class ApplyLevelUp : ICommand<LevelUpSignal>
+{
+    [Inject] private IProgressionService _progression;
+    public void Execute(LevelUpSignal signal) => _progression.SetLevel(signal.NewLevel);
+}
+
+// kayıt:
+builder.BindCommand<LevelUpSignal, ApplyLevelUp>();
+// veya [RegisterCommand(typeof(LevelUpSignal))] ile otomatik keşif
+```
+> **Kritik fark:** Zenject signal handler'ları metot aboneliğiydi; Nexus'ta `SignalBus.Subscribe<T>(handler)` gözlem için vardır, ama durumu değiştiren handler = `ICommand<T>` sınıfı. Mevcut metot tabanlı mantığınız için bir `ActionCommand<T>` adapter'ı yazabilirsiniz (metodu saran `ICommand<T>`), ama komut sınıflarına geçiş zamanla temizlenir.
+
+### Adım 5 — Reactive model'leri çevir
+```csharp
+// UniRx + Zenject: private readonly ReactiveProperty<int> _hp = new(100);
+// Nexus:
+public ObservableProperty<int> Health { get; } = new(100);
+// View aboneliği: Health.OnChanged(OnHealthChanged); // OnUnbind'da RemoveOnChanged
+```
+> **Hijyen kuralı (sihirbazın mediator şablonunda `WizardTemplateSyncTests` ile kilitli):** abonelikler isimli handler + `RemoveOnChanged` ile kaldırılır; `ClearOnChanged` başka aboneleri siler, anonim lambda kaldırılamaz.
+
+### Adım 6 — Servisleri taşı
+`INexusService` implementasyonu + `builder.BindService<TInterface, TImpl>()`. `InitializeAsync(ct)` iptal belirteci alır — teardown'da hang yok. Zenject'in `IInitializable` senkron başlatması yerine tercih edilen yoldur.
+
+### Adım 7 — View/Mediator'ları taşı
+`View` + `Mediator` tabanı: view MonoBehaviour'unuzu `View`'dan türetin ve `[Mediator(typeof(TMediator))]` ile işaretleyin; mediator'ü `Mediator<TView>`'dan türetin (`ViewBinder` Context'e aittir ve view'ı kendisi bağlar). `OnBind`/`OnUnbind` çifti, Zenject'te elle yapılan subscribe/unsubscribe akışının Nexus karşılığıdır — `OnUnbind`'da **kendi** aboneliğinizi kaldırın.
+
+### Adım 8 — Teardown'u doğrula
+Zenject'te `Dispose` senkron çağrılırdı; Nexus `OnDispose` üzerinden non-blocking teardown yapar. `async void` kullanmayın; teardown içinde `.Wait()/.Result` çağırmayın (sync-over-async deadlock).
+
+---
+
+## 3. Geçiş Doğrulama Listesi
+
+- [ ] Her Zenject binding'inin Nexus karşılığı var (sayı eşitliği)
+- [ ] Constructor injection eşlemesi doğrulandı (`[Inject]`/`[Construct]` işaretli veya tek-ctor) — ctor'ları gereksiz yere field'a taşımayın
+- [ ] Durumu değiştiren tüm signal handler'lar `ICommand<T>` (veya adapter); her `Subscribe` aboneliği dispose ediliyor — abonelik sızıntısı yok
+- [ ] Tüm `OnChanged` abonelikleri `RemoveOnChanged` ile kaldırılıyor
+- [ ] `async void` yok; teardown'da sync-over-async yok
+- [ ] `Window > Nexus > Code Health Analyzer` temiz (0 sorun); CI'da aynı analiz `-executeMethod Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless` ile koşar
+- [ ] `BuildValidation.RunSilent()` geçiyor
+- [ ] EditMode test suite'i geçiyor (Nexus'un kendi sayıları: repo'nun `docs/RELEASE_GATES.md` dosyası)
+
+---
+
+## 4. Geçişte En Çok Yapılan 3 Hata
+
+1. **`BindInterfacesAndSelfTo`'yu çoğaltmak** → aynı tipi birden çok singleton sanmak; Nexus'ta tek çağrı yeter, parite garantili.
+2. **`ClearOnChanged` kullanmak** → başka view'ların aboneliğini siler; her zaman `RemoveOnChanged(handler)`.
+3. **Sinyalleri class yapmak** → Nexus `where T : struct` zorunlu kılar; struct'a çevirin (değer tipi = sıfır GC + kutu yok).
+
+---
+
+## 5. Otomatik Geçiş Aracı (ileri adım)
+
+Mevcut durumda resmî bir otomatik dönüştürücü yok; ancak `NexusArchitectureAnalyzer`'ın headless modu geçiş sonrası mimari kapı olarak CI'a eklenebilir. Zenject → Nexus binding sözdizimi farkı yüksek oranda mekanik olduğundan (tablo 1), büyük projelerde regex-tabanlı bir dönüştürücü betiği (her `Container.Bind<X>().To<Y>().AsSingle()` → `BindFluent<X>().To<Y>().AsSingle()`) zaman kazandırır; adım adım taşıyıp her aşamada test koşmak daha güvenlidir.

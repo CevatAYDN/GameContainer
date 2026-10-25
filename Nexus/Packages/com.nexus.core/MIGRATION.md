@@ -5,6 +5,7 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 ## Table of Contents
 
 - [Version 0.4.0 → 0.5.0](#version-040--050)
+  - [Scene integration and large currency update](#scene-integration-and-large-currency-update)
 - [Version 0.3.2 → 0.4.0](#version-032--040)
 - [Version 0.3.0 → 0.3.1](#version-030--031)
 - [Version 0.2.0 → 0.3.0](#version-020--030)
@@ -45,7 +46,7 @@ await _ui.OpenScreenAsync<ShopScreen>(args, UILayer.Screen, pooled: true);
 3. Register screen prefabs via `RegisterScreenPrefab<TScreen>(prefab)` or your `IUIAssetProvider`.
 4. Replace close calls with `CloseScreen<TScreen>()` / `CloseTopScreenAsync()` / `CloseAllAsync()`.
 
-> Architecture note: this migration is recorded in [ADR-0001](../../../docs/adr/0001-ui-stack-in-game-ugui-editor-ui-toolkit.md) (addenda: WindowManager removal, UIManager canonical, Demo removal). The benchmark's WindowManager W1–W7 proof was migrated to UIManager U1–U7.
+> Architecture note: this migration is recorded in ADR-0001, `docs/adr/0001-ui-stack-in-game-ugui-editor-ui-toolkit.md` in the repository (addenda: WindowManager removal, UIManager canonical, Demo removal). The benchmark's WindowManager W1–W7 proof was migrated to UIManager U1–U7.
 
 #### 2. Demo Scaffolding Removed — Game/Samples Is Canonical
 
@@ -56,9 +57,9 @@ await _ui.OpenScreenAsync<ShopScreen>(args, UILayer.Screen, pooled: true);
 2. Refresh your example from the wizard (`NexusSetupWizard`) — its templates are kept in sync with `Game/Samples`.
 3. `DemoCompatibilitySuite` was removed from the benchmark together with the demo.
 
-#### 3. NEXUS004 Analyzer Rule Retired
+#### 3. NEXUS004 Now Names a Different Rule
 
-The `NEXUS004` rule (which flagged new `WindowManager` references to drive the migration) was removed together with `WindowManager`. The Code Health Analyzer now enforces NEXUS001 (hot-path allocations), NEXUS002 (async void), NEXUS003 (sync blocking); a `RunHeadless` batch-mode gate runs in CI.
+The `NEXUS004` rule that flagged new `WindowManager` references to drive the migration was retired together with `WindowManager`; the id now names the leftover-debug-trace rule (a `Debug.Log` carrying a `[SLOCK]` or `[*-TRACE]` marker in runtime code). The Code Health Analyzer enforces NEXUS001 (hot-path allocations), NEXUS002 (async void), NEXUS003 (sync blocking) and NEXUS004 (leftover debug trace). `NexusArchitectureAnalyzer.RunHeadless` is the batch-mode gate (exit 0 clean, 1 on any issue); the repository's `.github/workflows/nexus-ci.yml` runs it only on manual dispatch.
 
 #### 4. `NexusDI.ClearCaches()` Keeps Generated Registrations
 
@@ -77,6 +78,33 @@ NexusDI.ClearGeneratedRegistrations(); // tests and benchmarks only; a game neve
 #### 5. `IAdService` and `IIapService` Gained Members
 
 Custom implementations of the two service interfaces must add: `IAdService.RequestReward(string, Action<AdOutcome>)`, `ReadyChanged`, `PrivacyOptionsRequired`, `ShowPrivacyOptions(Action)`; `IIapService.Purchase(string, Action<PurchaseOutcome>)`, `GetLocalizedPrice(string)`, `IsStoreAvailable`, `StoreChanged`. Adapters (`IAdNetworkAdapter`, `IIapStoreAdapter`) are unchanged; the capability interfaces `IAdOutcomeAdapter`, `IAdReadinessAdapter`, `IAdConsentAdapter`, `IIapOutcomeAdapter` and `IIapStoreInfoAdapter` are optional (`docs/ADAPTERS.md`).
+
+### Scene integration and large currency update
+
+- NexusBehaviour hooks wait for the owning context: OnNexusAwake after successful
+  binding configuration, OnNexusStart after Unity Start plus async context startup.
+  Keep configuration hooks short; frame Update code must wait for your Start hook
+  when it needs initialized services. Context replacement cleans automatic injected
+  fields/properties and tracked subscriptions. Set Context=null to return to automatic
+  selection; multiple independent pure scopes require explicit Context assignment.
+- NexusBinding waits for configured bindings and chooses the nearest Root even when
+  that Root is still pending; it does not consume another scope's registration event.
+- Configure Root components on inactive GameObjects before activation. Keep one global
+  root in the bootstrap scene. Duplicate global registrations now fail explicitly;
+  failed startup releases global/sibling ownership so a replacement can start.
+- Input System is a declared UPM dependency. Choose New or Both Active Input Handling
+  for built-in device input. A custom provider's zero movement no longer falls through
+  to joystick/keyboard input. Disabled legacy backends are not probed every frame;
+  unavailable named legacy actions are cached after their first failure.
+- BigDouble API promotes a currency's live long balance to one canonical approximate
+  ledger; retained long observables project it (truncate/saturate). Existing network
+  validators must implement INetworkBigEconomyValidator for Big transactions. Existing
+  storage adapters implementing string methods get default numeric round-trip support;
+  concrete numeric codecs retain the mantissa;exponent format using invariant R output.
+- DOTS producer jobs use AsParallelWriter and immediately AddProducerDependency(handle)
+  on the main thread. The bridge completes registered jobs before drain/reinitialize/
+  destroy. Direct bridge Enqueue is a main-thread operation; NativeSignalQueue itself
+  requires explicit producer completion by its owner.
 
 ---
 
@@ -337,7 +365,7 @@ New editor tools available:
 - Network Signal Tracer
 - Game Manager Inspector
 
-Access via `Window > Nexus > [Plugin Name]`
+They are tabs of the Dashboard: **Window > Nexus > Dashboard** (`Ctrl+Shift+N`).
 
 ### Deprecated Features
 
@@ -362,8 +390,8 @@ signalBus.Fire(new MySignal());
 // Must use FireAsync() for signals with async handlers
 await signalBus.FireAsync(new MySignal());
 
-// Or fire and forget
-await signalBus.FireAsyncAndForget(new MySignal());
+// Or fire and forget (returns void)
+signalBus.FireAsyncAndForget(new MySignal());
 ```
 
 **Migration Steps:**
@@ -413,26 +441,27 @@ public class MyAsyncCommand : IAsyncCommand<MySignal>
 signalBus.FireAsyncAndForget(new MySignal());
 ```
 
-**After:**
+**After (current API):**
 ```csharp
-// Returns ValueTask (still fire-and-forget behavior)
-await signalBus.FireAsyncAndForget(new MySignal());
+// Returns void and does not wait; a failure goes to onError,
+// or to SignalBus.OnUnhandledException when onError is null
+signalBus.FireAsyncAndForget(new MySignal(), onError: ex => Debug.LogException(ex));
 ```
 
 **Migration Steps:**
-1. Add `await` to existing `FireAsyncAndForget()` calls
-2. Behavior remains the same (fire-and-forget)
-3. Better exception observability with new signature
+1. Call `FireAsyncAndForget()` without `await`: it returns `void` and does not wait for the handlers
+2. Pass `onError`, or subscribe to `SignalBus.OnUnhandledException`, to observe failures
+3. Use `await FireAsync()` when the caller must wait for completion
 
 ### New Features
 
 #### 1. AOT Code Generation
 
-Enable automatic binder generation:
+Enable automatic binder generation with the menu item **Nexus > Auto-Generate AOT on Script Reload**
+(a toggle, off by default, stored per machine in `EditorPrefs`), or from editor code:
 
 ```csharp
-// In Editor
-Menu.SetChecked("Nexus/Auto-Generate AOT on Script Reload", true);
+NexusCodeGenerator.AutoGenerateEnabled = true;
 ```
 
 Generated files:
@@ -484,8 +513,8 @@ For major version jumps:
 After upgrading:
 1. Open `Nexus > Generate AOT Binder`
 2. Review generated files
-3. Commit generated files to version control
-4. Update `.gitignore` if needed
+3. The generator writes a `.gitignore` beside `NexusGeneratedBinder.g.cs` and `link.xml` that ignores both; a player build regenerates them in its pre-build step (unless `NEXUS_DISABLE_AUTOGEN=1`)
+4. To track them in version control instead, add them once with `git add -f` (the generator re-adds the `.gitignore` entries on every run, and an ignore entry does not affect a file that is already tracked)
 
 ### 4. Run Tests
 
@@ -527,36 +556,5 @@ If you encounter issues during migration:
 
 1. **Check the Troubleshooting Guide** - [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 2. **Review GitHub Issues** - [GitHub Issues](https://github.com/CevatAYDN/GameContainer/issues)
-3. **Ask in Discussions** - [GitHub Discussions](https://github.com/CevatAYDN/GameContainer/discussions)
+3. **Open an Issue** - [New issue](https://github.com/CevatAYDN/GameContainer/issues/new/choose) (the repository has no Discussions)
 4. **Check Sample Projects** - [Samples~/Counter](Samples~/Counter/README.md)
-
----
-
-**Nexus Core Version:** 0.4.0
-
-## Current scene integration and large currency update (unreleased)
-
-- NexusBehaviour hooks wait for the owning context: OnNexusAwake after successful
-  binding configuration, OnNexusStart after Unity Start plus async context startup.
-  Keep configuration hooks short; frame Update code must wait for your Start hook
-  when it needs initialized services. Context replacement cleans automatic injected
-  fields/properties and tracked subscriptions. Set Context=null to return to automatic
-  selection; multiple independent pure scopes require explicit Context assignment.
-- NexusBinding waits for configured bindings and chooses the nearest Root even when
-  that Root is still pending; it does not consume another scope's registration event.
-- Configure Root components on inactive GameObjects before activation. Keep one global
-  root in the bootstrap scene. Duplicate global registrations now fail explicitly;
-  failed startup releases global/sibling ownership so a replacement can start.
-- Input System is a declared UPM dependency. Choose New or Both Active Input Handling
-  for built-in device input. A custom provider's zero movement no longer falls through
-  to joystick/keyboard input. Disabled legacy backends are not probed every frame;
-  unavailable named legacy actions are cached after their first failure.
-- BigDouble API promotes a currency's live long balance to one canonical approximate
-  ledger; retained long observables project it (truncate/saturate). Existing network
-  validators must implement INetworkBigEconomyValidator for Big transactions. Existing
-  storage adapters implementing string methods get default numeric round-trip support;
-  concrete numeric codecs retain the mantissa;exponent format using invariant R output.
-- DOTS producer jobs use AsParallelWriter and immediately AddProducerDependency(handle)
-  on the main thread. The bridge completes registered jobs before drain/reinitialize/
-  destroy. Direct bridge Enqueue is a main-thread operation; NativeSignalQueue itself
-  requires explicit producer completion by its owner.

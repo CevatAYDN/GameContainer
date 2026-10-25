@@ -50,10 +50,12 @@ The trace sink is attached in `OnStartAsync` via `NexusTrace.AddSink(...)`.
 2. Create a Canvas with a **Button** (assign to `incrementButton`) and a **Text**
    element (assign to `countText`).
 3. Add the `CounterView` component to your canvas or UI hierarchy.
-4. Create a new empty GameObject named `CounterRoot` and add the `Root` component
-   to it.
-5. In the `Root` component, set up your Context configurations (or use the
-   **Root Wizard** under `Window/Nexus/Root Wizard`).
+4. Create a scene root with **GameObject → Nexus → Scene Root** (or add the `Root`
+   component to an empty GameObject).
+5. Create a Context Data asset (**Create → Nexus → Context Data**), set its
+   **Scope Tag** to `Counter` and assign it to the `Root`. With **Enable Auto
+   Discovery** on (the default), the context finds `CounterLifecycle` by its
+   `{ScopeTag}Lifecycle` name.
 6. Enter **Play Mode** and click the button. Watch the Console: you will see the
    Sequential increment, the Concurrent load, the Exclusive persist, the Async
    load, the Composite fan-in trigger, telemetry, and the `[Trace]` causal events

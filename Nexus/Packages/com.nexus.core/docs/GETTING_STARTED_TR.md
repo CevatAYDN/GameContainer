@@ -1,62 +1,135 @@
-> **Kimin için:** seviye 2, mevcut bir oyuna Nexus ekleyen geliştirici. Üç yol: tek bileşen (code-first), sahne kökü veya örnek. Zenject'ten geliyorsanız bundan sonra `ZENJECT_MIGRATION.md`.
+> **Kimin için:** seviye 2, var olan bir oyuna Nexus ekleyen geliştirici. Üç yol: tek bileşen (code-first), sahne kökü veya örnek. Zenject'ten geliyorsanız bundan sonra `ZENJECT_MIGRATION_TR.md`'yi okuyun.
 
-# Unity 6 oyununa Nexus ekleme
+# Var olan bir Unity 6 projesine Nexus ekleme
 
-Nexus, mobil ve PC oyunları için UPM paketidir. Depodaki demo Unity projesini
-oyununuza kopyalamanız gerekmez.
+Nexus bir UPM paketidir; deponun demo projesi gerekmez. Bir yol seçin.
 
 ## Kurulum
 
-Unity'de **Window → Package Manager → + → Install package from git URL** seçin:
+**Window → Package Manager → + → Install package from git URL** içinde şunu kullanın:
 
 ```text
 https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core
 ```
 
-Yerel geliştirmede **Install package from disk** ile `Packages/com.nexus.core/package.json`
-dosyasını seçebilirsiniz. Üretim projesinde URL sonuna `#<commit-veya-etiket>` ekleyerek
-test ettiğiniz sürümü sabitleyin. Paketin kod-only kurulumu için .NET 10 kurulması gerekmez;
-bu çalışma .NET 10'u bağımsız host doğrulaması için kullanır.
+Yerel bir checkout için **Install package from disk** ile
+`Nexus/Packages/com.nexus.core/package.json` dosyasını seçin. Üretimde git bağımlılığını sabitlerken test edilmiş
+bir sürüm etiketi veya commit (`#<revision>`) kullanın. Unity, paketin uGUI, profiling ve Input System bağımlılıklarını çözer.
+Yerleşik klavye/gamepad desteği için Player Settings → Active Input Handling ayarını
+Input System Package (New) veya Both yapın. Özel bir IInputProvider replay, UI
+veya sanal kontroller sağlayabilir; onun nötr girişi belirleyicidir.
+Bu paket Unity 6'yı hedefler; bu rehber eski Unity sürümleri için söz vermez.
 
-## En kısa çalışan örnek
+## Yeni başlayan: örneği çalıştırın
 
-1. Package Manager'da Nexus'u seçin.
-2. Samples bölümünden **Code-first Startup** örneğini içe aktarın.
-3. Sahnenizde boş GameObject oluşturup `ScoreBootstrap` component'ini ekleyin.
-4. Play'e basın. Console'da `Nexus score: 1` beklenir.
+Package Manager'da Nexus'u seçin, **Samples** bölümünü açın ve **Counter Example**'ı içe aktarın.
+Örneğin README'sini izleyin. Örnek, MVCS turunun tamamını içerir; deponun `Assets` klasöründeki hiçbir
+dosya ön koşul değildir. Üretilmiş bir sahne için Nexus Dashboard'daki Setup Wizard'ı (Kurulum Sihirbazı)
+açın. Mevcut başlangıç dosyalarını, ayarları ve sahneleri korur; yeni sahneyi mevcutların yanına ekleyerek oluşturur.
 
-Tek dosya model, sinyal, command, kurulum, iptal ve kapanışı gösterir. Kendi oyununuz
-için bu tipleri değiştirin. Bindings `ContextFactory.StartAsync` callback'inde tanımlanır;
-doğrulama ve model/service initialization tamamlanmadan context döndürülmez. Sahibi
-context'i field'da tutar ve `OnDestroy` içinde kapatır. Başlangıcı Unity ana thread'inde
-çalıştırın. Asenkron kapanışı önceden bekleyebildiğiniz akışta `await context.DisposeAsync()`
-kullanın; Unity, `OnDestroy` mesajındaki asenkron işlemleri beklemez.
+## Code-first: tek başlatma çağrısı
 
-Tam script ve gelişmiş örnekler: [GETTING_STARTED.md](GETTING_STARTED.md).
+Package Manager'dan **Code-first Startup**'ı içe aktarın, `ScoreBootstrap`'ı boş bir
+GameObject'e ekleyin ve Play Mode'a girin. Script'in tamamı budur; Unity'nin bileşeni
+ekleyebilmesi için dosya adını `ScoreBootstrap.cs` olarak koruyun.
 
-## Sahne, UI ve gelişmiş mimari
+```csharp
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Nexus.Core;
+using UnityEngine;
 
-Root + ContextData + IContextLifecycle yoluyla sahne sahipliği, parent/child context,
-discovery ve mediator binding kullanabilirsiniz. [MVCS hızlı başlangıç](10_MIN_QUICKSTART_TR.md)
-bu akışı açıklar. Dashboard'daki Setup Wizard mevcut örnek klasörünü, ayarları ve sahneyi
-silmez; çakışan çıktı varsa oluşturmayı durdurur. Yeni starter sahnesini mevcut sahneleri
-kapatmadan ekler. Kendi projenize gerçek backend, reklam ve satın alma adapter'larınızı bağlayın.
+namespace Nexus.Samples.CodeFirst
+{
+    public readonly struct ScoreAdded
+    {
+        public readonly int Amount;
+        public ScoreAdded(int amount) => Amount = amount;
+    }
 
-## Performans
+    public sealed class ScoreModel : IReactiveModel
+    {
+        public ObservableProperty<int> Score { get; } = new(0);
+        public ValueTask OnBind(CancellationToken ct) => default;
+    }
 
-İki sinyali birleştiren sıcak senkron akışlarda `ICompositeCommand<TFirst,TSecond>` ve
-`BindComposite<TFirst,TSecond,TCommand>()` kullanın. Bu yol struct değerleri boxing
-yapmadan geçirir; warmup sonrasında host ölçümünde completion başına 0 B bulundu.
-Arbitrary-arity/async `CompositeContext` saklanabilir immutable snapshot üretir ve tahsis yapar.
-Startup, async işlemler, interceptor/decorator ve debug tracing maliyetlerini ayrı ölçün.
+    public sealed class AddScore : ICommand<ScoreAdded>
+    {
+        private readonly ScoreModel _model;
+        public AddScore(ScoreModel model) => _model = model;
+        public void Execute(ScoreAdded signal) => _model.Score.Value += signal.Amount;
+    }
 
-Network input'larını sahibi olan thread'de drain edin; pending input varken tick ilerletme,
-top-level owner fire veya rollback açık hata verir. Rollback modelleri için senkron handler
-kullanın. [Ölçümler ve doğrulama sınırları](HARDENING.md), Unity/IL2CPP cihaz kanıtından ayrıdır.
+    /// <summary>Attach to an empty GameObject. No Root, scene asset or assembly scanning needed.</summary>
+    public sealed class ScoreBootstrap : MonoBehaviour
+    {
+        private readonly CancellationTokenSource _startup = new();
+        private Context _context;
 
-## Giriş sistemi ve entegrasyon yolları
+        private async void Start()
+        {
+            try
+            {
+                _context = await ContextFactory.StartAsync("Gameplay", builder =>
+                {
+                    builder.BindReactiveModel<ScoreModel>();
+                    builder.BindSignal<ScoreAdded>().To<AddScore>();
+                }, ct: _startup.Token);
+                _context.Prewarm<ScoreAdded>(4);
+                _context.SignalBus.Fire(new ScoreAdded(1));
+                Debug.Log($"Nexus score: {_context.Resolve<ScoreModel>().Score.Value}");
+            }
+            catch (OperationCanceledException) { } // Owner destroyed during startup.
+            catch (Exception error) { Debug.LogException(error); }
+        }
 
-UPM, uGUI/profiling ve Input System bağımlılıklarını otomatik getirir. Yerleşik
-klavye/gamepad için Player Settings → Active Input Handling ayarını New veya Both
-seçin. Özel IInputProvider hareketin tek kaynağıdır; sıfır giriş başka kaynağa düşmez.
-[Başlangıç / mevcut oyun / takım entegrasyonu](INTEGRATION_PATHS_TR.md).
+        private void OnDestroy()
+        {
+            try { _startup.Cancel(); }
+            finally
+            {
+                try { _context?.Dispose(); }
+                finally { _startup.Dispose(); }
+            }
+        }
+    }
+}
+
+```
+
+`StartAsync` yapılandırmayı doğrulamadan önce çalıştırır ve dönmeden önce model, servis ve
+lifecycle başlatmasını tamamlar. Başlatma başarısız olursa temizlik yapılır; iptal `ct:` üzerinden
+kabul edilir. Unity işleri Unity ana thread'inde başlamalıdır. Context'i sahibi olan bir field'da
+tutun ve o sahip sona erdiğinde context'i dispose edin.
+
+## Sahne öncelikli ve gelişmiş projeler
+
+Sahne sahipliği, parent/child context'ler, auto-discovery, mediator'lar ve editör yapılandırması için
+bir Root + ContextData asset'i ve bir IContextLifecycle kullanın. [English quickstart](10_MIN_QUICKSTART.md)
+veya [Türkçe hızlı başlangıç](10_MIN_QUICKSTART_TR.md) rehberini izleyin. Yapılandırmayı ilgisiz
+MonoBehaviour update'lerinde binding yapmak yerine lifecycle'da tutun. Oyun ihtiyaç duyduğunda gerçek
+analytics/reklam/IAP/backend adaptörlerini bağlayın; stub servisler entegrasyon noktalarıdır.
+
+## Performansa duyarlı composite'ler
+
+```csharp
+public readonly struct MapReady { }
+public readonly struct PlayerReady { }
+public sealed class BeginPlay : ICompositeCommand<MapReady, PlayerReady>
+{
+    public void Execute(MapReady map, PlayerReady player) { /* start gameplay */ }
+}
+
+var registration = context.SignalBus.BindComposite<MapReady, PlayerReady, BeginPlay>();
+context.SignalBus.Fire(new MapReady());
+context.SignalBus.Fire(new PlayerReady());
+// Dispose registration to stop it, or let the owning context dispose its subscriptions.
+```
+
+İki farklı sinyal tipinin ikisi de gelmelidir. Tekrarlanan değerler o tipin bekleyen değerinin yerini alır;
+tamamlanan çiftler sıfırlanır ve `oneShot: true` ilk başarılı tamamlanmadan sonra durur. Başarısız bir çift, one-shot hakkını sonraki bir çift için serbest bırakır. Bu senkron yol
+tipli değerler ve havuzlanmış komutlar kullanır; teslim sırasını kayıt sırası belirler. Değişmez (immutable)
+saklanan snapshot'lar gerektiğinde, keyfi sayıda sinyalli veya async composite'ler için eski CompositeContext'i
+kullanın. Debug tracing/decorator'ların kendi maliyeti vardır. Bir frame bütçesi belirlemeden önce hedef
+cihazda doğrulayın; host'taki 0-GC sonuçları IL2CPP ölçümü değildir.

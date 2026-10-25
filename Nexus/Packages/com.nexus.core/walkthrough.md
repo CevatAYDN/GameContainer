@@ -26,13 +26,16 @@ configuration precedes validation and model/service initialization. Dispose the 
 when its owner ends. Do not add bindings after startup and call initialization a second time.
 
 
-1. Add the package to your Unity 6 project via **Package Manager → Add from disk**
-   (or a git dependency), or open the bundled starter scene
-   `Assets/Scenes/NexusStarter.unity`.
-2. The `Nexus` folder ships with `NexusEditorSettings.asset`,
-   `GameContextData.asset` and a demo `Lifecycle` for reference.
-3. Open **Tools → Nexus** (Dashboard). If the Dashboard shows no assemblies,
-   check the [TROUBLESHOOTING.md](TROUBLESHOOTING.md) "AOT / assembly scan" section.
+1. Add the package to your Unity 6 project via **Package Manager → + → Install package from
+   git URL…** pinned to a commit ([README.md](README.md#install)), or **Install package from disk…**
+   for a local clone. The package ships no scene: `Assets/Scenes/NexusStarter.unity` exists only in
+   this repository's development project (`Nexus/`).
+2. `NexusEditorSettings.asset` and `GameContextData.asset` are development-project files too, not
+   package content; in your project **Nexus → Editor Settings** creates
+   `Assets/NexusEditorSettings.asset` on first use. The demo was removed in 0.5.0; the Setup
+   Wizard generates the example project.
+3. Open **Window → Nexus → Dashboard** (`Ctrl+Shift+N`). If code generation or the assembly scan
+   misbehaves, see [AOT Code Generation Errors](TROUBLESHOOTING.md#aot-code-generation-errors).
 
 ## 2. Your first context
 
@@ -94,14 +97,16 @@ pools mediators and clears injected references on return.
 
 ## 6. Storage and anti-cheat
 
-- `GameSaveManager` writes model snapshots atomically (`File.Replace` /
-  overwrite-rename) — never delete-then-move.
+- `GameSaveManager` writes model snapshots to a temporary file and swaps it in with
+  `File.Replace`; where the platform does not support `File.Replace` it logs a warning and
+  falls back to a non-atomic delete-then-move.
 - `EncryptedStorageService` provides AES-256 + HMAC-SHA256 integrity and device-bound
   keys. It uses atomic replacement where available and a recoverable backup elsewhere.
   Tampered payloads are rejected on read; device power-loss guarantees require testing.
 - `OfflineTimeCalculator` validates offline reward time against **both** the wall
-  clock and hardware monotonic ticks (`Environment.TickCount64`), so a device
-  clock set backwards **or forwards** cannot inflate rewards.
+  clock and a monotonic clock (`Stopwatch.GetTimestamp`), so within one boot session a
+  device clock set backwards **or forwards** cannot inflate rewards; across a reboot the
+  monotonic clock restarts and only the wall-clock check and the `maxOfflineSeconds` cap apply.
 
 ## 7. Threading rules
 
@@ -116,23 +121,27 @@ pools mediators and clears injected references on return.
 
 ## 8. Reentrancy and recovery
 
-- The signal bus aborts runaway chains with `NexusReentrancyException` at depth
-  **10 in every build** (Debug AND Release) — silent returns are not allowed.
+- The signal bus aborts runaway chains with `NexusReentrancyException` in every build
+  (Debug AND Release) beyond **10** nested synchronous or **32** nested async dispatches; the
+  two counters are separate, so a sync handler that fires async starts a fresh async budget.
+  Silent returns are not allowed.
 - `RecoveryEngine` triages command failures (skip/abort/fallback/retry) through a
   single `BuildPlan` decision tree; a custom `IRecoveryStrategy` can override it.
 
 ## 9. Validating your project
 
-Native Unity integration evidence and calibrated allocation measurement are recorded in
-[HARDENING.md](docs/HARDENING.md). Debug tracing uses a monotonic Nexus clock; compare trace
+The repository's `docs/RELEASE_GATES.md` records the latest Unity, device and allocation evidence.
+Debug tracing uses a monotonic Nexus clock; compare trace
 timestamps with `NexusTrace.TimestampNow`, not Unity startup time. Zero-GC assertions require
 tracing disabled and a working positive-control allocation recorder.
 
-- Run the standalone harness: `dotnet run --project tools/nexus-benchmark`
-  (207+ regression tests covering registry parity, zero-GC hot paths, recovery,
-  threading, and storage integrity).
-- In Unity, run the **EditMode tests** (Package Tests → `Nexus.Tests.Editor` /
-  `Nexus.Core.Tests`) and call `BuildValidation.RunSilent()`.
+- In a clone of this repository, run the host harness: `dotnet run --project tools/nexus-benchmark`
+  (registry parity, zero-GC hot paths, recovery, threading and storage integrity). The gates
+  and their latest measured numbers are in the repository's `docs/RELEASE_GATES.md`.
+- In Unity, run the package tests in the Test Runner: EditMode `com.nexus.core.editor.tests`
+  and PlayMode `com.nexus.core.tests` (a project that consumes the package lists
+  `com.nexus.core` under `testables` in `Packages/manifest.json` to see them), and call
+  `BuildValidation.RunSilent()`.
 - The Dashboard surfaces DI validation warnings, including
   **`[CaptiveDependency]`** (a singleton capturing a transient) and
   **`[ConstructorExplosion]`** (>6 ctor parameters).

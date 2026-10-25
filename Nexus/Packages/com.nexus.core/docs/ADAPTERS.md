@@ -20,34 +20,42 @@ unknown name, and `null` with an error when the creator throws.
 Bind the services and factories in `OnConfigure`, then select the adapter once the context is
 built. `AdService.SetNetworkAdapter` calls the adapter's `Initialize` itself (outside the service
 lock, because SDKs may call back synchronously); `IapService.SetStoreAdapter` does the same with
-the registered product catalog.
+the registered product catalog. The lifecycle below is a component on the Root's GameObject:
+`Root` registers every `IContextLifecycle` component there and exposes the context it built as
+`Root.Context`.
 
 ```csharp
+using System.Threading;
+using System.Threading.Tasks;
 using Nexus.Core;
 using Nexus.Core.Services;
+using UnityEngine;
 
-public sealed class MonetizationLifecycle : IContextLifecycle
+[RequireComponent(typeof(Root))]
+public sealed class MonetizationLifecycle : MonoBehaviour, IContextLifecycle
 {
     public void OnConfigure(IContextBuilder builder)
     {
         builder.BindService<IAdService, AdService>();
         builder.BindService<IIapService, IapService>();
-        builder.BindInstance(new AdAdapterFactory());
-        builder.BindInstance(new IapAdapterFactory());
+        // Bind under the interface: BindInstance(new AdAdapterFactory()) would register the concrete type only.
+        builder.BindInstance<IAdAdapterFactory>(new AdAdapterFactory());
+        builder.BindInstance<IIapAdapterFactory>(new IapAdapterFactory());
     }
 
     public ValueTask OnInitializeAsync(CancellationToken ct) => default;
 
     public ValueTask OnStartAsync(CancellationToken ct)
     {
-        // Resolve through the context given to the lifecycle; never FindObjectOfType or async void.
-        var ads = _context.Resolve<IAdAdapterFactory>();
+        // Resolve through the context Root built; never FindObjectOfType or async void.
+        var context = GetComponent<Root>().Context;
+        var ads = context.Resolve<IAdAdapterFactory>();
         ads.RegisterProvider("admob", () => new AdMobAdapter());          // your class, see below
-        _context.Resolve<IAdService>().SetNetworkAdapter(ads.CreateAdapter(AdProviderName));
+        context.Resolve<IAdService>().SetNetworkAdapter(ads.CreateAdapter(AdProviderName));
 
-        var store = _context.Resolve<IIapAdapterFactory>();
+        var store = context.Resolve<IIapAdapterFactory>();
         store.RegisterProvider("unityiap", () => new UnityIapAdapter());
-        var iap = _context.Resolve<IIapService>();
+        var iap = context.Resolve<IIapService>();
         iap.RegisterProducts(new ProductDefinition { Id = "remove_ads", Type = ProductType.NonConsumable });
         iap.SetStoreAdapter(store.CreateAdapter(StoreProviderName));
         return default;
@@ -61,7 +69,6 @@ public sealed class MonetizationLifecycle : IContextLifecycle
 #else
     private const string AdProviderName = "admob", StoreProviderName = "unityiap";
 #endif
-    private readonly IContext _context; // supplied by your lifecycle host (Root passes it in)
 }
 ```
 
@@ -141,7 +148,7 @@ builds too. `LoggerService` drops `Log` and `LogWarning` there; errors and excep
 ## Writing an adapter
 
 An adapter translates the SDK's callbacks into the contract. Keep SDK types inside the adapter so
-the game code and tests depend only on `IAdService` / `IIapService`. Two rules the services rely on:
+the game code and tests depend only on `IAdService` / `IIapService`. Three rules the services rely on:
 
 - `IAdNetworkAdapter.Initialize` must call `onInitialized` exactly once when ads can be requested;
   until then `AdService` reports nothing available.

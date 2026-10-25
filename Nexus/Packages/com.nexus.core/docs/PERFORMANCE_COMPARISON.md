@@ -72,7 +72,8 @@ and `generated-android-002/unity-results.json` (generated).
 | Generated: register/build/first resolve (warm metadata), ns/op | **5526.60** | 17178.80 | 28006.20 | 6171.90 |
 
 Before the DI optimisation of 15 October the same player measured Nexus at 1115.55 ns
-(transient) and 13353.40 ns (register/build/first resolve); Reflex led both by about 2×.
+(transient) and 13353.40 ns (register/build/first resolve) in run
+`comparison-20261015/reflex-mono-001/unity-results.json`; Reflex led both by about 2×.
 In a Mono player Nexus already constructs through compiled constructor delegates, so its
 generated factories change little there; VContainer's generated injectors do.
 
@@ -80,7 +81,7 @@ generated factories change little there; VContainer's generated injectors do.
 
 `run-unity.ps1 -Android` builds the same benchmark as a non-development Android IL2CPP
 player (`player-android/Comparison.apk`, 26 MB) and runs it on the connected device through
-adb. Device: Xiaomi 2311DRK48G (MediaTek MT6897), Android 16, arm64-v8a; the phone owner
+adb. Device: Xiaomi 2311DRK48G, Android 16, arm64-v8a; the phone owner
 accepted the USB install. Allocation bytes are unavailable in the player (`-1`). Runs
 `after-reset-android-006/android-results.json` (reflection) and
 `generated-android-002/android-results.json` (generated), each with `android-device.json`
@@ -119,9 +120,10 @@ After the issue #23 DI fixes (M1: a singleton built while its container is dispo
 disposed; M8: constructor arguments of one type fill their parameters in order; both
 Unreleased), two reflection runs on `b423ac4`, `audit23-android-007` and `audit23-android-008`,
 measured Nexus at 31.1 / 29.8 ns cached, 5376 / 5200 ns transient and 29521 / 29047 ns startup.
-Every value lies within the two runs before the change (`rc-050`, `after-reset-android-006`:
-27.8–37.1 ns, 4890–5512 ns, 12872–29180 ns): no regression shows on this device. In those two
-runs Reflex's startup was 13% and 10% faster than Nexus's (in `rc-050` Nexus was 11% faster),
+The two runs before the change (`rc-050`, `after-reset-android-006`) span 27.8–37.1 ns,
+4890–5512 ns and 12872–29180 ns. Every new value lies within that span except
+`audit23-android-007`'s startup, 0.3 µs (1.2%) above its maximum and far less than the drift
+between launches: no regression shows on this device. In the two `audit23` runs Reflex's startup was 13% and 10% faster than Nexus's (in `rc-050` Nexus was 11% faster),
 the launch-to-launch drift described above.
 
 ## Reading

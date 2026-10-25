@@ -9,7 +9,7 @@
 
 ## ✅ Başlamadan Önce
 
-- Unity **6000.0+** (Unity 6)
+- Unity **6000.5+** (Unity 6)
 - Yeni veya mevcut bir Unity projesi (herhangi bir şablon)
 - Temel C# ve Unity Editor bilgisi
 
@@ -32,7 +32,7 @@
 
 ### 2a. ContextData asset'i oluşturun
 
-1. Project penceresinde sağ tıklayın → **Create > Nexus > ContextData**
+1. Project penceresinde sağ tıklayın → **Create > Nexus > Context Data**
 2. Adını `GameContextData` olarak değiştirin
 3. Üzerine tıklayın ve **Enable Auto-Discovery** seçeneğini işaretleyin
    - `{ScopeTag}Lifecycle` isim-konvansiyonu taramasını etkinleştirir (bkz. Adım 3c). `Root` bileşeni ayrıca kendi GameObject'ine eklenen her `IContextLifecycle` bileşenini otomatik bulur.
@@ -40,7 +40,7 @@
 ### 2b. Root bileşenini ekleyin
 
 1. Sahnenize boş bir **GameObject** oluşturun → adını `GameRoot` koyun
-2. `Root` bileşenini ekleyin (**Add Component → Nexus → Root**)
+2. `Root` bileşenini ekleyin (**Add Component**, ardından `Root` diye arayın). **GameObject > Nexus > Scene Root** ise bu bileşeni zaten taşıyan yeni bir `[Scene_Root]` nesnesi oluşturur
 3. `GameContextData` asset'ini Root bileşenindeki **Context Data** alanına sürükleyin
 
 > ✅ **Tamam.** Çalışma zamanında `Root` bileşeni:
@@ -153,7 +153,7 @@ public class ScoreView : View
     public Text scoreText;
     public Button addButton;
 
-    protected override void OnBind()
+    protected override void OnBind(IContext context)
     {
         var model = Context.Resolve<ScoreModel>();
         model.Total.OnChanged((oldVal, newVal) =>
@@ -190,19 +190,6 @@ public class ScoreView : View
 
 ---
 
-## 📚 Sırada Ne Var?
-
-| Konu | Rehber |
-|------|--------|
-| 🏗️ Mimari derinlemesine | [ARCHITECTURE.md](ARCHITECTURE.md) |
-| 🎮 Oyun pattern'leri (Idle, RPG, RTS vb.) | [GAME_PATTERNS.md](GAME_PATTERNS.md) |
-| 🔌 4 command yürütme modu | [Counter Sample](../Samples~/Counter/README.md) |
-| 🛠️ Editor eklentileri ve araçlar | [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) |
-| 🔍 Yerelleştirme sistemi | [LOCALIZATION_KEYS.md](LOCALIZATION_KEYS.md) |
-| 🤝 Katkıda bulunma | [CONTRIBUTING.md](CONTRIBUTING.md) |
-
----
-
 ## 🧬 Modern Binding'ler, Filtreler ve Sıfır-Reflection Constructor'lar
 
 **Fluent binding zinciri** (VContainer/Zenject tarzı, `builder` veya `container` üzerinde):
@@ -231,8 +218,8 @@ public sealed class CapDamageFilter : ISignalFilter<DamageSignal>
     }
 }
 // Kayıt:
-bus.AddSignalFilter(new CapDamageFilter());                    // örnek formu
-builder.AddSignalFilter<DamageSignal, CapDamageFilter>();      // tip formu (DI'dan çözülür veya üretilir)
+builder.AddSignalFilter<DamageSignal, CapDamageFilter>();      // tip formu, OnConfigure içinde (DI'dan çözülür veya üretilir)
+((SignalBus)context.SignalBus).AddSignalFilter(new CapDamageFilter()); // örnek formu: ISignalBus'ta değil, somut SignalBus'ta
 ```
 Filtreler hem `Fire` hem `FireAsync` üzerinde kayıt sırasıyla çalışır. Eski object-tabanlı `ISignalInterceptor` hâlâ çalışır; kayıtlıyken her fire'da bir kez box'lanır.
 
@@ -240,11 +227,59 @@ Filtreler hem `Fire` hem `FireAsync` üzerinde kayıt sırasıyla çalışır. E
 
 ---
 
+## 🚀 Hızlı Geliştirme ve Game Jam Modu: `NexusBehaviour`
+
+Hızlı prototipleme için veya ayrı View + Mediator sınıfları oluşturmak istemeyen yeni başlayan geliştiriciler için `NexusBehaviour`'dan türetin:
+
+```csharp
+using Nexus.Core;
+using Nexus.Core.Services;
+using UnityEngine;
+
+public class PlayerHUD : NexusBehaviour
+{
+    [Inject] public IEconomyService Economy { get; set; }
+
+    protected override void OnNexusAwake()
+    {
+        // Otomatik takip edilir ve OnDestroy'da otomatik dispose edilir (sıfır bellek sızıntısı!)
+        Subscribe<ScoreSignal>(signal => {
+            Debug.Log($"Skor güncellendi: {signal.Points}");
+        });
+    }
+
+    public void OnButtonClick()
+    {
+        // Sıfır-GC sinyal gönderimi
+        Fire(new ScoreSignal(50));
+        
+        // Doğrudan servis çözümleme
+        var balance = Economy.GetBalance("gold");
+    }
+}
+```
+Otomatik bağımlılık enjeksiyonu, sıfır bellek sızıntısı ve anında SignalBus erişimi tek bir sınıfta.
+
+---
+
+## 📚 Sırada Ne Var?
+
+| Konu | Rehber |
+|------|--------|
+| 🏗️ Mimari derinlemesine | [ARCHITECTURE.md](ARCHITECTURE.md) |
+| 🎮 Oyun pattern'leri (Idle, RPG, RTS vb.) | [GAME_PATTERNS.md](GAME_PATTERNS.md) |
+| 🔌 4 command yürütme modu | [Counter Sample](../Samples~/Counter/README.md) |
+| 🛠️ Editor eklentileri ve araçlar | [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) |
+| 🔍 Yerelleştirme sistemi | [LOCALIZATION_KEYS.md](LOCALIZATION_KEYS.md) |
+| 🤝 Katkıda bulunma | [CONTRIBUTING.md](CONTRIBUTING.md) |
+
+---
+
 ## 🆘 Hızlı Sorun Giderme
 
 | Belirti | Çözüm |
 |---------|-------|
-| **"No lifecycle found"** | Lifecycle sınıfınız `IContextLifecycle` implemente etmeli ve **Root GameObject'ine bileşen olarak eklenmeli** (veya boş olmayan ContextData `ScopeTag`'i ile `{ScopeTag}Lifecycle` konvansiyonuna uymalı) |
+| **"No IContextLifecycle was discovered or registered"** | Lifecycle sınıfınız `IContextLifecycle` implemente etmeli ve **Root GameObject'ine bileşen olarak eklenmeli** (veya boş olmayan ContextData `ScopeTag`'i ile `{ScopeTag}Lifecycle` konvansiyonuna uymalı) |
 | **"Type not registered"** | `OnConfigure`'a `builder.Bind<MyType>()` ekleyin veya türün sistem dışı bir assembly'de olduğunu kontrol edin |
 | **Signal gönderilmiyor** | Command'in `ICommand<YourSignal>` implemente ettiğini ve `builder.BindSignal<>()` ile kayıtlı olduğunu doğrulayın |
 | **Test çalışmıyor** | EditMode Test Runner'ı açın, `InfrastructureValidationTests` ve `PluginRefactorValidationTests`'i seçin |

@@ -44,7 +44,8 @@ namespace Nexus.Core
         public int CommandPoolMaxSize = 64;
         public int TracerRingBufferSize = 2000;
 
-        [Tooltip("Maximum seconds the synchronous Context.Dispose() path waits for background async-disposable singletons before proceeding with teardown. Lower values reduce main-thread stall during scene unload; higher values give slow async cleanup (network flushes, file writes) more time to finish deterministically.")]
+        [Tooltip("Not read: Context.Dispose never waits for async-disposable singletons, which finish in the background.")]
+        [System.Obsolete("Not read by the runtime: Context.Dispose never waits for async-disposable singletons; they finish in the background. Kept so existing assets and code compile.")]
         public float DisposeTimeoutSeconds = 5f;
 
         [Header("Metadata")]

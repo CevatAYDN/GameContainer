@@ -1,11 +1,11 @@
 > **Who this is for:** AI agents and architects choosing a context topology per genre.
 
-> **For AI Agents:** This document is the source of truth for selecting and configuring Nexus Core architecture patterns across different game genres (Casual, Mid-core, Hardcore RPG, Simulation, Strategy RTS).
+> **For AI Agents:** This document is the source of truth for selecting and configuring Nexus Core architecture patterns across different game genres (Casual, Mid-core, Hardcore RPG, Simulation, Strategy RTS, Idle Arcade).
 > Refer to [README.md](../README.md#glossary) and [ARCHITECTURE.md](ARCHITECTURE.md) for core concepts.
 
 # Nexus Game Architecture Patterns Guide
 
-This guide describes recommended Nexus Core architectural setups, context topologies, signal budgets, and performance parameters for 5 distinct game genres.
+This guide describes recommended Nexus Core architectural setups, context topologies, signal budgets, and performance parameters for 6 distinct game genres.
 
 ---
 
@@ -57,11 +57,14 @@ This guide describes recommended Nexus Core architectural setups, context topolo
 
 ## ⚔️ 5. Strategy / RTS Games
 
-- **Topology:** Spatial Sub-Contexts with DOTS Bridge (`NexusDOTSBridge`).
+- **Topology:** Spatial Sub-Contexts with the DOTS bridge (`NativeSignalQueue<T>`, `DOTSSignalBridge<T>`).
 - **Characteristics:** High-performance update ticks, thousands of entities, 60+ FPS target.
 - **Setup Pattern:**
   - Struct signals for high-level squad commands.
-  - Integration with `com.nexus.core.dots` for jobified unit pathfinding and combat calculation.
+  - Jobs (unit pathfinding, combat calculation) write unmanaged signals through `NativeSignalQueue<T>`'s
+    parallel writer; `DOTSSignalBridge<T>` drains them into the `SignalBus` on the main thread. Both live in
+    the package's `com.nexus.core.dots` assembly (namespace `Nexus.DOTS`), which compiles only when
+    `com.unity.collections` is installed.
 
 ---
 
@@ -81,21 +84,24 @@ This guide describes recommended Nexus Core architectural setups, context topolo
 - **Performance Budget:** 60 FPS, < 500B GC/frame, < 30 draw calls (UI-heavy).
 - **Offline Earnings Example:**
   ```csharp
-  public class OfflineEarningsCommand : ICommand<TickSignal>
+  using Nexus.Core;
+  using Nexus.Core.Services;
+
+  public struct GameResumedSignal { } // your game's signal, fired when play resumes
+
+  public class OfflineEarningsCommand : ICommand<GameResumedSignal>
   {
+      private const long CoinsPerSecond = 5;
+
       [Inject] public IEconomyService Economy { get; set; }
-      [Inject] public IEncryptedStorageService Save { get; set; }
+      [Inject] public IPlayerPrefsService Save { get; set; } // EncryptedStorageService implements it
 
-      public void Execute(TickSignal signal)
+      public void Execute(GameResumedSignal signal)
       {
-          // Passive income per second
-          Economy.AddCurrency("Coins", CalculateIncomePerSec() * signal.DeltaTime);
-      }
-
-      public void CalculateOfflineReward()
-      {
-          double elapsed = (DateTime.UtcNow - _lastSaveTime).TotalSeconds;
-          Economy.AddCurrency("Coins", (long)(CalculateIncomePerSec() * elapsed));
+          // Seconds since OfflineTimeCalculator.RecordQuitTimestamp(Save) ran on pause/quit:
+          // 0 when the clock was set back, capped at 8 hours by default.
+          long offlineSeconds = OfflineTimeCalculator.CalculateOfflineSeconds(Save);
+          Economy.Earn("Coins", CoinsPerSecond * offlineSeconds, "offline");
       }
   }
   ```

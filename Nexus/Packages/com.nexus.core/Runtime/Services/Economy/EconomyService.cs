@@ -73,8 +73,10 @@ namespace Nexus.Core.Services
         // it — the previous comment claiming lock-free reads were safe was wrong.
         private readonly ConcurrentDictionary<string, SecureObservableLong> _balances = new();
         private readonly ConcurrentDictionary<string, SecureObservableBigDouble> _bigBalances = new();
-        // Both currency modes share _balances' mutation lock. A promoted currency's long
-        // observable remains the same instance, projecting its canonical BigDouble balance.
+        // Both currency modes share one mutation lock, a dedicated object (CONTRIBUTING: never lock a concurrent
+        // collection itself). A promoted currency's long observable remains the same instance, projecting its
+        // canonical BigDouble balance.
+        private readonly object _balanceLock = new object();
         private readonly Dictionary<string, long> _projectingLegacy = new();
         // A currency's first touch reads storage (file I/O and decryption with EncryptedStorageService). The read
         // runs before the balance lock (PrefetchSaved) and the create path under the lock takes its result.
@@ -104,7 +106,7 @@ namespace Nexus.Core.Services
 
             SecureObservableLong prop;
             PrefetchSaved(currencyId);
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
                 prop = LazyLoadBalance(currencyId);
@@ -137,7 +139,7 @@ namespace Nexus.Core.Services
 
             SecureObservableLong prop;
             PrefetchSaved(currencyId);
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBalance(currencyId);
@@ -156,7 +158,7 @@ namespace Nexus.Core.Services
         {
             SecureObservableLong prop;
             PrefetchSaved(currencyId);
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBalance(currencyId);
@@ -178,7 +180,7 @@ namespace Nexus.Core.Services
                 return existing;
 
             PrefetchSaved(currencyId);
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing) return null;
                 return LazyLoadBalance(currencyId);
@@ -217,7 +219,7 @@ namespace Nexus.Core.Services
         private SavedBalance TakeSaved(string currencyId)
             => _prefetched.TryRemove(currencyId, out var saved) ? saved : ReadSaved(currencyId);
 
-        // Must be called under _balances lock.
+        // Must be called under _balanceLock.
         private SecureObservableLong LazyLoadBalance(string currencyId)
             => _balances.TryGetValue(currencyId, out var prop) ? prop : CreateBalanceLocked(currencyId);
 
@@ -237,7 +239,7 @@ namespace Nexus.Core.Services
             _balances[currencyId] = prop;
             prop.OnChanged((_, value) =>
             {
-                lock (_balances)
+                lock (_balanceLock)
                 {
                     if (_disposed || _disposing || !_bigBalances.TryGetValue(currencyId, out var canonical)) return;
                     if (_projectingLegacy.TryGetValue(currencyId, out long projection) && value == projection) return;
@@ -273,7 +275,7 @@ namespace Nexus.Core.Services
 
             SecureObservableBigDouble prop;
             PrefetchSaved(currencyId);
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
                 prop = LazyLoadBigBalance(currencyId);
@@ -297,7 +299,7 @@ namespace Nexus.Core.Services
 
             SecureObservableBigDouble prop;
             PrefetchSaved(currencyId);
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBigBalance(currencyId);
@@ -316,7 +318,7 @@ namespace Nexus.Core.Services
             amount = Normalize(amount);
             SecureObservableBigDouble prop;
             PrefetchSaved(currencyId);
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 prop = LazyLoadBigBalance(currencyId);
@@ -332,14 +334,14 @@ namespace Nexus.Core.Services
                 return existing;
 
             PrefetchSaved(currencyId);
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing) return null;
                 return LazyLoadBigBalance(currencyId);
             }
         }
 
-        // Must be called under _balances lock. Promotion is one-way per currency.
+        // Must be called under _balanceLock. Promotion is one-way per currency.
         private SecureObservableBigDouble LazyLoadBigBalance(string currencyId)
             => _bigBalances.TryGetValue(currencyId, out var prop) ? prop
                 : CreateBigBalanceLocked(currencyId, _balances.ContainsKey(currencyId) ? default : TakeSaved(currencyId));
@@ -365,7 +367,7 @@ namespace Nexus.Core.Services
             _bigBalances[currencyId] = prop;
             prop.OnChanged((_, value) =>
             {
-                lock (_balances)
+                lock (_balanceLock)
                 {
                     if (_disposed || _disposing) return;
                     ProjectLegacyLocked(currencyId, value);
@@ -450,7 +452,7 @@ namespace Nexus.Core.Services
         private void PersistAllBalancesNow()
         {
             if (PlayerPrefsService == null) return;
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed) return;
                 foreach (var kvp in _balances)
@@ -480,7 +482,7 @@ namespace Nexus.Core.Services
                 bool approved = await NetworkValidator.ValidateSpendAsync(currencyId, amount, reason);
                 if (approved) return;
                 PrefetchSaved(currencyId);
-                lock (_balances)
+                lock (_balanceLock)
                 {
                     if (_disposed || _disposing) return;
                     AddBalanceLocked(currencyId, amount);
@@ -519,7 +521,7 @@ namespace Nexus.Core.Services
             {
                 if (await validator.ValidateSpendBigAsync(currencyId, amount, reason)) return;
                 PrefetchSaved(currencyId);
-                lock (_balances)
+                lock (_balanceLock)
                 {
                     if (_disposed || _disposing) return;
                     var prop = LazyLoadBigBalance(currencyId);
@@ -540,7 +542,7 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
-            lock (_balances)
+            lock (_balanceLock)
             {
                 if (_disposed || _disposing) return;
                 _disposing = true;
@@ -554,7 +556,7 @@ namespace Nexus.Core.Services
             catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Final persist failed on dispose: {ex.Message}"); }
             finally
             {
-                lock (_balances)
+                lock (_balanceLock)
                 {
                     _disposed = true;
                     foreach (var kvp in _balances) kvp.Value.ClearOnChanged();

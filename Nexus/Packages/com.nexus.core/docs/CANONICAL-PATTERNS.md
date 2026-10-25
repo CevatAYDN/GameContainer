@@ -32,7 +32,13 @@ public class UpdateScoreCommand : ICommand<ScoreChangedSignal> { ... }
 
 ## 🥇 Canonical Composite Registration
 
-**Use `[CompositeSignalHandler]` attribute — the only supported path.**
+**Use `[CompositeSignalHandler]` for a composite over any number of signal types, sync or async.**
+`[RegisterCompositeCommand]` is the same registration under another name, and
+`SignalBus.RegisterCompositeCommand(...)` (on the concrete bus, not on `ISignalBus`) is the call both
+attributes end in. For a hot synchronous composite of exactly two signal types,
+`ISignalBus.BindComposite<TFirst, TSecond, TCommand>()` with an `ICompositeCommand<TFirst, TSecond>`
+passes the typed values to pooled commands without boxing; see
+[GETTING_STARTED.md](GETTING_STARTED.md#performance-sensitive-composites).
 
 ```csharp
 // ✅ CANONICAL — composite triggers span multiple signal types
@@ -147,10 +153,14 @@ builder.BindCommand<SomeSignal, LogPlayerStateCommand>(mode: ExecutionMode.Concu
 ```
 
 **Rationale:** Concurrent commands run in parallel; injecting writeable model interfaces could
-cause race conditions. The `BuildValidation` system emits warnings for concurrent commands
-that inject interfaces ending in `Model` with settable properties or mutation methods.
+cause race conditions. `BuildValidation` logs an error and fails validation for a concurrent
+command that `[Inject]`s an interface whose name ends in `Model` (and does not start with
+`IReadOnly`) with a settable property or a `Set`/`Update`/`Modify`/`Reset`/`Clear` method; the
+pre-build check then stops the build unless `NEXUS_VALIDATION_WARN_ONLY` is set.
 
-> **Note:** This is a *recommended practice* — the validation rule is a warning, not an error.
+> **Note:** The check reads `[SignalHandler(..., Mode = ExecutionMode.Concurrent)]` attributes only.
+> A command registered in code, as with `BindCommand(...)` above, is not checked; the read-only
+> interface is then your own rule.
 
 ---
 
@@ -222,7 +232,7 @@ public class LegacyService : ILegacyService, INexusService
 }
 ```
 
-**Rationale:** `NexusService<T>` is what the Nexus code generator (`NexusSetupWizard`, `WizardTabs`) and every runtime service template emit. It auto-injects `IContext` and `ISignalBus` (so derived services never need manual DI lookups), delegates `OnDispose()` to `Dispose()` so `IDisposable`-style cleanup works through the context's single `OnDispose` call, and derives from the `[Preserve]`d base (derived services carry `[Preserve]` too — all 13 runtime services do). The service **interface** stays a plain contract (`IPlayerPersistenceService`) — it does not extend `INexusService`; only the class derives from the base, which supplies the interface. Register with `BindService<TInterface, TImplementation>()` (or `BindServiceInterfacesAndSelfTo<TImplementation>()`); the `where TImplementation : class, INexusService` constraint is satisfied through the base.
+**Rationale:** `NexusService<T>` is what the Nexus code generator (`NexusSetupWizard`, `WizardTabs`) and every runtime service template emit. It auto-injects `IContext` and `ISignalBus` (so derived services never need manual DI lookups), delegates `OnDispose()` to `Dispose()` so `IDisposable`-style cleanup works through the context's single `OnDispose` call, and derives from the `[Preserve]`d base (derived services carry `[Preserve]` too — all 16 runtime services do). The service **interface** stays a plain contract (`IPlayerPersistenceService`) — it does not extend `INexusService`; only the class derives from the base, which supplies the interface. Register with `BindService<TInterface, TImplementation>()` (or `BindServiceInterfacesAndSelfTo<TImplementation>()`); the `where TImplementation : class, INexusService` constraint is satisfied through the base.
 
 ---
 
@@ -256,8 +266,9 @@ public class SettingsScreen : ScreenView { ... }
 **Rationale:** `UIManager` is the canonical, type-safe screen manager — open by type
 (`OpenScreenAsync<TScreen>`), pooled instances, `UICanvasSystem` layer policy, and
 `ScreenOpenedSignal`/`ScreenClosedSignal`. The legacy string-keyed `WindowManager` was
-**removed** (2026-08-06); its analyzer rule NEXUS004 was retired with it, so new code has no
-alternative to diverge to. `UILayer` and `IUIWindowLifecycle` live in their own files under
+**removed** (2026-08-06); its migration analyzer rule was retired with it (the id NEXUS004 now
+belongs to the leftover debug trace logging rule), so new code has no alternative to diverge to.
+`UILayer` and `IUIWindowLifecycle` live in their own files under
 `Runtime/Services/UI/` and are shared by `UIManager`/`ScreenView`/`UICanvasSystem`. Screens
 are opened/closed only through `UIManager`; scene-anchored views that are not screens stay
 plain `View`s.
@@ -266,11 +277,12 @@ plain `View`s.
 
 ## 🥇 Canonical Execution Order
 
-1. **Interceptors** (plugin pipeline)
-2. **Cross-Context Broadcast** (if `[CrossContext]` is present)
-3. **Commands** (mutate model state)
-4. **Subscriptions** (observers read final state)
-5. **Composite Triggers** (fan-in check)
+1. **Signal filters** (`ISignalFilter<T>`; a filter returning `false` cancels the signal)
+2. **Interceptors** (plugin pipeline)
+3. **Cross-Context Broadcast** (if `[CrossContext]` is present)
+4. **Commands** (mutate model state)
+5. **Subscriptions** (observers read final state)
+6. **Composite Triggers** (fan-in check)
 
 This guarantees mediators/views always read post-command state.
 

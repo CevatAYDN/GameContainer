@@ -1,132 +1,133 @@
-> **Kimin için:** seviye 2, entegrasyonun derinliğini seçen geliştirici (ilk özellik, mevcut proje, yükleme sırasında hazırlık, doğrulama, performans kararları).
+> **Kimin için:** seviye 2, entegrasyonun ne kadar derin olacağını seçen geliştirici (ilk özellik, mevcut proje, yükleme sırasında hazırlık, doğrulama, performans kararları).
 
-# Projenize uygun entegrasyon yolu
+# Entegrasyon yolunuzu seçin
 
-Nexus, Unity 6 mobil ve PC oyunlarının mimari temelidir. Oyun türüne ait hareket,
-dövüş, kamera ve bölüm tasarımı oyununuzda kalır. Paket eklemek için .NET SDK
-kurmanız gerekmez. Önce [kurulum rehberini](GETTING_STARTED_TR.md) uygulayın.
+Nexus, Unity 6 mobil ve PC oyunları için bir mimari temeldir. Hareket, dövüş, kamera
+ve bölüm tasarımı oyununuza aittir. Paketi kurmak .NET SDK gerektirmez.
+[Kurulum rehberiyle](GETTING_STARTED_TR.md) başlayın.
 
-| Durumunuz | Başlangıç | Sonraki adım |
+| Durumunuz | Buradan başlayın | Sonraki adım |
 |---|---|---|
-| Unity veya mimari paketlere yeni başlıyorum | Package Manager → Samples → Code-first Startup; boş GameObject'e `ScoreBootstrap` | Sinyalin puan miktarını değiştirin, sonra model ve komutu kendi özelliğinize uyarlayın |
-| Sahne ve Inspector üzerinden çalışıyorum | Nexus penceresindeki Kurulum Sihirbazı | Örnek sayaç sahnesini inceleyin; View/Mediator akışını öğrenin |
-| Mevcut oyunum var | Tek bir özellik için `ContextFactory.StartAsync` | Envanter, görev veya ekonomi gibi diğer özellikleri aşamalı ekleyin |
-| Büyük ekip / çok sahneli oyun | Uygulama ve sahne context'lerini ayırın | Named binding, açık kayıtlar, AOT üretimi ve otomatik doğrulama kullanın |
+| Unity mimari paketlerine yeni | Package Manager → Samples → Code-first Startup; `ScoreBootstrap`'ı ekleyin | Skor yükünü (payload) değiştirin, sonra model ve komutu kendi özelliğinize uyarlayın |
+| Sahneleri ve Inspector'ı tercih ediyorum | Nexus penceresindeki Kurulum Sihirbazı | Sayaç sahnesini ve View/Mediator akışını inceleyin |
+| Zaten bir oyunum var | Tek bir özellik için `ContextFactory.StartAsync` | Envanter, görev veya ekonomiyi aşamalı ekleyin |
+| Büyük ekip / birden çok sahne | Uygulama ve sahne context'lerini ayırın | Açık kayıtlar, named binding'ler, AOT üretimi ve otomatik kontroller kullanın |
 
-## İlk çalışan özellik
+## İlk çalışan özelliğiniz
 
-Code-first Startup örneği bir dosyada model, sinyal, komut, başlatma, iptal ve
-kapanışı gösterir. Play'e basınca Console'da `Nexus score: 1` görünmelidir.
-Başlangıç tamamlanmadan context'i kullanmayın. Sahibi yok edildiğinde context'i
-kapatın; örnek bu sahiplik düzenini içerir.
+Code-first Startup bir model, sinyal, komut, başlatma, iptal ve dispose işlemini tek
+dosyada toplar. Play Mode'a girin; Console'da `Nexus score: 1` bekleyin. Context'i
+kullanmadan önce başlatmayı bekleyin (await). Sahibi sona erdiğinde context'i dispose
+edin; örnek bunu gösterir.
 
-Akış: `ScoreAdded` → `AddScore` → `ScoreModel.Score`.
-UI eklediğinizde mediator, model değişikliğini view'a taşır. Modelin içine UI veya
-GameObject referansı koymayın. Ekran kapanınca abonelikleri kapatın.
+Akış: `ScoreAdded` → `AddScore` → `ScoreModel.Score`. UI eklediğinizde bir mediator
+model değişikliklerini gözler ve view'ı günceller. Modeller UI veya GameObject
+referansı içermemelidir. Ekranları kapandığında abonelikleri dispose edin.
 
-## Mevcut projeye aşamalı ekleme
+## Nexus'u mevcut bir projeye ekleme
 
-1. Mevcut projenizi version control ile koruyun; paketi UPM üzerinden kurun.
-2. Tek özellik seçin. Kodla başlangıç, sahne varlığı ve assembly taraması gerektirmez.
+1. Projenizi version control ile koruyun ve UPM paketini kurun.
+2. Tek bir özellik seçin. Code-first başlatma sahne asset'i veya assembly taraması gerektirmez.
 3. Özelliğin model ve komutlarını startup callback'inde açıkça kaydedin.
-4. Mevcut MonoBehaviour, döndürülen context üzerinden sinyal yayımlasın.
-5. Özelliğin durumu, iptal ve kapanışı doğru çalışınca bir sonraki özelliğe geçin.
+4. Sinyalleri mevcut MonoBehaviour'ınızdan, dönen context üzerinden yayımlayın.
+5. Sonraki özelliği eklemeden önce durumu, iptali ve dispose'u kontrol edin.
 
-Komut constructor'larına servis/model bağımlılıklarını alın; kullanıcı seçenekleri
-için `builder.BindFluent<MyCommand>().WithParameter(options)` kaydını komut
-kaydından önce yapabilirsiniz. Komut kaydı yerel transient seçeneklerini korur.
+Komut bağımlılıkları için constructor kullanın. Açık seçenekleri, komutun sinyal
+handler'ını kaydetmeden önce `builder.BindFluent<MyCommand>().WithParameter(options)`
+ile kaydedin; komut kaydı yerel transient seçenekleri korur.
 
-`builder.BindInstance(instance)` context'e temizleme sahipliği verir. Başka bir
-sistemin sahibi olduğu `IDisposable` nesneyi bu yolla devretmeyin. Düşük seviyeli
-DI API'sinde `container.BindInstance(instance, disposeWithContainer: false)` vardır;
-context kurulumunda aynı nesneyi sahipli bir kayıtla tekrar kaydetmeyin. Ömrü
-context ile sınırlı bir adaptör kullanmak mevcut servislerle güvenli bir sınır sağlar.
+`builder.BindInstance(instance)` temizleme sahipliğini context'e devreder. Başka bir
+sistemin sahip olduğu bir `IDisposable`'ı bu yolla devretmeyin. Düşük seviyeli DI API'si
+`container.BindInstance(instance, disposeWithContainer: false)` destekler; context
+yapılandırması sırasında aynı nesneyi sahipli ömürle yeniden kaydetmeyin. Context'e ait
+bir adaptör, mevcut servislere net bir sınır sağlayabilir.
 
-Nexus'un `IDependencyAdapter` köprüsü mevcut DI sisteminizle birlikte çalışma
-içindir. Köprü named binding çözmez; named bağımlılıkları Nexus'ta kaydedin.
+`IDependencyAdapter` köprüsü başka bir DI sistemiyle birlikte çalışmayı destekler.
+Named binding çözmez; named bağımlılıkları Nexus'ta kaydedin.
 
-## Yükleme ekranında hazırlık
+## Yükleme sırasında hazırlık
 
-Code-first örneğinin başlangıcındaki kullanım:
+Code-first örneğinde, başlatmadan sonra ve ilk oyun sinyalinden önce:
 
 ```csharp
-// Context başladıktan sonra, ilk oyun sinyalinden önce:
 _context.Prewarm<ScoreAdded>(4);
 _context.SignalBus.Fire(new ScoreAdded(1));
 ```
 
-`Prewarm` komutu çalıştırmaz, subscriber çağırmaz ve one-shot kaydını tüketmez.
-Constructor/factory çalışır; bunlar oyun durumunu değiştirmemelidir. Havuz, istenen
-kadar **boşta** komut tutar; varsayılan ilk kapasite daha büyükse mevcut nesneleri
-silmez. İstek maksimum havuz kapasitesini aşarsa açık hata verir. Tekrar çağrılması
-gereksiz nesne üretmez. İç içe veya eşzamanlı komut sayınıza göre kapasite seçin;
-tüm tipleri gereksiz yere hazırlamak bellek ve açılış maliyetini artırır.
+Prewarm hiçbir zaman komut çalıştırmaz, subscriber çağırmaz veya one-shot tüketmez.
+Constructor/factory'leri çalıştırır; bunlar oyun durumunu değiştirmemelidir. İstenen
+sayıda **boşta** komut bulunmasını sağlar; daha büyük bir varsayılan ilk kapasite korunur.
+Maksimum havuz kapasitesini aşan istekler açıkça hata verir. Tekrarlanan çağrılar gereksiz
+nesne üretmez. Kapasiteyi iç içe çağrı/eşzamanlılık için seçin; her tipi gereksiz yere
+hazırlamak bellek kullanımını ve başlatma işini artırır.
 
-Typed composite komut havuzunu doğrudan hazırlamak için
-`context.PoolManager.Prewarm<MyCompositeCommand>(4)` kullanın. Async, debug,
-interceptor/decorator ve immutable composite maliyetlerini ayrıca profil edin.
+Typed composite komutlar için havuzu doğrudan
+`context.PoolManager.Prewarm<MyCompositeCommand>(4)` ile hazırlayın. Async, tracing,
+interceptor/decorator ve immutable composite'leri ayrı profilleyin.
 
-## Hataları oyun başlamadan görmek
+## Yapılandırma hatalarını oyun başlamadan yakalayın
 
-`ContextFactory.StartAsync`, kayıtları başlangıçta doğrular. Düşük seviyeli DI
-kullanıyorsanız kayıtları tamamladıktan sonra `container.ValidateBindings()`
-çağırıp dönen sorunları inceleyin. Doğrulama constructor/factory çalıştırmaz.
+`ContextFactory.StartAsync` kayıtları başlatmada doğrular. Düşük seviyeli DI için
+kayıttan sonra `container.ValidateBindings()` çağırın ve sonucunu inceleyin.
+Doğrulama constructor veya factory çalıştırmaz.
 
-| Rapor | Düzeltme |
+| Sorun | Yapılacak |
 |---|---|
-| Eksik bağımlılık / named binding | Kaydı, bağımlılığı oluşturan context'in kendi scope'una veya parent'ına ekleyin |
-| Circular dependency | Rapordaki zinciri kırın; model verisini ve servis sorumluluklarını ayırın |
-| Captive dependency | Uzun yaşayan nesnenin transient bağımlılığını cached yapın veya ömrünü açık factory ile yönetin |
-| Invalid binding | Uyumlu implementation, kullanılabilir constructor ve geçerli özel parametre değeri sağlayın |
+| Eksik bağımlılık / named binding | Onu, oluşturan binding'in sahibi olan scope'a veya parent'ına kaydedin |
+| Circular dependency | Raporlanan zinciri kırın; veri ve servis sorumluluklarını ayırın |
+| Captive dependency | Bağımlılığı cache'leyin veya ömrünü bir factory üzerinden açıkça yönetin |
+| Invalid binding | Atanabilir bir implementation, kullanılabilir bir constructor ve uyumlu parametre değerleri sağlayın |
 
-Factory'ler, önceden sağlanan/oluşturulmuş instance'lar ve external adapter içi
-doğrulamaya kapalı sınırlar oluşturur. İç davranışlarını kendi testlerinizde
-doğrulayın. `LazyInjection<T>` erişim anında çözülür; başlangıçtaki eager cycle
-kontrolü lazy erişimleri ve fabrikaların kendi iç döngülerini incelemez.
+Factory'ler, sağlanan/önceden oluşturulmuş instance'lar ve dış adaptörler opak
+sınırlardır. İç yapılarını kendiniz test edin. `LazyInjection<T>` erişildiğinde çözülür;
+başlatmadaki eager-cycle analizi lazy erişimleri veya factory içindeki döngüleri izlemez.
 
-## Performans için kararlar
+## Performans kararları
 
-- Her kare DI çözümlemek yerine model/service referansını başlangıçta alın.
-- Sık sinyallerde struct ve generic senkron komut kullanın; yoğun akışları async yapmayın.
-- Üretim bütçesini debug/tracing açık ve kapalı olarak ayrı ölçün.
-- Mono'da uygun constructor'lar bir kere derlenir; transient grafikte gereksiz argüman
-  dizileri kaldırılır. İlk derleme açılış maliyetidir. Açık generic, optional/value
-  parametreler ve özel parametre override'ları mevcut fallback yolunu korur.
-- IL2CPP/AOT dinamik IL üretmez. AOT binder/source generator kullanın; gerçek player'ı test edin.
-- Başlangıç süresi, kullanılan bellek ve frame p95/p99 değerlerini hedef cihazda ölçün.
+- Model/servis referanslarını her kare yerine başlatmada çözün.
+- Sık olaylar için struct sinyaller ve generic senkron komutlar kullanın.
+- Debug/tracing açık ve kapalı durumları ayrı ölçün.
+- Mono'da uygun constructor'lar bir kez derlenir ve transient grafiklerde argüman
+  dizilerinden kaçınır. Derlemenin kendisi başlatma işidir. Açık generic'ler, optional/value
+  parametreler ve açık parametre override'ları yetkili fallback yollarını korur.
+- IL2CPP/AOT hiçbir zaman dinamik IL üretmez. AOT binder/source generator kullanın ve gerçek bir player'ı test edin.
+- Başlatma süresini, belleği ve frame p95/p99 değerlerini hedef cihazlarda ölçün.
 
-Reklam/IAP/analytics için gerçek provider adaptörlerinizi kaydedin. Mock provider
-ile ödeme veya reklam entegrasyonunun tamamlandığını varsaymayın. Network sinyal
-ve rollback katmanı, tek başına multiplayer backend kurmaz.
+Reklam, IAP ve analytics için üretim provider adaptörlerini kaydedin. Mock provider'lar
+çalışan bir ödeme veya reklam entegrasyonunu kanıtlamaz. Network sinyalleri ve rollback
+tek başına bir multiplayer backend oluşturmaz.
 
-Bkz. [doğrulama kapsamı](HARDENING.md), [oyun kalıpları](GAME_PATTERNS.md),
-[mimari](ARCHITECTURE.md), [sorun giderme](../TROUBLESHOOTING.md).
+Bkz. [oyun kalıpları](GAME_PATTERNS.md), [mimari](ARCHITECTURE.md) ve
+[sorun giderme](../TROUBLESHOOTING.md); doğrulama durumu deponun `docs/RELEASE_GATES.md` dosyasındadır.
 
-## Sahne bileşenleri ve hazır context
+## Sahne bileşenleri, global kapsam ve job'lar
 
-NexusBehaviour'ı kendi Root'unun altında kullanın; birden fazla bağımsız code-first
-context varsa Context'i açıkça atayın. OnNexusAwake binding/validation tamamlandığında,
-OnNexusStart Unity Start ve async servis başlangıcı tamamlandığında çağrılır. Context
-değişimi/disposal takip edilen abonelikleri ve inject edilmiş field/property'leri
-temizler; yeni context'e bağlanınca hook'lar yeniden çalışır. Disable abonelikleri
-sonlandırmaz. AutoInject kapalıysa elle atadığınız referansları siz yönetirsiniz.
-Bootstrap sahnesinde tek Global Root kullanın; serialized global flag sahne Root'ları
-kurulmadan keşfedilir, ikinci global reddedilir. Runtime Root'ları aktive etmeden önce
-konfigüre edin.
+Kullanışlı bir sahne bileşeni için NexusBehaviour kullanın: onu kendi Root'unun altına
+yerleştirin veya birden fazla bağımsız code-first context varsa Context'i açıkça atayın.
+Kayıt tek başına hazır olmak demek değildir. OnNexusAwake binding/validation'dan sonra,
+OnNexusStart ise Unity Start ve async context başlatmasından sonra çalışır. Hook'ları kısa
+tutun. Context değişimi veya dispose'u, takip edilen abonelikleri ve inject edilmiş
+field/property'leri temizler; yeniden bağlanma, hook'ları yeni context için çalıştırır.
+Disable abonelikleri yok etmez. AutoInject kapalıyken elle atanan field'lar sizin
+sorumluluğunuzdadır. Tek bir Global Root bootstrap sahnesine aittir; sahne Root'ları kendi
+başlatmalarından önce onun serialized flag'ini keşfeder. Yinelenen global'ler açıkça hata
+verir. Runtime Root'larını aktive etmeden önce yapılandırın.
 
-Collections/DOTS isteğe bağlıdır. Ana thread'de AsParallelWriter alın, producer job'u
-schedule edin ve Unity'ye kontrol vermeden hemen AddProducerDependency(jobHandle)
-çağırın. Her producer'ı kaydedin. Drain/yeniden kurulum/destroy job'ları tamamlar;
-uzun job'ları kendi update planınızda daha erken bitirin. NativeSignalQueue doğrudan
-kullanılıyorsa job tamamlama sahipliği sizdedir; Enqueue tek yazarlıdır.
+Collections/DOTS isteğe bağlıdır. AsParallelWriter'ı ana thread'de alın, producer'ı schedule
+edin, hemen AddProducerDependency(jobHandle) çağırın, sonra drain işini Unity Update'e bırakın.
+Her producer'ı kaydedin. Job'ları tamamlamak ana thread'i bekletebilir; uzun job'ları kendi
+update planınızda daha erken bitirin. Dispose, hâlâ çalışan bir producer'ı bırakıp geçemez.
+NativeSignalQueue'nun kendisi, okuma/dispose öncesinde producer'ları çağıranın tamamlamasını
+gerektirir; doğrudan Enqueue tek yazarlıdır, paralel yazma API'si değildir.
 
 ## Büyük oyun para birimleri
 
-BigDouble API, aynı currency'nin güncel long cache'ini diskten önce kullanarak tek
-canonical bakiyeye geçer. Long gözlemlenebilir nesne aynı kalır, kesirleri keser ve
-long.MaxValue'da doyar. Bu nesneye elle long yazmak canonical bakiyeyi o tam sayıya
-ayarlar. BigDouble yaklaşık double mantissa kullanır; idle oyun sayılarını taşır,
-büyük tam sayılarda kesin muhasebe doğruluğu sağlamaz. NaN/Infinity ve negatif Big
-miktarlar reddedilir. Backend varsa INetworkBigEconomyValidator desteği gerekir;
-destek yoksa SpendBig false, EarnBig/SetBigBalance NotSupportedException döndürür.
-Yerel doğrulama/obfuscation sunucu otoritesi yerine geçmez.
+Economy'nin BigDouble erişimi bir para birimini, kaydedilmiş durumdan önce güncel cache'teki
+long durumunu kullanarak yükseltir. Bundan sonra tek bir BigDouble defteri iki API'yi de
+yönetir; long okumalar/observable'lar kesirleri atar ve long.MaxValue'da doyar. Elde tutulan
+değiştirilebilir bir long observable'a yazmak, canonical tam sayı miktarını açıkça ayarlar.
+BigDouble idle/incremental oyunlar için yaklaşık double mantissa aritmetiği kullanır; büyük
+tam sayılarda kesin muhasebe garanti etmez. NaN/sonsuz ve negatif Big miktarlar reddedilir.
+Var olan bir network validator'ı, Big işlemler için INetworkBigEconomyValidator'ı da
+implemente etmelidir; desteklenmeyen SpendBig false döndürür, EarnBig/SetBigBalance
+NotSupportedException fırlatır. İstemci validator'ları/obfuscation sunucu otoritesi sağlamaz.

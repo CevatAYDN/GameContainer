@@ -2,7 +2,7 @@
 
 > **For AI Agents:** This document is the source of truth for developing, refactoring, and auditing editor plugins in the Nexus framework. Before making plugin edits:
 > 1. Verify `INexusEditorPlugin` contract requirements.
-> 2. Ensure `OnUpdate()` is overridden for polling — **DO NOT** use `_view.schedule`.
+> 2. Ensure `OnUpdate()` is overridden for polling — **DO NOT** poll with a repeating `schedule.Execute(...).Every(...)`.
 > 3. Run plugin tests: `PluginRefactorValidationTests`.
 >
 > **Out of scope:** Runtime game logic, runtime SignalBus implementation.
@@ -23,6 +23,8 @@ public interface INexusEditorPlugin
     string Id { get; }
     string DisplayName { get; }
     int Order { get; }
+    string Category { get; }
+    Color IconColor { get; }
     void Initialize(NexusWindow window);
     VisualElement CreateView();
     void OnEnable();
@@ -43,7 +45,7 @@ Before submitting a new plugin or refactor, verify:
 - [ ] `DisplayName` uses `NexusLang.Get("key")` for localization.
 - [ ] `Order` is specified (e.g. 0 for Dashboard, 1 for Wizard, 6 for GameManager).
 - [ ] `CreateView()` returns a non-null `VisualElement` tree.
-- [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** use `_view.schedule` or `EditorApplication.update`.
+- [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** a repeating `schedule.Execute(...).Every(...)` or `EditorApplication.update`. A slower cadence is throttled inside `OnUpdate()` with `EditorApplication.timeSinceStartup` (`CasualServicesPlugin` 0.5 s, `FSMPlugin` 0.3 s).
 - [ ] `OnDisable()` resets: instance fields, flags, counters, queues.
 - [ ] All user-facing text uses `NexusLang.Get("key")` — zero hardcoded English strings.
 - [ ] Stat displays use shared `NexusEditorStyles` stat helpers — no bespoke stat components.
@@ -64,18 +66,18 @@ Before submitting a new plugin or refactor, verify:
 | **Play Mode entry** | Subscribe to `EditorApplication.playModeStateChanged` in `CreateView()` / `OnEnable()`. |
 | **Play Mode exit** | Unsubscribe from `EditorApplication.playModeStateChanged` in `OnDisable()`. Reset live runtime metrics. |
 | **Context disposed during update** | Null-check active context references (`if (ctx == null) continue;`) before dereferencing containers. |
-| **`OnDisable` called before `OnEnable`** | `OnDisable()` must be defensive and null-check all references (`_debounce?.Pause()`). |
+| **`OnDisable` called before `OnEnable`** | `OnDisable()` must be defensive and null-check all references (`_scheduledHighlight?.Pause()`). |
 | **Tab opened multiple times** | Each `CreateView()` invocation creates a new tree. Instance fields store view elements cleanly. |
 | **Locale switched at runtime** | Text relies on `NexusLang.Get()`. Re-render view on language change if needed. |
 | **No active context (Edit Mode)** | Show a clean `NexusEditorStyles.CreateEmptyState` panel with an "Enter Play Mode" hint. |
-| **Rapid typing in text fields** | Debounce search inputs by 200ms using `_view.schedule.Execute(...).StartingIn(200)`. |
+| **Rapid typing in text fields** | Search fields re-filter in their `RegisterValueChangedCallback`; no plugin debounces. A one-shot delay (`schedule.Execute(...).StartingIn(ms)`, as `GraphPlugin`'s 500 ms node highlight) is kept in a field and paused in `OnDisable()`. |
 | **Empty or null data collections** | Render `CreateEmptyState()`, do not throw `NullReferenceException` or leave blank panel. |
 
 ---
 
 ## 🚫 Anti-Pattern Callouts
 
-### ❌ Anti-Pattern 1: Custom UI Schedulers (`_view.schedule`)
+### ❌ Anti-Pattern 1: Repeating UI Schedulers (`schedule.Execute(...).Every(...)`)
 ```csharp
 // BAD:
 _refreshSchedule = _view.schedule.Execute(RefreshStats).Every(500);
@@ -87,7 +89,7 @@ public override void OnUpdate()
     RefreshStats();
 }
 ```
-*Why:* Custom schedules continue firing when the editor window tab is hidden or minimized, consuming background CPU. The host `NexusWindow` automatically invokes `OnUpdate()` on the active tab every ~200ms.
+*Why:* Repeating schedules continue firing when the editor window tab is hidden or minimized, consuming background CPU. The host `NexusWindow` automatically invokes `OnUpdate()` on the active tab every ~200ms.
 
 ### ❌ Anti-Pattern 2: Retaining State Across `OnDisable()`
 ```csharp

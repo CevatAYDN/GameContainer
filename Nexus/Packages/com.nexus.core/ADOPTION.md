@@ -29,15 +29,9 @@
 }
 ```
 
-Git submodules work too: add the fork outside `Packages/` and point the manifest at the package folder.
-
-```bash
-git submodule add https://github.com/<your-org>/GameContainer.git External/GameContainer
-```
-
-```json
-"com.nexus.core": "file:../External/GameContainer/Nexus/Packages/com.nexus.core"
-```
+Use only the pinned git URL: no git submodule, no `file:` path and no embedded copy of the package
+in a game. One pinned copy of the framework per game means a fix is made once in the fork and
+each game re-pins.
 
 ## What to own vs. what not to fork
 
@@ -52,6 +46,7 @@ git submodule add https://github.com/<your-org>/GameContainer.git External/GameC
 
 ## Real-game reference
 
-This repository's own games (Gigawatt, Wickling, ChipCrisis and others) consume the upstream repository by
-git URL pinned to a commit: the infrastructure lives in the package, the game logic lives in each game's
-repository, and a framework fix is made in the package and re-pinned, never edited in a game's copy.
+For this repository's own games (Gigawatt, Wickling, ChipCrisis and others) the target is the same: a
+pinned git URL for every game. The infrastructure lives in the package, the game logic lives in each
+game's repository, and a framework fix is made in the package and re-pinned, never edited in a game's
+copy.

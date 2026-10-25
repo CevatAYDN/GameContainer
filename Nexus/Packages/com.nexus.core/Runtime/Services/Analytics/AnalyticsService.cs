@@ -3,6 +3,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core.Services;
 using UnityEngine;
+using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
 {
@@ -15,6 +16,7 @@ namespace Nexus.Core.Services
 
     // Derives from NexusService<IAnalyticsService> like every other service
     // (previously implemented INexusService directly — inconsistent base-class usage).
+    [Preserve]
     [StubService("Replace with Firebase Analytics or Amplitude before release")]
     public class AnalyticsService : NexusService<IAnalyticsService>, IAnalyticsService
     {

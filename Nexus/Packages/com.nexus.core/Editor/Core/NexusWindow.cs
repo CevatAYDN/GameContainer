@@ -19,12 +19,15 @@ namespace Nexus.Editor
         // Plugin icon colors and sidebar categories are now declared on each plugin
         // via INexusEditorPlugin.IconColor and INexusEditorPlugin.Category.
         // NexusWindow groups plugins by their self-declared category.
+        // The Context Wizard ("Wizard") stays visible: its Service, View/Mediator and Signal/Command generators have no
+        // other entry point, and the Dashboard and Game Manager buttons switch to it (hidden, they did nothing).
         private static readonly HashSet<string> HiddenPluginIds = new()
         {
             "TestPlugin",
-            "CustomPlugin",
-            "Wizard" // SetupWizard (Id: "SetupWizard") is the primary wizard.
+            "CustomPlugin"
         };
+
+        internal static bool IsHiddenPlugin(string pluginId) => HiddenPluginIds.Contains(pluginId);
 
         // Discovered plugin TYPES are cached across window open/close: the assembly-wide
         // scan is the expensive part of discovery (it was re-run on every OnEnable). Fresh

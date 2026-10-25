@@ -49,6 +49,40 @@ The Setup Wizard's eight generated files are single-source templates (`NexusSetu
 2. Run `WizardTemplateSyncTests`; the hash test's failure message prints the new SHA-256.
 3. Update the "Template content hashes" table in `CHANGELOG.md` and state the reason for the change in the release notes.
 
+### 6. Concurrency style guide
+
+Nexus runs on Unity's main thread but exposes thread-safe surfaces (`FireThreadSafe`, network
+rollback, worker-thread services). Shared state picks ONE documented pattern per structure; mixing
+patterns in one type is the most common source of subtle bugs.
+
+| Rule | When to use | Example |
+|------|-------------|---------|
+| **R1: Publish-through-snapshot** | Read-heavy state read on the hot path, mutated rarely | The command and subscription read copies `CommandRegistry._commandHandlersReadCopy` and `SubscriptionRegistry._subscriptionsReadCopy` |
+| **R2: Lock + plain collection** | Write-heavy or compound (check-then-mutate) operations | `NexusDI._singletonLock` around singleton construction and the `List<object> _resolvedSingletonOrder`; `EconomyService._balanceLock` around balance mutations. The bindings themselves are a `ConcurrentDictionary<Type, Binding> _bindings` read without a lock |
+| **R3: Interlocked counters / CAS flags** | Lock-free simple counters or one-shot claims | `NexusRuntime.Metrics` totals, `NexusRuntime.s_monitoringInitialized`, `HybridQueue` drain guards |
+| **R4: Never invoke callbacks under a lock** | Any event/plugin/sink invocation | `NexusTrace` sink writes (snapshotted under the lock, invoked outside it); `NexusRuntime` context events (invoked after the lock is released) |
+
+Anti-patterns to avoid:
+
+- **`lock (concurrentCollection)`**: locking a `ConcurrentDictionary`/`ConcurrentQueue` itself is
+  legal but misleading, because the collection's own synchronization is internal. Use a dedicated
+  `private readonly object _xxxLock = new()` and document it (e.g. `EconomyService._balanceLock`).
+- **Check-then-set on a `volatile` flag**: two threads can both pass the check. Use
+  `Interlocked.CompareExchange` (claim) or a single `lock` scope.
+- **Double reset on pooled objects**: decide whether reset happens on pop or on return, not both.
+  If both are deliberate (defensive `Mediator.Reset`), the reset MUST be idempotent and the double
+  call MUST be documented on the method.
+
+### 7. Lifecycle ownership
+
+- `ContextData` is **caller-owned** (scene/asset) unless created at runtime by
+  `NexusRuntime.CreatePureContextAsync`, which marks it owned (`Context.OwnsContextData()`) and
+  destroys it on dispose. Never destroy caller-provided assets.
+- `INexusService` lifecycle (`InitializeAsync`/`OnDispose`) is owned by the owning `Context`;
+  `NexusDI.Dispose` skips `INexusService` instances to avoid a double dispose. Non-service
+  interfaces (e.g. `IPlayerPrefsService`) keep their own `IDisposable` contract; document which one
+  a type uses.
+
 ## 📋 PR Review Checklist for AI Agents
 
 When reviewing or self-auditing a PR, validate every check item:
@@ -67,14 +101,14 @@ When reviewing or self-auditing a PR, validate every check item:
 - [ ] `Task.Run` or `async` continuations that call Unity APIs or `RestoreSaveData` marshal back to the captured `SynchronizationContext`.
 - [ ] Lock scope is minimised: no I/O, `PlayerPrefs`, or network calls inside `lock` blocks.
 - [ ] Signals dispatched via `FireThreadSafe`/`HybridQueue` not by direct `Fire<T>` when the caller may be off the main thread.
-- [ ] `ThreadStatic` fields (e.g. `s_resolutionStack`) are documented with the sync/async decision rationale.
+- [ ] `ThreadStatic` fields (e.g. `NexusDI.s_resolution`) are documented with the sync/async decision rationale.
 - [ ] Disposal races prevented: `Dispose()` sets a `_disposed` flag before signalling waiters or running cleanup.
 
 ### Persistence & Anti-Cheat
-- [ ] `EncryptedStorageService`: imported cloud payloads are HMAC-validated (`TryReadVersion2`) before touching the local file.
+- [ ] `EncryptedStorageService`: imported cloud payloads are HMAC-validated (`TryReadCurrentFormat`) before touching the local file.
 - [ ] `Save()` retains dirty keys on write failure (caller retries) instead of clearing them unconditionally.
 - [ ] `SecureObservable*` reads and writes are documented as memory-scan deterrence, not cryptographic guarantees.
-- [ ] `File.Replace` (atomic) is used for all persistent writes; no `Delete-then-Move` pattern exists.
+- [ ] Persistent writes stage a temporary file and swap it in with `File.Replace` (atomic) where the platform supports it; where it does not, the fallback logs a warning (`GameSaveManager`: non-atomic delete-then-move; `EncryptedStorageService`: the previous file kept as `.bak` until the move completes).
 
 ### Automated Testing
 - [ ] At least 1 NUnit test per P1/P2 fix added under `Tests/Editor/`.
@@ -95,9 +129,11 @@ When reviewing or self-auditing a PR, validate every check item:
    - `fix(tracer): replace ScrollView rebuild with ListView virtualization`
    - `perf(dashboard): cache assembly catalog and debounce search input`
    - `docs(readme): update language policy to en and tr`
-2. **Verify NUnit Tests**: Run tests via Unity Test Runner or command line:
-   ```bash
-   Unity.exe -batchmode -runTests -testPlatform EditMode -projectPath .
+2. **Verify NUnit Tests**: run them in the Unity Test Runner, or from the repository root with the
+   commands in the repository's `CLAUDE.md`:
+   ```powershell
+   & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
+   & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
    ```
 
 ---
@@ -107,9 +143,3 @@ When reviewing or self-auditing a PR, validate every check item:
 - 📖 [PLUGIN_DEVELOPMENT.md](PLUGIN_DEVELOPMENT.md) — Plugin development & edge cases
 - 📜 [CHANGELOG.md](../CHANGELOG.md) — Release notes and changelog
 - 📋 Past review and audit reports are archived in the repository under `docs/archive/` (not shipped with the package); consult them before re-flagging hardening items as new findings
-
----
-
-**Code version:** 0.5.0  
-**Maintainers:** Nexus Core Team  
-**Re-review trigger:** Any pull request submission or API change.

@@ -29,7 +29,7 @@ namespace Nexus.Editor
         private Label _resultLogLabel;
 
         private string _searchQuery = "";
-        private string _selectedAssembly = "All Assemblies";
+        private string _selectedAssembly; // null: every assembly (the dropdown's first, localized entry)
         private List<MappingInfo> _allMappings = new();
         private readonly List<VisualElement> _renderedRows = new();
 
@@ -188,7 +188,7 @@ namespace Nexus.Editor
             _assemblyDropdown = new DropdownField("Assembly", new List<string> { NexusLang.Get("exp_all_assemblies") }, 0) { style = { width = 160, marginRight = 10 } };
             _assemblyDropdown.RegisterValueChangedCallback(evt =>
             {
-                _selectedAssembly = evt.newValue;
+                _selectedAssembly = _assemblyDropdown.index <= 0 ? null : evt.newValue;
                 FilterAndPopulateExplorerRows();
             });
             filtersToolbar.Add(_assemblyDropdown);
@@ -330,7 +330,7 @@ namespace Nexus.Editor
             if (s_cachedMappings == null)
             {
                 s_cachedMappings = new List<MappingInfo>();
-                s_cachedAssemblies = new List<string> { "All Assemblies" };
+                s_cachedAssemblies = new List<string>();
                 s_cachedSignalTypes = new List<Type>();
 
                 var seenSignals = new HashSet<string>();
@@ -409,11 +409,13 @@ namespace Nexus.Editor
 
             if (_assemblyDropdown != null)
             {
-                _assemblyDropdown.choices = s_cachedAssemblies;
-                if (!s_cachedAssemblies.Contains(_selectedAssembly))
+                var choices = new List<string> { NexusLang.Get("exp_all_assemblies") };
+                choices.AddRange(s_cachedAssemblies);
+                _assemblyDropdown.choices = choices;
+                if (_selectedAssembly == null || !s_cachedAssemblies.Contains(_selectedAssembly))
                 {
-                    _selectedAssembly = "All Assemblies";
-                    _assemblyDropdown.value = "All Assemblies";
+                    _selectedAssembly = null;
+                    _assemblyDropdown.index = 0;
                 }
             }
 
@@ -430,7 +432,7 @@ namespace Nexus.Editor
             var filtered = new List<MappingInfo>();
             foreach (var map in _allMappings)
             {
-                if (_selectedAssembly != "All Assemblies" && map.AssemblyName != _selectedAssembly)
+                if (_selectedAssembly != null && map.AssemblyName != _selectedAssembly)
                     continue;
 
                 if (!string.IsNullOrEmpty(_searchQuery))
@@ -640,12 +642,13 @@ namespace Nexus.Editor
 
             var loadPresetRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 4 } };
             var presetNames = GetSavedPresetNames();
-            if (presetNames.Count == 0) presetNames.Add(NexusLang.Get("exp_no_presets"));
+            bool noPresets = presetNames.Count == 0;
+            if (noPresets) presetNames.Add(NexusLang.Get("exp_no_presets"));
             var loadDropdown = new DropdownField(presetNames, 0) { style = { flexGrow = 1, marginRight = 5 } };
             loadPresetRow.Add(loadDropdown);
 
-            var loadBtn = new Button(() => LoadPreset(loadDropdown.value)) { text = NexusLang.Get("exp_btn_load") };
-            if (presetNames[0] == "No Presets") loadBtn.SetEnabled(false);
+            var loadBtn = new Button(() => { if (!noPresets) LoadPreset(loadDropdown.value); }) { text = NexusLang.Get("exp_btn_load") };
+            if (noPresets) loadBtn.SetEnabled(false);
             loadPresetRow.Add(loadBtn);
 
             _testerFormContainer.Add(loadPresetRow);
@@ -681,7 +684,7 @@ namespace Nexus.Editor
 
         private void LoadPreset(string presetName)
         {
-            if (string.IsNullOrEmpty(presetName) || presetName == "No Presets") return;
+            if (string.IsNullOrEmpty(presetName)) return;
             if (_testerSelectedSignalType == null || _testerSignalInstance == null) return;
 
             string key = $"NexusPreset_{_testerSelectedSignalType.FullName}_{presetName}";

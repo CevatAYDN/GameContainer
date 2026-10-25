@@ -243,15 +243,15 @@ namespace Nexus.Editor
             var typeLabel = new Label(NexusLang.Get("nd_filter_type")) { style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginRight = 4 } };
             bar.Add(typeLabel);
 
-            foreach (var t in new[] { NexusLang.Get("nd_filter_all"), NexusLang.Get("nd_filter_sent"), NexusLang.Get("nd_filter_received"), NexusLang.Get("nd_filter_failed"), NexusLang.Get("nd_filter_timeout") })
+            // the filter keeps NetworkMonitor's event type; only the button text is localized
+            foreach (var (type, key) in new[] { ("All", "nd_filter_all"), ("Sent", "nd_filter_sent"), ("Received", "nd_filter_received"), ("Failed", "nd_filter_failed"), ("Timeout", "nd_filter_timeout") })
             {
-                var t1 = t;
                 var btn = new Button(() =>
                 {
-                    _typeFilter = t1;
+                    _typeFilter = type;
                     ApplyFilters();
-                }) { text = t };
-                StyleFilterBtn(btn, t == _typeFilter);
+                }) { text = NexusLang.Get(key) };
+                StyleFilterBtn(btn, type == _typeFilter);
                 bar.Add(btn);
             }
 

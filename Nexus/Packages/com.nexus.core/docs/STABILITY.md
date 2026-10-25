@@ -43,7 +43,7 @@
 ## ⚠️ May Change (Experimental)
 
 - `[SignalHandler]` attribute auto-discovery (canonical path is `BindCommand<>`)
-- `NexusDOTSBridge` DOTS integration
+- DOTS bridge: `NativeSignalQueue<T>` and `DOTSSignalBridge<T>` (`com.nexus.core.dots` assembly, compiled when `com.unity.collections` is installed)
 - `NetworkSignalBus` and replay system
 - `[CommandTimeout]` implementation details
 - `IRecoveryStrategy` API specifics
@@ -53,7 +53,7 @@
 
 ## 🗺️ Path to 1.0
 
-1. All 13 core services reach production validation
+1. All 16 core services reach production validation
 2. Performance benchmarks stabilize
 3. Breaking changes rate drops to zero for 3 consecutive releases
 4. Community adoption demonstrates API surface correctness

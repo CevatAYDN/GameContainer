@@ -96,8 +96,8 @@ Register production provider adapters for ads, IAP and analytics. Mock providers
 do not prove a working payment or advertising integration. Network signals and
 rollback alone do not establish a multiplayer backend.
 
-See [verification scope](HARDENING.md), [game patterns](GAME_PATTERNS.md),
-[architecture](ARCHITECTURE.md), and [troubleshooting](../TROUBLESHOOTING.md).
+See [game patterns](GAME_PATTERNS.md), [architecture](ARCHITECTURE.md) and
+[troubleshooting](../TROUBLESHOOTING.md); verification status is in the repository's `docs/RELEASE_GATES.md`.
 
 ## Scene components, global scope and jobs
 

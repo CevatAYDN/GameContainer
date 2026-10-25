@@ -32,7 +32,7 @@
 - Economy currencies promote once from long to canonical BigDouble using the live balance before disk. Existing long observables become saturated/truncated projections. Big backends implement INetworkBigEconomyValidator; unsupported transactions fail closed. Storage uses finite-only invariant round-trip mantissa encoding.
 - A custom input provider owns movement including zero. Optional DOTS bridges complete registered JobHandle producers before drain, reinitialization or disposal; callers register every scheduled producer on the main thread.
 
-Implementation and verification status: [HARDENING.md](HARDENING.md).
+Verification status: the repository's `docs/RELEASE_GATES.md`.
 
 This document describes the high-level architecture, runtime pipeline, component contracts, and lifecycle sequences of the **Nexus Core** framework for Unity 6.
 
@@ -105,7 +105,7 @@ The central dependency container and signal lifecycle manager. Root and sub-cont
 ### 2. `SignalBus` & `IContextResolver`
 Handles signal registration and command execution.
 - **Dispatch Modes**:
-  - `Sequential`: Executes commands in registration order synchronously.
+  - `Sequential`: Executes commands one at a time, highest `priority` first (handlers of one signal need distinct priorities; a duplicate is rejected at registration).
   - `Concurrent`: Executes commands asynchronously via tasks.
   - `Exclusive`: Ensures only one command instance executes for the signal type.
   - `Composite`: Triggers when multiple dependent signals are satisfied.
@@ -139,13 +139,13 @@ Both recovery paths dispatch fallback commands through object-based `ExecuteComm
 
 ## 🚫 Architectural Anti-Patterns
 
-### ❌ Bypassing `IContextResolver` for Cross-Context Signals
+### ❌ Indexing `ActiveContexts` for Cross-Context Signals
 ```csharp
 // BAD: Direct static access to internal context list
 NexusRuntime.ActiveContexts[0].SignalBus.Fire(signal);
 
-// GOOD: Route via IContextResolver abstraction
-_contextResolver.ResolveContext("Gameplay").SignalBus.Fire(signal);
+// GOOD: Address the context by its ScopeTag (null when no such context is active)
+NexusRuntime.GetContext("Gameplay")?.SignalBus.Fire(signal);
 ```
 *Why:* Direct index access creates brittle dependencies and fails during unit testing or multi-context scene reloads.
 
