@@ -11,6 +11,13 @@ namespace Nexus.Core.Services
     public interface IAudioRootProvider
     {
         GameObject GetOrCreateRoot();
+
+        /// <summary>
+        /// Called when the audio service is disposed, with the root <see cref="GetOrCreateRoot"/> returned.
+        /// The default keeps it (the provider owns its lifetime); a provider whose root should go with the
+        /// service destroys it here, as <see cref="DefaultAudioRootProvider"/> does.
+        /// </summary>
+        void ReleaseRoot(GameObject root) { }
     }
 
     public class DefaultAudioRootProvider : IAudioRootProvider
@@ -25,6 +32,12 @@ namespace Nexus.Core.Services
             UnityEngine.Object.DontDestroyOnLoad(_root);
             return _root;
         }
+
+        public void ReleaseRoot(GameObject root)
+        {
+            if (root != null) SafeDestroyUtility.SafeDestroy(root);
+            if (ReferenceEquals(root, _root)) _root = null;
+        }
     }
 
     public interface IAudioService
@@ -36,7 +49,12 @@ namespace Nexus.Core.Services
         /// Use <see cref="BgmStateMultiplier"/> instead for transient per-state ducking.</para></summary>
         float BgmVolume { get; set; }
         float SfxVolume { get; set; }
+        /// <summary>Mutes music and effects. Persisted.</summary>
         bool IsMuted { get; set; }
+        /// <summary>Mutes the music only. Persisted.</summary>
+        bool IsMusicMuted { get; set; }
+        /// <summary>Mutes the effects only. Persisted.</summary>
+        bool IsSfxMuted { get; set; }
 
         /// <summary>FIX P0.3 — Transient state-driven BGM volume multiplier (0..1).
         /// NOT persisted: the caller (e.g. a gameplay state) is responsible for restoring
@@ -68,13 +86,19 @@ namespace Nexus.Core.Services
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
         [Inject] public IAudioRootProvider AudioRootProvider { get; set; }
+        // Optional: the game's store for volumes and mutes (SettingsStores.Audio); null uses PlayerPrefsService.
+        [OptionalInject] public SettingsStores SettingsStores { get; set; }
+        private IPlayerPrefsService Store => SettingsStores?.Audio ?? PlayerPrefsService;
 
         private const string KeyMasterVol = "NT_AudioMasterVol";
         private const string KeyBgmVol = "NT_AudioBgmVol";
         private const string KeySfxVol = "NT_AudioSfxVol";
         private const string KeyMuted = "NT_AudioMuted";
+        private const string KeyMusicMuted = "NT_AudioMusicMuted";
+        private const string KeySfxMuted = "NT_AudioSfxMuted";
 
         private GameObject _audioRoot;
+        private bool _ownsAudioRoot; // created here because no provider supplied one
         private AudioSource _bgmSourceActive;
         private AudioSource _bgmSourceFade;
         private readonly List<AudioSource> _sfxPool = new();
@@ -102,6 +126,12 @@ namespace Nexus.Core.Services
         // overwrite the player's saved BgmVolume slider value.
         private float _bgmStateMultiplier = 1f;
         private bool _isMuted;
+        private bool _isMusicMuted;
+        private bool _isSfxMuted;
+
+        // Master × user preference × state multiplier, zero when the music is muted.
+        private float EffectiveBgmVolume => _isMuted || _isMusicMuted ? 0f : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+        private bool SfxMuted => _isMuted || _isSfxMuted;
 
         public float MasterVolume
         {
@@ -109,7 +139,7 @@ namespace Nexus.Core.Services
             set
             {
                 _masterVolume = Mathf.Clamp01(value);
-                PlayerPrefsService?.SetFloat(KeyMasterVol, _masterVolume);
+                Store?.SetFloat(KeyMasterVol, _masterVolume);
                 UpdateVolumes();
             }
         }
@@ -120,7 +150,7 @@ namespace Nexus.Core.Services
             set
             {
                 _bgmVolume = Mathf.Clamp01(value);
-                PlayerPrefsService?.SetFloat(KeyBgmVol, _bgmVolume);
+                Store?.SetFloat(KeyBgmVol, _bgmVolume);
                 UpdateVolumes();
             }
         }
@@ -145,7 +175,7 @@ namespace Nexus.Core.Services
             set
             {
                 _sfxVolume = Mathf.Clamp01(value);
-                PlayerPrefsService?.SetFloat(KeySfxVol, _sfxVolume);
+                Store?.SetFloat(KeySfxVol, _sfxVolume);
                 UpdateVolumes();
             }
         }
@@ -156,8 +186,29 @@ namespace Nexus.Core.Services
             set
             {
                 _isMuted = value;
-                PlayerPrefsService?.SetBool(KeyMuted, _isMuted);
+                Store?.SetBool(KeyMuted, _isMuted);
                 UpdateVolumes();
+            }
+        }
+
+        public bool IsMusicMuted
+        {
+            get => _isMusicMuted;
+            set
+            {
+                _isMusicMuted = value;
+                Store?.SetBool(KeyMusicMuted, _isMusicMuted);
+                UpdateVolumes();
+            }
+        }
+
+        public bool IsSfxMuted
+        {
+            get => _isSfxMuted;
+            set
+            {
+                _isSfxMuted = value;
+                Store?.SetBool(KeySfxMuted, _isSfxMuted);
             }
         }
 
@@ -170,6 +221,7 @@ namespace Nexus.Core.Services
             if (_audioRoot != null) return default;
 
             _audioRoot = AudioRootProvider?.GetOrCreateRoot();
+            _ownsAudioRoot = _audioRoot == null;
             if (_audioRoot == null)
             {
                 _audioRoot = new GameObject("[Nexus_AudioService]");
@@ -184,12 +236,15 @@ namespace Nexus.Core.Services
             _bgmSourceFade.loop = true;
             _bgmSourceFade.playOnAwake = false;
 
-            if (PlayerPrefsService != null)
+            var store = Store;
+            if (store != null)
             {
-                _masterVolume = PlayerPrefsService.GetFloat(KeyMasterVol, 1f);
-                _bgmVolume = PlayerPrefsService.GetFloat(KeyBgmVol, 1f);
-                _sfxVolume = PlayerPrefsService.GetFloat(KeySfxVol, 1f);
-                _isMuted = PlayerPrefsService.GetBool(KeyMuted, false);
+                _masterVolume = store.GetFloat(KeyMasterVol, 1f);
+                _bgmVolume = store.GetFloat(KeyBgmVol, 1f);
+                _sfxVolume = store.GetFloat(KeySfxVol, 1f);
+                _isMuted = store.GetBool(KeyMuted, false);
+                _isMusicMuted = store.GetBool(KeyMusicMuted, false);
+                _isSfxMuted = store.GetBool(KeySfxMuted, false);
             }
 
             UpdateVolumes();
@@ -201,9 +256,7 @@ namespace Nexus.Core.Services
             // Player preference × State multiplier. Old code wrote the state
             // multiplier (e.g. 0.40 from PlayingState) to PlayerPrefs every level entry,
             // overwriting the user's chosen slider value permanently.
-            float effectiveBgm = _isMuted
-                ? 0f
-                : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+            float effectiveBgm = EffectiveBgmVolume;
             if (_bgmSourceActive != null) _bgmSourceActive.volume = effectiveBgm;
             if (_bgmSourceFade != null) _bgmSourceFade.volume = effectiveBgm;
         }
@@ -214,9 +267,7 @@ namespace Nexus.Core.Services
             if (_bgmSourceActive.clip == clip && _bgmSourceActive.isPlaying) return;
 
             // Same effective formula (master × user pref × state mult).
-            float targetVolume = _isMuted
-                ? 0f
-                : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+            float targetVolume = EffectiveBgmVolume;
 
             if (fadeDuration <= 0f || _bgmSourceFade == null || !TryGetFadeRunner(out var runner))
             {
@@ -289,7 +340,7 @@ namespace Nexus.Core.Services
                 elapsed += Time.unscaledDeltaTime;
                 float t = Mathf.Clamp01(elapsed / duration);
                 // Recompute the target each frame so volume/mute changes mid-fade apply.
-                float target = _isMuted ? 0f : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+                float target = EffectiveBgmVolume;
                 if (incoming != null) incoming.volume = target * t;
                 if (outgoing != null) outgoing.volume = target * (1f - t);
                 yield return null;
@@ -300,7 +351,7 @@ namespace Nexus.Core.Services
                 outgoing.clip = null;
             }
             if (incoming != null)
-                incoming.volume = _isMuted ? 0f : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+                incoming.volume = EffectiveBgmVolume;
             _fadeCoroutine = null;
         }
 
@@ -320,7 +371,7 @@ namespace Nexus.Core.Services
                 source.Stop();
                 source.clip = null;
                 // Restore the source volume for the next PlayBgm.
-                source.volume = _isMuted ? 0f : _masterVolume * _bgmVolume * _bgmStateMultiplier;
+                source.volume = EffectiveBgmVolume;
             }
             _fadeCoroutine = null;
         }
@@ -329,7 +380,7 @@ namespace Nexus.Core.Services
 
         public void PlaySfx(AudioClip clip, float volume = 1f, float pitchMin = 1f, float pitchMax = 1f)
         {
-            if (clip == null || _isMuted) return;
+            if (clip == null || SfxMuted) return;
 
             // Guard: Random.Range(float, float) throws when min > max. Mirror the
             // FeedbackService.PlayCustom swap so inverted pitch ranges never crash.
@@ -344,7 +395,7 @@ namespace Nexus.Core.Services
 
         public void PlaySfxAtPosition(AudioClip clip, Vector3 position, float volume = 1f)
         {
-            if (clip == null || _isMuted) return;
+            if (clip == null || SfxMuted) return;
 
             var source = GetAvailableSfxSource();
             source.transform.position = position;
@@ -413,10 +464,9 @@ namespace Nexus.Core.Services
 
             if (_audioRoot != null)
             {
-                if (AudioRootProvider is DefaultAudioRootProvider)
-                {
-                    SafeDestroyUtility.SafeDestroy(_audioRoot);
-                }
+                // A root this service created goes with it; a provider's root goes back to the provider.
+                if (_ownsAudioRoot) SafeDestroyUtility.SafeDestroy(_audioRoot);
+                else AudioRootProvider?.ReleaseRoot(_audioRoot);
                 _audioRoot = null;
             }
 

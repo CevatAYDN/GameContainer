@@ -48,6 +48,9 @@ namespace Nexus.Core.Services
     public class EconomyService : NexusService<IEconomyService>, IEconomyService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
+        // Optional: the game's store for balances (SettingsStores.Economy); null uses PlayerPrefsService.
+        [OptionalInject] public SettingsStores SettingsStores { get; set; }
+        private IPlayerPrefsService Store => SettingsStores?.Economy ?? PlayerPrefsService;
         // Optional capability: every use is null-checked and fire-and-forget, so a game
         // without a backend must not fail strict injection / startup validation over it.
         [OptionalInject] public INetworkEconomyValidator NetworkValidator { get; set; }
@@ -207,7 +210,7 @@ namespace Nexus.Core.Services
 
         private SavedBalance ReadSaved(string currencyId)
         {
-            var store = PlayerPrefsService;
+            var store = Store;
             if (store == null) return default;
             if (store.HasKey($"NT_EcoBig_{currencyId}"))
                 return new SavedBalance(true, store.GetBigDouble($"NT_EcoBig_{currencyId}", BigDouble.Zero), false, 0L);
@@ -451,23 +454,24 @@ namespace Nexus.Core.Services
 
         private void PersistAllBalancesNow()
         {
-            if (PlayerPrefsService == null) return;
+            var store = Store;
+            if (store == null) return;
             lock (_balanceLock)
             {
                 if (_disposed) return;
                 foreach (var kvp in _balances)
                 {
                     if (!_bigBalances.ContainsKey(kvp.Key))
-                        PlayerPrefsService.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
+                        store.SetLong($"NT_Eco_{kvp.Key}", kvp.Value.Value);
                 }
                 foreach (var kvp in _bigBalances)
                 {
-                    PlayerPrefsService.SetBigDouble($"NT_EcoBig_{kvp.Key}", kvp.Value.Value);
-                    PlayerPrefsService.DeleteKey($"NT_Eco_{kvp.Key}");
+                    store.SetBigDouble($"NT_EcoBig_{kvp.Key}", kvp.Value.Value);
+                    store.DeleteKey($"NT_Eco_{kvp.Key}");
                 }
             }
             // Flush outside the lock (may hit disk) — mirrors ProgressionService.PersistNow.
-            PlayerPrefsService.Save();
+            store.Save();
         }
 
         /// <summary>

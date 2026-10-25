@@ -113,17 +113,17 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 |---|---|---|
 | `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; Google AdMob in the `com.nexus.ads.admob` package); `RequestReward` with `AdOutcome`, `ReadyChanged`, privacy options through optional adapter capabilities |
 | `AnalyticsService` | `Analytics` | Stub `IAnalyticsService`: events (with an optional parameter dictionary) and user properties written to the log; replace it with a real backend such as `com.nexus.firebase` before release |
-| `AudioService` | `Audio` | BGM playlist crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels |
-| `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator |
+| `AudioService` | `Audio` | BGM crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels, one mute for everything plus separate music and effects mutes (`IsMusicMuted`, `IsSfxMuted`); the root comes from an `IAudioRootProvider`, which gets it back through `ReleaseRoot` on dispose |
+| `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator; balances persist to `SettingsStores.Economy` when a game binds one |
 | `FeedbackService` | `Feedback` | Combined audio + haptic presets |
 | `FloatingTextService` | `UI` | Pooled world-space floating numbers |
-| `HapticService` | `Haptics` | Android JNI and iOS Taptic haptics with desktop preview |
+| `HapticService` | `Haptics` | Six `HapticType` presets and a game's own one-shots and waveforms (`CreateEffect`, `CreateWaveform`, `Play`); on Android 8+ each effect is built once and played through cached JNI; iOS uses `Handheld.Vibrate()`; `IsEnabled` persists |
 | `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (mock included; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
 | `InputService` | `Input` | Input System movement/actions behind `IInputService`; a custom `IInputProvider` is authoritative |
 | `LocalizationService` | `Localization` | Language tables (a game's JSON tables through `JsonLocalizationTableProvider`), first-run device language, the language's culture and `Format`, RTL formatting, English fallback |
 | `LoggerService` | `Logging` | Default `ILoggerService` |
 | `ObjectPoolService` | `Pool` | GameObject/component pools with prewarm, `IPoolable` callbacks and timed despawn |
-| `ProgressionService` | `Progression` | Level index, max unlocked level, upgrade cost formulas |
+| `ProgressionService` | `Progression` | Level index, max unlocked level, upgrade cost formulas; levels persist to `SettingsStores.Progression` when a game binds one |
 | `ResourcesAssetLoadService` | `Assets` | Default `IAssetLoadService` over `Resources`; an Addressables adapter is described in [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) |
 | `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause |
 | `UIManager` | `UI` | Typed `ScreenView` stack over the seven `UILayer` layers (`Background`, `HUD`, `Screen`, `Popup`, `Modal`, `Overlay`, `System`) with async open/close |
@@ -138,7 +138,9 @@ current language's culture (`LocalizationOptions.Cultures` fixes a game's own se
 
 Storage is not a `NexusService`: `EncryptedStorageService` (`Nexus.Core.Services`)
 implements `IPlayerPrefsService` with AES-256, key-bound HMAC-SHA256, device-bound seeds and
-atomic writes. `GameSaveManager` (`Nexus.Core.Extensions`) writes one registered
+atomic writes. `SettingsStores` names, per service (audio, haptics, economy, progression), the
+`IPlayerPrefsService` that keeps its state, for a game that keeps it in its own save; a slot left null uses the bound
+`IPlayerPrefsService`, and the key names stay the same. `GameSaveManager` (`Nexus.Core.Extensions`) writes one registered
 `ISaveDataProvider` to a JSON slot file under the persistent data path and reads it back; it is a
 starting point, not a save system: a game keeps its own save format and decides when to save.
 `SaveThrottler` (used by `EconomyService` and `ProgressionService`) limits how often a service writes.
@@ -150,6 +152,7 @@ starting point, not a save system: a game keeps its own save format and decides 
 | Generic synchronous dispatch, command pools, warmed DI resolution | Host regressions verify zero allocation for covered paths after warmup |
 | Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup |
 | `EconomyService` `Earn` / `Spend` / `GetBalance` with a `SaveThrottler` bound | 0 B after the currency's first touch (harness GCA5); without a throttler every mutation persists synchronously and allocates |
+| `HapticService.Play` of a built effect, `Vibrate(HapticType)` on Android 8+ | 0 B in the managed lookup (harness G5); on the device the call goes through a prebuilt `VibrationEffect` and a cached JNI method, which is allocation-free by construction and was not measured on a phone; Android 7 and older use `vibrate(long)`, which allocates |
 | Immutable arbitrary-arity or async composite | Retained snapshots; payload boxing and snapshot allocation are intentional |
 | Startup, registration, async operations, editor diagnostics, `NEXUS_DEBUG` tracing | May allocate; outside the hot-path contract |
 

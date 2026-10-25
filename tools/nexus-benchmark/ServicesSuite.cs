@@ -27,6 +27,9 @@ namespace NexusBench
         public bool IsEnabled { get; set; } = true;
         public readonly List<HapticType> Calls = new();
         public void Vibrate(HapticType type) => Calls.Add(type);
+        public HapticEffect CreateEffect(long milliseconds, int amplitude = -1) => default;
+        public HapticEffect CreateWaveform(long[] timings, int[] amplitudes) => default;
+        public void Play(HapticEffect effect) { }
     }
 
     public sealed class SvcLoggerRecorder : ILoggerService
@@ -1078,6 +1081,7 @@ namespace NexusBench
             RunZeroGc_Audio();
             RunZeroGc_Localization();
             RunZeroGc_FloatingText();
+            RunZeroGc_Haptics();
         }
 
         private static long MeasuredAllocations(Action action)
@@ -1165,6 +1169,22 @@ namespace NexusBench
             });
             Check("G3. Localization_GetString_ZeroGC", alloc <= 128,
                 $"allocated={alloc} bytes for 3000 lookups (limit <=128)");
+        }
+
+        // #71: effects are built once; Play only looks the effect up (the Android JNI call is not run here).
+        private static void RunZeroGc_Haptics()
+        {
+            var svc = new HapticService();
+            var tap = svc.CreateEffect(18, 70);
+            var wave = svc.CreateWaveform(new long[] { 0, 20, 40, 60 }, new[] { 0, 120, 0, 255 });
+            for (int i = 0; i < 100; i++) { svc.Play(tap); svc.Play(wave); }
+
+            long alloc = MeasuredAllocations(() =>
+            {
+                for (int i = 0; i < 1000; i++) { svc.Play(tap); svc.Play(wave); }
+            });
+            Check("G5. Haptics_Play_ZeroGC", alloc <= 128 && tap.IsValid && wave.IsValid && tap.Id != wave.Id,
+                $"allocated={alloc} bytes for 2000 plays (limit <=128), ids={tap.Id},{wave.Id}");
         }
 
         private static void RunZeroGc_FloatingText()

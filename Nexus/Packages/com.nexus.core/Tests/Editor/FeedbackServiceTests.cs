@@ -22,6 +22,10 @@ namespace Nexus.Editor.Tests
                 LastVibrated = type;
                 VibrateCount++;
             }
+
+            public HapticEffect CreateEffect(long milliseconds, int amplitude = -1) => default;
+            public HapticEffect CreateWaveform(long[] timings, int[] amplitudes) => default;
+            public void Play(HapticEffect effect) { }
         }
 
         private class MockAudioService : IAudioService
@@ -31,6 +35,8 @@ namespace Nexus.Editor.Tests
             public float BgmStateMultiplier { get; set; }
             public float SfxVolume { get; set; }
             public bool IsMuted { get; set; }
+            public bool IsMusicMuted { get; set; }
+            public bool IsSfxMuted { get; set; }
 
             public AudioClip LastSfxClip { get; private set; }
             public float LastPitchMin { get; private set; }

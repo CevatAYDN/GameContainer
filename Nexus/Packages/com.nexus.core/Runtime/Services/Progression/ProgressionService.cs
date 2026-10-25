@@ -29,6 +29,9 @@ namespace Nexus.Core.Services
     public class ProgressionService : NexusService<IProgressionService>, IProgressionService
     {
         [Inject] public IPlayerPrefsService PlayerPrefsService { get; set; }
+        // Optional: the game's store for levels (SettingsStores.Progression); null uses PlayerPrefsService.
+        [OptionalInject] public SettingsStores SettingsStores { get; set; }
+        private IPlayerPrefsService Store => SettingsStores?.Progression ?? PlayerPrefsService;
         // Optional write-coalescer: without it, every level change triggers a synchronous
         // PlayerPrefs.Save() (frame hitches on mobile). Mirrors EconomyService's pattern.
         [OptionalInject] public ISaveThrottler SaveThrottler { get; set; }
@@ -60,10 +63,11 @@ namespace Nexus.Core.Services
 
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
-            if (PlayerPrefsService != null)
+            var store = Store;
+            if (store != null)
             {
-                CurrentLevel.Value = Math.Max(1, PlayerPrefsService.GetInt(KeyCurrentLevel, 1));
-                MaxUnlockedLevel.Value = Math.Max(CurrentLevel.Value, PlayerPrefsService.GetInt(KeyMaxLevel, 1));
+                CurrentLevel.Value = Math.Max(1, store.GetInt(KeyCurrentLevel, 1));
+                MaxUnlockedLevel.Value = Math.Max(CurrentLevel.Value, store.GetInt(KeyMaxLevel, 1));
             }
 
             CurrentLevel.OnChanged(OnLevelChanged);
@@ -92,10 +96,11 @@ namespace Nexus.Core.Services
 
         private void PersistNow()
         {
-            if (PlayerPrefsService == null) return;
-            PlayerPrefsService.SetInt(KeyCurrentLevel, CurrentLevel.Value);
-            PlayerPrefsService.SetInt(KeyMaxLevel, MaxUnlockedLevel.Value);
-            PlayerPrefsService.Save();
+            var store = Store;
+            if (store == null) return;
+            store.SetInt(KeyCurrentLevel, CurrentLevel.Value);
+            store.SetInt(KeyMaxLevel, MaxUnlockedLevel.Value);
+            store.Save();
         }
 
         public void CompleteCurrentLevel()
