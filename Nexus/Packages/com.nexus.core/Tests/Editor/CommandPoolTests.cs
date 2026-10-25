@@ -1,5 +1,8 @@
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Nexus.Core;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Nexus.Editor.Tests
 {
@@ -90,6 +93,37 @@ namespace Nexus.Editor.Tests
             Assert.AreSame(command, first);
             Assert.AreNotSame(first, second, "Pool must not contain the same instance twice.");
             Assert.GreaterOrEqual(_pool.GetStats().TotalDiscarded, 1);
+        }
+
+        public class InjectedPropertiesCommand : ICommand
+        {
+            [Inject] public MockDependency Dependency { get; set; }
+            [Inject] private MockDependency Hidden { get; set; }
+            public void Execute() { }
+        }
+
+        public class StatefulPropertyCommand : ICommand
+        {
+            [Inject] public MockDependency Dependency { get; set; }
+            public MockDependency Leftover { get; set; }
+            public void Execute() { }
+        }
+
+        // #80: the warning listed "<Dependency>k__BackingField" because [Inject] sits on the property, not the field.
+        [Test]
+        public void StateLeakWarning_IgnoresInjectAutoProperties()
+        {
+            CommandPool.ClearStateLeakWarningsStatic();
+            _pool = new CommandPool(typeof(InjectedPropertiesCommand), () => new InjectedPropertiesCommand());
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
+        public void StateLeakWarning_StillNamesAPlainAutoPropertyNextToAnInjectedOne()
+        {
+            CommandPool.ClearStateLeakWarningsStatic();
+            LogAssert.Expect(LogType.Warning, new Regex(@"StatefulPropertyCommand' has mutable field\(s\) \[<Leftover>k__BackingField\] "));
+            _pool = new CommandPool(typeof(StatefulPropertyCommand), () => new StatefulPropertyCommand());
         }
     }
 }

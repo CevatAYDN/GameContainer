@@ -151,6 +151,7 @@ namespace Nexus.Core
                 // IsDefined scans metadata only — no attribute instantiation (GetCustomAttribute
                 // allocates the attribute instance per member on this startup-time path).
                 if (field.IsDefined(typeof(InjectAttribute), false)) continue;
+                if (IsInjectedPropertyBackingField(field)) continue;
                 if (field.FieldType.IsPrimitive || field.FieldType.IsEnum) continue;
 
                 if (riskyFields.Length > 0) riskyFields.Append(", ");
@@ -162,6 +163,17 @@ namespace Nexus.Core
             NexusRuntime.Logger?.LogWarning(
                 $"[Nexus] Command '{type.Name}' has mutable field(s) [{riskyFields}] but does not implement IResettable. " +
                 "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
+        }
+
+        // [Inject] on an auto-property sits on the property, not on its compiler-generated "<Name>k__BackingField".
+        private static bool IsInjectedPropertyBackingField(FieldInfo field)
+        {
+            const string suffix = ">k__BackingField";
+            var name = field.Name;
+            if (name.Length <= suffix.Length + 1 || name[0] != '<' || !name.EndsWith(suffix, StringComparison.Ordinal)) return false;
+            var property = field.DeclaringType.GetProperty(name.Substring(1, name.Length - suffix.Length - 1),
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly);
+            return property != null && property.IsDefined(typeof(InjectAttribute), false);
         }
 
         /// <summary>Retrieves a command instance from the pool, or creates a new one if the pool is empty.
