@@ -123,6 +123,9 @@ namespace Nexus.Ads.Unity
             if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] PolicyViolation " + v);
             if (Mode != HostMode.Idle) Controller.Start(); // an idle host (ad-free, blocked, provider missing) builds the controller and never starts it
             if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
+            // one line per start in every build, no ids: tools/device-acceptance -ExpectAds reads it (issue #52)
+            Debug.Log("[Nexus Ads] started mode=" + Mode + " mediation=" + _settings.SelectedMediation + " gate=" + Gate.Decision
+                + " rule=" + (Gate.Rule ?? "-") + " testMode=" + (config.Provider.TestMode ? "on" : "off"));
             Started?.Invoke();
         }
 

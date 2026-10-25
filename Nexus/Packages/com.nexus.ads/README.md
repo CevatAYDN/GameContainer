@@ -97,7 +97,10 @@ stays hidden and the reason is logged as an error. A release build never runs th
    provider's test data and the device list (the wizard of #11 fills it).
 2. Put `AdsBootstrap` on a GameObject in the first scene (it survives scene loads). In the editor,
    and in a development build while no mediation is selected, the simulator runs with a full-screen
-   overlay; a selected provider that is not installed runs nothing.
+   overlay; a selected provider that is not installed runs nothing. In every build it logs what it
+   started, without ids: `[Nexus Ads] started mode=<Provider|Simulator|Idle> mediation=<kind>
+   gate=<Provider|Simulator|Blocked> rule=<rule or -> testMode=<on|off>` (one line;
+   `tools/device-acceptance/run.ps1 -ExpectAds` reads it).
 3. Generate the `AdPlacements` constants (**Tools > Nexus Ads > Generate Placements**, path on the
    settings) and show ads through the facade:
 
