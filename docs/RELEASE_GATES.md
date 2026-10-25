@@ -29,7 +29,7 @@ Result files: `Nexus/artifacts/release-050/` (harness, coverage, binder, EditMod
 
 - Consumers (gate 11), each an issue in the game's repository: Gigawatt#1, Wickling#1 and ChipCrisis#1 (the move to LevelPlay with Google's consent form; the owner enters the LevelPlay keys), Pixel-Flow-Clone#2 and RingFlow#6 (game code to 0.5.0, submodule removal), IdleProject#1 (pin), PuzzleGame#1 (editor upgrade, embedded copy). Once the three ad games have moved, the legacy `AdMobAdapter` retires (#14).
 - The AppLovin MAX provider waits for a MAX account (#14).
-- GitHub Actions starts no job: "The job was not started because your account is locked due to a billing issue" (run 40184754971, a manual dispatch of `nexus-ci.yml` on 2026-10-25); the pre-commit hook remains the gate until the account is unlocked.
+- GitHub Actions is not used (GitHub Free; the owner's decision on 2026-10-25, #64): the gates are the pre-commit hook (the host harness) and the local runs in the table above.
 - Windows IL2CPP comparison: Visual Studio's C++ toolchain is not installed on the
   measuring machine (no `vswhere`), so only the Android IL2CPP path exists.
   No "fastest" claim is made; see the package `docs/PERFORMANCE_COMPARISON.md`.

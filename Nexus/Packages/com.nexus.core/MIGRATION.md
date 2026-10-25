@@ -59,7 +59,7 @@ await _ui.OpenScreenAsync<ShopScreen>(args, UILayer.Screen, pooled: true);
 
 #### 3. NEXUS004 Now Names a Different Rule
 
-The `NEXUS004` rule that flagged new `WindowManager` references to drive the migration was retired together with `WindowManager`; the id now names the leftover-debug-trace rule (a `Debug.Log` carrying a `[SLOCK]` or `[*-TRACE]` marker in runtime code). The Code Health Analyzer enforces NEXUS001 (hot-path allocations), NEXUS002 (async void), NEXUS003 (sync blocking) and NEXUS004 (leftover debug trace). `NexusArchitectureAnalyzer.RunHeadless` is the batch-mode gate (exit 0 clean, 1 on any issue); the repository's `.github/workflows/nexus-ci.yml` runs it only on manual dispatch.
+The `NEXUS004` rule that flagged new `WindowManager` references to drive the migration was retired together with `WindowManager`; the id now names the leftover-debug-trace rule (a `Debug.Log` carrying a `[SLOCK]` or `[*-TRACE]` marker in runtime code). The Code Health Analyzer enforces NEXUS001 (hot-path allocations), NEXUS002 (async void), NEXUS003 (sync blocking) and NEXUS004 (leftover debug trace). `NexusArchitectureAnalyzer.RunHeadless` is the batch-mode gate (exit 0 clean, 1 on any issue) for a project's own build pipeline.
 
 #### 4. `NexusDI.ClearCaches()` Keeps Generated Registrations
 

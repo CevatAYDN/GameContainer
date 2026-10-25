@@ -11,7 +11,7 @@ Fixes # (issue)
 - [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
 - [ ] Performance improvement
 - [ ] Documentation update
-- [ ] Tooling / CI change
+- [ ] Tooling change
 
 ## How Has This Been Tested?
 

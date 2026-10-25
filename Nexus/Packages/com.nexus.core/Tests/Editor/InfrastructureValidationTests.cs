@@ -6,9 +6,9 @@ using Nexus.Editor;
 namespace Nexus.Editor.Tests
 {
     /// <summary>
-    /// Locks the two infrastructure checks that must run on every CI pass but are
-    /// not ordinary feature tests: architecture validation and AOT binder codegen.
-    /// Both are part of the EditMode test job in .github/workflows/ci.yml.
+    /// Locks the two infrastructure checks that are not ordinary feature tests:
+    /// architecture validation and AOT binder codegen. Both run with the package's
+    /// EditMode tests.
     /// </summary>
     [TestFixture]
     public class InfrastructureValidationTests
