@@ -101,7 +101,8 @@ pools mediators and clears injected references on return.
   `File.Replace`; where the platform does not support `File.Replace` it logs a warning and
   falls back to a non-atomic delete-then-move.
 - `EncryptedStorageService` provides AES-256 + HMAC-SHA256 integrity and device-bound
-  keys. It uses atomic replacement where available and a recoverable backup elsewhere.
+  keys by default (`StorageKeyBinding.App` keeps data readable after a backup restore on
+  another phone; README, "Services"). It uses atomic replacement where available and a recoverable backup elsewhere.
   Tampered payloads are rejected on read; device power-loss guarantees require testing.
 - `OfflineTimeCalculator` validates offline reward time against **both** the wall
   clock and a monotonic clock (`Stopwatch.GetTimestamp`), so within one boot session a

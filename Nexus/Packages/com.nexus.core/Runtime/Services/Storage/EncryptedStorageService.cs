@@ -10,6 +10,19 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
 {
+    /// <summary>What <see cref="EncryptedStorageService"/> binds its storage seed to.</summary>
+    public enum StorageKeyBinding
+    {
+        /// <summary>The device id (the default). Data restored from a backup on another phone reads as
+        /// tampered and reverts to defaults.</summary>
+        Device,
+
+        /// <summary>The app id and salt only, so data restored from a backup on another phone stays readable.
+        /// The first run in this mode takes over the seed the device-bound mode wrote on this phone, so
+        /// existing data stays readable too. A copied save also opens on another phone, by design.</summary>
+        App,
+    }
+
     /// <summary>
     /// AES-256 Encrypted & Device-Bound Storage Service.
     /// Protects game saves against APK modification, XML editing, and save file sharing.
@@ -109,62 +122,53 @@ namespace Nexus.Core.Services
         /// </summary>
         public EncryptedStorageService() : this("Nexus_Secure_Salt_2026") { }
 
-        public EncryptedStorageService(string customSalt)
+        public EncryptedStorageService(string customSalt) : this(customSalt, StorageKeyBinding.Device) { }
+
+        /// <param name="binding"><see cref="StorageKeyBinding.App"/> keeps data readable after a backup is
+        /// restored on another phone; <see cref="StorageKeyBinding.Device"/> (the default) does not.</param>
+        public EncryptedStorageService(string customSalt, StorageKeyBinding binding)
+            : this(customSalt, binding, SystemInfo.deviceUniqueIdentifier) { }
+
+        // deviceId is a parameter so tests can stand in for another phone.
+        internal EncryptedStorageService(string customSalt, StorageKeyBinding binding, string deviceId)
         {
             if (string.IsNullOrEmpty(customSalt))
                 customSalt = "Nexus_Secure_Salt_2026";
 
-            // Device-bound key for seed obfuscation
-            string deviceId = SystemInfo.deviceUniqueIdentifier ?? "Default_Device_ID";
-            string rawKeySeed = $"{deviceId}_{customSalt}_{Application.identifier}";
-
             using var sha256 = SHA256.Create();
-            byte[] deviceBoundKey = sha256.ComputeHash(Encoding.UTF8.GetBytes(rawKeySeed));
+            // Device-bound key for seed obfuscation
+            byte[] deviceBoundKey = sha256.ComputeHash(Encoding.UTF8.GetBytes($"{deviceId ?? "Default_Device_ID"}_{customSalt}_{Application.identifier}"));
 
-            byte[] seedBytes = new byte[32];
             string seedKey = "NT_StorageSeed";
             if (customSalt != "Nexus_Secure_Salt_2026")
                 seedKey = $"NT_StorageSeed_{customSalt}";
 
-            string storedObfuscatedSeed = PlayerPrefs.GetString(seedKey, null);
-
-            if (string.IsNullOrEmpty(storedObfuscatedSeed))
+            byte[] seedBytes;
+            if (binding == StorageKeyBinding.App)
             {
-                // Generate a cryptographically secure random seed
-                using var rng = RandomNumberGenerator.Create();
-                rng.GetBytes(seedBytes);
-
-                // Obfuscate the seed using the device-bound key
-                byte[] obfuscatedBytes = new byte[32];
-                for (int i = 0; i < 32; i++)
-                    obfuscatedBytes[i] = (byte)(seedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
-
-                PlayerPrefs.SetString(seedKey, Convert.ToBase64String(obfuscatedBytes));
-                PlayerPrefs.Save();
+                byte[] appBoundKey = sha256.ComputeHash(Encoding.UTF8.GetBytes($"app_{customSalt}_{Application.identifier}"));
+                string appSeedKey = seedKey + "_App";
+                if (!string.IsNullOrEmpty(PlayerPrefs.GetString(appSeedKey, null)))
+                {
+                    seedBytes = ReadOrRegenerateSeed(appSeedKey, appBoundKey);
+                }
+                else
+                {
+                    // Take over the device-bound seed (same keys, so existing files stay readable), or start one.
+                    seedBytes = !string.IsNullOrEmpty(PlayerPrefs.GetString(seedKey, null))
+                        ? ReadOrRegenerateSeed(seedKey, deviceBoundKey)
+                        : NewSeed();
+                    StoreSeed(appSeedKey, seedBytes, appBoundKey);
+                }
+            }
+            else if (string.IsNullOrEmpty(PlayerPrefs.GetString(seedKey, null)))
+            {
+                seedBytes = NewSeed();
+                StoreSeed(seedKey, seedBytes, deviceBoundKey);
             }
             else
             {
-                try
-                {
-                    byte[] obfuscatedBytes = Convert.FromBase64String(storedObfuscatedSeed);
-                    for (int i = 0; i < 32; i++)
-                        seedBytes[i] = (byte)(obfuscatedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
-                }
-                catch (Exception ex)
-                {
-                    // Fallback in case of corruption: generate new and log warning
-                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorageService] Storage seed decoding failed ({ex.Message}). Regenerating new secure seed.");
-
-                    using var rng = RandomNumberGenerator.Create();
-                    rng.GetBytes(seedBytes);
-
-                    byte[] obfuscatedBytes = new byte[32];
-                    for (int i = 0; i < 32; i++)
-                        obfuscatedBytes[i] = (byte)(seedBytes[i] ^ deviceBoundKey[i % deviceBoundKey.Length]);
-
-                    PlayerPrefs.SetString(seedKey, Convert.ToBase64String(obfuscatedBytes));
-                    PlayerPrefs.Save();
-                }
+                seedBytes = ReadOrRegenerateSeed(seedKey, deviceBoundKey);
             }
 
             // Derive actual encryption & HMAC keys from the secure random seed
@@ -195,6 +199,45 @@ namespace Nexus.Core.Services
                 Directory.CreateDirectory(_storageFolderPath);
 
             HookAppEvents();
+        }
+
+        private static byte[] NewSeed()
+        {
+            // A cryptographically secure random seed.
+            var seed = new byte[32];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(seed);
+            return seed;
+        }
+
+        private static byte[] Xor(byte[] bytes, byte[] key)
+        {
+            var result = new byte[32];
+            for (int i = 0; i < 32; i++)
+                result[i] = (byte)(bytes[i] ^ key[i % key.Length]);
+            return result;
+        }
+
+        private static void StoreSeed(string prefsKey, byte[] seed, byte[] obfuscationKey)
+        {
+            PlayerPrefs.SetString(prefsKey, Convert.ToBase64String(Xor(seed, obfuscationKey)));
+            PlayerPrefs.Save();
+        }
+
+        private static byte[] ReadOrRegenerateSeed(string prefsKey, byte[] obfuscationKey)
+        {
+            try
+            {
+                return Xor(Convert.FromBase64String(PlayerPrefs.GetString(prefsKey, null)), obfuscationKey);
+            }
+            catch (Exception ex)
+            {
+                // Fallback in case of corruption: generate new and log warning
+                NexusRuntime.Logger?.LogWarning($"[EncryptedStorageService] Storage seed decoding failed ({ex.Message}). Regenerating new secure seed.");
+                var seed = NewSeed();
+                StoreSeed(prefsKey, seed, obfuscationKey);
+                return seed;
+            }
         }
 
         // Instance method-group handlers on the STATIC Application.focusChanged /

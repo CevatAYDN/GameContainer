@@ -9,6 +9,60 @@ namespace Nexus.Editor.Tests
     [TestFixture]
     public class EncryptedStorageAndAntiCheatTests
     {
+        // ── Issue #79: a backup restored on another phone ──
+
+        private static void ForgetStore(string salt)
+        {
+            UnityEngine.PlayerPrefs.DeleteKey($"NT_StorageSeed_{salt}");
+            UnityEngine.PlayerPrefs.DeleteKey($"NT_StorageSeed_{salt}_App");
+            var folder = Path.Combine(UnityEngine.Application.persistentDataPath, $"SecureData_{salt}");
+            if (Directory.Exists(folder)) Directory.Delete(folder, true);
+        }
+
+        private static void Write(string salt, StorageKeyBinding binding, string device, int coins)
+        {
+            var store = new EncryptedStorageService(salt, binding, device) { AutoSave = true };
+            store.SetInt("Coins", coins);
+            store.Dispose();
+        }
+
+        private static int Read(string salt, StorageKeyBinding binding, string device)
+        {
+            var store = new EncryptedStorageService(salt, binding, device);
+            try { return store.GetInt("Coins", -1); }
+            finally { store.Dispose(); }
+        }
+
+        [Test]
+        public void AppBinding_ReadsDataRestoredOnAnotherPhone_DeviceBindingDoesNot()
+        {
+            const string device = "Test_Salt_Restore79_Device", app = "Test_Salt_Restore79_App";
+            ForgetStore(device); ForgetStore(app);
+            try
+            {
+                Write(device, StorageKeyBinding.Device, "phone-A", 1234);
+                Assert.AreEqual(-1, Read(device, StorageKeyBinding.Device, "phone-B"), "The device-bound store reads a restored save as tampered.");
+
+                Write(app, StorageKeyBinding.App, "phone-A", 1234);
+                Assert.AreEqual(1234, Read(app, StorageKeyBinding.App, "phone-B"));
+            }
+            finally { ForgetStore(device); ForgetStore(app); }
+        }
+
+        [Test]
+        public void AppBinding_TakesOverTheDeviceSeed_SoExistingDataSurvivesTheSwitchAndARestore()
+        {
+            const string salt = "Test_Salt_Restore79_Switch";
+            ForgetStore(salt);
+            try
+            {
+                Write(salt, StorageKeyBinding.Device, "phone-A", 77);
+                Assert.AreEqual(77, Read(salt, StorageKeyBinding.App, "phone-A"), "Switching to App on the same phone must keep the data.");
+                Assert.AreEqual(77, Read(salt, StorageKeyBinding.App, "phone-B"), "After the switch a restore on another phone must keep it too.");
+            }
+            finally { ForgetStore(salt); }
+        }
+
         [Test]
         public void EncryptedStorageService_EncryptsAndDecryptsValues()
         {

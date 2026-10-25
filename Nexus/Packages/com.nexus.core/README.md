@@ -137,8 +137,13 @@ current language's culture (`LocalizationOptions.Cultures` fixes a game's own se
 `Format(key, args)` fills a table text with it. Without options the first run is English, as before.
 
 Storage is not a `NexusService`: `EncryptedStorageService` (`Nexus.Core.Services`)
-implements `IPlayerPrefsService` with AES-256, key-bound HMAC-SHA256, device-bound seeds and
-atomic writes. `SettingsStores` names, per service (audio, haptics, economy, progression), the
+implements `IPlayerPrefsService` with AES-256, key-bound HMAC-SHA256 and atomic writes. Its seed is
+bound to the device by default (`StorageKeyBinding.Device`): Android Auto Backup restores the files to a
+new phone, where every value then reads as tampered and reverts to its default. For data a player
+must keep on a new phone (purchases, progress, reward ledgers) construct it with
+`new EncryptedStorageService(salt, StorageKeyBinding.App)`: the seed is bound to the app and the salt,
+the first run takes over the device-bound seed so existing data stays readable, and a copied save
+then also opens on another phone. Keep `Device` where a save must not move between phones. `SettingsStores` names, per service (audio, haptics, economy, progression), the
 `IPlayerPrefsService` that keeps its state, for a game that keeps it in its own save; a slot left null uses the bound
 `IPlayerPrefsService`, and the key names stay the same. `GameSaveManager` (`Nexus.Core.Extensions`) writes one registered
 `ISaveDataProvider` to a JSON slot file under the persistent data path and reads it back; it is a
