@@ -17,7 +17,7 @@ namespace Nexus.Starter
             builder.BindReactiveModel<INexusStartModel, NexusStartModel>();
 
             // ── Bind signal → command (Sequential mode) ──
-            builder.BindSignal<NexusStartSignal>().To<NexusStartCommand>();
+            builder.BindCommand<NexusStartSignal, NexusStartCommand>();
         }
 
         public ValueTask OnInitializeAsync(CancellationToken ct) => default;

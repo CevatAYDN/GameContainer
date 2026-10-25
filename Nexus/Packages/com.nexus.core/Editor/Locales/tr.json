@@ -266,7 +266,7 @@
     {"key": "help_step3_title", "value": "3. Lifecycle Yaz"},
     {"key": "help_step3_desc", "value": "{ScopeTag}Lifecycle adında, IContextLifecycle uygulayan bir sınıf oluştur.\nNexus otomatik keşfeder. Modelleri ve komutları bağlamak için OnConfigure() kullan."},
     {"key": "help_step4_title", "value": "4. Komut Oluştur"},
-    {"key": "help_step4_desc", "value": "ICommand<TSignal> veya IAsyncCommand<TSignal> uygula.\nLifecycle'da bağla: builder.BindSignal<MySignal>().To<MyCommand>();\nKomutlar sinyal gönderiminden sonra, kayıtlı çalıştırma sırasıyla çalışır."},
+    {"key": "help_step4_desc", "value": "ICommand<TSignal> veya IAsyncCommand<TSignal> uygula.\nLifecycle'da bağla: builder.BindCommand<MySignal, MyCommand>();\nKomutlar sinyal gönderiminden sonra, kayıtlı çalıştırma sırasıyla çalışır."},
     {"key": "help_step5_title", "value": "5. View ve Mediator Bağla"},
     {"key": "help_step5_desc", "value": "View sınıfını genişlet, [Mediator(typeof(MyMediator))] ekle, Mediator<MyView> oluştur.\nSinyallere tepki vermek için OnBind() içinde Subscribe<TSignal>() kullan."},
     {"key": "help_step6_title", "value": "6. Sinyal Gönder"},

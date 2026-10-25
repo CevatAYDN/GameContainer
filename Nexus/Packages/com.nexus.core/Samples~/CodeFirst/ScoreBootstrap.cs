@@ -38,7 +38,7 @@ namespace Nexus.Samples.CodeFirst
                 _context = await ContextFactory.StartAsync("Gameplay", builder =>
                 {
                     builder.BindReactiveModel<ScoreModel>();
-                    builder.BindSignal<ScoreAdded>().To<AddScore>();
+                    builder.BindCommand<ScoreAdded, AddScore>();
                 }, ct: _startup.Token);
                 _context.Prewarm<ScoreAdded>(4);
                 _context.SignalBus.Fire(new ScoreAdded(1));

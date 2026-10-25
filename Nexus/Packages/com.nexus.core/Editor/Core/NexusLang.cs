@@ -820,7 +820,7 @@ namespace Nexus.Editor
             s_strings["help_step3_title"] = "3. Write a Lifecycle";
             s_strings["help_step3_desc"] = "Create a class named {ScopeTag}Lifecycle implementing IContextLifecycle.\nNexus auto-discovers it. Use OnConfigure() to bind models, commands, and services in one place.";
             s_strings["help_step4_title"] = "4. Create Commands";
-            s_strings["help_step4_desc"] = "Implement ICommand<TSignal> or IAsyncCommand<TSignal>.\nBind in lifecycle: builder.BindSignal<MySignal>().To<MyCommand>();\nCommands run after signal dispatch, in the registered execution order.";
+            s_strings["help_step4_desc"] = "Implement ICommand<TSignal> or IAsyncCommand<TSignal>.\nBind in lifecycle: builder.BindCommand<MySignal, MyCommand>();\nCommands run after signal dispatch, in the registered execution order.";
             s_strings["help_step5_title"] = "5. Wire Views & Mediators";
             s_strings["help_step5_desc"] = "Extend View, add [Mediator(typeof(MyMediator))], create Mediator<MyView>.\nUse Subscribe<TSignal>() in OnBind() to react to signals after the context has been configured.";
             s_strings["help_step6_title"] = "6. Fire Signals";

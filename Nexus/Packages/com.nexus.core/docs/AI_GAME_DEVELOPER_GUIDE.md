@@ -149,6 +149,8 @@ public class ScoreModel : IScoreModel
 }
 ```
 
+**Exception: state that changes every frame.** Positions, stacks and other simulation state that changes every frame stay in plain fields, and the view reads them once per frame (from an `ITickable` or on a per-frame signal). An `ObservableProperty` there would raise an event per field per frame. Use observables for state that changes on events (score, currency, settings).
+
 ---
 
 ## 🚀 Complete Game Creation Recipe
@@ -256,7 +258,7 @@ namespace MyGame.Contexts
         public void OnConfigure(IContextBuilder builder)
         {
             builder.BindReactiveModel<IHealthModel, HealthModel>();
-            builder.BindSignal<TakeDamageSignal>().To<TakeDamageCommand>();
+            builder.BindCommand<TakeDamageSignal, TakeDamageCommand>();
             // No mediator registration: HealthBarView's [Mediator] attribute attaches
             // HealthBarMediator when the view registers with the context.
         }

@@ -8,7 +8,7 @@
 
 ## 🥇 Canonical Command Registration
 
-**Use `BindCommand<>` / `BindAsyncCommand<>` (fluent API) — NOT `[SignalHandler]` attribute.**
+**Use `BindCommand<TSignal, TCommand>()` / `BindAsyncCommand<TSignal, TCommand>()` — NOT the `[SignalHandler]` attribute.**
 
 ```csharp
 // ✅ CANONICAL — compile-time checked, 0-GC, AOT-safe
@@ -26,7 +26,32 @@ public class GameplayLifecycle : IContextLifecycle
 public class UpdateScoreCommand : ICommand<ScoreChangedSignal> { ... }
 ```
 
-**Rationale:** Fluent API provides compile-time safety, explicit dependency ordering, and is validated by `ContextBuilder.Validate()`. Attribute-based discovery was kept for migration but may miss required interface checks.
+**Rationale:** Builder registration provides compile-time safety, explicit dependency ordering, and is validated by `ContextBuilder.Validate()`. Attribute-based discovery was kept for migration but may miss required interface checks.
+
+`builder.BindSignal<TSignal>().To<TCommand>()` (and `.ToAsync<TCommand>()`) is the same registration written as a chain: it calls `BindCommand` / `BindAsyncCommand` with the same mode and priority. Existing code may keep it; new code, the samples and these documents use `BindCommand<>`. A command that runs once uses `BindCommandOnce<>` / `BindAsyncCommandOnce<>`.
+
+**Several commands on one signal.** Every command on a signal has the same `ExecutionMode`; `Exclusive` allows one command. Under `Sequential` each command needs its own `priority` (higher runs first): binding a second command with a priority the signal already has throws `InvalidOperationException` ("Duplicate priority"). `Concurrent` commands may share a priority.
+
+```csharp
+builder.BindCommand<LevelWonSignal, GrantRewardCommand>(priority: 20); // runs first
+builder.BindCommand<LevelWonSignal, SaveProgressCommand>(priority: 10);
+```
+
+**Commands are pooled.** An instance is reused. When `Execute` returns, or the task from `ExecuteAsync` completes, the pool clears the command's `[Inject]` members. A callback that arrives later (an ad or store answer passed as a delegate, an event handler) must use locals captured before `Execute` returns; awaiting the answer inside `ExecuteAsync` is safe.
+
+```csharp
+public class ClaimRewardCommand : ICommand<ClaimRewardSignal>
+{
+    [Inject] public IAdService Ads { get; set; }
+    [Inject] public IWalletModel Wallet { get; set; }
+
+    public void Execute(ClaimRewardSignal signal)
+    {
+        var wallet = Wallet; // Wallet is null when the ad answers: the command is back in the pool
+        Ads.ShowRewarded("double_coins", rewarded => { if (rewarded) wallet.Coins.Value += signal.Amount; });
+    }
+}
+```
 
 ---
 

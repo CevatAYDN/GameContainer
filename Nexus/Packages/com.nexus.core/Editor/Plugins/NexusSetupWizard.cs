@@ -634,7 +634,7 @@ namespace Game
         public void OnConfigure(IContextBuilder builder)
         {
             builder.BindReactiveModel<GameModel>();
-            builder.BindSignal<GameSignal>().To<GameCommand>();
+            builder.BindCommand<GameSignal, GameCommand>();
             builder.BindService<IGameService, GameService>();
         }
 

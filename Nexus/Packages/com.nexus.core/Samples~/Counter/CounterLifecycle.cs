@@ -38,7 +38,7 @@ namespace Nexus.Samples.Counter
 
             // ── Commands: all four execution modes + async ────────
             // Sequential (default) — existing increment.
-            builder.BindSignal<CounterSignal>().To<CounterIncrementCommand>();
+            builder.BindCommand<CounterSignal, CounterIncrementCommand>();
 
             // Concurrent — parallel I/O-style handlers for the same signal.
             builder.BindCommand<CounterLoadSignal, CounterLoadCommand>(ExecutionMode.Concurrent);

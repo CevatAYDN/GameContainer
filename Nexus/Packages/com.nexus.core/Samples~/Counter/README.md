@@ -35,7 +35,7 @@ error-recovery strategy — so you can watch the whole architecture from one act
   Nexus service (zero-dependency Storage implementation).
 - `builder.Bind<IRecoveryStrategy, CounterRecoveryStrategy>()` — resolved
   automatically by `SignalBus` when a command throws.
-- Sequential: `builder.BindSignal<CounterSignal>().To<CounterIncrementCommand>()`.
+- Sequential: `builder.BindCommand<CounterSignal, CounterIncrementCommand>()`.
 - Concurrent: `builder.BindCommand<CounterLoadSignal, CounterLoadCommand>(ExecutionMode.Concurrent)`.
 - Exclusive: `builder.BindCommand<CounterPersistSignal, CounterPersistCommand>(ExecutionMode.Exclusive)`.
 - Async: `builder.BindAsyncCommand<CounterAsyncSignal, CounterAsyncCommand>()`.

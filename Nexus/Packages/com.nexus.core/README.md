@@ -112,7 +112,7 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 | Service | Folder under `Runtime/Services` | Purpose |
 |---|---|---|
 | `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; Google AdMob in the `com.nexus.ads.admob` package); `RequestReward` with `AdOutcome`, `ReadyChanged`, privacy options through optional adapter capabilities |
-| `AnalyticsService` | `Analytics` | Event tracking abstraction with pooled parameter dictionaries and user properties |
+| `AnalyticsService` | `Analytics` | Stub `IAnalyticsService`: events (with an optional parameter dictionary) and user properties written to the log; replace it with a real backend such as `com.nexus.firebase` before release |
 | `AudioService` | `Audio` | BGM playlist crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels |
 | `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator |
 | `FeedbackService` | `Feedback` | Combined audio + haptic presets |
@@ -130,8 +130,10 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 
 Storage is not a `NexusService`: `EncryptedStorageService` (`Nexus.Core.Services`)
 implements `IPlayerPrefsService` with AES-256, key-bound HMAC-SHA256, device-bound seeds and
-atomic writes; `GameSaveManager` (`Nexus.Core.Extensions`) coordinates save providers with a
-`SaveThrottler`.
+atomic writes. `GameSaveManager` (`Nexus.Core.Extensions`) writes one registered
+`ISaveDataProvider` to a JSON slot file under the persistent data path and reads it back; it is a
+starting point, not a save system: a game keeps its own save format and decides when to save.
+`SaveThrottler` (used by `EconomyService` and `ProgressionService`) limits how often a service writes.
 
 ## Performance scope
 

@@ -98,7 +98,7 @@ public class GameLifecycle : MonoBehaviour, IContextLifecycle
     public void OnConfigure(IContextBuilder builder)
     {
         builder.BindReactiveModel<ScoreModel>();
-        builder.BindSignal<ScoreSignal>().To<AddScoreCommand>();
+        builder.BindCommand<ScoreSignal, AddScoreCommand>();
     }
 
     public ValueTask OnInitializeAsync(CancellationToken ct) => default;
@@ -281,7 +281,7 @@ Automatic dependency injection, zero memory leaks, and instant SignalBus access 
 |---------|-----|
 | **"No IContextLifecycle was discovered or registered"** | Make sure your lifecycle class implements `IContextLifecycle` and is **attached to the Root GameObject as a component** (or matches the `{ScopeTag}Lifecycle` convention with a non-empty ContextData `ScopeTag`) |
 | **"Type not registered"** | Add `builder.Bind<MyType>()` in `OnConfigure`, or check that the type is in a non-system assembly |
-| **Signal not dispatched** | Verify the command implements `ICommand<YourSignal>` and is registered via `builder.BindSignal<>()` |
+| **Signal not dispatched** | Verify the command implements `ICommand<YourSignal>` and is registered via `builder.BindCommand<YourSignal, YourCommand>()` |
 | **Test won't run** | Open EditMode Test Runner, select `InfrastructureValidationTests` and `PluginRefactorValidationTests` |
 
 ---

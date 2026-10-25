@@ -98,7 +98,7 @@ public class GameLifecycle : MonoBehaviour, IContextLifecycle
     public void OnConfigure(IContextBuilder builder)
     {
         builder.BindReactiveModel<ScoreModel>();
-        builder.BindSignal<ScoreSignal>().To<AddScoreCommand>();
+        builder.BindCommand<ScoreSignal, AddScoreCommand>();
     }
 
     public ValueTask OnInitializeAsync(CancellationToken ct) => default;
@@ -281,7 +281,7 @@ Otomatik bağımlılık enjeksiyonu, sıfır bellek sızıntısı ve anında Sig
 |---------|-------|
 | **"No IContextLifecycle was discovered or registered"** | Lifecycle sınıfınız `IContextLifecycle` implemente etmeli ve **Root GameObject'ine bileşen olarak eklenmeli** (veya boş olmayan ContextData `ScopeTag`'i ile `{ScopeTag}Lifecycle` konvansiyonuna uymalı) |
 | **"Type not registered"** | `OnConfigure`'a `builder.Bind<MyType>()` ekleyin veya türün sistem dışı bir assembly'de olduğunu kontrol edin |
-| **Signal gönderilmiyor** | Command'in `ICommand<YourSignal>` implemente ettiğini ve `builder.BindSignal<>()` ile kayıtlı olduğunu doğrulayın |
+| **Signal gönderilmiyor** | Command'in `ICommand<YourSignal>` implemente ettiğini ve `builder.BindCommand<YourSignal, YourCommand>()` ile kayıtlı olduğunu doğrulayın |
 | **Test çalışmıyor** | EditMode Test Runner'ı açın, `InfrastructureValidationTests` ve `PluginRefactorValidationTests`'i seçin |
 
 ---
