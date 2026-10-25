@@ -200,6 +200,8 @@ namespace Nexus.Core
             SignalBus = bus;
             SignalBusInternal = bus;
             Container.BindInstance<ISignalBus>(bus);
+            Container.BindInstance<ISignalPublisher>(bus);
+            Container.BindInstance<ISignalSubscriber>(bus);
             Container.BindInstance(bus);
 
             HybridQueue = new HybridQueue(bus);
@@ -435,6 +437,13 @@ namespace Nexus.Core
 
             await InitializeReactiveModelsAsync(ct);
             await InitializeServicesAsync(ct);
+            // Lifecycles are bound as instances, which the container does not inject; their [Inject]
+            // members are set here, once the bindings exist and the services are initialized.
+            if (lifecycles != null)
+            {
+                for (int i = 0; i < lifecycles.Count; i++)
+                    Container.Inject(lifecycles[i]);
+            }
             Container.ReInjectAll();
 
             if (lifecycles != null)

@@ -211,12 +211,21 @@ public class ScoreChangedSignal { ... }
 
 **Prefer a single `IContextLifecycle` per context, using `OnConfigure` + `OnInitializeAsync`.**
 
+A lifecycle reaches the container through `[Inject]` members. They are set after the services
+have initialized and before `OnInitializeAsync`; inside `OnConfigure` they are still null, because
+the bindings are being made there. `ISignalPublisher` fires signals; `ISignalSubscriber` subscribes.
+
 ```csharp
-public class GameplayLifecycle : IContextLifecycle
+public class GameplayLifecycle : MonoBehaviour, IContextLifecycle
 {
+    [SerializeField] private AudioClip _music;
+
+    [Inject] public IAudioService Audio { get; set; }
+    [Inject] public ISignalPublisher Signals { get; set; }
+
     public void OnConfigure(IContextBuilder builder)
     {
-        // Bind everything here
+        // Bind everything here; Audio and Signals are still null
         builder.BindModel<IPlayerModel, PlayerModel>();
         builder.BindCommand<DamageSignal, DamageCommand>();
         builder.BindService<IAudioService, AudioService>();
@@ -224,11 +233,15 @@ public class GameplayLifecycle : IContextLifecycle
 
     public ValueTask OnInitializeAsync(CancellationToken ct)
     {
-        // Async init (load assets, connect services)
+        Audio.PlayBgm(_music); // services are initialized and injected here
         return default;
     }
 
-    public ValueTask OnStartAsync(CancellationToken ct) => default;
+    public ValueTask OnStartAsync(CancellationToken ct)
+    {
+        Signals.Fire(new GameStartedSignal());
+        return default;
+    }
 
     public void OnDispose() { }
 }

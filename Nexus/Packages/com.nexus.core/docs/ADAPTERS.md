@@ -34,6 +34,12 @@ using UnityEngine;
 [RequireComponent(typeof(Root))]
 public sealed class MonetizationLifecycle : MonoBehaviour, IContextLifecycle
 {
+    // Set before OnInitializeAsync (CANONICAL-PATTERNS, "Canonical Context Lifecycle").
+    [Inject] public IAdAdapterFactory AdFactory { get; set; }
+    [Inject] public IAdService Ads { get; set; }
+    [Inject] public IIapAdapterFactory StoreFactory { get; set; }
+    [Inject] public IIapService Iap { get; set; }
+
     public void OnConfigure(IContextBuilder builder)
     {
         builder.BindService<IAdService, AdService>();
@@ -47,17 +53,12 @@ public sealed class MonetizationLifecycle : MonoBehaviour, IContextLifecycle
 
     public ValueTask OnStartAsync(CancellationToken ct)
     {
-        // Resolve through the context Root built; never FindObjectOfType or async void.
-        var context = GetComponent<Root>().Context;
-        var ads = context.Resolve<IAdAdapterFactory>();
-        ads.RegisterProvider("admob", () => new AdMobAdapter());          // your class, see below
-        context.Resolve<IAdService>().SetNetworkAdapter(ads.CreateAdapter(AdProviderName));
+        AdFactory.RegisterProvider("admob", () => new AdMobAdapter());   // your class, see below
+        Ads.SetNetworkAdapter(AdFactory.CreateAdapter(AdProviderName));
 
-        var store = context.Resolve<IIapAdapterFactory>();
-        store.RegisterProvider("unityiap", () => new UnityIapAdapter());
-        var iap = context.Resolve<IIapService>();
-        iap.RegisterProducts(new ProductDefinition { Id = "remove_ads", Type = ProductType.NonConsumable });
-        iap.SetStoreAdapter(store.CreateAdapter(StoreProviderName));
+        StoreFactory.RegisterProvider("unityiap", () => new UnityIapAdapter());
+        Iap.RegisterProducts(new ProductDefinition { Id = "remove_ads", Type = ProductType.NonConsumable });
+        Iap.SetStoreAdapter(StoreFactory.CreateAdapter(StoreProviderName));
         return default;
     }
 
