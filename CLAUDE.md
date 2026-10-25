@@ -73,7 +73,7 @@ before tests, or the Standalone define `NEXUS_DEBUG` silently drops out of edito
 - Games consume the package by git URL pinned to a commit. Framework fixes are made here with a regression test and the game re-pins; a game never keeps an edited copy of the package. Known consumers: Gigawatt, Wickling, ChipCrisis, Pixel-Flow-Clone, IdleProject, PuzzleGame, RingFlow (sibling folders under `..\`).
 
 **Changes**
-- Every problem and every request starts as an issue in this repository (templates under `.github/ISSUE_TEMPLATE/`); nobody changes the repository or a consumer's pin on their own. Work inside a game (its migration, its re-pin) is an issue in that game's repository, linked from the issue here. A change lands on `main` by a commit or pull request that names its issue; `main` is the only long-lived branch and a pull request branch is deleted when it lands.
+- Every problem and every request starts as an issue in this repository (templates under `.github/ISSUE_TEMPLATE/`); nobody changes the repository or a consumer's pin on their own. Work inside a game (its migration, its re-pin) is an issue in that game's repository; gate 11 in `docs/RELEASE_GATES.md` links it. A change lands on `main` by a commit or pull request that names its issue; `main` is the only long-lived branch and a pull request branch is deleted when it lands.
 
 **Commits**
 - Conventional prefixes used here: `fix(di):`, `fix(codegen):`, `fix(lifecycle):`, `feat:`, `docs:`, `test:`, `chore:`. One logical change per commit; the message states what was wrong and how it was verified.
