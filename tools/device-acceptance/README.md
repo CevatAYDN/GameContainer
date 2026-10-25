@@ -22,7 +22,15 @@ Any APK works (`-Apk path`): the package and launch activity are read from the a
 | Soak (`-SoakSeconds`, default 300) | the process stays alive; `dumpsys meminfo` TOTAL PSS sampled every `-SampleSeconds` | the process dies, or PSS grows more than `-MaxPssGrowthPercent` (default 50) between the first and last sample |
 | Background and resume | HOME, 10 s, relaunch; the process is back (same pid recorded, a new pid is reported, not failed: Android may recreate it) | no process after relaunch |
 | Kill and restart | `am force-stop`, relaunch; a process exists after 15 s | no process |
-| Logcat | `FATAL EXCEPTION`, `ANR in <package>`, Unity exception lines, counted only on lines logged by this app's processes (other apps on the phone log their own); Unity's own Play Asset Delivery probe (`ClassNotFoundException ... AssetPackManager`, logged by every player without Play Core) is ignored | any of the three |
+| Logcat | `FATAL EXCEPTION`, `ANR in <package>`, Unity exception lines, `[Nexus Ads] PolicyViolation` lines, counted only on lines logged by this app's processes (other apps on the phone log their own; a process Android recreated on resume counts as the app's); Unity's own Play Asset Delivery probe (`ClassNotFoundException ... AssetPackManager`, logged by every player without Play Core) is ignored | any of the four |
+| Ads (`-ExpectAds Provider\|Simulator\|Idle`, off by default) | `com.nexus.ads`'s `[Nexus Ads] started mode=...` line on every launch (the package writes it from issue #52 on); the lines are recorded under `adsStarts` | fewer start lines than launches, or one with another mode |
+
+`-ExpectAds` checks which side of the ad gate the phone is on: `Provider` where the real SDK
+starts (a development build: a device in the settings' test device list with test mode on, or the
+provider's published test units), `Simulator` on a device that is not listed (rule
+`UnregisteredDevice`), `Idle` where nothing may run. The run
+shows no ad. Whether the SDK then serves test ads is decided by the mediation's own dashboard;
+LevelPlay's test ads carry no on-screen label and no logcat line naming them as test ads.
 
 Limits: no storage-interruption test (filling or detaching storage is not done safely on a
 phone), no gameplay assertions, one device model. Run it on a game's player as well; the

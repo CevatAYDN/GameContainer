@@ -5,7 +5,9 @@ param(
     [int]$SampleSeconds = 30,
     [int]$MaxPssGrowthPercent = 50,
     [string]$AdbSerial = '',
-    [string]$Aapt = ''
+    [string]$Aapt = '',
+    # what com.nexus.ads must have started on every launch, read from its "[Nexus Ads] started mode=" line; empty: not checked
+    [ValidateSet('', 'Provider', 'Simulator', 'Idle')][string]$ExpectAds = ''
 )
 # Physical-device acceptance of an Android player: cold start, soak with memory samples, background and
 # resume, kill and restart, logcat scan. Evidence lands under Nexus/artifacts/<RunName>/ (git-ignored).
@@ -104,7 +106,7 @@ Invoke-Adb @('shell', 'am', 'force-stop', $package) | Out-Null
 
 # 5. Logcat scan.
 $log = Invoke-Adb @('logcat', '-d')
-$pids = @($pid0, $pidRestart) | Where-Object { $_ }
+$pids = @($pid0, $pidResumed, $pidRestart) | Where-Object { $_ } | Select-Object -Unique  # a process Android recreated on resume is scanned too
 $own = @($log | Where-Object { $line = $_; @($pids | Where-Object { $line -match ('^\S+\s+\S+\s+' + $_ + '\s') }).Count -gt 0 })
 $log | Set-Content -LiteralPath (Join-Path $evidence 'logcat.log') -Encoding utf8
 $fatal = @($own | Where-Object { $_ -match 'FATAL EXCEPTION' }).Count
@@ -112,11 +114,18 @@ $anr = @($log | Where-Object { $_ -match ('ANR in ' + [regex]::Escape($package))
 $unityExceptions = @($own | Where-Object { $_ -match '\bUnity\b' -and $_ -match '(^|\s)[A-Za-z.]+Exception(:|\s)' -and $_ -notmatch 'ExceptionHelpers|Exceptions/' -and $_ -notmatch 'AssetPackManager' }).Count  # Unity's own Play Asset Delivery probe logs ClassNotFoundException on every APK without Play Core
 $adsViolations = @($own | Where-Object { $_ -match '\[Nexus Ads\] PolicyViolation' }).Count
 $adsLines = @($own | Where-Object { $_ -match '\[Nexus Ads\]' }).Count
-$result.phases.logcat = [ordered]@{ pids = $pids; ownLines = $own.Count; fatalExceptions = $fatal; anr = $anr; unityExceptionLines = $unityExceptions; adsLines = $adsLines; adsPolicyViolations = $adsViolations }
+$adsStarts = @($own | ForEach-Object { if ($_ -match '\[Nexus Ads\] started (mode=(\w+).*)$') { [ordered]@{ mode = $Matches[2]; line = $Matches[1] } } })
+$result.phases.logcat = [ordered]@{ pids = $pids; ownLines = $own.Count; fatalExceptions = $fatal; anr = $anr; unityExceptionLines = $unityExceptions; adsLines = $adsLines; adsPolicyViolations = $adsViolations; adsStarts = $adsStarts; expectAds = $ExpectAds }
 if ($fatal -gt 0) { Fail "$fatal FATAL EXCEPTION line(s) in logcat" }
 if ($anr -gt 0) { Fail "$anr ANR line(s) in logcat" }
 if ($unityExceptions -gt 0) { Fail "$unityExceptions Unity exception line(s) in logcat" }
 if ($adsViolations -gt 0) { Fail "$adsViolations Nexus Ads policy violation line(s) in logcat" }
+if ($ExpectAds) {
+    $launches = @($pid0, $pidRestart | Where-Object { $_ }).Count
+    $wrong = @($adsStarts | Where-Object { $_.mode -ne $ExpectAds })
+    if ($adsStarts.Count -lt $launches) { Fail "$($adsStarts.Count) '[Nexus Ads] started' line(s) for $launches launch(es); expected mode=$ExpectAds on each (com.nexus.ads before issue #52 writes none)" }
+    if ($wrong.Count -gt 0) { Fail "Nexus Ads started $(@($wrong | ForEach-Object { $_.line }) -join ' | '); expected mode=$ExpectAds" }
+}
 
 $result.passed = ($result.failures.Count -eq 0)
 $result.sourceCommit = (& git -C $repo rev-parse HEAD).Trim()
