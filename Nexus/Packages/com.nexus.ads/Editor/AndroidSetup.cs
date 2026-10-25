@@ -40,7 +40,11 @@ namespace Nexus.Ads.Editor
         public const string MainTemplatePath = "Assets/Plugins/Android/mainTemplate.gradle";
         public const string PropertiesTemplatePath = "Assets/Plugins/Android/gradleTemplate.properties";
         public const string GoogleEdmPackage = "com.google.external-dependency-manager";
+        public const string UnityEdmPackage = "com.unity.external-dependency-manager";
         private const string OpenUpm = "https://package.openupm.com";
+
+        /// <summary>The resolver Prepare Android adds: Google's from OpenUPM, or Unity's from the Unity registry when a disabled stub holds Google's name.</summary>
+        public static string ResolverPackage(IProjectProbe probe) => probe.DisabledEdmStub ? UnityEdmPackage : GoogleEdmPackage;
 
         public static List<SetupStep> Plan(AdsSettings settings, AdsValidator.Tab tab, IProjectProbe probe, PlatformCatalog catalog)
         {
@@ -66,7 +70,9 @@ namespace Nexus.Ads.Editor
 
             if (sdk.resolver == "external")
                 steps.Add(new SetupStep("resolver", probe.ExternalDependencyManagerInstalled ? SetupStatus.Done : SetupStatus.Pending, "dependency resolver",
-                    probe.ExternalDependencyManagerInstalled ? "installed" : "adds " + GoogleEdmPackage + " from OpenUPM"));
+                    probe.ExternalDependencyManagerInstalled ? "installed"
+                    : probe.DisabledEdmStub ? "adds " + UnityEdmPackage + " from the Unity registry (this project's " + GoogleEdmPackage + " is a disabled stub, which would shadow the OpenUPM package)"
+                    : "adds " + GoogleEdmPackage + " from OpenUPM"));
 
             if (!string.IsNullOrEmpty(sdk.nativeDependencyFile))
             {
@@ -303,7 +309,7 @@ namespace Nexus.Ads.Editor
             var scopes = new List<string>();
             if (Pending("sdk")) { add.Add(sdk.upm.package); if (IsOpenUpm(sdk.upm.registry)) scopes.AddRange(sdk.upm.scopes ?? new[] { sdk.upm.package }); }
             if (Pending("provider")) add.AddRange(ProviderPackageUrls(probe, sdk));
-            if (Pending("resolver")) { add.Add(GoogleEdmPackage); scopes.Add(GoogleEdmPackage); }
+            if (Pending("resolver")) { add.Add(ResolverPackage(probe)); if (!probe.DisabledEdmStub) scopes.Add(GoogleEdmPackage); }
             if (add.Count > 0)
             {
                 if (scopes.Count > 0)

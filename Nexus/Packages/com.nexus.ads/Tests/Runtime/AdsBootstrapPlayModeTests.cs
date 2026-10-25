@@ -40,6 +40,46 @@ namespace Nexus.Ads.Tests.Runtime
         }
 
         [UnityTest]
+        public IEnumerator StartOnAwakeOff_TouchesNothingUntilStartAds_ThenStartsOnce()
+        {
+            // issue #62: a game that starts ads late (Gigawatt at the first offer, Wickling after the first night) needs a bootstrap that waits
+            _settings = ScriptableObject.CreateInstance<AdsSettings>();
+            _settings.SelectedMediation = AdProviderKind.LevelPlay;
+            _settings.Placements.Add(new PlacementEntry { Name = "shop_refill", Format = AdFormat.Rewarded });
+            _root = new GameObject("AdsBootstrapTest");
+            _root.SetActive(false);
+            _bootstrap = _root.AddComponent<AdsBootstrap>();
+            _bootstrap.Configure(_settings, SimulatorScenario.Normal, logEvents: false, startOnAwake: false);
+            int started = 0, readyChanges = 0;
+            _bootstrap.Started += () => started++;
+            _root.SetActive(true);
+            var unsubscribe = Nexus.Ads.Unity.Ads.OnReadyChanged(() => readyChanges++); // made before the start, attached by it
+
+            for (int i = 0; i < 10; i++) yield return null;
+            Assert.IsNull(_bootstrap.Controller, "no controller before StartAds");
+            Assert.IsNull(_bootstrap.DeviceAdvertisingId, "the advertising id is not read before StartAds");
+            Assert.AreEqual(0, started);
+            Assert.AreEqual(AdResult.NotReady, ShowNow(), "a show before the start answers NotReady");
+
+            _bootstrap.StartAds();
+            _bootstrap.StartAds();
+            float deadline = Time.realtimeSinceStartup + 5f;
+            while ((_bootstrap.Controller == null || readyChanges == 0) && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.IsNotNull(_bootstrap.Controller, "StartAds started the bootstrap within 5 s");
+            Assert.AreEqual(1, started, "a second StartAds starts nothing");
+            Assert.Greater(readyChanges, 0, "the early ReadyChanged subscription was attached");
+            Assert.Throws<System.InvalidOperationException>(() => _bootstrap.Configure(_settings), "Configure after the start is refused");
+            unsubscribe();
+        }
+
+        private static AdResult ShowNow()
+        {
+            AdResult result = AdResult.Failed;
+            Nexus.Ads.Unity.Ads.Show("shop_refill", r => result = r);
+            return result;
+        }
+
+        [UnityTest]
         public IEnumerator Editor_RunsTheSimulator_AndAShowPausesTimeAndAudioUntilItCloses()
         {
             yield return Boot(SimulatorScenario.Normal);

@@ -13,10 +13,8 @@ namespace Nexus.Ads.AdMob
 {
     /// <summary>
     /// Google AdMob (Google Mobile Ads Unity plugin 11.3.0+, written against 11.6.0) as the core's
-    /// <see cref="IAdProvider"/>, with its User Messaging Platform consent as <see cref="IConsentFlow"/>.
-    /// Consent: <see cref="Request"/> asks UMP for an update on every launch, as Google's privacy page
-    /// requires, and shows the form where the law needs it; consent kept from an earlier session lets
-    /// ads load while this session's update runs. The age treatment (child-directed or under the age of
+    /// <see cref="IAdProvider"/>, with Google's User Messaging Platform (<see cref="UmpConsentFlow"/>) as its
+    /// <see cref="IConsentFlow"/>; the package also registers that flow for the other mediations. The age treatment (child-directed or under the age of
     /// consent: <c>AgeRestrictedTreatment.Child</c>, which replaced the deprecated TFCD and TFUA tags in 11.3.0)
     /// and the content rating reach <c>RequestConfiguration</c> before <c>MobileAds.Initialize</c>. Every SDK
     /// callback (the UMP listeners arrive on the Android UI thread) continues on the main thread.
@@ -29,9 +27,6 @@ namespace Nexus.Ads.AdMob
     {
         public const string ProviderName = "admob";
 
-        private static readonly List<string> TestDevices = new List<string>();
-        private static bool _eeaConsentGeography;
-
         /// <summary>
         /// Google-format test device ids: the 32-character id the SDK prints in logcat ("setTestDeviceIds")
         /// or in the Xcode console ("testDeviceIdentifiers"); on Android UMP prints the same id for its debug
@@ -40,12 +35,7 @@ namespace Nexus.Ads.AdMob
         /// sample units, so a release build never carries them. Call before the bootstrap starts.
         /// </summary>
         public static void SetTestDevices(IEnumerable<string> googleTestDeviceIds, bool eeaConsentGeography = false)
-        {
-            TestDevices.Clear();
-            if (googleTestDeviceIds != null)
-                foreach (var id in googleTestDeviceIds) if (!string.IsNullOrWhiteSpace(id)) TestDevices.Add(id.Trim());
-            _eeaConsentGeography = eeaConsentGeography;
-        }
+            => UmpConsentFlow.SetDebugDevices(googleTestDeviceIds, eeaConsentGeography);
 
         private readonly ProviderConfig _config;
         private readonly UnityMainThread _main = new UnityMainThread();
@@ -53,8 +43,8 @@ namespace Nexus.Ads.AdMob
         private InterstitialAd _interstitial;
         private BannerView _banner;
         private string _bannerPlacement = "";
-        private bool _sdkStarted, _loadingRewarded, _loadingInterstitial, _consentRequested, _consentAnswered;
-        private Action _onConsent;
+        private readonly UmpConsentFlow _consent;
+        private bool _sdkStarted, _loadingRewarded, _loadingInterstitial;
         private ShowState _show;
 
         private sealed class ShowState
@@ -69,9 +59,11 @@ namespace Nexus.Ads.AdMob
         public AdMobProvider(ProviderConfig config)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
+            _consent = new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: config.UsesPublishedTestData);
+            _consent.Changed += () => Changed?.Invoke();
         }
 
-        private bool TestDevicesApply => _config.UsesPublishedTestData && (TestDevices.Count > 0 || _eeaConsentGeography);
+        private bool TestDevicesApply => _consent.DebugApplies;
 
         private void OnMain(Action action)
         {
@@ -81,56 +73,18 @@ namespace Nexus.Ads.AdMob
 
         // ----- IConsentFlow
 
-        public bool Completed => _consentAnswered;
-        public bool CanRequestAds => ConsentInformation.CanRequestAds();
-        public bool PrivacyOptionsRequired => _consentAnswered && ConsentInformation.PrivacyOptionsRequirementStatus == PrivacyOptionsRequirementStatus.Required;
+        public bool Completed => _consent.Completed;
+        public bool CanRequestAds => _consent.CanRequestAds;
+        public bool PrivacyOptionsRequired => _consent.PrivacyOptionsRequired;
         public event Action Changed;
 
-        public void Request(Action onCompleted)
-        {
-            if (_consentAnswered) { onCompleted?.Invoke(); return; }
-            _onConsent += onCompleted;
-            if (_consentRequested) return;
-            _consentRequested = true;
-            var request = new ConsentRequestParameters { TagForUnderAgeOfConsent = _config.UnderAgeOfConsent };
-            if (TestDevicesApply)
-                request.ConsentDebugSettings = new ConsentDebugSettings
-                {
-                    DebugGeography = _eeaConsentGeography ? DebugGeography.EEA : DebugGeography.Disabled,
-                    TestDeviceHashedIds = new List<string>(TestDevices),
-                };
-            ConsentInformation.Update(request, updateError => OnMain(() =>
-            {
-                if (updateError != null) Debug.LogWarning("[Nexus Ads] AdMob consent update failed: " + updateError.Message);
-                ConsentForm.LoadAndShowConsentFormIfRequired(formError => OnMain(() =>
-                {
-                    if (formError != null) Debug.LogWarning("[Nexus Ads] AdMob consent form: " + formError.Message);
-                    AnswerConsent();
-                    Changed?.Invoke();
-                }));
-            }));
-            // consent obtained in an earlier session: ads may load while this session's update runs
-            if (ConsentInformation.CanRequestAds()) AnswerConsent();
-        }
+        public void Request(Action onCompleted) => _consent.Request(onCompleted);
 
-        private void AnswerConsent()
+        public void ShowPrivacyOptions(Action onClosed) => _consent.ShowPrivacyOptions(() =>
         {
-            _consentAnswered = true;
-            var callback = _onConsent;
-            _onConsent = null;
-            callback?.Invoke();
-        }
-
-        public void ShowPrivacyOptions(Action onClosed)
-        {
-            ConsentForm.ShowPrivacyOptionsForm(error => OnMain(() =>
-            {
-                if (error != null) Debug.LogWarning("[Nexus Ads] AdMob privacy options: " + error.Message);
-                if (!ConsentInformation.CanRequestAds()) DropLoadedAds();
-                Changed?.Invoke();
-                onClosed?.Invoke();
-            }));
-        }
+            if (!ConsentInformation.CanRequestAds()) DropLoadedAds();
+            onClosed?.Invoke();
+        });
 
         private void DropLoadedAds()
         {
@@ -156,7 +110,7 @@ namespace Nexus.Ads.AdMob
             {
                 MaxAdContentRating = MaxAdContentRating.ToMaxAdContentRating(config.MaxAdContentRating),
                 AgeRestrictedTreatment = config.ChildDirected || config.UnderAgeOfConsent ? AgeRestrictedTreatment.Child : AgeRestrictedTreatment.Unspecified,
-                TestDeviceIds = TestDevicesApply ? new List<string>(TestDevices) : new List<string>(),
+                TestDeviceIds = TestDevicesApply ? new List<string>(UmpConsentFlow.DebugDevices) : new List<string>(),
             });
             MobileAds.Initialize(_ => OnMain(() =>
             {
@@ -290,10 +244,17 @@ namespace Nexus.Ads.AdMob
         }
     }
 
-    /// <summary>Registers the provider with the bootstrap before any scene loads; only the selected mediation is ever created.</summary>
+    /// <summary>
+    /// Registers the provider and Google's consent form with the bootstrap before any scene loads; only the selected
+    /// mediation is ever created, and with another mediation selected the UMP flow runs before it (issue #63).
+    /// </summary>
     public static class AdMobRegistration
     {
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-        private static void Register() => AdsBootstrap.RegisterProvider(AdProviderKind.AdMob, (scheduler, config) => new AdMobProvider(config));
+        private static void Register()
+        {
+            AdsBootstrap.RegisterProvider(AdProviderKind.AdMob, (scheduler, config) => new AdMobProvider(config));
+            AdsBootstrap.RegisterSharedConsentFlow(config => new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: config.TestMode || config.UsesPublishedTestData), AdProviderKind.AdMob);
+        }
     }
 }

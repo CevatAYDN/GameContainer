@@ -16,6 +16,7 @@ namespace Nexus.Ads.Tests
         public readonly List<string> Networks = new List<string>();
         public readonly List<string> LinkXml = new List<string>();
         public bool Edm = true;
+        public bool EdmStub;
         public string Manifest = "{ \"dependencies\": {} }";
         public string AdMobAppId;
         public int TargetSdk = 34, MinSdk = 23;
@@ -29,6 +30,7 @@ namespace Nexus.Ads.Tests
         public bool ProviderPackageInstalled(AdProviderKind kind) => ProviderPackages.Contains(kind);
         public IReadOnlyList<string> DetectedNetworks => Networks;
         public bool ExternalDependencyManagerInstalled => Edm;
+        public bool DisabledEdmStub => EdmStub;
         public string CustomAndroidManifest => AndroidManifest;
         public int AndroidTargetSdk => TargetSdk;
         public int AndroidMinSdk => MinSdk;
@@ -90,6 +92,7 @@ namespace Nexus.Ads.Tests
         [Test]
         public void ACompleteProject_PassesBothTabs()
         {
+            WithGoogleConsent("ca-app-pub-1111111111111111~2222222222");
             var release = Run(AdsValidator.Tab.Release);
             var test = Run(AdsValidator.Tab.Test);
             Assert.AreEqual("pass", release.outcome, release.Summary());
@@ -117,14 +120,55 @@ namespace Nexus.Ads.Tests
             Assert.AreEqual("Invalid", report.status, "the badge and the check say the same thing");
         }
 
-        [Test]
-        public void GoogleSdk_NextToTheSelectedMediation_Warns_AndIsNotASecondMediation()
+        /// <summary>Google Mobile Ads and com.nexus.ads.admob in the project, the Google settings asset carrying <paramref name="appId"/>.</summary>
+        private void WithGoogleConsent(string appId)
         {
             _probe.Installed(AdProviderKind.AdMob);
+            _probe.AdMobAppId = appId;
+        }
+
+        [Test]
+        public void GoogleSdk_NextToTheSelectedMediation_WithoutItsPackage_Warns_AndIsNotASecondMediation()
+        {
+            _probe.Sdks.Add(AdProviderKind.AdMob);
+            _probe.Upm.Add(AdProviderKind.AdMob);
+            _probe.AdMobAppId = "ca-app-pub-1111111111111111~2222222222";
             var report = Run(AdsValidator.Tab.Release);
             Assert.AreEqual(CheckResult.Warn, Check(report, "mediation.admob").Result);
+            StringAssert.Contains("com.nexus.ads.admob", Check(report, "mediation.admob").fix, "the fix names the package that brings Google's consent form");
             Assert.AreEqual(CheckResult.Pass, Check(report, "mediation.single").Result, "AdMob is not counted as a second mediation");
             Assert.AreEqual("Active", report.status);
+        }
+
+        [Test]
+        public void LevelPlay_RunsGooglesConsentForm_WhenItsPackagesAreIn_AndWarnsWithoutAnyConsentPlatform()
+        {
+            // issue #63: LevelPlay ships no consent form
+            var bare = Run(AdsValidator.Tab.Release);
+            Assert.AreEqual(CheckResult.Warn, Check(bare, "consent.form").Result);
+            StringAssert.Contains("SetGdprConsent", Check(bare, "consent.form").fix, "the way out for a game with its own consent platform");
+
+            WithGoogleConsent("ca-app-pub-1111111111111111~2222222222");
+            var report = Run(AdsValidator.Tab.Release);
+            Assert.AreEqual(CheckResult.Pass, Check(report, "consent.form").Result);
+            Assert.AreEqual(CheckResult.Pass, Check(report, "mediation.admob").Result);
+        }
+
+        [Test]
+        public void GoogleSdk_BesideLevelPlay_NeedsAnAppId_AndNoSampleOneInARelease()
+        {
+            // issue #63: the Google Mobile Ads Android SDK stops the app at launch without an App ID, whichever mediation runs
+            WithGoogleConsent(null);
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Test), "android.admob.appid").Result, "no settings asset: every build stops at launch");
+            _probe.AdMobAppId = "";
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "android.admob.appid").Result);
+
+            _probe.AdMobAppId = AdMobSampleIds.PublisherPrefix + "~3347511713";
+            Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Test), "android.admob.appid").Result, "Google's sample App ID serves a development build");
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "android.admob.appid").Result, "a release would show Google's test message");
+
+            _probe.AdMobAppId = "ca-app-pub-1111111111111111~2222222222";
+            Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "android.admob.appid").Result);
         }
 
         [Test]
@@ -258,6 +302,7 @@ namespace Nexus.Ads.Tests
         [Test]
         public void Report_CountsAndOutcome_AreConsistent()
         {
+            WithGoogleConsent("ca-app-pub-1111111111111111~2222222222"); // the empty device list is then the only warning
             _settings.TestDeviceIds.Clear();
             var report = Run(AdsValidator.Tab.Test);
             Assert.AreEqual(report.checks.Count, report.pass + report.warn + report.fail);

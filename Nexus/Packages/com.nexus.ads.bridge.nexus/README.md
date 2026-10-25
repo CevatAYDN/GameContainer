@@ -9,10 +9,15 @@ family's [CHANGELOG](../com.nexus.ads/CHANGELOG.md).
 
 ## Install
 
-Both packages by git URL, pinned to the same commit, the full 40-character hash (the ads validator's `manifest.pins` check keeps
-them together; **Tools > Nexus Ads > Pin family packages to one commit** rewrites them):
+Three packages by git URL, pinned to the same commit, the full 40-character hash. The bridge declares
+`com.nexus.core` and `com.nexus.ads`, and the Package Manager does not install a git package's
+dependencies, so each is listed (without the `com.nexus.core` line a bare project stops at
+`Package [com.nexus.core@0.5.0] cannot be found`). The ads validator's `manifest.pins` check and
+**Tools > Nexus Ads > Pin family packages to one commit** cover the `com.nexus.ads*` entries only;
+`com.nexus.core` is set to the same commit by hand:
 
 ```json
+"com.nexus.core": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<commit>",
 "com.nexus.ads": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads#<commit>",
 "com.nexus.ads.bridge.nexus": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads.bridge.nexus#<commit>"
 ```
@@ -54,7 +59,7 @@ device id yet.
 | `ShowInterstitial` | the guard's natural-break and frequency rules, then the SDK |
 | `ShowBanner(placement, position)` | `"top"` or anything else = bottom |
 | `ReadyChanged` | the controller's |
-| `PrivacyOptionsRequired`, `ShowPrivacyOptions` | the provider's consent flow (UMP for AdMob, the mediation's form for LevelPlay and MAX, the simulator's switch in the editor) |
+| `PrivacyOptionsRequired`, `ShowPrivacyOptions` | the consent flow the bootstrap runs: Google UMP for AdMob, and for LevelPlay when `com.nexus.ads.admob` is installed (otherwise LevelPlay's pass-through, which never asks); the simulator's switch in the editor |
 | `OnImpressionRecorded` | every `AdRevenue` the mediation reports |
 
 Remote configuration: with `com.nexus.firebase` installed, `Nexus.Ads.Bridge.Nexus.Firebase`

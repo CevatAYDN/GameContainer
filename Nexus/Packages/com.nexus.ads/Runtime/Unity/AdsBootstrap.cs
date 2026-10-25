@@ -16,6 +16,8 @@ namespace Nexus.Ads.Unity
     public sealed class AdsBootstrap : MonoBehaviour
     {
         private static readonly Dictionary<AdProviderKind, Func<IAdScheduler, ProviderConfig, IAdProvider>> Factories = new Dictionary<AdProviderKind, Func<IAdScheduler, ProviderConfig, IAdProvider>>();
+        private static Func<ProviderConfig, IConsentFlow> _sharedConsent;
+        private static AdProviderKind _sharedConsentRunBy;
 
         [Tooltip("Left empty, Resources/NexusAdsSettings is loaded")]
         [SerializeField] private AdsSettings _settings;
@@ -25,10 +27,13 @@ namespace Nexus.Ads.Unity
         [SerializeField] private SimulatorScenario _simulatorScenario = SimulatorScenario.Normal;
         [Tooltip("Ad events go to the console in the editor and development builds")]
         [SerializeField] private bool _logEvents = true;
+        [Tooltip("Off: nothing reads the advertising id or touches the consent flow and the SDK until the game calls StartAds()")]
+        [SerializeField] private bool _startOnAwake = true;
 
         private UnityAdTelemetry _telemetry;
         private float _timeScaleBeforeAd = 1f;
         private bool _audioWasPaused;
+        private bool _startRequested;
 
         public static AdsBootstrap Instance { get; private set; }
 
@@ -47,12 +52,27 @@ namespace Nexus.Ads.Unity
         public event Action Started;
 
         /// <summary>Sets the settings and simulator scenario before the component is enabled (tests, code-made bootstraps).</summary>
-        public void Configure(AdsSettings settings, SimulatorScenario simulatorScenario = SimulatorScenario.Normal, bool logEvents = true)
+        public void Configure(AdsSettings settings, SimulatorScenario simulatorScenario = SimulatorScenario.Normal, bool logEvents = true, bool startOnAwake = true)
         {
-            if (Controller != null) throw new InvalidOperationException("Configure before the bootstrap starts.");
+            if (Controller != null || _startRequested) throw new InvalidOperationException("Configure before the bootstrap starts.");
             _settings = settings;
             _simulatorScenario = simulatorScenario;
             _logEvents = logEvents;
+            _startOnAwake = startOnAwake;
+        }
+
+        /// <summary>
+        /// Starts the ad stack once: reads the advertising id, then builds the provider or the simulator and the controller,
+        /// which runs the consent flow before the SDK. Awake calls it unless startOnAwake is off; a game that starts ads
+        /// later (after its own explanation, never for a player who owns the ad-free product) calls it itself, after Awake.
+        /// Later calls do nothing.
+        /// </summary>
+        public void StartAds()
+        {
+            if (_startRequested || Instance != this || _settings == null) return;
+            _startRequested = true;
+            var mainThread = new UnityMainThread();
+            DeviceIdentity.FetchAdvertisingId(id => mainThread.Post(() => StartWith(id, mainThread)));
         }
 
         /// <summary>
@@ -67,6 +87,25 @@ namespace Nexus.Ads.Unity
 
         public static bool IsProviderRegistered(AdProviderKind kind) => Factories.ContainsKey(kind);
 
+        /// <summary>
+        /// A consent platform for the mediations that ship no form: com.nexus.ads.admob registers Google's User Messaging
+        /// Platform here (issue #63). The provider of <paramref name="runByProvider"/> runs that platform itself and keeps its
+        /// own flow. A null factory clears the registration.
+        /// </summary>
+        public static void RegisterSharedConsentFlow(Func<ProviderConfig, IConsentFlow> factory, AdProviderKind runByProvider)
+        {
+            _sharedConsent = factory;
+            _sharedConsentRunBy = factory == null ? AdProviderKind.None : runByProvider;
+        }
+
+        /// <summary>
+        /// The consent flow that runs before <paramref name="provider"/> initializes: the shared platform when one is
+        /// registered and the selected mediation does not run it itself, otherwise the provider's own flow (LevelPlay's is a
+        /// pass-through, since LevelPlay ships no form).
+        /// </summary>
+        public static IConsentFlow ConsentFlowFor(AdProviderKind selected, IAdProvider provider, ProviderConfig config)
+            => _sharedConsent != null && selected != _sharedConsentRunBy ? _sharedConsent(config) : provider as IConsentFlow;
+
         public static BuildKind CurrentBuild => Application.isEditor ? BuildKind.Editor : Debug.isDebugBuild ? BuildKind.Development : BuildKind.Release;
 
         public static AdPlatform CurrentPlatform => Application.platform == RuntimePlatform.IPhonePlayer ? AdPlatform.Ios : AdPlatform.Android;
@@ -80,8 +119,7 @@ namespace Nexus.Ads.Unity
             if (_settings == null) { Debug.LogError("[Nexus Ads] No AdsSettings: create one with Nexus > Ads Settings or assign it on the bootstrap."); return; }
             Build = CurrentBuild;
             Platform = CurrentPlatform;
-            var mainThread = new UnityMainThread();
-            DeviceIdentity.FetchAdvertisingId(id => mainThread.Post(() => StartWith(id, mainThread)));
+            if (_startOnAwake) StartAds();
         }
 
         private void StartWith(string advertisingId, UnityMainThread mainThread)
@@ -101,7 +139,7 @@ namespace Nexus.Ads.Unity
             if (Mode == HostMode.Provider)
             {
                 Provider = factory(scheduler, config.Provider);
-                consent = Provider as IConsentFlow;
+                consent = ConsentFlowFor(_settings.SelectedMediation, Provider, config.Provider);
             }
             else
             {
@@ -230,7 +268,8 @@ namespace Nexus.Ads.Unity
             Action late = null;
             if (controller == null && AdsBootstrap.Instance != null)
             {
-                late = () => { if (AdsBootstrap.Instance != null && AdsBootstrap.Instance.Controller != null) AdsBootstrap.Instance.Controller.ReadyChanged += handler; };
+                // the start may already have filled an ad (the simulator fills at once), so the late subscriber reads readiness once
+                late = () => { if (AdsBootstrap.Instance != null && AdsBootstrap.Instance.Controller != null) { AdsBootstrap.Instance.Controller.ReadyChanged += handler; handler(); } };
                 AdsBootstrap.Instance.Started += late;
             }
             return () =>

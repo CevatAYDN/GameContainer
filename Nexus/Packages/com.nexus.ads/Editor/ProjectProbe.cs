@@ -21,7 +21,10 @@ namespace Nexus.Ads.Editor
         bool ProviderPackageInstalled(AdProviderKind kind);
         /// <summary>Lower-case ids of the network adapters found (mintegral, pangle, chartboost, meta, inmobi, liftoff, dtexchange, unityads, admob); a heuristic.</summary>
         IReadOnlyList<string> DetectedNetworks { get; }
+        /// <summary>A dependency resolver that works is in the project (a disabled stub does not count).</summary>
         bool ExternalDependencyManagerInstalled { get; }
+        /// <summary>com.google.external-dependency-manager is a disabled stub (its folder carries .edm_dummy): it only satisfies another package's dependency and shadows the real package of that name.</summary>
+        bool DisabledEdmStub { get; }
         /// <summary>Text of Assets/Plugins/Android/AndroidManifest.xml, or null when the project has no custom manifest.</summary>
         string CustomAndroidManifest { get; }
         int AndroidTargetSdk { get; }
@@ -86,7 +89,10 @@ namespace Nexus.Ads.Editor
         public bool SdkViaUpm(AdProviderKind kind) => UpmPackage.TryGetValue(kind, out var name) && _manifestPackages.Contains(name);
         public bool ProviderPackageInstalled(AdProviderKind kind) => ProviderAssembly.TryGetValue(kind, out var name) && _assemblies.Contains(name);
         public IReadOnlyList<string> DetectedNetworks => _networks;
-        public bool ExternalDependencyManagerInstalled => _manifestPackages.Contains("com.google.external-dependency-manager") || _manifestPackages.Contains("com.unity.external-dependency-manager") || _assemblies.Contains("Google.JarResolver") || Directory.Exists("Assets/ExternalDependencyManager");
+        public bool ExternalDependencyManagerInstalled => (_manifestPackages.Contains(AndroidSetup.GoogleEdmPackage) && !DisabledEdmStub) || _manifestPackages.Contains(AndroidSetup.UnityEdmPackage) || _assemblies.Contains("Google.JarResolver") || Directory.Exists("Assets/ExternalDependencyManager");
+        public bool DisabledEdmStub => _packages.TryGetValue(AndroidSetup.GoogleEdmPackage, out var info) && IsDisabledEdmStub(info.resolvedPath);
+        /// <summary>The marker of a disabled External Dependency Manager package (Gigawatt, Wickling and ChipCrisis embed one beside Firebase; issue #61).</summary>
+        public static bool IsDisabledEdmStub(string packageRoot) => !string.IsNullOrEmpty(packageRoot) && File.Exists(Path.Combine(packageRoot, ".edm_dummy"));
         public string PackageVersion(string package) => package != null && _packages.TryGetValue(package, out var info) ? info.version : null;
         public string PackageFileText(string package, string relativePath)
         {

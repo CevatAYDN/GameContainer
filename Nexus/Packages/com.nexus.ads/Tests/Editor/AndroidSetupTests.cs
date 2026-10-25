@@ -71,6 +71,31 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
+        public void ADisabledEdmStub_IsNoResolver_AndPrepareAndroidAddsUnitysResolverInstead()
+        {
+            // issue #61: the three ad games embed a disabled com.google.external-dependency-manager beside Firebase
+            string root = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nexus-edm-" + Guid.NewGuid().ToString("N"));
+            System.IO.Directory.CreateDirectory(root);
+            try
+            {
+                Assert.IsFalse(UnityProjectProbe.IsDisabledEdmStub(root), "a package folder without the marker is a real package");
+                System.IO.File.WriteAllText(System.IO.Path.Combine(root, ".edm_dummy"), "");
+                Assert.IsTrue(UnityProjectProbe.IsDisabledEdmStub(root));
+            }
+            finally { System.IO.Directory.Delete(root, true); }
+
+            _settings.SelectedMediation = AdProviderKind.LevelPlay;
+            var stubbed = new FakeProbe().Installed(AdProviderKind.LevelPlay);
+            stubbed.Edm = false;
+            stubbed.EdmStub = true;
+            var step = AndroidSetup.Plan(_settings, AdsValidator.Tab.Test, stubbed, _catalog).First(s => s.id == "resolver");
+            Assert.AreEqual(SetupStatus.Pending, step.status);
+            StringAssert.Contains(AndroidSetup.UnityEdmPackage, step.how);
+            Assert.AreEqual(AndroidSetup.UnityEdmPackage, AndroidSetup.ResolverPackage(stubbed), "the embedded stub would shadow Google's package from OpenUPM");
+            Assert.AreEqual(AndroidSetup.GoogleEdmPackage, AndroidSetup.ResolverPackage(new FakeProbe { Edm = false }));
+        }
+
+        [Test]
         public void AdMob_NeedsOnlyItsAppId_FromTheTabBeingBuilt()
         {
             _settings.SelectedMediation = AdProviderKind.AdMob;

@@ -2,7 +2,7 @@
 
 The ad package family's core: an engine-free ad core, a Unity layer, an editor setup wizard and
 validator, and a simulator provider. Mediation SDKs live in separate provider packages (`com.nexus.ads.levelplay`,
-`com.nexus.ads.max`, `com.nexus.ads.admob`); Nexus games connect through `com.nexus.ads.bridge.nexus`
+`com.nexus.ads.admob`; `com.nexus.ads.max` is planned, issue #14); Nexus games connect through `com.nexus.ads.bridge.nexus`
 ([#12](https://github.com/CevatAYDN/GameContainer/issues/12)). The plan, decisions and phases are in
 [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes are in [CHANGELOG.md](CHANGELOG.md). A game on the
 legacy `AdMobAdapter` moves here with [MIGRATION.md](MIGRATION.md).
@@ -47,7 +47,7 @@ pages they were read from, are in the register.
 |---|---|
 | `UnknownPlacement` | a placement name not declared in the settings, or declared with another format |
 | `InterstitialNaturalBreakOnly` | an interstitial on a placement without `NaturalBreak` |
-| `InterstitialFrequency` | an interstitial inside the gap, in the first seconds of a session, over a cap, right after a rewarded ad, or inside the placement's own cooldown and caps |
+| `InterstitialFrequency` | an interstitial inside the gap, in the first seconds of a session, over a session or day cap, or right after a rewarded ad; a show of any format before its placement's first-show delay, inside its cooldown or over its session or day cap |
 | `NoStackedAds` | a second full-screen ad while one is open |
 | `NoAdInBackground` | a show while the app is not visible |
 | `NoRequestBeforeConsent` | a show before the consent flow finished |
@@ -57,7 +57,7 @@ pages they were read from, are in the register.
 
 Defaults of `AdPolicy.Default`: 30 s between interstitials, none in the first 60 s of a session,
 none within 30 s after a rewarded ad, no session or day cap, a new session after 30 min in the
-background. Locked by `AdsCoreSuite` AP1–AP7.
+background. Locked by `AdsCoreSuite` AP1–AP6.
 
 ## Which build talks to which SDK
 
@@ -82,7 +82,7 @@ build, Google's ads settings page on the phone shows it as "Your advertising ID"
 build's debug panel shows the same id with a copy button.
 
 `ProviderGate.Host(build, gate, mediationSelected, providerRegistered)` then decides what the bootstrap
-runs. The simulator (a full-screen overlay labelled "Simulated ad") runs only where the gate chose it,
+runs. The simulator (a full-screen overlay labelled "Simulated Rewarded ad" or "Simulated Interstitial ad") runs only where the gate chose it,
 or in the editor and development builds while no mediation is selected. A blocked gate, or a selected
 provider that is not in the player (package not installed, assembly stripped) where the gate chose the
 SDK, runs nothing: the controller is never started, every show answers `NotReady`, the rewarded button
@@ -95,12 +95,18 @@ stays hidden and the reason is logged as an error. A release build never runs th
    `Assets/Resources/NexusAdsSettings.asset`. Declare the placements (name, format, `NaturalBreak`,
    cooldown, caps), the privacy flags and, on the Release tab, the live keys. The Test tab holds the
    provider's test data and the device list (the wizard of #11 fills it).
-2. Put `AdsBootstrap` on a GameObject in the first scene (it survives scene loads). In the editor,
-   and in a development build while no mediation is selected, the simulator runs with a full-screen
-   overlay; a selected provider that is not installed runs nothing. In every build it logs what it
+2. Put `AdsBootstrap` on a GameObject in the first scene (it survives scene loads). In the editor, in
+   a development build on a device that is not listed (`UnregisteredDevice`) and in a development
+   build while no mediation is selected, the simulator runs with a full-screen overlay; where the gate
+   chose the SDK, a selected provider that is not installed runs nothing. In every build it logs what it
    started, without ids: `[Nexus Ads] started mode=<Provider|Simulator|Idle> mediation=<kind>
    gate=<Provider|Simulator|Blocked> rule=<rule or -> testMode=<on|off>` (one line;
-   `tools/device-acceptance/run.ps1 -ExpectAds` reads it).
+   `tools/device-acceptance/run.ps1 -ExpectAds` reads it). A game that starts ads later (after its own
+   explanation, or never for a player who owns its ad-free product) turns the bootstrap's
+   `startOnAwake` off (or passes `startOnAwake: false` to `Configure` on a bootstrap made in code) and
+   calls `AdsBootstrap.Instance.StartAds()` when it is ready; until then nothing reads the advertising id
+   or touches the consent flow and the SDK, a show answers `NotReady`, and `NexusAdsBridge.Connect` and
+   `Ads.OnReadyChanged` complete when it starts (issue #62).
 3. Generate the `AdPlacements` constants (**Tools > Nexus Ads > Generate Placements**, path on the
    settings) and show ads through the facade:
 
@@ -184,7 +190,8 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | Check id | Fails or warns when |
 |---|---|
 | `mediation.single` | fail: two mediation SDKs are in the project |
-| `mediation.admob` | warn: the Google Mobile Ads SDK is in the project while LevelPlay or MAX is selected (only the selected mediation starts; the SDK still ships) |
+| `mediation.admob` | warn: the Google Mobile Ads SDK is in the project while LevelPlay or MAX is selected without `com.nexus.ads.admob` (only the selected mediation starts; the SDK still ships); with that package it passes, since Google's consent form then runs before the mediation |
+| `consent.form` | warn: LevelPlay is selected and no consent platform is in the project (LevelPlay ships no form; add `com.google.ads.mobile` and `com.nexus.ads.admob` for Google UMP, or forward a CMP's answer with `LevelPlayProvider.SetGdprConsent` before `StartAds()`) |
 | `mediation.selected` | fail: no mediation selected on a release that is not ad-free |
 | `mediation.status` | fail: the selected provider is not Active for a release build (warn on the Test tab when NotInstalled: a development build runs the simulator on a device that is not listed and no ads on a listed one) |
 | `keys.release.missing`, `keys.test.missing` | fail: a required field (derived from the placements) is empty; warn on the Test tab for LevelPlay/MAX (the SDK cannot start on a listed device) |
@@ -193,7 +200,7 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | `keys.test.mirror` | fail: LevelPlay/MAX Test tab differs from a filled Release tab |
 | `devices.empty` | warn: no test device, every development build runs the simulator |
 | `sdk.unitypackage` | warn: the SDK is a `.unitypackage` import; names the define to set |
-| `android.admob.appid` | fail: the Google Mobile Ads settings asset disagrees with the tab's App ID |
+| `android.admob.appid` | fail (AdMob selected): the Google Mobile Ads settings asset carries no App ID or one that disagrees with the tab's; a missing settings asset fails on the Release tab and warns on the Test tab. Fail (another mediation selected, Google Mobile Ads in the project): no App ID in that asset (the Android SDK stops the app at launch without one), or Google's sample App ID on the Release tab |
 | `android.edm` | fail (release): External Dependency Manager missing |
 | `android.nativesdk` | fail: the selected mediation's native SDK declaration is missing or not resolved into the Gradle template (LevelPlay's Gradle build would stop at `IronSourceError`) |
 | `android.gradle` | fail: the custom main Gradle template or one of the catalog's Gradle lines is missing (LevelPlay on Unity 6000.5: duplicate Kotlin classes) |

@@ -98,11 +98,20 @@ namespace Nexus.Ads.Editor
                 ? new AdsCheck("mediation.single", CheckResult.Fail, "two mediation SDKs are in the project (" + string.Join(", ", installedMediations) + "); one build carries one mediation.", "remove the SDK of the mediation that is not selected (LevelPlay and MAX bring the same network adapters in different versions).")
                 : new AdsCheck("mediation.single", CheckResult.Pass, installedMediations.Count == 0 ? "no mediation SDK in the project" : installedMediations[0] + " is the only mediation SDK"));
 
-            // the Google Mobile Ads SDK next to another mediation: only the selected provider starts, yet the SDK ships in the build
+            // the Google Mobile Ads SDK next to another mediation: only the selected provider starts, yet the SDK ships in the build;
+            // with com.nexus.ads.admob it brings Google's consent form, which the bootstrap runs before the mediation (issue #63)
+            bool googleSdk = probe.SdkInstalled(AdProviderKind.AdMob);
+            bool googleConsent = googleSdk && probe.ProviderPackageInstalled(AdProviderKind.AdMob);
             if (kind == AdProviderKind.LevelPlay || kind == AdProviderKind.Max)
-                report.Add(probe.SdkInstalled(AdProviderKind.AdMob)
-                    ? new AdsCheck("mediation.admob", CheckResult.Warn, "the Google Mobile Ads SDK is in the project while " + kind + " is selected; the AdMob provider never starts (only the selected mediation does), but the SDK ships in the build.", "keep com.google.ads.mobile when a network adapter or Google's consent form (UMP) needs it; remove it otherwise.")
-                    : new AdsCheck("mediation.admob", CheckResult.Pass, "no Google Mobile Ads SDK next to " + kind));
+                report.Add(!googleSdk ? new AdsCheck("mediation.admob", CheckResult.Pass, "no Google Mobile Ads SDK next to " + kind)
+                    : googleConsent ? new AdsCheck("mediation.admob", CheckResult.Pass, "Google Mobile Ads and com.nexus.ads.admob are in the project for Google's consent form (UMP), which runs before " + kind + " starts; the AdMob provider itself never starts")
+                    : new AdsCheck("mediation.admob", CheckResult.Warn, "the Google Mobile Ads SDK is in the project while " + kind + " is selected; the AdMob provider never starts (only the selected mediation does), but the SDK ships in the build.", "add com.nexus.ads.admob when Google's consent form (UMP) should run before " + kind + "; keep com.google.ads.mobile when a network adapter needs it; remove it otherwise."));
+
+            // LevelPlay ships no consent form (issue #63)
+            if (kind == AdProviderKind.LevelPlay)
+                report.Add(googleConsent
+                    ? new AdsCheck("consent.form", CheckResult.Pass, "Google's consent form (UMP) runs before LevelPlay starts; LevelPlay reads the consent UMP stores")
+                    : new AdsCheck("consent.form", CheckResult.Warn, "no consent form runs before LevelPlay starts (LevelPlay ships none); players in the EEA, the UK and Switzerland need one from a certified consent platform.", "install com.google.ads.mobile and com.nexus.ads.admob (Google's UMP then runs before LevelPlay), or turn the bootstrap's startOnAwake off, collect consent with your own platform and pass it with LevelPlayProvider.SetGdprConsent before calling StartAds()."));
 
             // status from the single resolver
             bool sdk = probe.SdkInstalled(kind) && probe.ProviderPackageInstalled(kind);
@@ -221,6 +230,19 @@ namespace Nexus.Ads.Editor
                     report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "the Google Mobile Ads settings asset carries '" + appId + "' but the " + (release ? "Release" : "Test") + " tab says '" + expected + "'; the manifest would start the SDK with the wrong app.", "press Prepare Android in Tools > Nexus Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
                 else
                     report.Add(new AdsCheck("android.admob.appid", CheckResult.Pass, "Google Mobile Ads settings asset carries the tab's App ID"));
+            }
+            else if (platform == AdPlatform.Android && probe.SdkInstalled(AdProviderKind.AdMob))
+            {
+                // Google Mobile Ads beside another mediation (Google's consent form or a network adapter): its Android SDK stops the app at launch without an App ID (issue #63)
+                string appId = probe.AdMobSettingsAppId(platform);
+                if (string.IsNullOrWhiteSpace(appId))
+                    report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "Google Mobile Ads is in the project beside " + kind + " but its settings asset (Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset) carries no Android App ID; the SDK stops the app at launch without one.",
+                        "enter the game's AdMob App ID in Assets > Google Mobile Ads > Settings; Google's consent form shows the message published for that App ID under Privacy & messaging in AdMob."));
+                else if (release && AdMobSampleIds.IsSample(appId))
+                    report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "the Google Mobile Ads settings asset carries Google's sample App ID in a release build; Google's consent form would show Google's test message, not the game's.",
+                        "enter the game's AdMob App ID in Assets > Google Mobile Ads > Settings."));
+                else
+                    report.Add(new AdsCheck("android.admob.appid", CheckResult.Pass, AdMobSampleIds.IsSample(appId) ? "Google Mobile Ads settings asset carries Google's sample App ID (development builds only)" : "Google Mobile Ads settings asset carries an App ID"));
             }
 
             if (release && !probe.ExternalDependencyManagerInstalled)

@@ -62,6 +62,26 @@ namespace Nexus.Ads.AdMob.Tests
             Assert.IsTrue(AdsBootstrap.IsProviderRegistered(AdProviderKind.AdMob), "registered by RuntimeInitializeOnLoadMethod before the first scene");
         }
 
+        [UnityTest]
+        public IEnumerator AnotherMediation_GetsGooglesConsentForm_ThatAnswersBeforeItStarts()
+        {
+            // issue #63: with LevelPlay selected the bootstrap runs UMP before the provider; LevelPlay's own flow is a pass-through
+            var other = new SimulatorProvider(new UnityAdSchedulerStub());
+            var flow = AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, other, Config(sampleUnits: false));
+            Assert.IsInstanceOf<UmpConsentFlow>(flow, "registered beside the provider before the first scene");
+            Assert.IsInstanceOf<AdMobProvider>(AdsBootstrap.ConsentFlowFor(AdProviderKind.AdMob, new AdMobProvider(Config()), Config()), "AdMob keeps its own flow");
+            bool answered = false;
+            flow.Request(() => answered = true);
+            yield return Until(() => answered, "the UMP answer");
+            Assert.IsTrue(flow.Completed);
+            Assert.IsTrue(flow.CanRequestAds, "the plugin's editor placeholder needs no form");
+        }
+
+        private sealed class UnityAdSchedulerStub : IAdScheduler
+        {
+            public IDisposable Schedule(double seconds, Action action) => null;
+        }
+
         [Test]
         public void BeforeInitialization_LoadFailsWithTheReason_AndAShowAnswersNotReady()
         {

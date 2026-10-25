@@ -13,11 +13,15 @@ puts the family's controller behind the same service.
 
 ## Steps
 
-1. **Packages.** In `Packages/manifest.json`, every family package at one commit of this repository
-   (the validator's `manifest.pins` check fails otherwise; **Tools > Nexus Ads > Pin family packages to one
-   commit** rewrites them): `com.nexus.core`, `com.nexus.ads`, `com.nexus.ads.bridge.nexus`, and the provider
-   of the selected mediation:
-   - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x;
+1. **Packages.** In `Packages/manifest.json`, every family package at one commit of this repository:
+   `com.nexus.core`, `com.nexus.ads`, `com.nexus.ads.bridge.nexus`, and the provider of the selected
+   mediation (the validator's `manifest.pins` check fails when the `com.nexus.ads*` entries differ, and
+   **Tools > Nexus Ads > Pin family packages to one commit** rewrites those; neither covers
+   `com.nexus.core`, which is re-pinned to the same commit by hand):
+   - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x; to keep Google's consent
+     form (the form the legacy `AdMobAdapter` showed), also keep `com.google.ads.mobile` and add
+     `com.nexus.ads.admob`: the bootstrap then runs Google UMP before LevelPlay, and the game's AdMob App
+     ID stays in Assets > Google Mobile Ads > Settings (issue #63);
    - AdMob: `com.nexus.ads.admob` (its `Nexus.Ads.AdMob` assembly is the family provider) plus
      `com.google.ads.mobile` 11.3.0 or newer from OpenUPM (11.6.0 brings Unity's External Dependency
      Manager as its own dependency).
@@ -30,7 +34,10 @@ puts the family's controller behind the same service.
    the Release tab plus the test device list).
 3. **Android and scene.** Press **Tools > Nexus Ads > Setup > Prepare Android** until every step is
    Done (the resolver, LevelPlay's native SDK and Gradle lines, the AdMob App ID; see the
-   [README](README.md#editor-tools)), and put an `AdsBootstrap` component in the first scene.
+   [README](README.md#editor-tools)), and put an `AdsBootstrap` component in the first scene. A game
+   that starts ads late (after its own explanation, or never for a player who owns its ad-free product)
+   turns the bootstrap's `startOnAwake` off and calls `AdsBootstrap.Instance.StartAds()` when it is
+   ready (issue #62).
 4. **Wiring.** Replace the adapter registration with the bridge:
 
    ```csharp
@@ -51,7 +58,7 @@ puts the family's controller behind the same service.
    |---|---|
    | `AdMobConfig` ad unit ids, test ids next to release ids | Test and Release tabs; a development build reads Test, a release build Release |
    | Mock in the editor, real adapter on devices | `AdsBootstrap`: the editor runs the simulator, a development build the SDK with test data (AdMob: Google's sample units on every device; LevelPlay and MAX: only on a device listed on the Test tab, the simulator elsewhere), a release build the SDK with live ids |
-   | `AdMobConfig.DebugGeographyEea`, `TestDeviceHashedIds` | `AdMobProvider.SetTestDevices(googleIds, eeaConsentGeography)` before the bootstrap starts; applied with Google's sample units only |
+   | `AdMobConfig.DebugGeographyEea`, `TestDeviceHashedIds` | `AdMobProvider.SetTestDevices(googleIds, eeaConsentGeography)` (AdMob; applied with Google's sample units only) or `UmpConsentFlow.SetDebugDevices(hashedIds, eeaGeography)` (Google's form before LevelPlay; applied in test mode only), before the bootstrap starts |
    | Interstitial cooldowns and per-day caps kept in `PlayerPrefs` | Policy floors and per-placement caps in the settings (`PolicyGuard`, per-day counters in `IPacingStore`) |
    | Muting audio or pausing time while an ad shows | `AdsBootstrap` pauses audio and time between open and close |
    | Load retries | `AdController`'s back-off, paused while the app is hidden |

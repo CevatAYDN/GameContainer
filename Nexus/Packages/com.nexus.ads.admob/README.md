@@ -17,7 +17,10 @@ are installed (assembly definition `versionDefines` `NEXUS_ADMOB` and `NEXUS_ADS
 Install the plugin from OpenUPM (scoped registry below; 11.6.0 brings Unity's External Dependency
 Manager, `com.unity.external-dependency-manager`, as its own dependency and resolves its Android
 libraries during the build), list
-`com.nexus.ads` and this package at the same commit, select **AdMob** in **Project Settings > Nexus
+`com.nexus.core`, `com.nexus.ads` and this package at the same commit (this package declares
+`com.nexus.core` for the legacy adapter, and the Package Manager does not install a git package's
+dependencies), or list `com.nexus.ads` alone and let Prepare Android add the ones it finds missing at
+the commit of `com.nexus.ads`; select **AdMob** in **Project Settings > Nexus
 Ads**, press **Tools > Nexus Ads > Setup > Prepare Android** (it writes the tab's App ID into the
 plugin's settings asset) and put an `AdsBootstrap` in the first scene; the provider registers itself
 before the first scene loads. A Nexus game adds `com.nexus.ads.bridge.nexus` and calls `NexusAdsBridge.Connect`.
@@ -26,7 +29,14 @@ What it does:
 - **Consent:** asks the User Messaging Platform for an update on every launch (Google's privacy page
   requires it) and shows the form where the law needs it; consent kept from an earlier session lets ads
   load while this session's update runs. The privacy options form is `ShowPrivacyOptions`; a withdrawal
-  destroys the loaded ads and further loads report "consent does not allow ad requests".
+  destroys the loaded ads and further loads report "consent does not allow ad requests". The flow is
+  `UmpConsentFlow`; the package also registers it with the bootstrap, which runs it before another
+  mediation that ships no form (LevelPlay reads the consent UMP stores, issue #63). With LevelPlay selected
+  the AdMob provider never starts, the App ID in the plugin's settings asset picks the consent message
+  published under AdMob's Privacy & messaging, and the validator fails a build without one (the Android SDK
+  stops the app at launch) or with Google's sample App ID on the Release tab. Test devices for that form:
+  `UmpConsentFlow.SetDebugDevices(hashedIds, eeaGeography: true)` before the bootstrap starts, applied in
+  test mode only.
 - **Request configuration** before `MobileAds.Initialize`: `AgeRestrictedTreatment.Child` when the
   settings mark the app child-directed or its users under the age of consent (Google's replacement for
   the deprecated `TagForChildDirectedTreatment` and `TagForUnderAgeOfConsent`, plugin 11.3.0), and the

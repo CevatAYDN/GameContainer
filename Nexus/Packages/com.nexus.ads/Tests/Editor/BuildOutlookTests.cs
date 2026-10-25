@@ -22,6 +22,34 @@ namespace Nexus.Ads.Tests
         [TearDown]
         public void TearDown() => Object.DestroyImmediate(_settings);
 
+        private sealed class NoScheduler : IAdScheduler
+        {
+            public static readonly NoScheduler Instance = new NoScheduler();
+            public System.IDisposable Schedule(double seconds, System.Action action) => null;
+        }
+
+        [Test]
+        public void ASharedConsentPlatform_RunsBeforeAMediationWithoutAForm_AndTheProviderThatRunsItKeepsItsOwn()
+        {
+            // issue #63: com.nexus.ads.admob registers Google UMP; LevelPlay's own flow is a pass-through
+            var config = _settings.ToConfig(BuildKind.Development, AdPlatform.Android).Provider;
+            var levelPlay = new SimulatorProvider(NoScheduler.Instance);
+            Assert.AreSame(levelPlay, AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, levelPlay, config), "nothing registered: the provider's own flow");
+
+            var shared = new SimulatorProvider(NoScheduler.Instance);
+            ProviderConfig seen = null;
+            AdsBootstrap.RegisterSharedConsentFlow(c => { seen = c; return shared; }, AdProviderKind.AdMob);
+            try
+            {
+                Assert.AreSame(shared, AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, levelPlay, config));
+                Assert.AreSame(config, seen, "the flow gets the provider configuration (age treatment, test mode)");
+                var admob = new SimulatorProvider(NoScheduler.Instance);
+                Assert.AreSame(admob, AdsBootstrap.ConsentFlowFor(AdProviderKind.AdMob, admob, config), "the AdMob provider runs UMP itself");
+            }
+            finally { AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None); }
+            Assert.AreSame(levelPlay, AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, levelPlay, config), "a null factory clears the registration");
+        }
+
         private void FillLevelPlay()
         {
             foreach (var tab in new[] { _settings.Test, _settings.Release })
