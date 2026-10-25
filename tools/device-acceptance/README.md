@@ -30,7 +30,8 @@ starts (a development build: a device in the settings' test device list with tes
 provider's published test units), `Simulator` on a device that is not listed (rule
 `UnregisteredDevice`), `Idle` where nothing may run. The run
 shows no ad. Whether the SDK then serves test ads is decided by the mediation's own dashboard;
-LevelPlay's test ads carry no on-screen label and no logcat line naming them as test ads.
+LevelPlay adds no label of its own to a test ad (AdMob's "Test Ad" badge has no counterpart
+there) and logs no line naming one; only the creative itself may say "test".
 
 Limits: no storage-interruption test (filling or detaching storage is not done safely on a
 phone), no gameplay assertions, one device model. Run it on a game's player as well; the
