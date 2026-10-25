@@ -15,7 +15,8 @@ What runs, in order (each stage is a separate Unity process; the first failure s
 1. `NexusVerifyBuild.PackPackage` packs `Nexus/Packages/com.nexus.core` with the Package Manager
    into `Nexus/artifacts/<RunName>/package/*.tgz`.
 2. `prepare_clean_project.py` creates `Nexus/artifacts/<RunName>/CleanConsumer`: a manifest with
-   only the built-in modules, the test framework and the tarball, the development project's
+   only the built-in modules, the test framework, `com.unity.pipeline` (which the Unity CLI needs)
+   and the tarball, the development project's
    Unity version, and the smoke assets (sample access helpers, a player probe, editor methods and
    two test assemblies).
 3. `consumer-import`: the Code-first Startup sample is imported through the UPM `Sample` API, which

@@ -8,17 +8,18 @@ must be current, consistent and verifiable. Read this file before changing code 
 
 | Path | Role |
 |---|---|
-| `Nexus/Packages/com.nexus.core/` | The product. `Runtime/` (player code), `Editor/` (tools, codegen, validation), `Tests/Editor` + `Tests/Runtime` (Unity NUnit), `Samples~/` (3 importable samples), `SourceGenerator~/` (Roslyn binder generator), `docs/` (user documentation), `CHANGELOG.md` (the changelog of the core and its adapter packages) |
+| `Nexus/Packages/com.nexus.core/` | The product. `Runtime/` (player code), `Editor/` (tools, codegen, validation), `Tests/Editor` + `Tests/Runtime` (Unity NUnit), `Samples~/` (3 importable samples), `SourceGenerator~/` (Roslyn binder generator), `SourceGenerators~/` (its built analyzer DLL), `docs/` (user documentation), `CHANGELOG.md` (the changelog of the core and its adapter packages) |
 | `Nexus/` | Unity 6000.5.6f1 development project hosting the package. `Assets/Scripts/Game/Samples` holds the wizard's canonical generated files; `Assets/Scripts/Nexus/` holds the git-ignored generated binder |
 | `tools/nexus-benchmark/` | .NET host harness; compiles the runtime against stubs (`UnityStubs.cs`, `GeneratorStubs.cs`) and runs every proof suite. Runs as the git pre-commit hook |
-| `tools/nexus-comparison/` | Pinned VContainer/Zenject/Reflex DI comparison (host and Unity Mono player) |
+| `tools/nexus-compile-check/` | Compiles every runtime file, the five the harness leaves out included, against the installed editor's engine modules |
+| `tools/nexus-comparison/` | Pinned VContainer/Zenject/Reflex DI comparison (host, Unity Mono player and Android IL2CPP device) |
 | `tools/nexus-consumer/` | Clean UPM consumer gate: packs the tarball, fresh project, sample import, tests, player |
 | `tools/unity-verify/` | Player builds of the development project (`NexusVerify.NexusVerifyBuild.*`) |
 | `tools/device-acceptance/` | Runs an Android player on the connected phone: soak, background/resume, kill/restart, logcat scan (gate 12) |
-| `Nexus/Packages/com.nexus.ads/` | The ad package family's core (issue #8): `Runtime/Core` (engine-free, `noEngineReferences`; compiled and proven in the host harness), `Runtime/Unity` (settings asset, bootstrap, simulator overlay, rewarded button), `docs/POLICY_COMPLIANCE.md` (policy register, EN + TR), `Editor/PlatformCatalog.json` (setup wizard data), `Editor/` (Project Settings page, setup wizard with Prepare Android (`AndroidSetup`, `PrepareCli`), Placement Tester, `AdsValidator` with `RunCli` and the pre-build hook), `CHANGELOG.md` (the family's changelog: core, providers, bridge). `com.nexus.ads.levelplay` is the first provider (#13), `Nexus.Ads.AdMob` in `com.nexus.ads.admob` the second (#14); MAX follows. `MIGRATION.md` moves a game from the legacy `AdMobAdapter` to the family |
+| `Nexus/Packages/com.nexus.ads/` | The ad package family's core (issue #8): `Runtime/Core` (engine-free, `noEngineReferences`; compiled and proven in the host harness), `Runtime/Unity` (settings asset, bootstrap that can wait for `StartAds()`, simulator overlay, rewarded button), `docs/POLICY_COMPLIANCE.md` (policy register, EN + TR), `Editor/PlatformCatalog.json` (setup wizard data), `Editor/` (Project Settings page, setup wizard with Prepare Android (`AndroidSetup`, `PrepareCli`), Placement Tester, `AdsValidator` with `RunCli` and the pre-build hook), `CHANGELOG.md` (the family's changelog: core, providers, bridge). `com.nexus.ads.levelplay` is the first provider (#13), `Nexus.Ads.AdMob` in `com.nexus.ads.admob` the second (#14); MAX follows. `MIGRATION.md` moves a game from the legacy `AdMobAdapter` to the family |
 | `Nexus/Packages/com.nexus.ads.levelplay/` | `LevelPlayProvider`, the family's `IAdProvider` over `com.unity.services.levelplay` 9.x; compiles only with that package (`NEXUS_LEVELPLAY`); compile proof in a disposable project under `Nexus/artifacts/levelplay-<date>/` (gate row in `docs/RELEASE_GATES.md`) |
 | `Nexus/Packages/com.nexus.ads.bridge.nexus/` | The family's adapter for `com.nexus.core`'s `AdService` (`NexusAdsAdapter`, `NexusAdsBridge.Connect`, `IapAdFreeEntitlement`; `FirebaseAdsRemoteConfig` compiles only with `com.nexus.firebase`). A Nexus game keeps its `IAdService` code and connects once |
-| `Nexus/Packages/com.nexus.ads.admob/`, `com.nexus.iap.unity/` | Optional adapter packages (Google AdMob with UMP consent; Unity IAP 5) behind `AdService` / `IapService`; compile only when their SDK package is installed (`versionDefines`). `com.nexus.ads.admob` also holds `Runtime/Provider` (`Nexus.Ads.AdMob`, the family's AdMob provider; compiles only with `com.nexus.ads` and Google Mobile Ads 11.3.0+; compile proof in `Nexus/artifacts/admob-<date>/`); the legacy `AdMobAdapter` stays until Gigawatt, Wickling and ChipCrisis have re-pinned to the family |
+| `Nexus/Packages/com.nexus.ads.admob/`, `com.nexus.iap.unity/` | Optional adapter packages (Google AdMob with UMP consent; Unity IAP 5) behind `AdService` / `IapService`; compile only when their SDK package is installed (`versionDefines`). `com.nexus.ads.admob` also holds `Runtime/Provider` (`Nexus.Ads.AdMob`: the family's AdMob provider and `UmpConsentFlow`, Google's consent form, which the bootstrap also runs before LevelPlay; compiles only with `com.nexus.ads` and Google Mobile Ads 11.3.0+; compile proof in `Nexus/artifacts/admob-<date>/`); the legacy `AdMobAdapter` stays until Gigawatt, Wickling and ChipCrisis have re-pinned to the family |
 | `docs/RELEASE_GATES.md` | The gates and the latest measured numbers |
 | `docs/research/` | Dated, sourced research (competitors) |
 | `docs/archive/` | Past audits, reviews and roadmaps; evidence only, never updated |
@@ -28,9 +29,10 @@ must be current, consistent and verifiable. Read this file before changing code 
 ```powershell
 dotnet run --project tools/nexus-benchmark                       # host harness, ~10 s
 dotnet run --project tools/nexus-benchmark -- --coverage         # which runtime files it compiles
+dotnet build tools/nexus-compile-check                           # every runtime file against the real engine modules
 python tools/check-docs.py                                       # markdown link check
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults Nexus\artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults Nexus\artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
+& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
+& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Ads.Editor.AdsValidator.RunCli -adsTab Release -adsPlatform Android -adsReport artifacts/ads-validation.json   # ads settings check; exit 0 pass, 1 fail, 2 could not run; the report path is relative to the project folder
 & "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath <consumer> -buildTarget Android -executeMethod Nexus.Ads.Editor.AndroidSetup.PrepareCli -adsTab Test   # Prepare Android for the selected mediation, without -quit; exit 0 done, 1 steps remain, 2 could not run, 3 packages added (run again)
@@ -38,7 +40,8 @@ python tools/check-docs.py                                       # markdown link
 ./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date>-generated -Android -Generated   # generated bindings (own artifact folder: the analyzer and the define stay in the project)
 ```
 
-Unity runs one instance per project: never start a Unity command while another is running on
+A relative `-testResults` path is resolved against the project folder (so `artifacts\editmode.xml` lands in
+`Nexus/artifacts/`), a relative `-logFile` against the working directory. Unity runs one instance per project: never start a Unity command while another is running on
 `Nexus/`, and do not edit files under `Nexus/` while a batch run is in progress.
 A player build leaves the editor on that build target; `NexusVerifyBuild` switches back, but after any
 other Android build run `Unity.exe -batchmode -nographics -quit -projectPath Nexus -buildTarget Win64`
@@ -63,14 +66,14 @@ before tests, or the Standalone define `NEXUS_DEBUG` silently drops out of edito
 - One canonical document per topic. User documentation lives in the package `docs/`; repository-level status lives in `docs/`; dated reports go to `docs/archive/` with a row in its README and are never edited afterwards.
 - English is canonical; `*_TR.md` files are translations and change in the same commit as their source.
 - Every number (test counts, file counts, versions, benchmark values) and every path or menu name in a document is checked against the code when the document is touched. No "last updated" footers; the git history is the date.
-- Two changelogs, one per family: `com.nexus.core/CHANGELOG.md` covers the core and its adapter packages (`com.nexus.ads.admob`'s legacy `AdMobAdapter`, `com.nexus.iap.unity`, `com.nexus.firebase`); `com.nexus.ads/CHANGELOG.md` covers the ad package family (core, providers including `com.nexus.ads.admob`'s `Nexus.Ads.AdMob`, bridge). Each `package.json` is its released version; everything newer is under `[Unreleased]`.
+- Two changelogs, one per family: `com.nexus.core/CHANGELOG.md` covers the core and its adapter packages (`com.nexus.ads.admob`'s legacy `AdMobAdapter`, `com.nexus.iap.unity`, `com.nexus.firebase`); `com.nexus.ads/CHANGELOG.md` covers the ad package family (core, providers including `com.nexus.ads.admob`'s `Nexus.Ads.AdMob`, bridge). Each `package.json` is its released version; everything newer is under `[Unreleased]`. A package that has never been released carries 0.1.0 and only an `[Unreleased]` section.
 - No performance claim without workload, platform, Unity version, competitor versions and reproduction tool. "Verified" means a result file exists.
 
 **Consumers**
 - Games consume the package by git URL pinned to a commit. Framework fixes are made here with a regression test and the game re-pins; a game never keeps an edited copy of the package. Known consumers: Gigawatt, Wickling, ChipCrisis, Pixel-Flow-Clone, IdleProject, PuzzleGame, RingFlow (sibling folders under `..\`).
 
 **Changes**
-- Every problem and every request starts as an issue in this repository (templates under `.github/ISSUE_TEMPLATE/`); nobody changes the repository or a consumer's pin on their own. A change lands on `main` by a commit or pull request that names its issue; `main` is the only long-lived branch and a pull request branch is deleted when it lands.
+- Every problem and every request starts as an issue in this repository (templates under `.github/ISSUE_TEMPLATE/`); nobody changes the repository or a consumer's pin on their own. Work inside a game (its migration, its re-pin) is an issue in that game's repository, linked from the issue here. A change lands on `main` by a commit or pull request that names its issue; `main` is the only long-lived branch and a pull request branch is deleted when it lands.
 
 **Commits**
 - Conventional prefixes used here: `fix(di):`, `fix(codegen):`, `fix(lifecycle):`, `feat:`, `docs:`, `test:`, `chore:`. One logical change per commit; the message states what was wrong and how it was verified.

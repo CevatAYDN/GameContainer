@@ -1,11 +1,12 @@
 using System;
 using System.Linq;
 using NUnit.Framework;
+using Nexus.Core;
 using UnityEngine;
 using UnityEngine.UIElements;
 using Nexus.Editor;
 
-namespace Nexus.Core.Tests
+namespace Nexus.Editor.Tests
 {
     public class IntegrationReadinessTests
     {

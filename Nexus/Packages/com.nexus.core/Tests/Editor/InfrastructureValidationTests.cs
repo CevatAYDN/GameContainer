@@ -3,7 +3,7 @@ using System.Linq;
 using NUnit.Framework;
 using Nexus.Editor;
 
-namespace Nexus.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// Locks the two infrastructure checks that must run on every CI pass but are

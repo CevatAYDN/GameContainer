@@ -3,8 +3,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using Nexus.Core;
 
-namespace Nexus.Core.Tests
+namespace Nexus.Editor.Tests
 {
     public class OptionalDiFeatureRegressionTests
     {

@@ -8,7 +8,7 @@ using Nexus.Editor;
 using NUnit.Framework;
 using UnityEngine.UIElements;
 
-namespace Nexus.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     [TestFixture]
     public class FSMHardeningTests

@@ -81,8 +81,9 @@ Produces `Nexus/builds/standalone-il2cpp/`. This is the strongest signal:
 IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 - `Runtime/link.xml` preserves the generic dispatch entry points,
 - the `[Preserve]`-annotated runtime surface survives stripping,
-- nothing relies on runtime JIT (`Expression.Compile` is bypassed under
-  `ENABLE_IL2CPP` in `NexusDI.cs`).
+- nothing relies on runtime JIT (`Expression.Compile` in `CommandRegistry.cs` and the
+  `DynamicMethod` emitter in `CompiledAccessorEmitter.cs`, which `NexusDI` uses, sit behind
+  `ENABLE_IL2CPP` / `UNITY_AOT` guards).
 
 ### Optional: Android IL2CPP (needs SDK/NDK)
 

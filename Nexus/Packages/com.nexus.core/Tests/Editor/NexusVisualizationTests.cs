@@ -3,7 +3,7 @@ using Nexus.Editor;
 using UnityEngine;
 using UnityEngine.UIElements;
 
-namespace Nexus.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     [TestFixture]
     public class NexusVisualizationTests

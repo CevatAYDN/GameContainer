@@ -15,14 +15,16 @@ describe the code at their date. Current state lives in the package documentatio
 | `STUDIO-EVALUATION-2026-08-13.md` | 2026-08-13 | Studio-adoption evaluation with P0/P1 gaps | `../research/COMPETITORS_2026-10-15.md` for the market view; open gaps tracked in `../RELEASE_GATES.md` |
 | `COMPETITIVE_ROADMAP-2026-08-13.md` | 2026-08-13 | Competitor matrix and seven-phase roadmap. Its §3 matrix and §9 corrected matrix disagree with each other (VContainer editor tooling); Reflex is absent | `../research/COMPETITORS_2026-10-15.md` |
 | `REFACTOR_PLAN.md` | 2026-08 | Boot and frame-spike refactor plan with implementation-status banner | Package `CHANGELOG.md` ("Performance") |
-| `NEXUS_REVIEW_2026_10_07.md` | 2026-10-07 | Commit review LC01–LC20 with verified evidence (EditMode 352, PlayMode 160, harness 291) | Package `docs/HARDENING.md`; numbers refreshed in `../RELEASE_GATES.md` |
+| `NEXUS_REVIEW_2026_10_07.md` | 2026-10-07 | Commit review LC01–LC20 with verified evidence (EditMode 352, PlayMode 160, harness 291) | `HARDENING.md` (archived beside it); numbers refreshed in `../RELEASE_GATES.md` |
 | `NEXUS_PERFORMANCE_2026_10_07.md` | 2026-10-07 | Optional-map startup optimisation and Unity Mono player DI comparison | Package `docs/PERFORMANCE_COMPARISON.md` |
 | `NEXUS_NEXT_STEPS_2026_10_07.md` | 2026-10-07 | Prioritised next steps after the October review | `../RELEASE_GATES.md` (open gates) |
 | `package-reviews/DEEP_CODE_REVIEW_2026.md` | 2026 | Deep code review that used to ship inside the UPM package | Package `CHANGELOG.md` |
 | `package-reviews/REVIEW_FINDINGS_A1_B8.md` | 2026-08-01 | Findings A1–A6, B1–B8 with per-finding fix evidence | Package `CHANGELOG.md` |
 | `package-reviews/REVIEW_VALIDATION.md` | 2026-07-31 | Validation of four action items from a July review | Package `CHANGELOG.md` |
-| `package-reviews/SERVICE_AUDIT.md` | 2026-07-31 | Audit of the service layer (13 services at the time; 17 `NexusService` subclasses today) | Package `README.md` service table |
+| `package-reviews/SERVICE_AUDIT.md` | 2026-07-31 | Audit of the service layer (13 services at the time; 16 `NexusService` subclasses on 2026-10-25) | Package `README.md` service table |
 | `package-reviews/NEXUS_NOTEBOOKLM_ADVERSARIAL_AUDIT_REGISTRY.md` | 2026 | Registry of externally generated audit claims and their verdicts | Package `CHANGELOG.md` |
-| `INTEGRATION.md` | 2026-08 | Turkish integration guide (UPM, submodule, npm) with Ads/IAP adapter registration examples that use pre-Unity-6 APIs | Package `docs/GETTING_STARTED.md`, `docs/INTEGRATION_PATHS*.md`; an adapter guide verified against the current `AdAdapterFactory`/`IapAdapterFactory` API is an open documentation task (see `../RELEASE_GATES.md`) |
+| `HARDENING.md` | 2026-10-06 → 2026-10-07 | Correctness, integration and performance hardening R01–R20 with the verification of that time (harness 291, EditMode 352, PlayMode 160); it shipped in the package `docs/` until 2026-10-25 | `../RELEASE_GATES.md` |
+| `SLO.md` | 2026-08 → 2026-10-15 | Service-level objectives with harness "baselines" no run records, and a CI gate, self-hosted runner, crash reporting and device soak that did not exist | `../RELEASE_GATES.md`; the package README's Performance scope table |
+| `INTEGRATION.md` | 2026-08 | Turkish integration guide (UPM, submodule, npm) with Ads/IAP adapter registration examples that use pre-Unity-6 APIs | Package `docs/GETTING_STARTED.md`, `docs/INTEGRATION_PATHS*.md`; adapters: package `docs/ADAPTERS.md` |
 
 Relative links inside archived files were written for their original locations and may not resolve.

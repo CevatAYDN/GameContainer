@@ -1,7 +1,7 @@
 using NUnit.Framework;
 using Nexus.Editor;
 
-namespace Nexus.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// Locks the NEXUS003 rule of <see cref="NexusArchitectureAnalyzer"/>: it must flag

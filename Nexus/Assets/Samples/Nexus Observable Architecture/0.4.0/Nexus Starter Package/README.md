@@ -1,6 +1,8 @@
 # 🚀 Nexus Starter Template
 
-The minimal Nexus project to get you from zero to running in 5 minutes.
+The minimal scaffold template to get a fresh project running quickly.
+
+For the recommended onboarding sample, import the **Counter Example** sample.
 
 ## What's included
 
@@ -15,11 +17,11 @@ The minimal Nexus project to get you from zero to running in 5 minutes.
 
 ## Setup
 
-1. Import this sample via **Window > Package Manager → Nexus → Samples**
+1. Import this sample via **Window > Package Manager → Nexus Observable Architecture → Samples**
 2. Create a **Canvas** with a **Button** and a **Text** element
 3. Add `NexusStartView` to your Canvas (assign Button & Text in Inspector)
 4. Create an empty GameObject → add `Root` component
-5. Create **ContextData** asset (Create → Nexus → ContextData), enable **Auto-Discovery**
+5. Create a **ContextData** asset (Create → Nexus → Context Data), set **Scope Tag** to `NexusStart` and keep **Enable Auto Discovery** on: the context finds `NexusStartLifecycle` by its `{ScopeTag}Lifecycle` name
 6. Assign ContextData to Root → Press **Play**
 
 ## What you'll see

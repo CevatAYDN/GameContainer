@@ -5,7 +5,7 @@ using NUnit.Framework;
 using Nexus.Core;
 using Nexus.Core.Services;
 
-namespace Nexus.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     [TestFixture]
     public class AdversarialAuditVerificationTests

@@ -1,9 +1,10 @@
 using System;
 using System.Threading.Tasks;
 using NUnit.Framework;
+using Nexus.Core;
 using UnityEngine;
 
-namespace Nexus.Core.Tests
+namespace Nexus.Editor.Tests
 {
     [TestFixture]
     public class NexusLifecycleStressHarnessTests

@@ -14,15 +14,16 @@ repository's `docs/RELEASE_GATES.md` cites the latest run.
 ```
 
 Any APK works (`-Apk path`): the package and launch activity are read from the archive with
-`aapt`, so a game's own player goes through the same phases.
+`aapt` (found in the Android SDK, or given with `-Aapt path`), so a game's own player goes through
+the same phases. `-AdbSerial` picks the phone when more than one device is connected.
 
 | Phase | What is checked | Fails when |
 |---|---|---|
 | Cold start | a process exists 15 s after launch | no process |
-| Soak (`-SoakSeconds`, default 300) | the process stays alive; `dumpsys meminfo` TOTAL PSS sampled every `-SampleSeconds` | the process dies, or PSS grows more than `-MaxPssGrowthPercent` (default 50) between the first and last sample |
+| Soak (`-SoakSeconds`, default 300) | the process stays alive; `dumpsys meminfo` TOTAL PSS sampled every `-SampleSeconds` (default 30) | the process dies, or PSS grows more than `-MaxPssGrowthPercent` (default 50) between the first and last sample |
 | Background and resume | HOME, 10 s, relaunch; the process is back (same pid recorded, a new pid is reported, not failed: Android may recreate it) | no process after relaunch |
 | Kill and restart | `am force-stop`, relaunch; a process exists after 15 s | no process |
-| Logcat | `FATAL EXCEPTION`, `ANR in <package>`, Unity exception lines, `[Nexus Ads] PolicyViolation` lines, counted only on lines logged by this app's processes (other apps on the phone log their own; a process Android recreated on resume counts as the app's); Unity's own Play Asset Delivery probe (`ClassNotFoundException ... AssetPackManager`, logged by every player without Play Core) is ignored | any of the four |
+| Logcat | `FATAL EXCEPTION`, Unity exception lines and `[Nexus Ads] PolicyViolation` lines, counted only on lines logged by this app's processes (other apps on the phone log their own; a process Android recreated on resume counts as the app's); `ANR in <package>`, which the system logs, counted over the whole logcat; Unity's own Play Asset Delivery probe (`ClassNotFoundException ... AssetPackManager`, logged by every player without Play Core) is ignored | any of the four |
 | Ads (`-ExpectAds Provider\|Simulator\|Idle`, off by default) | `com.nexus.ads`'s `[Nexus Ads] started mode=...` line on every launch (the package writes it from issue #52 on); the lines are recorded under `adsStarts` | fewer start lines than launches, or one with another mode |
 
 `-ExpectAds` checks which side of the ad gate the phone is on: `Provider` where the real SDK

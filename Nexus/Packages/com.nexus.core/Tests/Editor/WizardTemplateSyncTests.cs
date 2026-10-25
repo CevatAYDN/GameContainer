@@ -8,7 +8,7 @@ using Nexus.Editor;
 using UnityEditor;
 using UnityEngine;
 
-namespace Nexus.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// Locks the sample↔wizard sync contract end to end. Four layers:

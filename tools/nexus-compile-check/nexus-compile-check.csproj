@@ -8,6 +8,8 @@
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
     <!-- Match Unity's optional DOTS assembly: compile NexusDOTSBridge only when the
          generated Unity.Collections assembly is available. -->
+    <!-- The installed editor's engine modules; pass -p:UNITY_MODULES=<...\Data\Managed\UnityEngine\> for another install. -->
+    <UNITY_MODULES Condition="'$(UNITY_MODULES)' == ''">C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Data\Managed\UnityEngine\</UNITY_MODULES>
     <UNITY_COLLECTIONS_DLL Condition="'$(UNITY_COLLECTIONS_DLL)' == ''">..\..\Nexus\Library\ScriptAssemblies\Unity.Collections.dll</UNITY_COLLECTIONS_DLL>
     <UNITY_COLLECTIONS_DEFINE Condition="Exists('$(UNITY_COLLECTIONS_DLL)')">;UNITY_COLLECTIONS</UNITY_COLLECTIONS_DEFINE>
     <UNITY_UGUI_DLL Condition="'$(UNITY_UGUI_DLL)' == '' and Exists('$(UNITY_UGUI)UnityEngine.UI.dll')">$(UNITY_UGUI)UnityEngine.UI.dll</UNITY_UGUI_DLL>
@@ -25,6 +27,7 @@
 
   <ItemGroup>
     <Reference Include="$(UNITY_MODULES)UnityEngine.CoreModule.dll" />
+    <Reference Include="..\..\Nexus\Library\ScriptAssemblies\Unity.Profiling.Core.dll" />
     <Reference Include="$(UNITY_MODULES)Unity.Scripting.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.SharedInternalsModule.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.AudioModule.dll" />

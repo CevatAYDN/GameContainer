@@ -30,7 +30,7 @@ DotsOwnershipRegressionTests. Framework observer callbacks cannot double-inject 
 component or return a disposed owner as successful startup. Readiness observers stop
 when an earlier observer disposes the owner. Review is not exhaustive branch coverage.
 
-Core DI comparison and reproducibility: [PERFORMANCE_COMPARISON.md](PERFORMANCE_COMPARISON.md).
+Core DI comparison and reproducibility: [PERFORMANCE_COMPARISON.md](../../Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md).
 In the 2026-10-15 runs Nexus leads cached resolves on host and in the Unity Mono player;
 Reflex leads transient construction and warm register/build startup in the player, and
 VContainer leads transient construction on host. No universal or target-device winner
@@ -91,7 +91,7 @@ versions with disk commits; latest manual mutations remain dirty until saved.
 
 Import **Code-first Startup** from UPM Samples, attach `ScoreBootstrap`, then enter Play Mode.
 The sample's exact source compiles against Unity references; its model/command/startup flow
-has a host regression. [English integration](GETTING_STARTED.md) / [Türkçe](GETTING_STARTED_TR.md).
+has a host regression. [English integration](../../Nexus/Packages/com.nexus.core/docs/GETTING_STARTED.md) / [Türkçe](../../Nexus/Packages/com.nexus.core/docs/GETTING_STARTED_TR.md).
 The Setup Wizard preserves conflicting existing files/settings/scenes and creates new scenes
 additively. Existing Root/discovery APIs remain supported.
 

@@ -1,7 +1,7 @@
 using NUnit.Framework;
 using Nexus.Editor;
 
-namespace Nexus.Tests.Editor
+namespace Nexus.Editor.Tests
 {
     [TestFixture]
     public class LocalizationValidationTests

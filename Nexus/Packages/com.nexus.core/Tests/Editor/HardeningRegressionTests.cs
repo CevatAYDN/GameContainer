@@ -12,7 +12,7 @@ using Nexus.Core.Services;
 using Nexus.Netcode;
 using UnityEngine;
 
-namespace Nexus.Tests
+namespace Nexus.Editor.Tests
 {
     [TestFixture]
     public class HardeningRegressionTests

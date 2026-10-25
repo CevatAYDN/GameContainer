@@ -208,7 +208,10 @@ public static class ComparativeBenchmarks
             Runtime = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
             OS = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
             Architecture = System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture.ToString(),
-            Scope = "Core DI only. Unity bridges excluded from competitors. Nexus registered binder/factory caches cleared before warmup; no source generation/reflection baking for any library. Register/build/first resolve includes wrapper and available disposal (Zenject has no disposal action; Reflex's Dispose log is silenced: host shim logger / player LogLevel=Warning). Full Context startup and game frame times are outside this workload.",
+            Scope = "Core DI only. Unity bridges excluded from competitors. " + (generated
+                ? "Generated configuration: Nexus runs its generated binder and VContainer its source generator; Zenject and Reflex use reflection. "
+                : "Nexus registered binder/factory caches cleared before warmup; no source generation/reflection baking for any library. ")
+                + "Register/build/first resolve includes wrapper and available disposal (Zenject has no disposal action; Reflex's Dispose log is silenced: host shim logger / player LogLevel=Warning). Full Context startup and game frame times are outside this workload.",
             Measurements = output.ToArray(),
             AllocationCounterValid = allocationCounterValid,
             PositiveControlMeasuredBytes = positiveControlBytes,
