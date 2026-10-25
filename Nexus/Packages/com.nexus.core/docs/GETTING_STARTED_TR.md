@@ -9,7 +9,7 @@ Nexus bir UPM paketidir; deponun demo projesi gerekmez. Bir yol seçin.
 **Window → Package Manager → + → Install package from git URL** içinde şunu kullanın:
 
 ```text
-https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core
+https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<commit>
 ```
 
 Yerel bir checkout için **Install package from disk** ile

@@ -9,7 +9,7 @@ Nexus is a UPM package; the repository's demo project is not required. Choose on
 In **Window → Package Manager → + → Install package from git URL**, use:
 
 ```text
-https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core
+https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<commit>
 ```
 
 For a local checkout, use **Install package from disk** and select
