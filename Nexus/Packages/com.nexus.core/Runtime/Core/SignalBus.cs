@@ -321,7 +321,7 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Prepares registered commands, dispatch snapshots and cross-context metadata for a
+        /// Prepares registered commands, dispatch snapshots, cross-context metadata and the metrics trace label for a
         /// signal without firing it, consuming one-shots or calling subscribers. Constructors
         /// and factories run during this explicit loading step. Async execution, debug tracing,
         /// decorators and composite triggers have additional costs; prewarm those pools separately.
@@ -333,6 +333,8 @@ namespace Nexus.Core
                 ThrowIfDisposed();
                 if (availablePerCommand < 0) throw new ArgumentOutOfRangeException(nameof(availablePerCommand));
                 _commandRegistry.GetCachedCrossContext<TSignal>();
+                // Built on the first metered Fire otherwise: 280 B in the harness for a subscriber-only signal (issue #77).
+                _ = SignalTraceLabel<TSignal>.Fire;
                 if (_commandRegistry.TryGetHandlers(typeof(TSignal), out var handlers))
                     for (int i = 0; i < handlers.Count; i++)
                         _poolManager.Prewarm(handlers[i].CommandType, availablePerCommand);

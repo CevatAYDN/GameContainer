@@ -34,6 +34,7 @@ namespace NexusBench
             failures += AssertPass("GCA3. TickService_OnTick_ZeroGC", TestTickServiceOnTickZeroGC);
             failures += AssertPass("GCA4. CommandPoolManager_RentReturn_ZeroGC", TestCommandPoolManagerRentReturnZeroGC);
             failures += AssertPass("GCA5. EconomyService_EarnSpendRead_WithThrottler_ZeroGC", TestEconomyWithThrottlerZeroGC);
+            failures += AssertPass("GCA6. SubscribedSignal_FirstFireAfterPrewarm_ZeroGC", TestSubscribedFirstFireAfterPrewarmZeroGC);
 
             if (failures == 0)
                 Console.WriteLine("\n[GCAudit] ALL ZERO-GC AUDIT TESTS PASSED ✓");
@@ -95,6 +96,33 @@ namespace NexusBench
                 return false;
             }
             return counter.Value == 5001;
+        }
+
+        public struct FirstFireSignal { public int Value; }
+
+        // Issue #77: Wickling fired an empty signal to warm a subscriber path; Prewarm<T> must leave nothing for the first Fire.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TestSubscribedFirstFireAfterPrewarmZeroGC()
+        {
+            var container = new NexusDI();
+            var pool = new CommandPoolManager(container);
+            var bus = new SignalBus(container, pool, new MockContext());
+            int heard = 0;
+            bus.Subscribe<FirstFireSignal>(s => heard += s.Value);
+            bus.Prewarm<FirstFireSignal>();
+            bool metrics = NexusRuntime.Metrics.MetricsEnabled;
+            NexusRuntime.Metrics.MetricsEnabled = true; // the metered path, as in a player
+
+            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            bus.Fire(new FirstFireSignal { Value = 1 });
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - allocBefore;
+            NexusRuntime.Metrics.MetricsEnabled = metrics;
+            if (allocated > 0)
+            {
+                Console.WriteLine($"      Allocated {allocated} bytes on the first Fire after Prewarm");
+                return false;
+            }
+            return heard == 1;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
