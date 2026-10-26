@@ -35,7 +35,13 @@ namespace Nexus.Core
         // (any thread) while RecordMetric and UpdateFrameMetrics read them on the hot path
         // (game or monitoring thread). A plain bool could be cached in a register and never
         // observe the toggle, silently continuing/stopping recording.
-        private static volatile bool s_enabled = true;
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        internal const bool DefaultEnabled = true;
+#else
+        // A release player records no samples unless the game sets Enabled (issue #77).
+        internal const bool DefaultEnabled = false;
+#endif
+        private static volatile bool s_enabled = DefaultEnabled;
         private static volatile bool s_recording = false;
         // True once user code has explicitly assigned Enabled; lets NexusRuntime's startup
         // default skip flags the user already chose (see NexusRuntime.InitializeMonitoring).

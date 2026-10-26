@@ -52,6 +52,17 @@ namespace NexusBench
         private static TestCounter _counter;
         private static int _failures;
 
+        // Issue #77: the harness compiles without UNITY_EDITOR and DEVELOPMENT_BUILD, as a release player does. It runs
+        // first, before any suite assigns Enabled; the first context registered applies the defaults.
+        private static void ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn()
+        {
+            var context = ContextFactory.Create();
+            bool performance = PerformanceMonitor.Enabled, network = NetworkMonitor.Enabled;
+            context.Dispose();
+            Report(nameof(ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn), !performance && !network,
+                $"PerformanceMonitor.Enabled={performance} NetworkMonitor.Enabled={network} (expected both false)");
+        }
+
         private static void Setup()
         {
             _counter = new TestCounter();
@@ -466,6 +477,7 @@ namespace NexusBench
         public static int RunAll()
         {
             _failures = 0;
+            Run("ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn", ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn);
             Run("Dispatch1000Signals_CompletesUnderTime", Dispatch1000Signals_CompletesUnderTime);
             Run("Subscribe1000AndFire_AllReceived", Subscribe1000AndFire_AllReceived);
             Run("CommandPool_ReusesInstances", CommandPool_ReusesInstances);

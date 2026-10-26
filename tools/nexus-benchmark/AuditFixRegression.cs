@@ -896,6 +896,8 @@ namespace NexusBench
             PerformanceMonitor.OnMetricRecorded += throwing;
             PerformanceMonitor.OnMetricRecorded += first;
 
+            bool wasEnabled = PerformanceMonitor.Enabled;
+            PerformanceMonitor.Enabled = true; // off by default in a release build, as the harness is (issue #77)
             PerformanceMonitor.StartRecording();
             bool threw = false;
             try
@@ -910,6 +912,7 @@ namespace NexusBench
                 Console.WriteLine($"[Nexus Benchmark]   M7 perf unexpected: {ex.GetType().Name}: {ex.Message}");
             }
             PerformanceMonitor.StopRecording();
+            PerformanceMonitor.Enabled = wasEnabled;
 
             PerformanceMonitor.OnMetricRecorded -= throwing;
             PerformanceMonitor.OnMetricRecorded -= first;
@@ -928,6 +931,8 @@ namespace NexusBench
 
             NetworkMonitor.OnNetworkEvent += throwing;
             NetworkMonitor.OnNetworkEvent += second;
+            bool wasEnabled = NetworkMonitor.Enabled;
+            NetworkMonitor.Enabled = true; // off by default in a release build, as the harness is (issue #77)
 
             bool threw = false;
             try
@@ -940,6 +945,7 @@ namespace NexusBench
                 Console.WriteLine($"[Nexus Benchmark]   M7 net unexpected: {ex.GetType().Name}: {ex.Message}");
             }
 
+            NetworkMonitor.Enabled = wasEnabled;
             NetworkMonitor.OnNetworkEvent -= throwing;
             NetworkMonitor.OnNetworkEvent -= second;
             NetworkMonitor.ClearHistory();

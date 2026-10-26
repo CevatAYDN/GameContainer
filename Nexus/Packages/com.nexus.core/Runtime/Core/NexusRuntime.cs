@@ -739,12 +739,12 @@ namespace Nexus.Core
 
         private static void InitializeMonitoring()
         {
-            // Enable error collection and performance monitoring by default — but never
-            // override a value the user explicitly assigned before the first context
-            // registered (an early Enabled = false must stick).
+            // Enable error collection by default, and the monitors in the editor and development
+            // builds — but never override a value the user explicitly assigned before the first
+            // context registered (an early Enabled = false must stick).
             if (!ErrorCollection.EnabledExplicitlySet) ErrorCollection.Enabled = true;
-            if (!PerformanceMonitor.EnabledExplicitlySet) PerformanceMonitor.Enabled = true;
-            if (!NetworkMonitor.EnabledExplicitlySet) NetworkMonitor.Enabled = true;
+            if (!PerformanceMonitor.EnabledExplicitlySet) PerformanceMonitor.Enabled = PerformanceMonitor.DefaultEnabled;
+            if (!NetworkMonitor.EnabledExplicitlySet) NetworkMonitor.Enabled = NetworkMonitor.DefaultEnabled;
         }
 
         /// <summary>Unregisters a context. Thread-safe.</summary>
