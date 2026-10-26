@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using NUnit.Framework;
 using Nexus.Core.Services;
 
@@ -87,6 +88,14 @@ namespace Nexus.Ads.Bridge.Tests
             _service.RequestReward("shop_refill", o => outcome = o);
             Assert.AreEqual(AdOutcome.Rewarded, outcome);
             Assert.IsTrue(_service.IsRewardedAvailable("shop_refill"), "reloaded after the show");
+        }
+
+        [Test]
+        public async Task RequestRewardAsync_AwaitsTheBridgesOutcome() // issue #73
+        {
+            Assert.AreEqual(AdOutcome.Rewarded, await _service.RequestRewardAsync("shop_refill"));
+            _simulator.Scenario = SimulatorScenario.ClosedEarly;
+            Assert.AreEqual(AdOutcome.Closed, await _service.RequestRewardAsync("shop_refill"));
         }
 
         [Test]

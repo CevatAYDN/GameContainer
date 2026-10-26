@@ -93,6 +93,12 @@ and degrade predictably when an adapter lacks the capability:
 `MonetizationContractTests` (EditMode) lock every row of this table against the mock adapters
 and bool-only adapters.
 
+`RequestRewardAsync(placement, ct)` and `PurchaseAsync(productId, ct)` (`MonetizationAsyncExtensions`) are the
+same two calls as tasks an `IAsyncCommand` awaits; a callback would arrive after a pooled command has
+returned and its `[Inject]` members have been cleared. Cancelling stops the wait, not the ad or the store:
+a reward or a purchase that completes afterwards is logged as a warning and not handed to the caller, so
+grant a non-consumable from `IsProductOwned`. `MonetizationAsyncTests` (EditMode) lock them.
+
 ## The ad package family (recommended for ads)
 
 `com.nexus.ads` with `com.nexus.ads.bridge.nexus` replaces a hand-written ad adapter: the bridge is

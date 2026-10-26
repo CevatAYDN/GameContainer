@@ -111,14 +111,14 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 
 | Service | Folder under `Runtime/Services` | Purpose |
 |---|---|---|
-| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; Google AdMob in the `com.nexus.ads.admob` package); `RequestReward` with `AdOutcome`, `ReadyChanged`, privacy options through optional adapter capabilities |
+| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; Google AdMob in the `com.nexus.ads.admob` package); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged`, privacy options through optional adapter capabilities |
 | `AnalyticsService` | `Analytics` | Stub `IAnalyticsService`: events (with an optional parameter dictionary) and user properties written to the log; replace it with a real backend such as `com.nexus.firebase` before release |
 | `AudioService` | `Audio` | BGM crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels, one mute for everything plus separate music and effects mutes (`IsMusicMuted`, `IsSfxMuted`); the root comes from an `IAudioRootProvider`, which gets it back through `ReleaseRoot` on dispose |
 | `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator; balances persist to `SettingsStores.Economy` when a game binds one |
 | `FeedbackService` | `Feedback` | Combined audio + haptic presets |
 | `FloatingTextService` | `UI` | Pooled world-space floating numbers |
 | `HapticService` | `Haptics` | Six `HapticType` presets and a game's own one-shots and waveforms (`CreateEffect`, `CreateWaveform`, `Play`); on Android 8+ each effect is built once and played through cached JNI; iOS uses `Handheld.Vibrate()`; `IsEnabled` persists |
-| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (mock included; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
+| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (mock included; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` / `PurchaseAsync` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
 | `InputService` | `Input` | Input System movement/actions behind `IInputService`; a custom `IInputProvider` is authoritative |
 | `LocalizationService` | `Localization` | Language tables (a game's JSON tables through `JsonLocalizationTableProvider`), first-run device language, the language's culture and `Format`, RTL formatting, English fallback |
 | `LoggerService` | `Logging` | Default `ILoggerService` |

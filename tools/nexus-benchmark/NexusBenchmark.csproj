@@ -117,6 +117,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ScreenOwner.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/MonetizationAsyncExtensions.cs" />
     <!-- Provider factories (ads/IAP adapter factories + shared base): compiled so the
          demo compatibility suite can prove the demo binding graph (which binds these
          factories) validates and boots under strict injection. -->
