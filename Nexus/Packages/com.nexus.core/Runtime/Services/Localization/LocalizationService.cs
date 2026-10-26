@@ -78,7 +78,7 @@ namespace Nexus.Core.Services
         private void LoadSavedLanguage()
         {
             if (PlayerPrefsService != null && PlayerPrefsService.HasKey(LanguageKey))
-                CurrentLanguage = PlayerPrefsService.GetString(LanguageKey, "en");
+                CurrentLanguage = PlayerPrefsService.GetString(LanguageKey, "en").ToLower(); // tables are keyed lower-case (RegisterLanguageTable); a game may save "pt-BR"
             else if (Options != null)
                 CurrentLanguage = FirstRunLanguage(Options); // not saved: the device language is followed until the player picks one
             _culture = CultureFor(_currentLanguage);

@@ -118,6 +118,17 @@ namespace Nexus.Tests
         }
 
         [Test]
+        public void SavedLanguageWithCapitals_ReadsItsTable()
+        {
+            // issue #82: a game that saves "pt-BR" itself read every text in English
+            var prefs = new TestPlayerPrefsService();
+            prefs.SetString("NT_Language", "pt-BR");
+            var service = Started(prefs, Tables("en", "pt-BR"), "en", new LocalizationOptions());
+            Assert.AreEqual("pt-br", service.CurrentLanguage);
+            Assert.AreEqual("pt-BR", service.GetString("title"));
+        }
+
+        [Test]
         public void JsonTableProvider_ReadsFlatTablesWithEscapesAndSkipsNonStrings()
         {
             var provider = new JsonLocalizationTableProvider(new Dictionary<string, string>
