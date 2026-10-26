@@ -133,6 +133,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Debug/NexusDebugHUD.cs" />
     <!-- AOT binder generator compile guard (editor-only file, stubbed UnityEditor APIs in GeneratorStubs.cs) -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Editor/CodeGen/NexusCodeGenerator.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Editor/CodeGen/BinderConditions.cs" />
     <!-- Roslyn Source Generator (shipping assembly = Nexus.SourceGenerator~): the SAME source
          file is compiled into the harness so CodeGenSuite CG2 drives the exact generator that
          ships in the package (guards against drift between the two). -->

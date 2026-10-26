@@ -144,6 +144,30 @@ namespace Nexus.Editor
         }
 
         /// <summary>
+        /// Source files (physical paths) and scripting defines of every assembly the Editor compiles from source, by
+        /// name, and the name of the assembly that compiles the binder. The binder reads type declarations from them to
+        /// repeat a type's own #if (issue #85); precompiled assemblies are absent.
+        /// </summary>
+        public static Dictionary<string, (string[] Files, string[] Defines)> SourceAssemblies(string binderFolder, out string binderAssembly)
+        {
+            var result = new Dictionary<string, (string[] Files, string[] Defines)>();
+            binderAssembly = null;
+            try
+            {
+                string binderScript = System.IO.Path.Combine(binderFolder, "NexusGeneratedBinder.g.cs").Replace('\\', '/');
+                binderAssembly = System.IO.Path.GetFileNameWithoutExtension(
+                    UnityEditor.Compilation.CompilationPipeline.GetAssemblyNameFromScriptPath(binderScript));
+                foreach (var compiled in UnityEditor.Compilation.CompilationPipeline.GetAssemblies(UnityEditor.Compilation.AssembliesType.Editor))
+                    result[compiled.name] = (compiled.sourceFiles.Select(UnityEditor.FileUtil.GetPhysicalPath).ToArray(), compiled.defines);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning($"[Nexus] Could not read the compilation pipeline ({ex.Message}); the binder names every type without its #if.");
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Safely enumerates a loaded assembly's types. On a <see cref="ReflectionTypeLoadException"/>
         /// it logs a single warning (once per assembly) and yields the types that did load;
         /// it never throws.

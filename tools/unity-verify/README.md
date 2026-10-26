@@ -81,6 +81,9 @@ Produces `Nexus/builds/standalone-il2cpp/`. This is the strongest signal:
 IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 - `Runtime/link.xml` preserves the generic dispatch entry points,
 - the `[Preserve]`-annotated runtime surface survives stripping,
+- a public type that exists only in the Editor and development builds
+  (`Nexus/Assets/Scripts/Verify/DevOnlyProbe.cs`) is named in the generated binder only under its own
+  `#if` (issue #85; the release Mono build checks the same),
 - nothing relies on runtime JIT (`Expression.Compile` in `CommandRegistry.cs` and the
   `DynamicMethod` emitter in `CompiledAccessorEmitter.cs`, which `NexusDI` uses, sit behind
   `ENABLE_IL2CPP` / `UNITY_AOT` guards).

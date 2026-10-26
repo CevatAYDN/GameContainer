@@ -94,6 +94,13 @@ namespace Nexus.Editor
         /// </summary>
         public static IEnumerable<Assembly> BinderAssemblies(string binderFolder) => NexusReferencingAssemblies();
 
+        /// <summary>No compilation pipeline in the harness: no sources, so the binder names every type without its #if.</summary>
+        public static Dictionary<string, (string[] Files, string[] Defines)> SourceAssemblies(string binderFolder, out string binderAssembly)
+        {
+            binderAssembly = null;
+            return new Dictionary<string, (string[] Files, string[] Defines)>();
+        }
+
         public static Type[] GetTypesSafe(Assembly assembly)
         {
             try { return assembly.GetTypes(); }

@@ -322,6 +322,24 @@ namespace Nexus.Editor
             var ctorFactoryTypes = new List<(Type Type, ConstructorInfo Ctor)>();
             // Shared across all passes below so each type's members reflect exactly once.
             var memberCache = new Dictionary<Type, MemberSet>();
+            // Issue #85: a type declared under #if UNITY_EDITOR / DEVELOPMENT_BUILD is named only under that #if.
+            var conditions = new BinderConditions(AssemblyCatalog.SourceAssemblies(settings.BinderOutputPath, out string binderAssembly), binderAssembly);
+            string InjectCondition(Type type)
+            {
+                var set = GetMemberSet(type, memberCache);
+                var named = new List<Type> { type };
+                foreach (var f in set.Fields)
+                    if (HasInject(f)) { named.Add(f.DeclaringType); named.Add(f.FieldType); }
+                foreach (var p in set.Properties)
+                    if (HasInject(p)) { named.Add(p.DeclaringType); named.Add(p.PropertyType); }
+                foreach (var m in set.Methods)
+                {
+                    if (!HasInject(m)) continue;
+                    named.Add(m.DeclaringType);
+                    foreach (var prm in m.GetParameters()) named.Add(prm.ParameterType);
+                }
+                return conditions.For(named);
+            }
 
             // Gather all types containing [Inject] and all INetworkSignal implementations from every assembly that
             // references Nexus (link.xml must preserve all of them). Binder code is emitted only for the assemblies the
@@ -531,7 +549,9 @@ namespace Nexus.Editor
                     }
                 }
                 if (skipType) continue;
+                int factoryStart = ctorFactorySb.Length;
                 ctorFactorySb.AppendLine($"            NexusDI.RegisterConstructorFactory<{fullName}>((di) => new {fullName}({string.Join(", ", argList)}));");
+                WrapInCondition(ctorFactorySb, factoryStart, conditions.For(new[] { type }.Concat(parameters.Select(p => p.ParameterType))));
             }
 
             // Generic-only command dispatchers: strongly-typed delegates registered into
@@ -546,6 +566,7 @@ namespace Nexus.Editor
                 string signalName = GetCSharpTypeName(signalType);
                 if (commandName == null || signalName == null) continue;
 
+                int dispatcherStart = dispatcherSb.Length;
                 if (isAsync)
                 {
                     dispatcherSb.AppendLine($"            CommandRegistry.RegisterGenericAsyncDispatcher(typeof({commandName}), typeof({signalName}),");
@@ -556,6 +577,7 @@ namespace Nexus.Editor
                     dispatcherSb.AppendLine($"            CommandRegistry.RegisterGenericSyncDispatcher(typeof({commandName}), typeof({signalName}),");
                     dispatcherSb.AppendLine($"                (cmd, sig) => ((ICommand<{signalName}>)cmd).Execute(({signalName})sig));");
                 }
+                WrapInCondition(dispatcherSb, dispatcherStart, conditions.For(commandType, signalType));
             }
 
             // Generate Injectors and Cache Definitions (Issue 5 & 7). All-or-nothing per type:
@@ -614,6 +636,7 @@ namespace Nexus.Editor
                     continue;
                 }
 
+                int cacheStart = cacheSb.Length, initStart = initSb.Length;
                 initSb.AppendLine($"            NexusDI.RegisterInjector<{fullName}>((instance, di) =>");
                 initSb.AppendLine("            {");
 
@@ -744,6 +767,10 @@ namespace Nexus.Editor
 
                     initSb.AppendLine("            });");
                 }
+
+                string injectCondition = InjectCondition(type);
+                WrapInCondition(cacheSb, cacheStart, injectCondition);
+                WrapInCondition(initSb, initStart, injectCondition);
             }
 
             // Generate PreserveMembers (Issue 4)
@@ -760,6 +787,7 @@ namespace Nexus.Editor
                 string fullName = GetCSharpTypeName(type);
                 if (fullName == null) continue;
                 string typeSafeName = GetSafeIdentifierName(fullName);
+                int preserveStart = preserveSb.Length;
 
                 var fields = GetMemberSet(type, memberCache).Fields;
                 foreach (var f in fields)
@@ -791,6 +819,7 @@ namespace Nexus.Editor
                         }
                     }
                 }
+                WrapInCondition(preserveSb, preserveStart, InjectCondition(type));
             }
 
             preserveSb.AppendLine("            }");
@@ -1013,6 +1042,14 @@ namespace Nexus.Editor
                 Debug.Log("[Nexus] AOT Binder generation completed with no file changes.");
             }
             return true;
+        }
+
+        /// <summary>Puts what was appended since <paramref name="start"/> under <c>#if condition</c>; null leaves it as is.</summary>
+        private static void WrapInCondition(StringBuilder sb, int start, string condition)
+        {
+            if (condition == null || sb.Length == start) return;
+            sb.Insert(start, "#if " + condition + Environment.NewLine);
+            sb.AppendLine("#endif");
         }
 
         private static void EnsureGitIgnore(string folder, string fileNameToIgnore)
