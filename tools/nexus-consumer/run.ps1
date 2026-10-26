@@ -32,7 +32,9 @@ $archive = Get-ChildItem -LiteralPath $packDir -Filter '*.tgz' | Select-Object -
 if (-not $archive) { throw 'No tarball was produced.' }
 
 # 2. Fresh consumer project.
-& python -I (Join-Path $PSScriptRoot 'prepare_clean_project.py') --archive $archive.FullName --output $evidence
+$prepare = @('--archive', $archive.FullName, '--output', $evidence)
+if ($ValidatePerformance) { $prepare += '--testables' }
+& python -I (Join-Path $PSScriptRoot 'prepare_clean_project.py') @prepare
 if ($LASTEXITCODE -ne 0) { throw 'prepare_clean_project.py failed.' }
 $consumer = Join-Path $evidence 'CleanConsumer'
 

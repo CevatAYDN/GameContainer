@@ -97,8 +97,15 @@ generate. Also custom inspectors, a scene-view overlay of context boundaries, a 
 Profiler module, build validation rules, an architecture analyzer with a headless gate, and
 hot-reload hooks. Editor text is localized in English and Turkish.
 
-**Testing**: `NexusTestHarness`, `NexusTestContext`, `MockContext` and `GcAllocationProbe`
-(calibrated against a positive control) for EditMode and PlayMode tests.
+**Testing**: the `com.nexus.core.testing` assembly holds `NexusTestHarness`, `NexusTestContext`,
+`MockContext`, `RecordingSignalBus` (a bus without a context that records what was fired),
+`InMemoryPlayerPrefsService` and `GcAllocationProbe` (calibrated against a positive control) for
+EditMode and PlayMode tests; `MockAdNetworkAdapter.RewardOutcome` picks what a rewarded ad ends with.
+A game's test assembly lists `com.nexus.core.testing` in its references and needs no `testables`;
+the assembly compiles in the editor and for test players (`UNITY_INCLUDE_TESTS`), not into a game's
+build. To run the package's own tests in a game, add `"testables": ["com.nexus.core"]` to
+`Packages/manifest.json`; the clean consumer gate (`tools/nexus-consumer`, `-ValidatePerformance`)
+runs seven of its suites that way.
 
 **Not in the package** (so that no one looks for it): UniTask or Awaitable integration (the API is
 `ValueTask`); real advertising, store or analytics SDKs (adapters and mocks only, see

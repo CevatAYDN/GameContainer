@@ -16,7 +16,7 @@ What runs, in order (each stage is a separate Unity process; the first failure s
    into `Nexus/artifacts/<RunName>/package/*.tgz`.
 2. `prepare_clean_project.py` creates `Nexus/artifacts/<RunName>/CleanConsumer`: a manifest with
    only the built-in modules, the test framework, `com.unity.pipeline` (which the Unity CLI needs)
-   and the tarball, the development project's
+   and the tarball, without `testables` as in a game (`-ValidatePerformance` adds them), the development project's
    Unity version, and the smoke assets (sample access helpers, a player probe, editor methods and
    two test assemblies).
 3. `consumer-import`: the Code-first Startup sample is imported through the UPM `Sample` API, which
@@ -24,11 +24,13 @@ What runs, in order (each stage is a separate Unity process; the first failure s
 4. `consumer-prepare`: a scene with the sample's `ScoreBootstrap` and the probe is created and
    `BuildValidation.ValidateOrThrow()` runs.
 5. `consumer-editmode` (`UpmConsumerTests`): the imported sample equals the archived one byte for
-   byte; production architecture validation passes with test assemblies excluded.
+   byte; production architecture validation passes with test assemblies excluded; the project's own
+   test assembly, referencing `com.nexus.core.testing`, uses `NexusTestHarness`, `RecordingSignalBus`,
+   `InMemoryPlayerPrefsService`, `GcAllocationProbe` and the mock ad adapter's `RewardOutcome`.
 6. `consumer-playmode` (`CodeFirstConsumerTests`): one component starts at score 1 and destroying
    its owner disposes the container.
 7. `-ValidatePerformance`: the package's own performance, trace-stripping, hardening, readiness,
-   service, reentrancy and lifecycle suites run inside the consumer (`testables` in the manifest).
+   service, reentrancy and lifecycle suites run inside the consumer (this switch writes `testables` in the manifest).
 8. `-BuildPlayer`: a Windows Mono development player is built and executed headless; the probe
    writes `player-mono-result.json` with `passed: true` only when startup reached score 1 and
    disposal threw on resolve.

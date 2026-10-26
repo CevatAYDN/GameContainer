@@ -18,6 +18,7 @@ DEV_PROJECT = REPO / "Nexus"
 parser = argparse.ArgumentParser()
 parser.add_argument("--archive", type=Path, required=True, help="com.nexus.core-<version>.tgz produced by NexusVerifyBuild.PackPackage")
 parser.add_argument("--output", type=Path, required=True, help="evidence folder; the project is created at <output>/CleanConsumer")
+parser.add_argument("--testables", action="store_true", help="list com.nexus.core in testables, so the package's own tests compile in the consumer")
 args = parser.parse_args()
 archive = args.archive.resolve()
 if not archive.is_file():
@@ -41,7 +42,9 @@ dependencies.update({
     # The Unity CLI (`unity run` / `unity test`) drives the project through this package; the development project carries the same version.
     "com.unity.pipeline": original["dependencies"].get("com.unity.pipeline", "0.8.0-exp.1"),
 })
-write("Packages/manifest.json", json.dumps({"dependencies": dependencies, "testables": ["com.nexus.core"]}, indent=2))
+# A game lists no testables; only the package's own suites need them (issue #74).
+manifest = {"dependencies": dependencies, **({"testables": ["com.nexus.core"]} if args.testables else {})}
+write("Packages/manifest.json", json.dumps(manifest, indent=2))
 write("ProjectSettings/ProjectVersion.txt", (DEV_PROJECT / "ProjectSettings/ProjectVersion.txt").read_text())
 
 write("Assets/Smoke/Runtime/NexusIntegrationSmoke.Runtime.asmdef", json.dumps({
@@ -223,7 +226,7 @@ public static class CleanConsumerSetup
 ''')
 write("Assets/Smoke/Tests/Editor/NexusIntegrationSmoke.Editor.Tests.asmdef", json.dumps({
     "name": "NexusIntegrationSmoke.Editor.Tests", "includePlatforms": ["Editor"],
-    "references": ["com.nexus.core", "com.nexus.core.editor"],
+    "references": ["com.nexus.core", "com.nexus.core.editor", "com.nexus.core.testing"],
     "optionalUnityReferences": ["TestAssemblies"], "autoReferenced": False,
 }, indent=2))
 write("Assets/Smoke/Tests/Editor/UpmConsumerTests.cs", r'''
@@ -251,6 +254,21 @@ public sealed class UpmConsumerTests
         BuildValidation.IncludeTestAssemblies = false;
         Assert.IsTrue(BuildValidation.Validate());
         Assert.AreEqual(0, BuildValidation.LastErrorCount);
+    }
+    private struct KitSignal { }
+    // The game's own test assembly references com.nexus.core.testing; the manifest lists no testables (issue #74).
+    [Test] public void TestingKit_ReachesAGameWithoutTestables()
+    {
+        using var test = Nexus.Core.NexusTestHarness.CreateContext();
+        Assert.IsNotNull(test.Context);
+        var bus = new Nexus.Core.RecordingSignalBus();
+        bus.Fire(new KitSignal());
+        Assert.AreEqual(1, bus.Count<KitSignal>());
+        var prefs = new Nexus.Core.InMemoryPlayerPrefsService();
+        prefs.SetBool("kit", true);
+        Assert.IsTrue(prefs.GetBool("kit"));
+        Assert.AreEqual(Nexus.Core.Services.AdOutcome.Closed, new Nexus.Core.Services.MockAdNetworkAdapter { RewardOutcome = Nexus.Core.Services.AdOutcome.Closed }.RewardOutcome);
+        using (new Nexus.Core.GcAllocationProbe()) { }
     }
 }
 ''')

@@ -45,12 +45,14 @@ namespace Nexus.Core.Services
         /// <summary>Test switch for the consent capability; a real adapter reads this from its consent SDK.</summary>
         public bool PrivacyOptionsRequired { get; set; }
         public int PrivacyOptionsShown { get; private set; }
+        /// <summary>What a ready placement's rewarded ad ends with; a test picks Closed, Failed or NotReady (issue #74).</summary>
+        public AdOutcome RewardOutcome { get; set; } = AdOutcome.Rewarded;
 
         public void RequestReward(string placement, Action<AdOutcome> onOutcome)
         {
             if (!IsRewardedReady(placement)) { onOutcome?.Invoke(AdOutcome.NotReady); return; }
             NexusRuntime.Logger?.Log($"[MockAdAdapter] Showing rewarded: {placement}");
-            onOutcome?.Invoke(AdOutcome.Rewarded);
+            onOutcome?.Invoke(RewardOutcome);
         }
 
         public void ShowPrivacyOptions(Action onClosed)
@@ -105,7 +107,7 @@ namespace Nexus.Core.Services
             }
             // Mock stays ready (see ShowInterstitial): the AdService cooldown paces shows.
             NexusRuntime.Logger?.Log($"[MockAdAdapter] Showing rewarded: {placement}");
-            onCompleted?.Invoke(true);
+            onCompleted?.Invoke(RewardOutcome == AdOutcome.Rewarded);
         }
 
         public void ShowBanner(string placement, string position)
