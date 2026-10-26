@@ -105,5 +105,30 @@ namespace Nexus.Tests
             Assert.AreEqual(1, tickable.TickCount);
             service.Dispose();
         }
+
+        [Test]
+        public void TickingResumesOnlyWhenEveryPauseHoldIsReleased() // issue #77
+        {
+            var service = new TickService();
+            var tickable = new TestTickable();
+            service.RegisterTickable(tickable);
+
+            var shop = service.HoldPause();
+            var adOverShop = service.HoldPause();
+            shop.Dispose();
+            shop.Dispose(); // a second dispose must not release the ad's hold
+            service.OnTick(0.1f);
+            Assert.AreEqual(0, tickable.TickCount, "the ad still holds the pause");
+
+            adOverShop.Dispose();
+            service.IsPaused = true;
+            service.OnTick(0.1f);
+            Assert.AreEqual(0, tickable.TickCount, "the flag still pauses on its own");
+
+            service.IsPaused = false;
+            service.OnTick(0.1f);
+            Assert.AreEqual(1, tickable.TickCount);
+            service.Dispose();
+        }
     }
 }

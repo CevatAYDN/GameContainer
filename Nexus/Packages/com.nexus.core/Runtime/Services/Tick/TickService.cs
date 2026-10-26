@@ -13,7 +13,13 @@ namespace Nexus.Core.Services
     public interface ITickService
     {
         float TimeScale { get; set; }
+        /// <summary>True while the flag is set or any <see cref="HoldPause"/> handle is held; the setter sets the flag only.</summary>
         bool IsPaused { get; set; }
+        /// <summary>
+        /// Pauses ticking until the returned handle is disposed, for screens and ads that open over each other: ticking
+        /// resumes when the last handle is disposed and the <see cref="IsPaused"/> flag is clear. Disposing twice is harmless.
+        /// </summary>
+        IDisposable HoldPause();
 
         void RegisterTickable(ITickable tickable);
         void UnregisterTickable(ITickable tickable);
@@ -77,6 +83,7 @@ namespace Nexus.Core.Services
         private TickDriver _driver;
         private GameObject _driverObject;
         private volatile bool _isPaused;
+        private int _pauseHolds;
 
         // Zero-allocation profiler markers (same pattern as SignalBus). ProfilerMarker is a
         // cheap struct no-op when the profiler is not attached, so these are unconditional —
@@ -93,8 +100,26 @@ namespace Nexus.Core.Services
 
         public bool IsPaused
         {
-            get => _isPaused;
+            get => _isPaused || Volatile.Read(ref _pauseHolds) > 0;
             set => _isPaused = value;
+        }
+
+        public IDisposable HoldPause()
+        {
+            Interlocked.Increment(ref _pauseHolds);
+            return new PauseHold(this);
+        }
+
+        private sealed class PauseHold : IDisposable
+        {
+            private TickService _owner;
+            public PauseHold(TickService owner) { _owner = owner; }
+
+            public void Dispose()
+            {
+                var owner = Interlocked.Exchange(ref _owner, null);
+                if (owner != null) Interlocked.Decrement(ref owner._pauseHolds);
+            }
         }
 
         private static GameObject s_sharedDriverObject;

@@ -219,6 +219,7 @@ namespace NexusBench
         {
             public float TimeScale { get; set; } = 1f;
             public bool IsPaused { get; set; }
+            public IDisposable HoldPause() => throw new NotSupportedException();
             public void RegisterTickable(ITickable tickable) { }
             public void UnregisterTickable(ITickable tickable) { }
             public void RegisterFixedTickable(IFixedTickable tickable) { }

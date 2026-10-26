@@ -34,6 +34,7 @@ namespace Nexus.Tests
         {
             public float TimeScale { get; set; } = 1f;
             public bool IsPaused { get; set; }
+            public System.IDisposable HoldPause() => throw new System.NotSupportedException();
             public void RegisterTickable(ITickable tickable) { }
             public void UnregisterTickable(ITickable tickable) { }
             public void RegisterFixedTickable(IFixedTickable tickable) { }
