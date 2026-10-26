@@ -10,7 +10,8 @@ namespace Nexus.Ads.Unity
     /// (<see cref="BuildOutlook"/>), the build kind, test mode,
     /// the consent state, the device's advertising id (to paste into the Test tab and the mediation
     /// dashboard), readiness per placement, the last violations and events, and a button that opens
-    /// the mediation's own test tool. Immediate-mode UI, no canvas.
+    /// the mediation's own test tool. Immediate-mode UI, no canvas; the component that draws it is
+    /// enabled only while the panel is open, since an enabled OnGUI costs IMGUI work every frame (issue #83).
     /// </summary>
     [DisallowMultipleComponent]
     public sealed class AdsDebugPanel : MonoBehaviour, IAdTelemetry
@@ -19,6 +20,7 @@ namespace Nexus.Ads.Unity
         private readonly List<string> _events = new List<string>();
         private readonly List<string> _violations = new List<string>();
         private AdsBootstrap _bootstrap;
+        private Drawer _drawer;
         private bool _open;
         private float _touchStart = -1f;
         private Vector2 _scroll;
@@ -28,6 +30,12 @@ namespace Nexus.Ads.Unity
         public void Bind(AdsBootstrap bootstrap)
         {
             _bootstrap = bootstrap;
+            if (_drawer == null)
+            {
+                _drawer = gameObject.AddComponent<Drawer>();
+                _drawer.Panel = this;
+            }
+            _drawer.enabled = _open;
             bootstrap.Telemetry?.AddSink(this);
             if (bootstrap.Controller != null) bootstrap.Controller.Violation += v => Keep(_violations, v.ToString());
         }
@@ -41,23 +49,40 @@ namespace Nexus.Ads.Unity
         }
 
         /// <summary>Opens or closes the panel; a game's own debug menu can call it when the legacy input manager is off.</summary>
-        public void Toggle() => _open = !_open;
+        public void Toggle() => SetOpen(!_open);
+
+        private void SetOpen(bool open)
+        {
+            _open = open;
+            if (_drawer != null) _drawer.enabled = open;
+        }
 
         private void Update()
         {
 #if ENABLE_LEGACY_INPUT_MANAGER
-            if (Input.GetKeyDown(KeyCode.F9)) _open = !_open;
+            if (Input.GetKeyDown(KeyCode.F9)) Toggle();
             if (Input.touchCount >= 3)
             {
                 if (_touchStart < 0f) _touchStart = Time.unscaledTime;
-                else if (Time.unscaledTime - _touchStart > 1f) { _open = !_open; _touchStart = float.PositiveInfinity; }
+                else if (Time.unscaledTime - _touchStart > 1f) { Toggle(); _touchStart = float.PositiveInfinity; }
             }
             else _touchStart = -1f;
 #endif
             // shortcut: with the Input System alone the gesture is not read; call Toggle() from the game's debug menu until the panel reads Touchscreen.current.
         }
 
-        private void OnGUI()
+        /// <summary>Draws the panel; a separate component so the panel's Update can run while nothing is drawn.</summary>
+        private sealed class Drawer : MonoBehaviour
+        {
+            internal AdsDebugPanel Panel;
+
+            private void OnGUI()
+            {
+                if (Panel != null) Panel.Draw();
+            }
+        }
+
+        private void Draw()
         {
             if (!_open || _bootstrap == null) return;
             float scale = Mathf.Max(1f, Screen.dpi / 160f);
@@ -87,7 +112,7 @@ namespace Nexus.Ads.Unity
             foreach (var v in _violations) GUILayout.Label("  " + v);
             GUILayout.Label("events:");
             for (int i = _events.Count - 1; i >= 0; i--) GUILayout.Label("  " + _events[i]);
-            if (GUILayout.Button("Close")) _open = false;
+            if (GUILayout.Button("Close")) SetOpen(false);
             GUILayout.EndScrollView();
             GUILayout.EndArea();
             GUI.matrix = Matrix4x4.identity;

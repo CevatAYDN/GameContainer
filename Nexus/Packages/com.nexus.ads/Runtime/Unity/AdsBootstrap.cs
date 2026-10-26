@@ -33,6 +33,7 @@ namespace Nexus.Ads.Unity
         private UnityAdTelemetry _telemetry;
         private float _timeScaleBeforeAd = 1f;
         private bool _audioWasPaused;
+        private SimulatorOverlay _overlay;
         private bool _startRequested;
 
         public static AdsBootstrap Instance { get; private set; }
@@ -149,7 +150,7 @@ namespace Nexus.Ads.Unity
                     Debug.LogWarning("[Nexus Ads] " + Gate.Rule + ": " + Gate.Reason + "; the simulator runs (labelled, not a real ad)");
                 // an idle host keeps a simulator that is never started, so every show answers NotReady
                 var simulator = new SimulatorProvider(scheduler, _simulatorScenario) { Interactive = Mode == HostMode.Simulator };
-                if (Mode == HostMode.Simulator) gameObject.AddComponent<SimulatorOverlay>().Bind(simulator);
+                if (Mode == HostMode.Simulator) { _overlay = gameObject.AddComponent<SimulatorOverlay>(); _overlay.Bind(simulator); }
                 Provider = simulator;
                 consent = simulator;
             }
@@ -177,6 +178,7 @@ namespace Nexus.Ads.Unity
         {
             if (_pauseAudioDuringAds) AudioListener.pause = _audioWasPaused;
             if (_pauseTimeDuringAds) Time.timeScale = _timeScaleBeforeAd;
+            if (_overlay != null) _overlay.enabled = false; // its OnGUI runs only while a show is open (issue #83)
         }
 
         private void OnDestroy()

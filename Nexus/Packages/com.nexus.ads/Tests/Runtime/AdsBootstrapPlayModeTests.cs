@@ -162,6 +162,37 @@ namespace Nexus.Ads.Tests.Runtime
         }
 
         [UnityTest]
+        public IEnumerator OnGUI_RunsOnlyWhileThePanelIsOpenOrAShowIsOpen()
+        {
+            // issue #83: an enabled OnGUI allocates every frame even when it returns at once (61,824 B in 168 frames on a phone)
+            yield return Boot(SimulatorScenario.Normal);
+            var panel = _root.GetComponent<AdsDebugPanel>();
+            Assert.IsNotNull(panel, "the editor is not a release build, so the panel is there");
+            Assert.IsNull(EnabledOnGui(), "closed panel, no ad: nothing draws");
+
+            _bootstrap.Controller.Show("shop_refill", _ => { });
+            Assert.IsNotNull(EnabledOnGui(), "the overlay draws while the show is open");
+            _bootstrap.Simulator.CompleteShow(AdResult.Closed);
+            yield return null;
+            Assert.IsNull(EnabledOnGui(), "the overlay stops when the show closes");
+
+            panel.Toggle();
+            Assert.IsNotNull(EnabledOnGui(), "the open panel draws");
+            panel.Toggle();
+            Assert.IsNull(EnabledOnGui(), "the closed panel stops drawing");
+        }
+
+        private string EnabledOnGui()
+        {
+            foreach (var behaviour in _root.GetComponents<MonoBehaviour>())
+            {
+                var onGui = behaviour.GetType().GetMethod("OnGUI", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic);
+                if (behaviour.enabled && onGui != null) return behaviour.GetType().Name;
+            }
+            return null;
+        }
+
+        [UnityTest]
         public IEnumerator RewardedButton_IsHiddenWhileNothingIsLoaded_AndPaysOnceOnReward()
         {
             yield return Boot(SimulatorScenario.NoFill);

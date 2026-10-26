@@ -19,14 +19,15 @@ namespace Nexus.Ads.Unity
         {
             _simulator = simulator;
             simulator.Interactive = true;
-            simulator.Opened += format => { _format = format; _placement = null; };
+            simulator.Opened += format => { _format = format; _placement = null; enabled = true; };
+            enabled = false; // an enabled OnGUI costs IMGUI work every frame, so it is on only while a show is open (issue #83)
         }
 
         public bool Visible => _simulator != null && _simulator.IsShowing;
 
         private void OnGUI()
         {
-            if (!Visible) return;
+            if (!Visible) { enabled = false; return; }
             if (_backdrop == null)
             {
                 _backdrop = new Texture2D(1, 1);
