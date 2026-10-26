@@ -19,6 +19,12 @@ namespace Nexus.Editor.Tests
         [Inject] public IStaleProbeUnbound Unbound { get; set; }
     }
 
+    public sealed class StaleProbeWithOptionalMember
+    {
+        [Inject] public IStaleProbeDependency First { get; set; }
+        [OptionalInject] public IStaleProbeDependency Optional { get; set; }
+    }
+
     /// <summary>
     /// A generated binder written before a type gained an [Inject] member leaves that member null on every instance,
     /// because no reflection pass runs while a generated injector exists. The container checks each generated injector
@@ -44,6 +50,20 @@ namespace Nexus.Editor.Tests
             Assert.That(first.First, Is.Not.Null);
             Assert.That(first.Second, Is.Not.Null, "the member the stale binder does not know is injected by reflection");
             Assert.That(later.Second, Is.Not.Null, "later instances of the type no longer use the stale injector");
+        }
+
+        [Test]
+        public void BoundOptionalMemberTheStaleInjectorSkippedIsInjectedByReflection()
+        {
+            // issue #81: LocalizationService and AudioService gained [OptionalInject] members; an older binder left them null with no log
+            NexusDI.RegisterInjector<StaleProbeWithOptionalMember>((subject, di) => subject.First = di.Resolve<IStaleProbeDependency>());
+            var container = new NexusDI();
+            container.Bind<IStaleProbeDependency, StaleProbeDependency>();
+
+            var subject = new StaleProbeWithOptionalMember();
+            container.Inject(subject);
+
+            Assert.That(subject.Optional, Is.Not.Null, "the bound optional member the stale binder does not know is injected by reflection");
         }
 
         [Test]

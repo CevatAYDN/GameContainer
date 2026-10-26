@@ -1000,22 +1000,24 @@ namespace Nexus.Core
             }
 
             /// <summary>
-            /// Name of the first required [Inject] field or property that a generated injector left null although this
-            /// container could have supplied it, or null when the injector covered every such member. Members whose
+            /// Name of the first [Inject] or [OptionalInject] field or property that a generated injector left null although
+            /// this container could have supplied it, or null when the injector covered every such member. Members whose
             /// binding is absent are not counted: reflection would leave them null too, so they say nothing about the binder.
+            /// Optional members count (issue #81): a framework service that gains an [OptionalInject] member is otherwise
+            /// left without it, silently, until the game regenerates its binder.
             /// </summary>
             private string FirstMemberTheInjectorSkipped(object instance, InjectableMetadata meta)
             {
                 for (int i = 0; i < meta.Fields.Length; i++)
                 {
                     var f = meta.Fields[i];
-                    if (f.IsOptional || f.IsLazy || f.Type.IsValueType || !_di.IsRegistered(f.Type, f.Name)) continue;
+                    if (f.IsLazy || f.Type.IsValueType || !_di.IsRegistered(f.Type, f.Name)) continue;
                     if ((f.Getter != null ? f.Getter(instance) : f.Field.GetValue(instance)) == null) return f.Field.Name;
                 }
                 for (int i = 0; i < meta.Properties.Length; i++)
                 {
                     var p = meta.Properties[i];
-                    if (p.IsOptional || p.IsLazy || p.Type.IsValueType || !p.Property.CanRead || !_di.IsRegistered(p.Type, p.Name)) continue;
+                    if (p.IsLazy || p.Type.IsValueType || !p.Property.CanRead || !_di.IsRegistered(p.Type, p.Name)) continue;
                     if (p.Property.GetValue(instance) == null) return p.Property.Name;
                 }
                 return null;

@@ -60,6 +60,19 @@ namespace NexusBench
         public CodeGenOverride(CodeGenDep dep) { Dep = dep; }
     }
 
+    /// <summary>[Inject(Name)] on a field, a property (one optional) and a method parameter: the generated
+    /// injector must resolve the named binding as the reflection path does (issue #81).</summary>
+    public sealed class CodeGenNamed
+    {
+        [Inject(Name = "special")] public CodeGenDep Field;
+        [Inject(Name = "special")] public CodeGenDep Property { get; private set; }
+        [Inject(Name = "special"), OptionalInject] public CodeGenDep Optional { get; set; }
+        public CodeGenDep FromMethod;
+
+        [Inject]
+        public void Take([Inject(Name = "special")] CodeGenDep dep) => FromMethod = dep;
+    }
+
     /// <summary>Value-type ctor param → the generator must SKIP the factory (reflection handles it).</summary>
     public sealed class CodeGenSkippedValueParam
     {
@@ -586,6 +599,8 @@ namespace NexusBench.CG2Source
                 bool emittableMemberInjector = source.Contains("RegisterInjector<NexusBench.CodeGenHierarchy.CodeGenEmittableMember>");
                 bool nonEmittableInjectorAbsent = !source.Contains("RegisterInjector<NexusBench.CodeGenHierarchy.CodeGenNonEmittableMember>");
                 bool postConstructInjector = source.Contains("RegisterInjector<NexusBench.CodeGenPostConstruct>");
+                bool namedEmitted = source.Contains("instance.Field = di.Resolve<NexusBench.CodeGenDep>(\"special\")")
+                                    && source.Contains("di.TryResolve<NexusBench.CodeGenDep>(\"special\")");
 
                 string[] compileErrors = CompileGeneratedBinder(source, out Assembly binderAssembly);
                 if (compileErrors.Length > 0)
@@ -618,6 +633,9 @@ namespace NexusBench.CG2Source
                 container.Bind<CodeGenHierarchy.CodeGenEmittableMember>(Lifetime.Transient);
                 container.Bind<CodeGenHierarchy.CodeGenNonEmittableMember>(Lifetime.Transient);
                 container.Bind<CodeGenHierarchy.InternalDep>(Lifetime.Scoped);
+                var special = new CodeGenDep();
+                container.BindInstance<CodeGenDep>("special", special);
+                container.Bind<CodeGenNamed>(Lifetime.Transient);
 
                 var target = container.Resolve<CodeGenTarget>();      // generated factory
                 var multi = container.Resolve<CodeGenMulti>();        // generated [Construct] factory
@@ -627,6 +645,9 @@ namespace NexusBench.CG2Source
                 var visibleBase = container.Resolve<CodeGenHierarchy.CodeGenDerivedWithVisibleBase>();  // generated injector, base member
                 var emittableMember = container.Resolve<CodeGenHierarchy.CodeGenEmittableMember>();      // generated injector
                 var nonEmittableMember = container.Resolve<CodeGenHierarchy.CodeGenNonEmittableMember>(); // reflection injector (all-or-nothing skip)
+                var named = container.Resolve<CodeGenNamed>();                                          // generated injector, named members
+                bool namedResolved = ReferenceEquals(named.Field, special) && ReferenceEquals(named.Property, special)
+                                     && ReferenceEquals(named.Optional, special) && ReferenceEquals(named.FromMethod, special);
 
                 // WithParameter override must beat the generated factory (regression for the
                 // silent-drop bug) — proves the fix through the REAL emitted binder.
@@ -636,7 +657,7 @@ namespace NexusBench.CG2Source
 
                 ok = hasTargetFactory && hasMarkedFactory && hasInjector && skippedValueParam
                      && visibleBaseInjector && emittableMemberInjector && nonEmittableInjectorAbsent
-                     && postConstructInjector
+                     && postConstructInjector && namedEmitted && namedResolved
                      && target.Dep != null && ReferenceEquals(target.Dep, shared)
                      && multi.Dep != null && !multi.ParameterlessUsed
                      && injected.Dep != null
@@ -646,7 +667,7 @@ namespace NexusBench.CG2Source
                 detail = $"emittedFactory={hasTargetFactory} markedCtorFactory={hasMarkedFactory} injector={hasInjector} " +
                          $"valueParamSkipped={skippedValueParam} visibleBaseInjector={visibleBaseInjector} " +
                          $"emittableMemberInjector={emittableMemberInjector} nonEmittableInjectorAbsent={nonEmittableInjectorAbsent} " +
-                         $"postConstructInjector={postConstructInjector} " +
+                         $"postConstructInjector={postConstructInjector} namedEmitted={namedEmitted} namedResolved={namedResolved} " +
                          $"targetReadonly={target.Dep != null} markedCtorWon={!multi.ParameterlessUsed} injected={injected.Dep != null} " +
                          $"postConstructRan={postConstruct.PostRan} " +
                          $"visibleBaseInjected={visibleBase.ReadDep() != null} emittableInjected={emittableMember.HasDep} " +

@@ -226,6 +226,17 @@ namespace Nexus.Editor
         private static bool HasInject(MethodInfo m)
             => m.GetCustomAttribute<InjectAttribute>() != null;
 
+        /// <summary>The <c>[Inject(Name = ...)]</c> binding name as a C# string literal, or null for the default binding.</summary>
+        private static string BindingNameLiteral(string name)
+            => string.IsNullOrEmpty(name) ? null : "\"" + name.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+
+        /// <summary>The resolve call the reflection path makes for a member or parameter: TryResolve when optional, the named overload when named.</summary>
+        private static string ResolveCall(string typeName, bool optional, string name)
+        {
+            string nameLiteral = BindingNameLiteral(name);
+            return $"di.{(optional ? "TryResolve" : "Resolve")}<{typeName}>({nameLiteral})";
+        }
+
         /// <summary>True when a type can be referenced from the generated binder file.</summary>
         private static bool ImplementsSignalFilter(Type type)
         {
@@ -511,11 +522,11 @@ namespace Nexus.Editor
                     string paramName = paramInject?.Name;
                     if (optional)
                     {
-                        argList.Add($"di.TryResolve<{pTypeName}>()");
+                        argList.Add(ResolveCall(pTypeName, true, paramName));
                     }
                     else
                     {
-                        string nameArg = string.IsNullOrEmpty(paramName) ? "" : $", \"{paramName}\"";
+                        string nameArg = string.IsNullOrEmpty(paramName) ? "" : ", " + BindingNameLiteral(paramName);
                         argList.Add($"di.ResolveConstructorParameter<{pTypeName}>({i}, \"{fullName}\", \"{pTypeName}\"{nameArg})");
                     }
                 }
@@ -615,9 +626,7 @@ namespace Nexus.Editor
                         // Optional members resolve through TryResolve (null when unbound) so an
                         // absent optional dependency never throws at boot on the AOT path.
                         string fTypeName = GetCSharpTypeName(f.FieldType);
-                        string fResolve = fOptional
-                            ? $"di.TryResolve<{fTypeName}>()"
-                            : $"di.Resolve<{fTypeName}>()";
+                        string fResolve = ResolveCall(fTypeName, fOptional, f.GetCustomAttribute<InjectAttribute>()?.Name);
                         if (f.IsPublic)
                         {
                             initSb.AppendLine($"                instance.{f.Name} = {fResolve};");
@@ -644,9 +653,7 @@ namespace Nexus.Editor
                     if (setMethod != null)
                     {
                         string pTypeName = GetCSharpTypeName(p.PropertyType);
-                        string pResolve = pOptional
-                            ? $"di.TryResolve<{pTypeName}>()"
-                            : $"di.Resolve<{pTypeName}>()";
+                        string pResolve = ResolveCall(pTypeName, pOptional, p.GetCustomAttribute<InjectAttribute>()?.Name);
                         if (setMethod.IsPublic)
                         {
                             initSb.AppendLine($"                instance.{p.Name} = {pResolve};");
@@ -682,9 +689,7 @@ namespace Nexus.Editor
                         // [OptionalInject] on a parameter → TryResolve (null when unbound).
                         bool paramOptional = param.GetCustomAttribute<OptionalInjectAttribute>() != null;
                         string paramTypeName = GetCSharpTypeName(param.ParameterType);
-                        paramList.Add(paramOptional
-                            ? $"di.TryResolve<{paramTypeName}>()"
-                            : $"di.Resolve<{paramTypeName}>()");
+                        paramList.Add(ResolveCall(paramTypeName, paramOptional, param.GetCustomAttribute<InjectAttribute>()?.Name));
                     }
                     if (hasValueTypeParams) continue;
 
