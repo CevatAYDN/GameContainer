@@ -33,6 +33,14 @@ namespace Nexus.Core
                 return;
             }
 
+            // A screen UIManager opened has no Root among its parents; it belongs to that UIManager's context (issue #67).
+            var owner = mb.GetComponentInParent<Services.ScreenOwner>(true);
+            if (owner != null && owner.Context != null && !owner.Context.LifetimeToken.IsCancellationRequested)
+            {
+                owner.Context.RegisterView(view);
+                return;
+            }
+
             var roots = UnityEngine.Object.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
             if (roots.Length == 1)
             {

@@ -284,37 +284,51 @@ namespace Nexus.Core.Services
                 _registeredPrefabs.TryGetValue(key, out prefab);
             }
 
-            GameObject instance;
-            if (prefab != null)
+            // The screen is created under an inactive holder, so its views run OnEnable only once ScreenOwner names this
+            // UIManager's context; the canvas has no Root and the scene may hold several (issue #67).
+            var holder = new GameObject("[Nexus_ScreenSpawn]");
+            holder.SetActive(false);
+            holder.transform.SetParent(layerRoot, false);
+            try
             {
-                instance = UnityEngine.Object.Instantiate(prefab, layerRoot);
-            }
-            else if (AssetProvider != null)
-            {
-                // Provider addresses stay compatible; internal identities include assembly
-                // and namespace so registered same-name screen types never share a pool.
-                instance = await AssetProvider.InstantiateWindowAsync(typeof(TScreen).Name, layerRoot);
-            }
-            else
-            {
-                NexusRuntime.Logger?.LogError($"[UIManager] No prefab registered and no asset provider for screen '{key}'.");
-                return null;
-            }
+                GameObject instance;
+                if (prefab != null)
+                {
+                    instance = UnityEngine.Object.Instantiate(prefab, holder.transform);
+                }
+                else if (AssetProvider != null)
+                {
+                    // Provider addresses stay compatible; internal identities include assembly
+                    // and namespace so registered same-name screen types never share a pool.
+                    instance = await AssetProvider.InstantiateWindowAsync(typeof(TScreen).Name, holder.transform);
+                }
+                else
+                {
+                    NexusRuntime.Logger?.LogError($"[UIManager] No prefab registered and no asset provider for screen '{key}'.");
+                    return null;
+                }
 
-            if (instance == null)
-            {
-                NexusRuntime.Logger?.LogError($"[UIManager] Failed to instantiate screen '{key}'.");
-                return null;
-            }
+                if (instance == null)
+                {
+                    NexusRuntime.Logger?.LogError($"[UIManager] Failed to instantiate screen '{key}'.");
+                    return null;
+                }
 
-            var screen = instance.GetComponent<TScreen>();
-            if (screen == null)
-            {
-                NexusRuntime.Logger?.LogError($"[UIManager] Prefab for '{key}' has no {typeof(TScreen).Name} component.");
-                SafeDestroy(instance);
-                return null;
+                var screen = instance.GetComponent<TScreen>();
+                if (screen == null)
+                {
+                    NexusRuntime.Logger?.LogError($"[UIManager] Prefab for '{key}' has no {typeof(TScreen).Name} component.");
+                    SafeDestroy(instance);
+                    return null;
+                }
+                if (Context != null) instance.AddComponent<ScreenOwner>().Context = Context;
+                instance.transform.SetParent(layerRoot, false);
+                return screen;
             }
-            return screen;
+            finally
+            {
+                SafeDestroy(holder);
+            }
         }
 
         private void ReturnToPool(string key, ScreenView screen)
