@@ -272,6 +272,8 @@ public class LegacyService : ILegacyService, INexusService
 
 **Rationale:** `NexusService<T>` is what the Nexus code generator (`NexusSetupWizard`, `WizardTabs`) and every runtime service template emit. It auto-injects `IContext` and `ISignalBus` (so derived services never need manual DI lookups), delegates `OnDispose()` to `Dispose()` so `IDisposable`-style cleanup works through the context's single `OnDispose` call, and derives from the `[Preserve]`d base (derived services carry `[Preserve]` too — all 16 runtime services do). The service **interface** stays a plain contract (`IPlayerPersistenceService`) — it does not extend `INexusService`; only the class derives from the base, which supplies the interface. Register with `BindService<TInterface, TImplementation>()` (or `BindServiceInterfacesAndSelfTo<TImplementation>()`); the `where TImplementation : class, INexusService` constraint is satisfied through the base.
 
+A service the game constructs itself (its constructor takes game values) is bound with `BindServiceInstance<TInterface>(instance)`: it gets its `[Inject]` members and `InitializeAsync`, and is disposed in bind order, as a `BindService` service is. `BindInstance` only stores an object and logs a warning when it is given a service; `BindModelInstance` injects the model and runs `OnBind` for an `IReactiveModel`.
+
 ---
 
 ## 🥇 Canonical UI Manager

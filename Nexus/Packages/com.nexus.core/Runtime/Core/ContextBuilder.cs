@@ -14,6 +14,8 @@ namespace Nexus.Core
         private readonly SignalBus _signalBus;
         private readonly List<Type> _reactiveModelTypes = new();
         private readonly List<Type> _serviceTypes = new();
+        // Instances the game built: injected once every binding exists (issue #69).
+        private readonly List<object> _instancesToInject = new();
 
         /// <summary>
         /// When true (default), <see cref="Context.Configure"/> runs DI validation in ALL
@@ -50,6 +52,8 @@ namespace Nexus.Core
         public void BindModelInstance<TInterface>(TInterface instance) where TInterface : class
         {
             _container.BindInstance(instance);
+            _instancesToInject.Add(instance);
+            if (instance is IReactiveModel) _reactiveModelTypes.Add(typeof(TInterface));
         }
 
         public void BindReactiveModel<TInterface, TImplementation>()
@@ -78,6 +82,8 @@ namespace Nexus.Core
 
         public void BindInstance<T>(T instance) where T : class
         {
+            if (instance is INexusService)
+                NexusRuntime.Logger?.LogWarning($"[Nexus] '{instance.GetType().Name}' is an INexusService bound with BindInstance: it gets no [Inject] members and no InitializeAsync. Bind it with BindServiceInstance.");
             _container.BindInstance(instance);
         }
 
@@ -272,6 +278,15 @@ namespace Nexus.Core
             _serviceTypes.Add(typeof(TImplementation));
         }
 
+        public void BindServiceInstance<TInterface>(TInterface instance) where TInterface : class
+        {
+            if (instance is not INexusService)
+                throw new ArgumentException($"[Nexus] BindServiceInstance needs an INexusService; '{instance?.GetType().Name ?? "null"}' is not one. Bind it with BindInstance.", nameof(instance));
+            _container.BindInstance(instance);
+            _instancesToInject.Add(instance);
+            _serviceTypes.Add(typeof(TInterface));
+        }
+
         /// <summary>
         /// Binds an <see cref="INexusService"/> under ALL of its user-defined interfaces AND its
         /// concrete type as ONE shared singleton, and registers it for eager initialization during
@@ -428,6 +443,11 @@ namespace Nexus.Core
 
         internal async ValueTask InitializeReactiveModelsAsync(CancellationToken ct)
         {
+            // Models run first, so the game's instances get their [Inject] members here, before any OnBind.
+            for (int i = 0; i < _instancesToInject.Count; i++)
+                _container.Inject(_instancesToInject[i]);
+            _instancesToInject.Clear();
+
             foreach (var modelType in _reactiveModelTypes)
             {
                 if (ct.IsCancellationRequested) break;

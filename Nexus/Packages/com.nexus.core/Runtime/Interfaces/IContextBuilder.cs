@@ -22,6 +22,10 @@ namespace Nexus.Core
         /// </summary>
         void BindModel<TInterface, TImplementation>() where TImplementation : class, TInterface;
         void BindModel<TImplementation>() where TImplementation : class;
+        /// <summary>
+        /// Binds a model the game built itself. It gets its [Inject] members once every binding exists and, when it is an
+        /// <see cref="IReactiveModel"/>, its <see cref="IReactiveModel.OnBind"/> with the container-built models.
+        /// </summary>
         void BindModelInstance<TInterface>(TInterface instance) where TInterface : class;
 
         /// <summary>
@@ -52,6 +56,13 @@ namespace Nexus.Core
         /// <summary>Binds a self-referencing service as a singleton.</summary>
         void BindService<TImplementation>()
             where TImplementation : class, INexusService;
+
+        /// <summary>
+        /// Binds a service the game built itself (its constructor takes game values) with what <c>BindService</c> gives
+        /// a container-built one: its [Inject] members, <c>InitializeAsync</c> in bind order with the other services and
+        /// <c>OnDispose</c> in reverse. The instance must be an <see cref="INexusService"/>.
+        /// </summary>
+        void BindServiceInstance<TInterface>(TInterface instance) where TInterface : class;
 
         /// <summary>
         /// Binds an INexusService under all of its user-defined interfaces AND its concrete
