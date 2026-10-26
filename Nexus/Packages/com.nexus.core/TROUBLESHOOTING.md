@@ -721,7 +721,11 @@ Headless: -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
 ```
 The guard only runs in projects that have a generated binder; a project on reflection injection is never stopped. Set `NEXUS_SKIP_BINDER_GUARD=1` only to build deliberately without regenerating.
 
-**Removed or renamed type:** the binder then fails to compile itself (`error CS0246` inside `NexusGeneratedBinder.g.cs`). In the Editor, Nexus empties the file and regenerates it after the next successful compilation. In batchmode, empty the file before `-executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder`, because Unity stops on the first failed compilation.
+**Removed or renamed type:** the binder then fails to compile itself (`error CS0246` inside `NexusGeneratedBinder.g.cs`). In the Editor, Nexus empties the file and regenerates it after the next successful compilation. In batchmode Unity stops on the first failed compilation ("Scripts have compiler errors", exit 1) unless it is started with `-ignorecompilererrors`; with it, the same healing runs in one command and the binder is written from the current code:
+```
+Unity.exe -batchmode -nographics -quit -ignorecompilererrors -projectPath <project> -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
+```
+(checked on Unity 6000.5.6f1 with a binder that named a deleted type: exit 0, and the binder equal to one generated from a clean project). The flag lets any other compile error through as well, so run the build or the tests next; they fail on it. Emptying the file before a plain run also works.
 
 ---
 

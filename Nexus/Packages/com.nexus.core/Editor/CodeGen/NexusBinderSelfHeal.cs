@@ -11,8 +11,9 @@ namespace Nexus.Editor
     /// project that does not compile cannot run the generator that would fix it. When a compilation fails with errors inside
     /// NexusGeneratedBinder.g.cs, the stale file is emptied (it is generated; the code is the source of truth; an empty file keeps its
     /// .meta and GUID), the project compiles without it (injection falls back to reflection) and the binder is generated again after
-    /// that compilation. Headless pipelines cannot rely on this (batchmode stops on the first failed compilation): empty the
-    /// generated file before running <see cref="NexusCodeGenerator.GenerateBinder"/>.
+    /// that compilation. Batchmode stops on the first failed compilation unless Unity is started with -ignorecompilererrors;
+    /// with it, this healing runs and <see cref="NexusCodeGenerator.GenerateBinder"/> ends with a binder written from the
+    /// current code (issue #77, TROUBLESHOOTING.md "Stale Generated Binder").
     /// </summary>
     [InitializeOnLoad]
     internal static class NexusBinderSelfHeal
