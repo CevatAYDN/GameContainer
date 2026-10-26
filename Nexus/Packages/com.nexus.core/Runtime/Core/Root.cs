@@ -554,6 +554,13 @@ namespace Nexus.Core
         // and <see cref="MetricsSampler"/> MonoBehaviours on the same GameObject.
         // Root focuses solely on context lifecycle.
 
+        private void OnApplicationPause(bool pauseStatus)
+        {
+            // Synchronous: Android may freeze the process as soon as this returns, so a save must finish inside the handler.
+            if (Context != null && Context.IsInitialized && Context.SignalBusInternal.HasHandlers(typeof(ApplicationPauseSignal)))
+                Context.SignalBus.Fire(new ApplicationPauseSignal(pauseStatus));
+        }
+
         private void OnDestroy()
         {
             if (isGlobalContext)

@@ -67,6 +67,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/VersionedScriptableObject.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusRuntime.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/NexusStaticState.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/ContextSignals.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/Root.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/MetricsSampler.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Core/QueueDrainer.cs" />

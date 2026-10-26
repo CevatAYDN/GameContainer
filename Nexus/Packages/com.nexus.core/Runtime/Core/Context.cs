@@ -469,6 +469,9 @@ namespace Nexus.Core
             // during startup would never receive InitializeAsync.
             await InitializeLazyServicesAsync(ct);
             ct.ThrowIfCancellationRequested();
+            // Fired only when something listens: an unheard framework signal would log "no subscribers" in every game.
+            if (SignalBusInternal.HasHandlers(typeof(ContextStartedSignal)))
+                await SignalBus.FireAsync(new ContextStartedSignal(ScopeTag));
             Volatile.Write(ref _lifecycleState, 2);
             if (Container.HasPendingLazyServices)
                 ScheduleLazyServiceDrain();

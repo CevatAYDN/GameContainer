@@ -526,6 +526,9 @@ namespace Nexus.Core
             }
         }
 
+        internal bool HasHandlers(Type signalType) =>
+            _subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(signalType) || _commandRegistry.TryGetHandlers(signalType, out _);
+
         internal bool HasAsyncHandlers(Type signalType) =>
             _commandRegistry.HasAsyncCommandHandlers(signalType)
             || _subscriptionRegistry.HasAsyncSubscriptions(signalType);

@@ -247,6 +247,8 @@ public class GameplayLifecycle : MonoBehaviour, IContextLifecycle
 }
 ```
 
+**Started, pause and resume.** When the start-up has run (services, every `OnStartAsync`, the startables), the context fires `ContextStartedSignal`; a view that registered before the services were ready redraws on it. Once its context has started, `Root` forwards `OnApplicationPause` as `ApplicationPauseSignal` (`IsPaused` true on pause, false on resume); a call that arrives before the start (Android sends one) is dropped. Subscribe to it with `Subscribe`, not `SubscribeAsync`: Android may freeze the process as soon as the pause call returns, so a save must finish inside the handler. Both signals are fired only when something subscribes to them.
+
 ---
 
 ## 🥇 Canonical Service Implementation
