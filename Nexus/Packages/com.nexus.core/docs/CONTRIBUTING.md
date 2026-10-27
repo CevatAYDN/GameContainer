@@ -1,5 +1,5 @@
-> **For AI Agents:** This document is the source of truth for contribution standards, PR verification rules, and automated test enforcement. Before submitting a pull request:
-> 1. Complete the [PR Review Checklist](#pr-review-checklist-for-ai-agents) below.
+> **For AI Agents:** This document is the source of truth for contribution standards, verification rules, and automated test enforcement. Work in this repository is committed directly on `main`, with no branches or pull requests (the repository's `CLAUDE.md`). Before committing:
+> 1. Complete the [Review Checklist](#-review-checklist-for-ai-agents) below.
 > 2. Run all NUnit tests: EditMode `PluginRefactorValidationTests` and `InfrastructureValidationTests`.
 > 3. Update `CHANGELOG.md` under `[Unreleased]`.
 >
@@ -83,9 +83,9 @@ Anti-patterns to avoid:
   interfaces (e.g. `IPlayerPrefsService`) keep their own `IDisposable` contract; document which one
   a type uses.
 
-## 📋 PR Review Checklist for AI Agents
+## 📋 Review Checklist for AI Agents
 
-When reviewing or self-auditing a PR, validate every check item:
+When reviewing or self-auditing a change, validate every check item:
 
 ### Code Quality & Architecture
 - [ ] No `_view.schedule`, `_root.schedule`, or `EditorApplication.update` calls in plugins.
@@ -123,7 +123,11 @@ When reviewing or self-auditing a PR, validate every check item:
 
 ---
 
-## 📝 Submitting Pull Requests
+## 📝 Submitting Changes
+
+Work in this repository (the owner and AI agents) is committed directly on `main`; the repository has
+no other branch. An outside contributor forks the repository and opens a pull request from the fork,
+which lands on `main` as commits. Either way:
 
 1. **Format Commit Messages**: Use [Conventional Commits](https://www.conventionalcommits.org/):
    - `fix(tracer): replace ScrollView rebuild with ListView virtualization`

@@ -145,7 +145,7 @@ var button = new Button { text = NexusLang.Get("dash_qf_copy") };
 - 📖 [README.md](../README.md) — Framework overview, file map, and decision flows
 - 🏛️ [ARCHITECTURE.md](ARCHITECTURE.md) — Runtime architecture and lifecycle sequence
 - 🌐 [LOCALIZATION_KEYS.md](LOCALIZATION_KEYS.md) — Active localization keys catalog
-- 🤝 [CONTRIBUTING.md](CONTRIBUTING.md) — Pull request rules and AI checklist
+- 🤝 [CONTRIBUTING.md](CONTRIBUTING.md) — Contribution rules and AI checklist
 
 ---
 
