@@ -1,0 +1,27 @@
+{
+    "name": "com.nexus.firebase.editor",
+    "rootNamespace": "Nexus.Firebase.Editor",
+    "references": [],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.google.firebase.analytics",
+            "expression": "14.0.0",
+            "define": "NEXUS_FIREBASE_ANALYTICS"
+        },
+        {
+            "name": "com.google.firebase.crashlytics",
+            "expression": "14.0.0",
+            "define": "NEXUS_FIREBASE_CRASHLYTICS"
+        }
+    ],
+    "noEngineReferences": false
+}

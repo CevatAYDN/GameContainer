@@ -4,6 +4,8 @@
     "references": [
         "com.nexus.core",
         "com.nexus.firebase",
+        "com.nexus.firebase.editor",
+        "com.nexus.core.testing",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

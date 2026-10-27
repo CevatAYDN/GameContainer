@@ -17,6 +17,8 @@ Firebase Analytics, Remote Config and Crashlytics behind Nexus services, with th
 | `MockAnalyticsService`, `MockRemoteConfigService`, `MockCrashReporter`, `MockAnalyticsConsent` | In-memory versions for the editor, development builds and tests. The analytics mock drops what the Firebase service would drop. |
 | `FirebaseAnalyticsService` (`NEXUS_FIREBASE_ANALYTICS`) | Analytics behind `IAnalyticsService`. Collection stays off until the decision allows it. |
 | `FirebaseRemoteConfigService` (`NEXUS_FIREBASE_REMOTE_CONFIG`) | Remote Config behind `IRemoteConfigService`. A value the console does not set returns the game's fallback. |
+| `FirebaseBindings.Bind<TConsent>(builder)` | Binds the three services in one call: the Firebase service of each installed SDK in a player, the mock in the Editor and without the SDK (see Binding). |
+| `FirebaseCollectionFlags` (Editor) | Writes Firebase's collection-off flags into the Android manifest on every build (see Consent and the platform manifest). |
 | `FirebaseCrashReporter` (`NEXUS_FIREBASE_CRASHLYTICS`) | Crashlytics behind `ICrashReporter`: reports the commands Nexus's recovery engine gave up on, and logged errors (`Debug.LogError`), as non-fatals. |
 
 ## Install the SDK
@@ -30,13 +32,25 @@ The adapters were written against Firebase Unity SDK **14.0.0** (`expression` 14
 - **Consent.** The consent status does not say which purposes the player accepted: `Obtained` means the form was answered. Analytics are sent when the choice is granted, dropped when it is refused, and held while the choice or the answer is unknown. Where consent is not required, events are sent at once. Where the choice is read from is the game's job, through `IAnalyticsConsent`.
 - **Remote config.** Fetched at launch and reused for 12 hours. A clock set back forces a fetch. A value that cannot be read as the requested type returns the fallback. Numbers are read with the invariant culture, so a device language does not change them.
 
+## Binding
+
+```csharp
+public void OnConfigure(IContextBuilder builder)
+{
+    FirebaseBindings.Bind<GameConsent>(builder);   // GameConsent : NexusService<IAnalyticsConsent>, IAnalyticsConsent
+}
+```
+
+A player gets the Firebase service of each SDK package the project has; the Editor (every batch tool, no `google-services.json` needed) and a missing SDK get the mock. The game's consent reader is bound only when a Firebase service reads it, and after them, so they start Firebase before it asks the User Messaging Platform; otherwise a `MockAnalyticsConsent` answering `NotRequired` is bound, so the mocks send at once. The reader is named in every build, so it must compile without the Firebase SDK (for example over the User Messaging Platform's status). The SDK defines exist only inside this package's assemblies: game code does not pick SDK or mock with a define of its own.
+
 ## Consent and the platform manifest
 
-`SetAnalyticsCollectionEnabled(false)` at start is too late to stop what the SDK collects before the game's code runs. For a game that waits for consent, set `firebase_analytics_collection_enabled` to `false` in the application tag of the Android manifest (Firebase's documented way to delay collection until consent) and let `FirebaseAnalyticsService` turn it on. Crashlytics needs the same at the platform level; the exact flag is not verified here, so check Crashlytics's own documentation.
+`SetAnalyticsCollectionEnabled(false)` at start is too late to stop what the SDK collects before the game's code runs. On every Android build `FirebaseCollectionFlags` writes Firebase's own flags, `false`, into the `application` tag of the launcher manifest for each SDK package the project has: `firebase_analytics_collection_enabled`, and `firebase_crashlytics_collection_enabled` (Crashlytics's [opt-in reporting](https://firebase.google.com/docs/crashlytics/android/customize-crash-reports)). `FirebaseAnalyticsService` and `FirebaseCrashReporter` turn collection on once the consent decision allows it. A flag the manifest already carries is left as the game set it, and a second build adds no duplicate. A game that uses the Firebase SDK directly, without these services, turns collection on itself. The build log names the flags it wrote (`[Nexus Firebase] Collection off in the manifest until consent: ...`).
 
 ## Not checked by 0.1.0
 
-- The adapters compile against 14.0.0; they have not been run in the editor or on a device, which needs a `google-services.json`.
+- The adapters compile against 14.0.0; they have not been run in the editor or on a device here, which needs a `google-services.json`.
+- The manifest flags are checked in EditMode on a sample manifest; that a device starts with Crashlytics collection off has not been observed yet.
 - The string length of event parameter values (100 characters for standard properties, per Google's documentation).
 - The number of parameters per event and the 500 event types per app.
 
