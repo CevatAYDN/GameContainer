@@ -3,6 +3,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using UnityEngine.Scripting;
+#if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
+using UnityEngine.InputSystem;
+#endif
 
 namespace Nexus.Core.Services
 {
@@ -42,12 +45,20 @@ namespace Nexus.Core.Services
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
             TickService?.RegisterTickable(this);
+#if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
+            CreateButtonActions();
+#endif
             return default;
         }
 
         public override void OnDispose()
         {
             TickService?.UnregisterTickable(this);
+#if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
+            _cancelAction?.Dispose();
+            _submitAction?.Dispose();
+            _cancelAction = _submitAction = null;
+#endif
             base.OnDispose();
         }
 
@@ -150,37 +161,46 @@ namespace Nexus.Core.Services
             NexusRuntime.Logger?.LogWarning($"[InputService] Input System read failed ({ex.GetType().Name}: {ex.Message}); input reads as none. Check the Input System setup or supply IInputProvider.");
         }
 
-        private static bool CheckNewInputButton(string actionName, ButtonQuery query)
+        // Actions, not a key's wasPressedThisFrame: an action records every event, so a press and release in one update (Android's
+        // back key) still counts, and its binding covers a keyboard that appears after the service starts (#92).
+        private InputAction _cancelAction;
+        private InputAction _submitAction;
+
+        private void CreateButtonActions()
         {
-            if (!Application.isPlaying) return false;
+            // Reads report nothing outside play mode, so edit-mode runs keep no enabled actions.
+            if (!Application.isPlaying) return;
             try
             {
-                var kb = UnityEngine.InputSystem.Keyboard.current;
-                if (kb != null)
+                _cancelAction = new InputAction("Cancel", InputActionType.Button, "<Keyboard>/escape");
+                _submitAction = new InputAction("Submit", InputActionType.Button, "<Keyboard>/space");
+                _submitAction.AddBinding("<Keyboard>/enter");
+                _cancelAction.Enable();
+                _submitAction.Enable();
+            }
+            catch (Exception ex) { ReportInputSystemFailure(ex); }
+        }
+
+        private bool CheckNewInputButton(string actionName, ButtonQuery query)
+        {
+            if (!Application.isPlaying) return false;
+            InputAction action = null;
+            if (string.Equals(actionName, "Jump", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(actionName, "Submit", StringComparison.OrdinalIgnoreCase))
+                action = _submitAction;
+            else if (string.Equals(actionName, "Cancel", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(actionName, "Pause", StringComparison.OrdinalIgnoreCase))
+                action = _cancelAction;
+            if (action == null) return false;
+            try
+            {
+                return query switch
                 {
-                    if (string.Equals(actionName, "Jump", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(actionName, "Submit", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return query switch
-                        {
-                            ButtonQuery.Pressed => kb.spaceKey.isPressed || kb.enterKey.isPressed,
-                            ButtonQuery.Down => kb.spaceKey.wasPressedThisFrame || kb.enterKey.wasPressedThisFrame,
-                            ButtonQuery.Up => kb.spaceKey.wasReleasedThisFrame || kb.enterKey.wasReleasedThisFrame,
-                            _ => false
-                        };
-                    }
-                    if (string.Equals(actionName, "Cancel", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(actionName, "Pause", StringComparison.OrdinalIgnoreCase))
-                    {
-                        return query switch
-                        {
-                            ButtonQuery.Pressed => kb.escapeKey.isPressed,
-                            ButtonQuery.Down => kb.escapeKey.wasPressedThisFrame,
-                            ButtonQuery.Up => kb.escapeKey.wasReleasedThisFrame,
-                            _ => false
-                        };
-                    }
-                }
+                    ButtonQuery.Pressed => action.IsPressed(),
+                    ButtonQuery.Down => action.WasPressedThisFrame(),
+                    ButtonQuery.Up => action.WasReleasedThisFrame(),
+                    _ => false
+                };
             }
             catch (Exception ex) { ReportInputSystemFailure(ex); }
             return false;

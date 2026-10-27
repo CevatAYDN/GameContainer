@@ -6,7 +6,9 @@
         "UnityEngine.TestRunner",
         "com.nexus.core",
         "com.nexus.core.dots",
-        "com.nexus.core.testing"
+        "com.nexus.core.testing",
+        "Unity.InputSystem",
+        "Unity.InputSystem.TestFramework"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
