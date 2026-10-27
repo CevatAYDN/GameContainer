@@ -1,10 +1,13 @@
 # Migrating a game from `AdMobAdapter` to the ad family
 
 For a Nexus game whose ads run on `com.nexus.ads.admob`'s `AdMobAdapter` behind `AdService`
-(Gigawatt, Wickling and ChipCrisis pin it at `c7a31eb`). Each owner migrates the game in its own
-repository and re-pins (decision 6 of [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8));
-nothing on `main` changes a game before it re-pins. `AdMobAdapter` keeps compiling until all three
-games have re-pinned; then it is retired from `com.nexus.ads.admob`. A step that does not work is an
+(Gigawatt, Wickling and ChipCrisis pinned it at `c7a31eb`). Each owner migrated the game in its own
+repository (decision 6 of [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8)). Once the
+three had moved, `AdMobAdapter`, `AdMobConfig` and their assembly were removed from
+`com.nexus.ads.admob` ([issue #14](https://github.com/CevatAYDN/GameContainer/issues/14)): a game still
+on the adapter migrates with this page on its current pin and re-pins afterwards, and the first
+generated binder after the re-pin is written with `-ignorecompilererrors` (the old binder names the
+removed type; core TROUBLESHOOTING, "Stale Generated Binder"). A step that does not work is an
 issue in this repository, not a local edit of a package.
 
 Game code written against `IAdService` (`RequestReward`, `ShowInterstitial`, `ReadyChanged`,

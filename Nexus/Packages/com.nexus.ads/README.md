@@ -2,10 +2,10 @@
 
 The ad package family's core: an engine-free ad core, a Unity layer, an editor setup wizard and
 validator, and a simulator provider. Mediation SDKs live in separate provider packages (`com.nexus.ads.levelplay`,
-`com.nexus.ads.admob`; `com.nexus.ads.max` is planned, issue #14); Nexus games connect through `com.nexus.ads.bridge.nexus`
+`com.nexus.ads.admob`; `com.nexus.ads.max` is planned, issue #86); Nexus games connect through `com.nexus.ads.bridge.nexus`
 ([#12](https://github.com/CevatAYDN/GameContainer/issues/12)). The plan, decisions and phases are in
-[issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes are in [CHANGELOG.md](CHANGELOG.md). A game on the
-legacy `AdMobAdapter` moves here with [MIGRATION.md](MIGRATION.md).
+[issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes are in [CHANGELOG.md](CHANGELOG.md). A game still on the
+removed legacy `AdMobAdapter` moves here with [MIGRATION.md](MIGRATION.md).
 
 ## Install
 

@@ -134,18 +134,6 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
-        public void AdMobProvider_BringsTheCoreItStillDeclares_InAGameWithoutIt()
-        {
-            _settings.SelectedMediation = AdProviderKind.AdMob;
-            var probe = new FakeProbe { Manifest = GitManifest };
-            string how = AndroidSetup.Plan(_settings, AdsValidator.Tab.Test, probe, _catalog).First(s => s.id == "provider").how;
-            StringAssert.Contains("path=/Nexus/Packages/com.nexus.ads.admob#eee5c2f5ddffb90c6100871a1971cccfd310c1bc", how);
-            StringAssert.Contains("path=/Nexus/Packages/com.nexus.core#eee5c2f5ddffb90c6100871a1971cccfd310c1bc", how, "UPM does not resolve the git dependency by itself");
-            probe.Packages["com.nexus.core"] = "0.5.0";
-            StringAssert.DoesNotContain("com.nexus.core", AndroidSetup.Plan(_settings, AdsValidator.Tab.Test, probe, _catalog).First(s => s.id == "provider").how);
-        }
-
-        [Test]
         public void NativeSdk_IsTheLowerBoundOfTheInstalledPackagesRange()
         {
             Assert.IsTrue(AndroidSetup.TryNativeSdk(VersionsJson, "9.4.0", out var version, out var url));

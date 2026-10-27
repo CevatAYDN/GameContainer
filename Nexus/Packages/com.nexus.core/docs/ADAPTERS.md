@@ -53,7 +53,7 @@ public sealed class MonetizationLifecycle : MonoBehaviour, IContextLifecycle
 
     public ValueTask OnStartAsync(CancellationToken ct)
     {
-        AdFactory.RegisterProvider("admob", () => new AdMobAdapter());   // your class, see below
+        AdFactory.RegisterProvider("mynetwork", () => new MyAdNetworkAdapter());   // your class, see "Writing an adapter"
         Ads.SetNetworkAdapter(AdFactory.CreateAdapter(AdProviderName));
 
         StoreFactory.RegisterProvider("unityiap", () => new UnityIapAdapter());
@@ -68,7 +68,7 @@ public sealed class MonetizationLifecycle : MonoBehaviour, IContextLifecycle
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
     private const string AdProviderName = "mock", StoreProviderName = "mock";
 #else
-    private const string AdProviderName = "admob", StoreProviderName = "unityiap";
+    private const string AdProviderName = "mynetwork", StoreProviderName = "unityiap";
 #endif
 }
 ```
@@ -111,42 +111,37 @@ gets the simulator), a release build runs the **Release** tab. The provider is n
 [bridge README](../../com.nexus.ads.bridge.nexus/README.md); the lifecycle above becomes
 `NexusAdsBridge.Connect(ads, adFactory, iap, "remove_ads")` in `OnStartAsync` and loses its
 `AdProviderName` switch. The `"mock"` adapter and the `#if UNITY_EDITOR || DEVELOPMENT_BUILD` switch
-stay the pattern for the store. A game on `AdMobAdapter` moves with the family's
-[MIGRATION.md](../../com.nexus.ads/MIGRATION.md); AdMob itself stays available there as the
-`Nexus.Ads.AdMob` provider in `com.nexus.ads.admob`.
+stay the pattern for the store. AdMob is the family's `Nexus.Ads.AdMob` provider in
+`com.nexus.ads.admob`; the legacy `AdMobAdapter` behind `AdService` was removed (issue #14), and a game
+still on it moves with the family's [MIGRATION.md](../../com.nexus.ads/MIGRATION.md).
 
 ## Shipped adapters
 
-Two optional packages in this repository implement the full contract (base adapter plus every
-capability) against real SDKs. Each compiles only while its SDK package is installed
-(`versionDefines` in the assembly definition), so installing them without the SDK is inert.
+One optional package in this repository implements the full store contract (base adapter plus every
+capability) against a real SDK. It compiles only while its SDK package is installed
+(`versionDefines` in the assembly definition), so installing it without the SDK is inert. Ads go
+through the ad family (above).
 
-The defines `NEXUS_ADMOB` and `NEXUS_UNITY_IAP` exist only inside the adapter assemblies. In game
-code `#if NEXUS_ADMOB` is always false and silently removes what it guards from every build,
+The define `NEXUS_UNITY_IAP` exists only inside the adapter assembly, as the ad family's `NEXUS_ADMOB`
+and `NEXUS_LEVELPLAY` exist only inside its provider assemblies. In game code `#if NEXUS_ADMOB` is always false and silently removes what it guards from every build,
 release included. Game code that must compile without the SDK declares its own define: the same
 `versionDefines` entry in the game's assembly definition, or a scripting define in Player
 Settings when the code lives in `Assembly-CSharp`.
 
 | Package | SDK | Provider name | Install |
 |---|---|---|---|
-| `com.nexus.ads.admob` ([README](../../com.nexus.ads.admob/README.md)) | Google Mobile Ads Unity plugin (`com.google.ads.mobile`, OpenUPM) with User Messaging Platform consent | `admob` | git URL `?path=/Nexus/Packages/com.nexus.ads.admob#<commit>`; legacy, kept until its three games moved to the family |
 | `com.nexus.iap.unity` ([README](../../com.nexus.iap.unity/README.md)) | Unity IAP 5 (`com.unity.purchasing`, declared dependency) | `unity` | git URL `?path=/Nexus/Packages/com.nexus.iap.unity#<commit>` |
 
 ```csharp
-AdMobAdapter.Register(adFactory, new AdMobConfig { RewardedAdUnitIdAndroid = "..." });
-adService.SetNetworkAdapter(adFactory.CreateAdapter(AdMobAdapter.ProviderName));
 UnityIapAdapter.Register(iapFactory);
 iapService.SetStoreAdapter(iapFactory.CreateAdapter(UnityIapAdapter.ProviderName));
 ```
 
-Both were ported from the first shipped Nexus game and are verified by compiling against the
-real SDK packages in a disposable project and by tests of their behaviour before initialization
-(`Nexus/artifacts/adapters-050/`; the deferred payment and the consent debug settings in
-`adapters-20261020/`; see the repository's `docs/RELEASE_GATES.md`). Gigawatt runs
-both in its signed Android IL2CPP release build: its device acceptance passed and a Google test
-rewarded ad paid out on the phone; with `DebugGeographyEea` and the phone's hashed id its development
-build showed the consent form outside the EEA. A price, a purchase and a restore against Google Play are the
-open item.
+It was ported from the first shipped Nexus game and is verified by compiling against the real SDK
+package in a disposable project and by tests of its behaviour before initialization
+(`Nexus/artifacts/adapters-050/`; the deferred payment in `adapters-20261020/`; see the repository's
+`docs/RELEASE_GATES.md`). Gigawatt runs it in its signed Android IL2CPP release build; a price, a
+purchase and a restore against Google Play are the open item.
 
 Adapter warnings (an ad that did not load, a store that is not reachable, products not fetched)
 go through `NexusLog.WarnAlways`, so they reach the player log (logcat on Android) in release
@@ -164,11 +159,12 @@ the game code and tests depend only on `IAdService` / `IIapService`. Three rules
   or never.
 - An SDK may call back on a worker thread: the Google Mobile Ads plugin invokes its User Messaging
   Platform listeners on the Android UI thread. Continue on the Unity main thread before touching
-  Unity or the game's handlers; the AdMob adapter captures Unity's `SynchronizationContext` in
-  `Initialize` and posts every callback to it, and logs each step through `NexusLog.WarnAlways`.
-  An SDK may also queue its callbacks behind an object it creates later: Google Mobile Ads queues
-  the consent callbacks in `MobileAdsEventExecutor`, created by `MobileAds.Initialize`, so the
-  AdMob adapter creates the executor before it asks for consent.
+  Unity or the game's handlers: capture Unity's `SynchronizationContext` in `Initialize`, post every
+  callback to it, and log each step through `NexusLog.WarnAlways`. An SDK may also queue its callbacks
+  behind an object it creates later: with `MobileAds.RaiseAdEventsOnUnityMainThread` on, Google Mobile
+  Ads queues the consent callbacks in `MobileAdsEventExecutor`, created by `MobileAds.Initialize`, so the
+  executor must exist before the consent request. The family's `AdMobProvider` and `UmpConsentFlow`
+  leave that switch off and post each callback to the main thread themselves.
 
 `MonetizationServiceTests` (EditMode) show the services driven through the mock adapters:
 interstitial cooldown and availability, product registration and a mock purchase.
@@ -180,5 +176,5 @@ with simulated and real AdMob / Unity IAP implementations instead of `AdService`
 It needed a consent step before the SDK starts (Google User Messaging Platform; EEA/UK) with a
 privacy-options entry in the menu, a readiness event instead of polling, structured outcomes
 instead of booleans, and the store's localized prices with a change event. The capability
-interfaces above carry exactly that contract, the two shipped adapters are ports of its AdMob and
-Unity IAP implementations, and Gigawatt now runs on `AdService` / `IapService` with them.
+interfaces above carry exactly that contract, and the Unity IAP adapter is a port of its store. Its ads
+now come from the ad family through the bridge, which keeps `AdService` as the game's API.
