@@ -275,6 +275,12 @@ Where possible, maintain compatibility:
 - **Support**: Best effort
 - **Duration**: Until 1.0.0 release
 
+A public API that nothing references (the package, its samples, the development project, `tools/` and
+the known consumer games searched; a game's generated binder does not count, it is regenerated) is
+removed directly: the changelog's Removed entry names the search, and the release's section in
+`MIGRATION.md` lists it. The warning period of the [Deprecation Process](#deprecation-process) applies
+to an API with known callers or one that serialized assets reference.
+
 ### Stable Release (1.x+)
 
 - **Stability**: Production-ready
