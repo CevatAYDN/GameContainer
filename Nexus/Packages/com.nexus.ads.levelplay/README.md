@@ -56,6 +56,14 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
 The assembly compiles only while the LevelPlay package is installed (`versionDefines` →
 `NEXUS_LEVELPLAY`); without it the package is inert.
 
+The Ads Mediation package adds the scripting define `LEVELPLAY_DEPENDENCIES_INSTALLED` to the Player
+Settings of the selected build target whenever the editor opens outside batch mode without it
+(`ServicesCoreDependencyInstaller` in 9.5.1, after it checks for `com.unity.services.core`). The define
+compiles only LevelPlay's editor code, the **Ads Mediation** menu with its Network Manager included; no
+runtime file and none of its build processors read it, so the player is the same with or without it.
+Commit it in `ProjectSettings/ProjectSettings.asset` for every build target the editor is opened on:
+reverted, it comes back on the next open.
+
 ## What the provider does
 
 | Core call | LevelPlay |
