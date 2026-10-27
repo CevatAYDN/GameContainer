@@ -10,7 +10,7 @@ namespace Nexus.Core.Services
     /// Anti-cheat model (A8):
     /// 1. A wall-clock timestamp is stored on quit. If the wall clock reads LOWER on resume
     ///    than on quit, the clock was set backwards → 0 offline progress.
-    /// 2. A hardware monotonic tick (ms since boot) is stored alongside it. On the same boot
+    /// 2. A hardware monotonic tick (ms since boot, deep sleep included) is stored alongside it. On the same boot
     ///    session, monotonic time cannot be forged by changing the clock, so the offline
     ///    reward is additionally bounded by the hardware-measured elapsed time. This closes
     ///    the forward-clock hole: setting the clock forward inflates the wall-clock diff but
@@ -18,6 +18,8 @@ namespace Nexus.Core.Services
     /// 3. Across a device reboot the monotonic counter resets (monotonic diff turns negative),
     ///    which is indistinguishable from tampering with the monotonic source alone — in that
     ///    case we fall back to wall-clock-only validation, still capped at maxOfflineSeconds.
+    ///    shortcut: a reboot followed by more uptime than before the quit reads as the same boot and clamps the reward to
+    ///    the time since that reboot; storing Android's boot count beside the tick is the upgrade.
     /// </summary>
     [Preserve]
     public static class OfflineTimeCalculator
@@ -27,7 +29,16 @@ namespace Nexus.Core.Services
 
         private static long GetMonotonicMs()
         {
+#if UNITY_ANDROID && !UNITY_EDITOR
+            // Stopwatch is CLOCK_MONOTONIC there, which stops while the phone sleeps: a pocketed phone's absence was clamped to
+            // its awake minutes. elapsedRealtime counts deep sleep (issue #77).
+            using (var clock = new UnityEngine.AndroidJavaClass("android.os.SystemClock"))
+                return clock.CallStatic<long>("elapsedRealtime");
+#else
+            // shortcut: on iOS Stopwatch is expected to read mach_absolute_time, which Apple documents as not advancing while
+            // the device sleeps, so the clamp may under-count there (not measured); a native mach_continuous_time call is the upgrade.
             return System.Diagnostics.Stopwatch.GetTimestamp() * 1000L / System.Diagnostics.Stopwatch.Frequency;
+#endif
         }
 
         /// <summary>

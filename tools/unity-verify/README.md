@@ -99,6 +99,12 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 
 The most realistic mobile pipeline (Android + IL2CPP + stripping).
 
+`NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopment` builds the same player as a development
+build (`Nexus/builds/android-il2cpp-dev.apk`) with `Assets/Scripts/Verify/DeviceProbe.cs`, which exists
+only there: on the phone it logs `[Probe]` lines (`adb logcat -s Unity`) with the managed allocations of
+each haptic play (issue #84) and, after each HOME and return, the time away by the wall clock,
+`Stopwatch`, `SystemClock.elapsedRealtime` and `OfflineTimeCalculator` (issue #77).
+
 ## Mode B: verify the Roslyn Source Generator binder (optional, opt-in)
 
 The four steps above compile the game with the **editor-time generator's** binder

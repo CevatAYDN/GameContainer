@@ -19,7 +19,8 @@ namespace NexusVerify
     /// </summary>
     public static class NexusVerifyBuild
     {
-        private static void Build(string targetName, BuildTargetGroup group, BuildTarget target, ScriptingImplementation backend)
+        private static void Build(string targetName, BuildTargetGroup group, BuildTarget target, ScriptingImplementation backend,
+            BuildOptions buildOptions = BuildOptions.None)
         {
             // Restore the pre-existing backend when the batch finishes so this
             // verification never pollutes ProjectSettings.asset. NamedBuildTarget is the
@@ -39,7 +40,7 @@ namespace NexusVerify
                     locationPathName = $"builds/{targetName}",
                     target = target,
                     targetGroup = group,
-                    options = BuildOptions.None,
+                    options = buildOptions,
                 };
 
                 var report = BuildPipeline.BuildPlayer(options);
@@ -78,6 +79,12 @@ namespace NexusVerify
         public static void BuildAndroidIL2CPP()
         {
             Build("android-il2cpp", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP);
+        }
+
+        /// <summary>Android, IL2CPP, development build: holds Assets/Scripts/Verify/DeviceProbe.cs (phone checks for #77 and #84).</summary>
+        public static void BuildAndroidIL2CPPDevelopment()
+        {
+            Build("android-il2cpp-dev.apk", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP, BuildOptions.Development);
         }
 
         /// <summary>
