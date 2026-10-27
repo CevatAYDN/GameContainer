@@ -105,19 +105,5 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(0.5f, inputService.MoveInput.x, 0.001f);
             Assert.AreEqual(0.8f, inputService.MoveInput.y, 0.001f);
         }
-
-        [Test]
-        public void FloatingTextService_SpawnsAndUpdatesCleanly()
-        {
-            var floatService = new FloatingTextService();
-            floatService.SpawnFloatingText("+$500", Vector3.zero, Color.yellow, 1.0f);
-
-            Assert.AreEqual(1, floatService.ActiveTexts.Count);
-            Assert.AreEqual("+$500", floatService.ActiveTexts[0].Text);
-
-            // Update time to expire text
-            floatService.UpdateService(1.1f);
-            Assert.AreEqual(0, floatService.ActiveTexts.Count);
-        }
     }
 }

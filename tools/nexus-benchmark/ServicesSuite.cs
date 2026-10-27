@@ -1,5 +1,5 @@
 // Service-layer proof suite: exercises the service/tooling files that were pulled
-// into the harness (Localization, Haptics, Input, Feedback, Audio, FloatingText,
+// into the harness (Localization, Haptics, Input, Feedback, Audio,
 // Analytics, SceneLoader, UIManager, NexusTestContext/NexusTestHarness) against
 // the REAL runtime. Uses the functional Unity stubs (scene graph, AudioSource state,
 // SceneManager operation queue) so the logic paths run end-to-end, not as mocks.
@@ -168,7 +168,6 @@ namespace NexusBench
                 RunInput();
                 RunFeedback();
                 RunAudio();
-                RunFloatingText();
                 RunAnalytics();
                 RunSceneLoader();
                 RunNexusTestContext();
@@ -541,52 +540,6 @@ namespace NexusBench
                 audio.PlaySfx(clip, 1f, 0.9f, 0.5f);
                 bool guard = CountSfxSources() > 0;
                 Check("A8. InvertedPitch_Guard_NoCrash", guard, $"sfxSources={CountSfxSources()}");
-            }
-            finally
-            {
-                ctx.Dispose();
-            }
-        }
-
-        // =========================================================================
-        // FloatingText — spawn/duration/expiry state machine
-        // =========================================================================
-
-        private static void RunFloatingText()
-        {
-            var ctx = NexusTestHarness.CreateContext();
-            try
-            {
-                ctx.Context.Container.Bind<IFloatingTextService, FloatingTextService>(isSingleton: true);
-                var svc = ctx.Context.Resolve<IFloatingTextService>() as FloatingTextService;
-
-                svc.SpawnFloatingText("+500", new Vector3(1f, 2f, 3f), Color.green, 1f, 2f);
-                var item = svc.ActiveTexts[0];
-                bool fields = svc.ActiveTexts.Count == 1 && item.Text == "+500"
-                    && item.StartPosition == new Vector3(1f, 2f, 3f)
-                    && item.Color == Color.green && item.Duration == 1f
-                    && item.RiseHeight == 2f && item.ElapsedTime == 0f;
-                Check("FT1. Spawn_Tracks_All_Fields", fields,
-                    $"text='{item.Text}' pos={item.StartPosition} color={item.Color} dur={item.Duration}");
-
-                svc.UpdateService(0.4f);
-                bool midLife = svc.ActiveTexts.Count == 1 && Math.Abs(svc.ActiveTexts[0].ElapsedTime - 0.4f) < 1e-6;
-                svc.UpdateService(0.6f);
-                bool expired = svc.ActiveTexts.Count == 0;
-                Check("FT2. ElapsedTime_Accumulates_And_Expires", midLife && expired,
-                    $"count={svc.ActiveTexts.Count} elapsed={(svc.ActiveTexts.Count > 0 ? svc.ActiveTexts[0].ElapsedTime : -1)}");
-
-                // Duration is clamped to >= 0.1 — tiny durations still render at least one update.
-                svc.SpawnFloatingText("+1", Vector3.zero, Color.white, 0.01f);
-                svc.UpdateService(0.05f);
-                bool clamped = svc.ActiveTexts.Count == 1 && Math.Abs(svc.ActiveTexts[0].Duration - 0.1f) < 1e-6;
-                Check("FT3. Duration_Clamped_To_Minimum", clamped,
-                    $"duration={(svc.ActiveTexts.Count > 0 ? svc.ActiveTexts[0].Duration : -1)}");
-
-                svc.SpawnFloatingText("", Vector3.zero, Color.red, 1f);
-                svc.SpawnFloatingText(null, Vector3.zero, Color.red, 1f);
-                bool emptyIgnored = svc.ActiveTexts.Count == 1;
-                Check("FT4. Empty_Or_Null_Text_Ignored", emptyIgnored, $"count={svc.ActiveTexts.Count}");
             }
             finally
             {
@@ -1080,7 +1033,6 @@ namespace NexusBench
             RunZeroGc_Input();
             RunZeroGc_Audio();
             RunZeroGc_Localization();
-            RunZeroGc_FloatingText();
             RunZeroGc_Haptics();
         }
 
@@ -1185,29 +1137,6 @@ namespace NexusBench
             });
             Check("G5. Haptics_Play_ZeroGC", alloc <= 128 && tap.IsValid && wave.IsValid && tap.Id != wave.Id,
                 $"allocated={alloc} bytes for 2000 plays (limit <=128), ids={tap.Id},{wave.Id}");
-        }
-
-        private static void RunZeroGc_FloatingText()
-        {
-            var ctx = NexusTestHarness.CreateContext();
-            try
-            {
-                ctx.Context.Container.Bind<IFloatingTextService, FloatingTextService>(isSingleton: true);
-                var svc = ctx.Context.Resolve<IFloatingTextService>() as FloatingTextService;
-                for (int i = 0; i < 50; i++) svc.SpawnFloatingText($"t{i}", Vector3.zero, Color.white, 1f);
-                svc.UpdateService(0.05f);
-
-                long alloc = MeasuredAllocations(() =>
-                {
-                    for (int i = 0; i < 2000; i++) svc.UpdateService(0.05f);
-                });
-                Check("G4. FloatingText_Update_ZeroGC", alloc <= 128,
-                    $"allocated={alloc} bytes for 2000 updates (limit <=128)");
-            }
-            finally
-            {
-                ctx.Dispose();
-            }
         }
 
         // ---------------------------------------------------------------------------

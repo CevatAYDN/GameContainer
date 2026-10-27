@@ -106,8 +106,6 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/InputService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Localization/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Network/INetworkAdapter.cs" />
-    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/FloatingTextService.cs" />
-    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IFloatingTextService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/IUIAssetProvider.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ResourcesUIAssetProvider.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/UILayer.cs" />
