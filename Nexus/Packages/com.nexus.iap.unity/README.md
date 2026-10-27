@@ -19,13 +19,16 @@ Services are not started by the adapter; Google Play and App Store purchases do 
 using Nexus.Iap.Unity;
 
 UnityIapAdapter.Register(iapFactory);               // IIapAdapterFactory, provider name "unity"
-iapService.SetStoreAdapter(iapFactory.CreateAdapter("unity"));
 iapService.RegisterProducts(new ProductDefinition { Id = "rewards_pass", Type = ProductType.NonConsumable });
+iapService.SetStoreAdapter(iapFactory.CreateAdapter("unity"));   // after the products: it hands the catalog to the store
 
 iapService.Purchase("rewards_pass", outcome => { if (outcome == PurchaseOutcome.Purchased) Unlock(); });
 label.text = iapService.GetLocalizedPrice("rewards_pass") ?? "...";
 iapService.StoreChanged += RefreshShop;
 ```
+
+Register every product before `SetStoreAdapter`: it passes the catalog of that moment to the
+adapter's `Initialize`, and a product registered later is unknown to the store (`Unavailable`).
 
 Order of events: `Initialize` connects, fetches the catalog's products and the purchases this
 account already owns, then confirms every pending order. A purchase reports `Purchased` to the
