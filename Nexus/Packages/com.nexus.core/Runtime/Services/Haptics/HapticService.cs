@@ -189,20 +189,25 @@ namespace Nexus.Core.Services
         {
             if (_vibrator == null || !_hasVibrator) { Handheld.Vibrate(); return; }
             var args = index < _effectArgs.Count ? _effectArgs[index] : null;
-            if (args != null)
-            {
-                AndroidJNI.CallVoidMethod(_vibrator.GetRawObject(), _vibrateMethod, args);
-                IntPtr error = AndroidJNI.ExceptionOccurred();
-                if (error == IntPtr.Zero) return;
-                AndroidJNI.ExceptionClear();
-                AndroidJNI.DeleteLocalRef(error);
-                ReportNativeFailure("vibrate(VibrationEffect) threw");
-                Handheld.Vibrate();
-                return;
-            }
+            if (args == null) { PlayWithoutEffect(index); return; }
+            AndroidJNI.CallVoidMethod(_vibrator.GetRawObject(), _vibrateMethod, args);
+            IntPtr error = AndroidJNI.ExceptionOccurred();
+            if (error != IntPtr.Zero) VibrateThrew(error);
+        }
+
+        private void VibrateThrew(IntPtr error)
+        {
+            AndroidJNI.ExceptionClear();
+            AndroidJNI.DeleteLocalRef(error);
+            ReportNativeFailure("vibrate(VibrationEffect) threw");
+            Handheld.Vibrate();
+        }
+
+        // Android 7 and older (or an effect that could not be built): vibrate(long), which allocates.
+        private void PlayWithoutEffect(int index)
+        {
             try
             {
-                // Android 7 and older (or an effect that could not be built): vibrate(long), which allocates.
                 long total = 0;
                 foreach (var t in _timings[index]) total += t;
                 _vibrator.Call("vibrate", total);

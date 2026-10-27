@@ -164,7 +164,7 @@ starting point, not a save system: a game keeps its own save format and decides 
 | Generic synchronous dispatch, command pools, warmed DI resolution | Host regressions verify zero allocation for covered paths after warmup |
 | Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup |
 | `EconomyService` `Earn` / `Spend` / `GetBalance` with a `SaveThrottler` bound | 0 B after the currency's first touch (harness GCA5); without a throttler every mutation persists synchronously and allocates |
-| `HapticService.Play` of a built effect, `Vibrate(HapticType)` on Android 8+ | 0 B in the managed lookup (harness G5); on the device the call goes through a prebuilt `VibrationEffect` and a cached JNI method, which is allocation-free by construction and was not measured on a phone; Android 7 and older use `vibrate(long)`, which allocates |
+| `HapticService.Play` of a built effect, `Vibrate(HapticType)` on Android 8+ | 0 B in the managed lookup (harness G5); on the device the call goes through a prebuilt `VibrationEffect` and a cached JNI method: 0 `GC.Alloc` samples in each of 12 plays of two built effects, the first play of each included (Android IL2CPP development player, Unity 6000.5.6f1, 2311DRK48G on Android 16, `DeviceProbe`); Android 7 and older use `vibrate(long)`, which allocates |
 | Immutable arbitrary-arity or async composite | Retained snapshots; payload boxing and snapshot allocation are intentional |
 | Startup, registration, async operations, editor diagnostics, `NEXUS_DEBUG` tracing | May allocate; outside the hot-path contract |
 
