@@ -170,9 +170,9 @@ starting point, not a save system: a game keeps its own save format and decides 
 
 The repository's host harness (`tools/nexus-benchmark`) and the Unity `PerformanceTests` assert these
 contracts; their latest numbers are in the repository's `docs/RELEASE_GATES.md`. The pinned core DI comparison
-with VContainer and Zenject, on host and in a Unity Mono player, is in
-[PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md); it does not establish device or
-IL2CPP performance, and no universal winner is claimed.
+with VContainer, Zenject and Reflex, on host, in a Unity Mono player and on an Android IL2CPP device, is in
+[PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md); it measures a three-object constructor graph, not
+frame budget or full `Context` startup, and no universal winner is claimed.
 
 ## Module map
 
@@ -232,7 +232,7 @@ IL2CPP performance, and no universal winner is claimed.
 | [STRANGE_COMPARISON.md](docs/STRANGE_COMPARISON.md) ([TR](docs/STRANGE_COMPARISON_TR.md)) | Feature-by-feature comparison with StrangeIoC |
 | [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) ([TR](docs/ADDRESSABLES_ADAPTER_TR.md)) | Implementing `IAssetLoadService` over Addressables without a package dependency |
 | [ADAPTERS.md](docs/ADAPTERS.md) | Registering real ad and store SDKs behind `AdService` / `IapService`, and what a shipped game needed beyond them |
-| [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md) | Pinned DI comparison with VContainer and Zenject |
+| [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md) | Pinned DI comparison with VContainer, Zenject and Reflex (host, Mono player, Android IL2CPP device) |
 | [STABILITY.md](docs/STABILITY.md) | Pre-1.0 stability policy |
 | [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md) | Writing editor plugins |
 | [LOCALIZATION_KEYS.md](docs/LOCALIZATION_KEYS.md) | Editor localization keys and parity rules |
