@@ -46,6 +46,22 @@ namespace Nexus.Core
             return false;
         }
 
+        private static readonly string[] NexusPackagePrefixes = { "com.nexus.", "Nexus.Ads." };
+
+        /// <summary>
+        /// True for the assemblies of the Nexus packages: <c>com.nexus.*</c>, and <c>Nexus.Ads.*</c> in the ad family.
+        /// A game's generated binder and link.xml register none of their types; each package preserves its own (#110).
+        /// </summary>
+        public static bool IsNexusPackageAssembly(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            for (int i = 0; i < NexusPackagePrefixes.Length; i++)
+            {
+                if (name.StartsWith(NexusPackagePrefixes[i], StringComparison.Ordinal)) return true;
+            }
+            return false;
+        }
+
         /// <summary>True for test assemblies and test-support assemblies ending in '.testing'.</summary>
         public static bool IsTestAssembly(string name)
             => !string.IsNullOrEmpty(name)

@@ -1,0 +1,5 @@
+<linker>
+  <!-- A game's generated link.xml lists no package type (#110): the package preserves its own.
+       ignoreIfMissing keeps a player build without this assembly (its SDK, define or platform absent) working. -->
+  <assembly fullname="com.nexus.iap.unity" preserve="all" ignoreIfMissing="true"/>
+</linker>

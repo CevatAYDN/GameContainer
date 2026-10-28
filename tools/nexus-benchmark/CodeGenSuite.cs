@@ -34,10 +34,14 @@ namespace NexusBench
         public CodeGenMulti(CodeGenDep dep) { Dep = dep; }
     }
 
-    /// <summary>[Inject] field → the generator must emit an injector.</summary>
+    /// <summary>Never bound: an [OptionalInject] member of this type must stay null instead of throwing.</summary>
+    public sealed class CodeGenUnbound { }
+
+    /// <summary>[Inject] field → the generator must emit an injector; the [OptionalInject] one must use TryResolve.</summary>
     public sealed class CodeGenInjected
     {
         [Inject] public CodeGenDep Dep;
+        [OptionalInject] public CodeGenUnbound Missing;
     }
 
     /// <summary>[Inject] field + [PostConstruct]: a generated injector REPLACES the reflection
@@ -172,9 +176,12 @@ namespace NexusBench
 
             Test_Codegen_Emits_Compiles_And_Boots();
             Test_Generator_Emits_Compiles_And_Boots();
-            Test_Codegen_Skips_Factories_For_UnityObjects_And_Package_Runtime();
+            Test_Codegen_Skips_Factories_For_UnityObjects();
             Test_ConstructorFactoryPolicy_Decisions();
             Test_LinkXml_Keeps_ActivatorCreatedTypes();
+            Test_PackageAssemblies_Recognized_And_Preserved();
+            // Last: it loads an assembly named like a package, which every later scan would see.
+            Test_Binders_Register_No_Package_Assembly_Type();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -284,18 +291,7 @@ namespace NexusBench.CG2Source
                 // 2) Drive the REAL shipping generator over a synthetic compilation whose CURRENT
                 //    assembly is the stub (source path) and which references the harness assembly
                 //    (referenced game-assembly path).
-                var references = new List<MetadataReference>();
-                foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-                {
-                    if (asm.IsDynamic) continue;
-                    try
-                    {
-                        string location = asm.Location;
-                        if (string.IsNullOrEmpty(location)) continue;
-                        references.Add(MetadataReference.CreateFromFile(location));
-                    }
-                    catch { }
-                }
+                var references = LoadedAssemblyReferences();
                 var stubTree = CSharpSyntaxTree.ParseText(GeneratorStubSource);
                 var compilation = CSharpCompilation.Create(
                     "NexusBench.CodeGenSourceStub",
@@ -466,12 +462,12 @@ namespace NexusBench.CG2Source
 
         // ─── CG3/CG4: constructor-factory gate ─────────────────────────────────
         // A constructor factory is `new T(...)`, which is only valid for plain C# types:
-        // UnityEngine.Object types (MonoBehaviour, ScriptableObject...) are instantiated by Unity,
-        // and the package's own runtime assembly is served by the reflection path. The generator
-        // must emit no factory for either, while plain DI types and mediators (ViewBinder resolves
-        // mediators through DI) keep theirs and Unity objects keep their [Inject] injectors.
+        // UnityEngine.Object types (MonoBehaviour, ScriptableObject...) are instantiated by Unity.
+        // The generator must emit no factory for them, while plain DI types and mediators (ViewBinder
+        // resolves mediators through DI) keep theirs and Unity objects keep their [Inject] injectors.
+        // The packages' own types get no registration at all (CG6).
 
-        private static void Test_Codegen_Skips_Factories_For_UnityObjects_And_Package_Runtime()
+        private static void Test_Codegen_Skips_Factories_For_UnityObjects()
         {
             string rootDir = NexusEditorSettings.OutputRoot;
             string binderPath = Path.Combine(rootDir, "NexusGeneratedBinder.g.cs");
@@ -530,6 +526,163 @@ namespace NexusBench.CG2Source
             Report("CG5. LinkXml_Keeps_ActivatorCreatedTypes", ok, detail);
         }
 
+        // ─── CG6: a game's binder registers no type of a Nexus package (#110) ───
+        // A package type registered by a game's binder breaks that game's compile when the package removes it
+        // (FloatingTextService #91, AdMobAdapter #14). The harness runtime compiles as NexusBenchmark, which no
+        // package-name rule matches, so the rule is proven on a fixture assembly that carries a package's NAME:
+        // neither generator may register, preserve or list its types, while the game assembly keeps its own.
+
+        private const string PackageFixtureAssembly = "com.nexus.harnessfixture";
+
+        private const string PackageFixtureSource = @"
+using Nexus.Core;
+using NexusBench;
+
+namespace NexusBench.PackageFixture
+{
+    public sealed class PackageInjected
+    {
+        [Inject] public CodeGenDep Dep;
+    }
+
+    public sealed class PackageCtorService
+    {
+        public readonly CodeGenDep Dep;
+        public PackageCtorService(CodeGenDep dep) { Dep = dep; }
+    }
+
+    public struct PackageSignal { }
+
+    public sealed class PackageCommand : ICommand<PackageSignal>
+    {
+        public void Execute(PackageSignal signal) { }
+    }
+
+    public struct PackageNetworkSignal : Nexus.Netcode.INetworkSignal { }
+}";
+
+        private static void Test_Binders_Register_No_Package_Assembly_Type()
+        {
+            const string name = "CG6. Binders_Register_No_Package_Assembly_Type";
+            const string fixtureNamespace = "NexusBench.PackageFixture.";
+            string rootDir = NexusEditorSettings.OutputRoot;
+            bool ok = false;
+            string detail;
+            try
+            {
+                // Persisted and file-loaded (as in CG2) so the source generator's compilation can reference it.
+                string[] errors = CompileSource(PackageFixtureSource, PackageFixtureAssembly, out _, out byte[] pe);
+                if (errors.Length > 0)
+                {
+                    Report(name, false, "package fixture FAILED to compile: " + string.Join(" | ", errors.Take(3)));
+                    return;
+                }
+                string fixtureDir = Path.Combine(Path.GetTempPath(), "nexus-cg6");
+                Directory.CreateDirectory(fixtureDir);
+                string fixturePath = Path.Combine(fixtureDir, PackageFixtureAssembly + ".dll");
+                File.WriteAllBytes(fixturePath, pe);
+                Assembly.LoadFrom(fixturePath);
+
+                if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
+                NexusCodeGenerator.GenerateBinder();
+                string binder = File.ReadAllText(Path.Combine(rootDir, "NexusGeneratedBinder.g.cs"));
+                string linkXml = File.ReadAllText(Path.Combine(rootDir, "link.xml"));
+                bool editorBinderClean = !binder.Contains(fixtureNamespace);
+                bool editorLinkClean = !linkXml.Contains(fixtureNamespace) && !linkXml.Contains($"fullname=\"{PackageFixtureAssembly}\"");
+                bool editorGameKept = binder.Contains("RegisterConstructorFactory<NexusBench.CodeGenTarget>");
+
+                var compilation = CSharpCompilation.Create(
+                    "NexusBench.CG6Game",
+                    new[] { CSharpSyntaxTree.ParseText("namespace NexusBench.CG6Game { public sealed class Marker { } }") },
+                    LoadedAssemblyReferences(),
+                    new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+                CSharpGeneratorDriver.Create(new Nexus.Generator.NexusBinderGenerator())
+                    .RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
+                string generated = output.SyntaxTrees.FirstOrDefault(t => t.FilePath.EndsWith("NexusGeneratedBinder.g.cs"))?.ToString() ?? string.Empty;
+                bool generatorClean = generated.Length > 0 && !generated.Contains(fixtureNamespace);
+                bool generatorGameKept = HasRegistration(generated, "RegisterConstructorFactory", "NexusBench.CodeGenTarget");
+
+                ok = editorBinderClean && editorLinkClean && editorGameKept && generatorClean && generatorGameKept;
+                detail = $"editorBinderClean={editorBinderClean} editorLinkXmlClean={editorLinkClean} editorGameKept={editorGameKept} " +
+                         $"sourceGeneratorClean={generatorClean} sourceGeneratorGameKept={generatorGameKept}";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report(name, ok, detail);
+        }
+
+        // ─── CG7: every Nexus package assembly is recognized and preserves itself (#110) ───
+        // Read from the repository's asmdefs, so a new package is covered the day it is added. A runtime assembly
+        // the two package predicates (editor and source generator) miss would be registered by games again; one
+        // that references the core without an <assembly> element in its package's link.xml would lose its
+        // reflection-constructed types to IL2CPP stripping above the default level; one compiled only under a
+        // define needs ignoreIfMissing, or a project without that SDK fails to build.
+
+        private static void Test_PackageAssemblies_Recognized_And_Preserved()
+        {
+            const string name = "CG7. PackageAssemblies_Recognized_And_Preserved";
+            bool ok = false;
+            string detail;
+            try
+            {
+                string packages = new[] { "../../Nexus/Packages", "Nexus/Packages" }.FirstOrDefault(Directory.Exists);
+                if (packages == null)
+                {
+                    Report(name, false, "Nexus/Packages not found from the working directory");
+                    return;
+                }
+                string coreGuid = File.ReadAllLines(Path.Combine(packages, "com.nexus.core/Runtime/com.nexus.core.asmdef.meta"))
+                    .First(l => l.StartsWith("guid: ", StringComparison.Ordinal)).Substring(6).Trim();
+
+                var problems = new List<string>();
+                int checkedAssemblies = 0;
+                foreach (string asmdef in Directory.GetFiles(packages, "*.asmdef", SearchOption.AllDirectories))
+                {
+                    using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(asmdef));
+                    var root = json.RootElement;
+                    string assembly = root.GetProperty("name").GetString();
+                    if (NexusAssemblyPolicy.IsTestAssembly(assembly) || NexusAssemblyPolicy.IsEditorAssembly(assembly)) continue;
+                    checkedAssemblies++;
+
+                    if (!NexusAssemblyPolicy.IsNexusPackageAssembly(assembly) || !Nexus.Generator.NexusBinderGenerator.IsNexusPackageAssembly(assembly))
+                        problems.Add($"{assembly}: not recognized as a package assembly");
+
+                    bool referencesCore = assembly == "com.nexus.core"
+                        || (root.TryGetProperty("references", out var refs)
+                            && refs.EnumerateArray().Any(r => r.GetString() == "com.nexus.core" || r.GetString() == "GUID:" + coreGuid));
+                    if (!referencesCore) continue;
+
+                    string package = Path.Combine(packages, Path.GetRelativePath(packages, asmdef).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0]);
+                    string element = Directory.GetFiles(package, "link.xml", SearchOption.AllDirectories)
+                        .SelectMany(File.ReadAllLines)
+                        .FirstOrDefault(l => l.Contains($"<assembly fullname=\"{assembly}\""));
+                    bool gated = root.TryGetProperty("defineConstraints", out var defines) && defines.GetArrayLength() > 0;
+                    if (element == null) problems.Add($"{assembly}: no <assembly> element in a link.xml of its package");
+                    else if (gated && !element.Contains("ignoreIfMissing=\"true\"")) problems.Add($"{assembly}: compiled under a define, but its link.xml element has no ignoreIfMissing");
+                }
+
+                // Game assemblies, the harness runtime and empty names stay game code for both predicates.
+                string[] gameNames = { "Assembly-CSharp", "Gigawatt", "Wickling.Monetization", "ChipCrisis.Game", "NexusBenchmark", "Nexus.Starter", string.Empty, null };
+                foreach (string game in gameNames)
+                    if (NexusAssemblyPolicy.IsNexusPackageAssembly(game) || Nexus.Generator.NexusBinderGenerator.IsNexusPackageAssembly(game))
+                        problems.Add($"'{game}': taken for a package assembly");
+
+                ok = checkedAssemblies > 0 && problems.Count == 0;
+                detail = $"{checkedAssemblies} package runtime assemblies checked; " + (problems.Count == 0 ? "no problems" : string.Join(" | ", problems));
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            Report(name, ok, detail);
+        }
+
         private static void Test_ConstructorFactoryPolicy_Decisions()
         {
             bool ok = false;
@@ -541,20 +694,9 @@ namespace NexusBench.CG2Source
                 bool plainKept = NexusCodeGenerator.CanEmitConstructorFactory(typeof(CodeGenTarget));
                 bool mediatorKept = NexusCodeGenerator.CanEmitConstructorFactory(typeof(CodeGenMediator));
 
-                // EXACT-name match: the package's test/editor/testing assemblies share the
-                // "com.nexus.core." prefix and must keep their factories.
-                bool runtimeMatched = NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core");
-                bool siblingsKept = !NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core.tests")
-                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core.editor")
-                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core.editor.tests")
-                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly("com.nexus.core.testing")
-                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly("Gigawatt")
-                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly(string.Empty)
-                                    && !NexusCodeGenerator.IsPackageRuntimeAssembly(null);
-
-                ok = behaviourSkipped && assetSkipped && plainKept && mediatorKept && runtimeMatched && siblingsKept;
+                ok = behaviourSkipped && assetSkipped && plainKept && mediatorKept;
                 detail = $"behaviourSkipped={behaviourSkipped} assetSkipped={assetSkipped} plainKept={plainKept} " +
-                         $"mediatorKept={mediatorKept} runtimeMatched={runtimeMatched} siblingsKept={siblingsKept}";
+                         $"mediatorKept={mediatorKept}";
             }
             catch (Exception ex)
             {
@@ -601,6 +743,10 @@ namespace NexusBench.CG2Source
                 bool postConstructInjector = source.Contains("RegisterInjector<NexusBench.CodeGenPostConstruct>");
                 bool namedEmitted = source.Contains("instance.Field = di.Resolve<NexusBench.CodeGenDep>(\"special\")")
                                     && source.Contains("di.TryResolve<NexusBench.CodeGenDep>(\"special\")");
+                // [OptionalInject] mirrors the runtime: TryResolve (unbound stays null, never throws), and the clearer nulls it.
+                bool optionalEmitted = source.Contains("instance.Missing = di.TryResolve<NexusBench.CodeGenUnbound>();")
+                                       && source.Contains("instance.Missing = null;")
+                                       && !source.Contains("di.Resolve<NexusBench.CodeGenUnbound>");
 
                 string[] compileErrors = CompileGeneratedBinder(source, out Assembly binderAssembly);
                 if (compileErrors.Length > 0)
@@ -657,10 +803,10 @@ namespace NexusBench.CG2Source
 
                 ok = hasTargetFactory && hasMarkedFactory && hasInjector && skippedValueParam
                      && visibleBaseInjector && emittableMemberInjector && nonEmittableInjectorAbsent
-                     && postConstructInjector && namedEmitted && namedResolved
+                     && postConstructInjector && namedEmitted && namedResolved && optionalEmitted
                      && target.Dep != null && ReferenceEquals(target.Dep, shared)
                      && multi.Dep != null && !multi.ParameterlessUsed
-                     && injected.Dep != null
+                     && injected.Dep != null && injected.Missing == null
                      && postConstruct.PostRan
                      && visibleBase.ReadDep() != null && emittableMember.HasDep && nonEmittableMember.HasDep
                      && ReferenceEquals(overridden.Dep, manual);
@@ -668,6 +814,7 @@ namespace NexusBench.CG2Source
                          $"valueParamSkipped={skippedValueParam} visibleBaseInjector={visibleBaseInjector} " +
                          $"emittableMemberInjector={emittableMemberInjector} nonEmittableInjectorAbsent={nonEmittableInjectorAbsent} " +
                          $"postConstructInjector={postConstructInjector} namedEmitted={namedEmitted} namedResolved={namedResolved} " +
+                         $"optionalEmitted={optionalEmitted} optionalUnboundNull={injected.Missing == null} " +
                          $"targetReadonly={target.Dep != null} markedCtorWon={!multi.ParameterlessUsed} injected={injected.Dep != null} " +
                          $"postConstructRan={postConstruct.PostRan} " +
                          $"visibleBaseInjected={visibleBase.ReadDep() != null} emittableInjected={emittableMember.HasDep} " +
@@ -708,18 +855,7 @@ namespace NexusBench.CG2Source
         {
             assembly = null;
             peBytes = null;
-            var references = new List<MetadataReference>();
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
-            {
-                if (asm.IsDynamic) continue;
-                try
-                {
-                    string location = asm.Location;
-                    if (string.IsNullOrEmpty(location)) continue;
-                    references.Add(MetadataReference.CreateFromFile(location));
-                }
-                catch { }
-            }
+            var references = LoadedAssemblyReferences();
             if (extraReferences != null) references.AddRange(extraReferences);
 
             var syntaxTree = CSharpSyntaxTree.ParseText(source);
@@ -744,6 +880,25 @@ namespace NexusBench.CG2Source
                 assembly = Assembly.Load(peBytes);
             }
             return Array.Empty<string>();
+        }
+
+        /// <summary>Every file-backed assembly loaded in the harness: the surface the binder sees in Unity's compilation.
+        /// Byte-loaded assemblies have no Location and are skipped.</summary>
+        private static List<MetadataReference> LoadedAssemblyReferences()
+        {
+            var references = new List<MetadataReference>();
+            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (asm.IsDynamic) continue;
+                try
+                {
+                    string location = asm.Location;
+                    if (string.IsNullOrEmpty(location)) continue;
+                    references.Add(MetadataReference.CreateFromFile(location));
+                }
+                catch { }
+            }
+            return references;
         }
 
         /// <summary>True when the emitted binder contains a registration of the form

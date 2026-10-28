@@ -83,7 +83,9 @@ persistent global root; `ContextFactory.StartAsync` for scan-free code-first sta
 
 **AOT and IL2CPP**: the editor generator (Nexus → Generate AOT Binder) and the Roslyn source
 generator (`SourceGenerator~/`) emit injectors, constructor factories and typed command
-dispatchers; only the editor generator writes `link.xml`. `NexusBinderBuildGuard` stops a player build with a stale binder,
+dispatchers; only the editor generator writes `link.xml`. Both cover the game's own types: the Nexus packages' types
+take the reflection path and each package preserves them in its own `link.xml`, so a package update does not leave a
+binder naming a removed type (issue #110). `NexusBinderBuildGuard` stops a player build with a stale binder,
 `NexusBinderSelfHeal` recovers a binder that no longer compiles, and a stale generated injector
 falls back to reflection at runtime with a warning.
 

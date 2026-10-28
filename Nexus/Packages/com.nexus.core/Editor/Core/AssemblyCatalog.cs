@@ -32,6 +32,9 @@ namespace Nexus.Editor
         /// <summary>True for known third-party assemblies that are not game code.</summary>
         public static bool IsThirdPartyAssembly(string name) => NexusAssemblyPolicy.IsThirdPartyAssembly(name);
 
+        /// <summary>True for the Nexus packages' own assemblies, whose types a game's binder does not register (#110).</summary>
+        public static bool IsNexusPackageAssembly(string name) => NexusAssemblyPolicy.IsNexusPackageAssembly(name);
+
         /// <summary>True for Unity test assemblies and '.testing' support assemblies.</summary>
         public static bool IsTestAssembly(string name) => NexusAssemblyPolicy.IsTestAssembly(name);
 
@@ -78,7 +81,8 @@ namespace Nexus.Editor
 
         /// <summary>
         /// Game assemblies that reference the Nexus runtime, plus the runtime itself. Only these can contain
-        /// [Inject] members, commands or network signals, so this is the exact universe for link.xml preservation.
+        /// [Inject] members, commands or network signals. The binder generator leaves out the Nexus packages' own
+        /// assemblies among them (<see cref="IsNexusPackageAssembly"/>); each package preserves its types itself.
         /// A precompiled SDK the name policy has never seen (an ads or store plugin) cannot reference Nexus and is excluded.
         /// </summary>
         public static IEnumerable<Assembly> NexusReferencingAssemblies()

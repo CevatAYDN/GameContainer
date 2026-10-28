@@ -4,7 +4,8 @@
 // Compile-time counterpart of the editor-time NexusCodeGenerator: discovers
 // [Inject]/[OptionalInject]/[Construct] types, single-public-ctor factories and
 // generic-only ICommand<T>/IAsyncCommand<T> implementations in the CURRENT
-// compilation plus every game-relevant referenced assembly, and emits the same
+// compilation plus every game-relevant referenced assembly (the Nexus packages'
+// own assemblies excluded: each preserves its types itself, #110), and emits the same
 // NexusGeneratedBinder shape the editor generator produces (RegisterConstructorFactory
 // / RegisterInjector / RegisterClearer / RegisterGeneric*Dispatcher / PreserveMembers).
 //
@@ -61,6 +62,10 @@ namespace Nexus.Generator
             "StandardSocketsHttpHandler"
         };
 
+        // Mirror of NexusAssemblyPolicy.IsNexusPackageAssembly, which this netstandard2.0 analyzer cannot reference;
+        // the harness (CG7) fails when the two disagree on a package or game assembly name.
+        private static readonly string[] NexusPackagePrefixes = { "com.nexus.", "Nexus.Ads." };
+
         private static readonly DiagnosticDescriptor s_valueTypeMemberError = new DiagnosticDescriptor(
             id: "NEXUS_SG001",
             title: "Value-type injection member is not supported",
@@ -106,6 +111,17 @@ namespace Nexus.Generator
             if (name.IndexOf("tests", StringComparison.OrdinalIgnoreCase) >= 0) return false;
             if (name.EndsWith(".testing", StringComparison.OrdinalIgnoreCase)) return false;
             return true;
+        }
+
+        /// <summary>The Nexus packages' own assemblies: a game's binder registers none of their types (#110).</summary>
+        internal static bool IsNexusPackageAssembly(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return false;
+            for (int i = 0; i < NexusPackagePrefixes.Length; i++)
+            {
+                if (name.StartsWith(NexusPackagePrefixes[i], StringComparison.Ordinal)) return true;
+            }
+            return false;
         }
 
         private static IEnumerable<INamedTypeSymbol> WalkAllTypes(INamespaceSymbol ns)
@@ -248,7 +264,8 @@ namespace Nexus.Generator
                 Visit(type, fromCurrentCompilation: true);
             foreach (var asm in compilation.SourceModule.ReferencedAssemblySymbols)
             {
-                if (!IsGameAssembly(asm.Name)) continue;
+                // A package type named in a game's binder breaks the game's compile the day the package removes it (#110).
+                if (!IsGameAssembly(asm.Name) || IsNexusPackageAssembly(asm.Name)) continue;
                 if (string.Equals(asm.Name, compilation.AssemblyName, StringComparison.Ordinal)) continue;
                 foreach (var type in WalkAllTypes(asm.GlobalNamespace))
                     Visit(type, fromCurrentCompilation: false);

@@ -57,6 +57,7 @@ namespace Nexus.Editor
         public static bool IsThirdPartyAssembly(string name) => Nexus.Core.NexusAssemblyPolicy.IsThirdPartyAssembly(name);
         public static bool IsTestAssembly(string name) => Nexus.Core.NexusAssemblyPolicy.IsTestAssembly(name);
         public static bool IsEditorAssembly(string name) => Nexus.Core.NexusAssemblyPolicy.IsEditorAssembly(name);
+        public static bool IsNexusPackageAssembly(string name) => Nexus.Core.NexusAssemblyPolicy.IsNexusPackageAssembly(name);
         public static string GetSimpleName(Assembly assembly) => Nexus.Core.NexusAssemblyPolicy.GetSimpleName(assembly);
 
         public static IEnumerable<Assembly> GameAssemblies(bool includeTests = false)

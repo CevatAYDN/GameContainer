@@ -32,7 +32,14 @@
     <type fullname="Nexus.Core.ViewBinder" preserve="all"/>
     <type fullname="Nexus.Core.CommandHandlerInfo" preserve="all"/>
     <type fullname="Nexus.Core.CompositeTriggerState" preserve="all"/>
+
+    <!-- The services a game binds and the reflection path constructs. A game's generated link.xml lists
+         no package type (#110), so the package preserves them here. -->
+    <namespace fullname="Nexus.Core.Services" preserve="all"/>
   </assembly>
+
+  <!-- Compiled only with com.unity.collections (UNITY_COLLECTIONS). -->
+  <assembly fullname="com.nexus.core.dots" preserve="all" ignoreIfMissing="true"/>
 
   <!-- P1-13 fix: preserve UnityEngine.UI types accessed by WindowManager at runtime -->
   <assembly fullname="UnityEngine.UI" ignoreIfMissing="true">

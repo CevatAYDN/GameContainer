@@ -263,22 +263,12 @@ namespace Nexus.Editor
         }
 
         /// <summary>
-        /// The package's own runtime assembly, matched by EXACT name: its test, editor and
-        /// testing assemblies share the "com.nexus.core." prefix but are ordinary generator
-        /// inputs, so a prefix match would silently drop their factories.
-        /// </summary>
-        internal static bool IsPackageRuntimeAssembly(string assemblyName)
-            => string.Equals(assemblyName, "com.nexus.core", StringComparison.Ordinal);
-
-        /// <summary>
         /// True when a constructor factory (<c>new T(...)</c>) may be emitted for the type.
         /// UnityEngine.Object types (MonoBehaviour, ScriptableObject, Component...) are created by
-        /// Unity and must never be constructed with <c>new</c>; the package's own runtime types
-        /// keep the reflection path.
+        /// Unity and must never be constructed with <c>new</c>.
         /// </summary>
         internal static bool CanEmitConstructorFactory(Type type)
-            => !typeof(UnityEngine.Object).IsAssignableFrom(type)
-                && !IsPackageRuntimeAssembly(AssemblyCatalog.GetSimpleName(type.Assembly));
+            => !typeof(UnityEngine.Object).IsAssignableFrom(type);
 
         /// <summary>E-C1: sanitizes a C# type name into a valid identifier prefix for cache fields.</summary>
         private static string GetSafeIdentifierName(string csharpTypeName)
@@ -347,6 +337,9 @@ namespace Nexus.Editor
             var emittableAssemblies = new HashSet<Assembly>(AssemblyCatalog.BinderAssemblies(settings.BinderOutputPath));
             foreach (var assembly in AssemblyCatalog.NexusReferencingAssemblies())
             {
+                // The Nexus packages' types take the reflection path and each package's own link.xml preserves them:
+                // a package type named here would break the game's compile the day the package removes it (#110).
+                if (AssemblyCatalog.IsNexusPackageAssembly(AssemblyCatalog.GetSimpleName(assembly))) continue;
                 bool emittable = emittableAssemblies.Contains(assembly);
                 foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
