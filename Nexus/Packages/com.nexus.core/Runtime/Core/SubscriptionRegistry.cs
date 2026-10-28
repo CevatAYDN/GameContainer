@@ -6,10 +6,12 @@ using System.Threading.Tasks;
 namespace Nexus.Core
 {
     /// <summary>
-    /// Subscription node for the zero-allocation linked-list subscription registry.
+    /// Subscription node for the linked-list subscription registry.
     /// Public because <see cref="SubscriptionRegistry.SubscriptionsReadCopy"/> exposes it to
-    /// dispatch iterators (the owning bus walks the linked list lock-free). Pooled to achieve
-    /// 0-GC on Subscribe/Unsubscribe.
+    /// dispatch iterators (the owning bus walks the linked list lock-free). Pooled, so a
+    /// Subscribe reuses a swept node; Subscribe still allocates its subscription and a new read
+    /// copy, and the sweep after Unsubscribe a new read copy (registration is outside the hot-path
+    /// contract, README "Performance scope").
     /// </summary>
     public sealed class SubscriptionNode
     {
@@ -33,7 +35,7 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// Thread-safe pool for SubscriptionNode instances — zero allocation on Subscribe/Unsubscribe.
+    /// Thread-safe pool for SubscriptionNode instances: the sweep returns nodes, Subscribe reuses them.
     /// </summary>
     internal static class SubscriptionNodePool
     {

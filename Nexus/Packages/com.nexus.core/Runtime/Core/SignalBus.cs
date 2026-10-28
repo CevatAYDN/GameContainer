@@ -15,7 +15,7 @@ namespace Nexus.Core
     /// (never unobserved) rather than crashing the process on the Unity
     /// SynchronizationContext. Note: Run() already fast-paths completed tasks, so
     /// RunAsync is only reached for genuinely suspended work — the ValueTask keeps
-    /// the completed-tail allocation-free, and suspended work allocates one state
+    /// the completed tail free of a Task, and suspended work allocates one state
     /// machine instead of a Task.
     /// </summary>
     internal static class SafeAsyncRunner
@@ -188,8 +188,8 @@ namespace Nexus.Core
         public IReadOnlyDictionary<Type, IReadOnlyList<CommandHandlerInfo>> RegisteredHandlers => _commandRegistry.RegisteredHandlers;
 
         /// <summary>
-        /// Cached per-signal-type trace label so the trace ring buffer
-        /// stays allocation-free on the hot path.
+        /// Cached per-signal-type trace label, built once per type, so the trace ring
+        /// buffer builds no string per fire.
         /// </summary>
         private static class SignalTraceLabel<T> where T : struct
         {
@@ -429,7 +429,7 @@ namespace Nexus.Core
         private volatile bool _hasAnyCompositeTriggers;
 
         // ─── Signal filters (ISignalFilter<T>) ───
-        // Ref-based, zero-allocation middleware. Per-bus, per-signal-type arrays snapshotted on
+        // Ref-based middleware that never boxes the signal. Per-bus, per-signal-type arrays snapshotted on
         // registration; the volatile flag keeps the no-filter hot path to a single branch, and
         // the dictionary is only touched when at least one filter exists on this bus. A filter
         // returning false cancels the signal before ANY dispatch (commands, subscriptions and
@@ -701,11 +701,10 @@ namespace Nexus.Core
                 // P0-CR fix: defer boxing until we find a non-empty interceptor list.
                 // When no interceptors are registered (the common case), the struct is
                 // never copied to the heap, eliminating the per-Fire() GC allocation.
-                // The "0 GC allocation" claim is CONDITIONAL — when
-                // interceptors ARE registered, the signal struct is boxed once per Fire()
+                // The 0 B contract (README "Performance scope", harness GCA1) holds without
+                // interceptors only: when they ARE registered, the signal struct is boxed once per Fire()
                 // (boxedSignal ??= (object)signal). This is inherent to the interceptor
-                // API (which operates on object), so the claim is documented as:
-                // "0 GC allocation in steady state when no interceptors are registered."
+                // API (which operates on object).
                 bool interceptorCancelled = false;
                 if (_context is Context ctx && ctx.HasInterceptors)
                 {
@@ -763,7 +762,7 @@ namespace Nexus.Core
                     // lose the claim and skip — guaranteeing exactly-once even under races.
                     // Indexed, not foreach: `handlers` is IReadOnlyList<T>, so foreach boxes
                     // List<T>'s struct enumerator — 40 bytes on every dispatch with a handler,
-                    // which is what broke the zero-allocation guarantee on this hot path.
+                    // which is what broke this hot path's 0 B contract (GCA1).
                     for (int i = 0; i < handlers.Count; i++)
                     {
                         var handler = handlers[i];
@@ -1177,9 +1176,8 @@ namespace Nexus.Core
         [ThreadStatic] private static int s_compositeDepth;
 
         // Nested composite dispatch previously allocated a fresh
-        // List<> on EVERY nested call — a per-Fire() heap allocation that broke the
-        // "0 GC" claim whenever a composite command fired another signal completing
-        // another trigger. Now nested frames rent a buffer from a ThreadStatic free
+        // List<> on EVERY nested call — a per-Fire() heap allocation whenever a composite command fired another signal
+        // completing another trigger. Now nested frames rent a buffer from a ThreadStatic free
         // list (bounded by the sync reentrancy cap MaxStackDepth=10, so a runaway
         // chain cannot grow it unboundedly) and return it when the frame unwinds.
         // The outer frame keeps its own buffer untouched.
@@ -1234,7 +1232,7 @@ namespace Nexus.Core
                 // the buffer.Count == 0 path below does this after the lock, but this
                 // early-out skips that path and would otherwise strand the buffer,
                 // leaking one List<> allocation per nested composite fire of a
-                // non-composite signal (the 0-GC claim in the nested case).
+                // non-composite signal.
                 if (isNested && s_nestedBufferFreeList == null)
                     s_nestedBufferFreeList = buffer;
                 return;
@@ -1380,8 +1378,8 @@ namespace Nexus.Core
         /// Fire-and-forget async dispatch used by <see cref="BroadcastCrossContext"/> when
         /// the TARGET bus has async handlers/subscriptions for the broadcast signal. Kept in a
         /// separate [NoInlining] method so the lambda closure and interpolated error string live
-        /// off the cross-context hot path (which must stay allocation-free — the ZeroGC harness
-        /// test measures 0 bytes per broadcast).
+        /// off the cross-context hot path (harness stress 4, CrossContext_MultiHierarchy_Routing_ZeroGC,
+        /// measures 0 bytes per broadcast).
         /// </summary>
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
         private void RunCrossContextAsyncDispatch<T>(T signal) where T : struct

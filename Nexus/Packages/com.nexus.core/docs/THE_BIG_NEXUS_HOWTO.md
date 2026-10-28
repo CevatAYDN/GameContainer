@@ -32,7 +32,7 @@ The first framework to do this was StrangeIoC (and its ancestor Robotlegs). Nexu
 language — Context, Signal, Command, Mediator — but changes three things at the root:
 
 1. **Performance:** signals are `struct`s, commands and mediators are pooled,
-   resolution produces zero GC on the hot path.
+   a cached resolve measured 0 B (the package README's [Performance scope](../README.md#performance-scope) names each check).
 2. **Discipline:** there are two registration paths (explicit `BindCommand` and the prototype `[SignalHandler]`)
    but only one is canonical, and this guide tells you which to use when,
    with the reasons.
@@ -260,7 +260,7 @@ var elite = Units.Get(UnitType.Warrior, "elite"); // named
 ```
 
 `ToFactory` gives a fresh instance on every `Get`; `To<T>()` resolves the concrete type from the DI
-container; the read paths are zero GC (just a dictionary lookup).
+container; the read paths are a dictionary lookup, 0 B after warmup (harness Z1).
 
 **When to use it:** *data* mappings that fall outside the MVCS patterns.
 **When not to use it:** to glue on behaviour that should already live as a

@@ -327,7 +327,7 @@ namespace Nexus.Core
         // captures `this` would allocate a NEW closure object on EVERY GetCommand call —
         // i.e. once per command execution per signal fire — which is exactly the kind of
         // heap churn this framework exists to eliminate on mobile. Caching the delegate in
-        // the constructor keeps the hot path allocation-free while staying on the classic
+        // the constructor keeps the hot path at 0 B (GCA4) while staying on the classic
         // GetOrAdd(TKey, Func<TKey,TValue>) overload, which is available in .NET Standard
         // 2.0 / .NET Framework 4.x (the GetOrAdd<TArg>(..., TArg) overload that passes the
         // manager as an argument only exists in .NET Standard 2.1+, so it would break the

@@ -1,6 +1,6 @@
 # Addressables Adapter — `IAssetLoadService`
 
-**Neden bu dosya:** `com.nexus.core` bilinçli olarak üçüncü taraf bağımlılıksız kalıyor (sıfır-GC + AOT + paket hafifliği). Adreslenebilir aset hattı isteyen stüdyolar için seam (`IAssetLoadService`) pakette, adaptör **bu dokümanda** — Addressables paketini kurduğunuzda kendi projenize yapıştırın. Çağıran kod hiç değişmez.
+**Neden bu dosya:** `com.nexus.core` bilinçli olarak üçüncü taraf bağımlılıksız kalıyor (AOT + paket hafifliği). Adreslenebilir aset hattı isteyen stüdyolar için seam (`IAssetLoadService`) pakette, adaptör **bu dokümanda** — Addressables paketini kurduğunuzda kendi projenize yapıştırın. Çağıran kod hiç değişmez.
 
 ## 1. Kurulum
 

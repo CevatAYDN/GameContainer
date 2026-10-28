@@ -30,7 +30,7 @@ namespace Nexus.Netcode
     {
         private readonly ISnapshotableModel<TState> _model;
         private readonly Dictionary<int, TState> _snapshots = new();
-        // Reusable list to avoid allocating a new List per Prune call (0-GC steady state).
+        // Reusable list to avoid allocating a new List per Prune call.
         private readonly List<int> _keysToPrune = new();
 
         public NetworkModelSnapshotHandler(ISnapshotableModel<TState> model)
@@ -170,7 +170,7 @@ namespace Nexus.Netcode
         /// </summary>
         public void ReplaySignals(int tick, ISignalBus localSignalBus)
         {
-            // Reuse a private replay buffer so rollback remains allocation-free after the
+            // Reuse a private replay buffer so a replay stays at 0 B (Netcode_Rollback_And_Replay_ZeroGC) after the
             // history's initial capacity is reached.  The replay lock serializes concurrent
             // rollback callers; user handlers run after the history lock is released and may
             // safely append a new signal for a later tick.
@@ -220,10 +220,10 @@ namespace Nexus.Netcode
 
         public void RemoveSignalsAfter(int tick)
         {
-            // In-place compaction: single O(N) pass, zero allocation. Repeated RemoveAt
+            // In-place compaction: single O(N) pass, no new list. Repeated RemoveAt
             // in the old backwards loop was O(N²) for large histories (each removal
             // shifts every later element). List.RemoveAll would allocate a predicate;
-            // manual compaction keeps the 0-GC steady-state guarantee.
+            // manual compaction keeps it at 0 B (Netcode_Rollback_And_Replay_ZeroGC).
             lock (_signalsLock)
             {
                 int write = 0;
@@ -244,7 +244,7 @@ namespace Nexus.Netcode
 
         public void Prune(int confirmedTick)
         {
-            // Same O(N), zero-allocation in-place compaction as RemoveSignalsAfter —
+            // Same O(N) in-place compaction as RemoveSignalsAfter —
             // keeps only signals strictly newer than the confirmed tick.
             lock (_signalsLock)
             {
@@ -320,7 +320,7 @@ namespace Nexus.Netcode
         private NetworkSignalHistory<T> GetOrCreateHistory<T>() where T : struct, INetworkSignal
         {
             var type = typeof(T);
-            // All writers hold _tickLock. Keep a list for allocation-free lifecycle
+            // All writers hold _tickLock. Keep a list for lifecycle
             // iteration; ConcurrentDictionary.Values materializes a collection each call.
             if (_histories.TryGetValue(type, out var existing)) return (NetworkSignalHistory<T>)existing;
             var history = new NetworkSignalHistory<T>();
@@ -422,7 +422,7 @@ namespace Nexus.Netcode
             lock (_tickLock) _journal.MarkApplied(eventId);
             try
             {
-                // Preserve the allocation-free owner-thread fast path.  Async handlers still use
+                // Preserve the inline owner-thread fast path.  Async handlers still use
                 // the queued async-safe dispatcher; sync-only handlers run inline.
                 if (_localSignalBus is SignalBus concreteBus && concreteBus.HasAsyncHandlers(typeof(T)))
                     concreteBus.FireQueued(signal);

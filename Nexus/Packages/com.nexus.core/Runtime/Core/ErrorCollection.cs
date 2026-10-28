@@ -391,8 +391,8 @@ namespace Nexus.Core
         public static ErrorEntry[] GetFrequentErrors(int minCount = 3, int limit = 10)
         {
             // Snapshot before filtering. Manual filter + sort instead of the
-            // LINQ Where/OrderByDescending/Take iterator chain (allocation-free apart from
-            // the snapshot, the match list, and the result array).
+            // LINQ Where/OrderByDescending/Take iterator chain: no iterator or delegate per
+            // stage; it allocates the snapshot, the match list and the result array.
             var snapshot = s_errors.ToArray();
             var matches = new List<ErrorEntry>();
             foreach (var e in snapshot)

@@ -154,8 +154,8 @@ OnInitialize → OnStart), the PostContext phase fires. **The PC1–PC5 PlayMode
   phases (commands first, then subscribers observe).
 - `BindCommand<TSignal,TCommand>` / `BindSignal<TSignal>().To<TCommand>()` /
   `.Once()` / composite (`[CompositeSignalHandler]`).
-- **Difference:** Strange defines signals as classes; Nexus as **structs**
-  (GC-free hot path). In Nexus, signal types are portable value types.
+- **Difference:** Strange defines signals as classes; Nexus as **structs**.
+  In Nexus, signal types are portable value types.
 
 **Status:** ✅ Closed; the GC difference is deliberate (struct signals + pooling).
 
@@ -176,8 +176,9 @@ inside MVCS = type-specific API) is preserved.
 
 ## 7. Strengths Nexus has that Strange does not
 
-- **Zero-GC hot path:** struct signals, pooled command/mediator/subscription
-  nodes, snapshot-read-copy (read paths thread-safe without locking).
+- **Measured hot path:** struct signals, pooled command/mediator/subscription
+  nodes, snapshot-read-copy (read paths thread-safe without locking); the package
+  README's [Performance scope](../README.md#performance-scope) names the check behind each 0 B contract.
 - **First-class async:** `FireAsync`, `IAsyncCommand<T>`, timeout + cancellation,
   sequential/parallel dispatch guarantees.
 - **Pooling + telemetry:** mediator/subscription pools, leak warnings,
@@ -201,7 +202,7 @@ inside MVCS = type-specific API) is preserved.
 | Polymorphic binding | yes | yes (shared singleton) | ✅ Closed |
 | Cross-context | binder + dispatcher | `[CrossContext]` + scope tag / `BindCrossBoundary<T>` + `ResolveCrossBoundary<T>` | ✅ Closed |
 | Mediator lifecycle | OnRegister/OnRemove / ToAbstraction | OnBind/OnUnbind + pooling / `[Mediator(TMediator, TIAbstraction)]` | ✅ Closed + stronger |
-| Signal | class-based | struct-based (GC-free) | ✅ Different design |
+| Signal | class-based | struct-based | ✅ Different design |
 | PostContexts | global phase once all contexts are ready | `IPostContextLifecycle` + `NexusRuntime.FinalizeInitializationAsync()` | ✅ Closed (PC1–PC5) |
 | Async | limited | first-class | ✅ Nexus ahead |
 | Pooling/telemetry | none | comprehensive | ✅ Nexus ahead |

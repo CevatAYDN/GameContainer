@@ -4,7 +4,7 @@ namespace Nexus.Core
 {
     /// <summary>
     /// Drag-and-drop MonoBehaviour component for defining a DI lifetime scope directly in the Unity hierarchy.
-    /// Provides VContainer-style LifetimeScope workflow while leveraging Nexus's zero-GC SignalBus,
+    /// Provides VContainer-style LifetimeScope workflow while leveraging Nexus's SignalBus,
     /// anti-cheat reactive models, and reverse disposal order.
     /// </summary>
     [AddComponentMenu("Nexus/Nexus Lifetime Scope")]

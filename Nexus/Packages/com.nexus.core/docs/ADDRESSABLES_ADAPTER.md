@@ -1,6 +1,6 @@
 # Addressables Adapter — `IAssetLoadService`
 
-**Why this file:** `com.nexus.core` deliberately stays free of third-party dependencies (zero GC + AOT + a light package). For studios that want an Addressables asset pipeline, the seam (`IAssetLoadService`) is in the package and the adapter is **in this document** — paste it into your own project once you have installed the Addressables package. Calling code does not change at all.
+**Why this file:** `com.nexus.core` deliberately stays free of third-party dependencies (AOT + a light package). For studios that want an Addressables asset pipeline, the seam (`IAssetLoadService`) is in the package and the adapter is **in this document** — paste it into your own project once you have installed the Addressables package. Calling code does not change at all.
 
 ## 1. Setup
 

@@ -82,7 +82,7 @@ CreateView()          OnEnable()           OnUpdate() (~200ms tick)
     ▼                     ▼                        ▼
 Build UI Tree         Subscribe events           Read state
 Subscribe callbacks   Register listeners         Render changes
-Cache references      Load static caches        (Zero-GC steady state)
+Cache references      Load static caches        (steady state)
 
 OnDisable()               Dispose()
     │                        │
@@ -112,7 +112,7 @@ Handles signal registration and command execution.
 - **Cross-Context Routing**: `IContextResolver` provides clean context lookup without exposing internal global registries.
 
 ### 3. `ObservableProperty<T>`
-Type-safe reactive property wrapper providing allocation-free change notifications to UI views and mediators.
+Type-safe reactive property wrapper providing change notifications to UI views and mediators, 0 B after the first subscription (harness GCA2; [Performance scope](../README.md#performance-scope)).
 
 ### 4. `NexusEditorPlugin` & `NexusWindow`
 Editor tools implement `INexusEditorPlugin`. The host window drives tab updates via `OnUpdate()` cadence (~200ms interval) without custom background timers.

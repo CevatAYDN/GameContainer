@@ -1,7 +1,7 @@
 namespace Nexus.Core
 {
     /// <summary>
-    /// Ref-based, zero-allocation signal filter (MessagePipe/VContainer-style middleware).
+    /// Ref-based signal filter that never boxes the signal (MessagePipe/VContainer-style middleware).
     /// Registered per signal type via <see cref="SignalBus.AddSignalFilter{T}"/> (instance form)
     /// or <see cref="SignalBus.AddSignalFilter{TSignal,TFilter}"/> (type form, container-resolved).
     /// Filters run in registration order BEFORE any dispatch; returning <c>false</c> cancels the

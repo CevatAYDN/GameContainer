@@ -6,7 +6,7 @@ namespace Nexus.Core
     /// <summary>
     /// Generic multicast-handler snapshot cache — the shared observer core for the whole
     /// observable family (SecureObservable*, ObservableProperty, ObservableList).
-    /// Owns the handler list, the zero-GC snapshot cache, the dirty flag and the handler
+    /// Owns the handler list, the snapshot cache, the dirty flag and the handler
     /// lock — the block that was previously copy-pasted across every observable type.
     /// Handler registration dedupes: registering the same delegate twice is a no-op.
     /// </summary>
@@ -59,7 +59,7 @@ namespace Nexus.Core
             }
         }
 
-        /// <summary>Returns the snapshot cache. Zero-GC AND lock-free on the hot path:
+        /// <summary>Returns the snapshot cache. Lock-free and 0 B on the hot path (harness GCA2, GCA7):
         /// the array is rebuilt on the write side whenever the handler set changes.</summary>
         public TDelegate[] GetSnapshot() => _snapshotCache;
     }
@@ -91,10 +91,10 @@ namespace Nexus.Core
         public void RemoveOnChanged(Action<T, T> handler) => _delegates.Remove(handler);
         public void Clear() => _delegates.Clear();
 
-        /// <summary>Returns the current handler snapshot (zero-GC cached).</summary>
+        /// <summary>Returns the current handler snapshot (cached).</summary>
         public Action<T, T>[] GetSnapshot() => _delegates.GetSnapshot();
 
-        /// <summary>Invokes the snapshot cache with the change. Zero-GC on the hot path:
+        /// <summary>Invokes the snapshot cache with the change. 0 B on the hot path (harness GCA2, GCA7):
         /// the array is rebuilt only when the handler set changed since the last notify.
         /// Reentrancy-safe: a handler that writes the value is coalesced, not recursed.</summary>
         public void Notify(T oldValue, T newValue) => Notify(oldValue, newValue, 0L);
@@ -205,7 +205,7 @@ namespace Nexus.Core
         // Scratch buffers are THREAD-STATIC rather than shared under a global lock: keys
         // are rotated on every value write (not only at construction), so a single static
         // lock serialized every secure write across the whole game. RandomNumberGenerator
-        // is thread-safe, so per-thread buffers keep the path allocation-free AND
+        // is thread-safe, so per-thread buffers keep the path at 0 B (GCA5) AND
         // contention-free.
         [ThreadStatic] private static byte[] s_intBuf;
         [ThreadStatic] private static byte[] s_longBuf;
@@ -540,10 +540,10 @@ namespace Nexus.Core
     /// Float storage core behind <see cref="SecureObservableFloat"/>: the IEEE-754 bit
     /// pattern is what gets obscured.
     ///
-    /// Zero-allocation float ↔ int re-interpretation via an explicit-layout union.
+    /// Float ↔ int re-interpretation via an explicit-layout union.
     /// Alternative: <c>Unsafe.As&lt;float, int&gt;(ref value)</c>
     /// (System.Runtime.CompilerServices.Unsafe) requires an unsafe context; the union
-    /// approach is CLS-compliant and allocation-free.
+    /// approach is CLS-compliant and needs no unsafe context.
     /// </summary>
     internal sealed class SecureFloatCore : SecureWord32Core<float>
     {

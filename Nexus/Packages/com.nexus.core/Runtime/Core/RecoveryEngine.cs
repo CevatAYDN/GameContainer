@@ -201,7 +201,7 @@ namespace Nexus.Core
         // aborted with "max fallback depth exceeded". AsyncLocal carries the depth through
         // the logical call chain (nested sync calls and awaits alike), which is exactly the
         // recursion this guard is meant to bound. The mutable box keeps increments and
-        // decrements allocation-free after the first access in a flow, and its field is
+        // decrements on one box after the first access in a flow, and its field is
         // volatile because continuations may run on other threads.
         private static readonly System.Threading.AsyncLocal<FallbackDepthBox> s_fallbackDepth = new();
         private const int MaxFallbackDepth = 3;

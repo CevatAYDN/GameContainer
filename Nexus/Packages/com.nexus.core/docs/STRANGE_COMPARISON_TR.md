@@ -154,8 +154,8 @@ OnInitialize → OnStart), PostContext fazı ateşlenir. **`Tests/Runtime/PostCo
   ayrımı (önce komutlar, sonra subscriber'lar gözlemler).
 - `BindCommand<TSignal,TCommand>` / `BindSignal<TSignal>().To<TCommand>()` /
   `.Once()` / composite (`[CompositeSignalHandler]`).
-- **Fark:** Strange sinyalleri sınıf olarak tanımlar; Nexus **struct** olarak
-  (GC'siz hot path). Nexus'ta sinyal tipleri taşınabilir value type'lardır.
+- **Fark:** Strange sinyalleri sınıf olarak tanımlar; Nexus **struct** olarak.
+  Nexus'ta sinyal tipleri taşınabilir value type'lardır.
 
 **Durum:** ✅ Kapalı; GC farkı bilinçli (struct sinyaller + havuzlama).
 
@@ -176,8 +176,9 @@ MVCS içi = tipe-özel API) korunuyor.
 
 ## 7. Nexus'un Strange'te olmayan güçleri
 
-- **Zero-GC hot path:** struct sinyaller, havuzlu komut/mediator/subscription
-  düğümleri, snapshot-read-copy (okuma yolları kilitlenmeden thread-safe).
+- **Ölçülen hot path:** struct sinyaller, havuzlu komut/mediator/subscription
+  düğümleri, snapshot-read-copy (okuma yolları kilitlenmeden thread-safe); her 0 B
+  sözleşmesinin arkasındaki kontrol paket README'sinin [Performance scope](../README.md#performance-scope) tablosunda.
 - **Async first-class:** `FireAsync`, `IAsyncCommand<T>`, timeout + cancellation,
   sequential/parallel dispatch garantileri.
 - **Havuzlama + telemetri:** mediator/subscription havuzları, sızıntı uyarıları,
@@ -201,7 +202,7 @@ MVCS içi = tipe-özel API) korunuyor.
 | Polimorfik binding | var | var (paylaşılan singleton) | ✅ Kapalı |
 | Cross-context | binder + dispatcher | `[CrossContext]` + scope tag / `BindCrossBoundary<T>` + `ResolveCrossBoundary<T>` | ✅ Kapalı |
 | Mediator lifecycle | OnRegister/OnRemove / ToAbstraction | OnBind/OnUnbind + pooling / `[Mediator(TMediator, TIAbstraction)]` | ✅ Kapalı + güçlü |
-| Signal | sınıf bazlı | struct bazlı (GC'siz) | ✅ Farklı tasarım |
+| Signal | sınıf bazlı | struct bazlı | ✅ Farklı tasarım |
 | PostContexts | tüm bağlamlar hazır olunca global faz | `IPostContextLifecycle` + `NexusRuntime.FinalizeInitializationAsync()` | ✅ Kapalı (PC1–PC5) |
 | Async | sınırlı | first-class | ✅ Nexus üstün |
 | Havuzlama/telemetri | yok | kapsamlı | ✅ Nexus üstün |

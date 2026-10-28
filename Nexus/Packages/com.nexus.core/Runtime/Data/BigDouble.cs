@@ -4,7 +4,7 @@ using UnityEngine.Scripting;
 namespace Nexus.Core
 {
     /// <summary>
-    /// Lightweight 0-GC struct for Idle & Incremental games supporting numbers up to 1e(9*10^18).
+    /// Lightweight struct for Idle & Incremental games supporting numbers up to 1e(9*10^18).
     /// Stores number as mantissa * 10^exponent with auto-normalization and Idle suffix formatting (K, M, B, T, aa, ab...).
     /// </summary>
     [Serializable]

@@ -8,7 +8,8 @@ namespace Nexus.Core
     /// A lightweight, zero-additional-allocation (steady-state) observable value wrapper.
     ///
     /// Supports multicast subscriptions. Subscribe/unsubscribe may allocate during
-    /// initial registration (list growth), but the notification hot path is allocation-free.
+    /// initial registration (list growth); a notification after the first subscription is 0 B
+    /// (harness GCA2, stress 17; README "Performance scope").
     ///
     /// Use in any model that needs to notify listeners when a value changes.
     /// <code>
@@ -24,7 +25,7 @@ namespace Nexus.Core
     {
         // ── State ──────────────────────────────────────────────
         private T _value;
-        // Handler list, zero-GC snapshot cache, dirty flag and handler lock now
+        // Handler list, snapshot cache, dirty flag and handler lock now
         // live once in the shared SecureObserverSet<T> core instead of being copied here.
         private readonly SecureObserverSet<T> _observers = new();
         // The old `volatile bool` guard was check-then-set — two threads
@@ -179,7 +180,7 @@ namespace Nexus.Core
         private readonly List<T> _items = new();
 
         // The three callback channels share the SnapshotDelegateSet core (dedupe +
-        // zero-GC snapshot cache) instead of hand-rolled lists + per-mutation ToArray copies.
+        // snapshot cache) instead of hand-rolled lists + per-mutation ToArray copies.
         private readonly SnapshotDelegateSet<Action<int, T>> _onAdded = new();
         private readonly SnapshotDelegateSet<Action<int, T>> _onRemoved = new();
         private readonly SnapshotDelegateSet<Action> _onCleared = new();
@@ -201,13 +202,13 @@ namespace Nexus.Core
         // are now queued under _eventLock and dispatched once the outer notification loop
         // finishes (DrainPendingChanges), so every structural change is observed exactly
         // once. The queue only grows while a dispatch is active and is drained in the same
-        // call stack, so steady state stays zero-alloc.
+        // call stack, so it reaches its largest size once and then stays there.
         private readonly List<PendingChange> _pendingChanges = new();
         // Reusable instance drain buffer for DrainPendingChanges. The old `pending =
         // _pendingChanges.ToArray()` allocated a fresh array on EVERY pass whenever
         // reentrant handlers queued changes. The buffer grows only when a deeper
         // reentrancy nests more changes than any prior drain — amortized
-        // zero-allocation steady state — and each pass copies under _eventLock then
+        // to no new array per pass — and each pass copies under _eventLock then
         // dispatches outside it, so semantics are identical to the old code.
         // The dispatch claim gives one drain exclusive ownership of this instance.
         // Separate lists may drain recursively on the same thread without sharing storage.

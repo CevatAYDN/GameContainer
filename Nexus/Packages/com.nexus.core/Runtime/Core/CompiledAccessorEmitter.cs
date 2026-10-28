@@ -15,7 +15,7 @@ namespace Nexus.Core
     /// </summary>
     internal static class CompiledAccessorEmitter
     {
-        /// <summary>Compiles a fast zero-GC setter for an injectable field using DynamicMethod IL generation.</summary>
+        /// <summary>Compiles a fast setter for an injectable field using DynamicMethod IL generation.</summary>
         internal static Action<object, object> CompileFieldSetter(Type targetType, FieldInfo field)
         {
 #if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
@@ -45,7 +45,7 @@ namespace Nexus.Core
 #endif
         }
 
-        /// <summary>Compiles a fast zero-GC getter for an injectable field using DynamicMethod IL generation.</summary>
+        /// <summary>Compiles a fast getter for an injectable field using DynamicMethod IL generation.</summary>
         internal static Func<object, object> CompileFieldGetter(Type targetType, FieldInfo field)
         {
 #if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
@@ -125,7 +125,7 @@ namespace Nexus.Core
 #endif
         }
 
-        /// <summary>Compiles a fast zero-GC setter for an injectable property using DynamicMethod IL generation.</summary>
+        /// <summary>Compiles a fast setter for an injectable property using DynamicMethod IL generation.</summary>
         internal static Action<object, object> CompilePropertySetter(Type targetType, PropertyInfo prop)
         {
 #if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL

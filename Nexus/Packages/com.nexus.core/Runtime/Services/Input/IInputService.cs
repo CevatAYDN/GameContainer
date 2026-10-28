@@ -5,7 +5,7 @@ using UnityEngine.Scripting;
 namespace Nexus.Core.Services
 {
     /// <summary>
-    /// Lightweight 0-GC struct carrying player move direction signal.
+    /// Lightweight struct carrying player move direction signal.
     /// </summary>
     [Preserve]
     public readonly struct PlayerMoveSignal

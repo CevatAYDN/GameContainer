@@ -85,9 +85,9 @@ namespace Nexus.Core.Services
         private volatile bool _isPaused;
         private int _pauseHolds;
 
-        // Zero-allocation profiler markers (same pattern as SignalBus). ProfilerMarker is a
+        // Profiler markers (same pattern as SignalBus). ProfilerMarker is a
         // cheap struct no-op when the profiler is not attached, so these are unconditional —
-        // no #if wrapper needed and the production GC guarantee is untouched.
+        // no #if wrapper needed, and dispatch stays at 0 B (harness GCA3).
         private static readonly ProfilerMarker s_UpdateMarker = new("Nexus.TickService.Update");
         private static readonly ProfilerMarker s_FixedUpdateMarker = new("Nexus.TickService.FixedUpdate");
         private static readonly ProfilerMarker s_LateUpdateMarker = new("Nexus.TickService.LateUpdate");

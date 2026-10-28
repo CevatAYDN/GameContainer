@@ -130,7 +130,7 @@ In Zenject `Dispose` was called synchronously; Nexus does a non-blocking teardow
 
 1. **Duplicating `BindInterfacesAndSelfTo`** → thinking the same type yields several singletons; in Nexus one call is enough, parity is guaranteed.
 2. **Using `ClearOnChanged`** → deletes other views' subscriptions; always `RemoveOnChanged(handler)`.
-3. **Making signals classes** → Nexus enforces `where T : struct`; convert them to structs (value type = zero GC + no boxing).
+3. **Making signals classes** → Nexus enforces `where T : struct`; convert them to structs.
 
 ---
 

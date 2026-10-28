@@ -52,7 +52,7 @@ namespace Nexus.Core
 
         // Cached comparison delegates for the registration-time priority sorts.
         // A lambda written inline at the Sort call site relies on the compiler's delegate
-        // caching; the explicit static makes the zero-allocation guarantee self-documenting
+        // caching; the explicit static makes the cached delegate self-documenting
         // and immune to accidental capture introduction later.
         private static readonly Comparison<CommandHandlerInfo> s_priorityDescHandlers =
             static (a, b) => b.Priority.CompareTo(a.Priority);
@@ -418,7 +418,7 @@ namespace Nexus.Core
         /// hot path: returns the immutable per-type snapshot published on registration (lists are
         /// never mutated in place after publish, so an iterating dispatch is safe while a
         /// concurrent registration rebuilds the snapshot). Returns false when the signal has no
-        /// composite triggers (no allocation, no lock).
+        /// composite triggers (one read of the published snapshot, no lock).
         ///
         /// The returned snapshot is SHARED between concurrent dispatches — the read-only surface
         /// is deliberate: callers must never mutate it (a Clear/Add would corrupt every other

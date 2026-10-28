@@ -216,7 +216,7 @@ namespace Nexus.Core
         /// Registers a ref-based signal filter (MessagePipe-style middleware) by type. The filter
         /// is resolved from the container so it may carry dependencies; when unbound it is created
         /// via <c>Activator.CreateInstance</c>. A filter returning <c>false</c> cancels the signal
-        /// before dispatch — zero allocation, never boxes the signal.
+        /// before dispatch; the signal is passed by ref and never boxed.
         /// </summary>
         void AddSignalFilter<TSignal, TFilter>()
             where TSignal : struct

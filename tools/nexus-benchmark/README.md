@@ -84,9 +84,10 @@ dotnet-trace collect -p <pid> --profile gc-verbose                  # allocation
 | Ads core (`AdsCoreSuite.cs`) | `com.nexus.ads` `Runtime/Core` through hand-written ports: every `PolicyGuard` rule, `ReadyChanged` when a pacing window runs out (PW1–PW7, issue #95), retry back-off, preload, reward-once, the provider gate, session reset, simulator scenarios; fails if a Core source names `UnityEngine` or `UnityEditor` |
 | Service graph (`ServiceGraphSuite.cs`) | A real context with every package service under strict injection validates with zero issues, boots and resolves each service by interface and concrete type (SVC1) |
 
-The harness runs the operations of `PerformanceTests.cs` with tighter limits than the Unity
-test asserts (`<10ms`, `==0` B, `<200ms`, `<3000ns`, `<4000ns` against the Unity test's
-`<=128` B, `<800ms`, `<25000ns`, `<30000ns`), plus the pool zero-alloc regression.
+The harness runs the operations of `PerformanceTests.cs` with tighter time limits than the Unity
+test asserts (`<10ms`, `<200ms`, `<3000ns`, `<4000ns` against the Unity test's `<50ms`, `<800ms`,
+`<25000ns`, `<30000ns`). Steady-state dispatch is `==0` B here and 0 `GC.Alloc` samples in the Unity
+test; the pool get/return regression is `<=128` B here and 0 samples in the Unity test.
 
 ## Coverage notes (known non-zero-GC paths)
 

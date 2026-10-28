@@ -38,7 +38,7 @@ This guide describes recommended Nexus Core architectural setups, context topolo
 - **Topology:** Scoped Sub-Contexts (WorldContext, CombatContext, DialogueContext).
 - **Characteristics:** High signal frequency (100–500 sigs/sec), 20+ reactive models, 100+ signals.
 - **Setup Pattern:**
-  - Struct signals (`public struct DamageSignal`) for 0-GC steady state.
+  - Struct signals (`public struct DamageSignal`), dispatched at 0 B after warmup ([Performance scope](../README.md#performance-scope)).
   - Pooling enabled via `CommandPoolManager` for high-frequency combat commands.
   - `CausalTracing` enabled in debug builds to trace complex status-effect cascades.
 

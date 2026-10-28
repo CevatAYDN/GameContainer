@@ -32,7 +32,7 @@ Bunu yapan ilk framework StrangeIoC idi (ve onun atası Robotlegs). Nexus aynı
 dili konuşur — Context, Signal, Command, Mediator — ama üç şeyi kökten değiştirir:
 
 1. **Performans:** sinyaller `struct`, komutlar ve mediator'ler havuzlanır,
-   çözümleme sıcak yolda sıfır GC üretir.
+   önbellekteki bir çözümleme 0 B ölçüldü (her kontrol paket README'sinin [Performance scope](../README.md#performance-scope) tablosunda).
 2. **Disiplin:** iki kayıt yolu (açık `BindCommand` ve prototip `[SignalHandler]`)
    vardır ama canonical olan birdir ve bu rehber size hangisini ne zaman
    kullanacağınızı nedenleriyle söyler.
@@ -261,7 +261,7 @@ var elite = Units.Get(UnitType.Warrior, "elite"); // adlandırılmış
 ```
 
 `ToFactory` her `Get`'te taze örnek verir; `To<T>()` somut tipi DI
-container'ından çözer; okuma yolları sıfır GC'dir (sadece dictionary lookup).
+container'ından çözer; okuma yolları bir dictionary lookup'tır, ısınmadan sonra 0 B (harness Z1).
 
 **Ne zaman kullanın:** MVCS kalıplarının dışına taşan, *veri* eşlemeleri.
 **Ne zaman kullanmayın:** zaten Command/Service/Model olarak yaşaması gereken

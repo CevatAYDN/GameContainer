@@ -134,7 +134,7 @@ public class ScoreModel : IReactiveModel
 }
 ```
 
-> `ObservableProperty<T>` is allocation-free — no GC pressure from property changes.
+> After the first subscription, an `ObservableProperty<T>` change reaches its subscribers without allocating (harness GCA2; every contract is in the package README's [Performance scope](../README.md#performance-scope)).
 
 ---
 
@@ -250,7 +250,7 @@ public class PlayerHUD : NexusBehaviour
 
     public void OnButtonClick()
     {
-        // Zero-GC signal firing
+        // Fire a struct signal
         Fire(new ScoreSignal(50));
         
         // Direct service resolution

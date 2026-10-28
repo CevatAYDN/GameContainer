@@ -134,7 +134,7 @@ public class ScoreModel : IReactiveModel
 }
 ```
 
-> `ObservableProperty<T>` sıfır-allocation'dır — property değişikliklerinden GC baskısı oluşmaz.
+> İlk abonelikten sonra bir `ObservableProperty<T>` değişikliği abonelerine bellek ayırmadan ulaşır (harness GCA2; bütün sözleşmeler paket README'sinin [Performance scope](../README.md#performance-scope) tablosunda).
 
 ---
 
@@ -250,7 +250,7 @@ public class PlayerHUD : NexusBehaviour
 
     public void OnButtonClick()
     {
-        // Sıfır-GC sinyal gönderimi
+        // Struct sinyal gönder
         Fire(new ScoreSignal(50));
         
         // Doğrudan servis çözümleme

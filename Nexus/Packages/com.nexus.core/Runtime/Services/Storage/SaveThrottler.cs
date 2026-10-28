@@ -137,7 +137,7 @@ namespace Nexus.Core.Services
             if (flushNow) FlushSlot(slot);
         }
 
-        // Reusable per-thread due-slot buffer so Tick stays allocation-free in steady state
+        // Reusable per-thread due-slot buffer so Tick stays at 0 B in steady state (harness GCA8)
         // (NEXUS001 flags per-frame collection allocation inside hot-path methods).
         // Re-entrancy-safe: a save action that (pathologically) re-enters Tick on the same
         // thread rents a FRESH list via the depth guard (mirrors ObjectPoolService's

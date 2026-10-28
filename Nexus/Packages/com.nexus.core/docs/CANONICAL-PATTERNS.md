@@ -11,7 +11,7 @@
 **Use `BindCommand<TSignal, TCommand>()` / `BindAsyncCommand<TSignal, TCommand>()` — NOT the `[SignalHandler]` attribute.**
 
 ```csharp
-// ✅ CANONICAL — compile-time checked, 0-GC, AOT-safe
+// ✅ CANONICAL — compile-time checked, AOT-safe
 public class GameplayLifecycle : IContextLifecycle
 {
     public void OnConfigure(IContextBuilder builder)
@@ -194,7 +194,7 @@ pre-build check then stops the build unless `NEXUS_VALIDATION_WARN_ONLY` is set.
 **Use `public struct` — never `class`.**
 
 ```csharp
-// ✅ CANONICAL — value type, zero GC per fire
+// ✅ CANONICAL — value type
 public struct ScoreChangedSignal
 {
     public int NewScore;

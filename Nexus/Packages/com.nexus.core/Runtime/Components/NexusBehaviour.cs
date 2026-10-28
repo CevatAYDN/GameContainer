@@ -60,7 +60,8 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Dispatches a signal to the Nexus SignalBus with zero GC allocation on the hot path.
+        /// Dispatches a signal to the Nexus SignalBus: 0 B after warmup without plugin interceptors
+        /// (harness GCA1; README "Performance scope").
         /// </summary>
         public void Fire<T>(T signal) where T : struct
         {

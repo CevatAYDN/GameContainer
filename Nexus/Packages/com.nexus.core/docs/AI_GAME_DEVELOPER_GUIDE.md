@@ -46,10 +46,10 @@ This guide equips AI agents and human developers with complete, self-contained r
 
 ## 📋 5 Golden Rules of Nexus Game Development
 
-### Rule 1: Zero-GC Struct Signals
+### Rule 1: Struct Signals
 All signals represent game events and MUST be defined as `public struct`:
 ```csharp
-// GOOD: Zero-allocation struct signal
+// GOOD: struct signal
 public struct ScoreUpdatedSignal
 {
     public int NewScore;

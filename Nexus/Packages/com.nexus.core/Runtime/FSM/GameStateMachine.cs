@@ -351,7 +351,7 @@ namespace Nexus.Core.FSM
         }
 
         /// <summary>
-        /// Appends a transition record to the fixed-size ring buffer (no allocation), fires
+        /// Appends a transition record to the fixed-size ring buffer (written in place), fires
         /// <see cref="OnStateChanged"/>, and pushes a causal trace event (NEXUS_DEBUG-only).
         /// </summary>
         private void RecordTransition(string fromName, string toName, string argsSummary,

@@ -160,15 +160,28 @@ starting point, not a save system: a game keeps its own save format and decides 
 
 | Path | Allocation contract |
 |---|---|
-| Generic synchronous dispatch, command pools, warmed DI resolution | Host regressions verify zero allocation for covered paths after warmup |
-| Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup |
+| Synchronous `Fire` of a struct signal to its commands and subscribers, no plugin `SignalInterceptor` registered | 0 B after warmup (GCA1, GCA6, `SteadyState_HasZeroGCAllocations` in the harness and in `PerformanceTests`); nested dispatch (stress 2), cross-context routing (stress 4) and a real context under fuzz (F1) 0 B; an interceptor boxes the signal once per fire |
+| Command pools | `CommandPoolManager` get/return 0 B after warmup (GCA4, stress 5, `CommandPoolManager_GetReturn_SteadyState_DoesNotAllocate` in the harness and in `PerformanceTests`) |
+| Warmed DI resolution | A cached resolve 0 B/op on host in the pinned comparison runs (`after-reset-android-006` and `generated-android-002`, `host-results.json`; [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md)), a measurement, not a check run on every commit; a resolved `LazyInjection<T>` read 0 B (stress 12) |
+| Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup (EditMode `TypedComposite_SteadyStateHasNoManagedAllocation`) |
+| `ObservableProperty<T>` value change, `ObservableList<T>` add, remove and clear, with subscribers | 0 B after the first subscription (GCA2, stress 17 and 17b) |
+| `TickService` dispatch | 0 B per frame (GCA3; stress 20, 10k frames × 300 tickables) |
+| `HybridQueue` thread-safe and next-frame enqueue and drain | 0 B after warmup (`HybridQueue_ThreadSafe_ZeroGC`, stress 14) |
+| `NetworkSignalHistory` replay, `RemoveSignalsAfter` and `Prune`; `NetworkSignalBus.RollbackAndResimulate` | 0 B (`Netcode_Rollback_And_Replay_ZeroGC`, stress 9; PlayMode `NetcodeTests.Prune_SteadyState_ZeroAllocations`, EditMode `NestedRollback_SteadyStateHasNoManagedAllocation`) |
+| `InputService` update with a `PlayerMoveSignal` fire, a pool-warmed `AudioService.PlaySfx`, `LocalizationService.GetString` | 0 B (G1, G2, G3) |
+| `NexusBinder` lookups, `SubscriptionRegistry` read paths and a sweep with nothing to sweep | 0 B (binder Z1, registry Z1 and Z2) |
 | `EconomyService` `Earn` / `Spend` / `GetBalance` with a `SaveThrottler` bound | 0 B after the currency's first touch (harness GCA5), also with a handler subscribed to the balance (GCA7); `SaveThrottler.Tick` each frame, idle or with saves due, 0 B (GCA8); without a throttler every mutation persists synchronously and allocates |
 | `HapticService.Play` of a built effect, `Vibrate(HapticType)` on Android 8+ | 0 B in the managed lookup (harness G5); on the device the call goes through a prebuilt `VibrationEffect` and a cached JNI method: 0 `GC.Alloc` samples in each of 12 plays of two built effects, the first play of each included (Android IL2CPP development player, Unity 6000.5.6f1, 2311DRK48G on Android 16, `DeviceProbe`); Android 7 and older use `vibrate(long)`, which allocates |
 | Immutable arbitrary-arity or async composite | Retained snapshots; payload boxing and snapshot allocation are intentional |
-| Startup, registration, async operations, editor diagnostics, `NEXUS_DEBUG` tracing | May allocate; outside the hot-path contract |
+| Startup, registration (a `Subscribe` allocates its subscription and a new read copy, the sweep after `Unsubscribe` a new read copy), async operations, editor diagnostics, `NEXUS_DEBUG` tracing | May allocate; outside the hot-path contract |
 
-The repository's host harness (`tools/nexus-benchmark`) and the Unity `PerformanceTests` assert these
-contracts; their latest numbers are in the repository's `docs/RELEASE_GATES.md`. The pinned core DI comparison
+Each row names the check behind it. GCA, G and Z checks, the fuzz suite's F1 and the numbered stress cases
+run in the repository's host harness (`tools/nexus-benchmark`, on .NET with Unity APIs stubbed, before every
+commit): GCA checks and `SteadyState_HasZeroGCAllocations` fail on any byte, the others above 128 B (F1: 512 B)
+over the whole measured loop of 1000 to 40000 iterations, and every one of them measured 0 B on the run that
+`docs/RELEASE_GATES.md` records. The named Unity tests run in the package's EditMode and PlayMode suites
+and fail on any `GC.Alloc` sample. A host result is not an IL2CPP measurement; the haptics row is the one
+measured on a device. The pinned core DI comparison
 with VContainer, Zenject and Reflex, on host, in a Unity Mono player and on an Android IL2CPP device, is in
 [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md); it measures a three-object constructor graph, not
 frame budget or full `Context` startup, and no universal winner is claimed.

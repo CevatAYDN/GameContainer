@@ -46,7 +46,7 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// Thread-safe object pool for reusing QueuedSignalWrapper instances to achieve 0 GC allocation.
+    /// Thread-safe object pool for reusing QueuedSignalWrapper instances, so a queued signal needs no new wrapper.
     /// </summary>
     public static class QueuedSignalPool<T> where T : struct
     {
@@ -157,7 +157,7 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// Zero-allocation ring buffer queue for storing IQueuedSignal items without GC churn.
+    /// Ring buffer queue for storing IQueuedSignal items without a node per item.
     /// </summary>
     internal class QueuedSignalRingBuffer
     {
@@ -213,7 +213,8 @@ namespace Nexus.Core
 
     /// <summary>
     /// Manages thread-safe and next-frame deferred signal queues.
-    /// Provides zero-allocation draining while preserving chronological interleaved order.
+    /// Drains at 0 B after warmup (harness HybridQueue_ThreadSafe_ZeroGC, stress 14) while preserving
+    /// chronological interleaved order.
     /// Used by <see cref="Context"/> for cross-thread and deferred signal delivery.
     /// </summary>
     [Preserve]
@@ -295,7 +296,7 @@ namespace Nexus.Core
 
         /// <summary>
         /// Drains all thread-safe queued signals into the signal bus in chronological order.
-        /// Called from <c>Root.Update()</c>. Zero-allocation.
+        /// Called from <c>Root.Update()</c>. 0 B after warmup (harness HybridQueue_ThreadSafe_ZeroGC).
         /// </summary>
         public void DrainThreadSafe()
         {
@@ -307,7 +308,7 @@ namespace Nexus.Core
 
         /// <summary>
         /// Drains all next-frame queued signals into the signal bus in chronological order.
-        /// Called from <c>Root.LateUpdate()</c>. Zero-allocation.
+        /// Called from <c>Root.LateUpdate()</c>. 0 B after warmup (harness stress 14, HybridQueue_NextFrame_ZeroGC).
         /// </summary>
         public void DrainNextFrame()
         {

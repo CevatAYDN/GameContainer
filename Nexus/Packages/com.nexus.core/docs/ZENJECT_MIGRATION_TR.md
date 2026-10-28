@@ -130,7 +130,7 @@ Zenject'te `Dispose` senkron çağrılırdı; Nexus `OnDispose` üzerinden non-b
 
 1. **`BindInterfacesAndSelfTo`'yu çoğaltmak** → aynı tipi birden çok singleton sanmak; Nexus'ta tek çağrı yeter, parite garantili.
 2. **`ClearOnChanged` kullanmak** → başka view'ların aboneliğini siler; her zaman `RemoveOnChanged(handler)`.
-3. **Sinyalleri class yapmak** → Nexus `where T : struct` zorunlu kılar; struct'a çevirin (değer tipi = sıfır GC + kutu yok).
+3. **Sinyalleri class yapmak** → Nexus `where T : struct` zorunlu kılar; struct'a çevirin.
 
 ---
 

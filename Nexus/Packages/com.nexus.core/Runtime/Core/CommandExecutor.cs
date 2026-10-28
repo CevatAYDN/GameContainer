@@ -131,7 +131,7 @@ namespace Nexus.Core
                             // Call via the [NoInlining] helper: an inline lambda here would capture
                             // 'signal' (referenced from the catch/finally below), which makes Roslyn
                             // hoist a closure display-class allocation to method entry — ~56 B per
-                            // dispatch on the zero-GC hot path (proven via IL dump + alloc-diag).
+                            // dispatch on the hot path GCA1 holds at 0 B (found via IL dump + alloc-diag).
                             ExecuteDecoratedCommand(genericSyncCmd, signal);
                         }
                         else
