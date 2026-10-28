@@ -13,9 +13,11 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 if ($RunName -notmatch '^[a-zA-Z0-9_-]+$') { throw 'RunName must be a simple folder name.' }
-if ($Apk) {
-    $Apk = [IO.Path]::GetFullPath($Apk)
-    if (-not (Test-Path -LiteralPath $Apk)) { throw "APK not found: $Apk" }
+# PowerShell names are case-insensitive: $apk below would overwrite the parameter, so it is read once here.
+$launchOnly = [bool]$Apk
+if ($launchOnly) {
+    $existingApk = [IO.Path]::GetFullPath($Apk)
+    if (-not (Test-Path -LiteralPath $existingApk)) { throw "APK not found: $existingApk" }
     $Android = $true
 }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -29,7 +31,7 @@ New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 $oldPlayer = $env:NEXUS_COMPARE_PLAYER
 $oldResult = $env:NEXUS_COMPARE_RESULT
 try {
-    if (-not $Apk) {
+    if (-not $launchOnly) {
         & (Join-Path $PSScriptRoot 'run.ps1') -Dotnet $Dotnet -Output (Join-Path $evidence 'host-results.json') -Generated:$Generated *> (Join-Path $evidence 'host.log')
         if ($LASTEXITCODE -ne 0) { throw 'Pinned competitor build/host comparison failed.' }
         $assets = Join-Path $project 'Assets'
@@ -84,9 +86,9 @@ try {
 
     if ($Android) {
         # Same benchmark as an Android ARM64 IL2CPP non-development player, run on the connected device.
-        $apk = if ($Apk) { $Apk } else { Join-Path $evidence 'player-android/Comparison.apk' }
+        $apk = if ($launchOnly) { $existingApk } else { Join-Path $evidence 'player-android/Comparison.apk' }
         $androidResult = Join-Path $evidence 'android-results.json'
-        if (-not $Apk) {
+        if (-not $launchOnly) {
             $env:NEXUS_COMPARE_PLAYER = $apk
             & $UnityCli run $project --non-interactive --json -- -buildTarget Android -nographics -executeMethod ComparisonBuild.BuildAndroidIl2cpp -logFile (Join-Path $evidence 'build-android-editor.log') *> (Join-Path $evidence 'build-android-cli.log')
             if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $apk)) { throw 'Unity Android IL2CPP build failed; inspect build-android logs.' }
@@ -121,7 +123,7 @@ try {
             throw 'Unexpected Android benchmark configuration/results.'
         }
         $model = (& adb @adbArgs shell getprop ro.product.model).Trim(); $release = (& adb @adbArgs shell getprop ro.build.version.release).Trim()
-        @{ model = $model; androidRelease = $release; abi = (& adb @adbArgs shell getprop ro.product.cpu.abi).Trim(); apk = $apk; apkSha256 = (Get-FileHash -LiteralPath $apk).Hash; launchOnly = [bool]$Apk } |
+        @{ model = $model; androidRelease = $release; abi = (& adb @adbArgs shell getprop ro.product.cpu.abi).Trim(); apk = $apk; apkSha256 = (Get-FileHash -LiteralPath $apk).Hash; launchOnly = $launchOnly } |
             ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'android-device.json') -Encoding utf8
         Write-Host "Android ($model, Android $release, IL2CPP):"
         $androidReport.Measurements | Select-Object Library, Scenario, MedianNsPerOperation | Format-Table -AutoSize
