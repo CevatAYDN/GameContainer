@@ -84,7 +84,10 @@ Produces `Nexus/builds/standalone-il2cpp/`. It needs Visual Studio's C++ toolcha
 `docs/RELEASE_GATES.md` measures on has had since 2026-10-23 (Build Tools 2022 with the C++ workload).
 This is the strongest signal:
 IL2CPP compiles the C# to C++ and strips unused code, so it validates that
-- `Runtime/link.xml` preserves the generic dispatch entry points,
+- the build succeeds with the packages' `link.xml` files handed to UnityLinker by `NexusPackagesLinkXml`
+  (the build log says how many; Unity itself passes the linker only the files under `Assets`, so before
+  issue #110 the packages' files were never read). At the project's level, Minimal, the linker copies the
+  package assemblies whole: what those files preserve is tested only by the High-stripping build below,
 - the `[Preserve]`-annotated runtime surface survives stripping,
 - a public type that exists only in the Editor and development builds
   (`Nexus/Assets/Scripts/Verify/DevOnlyProbe.cs`) is named in the generated binder only under its own
@@ -104,10 +107,19 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 
 The most realistic mobile pipeline (Android + IL2CPP + stripping).
 
+`NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopmentHighStripping` builds the development player
+below at High managed stripping (`Nexus/builds/android-il2cpp-dev-high.apk`; issue #110). The packages'
+assemblies in `Nexus/Library/Bee/artifacts/Android/ManagedStripped` show what their `link.xml` files kept,
+and the probe's `framework services resolved 4/4 injected 4/4` line shows the services still construct and
+inject. Unity has no call that unsets a stripping level, so the build writes the previous level back
+explicitly; run `git checkout -- Nexus/ProjectSettings/ProjectSettings.asset` after it. On 6000.5.6f1 this
+player's own start-up scene fails at High (`EntryPointNotFoundException` in `GameLifecycle.OnConfigure`,
+issue #113), with or without the #110 change; the projects build at Minimal, where it does not occur.
+
 `NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopment` builds the same player as a development
 build (`Nexus/builds/android-il2cpp-dev.apk`) with `Assets/Scripts/Verify/DeviceProbe.cs`, which exists
-only there: on the phone it logs `[Probe]` lines (`adb logcat -s Unity`) with the managed allocations of
-each haptic play (issue #84) and, after each HOME and return, the time away by the wall clock,
+only there: on the phone it logs `[Probe]` lines (`adb logcat -s Unity`) with the first resolve of the
+framework services Gigawatt binds (issue #110), the managed allocations of each haptic play (issue #84) and, after each HOME and return, the time away by the wall clock,
 `Stopwatch`, `SystemClock.elapsedRealtime` and `OfflineTimeCalculator` (issue #77). Both Android players
 have the same application id, so installing one replaces the other: before a probe run, compare
 `adb shell dumpsys package <application id> | grep lastUpdateTime` with the APK's time and look for a

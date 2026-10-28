@@ -20,7 +20,7 @@ namespace NexusVerify
     public static class NexusVerifyBuild
     {
         private static void Build(string targetName, BuildTargetGroup group, BuildTarget target, ScriptingImplementation backend,
-            BuildOptions buildOptions = BuildOptions.None)
+            BuildOptions buildOptions = BuildOptions.None, ManagedStrippingLevel? stripping = null)
         {
             // Restore the pre-existing backend when the batch finishes so this
             // verification never pollutes ProjectSettings.asset. NamedBuildTarget is the
@@ -31,7 +31,9 @@ namespace NexusVerify
             // which scripting defines (e.g. the Standalone NEXUS_DEBUG) later editor runs compile with.
             var previousTarget = EditorUserBuildSettings.activeBuildTarget;
             var previousGroup = BuildPipeline.GetBuildTargetGroup(previousTarget);
+            var previousStripping = PlayerSettings.GetManagedStrippingLevel(namedTarget);
             PlayerSettings.SetScriptingBackend(namedTarget, backend);
+            if (stripping.HasValue) PlayerSettings.SetManagedStrippingLevel(namedTarget, stripping.Value);
             try
             {
                 var options = new BuildPlayerOptions
@@ -54,13 +56,15 @@ namespace NexusVerify
                         "See the -logFile output for compiler errors.");
                 }
 
-                Console.WriteLine($"[NexusVerifyBuild] {targetName} ({backend}) succeeded: {summary.totalSize} bytes, " +
+                Console.WriteLine($"[NexusVerifyBuild] {targetName} ({backend}, stripping {PlayerSettings.GetManagedStrippingLevel(namedTarget)}) succeeded: {summary.totalSize} bytes, " +
                     $"{summary.totalTime.TotalSeconds:F1}s, warnings={summary.totalWarnings}");
                 WriteCommitFile(targetName);
             }
             finally
             {
                 PlayerSettings.SetScriptingBackend(namedTarget, previous);
+                // No API unsets the level: after a stripping build, ProjectSettings.asset holds the previous level explicitly.
+                if (stripping.HasValue) PlayerSettings.SetManagedStrippingLevel(namedTarget, previousStripping);
                 // The build saved the settings with its backend; without this a failed build exits with it on disk (issue #102).
                 AssetDatabase.SaveAssets();
                 if (EditorUserBuildSettings.activeBuildTarget != previousTarget)
@@ -122,10 +126,22 @@ namespace NexusVerify
             Build("android-il2cpp", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP);
         }
 
-        /// <summary>Android, IL2CPP, development build: holds Assets/Scripts/Verify/DeviceProbe.cs (phone checks for #77 and #84).</summary>
+        /// <summary>Android, IL2CPP, development build: holds Assets/Scripts/Verify/DeviceProbe.cs (phone checks for #77, #84 and #110).</summary>
         public static void BuildAndroidIL2CPPDevelopment()
         {
             Build("android-il2cpp-dev.apk", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP, BuildOptions.Development);
+        }
+
+        /// <summary>
+        /// The development build above at High managed stripping (issue #110). The project and the games build at the default
+        /// level, Minimal, where the linker copies the package assemblies whole. Only this build tests what the packages'
+        /// link.xml files preserve (handed over by NexusPackagesLinkXml): their assemblies in
+        /// Library/Bee/artifacts/Android/ManagedStripped, and DeviceProbe's "framework services" line on the phone.
+        /// </summary>
+        public static void BuildAndroidIL2CPPDevelopmentHighStripping()
+        {
+            Build("android-il2cpp-dev-high.apk", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP,
+                BuildOptions.Development, ManagedStrippingLevel.High);
         }
 
         /// <summary>

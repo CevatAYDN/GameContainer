@@ -621,8 +621,9 @@ namespace NexusBench.PackageFixture
         // Read from the repository's asmdefs, so a new package is covered the day it is added. A runtime assembly
         // the two package predicates (editor and source generator) miss would be registered by games again; one
         // that references the core without an <assembly> element in its package's link.xml would lose its
-        // reflection-constructed types to IL2CPP stripping above the default level; one compiled only under a
-        // define needs ignoreIfMissing, or a project without that SDK fails to build.
+        // reflection-constructed types to IL2CPP stripping above the default level (the editor's NexusPackagesLinkXml
+        // hands those files to the linker); one compiled only under a define needs ignoreIfMissing, or a project
+        // without that SDK fails to build. A package link.xml that does not parse is skipped by the editor, so it fails here.
 
         private static void Test_PackageAssemblies_Recognized_And_Preserved()
         {
@@ -641,6 +642,18 @@ namespace NexusBench.PackageFixture
                     .First(l => l.StartsWith("guid: ", StringComparison.Ordinal)).Substring(6).Trim();
 
                 var problems = new List<string>();
+                foreach (string linkXml in Directory.GetFiles(packages, "link.xml", SearchOption.AllDirectories))
+                {
+                    try
+                    {
+                        if (System.Xml.Linq.XDocument.Load(linkXml).Root?.Name != "linker") problems.Add($"{linkXml}: the root is not <linker>");
+                    }
+                    catch (Exception ex)
+                    {
+                        problems.Add($"{linkXml}: {ex.Message}");
+                    }
+                }
+
                 int checkedAssemblies = 0;
                 foreach (string asmdef in Directory.GetFiles(packages, "*.asmdef", SearchOption.AllDirectories))
                 {
