@@ -1,7 +1,9 @@
 # ADR-0003: In-Game UI Toolkit Screen Stack
 
-- **Status:** Accepted for the direction. The API sketch below is proposed: open for objection on
-  [#76](https://github.com/CevatAYDN/GameContainer/issues/76) before any code.
+- **Status:** Accepted for the direction. The API sketch below is accepted with the answers to its three open
+  questions ("Answers to the open questions", 2026-10-28; the owner had them decided by the advisor on
+  [#76](https://github.com/CevatAYDN/GameContainer/issues/76)). Names may still change in the stack cycle, which is
+  its own cycle and re-pin.
 - **Date:** 2026-10-28
 - **Decision makers:** Project owner. UI Toolkit in the framework was decided on 2026-10-25 (#76, option (a)). On
   2026-10-27 the stack was given its own cycle and re-pin. On 2026-10-28 the owner chose "this ADR and the API sketch
@@ -129,12 +131,15 @@ namespace Nexus.Core.Services
 
     public interface IScreenStack : INexusService
     {
-        /// What the games' mediators watch today (Gigawatt and Wickling: Navigation.Current).
-        ObservableProperty<ScreenRoute> Current { get; }
+        /// What the games' mediators watch today (Gigawatt and Wickling: Navigation.Current). Read-only: only the
+        /// stack sets it, so it cannot drift from the history.
+        IReadOnlyObservableProperty<ScreenRoute> Current { get; }
         int Depth { get; }
 
         /// Gigawatt overlay:true, Wickling Navigate(menu), ChipCrisis opening a sheet or a modal.
-        /// Pushing the route already on top does nothing.
+        /// Pushing the route already on top does nothing. The screen below on the same layer is hidden; screens on
+        /// lower layers stay shown. Push does not look at BlocksBack: a game that refuses routes while a blocking
+        /// screen is shown checks IsShown<T>() in its own command, as Gigawatt's NavigateUiCommand does.
         void Push<TScreen>(object args = null) where TScreen : ToolkitScreen;
 
         /// Gigawatt overlay:false, Wickling Navigate(Camp or Run): the history is cleared.
@@ -204,15 +209,28 @@ next panel update. To hide it, the stack removes the class and sets `display: no
 waits for `TransitionEndEvent`, or for the longest transition duration if the event does not come. A screen whose USS
 has no transition shows and hides at once, as Wickling's and ChipCrisis's closes do today.
 
-Open questions for objection on #76:
+### Answers to the open questions (2026-10-28)
 
-- **Push over a blocking screen.** Should `Push` be refused while a `BlocksBack` screen is on top? Gigawatt's
-  `NavigateUiCommand` refuses every route except Recovery while Recovery is shown. Or is that a game rule?
-- **The screen below.** Does a pushed screen hide the one below it? Gigawatt shows one route at a time. Wickling keeps
-  the Camp visible and covered under its menus. ChipCrisis keeps the shop under a sheet's backdrop. Proposal: the screen
-  below is hidden on the same layer and stays shown on a lower layer.
-- **`Current`.** `ObservableProperty<T>` has no read-only interface, so a caller could set `Current` around the history.
-  Should the stack expose a read-only view instead, or an event?
+The sketch went to #76 with three open questions. The owner had them decided by the advisor; the answers are written
+into the sketch above.
+
+- **Push over a blocking screen: a game rule.** `Push` is not refused while a `BlocksBack` screen is on top. Only
+  Gigawatt refuses routes there (its `NavigateUiCommand` lets only Recovery through while Recovery is shown), and
+  decision 3 takes into the framework what two or three games each built. `IsShown<TScreen>()` gives a game's command
+  the check, and `BlocksBack` keeps one meaning: back never closes the screen.
+- **The screen below: hidden on the same layer, shown on a lower layer.** Every game fits:
+  - Gigawatt shows one route at a time, all on one layer.
+  - Wickling's `WicklingRuntimeBootstrap.cs` (at `69f7494`) gives the Camp the HUD's order (0) and its menus order 1,
+    so the Camp stays shown under a menu.
+  - ChipCrisis's `MapSceneBuilder.cs` (at `6618271`) puts the four sheets on its `ScreenPanel` (order −20), the HUD,
+    dock and menu on its `HudPanel` (−30) and the Return and MapEnd modals on its `ModalPanel` (−10). A sheet hides
+    nothing on the HUD, and a modal over a sheet leaves the sheet shown.
+- **`Current`: a read-only observable.** The core has no read-only interface for `ObservableProperty<T>` (the class is
+  sealed, and `Mediator.TrackObservable` takes the class). The stack cycle adds `IReadOnlyObservableProperty<T>`
+  (`Value`, `OnChanged`, `RemoveOnChanged`), which `ObservableProperty<T>` implements, and a `TrackObservable` overload
+  for it. Both are additions; no existing call changes. A setter outside the stack becomes a compile error instead of
+  a history that disagrees with `Current`, and the mediators keep watching `Current` as they do today. An event alone
+  was the fallback, in case the helper could not take the interface.
 
 ## Verification plan for the stack cycle
 
