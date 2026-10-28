@@ -181,8 +181,9 @@ namespace NexusBench
             Test_LinkXml_Keeps_ActivatorCreatedTypes();
             Test_PackageAssemblies_Recognized_And_Preserved();
             Test_ArityOverloadImplementations_Preserved();
-            // Last: it loads an assembly named like a package, which every later scan would see.
+            // Last: they load an assembly named like a package, which every later scan would see.
             Test_Binders_Register_No_Package_Assembly_Type();
+            Test_Shipped_SourceGenerator_Matches_Source();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -531,9 +532,13 @@ namespace NexusBench.CG2Source
         // A package type registered by a game's binder breaks that game's compile when the package removes it
         // (FloatingTextService #91, AdMobAdapter #14). The harness runtime compiles as NexusBenchmark, which no
         // package-name rule matches, so the rule is proven on a fixture assembly that carries a package's NAME:
-        // neither generator may register, preserve or list its types, while the game assembly keeps its own.
+        // neither generator may register, preserve or list its types, while the game assembly keeps its own. The same
+        // source under a game's name must be registered by both, or the check would pass for a generator that skipped
+        // every loaded fixture (#116).
 
         private const string PackageFixtureAssembly = "com.nexus.harnessfixture";
+        private const string GameFixtureAssembly = "NexusBench.GameFixture";
+        private static string[] _fixtureErrors;
 
         private const string PackageFixtureSource = @"
 using Nexus.Core;
@@ -571,18 +576,12 @@ namespace NexusBench.PackageFixture
             string detail;
             try
             {
-                // Persisted and file-loaded (as in CG2) so the source generator's compilation can reference it.
-                string[] errors = CompileSource(PackageFixtureSource, PackageFixtureAssembly, out _, out byte[] pe);
+                string[] errors = LoadPackageAndGameFixtures();
                 if (errors.Length > 0)
                 {
-                    Report(name, false, "package fixture FAILED to compile: " + string.Join(" | ", errors.Take(3)));
+                    Report(name, false, "fixtures FAILED to compile: " + string.Join(" | ", errors));
                     return;
                 }
-                string fixtureDir = Path.Combine(Path.GetTempPath(), "nexus-cg6");
-                Directory.CreateDirectory(fixtureDir);
-                string fixturePath = Path.Combine(fixtureDir, PackageFixtureAssembly + ".dll");
-                File.WriteAllBytes(fixturePath, pe);
-                Assembly.LoadFrom(fixturePath);
 
                 if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
                 NexusCodeGenerator.GenerateBinder();
@@ -591,21 +590,23 @@ namespace NexusBench.PackageFixture
                 bool editorBinderClean = !binder.Contains(fixtureNamespace);
                 bool editorLinkClean = !linkXml.Contains(fixtureNamespace) && !linkXml.Contains($"fullname=\"{PackageFixtureAssembly}\"");
                 bool editorGameKept = binder.Contains("RegisterConstructorFactory<NexusBench.CodeGenTarget>");
+                bool editorGameFixture = binder.Contains("RegisterConstructorFactory<NexusBench.GameFixture.PackageCtorService>") &&
+                                         binder.Contains("RegisterInjector<NexusBench.GameFixture.PackageInjected>") &&
+                                         binder.Contains("typeof(NexusBench.GameFixture.PackageCommand)") &&
+                                         linkXml.Contains("NexusBench.GameFixture.PackageNetworkSignal");
 
-                var compilation = CSharpCompilation.Create(
-                    "NexusBench.CG6Game",
-                    new[] { CSharpSyntaxTree.ParseText("namespace NexusBench.CG6Game { public sealed class Marker { } }") },
-                    LoadedAssemblyReferences(),
-                    new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
-                CSharpGeneratorDriver.Create(new Nexus.Generator.NexusBinderGenerator())
-                    .RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
-                string generated = output.SyntaxTrees.FirstOrDefault(t => t.FilePath.EndsWith("NexusGeneratedBinder.g.cs"))?.ToString() ?? string.Empty;
+                string generated = GenerateBinderSource(new Nexus.Generator.NexusBinderGenerator(), "NexusBench.CG6Game", "namespace NexusBench.CG6Game { public sealed class Marker { } }");
                 bool generatorClean = generated.Length > 0 && !generated.Contains(fixtureNamespace);
                 bool generatorGameKept = HasRegistration(generated, "RegisterConstructorFactory", "NexusBench.CodeGenTarget");
+                // A referenced assembly gets factories and dispatchers only (CG2: Roslyn metadata hides non-public members).
+                bool generatorGameFixture = HasRegistration(generated, "RegisterConstructorFactory", "NexusBench.GameFixture.PackageCtorService") &&
+                                            generated.Contains("typeof(global::NexusBench.GameFixture.PackageCommand)");
 
-                ok = editorBinderClean && editorLinkClean && editorGameKept && generatorClean && generatorGameKept;
+                ok = editorBinderClean && editorLinkClean && editorGameKept && editorGameFixture &&
+                     generatorClean && generatorGameKept && generatorGameFixture;
                 detail = $"editorBinderClean={editorBinderClean} editorLinkXmlClean={editorLinkClean} editorGameKept={editorGameKept} " +
-                         $"sourceGeneratorClean={generatorClean} sourceGeneratorGameKept={generatorGameKept}";
+                         $"editorGameFixtureRegistered={editorGameFixture} sourceGeneratorClean={generatorClean} " +
+                         $"sourceGeneratorGameKept={generatorGameKept} sourceGeneratorGameFixtureRegistered={generatorGameFixture}";
             }
             catch (Exception ex)
             {
@@ -614,6 +615,109 @@ namespace NexusBench.PackageFixture
             finally
             {
                 try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report(name, ok, detail);
+        }
+
+        /// <summary>Compiles the CG6 fixture under the package's and the game's name and loads both from disk (as in
+        /// CG2) so a source generator's compilation can reference them; once per run, a loaded file stays locked.</summary>
+        private static string[] LoadPackageAndGameFixtures()
+        {
+            if (_fixtureErrors != null) return _fixtureErrors;
+            string fixtureDir = Path.Combine(Path.GetTempPath(), "nexus-cg6");
+            Directory.CreateDirectory(fixtureDir);
+            var errors = new List<string>();
+            var fixtures = new[]
+            {
+                (Assembly: PackageFixtureAssembly, Source: PackageFixtureSource),
+                (Assembly: GameFixtureAssembly, Source: PackageFixtureSource.Replace("NexusBench.PackageFixture", "NexusBench.GameFixture")),
+            };
+            foreach (var fixture in fixtures)
+            {
+                string[] compileErrors = CompileSource(fixture.Source, fixture.Assembly, out _, out byte[] pe);
+                if (compileErrors.Length > 0)
+                {
+                    errors.Add($"{fixture.Assembly}: {string.Join(" | ", compileErrors.Take(3))}");
+                    continue;
+                }
+                string fixturePath = Path.Combine(fixtureDir, fixture.Assembly + ".dll");
+                File.WriteAllBytes(fixturePath, pe);
+                Assembly.LoadFrom(fixturePath);
+            }
+            return _fixtureErrors = errors.ToArray();
+        }
+
+        /// <summary>The binder a source generator emits for a compilation of <paramref name="source"/> that references
+        /// every file-backed assembly loaded in the harness; empty when it emits none.</summary>
+        private static string GenerateBinderSource(IIncrementalGenerator generator, string assemblyName, string source)
+        {
+            var compilation = CSharpCompilation.Create(
+                assemblyName,
+                new[] { CSharpSyntaxTree.ParseText(source) },
+                LoadedAssemblyReferences(),
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            CSharpGeneratorDriver.Create(generator).RunGeneratorsAndUpdateCompilation(compilation, out var output, out _);
+            return output.SyntaxTrees.FirstOrDefault(t => t.FilePath.EndsWith("NexusGeneratedBinder.g.cs"))?.ToString() ?? string.Empty;
+        }
+
+        // ─── CG9: the shipped source generator is built from its source (#116) ───
+        // Unity runs SourceGenerators~/Nexus.SourceGenerator.dll, while CG2 and CG6 prove NexusBinderGenerator.cs compiled
+        // into the harness. A source change committed without the rebuilt DLL ships the old generator, so the DLL must emit
+        // the same binder on CG2's compilation (types in the current compilation) and CG6's (referenced game and package
+        // assemblies).
+
+        private static void Test_Shipped_SourceGenerator_Matches_Source()
+        {
+            const string name = "CG9. Shipped_SourceGenerator_Matches_Source";
+            bool ok = false;
+            string detail;
+            try
+            {
+                string packages = PackagesDirectory();
+                if (packages == null)
+                {
+                    Report(name, false, "Nexus/Packages not found from the working directory");
+                    return;
+                }
+                string[] errors = LoadPackageAndGameFixtures();
+                if (errors.Length > 0)
+                {
+                    Report(name, false, "fixtures FAILED to compile: " + string.Join(" | ", errors));
+                    return;
+                }
+                string dll = Path.GetFullPath(Path.Combine(packages, "com.nexus.core/SourceGenerators~/Nexus.SourceGenerator.dll"));
+                Type shippedType = Assembly.LoadFrom(dll).GetType("Nexus.Generator.NexusBinderGenerator", throwOnError: true);
+
+                var differences = new List<string>();
+                int compared = 0;
+                foreach (var (assemblyName, source) in new[]
+                         {
+                             ("NexusBench.CodeGenSourceStub", GeneratorStubSource),
+                             ("NexusBench.CG6Game", "namespace NexusBench.CG6Game { public sealed class Marker { } }"),
+                         })
+                {
+                    string fromSource = GenerateBinderSource(new Nexus.Generator.NexusBinderGenerator(), assemblyName, source);
+                    string fromDll = GenerateBinderSource((IIncrementalGenerator)Activator.CreateInstance(shippedType), assemblyName, source);
+                    if (fromSource.Length == 0)
+                    {
+                        differences.Add($"{assemblyName}: the source generator emitted no binder");
+                        continue;
+                    }
+                    compared += fromSource.Length;
+                    if (fromDll == fromSource) continue;
+                    int at = 0;
+                    while (at < fromSource.Length && at < fromDll.Length && fromSource[at] == fromDll[at]) at++;
+                    differences.Add($"{assemblyName}: source {fromSource.Length} chars, DLL {fromDll.Length} chars, first difference at {at}");
+                }
+
+                ok = differences.Count == 0;
+                detail = ok
+                    ? $"the DLL emits the source's binder on both compilations ({compared} chars)"
+                    : string.Join("; ", differences) + " — rebuild the DLL (SourceGenerators~/README.md)";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
             }
             Report(name, ok, detail);
         }
