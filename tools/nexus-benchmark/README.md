@@ -77,7 +77,7 @@ dotnet-trace collect -p <pid> --profile gc-verbose                  # allocation
 | Lifecycle (`LifecycleSuite.cs`) | Startup validation on by default, context phases and dispose, a throwing `OnStart` failing the boot, `Root` adding `QueueDrainer` and `MetricsSampler` (L1–L4) |
 | Lifetime and scopes (`LifetimeScopeSuite.cs`) | Singleton / Scoped / Transient across `CreateChildScope`, ownership, reverse-creation-order disposal (LT1–LT9) |
 | New features (`NewFeatureSuite.cs`) | Fluent binding (`BindFluent<T>()`), the `ISignalFilter<T>` pipeline and constructor factories |
-| Zero-GC audit (`GCAuditSuite.cs`) | `SignalBus.Fire`, `ObservableProperty`, `TickService`, `CommandPoolManager`, economy earn/spend/read with a `SaveThrottler` (GCA1–GCA5) |
+| Zero-GC audit (`GCAuditSuite.cs`) | `SignalBus.Fire`, `ObservableProperty`, `TickService`, `CommandPoolManager`, economy earn/spend/read with a `SaveThrottler` (GCA1–GCA5), the first fire of a subscribed signal after prewarm (GCA6), earn/spend with a subscribed balance (GCA7), `SaveThrottler.Tick` idle and with saves due (GCA8) |
 | Teardown leaks (`TeardownLeakSuite.cs`) | A disposed context and its services are collectable and leave `NexusRuntime`; a throwing view unbind still unbinds the mediator (TL1–TL3) |
 | Fix verification (`FixVerificationSuite.cs`) | Regressions for fixed defects, each failing on the pre-fix code (FV1–FV10) |
 | Evidence (`EvidenceSuite.cs`) | Post-context phases, save throttling and `GameSaveManager`, bounded performance samples, built-in metrics without recording, debug stripping (E1–E6) |

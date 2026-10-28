@@ -35,6 +35,8 @@ namespace NexusBench
             failures += AssertPass("GCA4. CommandPoolManager_RentReturn_ZeroGC", TestCommandPoolManagerRentReturnZeroGC);
             failures += AssertPass("GCA5. EconomyService_EarnSpendRead_WithThrottler_ZeroGC", TestEconomyWithThrottlerZeroGC);
             failures += AssertPass("GCA6. SubscribedSignal_FirstFireAfterPrewarm_ZeroGC", TestSubscribedFirstFireAfterPrewarmZeroGC);
+            failures += AssertPass("GCA7. EconomyService_SubscribedBalance_EarnSpend_ZeroGC", TestEconomySubscribedBalanceZeroGC);
+            failures += AssertPass("GCA8. SaveThrottler_Tick_IdleAndDue_ZeroGC", TestSaveThrottlerTickZeroGC);
 
             if (failures == 0)
                 Console.WriteLine("\n[GCAudit] ALL ZERO-GC AUDIT TESTS PASSED ✓");
@@ -216,6 +218,12 @@ namespace NexusBench
             public float Now => 0f;
         }
 
+        private sealed class StepClock : ITimeProvider
+        {
+            public float Seconds;
+            public float Now => Seconds;
+        }
+
         private sealed class NullPrefs : IPlayerPrefsService
         {
             public int GetInt(string key, int defaultValue = 0) => defaultValue;
@@ -264,6 +272,80 @@ namespace NexusBench
                 return false;
             }
             return economy.GetBalance("gold") == 5000;
+        }
+
+        // A HUD follows the balance (ChipCrisis HudMediator): every Earn/Spend notifies the subscriber
+        // through the secure observable, a path GCA5 does not reach because nothing is subscribed there.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TestEconomySubscribedBalanceZeroGC()
+        {
+            var economy = new EconomyService
+            {
+                PlayerPrefsService = new NullPrefs(),
+                SaveThrottler = new SaveThrottler { TimeProvider = new FixedClock() }
+            };
+            long shown = 0;
+            int notifications = 0;
+            economy.GetObservableBalance("gold").OnChanged((_, now) => { shown = now; notifications++; });
+
+            // Warmup: creates the balance, flushes the fresh throttler slot and builds the handler snapshot.
+            economy.Earn("gold", 1);
+            economy.Spend("gold", 1);
+            notifications = 0;
+
+            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 5000; i++)
+            {
+                economy.Earn("gold", 2);
+                economy.Spend("gold", 1);
+            }
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - allocBefore;
+            if (allocated > 0)
+            {
+                Console.WriteLine($"      Allocated {allocated} bytes during 5000 Earn/Spend rounds with a subscribed balance");
+                return false;
+            }
+            return notifications == 10000 && shown == 5000;
+        }
+
+        // SaveThrottler is an ITickable: it runs every frame in a game that binds it, with or without a save due.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TestSaveThrottlerTickZeroGC()
+        {
+            var clock = new StepClock();
+            var throttler = new SaveThrottler { TimeProvider = clock };
+            int saves = 0;
+            Action save = () => saves++;
+
+            // Warmup: two owners' slots and the due-slot buffer.
+            throttler.TryRequestSave("economy", save);
+            throttler.TryRequestSave("progression", save);
+            for (int i = 0; i < 50; i++)
+            {
+                clock.Seconds += 0.5f;
+                throttler.TryRequestSave("economy", save);
+                throttler.Tick(0.5f);
+            }
+            int savesBefore = saves;
+
+            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 5000; i++) throttler.Tick(0.016f);
+            long idle = GC.GetAllocatedBytesForCurrentThread() - allocBefore;
+
+            allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 5000; i++)
+            {
+                clock.Seconds += 0.5f;
+                throttler.TryRequestSave("economy", save);
+                throttler.Tick(0.5f);
+            }
+            long due = GC.GetAllocatedBytesForCurrentThread() - allocBefore;
+            if (idle > 0 || due > 0)
+            {
+                Console.WriteLine($"      Allocated {idle} bytes in 5000 idle ticks, {due} bytes in 5000 ticks with saves due");
+                return false;
+            }
+            return saves > savesBefore;
         }
     }
 }
