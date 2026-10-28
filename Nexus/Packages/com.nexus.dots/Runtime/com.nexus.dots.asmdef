@@ -1,5 +1,5 @@
 {
-    "name": "com.nexus.core.dots",
+    "name": "com.nexus.dots",
     "rootNamespace": "Nexus.DOTS",
     "references": [
         "com.nexus.core",

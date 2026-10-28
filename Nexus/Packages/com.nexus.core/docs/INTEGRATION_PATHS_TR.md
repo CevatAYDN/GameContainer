@@ -113,7 +113,7 @@ sorumluluğunuzdadır. Tek bir Global Root bootstrap sahnesine aittir; sahne Roo
 başlatmalarından önce onun serialized flag'ini keşfeder. Yinelenen global'ler açıkça hata
 verir. Runtime Root'larını aktive etmeden önce yapılandırın.
 
-Collections/DOTS isteğe bağlıdır. AsParallelWriter'ı ana thread'de alın, producer'ı schedule
+Collections/DOTS isteğe bağlıdır: `com.nexus.dots` paketini ve `com.unity.collections`'ı kurun. AsParallelWriter'ı ana thread'de alın, producer'ı schedule
 edin, hemen AddProducerDependency(jobHandle) çağırın, sonra drain işini Unity Update'e bırakın.
 Her producer'ı kaydedin. Job'ları tamamlamak ana thread'i bekletebilir; uzun job'ları kendi
 update planınızda daha erken bitirin. Dispose, hâlâ çalışan bir producer'ı bırakıp geçemez.

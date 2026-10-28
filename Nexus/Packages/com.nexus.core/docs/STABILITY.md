@@ -43,7 +43,7 @@
 ## ⚠️ May Change (Experimental)
 
 - `[SignalHandler]` attribute auto-discovery (canonical path is `BindCommand<>`)
-- DOTS bridge: `NativeSignalQueue<T>` and `DOTSSignalBridge<T>` (`com.nexus.core.dots` assembly, compiled when `com.unity.collections` is installed)
+- DOTS bridge: `NativeSignalQueue<T>` and `DOTSSignalBridge<T>` (`com.nexus.dots` package, compiled when `com.unity.collections` is installed)
 - `NetworkSignalBus` and replay system
 - `[CommandTimeout]` implementation details
 - `IRecoveryStrategy` API specifics

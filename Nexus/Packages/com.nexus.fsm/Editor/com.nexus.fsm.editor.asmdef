@@ -1,0 +1,20 @@
+{
+    "name": "com.nexus.fsm.editor",
+    "rootNamespace": "Nexus.Editor",
+    "references": [
+        "com.nexus.core",
+        "com.nexus.core.editor",
+        "com.nexus.fsm"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

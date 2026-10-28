@@ -41,11 +41,11 @@ public interface INexusEditorPlugin
 Before submitting a new plugin or refactor, verify:
 
 - [ ] Extends `NexusEditorPlugin` (not just bare `INexusEditorPlugin`).
-- [ ] `Id` is unique across all 16 plugins (e.g. `"Dashboard"`, `"Tracer"`, `"GameManager"`).
+- [ ] `Id` is unique across all plugins (15 in the core, `FSMPlugin` in `com.nexus.fsm`) (e.g. `"Dashboard"`, `"Tracer"`, `"GameManager"`).
 - [ ] `DisplayName` uses `NexusLang.Get("key")` for localization.
 - [ ] `Order` is specified (e.g. 0 for Dashboard, 1 for Wizard, 6 for GameManager).
 - [ ] `CreateView()` returns a non-null `VisualElement` tree.
-- [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** a repeating `schedule.Execute(...).Every(...)` or `EditorApplication.update`. A slower cadence is throttled inside `OnUpdate()` with `EditorApplication.timeSinceStartup` (`CasualServicesPlugin` 0.5 s, `FSMPlugin` 0.3 s).
+- [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** a repeating `schedule.Execute(...).Every(...)` or `EditorApplication.update`. A slower cadence is throttled inside `OnUpdate()` with `EditorApplication.timeSinceStartup` (`CasualServicesPlugin` 0.5 s, `com.nexus.fsm`'s `FSMPlugin` 0.3 s).
 - [ ] `OnDisable()` resets: instance fields, flags, counters, queues.
 - [ ] All user-facing text uses `NexusLang.Get("key")` — zero hardcoded English strings.
 - [ ] Stat displays use shared `NexusEditorStyles` stat helpers — no bespoke stat components.

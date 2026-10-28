@@ -111,7 +111,7 @@ disabled, manually assigned fields remain your responsibility. One Global Root b
 in the bootstrap scene; scene roots discover its serialized flag before their own
 startup. Duplicate globals fail explicitly. Configure runtime Roots before activation.
 
-Collections/DOTS is optional. Obtain AsParallelWriter on the main thread, schedule the
+Collections/DOTS is optional: install the `com.nexus.dots` package and `com.unity.collections`. Obtain AsParallelWriter on the main thread, schedule the
 producer, immediately call AddProducerDependency(jobHandle), then allow Unity Update
 to drain. Register every producer. Completing jobs can stall the main thread; finish
 long jobs earlier in your own update schedule. Dispose cannot abandon an in-flight

@@ -6,3 +6,5 @@ using System.Runtime.CompilerServices;
 // Test helpers live in their own assembly (Runtime/Testing) so they are excluded from
 // player builds; they still drive the context's internal configure/initialize entry points.
 [assembly: InternalsVisibleTo("com.nexus.core.testing")]
+// GameStateMachine moved to com.nexus.fsm (#112) and still runs its exit hook on Dispose through SafeAsyncRunner.
+[assembly: InternalsVisibleTo("com.nexus.fsm")]

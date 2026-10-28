@@ -61,8 +61,24 @@
         "com.unity.modules.androidjni": "1.0.0"
       }
     },
+    "com.nexus.dots": {
+      "version": "file:com.nexus.dots",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.nexus.core": "0.5.0"
+      }
+    },
     "com.nexus.firebase": {
       "version": "file:com.nexus.firebase",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.nexus.core": "0.5.0"
+      }
+    },
+    "com.nexus.fsm": {
+      "version": "file:com.nexus.fsm",
       "depth": 0,
       "source": "embedded",
       "dependencies": {

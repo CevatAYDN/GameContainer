@@ -1,9 +1,9 @@
 {
-  "name": "com.nexus.core.dots.tests",
+  "name": "com.nexus.dots.tests",
   "rootNamespace": "Nexus.Core.Tests",
   "references": [
     "com.nexus.core",
-    "com.nexus.core.dots",
+    "com.nexus.dots",
     "Unity.Collections",
     "UnityEngine.TestRunner"
   ],

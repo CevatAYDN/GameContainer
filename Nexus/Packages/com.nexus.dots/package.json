@@ -1,0 +1,14 @@
+{
+  "name": "com.nexus.dots",
+  "version": "0.1.0",
+  "displayName": "Nexus DOTS Bridge",
+  "description": "Hands signals from jobs to the main thread: NativeSignalQueue and DOTSSignalBridge. Compiles only while com.unity.collections is installed. Moved out of com.nexus.core with its namespace (Nexus.DOTS) unchanged.",
+  "unity": "6000.5",
+  "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.dots/README.md",
+  "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
+  "dependencies": {
+    "com.nexus.core": "0.5.0"
+  },
+  "keywords": [ "nexus", "dots", "jobs", "collections" ],
+  "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" }
+}

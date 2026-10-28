@@ -90,10 +90,10 @@ binder naming a removed type (issue #110). `NexusBinderBuildGuard` stops a playe
 `NexusBinderSelfHeal` recovers a binder that no longer compiles, and a stale generated injector
 falls back to reflection at runtime with a warning.
 
-**Editor suite** (Window → Nexus → Dashboard, `Ctrl+Shift+N`): 16 plugins, one tab each:
-Dashboard, GameManager, Hierarchy, Explorer, Graph, TypeAnalyzer, ContextInspector, FSM, Tracer,
+**Editor suite** (Window → Nexus → Dashboard, `Ctrl+Shift+N`): 15 plugins, one tab each:
+Dashboard, GameManager, Hierarchy, Explorer, Graph, TypeAnalyzer, ContextInspector, Tracer,
 ErrorDashboard, PerformanceDashboard, NetworkDashboard, Setup Wizard (project scaffolding), Context
-Wizard (Root, Service, View/Mediator and Signal/Command generators), CasualServices, Help. The Dashboard's build-readiness card shows the AOT binder state,
+Wizard (Root, Service, View/Mediator and Signal/Command generators), CasualServices, Help; `com.nexus.fsm` adds a State Machine tab. The Dashboard's build-readiness card shows the AOT binder state,
 `link.xml`, the active build target and its scripting defines, generated injectors that fell back
 to reflection, and DI validation issues of the active contexts, with one-click check and
 generate. Also custom inspectors, a scene-view overlay of context boundaries, a Unity
@@ -202,15 +202,19 @@ frame budget or full `Context` startup, and no universal winner is claimed.
 | `Runtime/Models` | Observable properties and lists, secure observables, `ModelData` |
 | `Runtime/Components` | `NexusBehaviour`, `NexusBinding`, `NexusLifetimeScope` |
 | `Runtime/Services` | The services above, `ProviderFactory<TAdapter>`, storage and save throttling |
-| `Runtime/Netcode`, `Runtime/DOTS` | Network signal bus with rollback journal; optional Collections/Jobs bridge (`com.nexus.core.dots`) |
-| `Runtime/FSM`, `Runtime/Queue`, `Runtime/Recovery`, `Runtime/Plugins`, `Runtime/Tracing`, `Runtime/Debug`, `Runtime/Data`, `Runtime/Extensions` | State machine, hybrid queue, recovery strategies, runtime plugin system, causal tracing, debug HUD, `BigDouble`, save manager and scene helpers |
+| `Runtime/Netcode` | Network signal bus with rollback journal |
+| `Runtime/Queue`, `Runtime/Recovery`, `Runtime/Plugins`, `Runtime/Tracing`, `Runtime/Debug`, `Runtime/Data`, `Runtime/Extensions` | Hybrid queue, recovery strategies, runtime plugin system, causal tracing, debug HUD, `BigDouble`, save manager and scene helpers |
 | `Runtime/Testing` | Test harness assembly (`com.nexus.core.testing`) |
 | `Editor/Core` | `NexusWindow` host, plugin base class, styles, localization, hierarchy menus |
-| `Editor/Plugins` | The 16 plugins, one Dashboard tab each |
+| `Editor/Plugins` | The 15 plugins, one Dashboard tab each |
 | `Editor/CodeGen` | Binder generator, build guard, self-heal, editor settings asset |
 | `Editor/Validation`, `Editor/Analyzer`, `Editor/Inspector`, `Editor/Overlay`, `Editor/Profiling`, `Editor/LiveReload` | Build validation rules, architecture analyzer, custom inspectors, scene overlay, profiler module, hot reload |
 | `SourceGenerator~` | Roslyn source generator project; built DLL ships in `SourceGenerators~` |
-| `Tests/Editor`, `Tests/Runtime`, `Tests/DOTS` | EditMode, PlayMode and optional DOTS tests |
+| `Tests/Editor`, `Tests/Runtime` | EditMode and PlayMode tests |
+
+The state machine and the jobs-to-signals bridge are packages of their own since issue #112:
+[`com.nexus.fsm`](../com.nexus.fsm/README.md) (`GameStateMachine` and the window's State Machine tab) and
+[`com.nexus.dots`](../com.nexus.dots/README.md) (`NativeSignalQueue<T>`, `DOTSSignalBridge<T>`).
 
 ## Glossary
 

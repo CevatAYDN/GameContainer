@@ -1,0 +1,5 @@
+<linker>
+  <!-- A game's generated link.xml lists no package type (#110). Compiled only with com.unity.collections
+       (UNITY_COLLECTIONS), so a player build without it ignores the element. -->
+  <assembly fullname="com.nexus.dots" preserve="all" ignoreIfMissing="true"/>
+</linker>

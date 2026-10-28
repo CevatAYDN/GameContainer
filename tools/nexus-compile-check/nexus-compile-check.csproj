@@ -6,7 +6,7 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <!-- Match Unity's optional DOTS assembly: compile NexusDOTSBridge only when the
+    <!-- Match Unity's optional DOTS assembly (com.nexus.dots): compile NexusDOTSBridge only when the
          generated Unity.Collections assembly is available. -->
     <!-- The installed editor's engine modules; pass -p:UNITY_MODULES=<...\Data\Managed\UnityEngine\> for another install. -->
     <UNITY_MODULES Condition="'$(UNITY_MODULES)' == ''">C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Data\Managed\UnityEngine\</UNITY_MODULES>
@@ -23,6 +23,10 @@
 
   <ItemGroup>
     <Compile Include="..\..\Nexus\Packages\com.nexus.core\Runtime\**\*.cs" />
+    <!-- Split from the core in #112. Built into this one assembly, so their access to core internals is checked
+         by Unity's own compile (gate 3), not here. -->
+    <Compile Include="..\..\Nexus\Packages\com.nexus.fsm\Runtime\**\*.cs" />
+    <Compile Include="..\..\Nexus\Packages\com.nexus.dots\Runtime\**\*.cs" />
   </ItemGroup>
 
   <ItemGroup>

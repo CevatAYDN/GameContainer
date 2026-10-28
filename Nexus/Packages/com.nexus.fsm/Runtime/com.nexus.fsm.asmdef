@@ -1,0 +1,16 @@
+{
+    "name": "com.nexus.fsm",
+    "rootNamespace": "Nexus.Core.FSM",
+    "references": [
+        "com.nexus.core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

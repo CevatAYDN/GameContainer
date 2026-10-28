@@ -30,7 +30,7 @@
 - Registry registration occurs during construction; it is **not** readiness. `OnContextConfigured` follows successful bindings/validation and `OnContextInitialized` follows full async startup. NexusBehaviour defers injection/Awake hooks until configuration and Start hooks until async initialization. It clears context-owned subscriptions/injected references on replacement or disposal. A nearest parent Root is authoritative; unrelated scope events cannot redirect injection.
 - One persistent Global Root is supported. Serialized global flags are discovered on cold startup before linking orphan roots; duplicate globals are rejected. Hierarchy menus configure inactive GameObjects before Awake, and global roots stay top-level.
 - Economy currencies promote once from long to canonical BigDouble using the live balance before disk. Existing long observables become saturated/truncated projections. Big backends implement INetworkBigEconomyValidator; unsupported transactions fail closed. Storage uses finite-only invariant round-trip mantissa encoding.
-- A custom input provider owns movement including zero. Optional DOTS bridges complete registered JobHandle producers before drain, reinitialization or disposal; callers register every scheduled producer on the main thread.
+- A custom input provider owns movement including zero. Optional DOTS bridges (`com.nexus.dots`) complete registered JobHandle producers before drain, reinitialization or disposal; callers register every scheduled producer on the main thread.
 
 Verification status: the repository's `docs/RELEASE_GATES.md`.
 

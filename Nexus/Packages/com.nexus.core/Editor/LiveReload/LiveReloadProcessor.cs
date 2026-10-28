@@ -8,6 +8,8 @@ using System.Runtime.CompilerServices;
 using Nexus.Core;
 
 [assembly: InternalsVisibleTo("com.nexus.core.editor.tests")]
+// The State Machine tab moved to com.nexus.fsm with the FSM (#112) and keeps the window's strings and styles.
+[assembly: InternalsVisibleTo("com.nexus.fsm.editor")]
 
 namespace Nexus.Editor
 {

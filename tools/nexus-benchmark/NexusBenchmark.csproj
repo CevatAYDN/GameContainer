@@ -88,7 +88,8 @@
          harness can never drift from the runtime's tracing surface again. -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Tracing/CausalTracing.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Netcode/**/*.cs" />
-    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/FSM/**/*.cs" />
+    <!-- com.nexus.fsm (#112): the FSM benchmark and stress tests below still run against it. -->
+    <Compile Include="../../Nexus/Packages/com.nexus.fsm/Runtime/**/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Testing/MockContext.cs" />
     <!-- Service/tooling layer pulled into the harness proof (stubs extended in UnityStubs.cs): -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/AssemblyInfo.cs" />
@@ -130,9 +131,7 @@
          AdsCoreSuite proves every PolicyGuard rule, the retry, the gate and the simulator here, and scans
          these files for UnityEngine tokens because the stubs would otherwise hide a slip. -->
     <Compile Include="../../Nexus/Packages/com.nexus.ads/Runtime/Core/**/*.cs" />
-    <!-- Fully guarded/UI-only files: NexusDOTSBridge is #if UNITY_COLLECTIONS (empty
-         in the harness), NexusDebugHUD is an OnGUI debug surface backed by no-op stubs. -->
-    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/DOTS/NexusDOTSBridge.cs" />
+    <!-- UI-only file: NexusDebugHUD is an OnGUI debug surface backed by no-op stubs. -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Debug/NexusDebugHUD.cs" />
     <!-- AOT binder generator compile guard (editor-only file, stubbed UnityEditor APIs in GeneratorStubs.cs) -->
     <Compile Include="../../Nexus/Packages/com.nexus.core/Editor/CodeGen/NexusCodeGenerator.cs" />

@@ -15,11 +15,6 @@
     "defineConstraints": [],
     "versionDefines": [
         {
-            "name": "com.unity.collections",
-            "expression": "1.0.0",
-            "define": "UNITY_COLLECTIONS"
-        },
-        {
             "name": "com.unity.inputsystem",
             "expression": "1.0.0",
             "define": "UNITY_INPUT_SYSTEM"

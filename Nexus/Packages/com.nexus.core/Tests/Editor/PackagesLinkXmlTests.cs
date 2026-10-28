@@ -85,7 +85,7 @@ namespace Nexus.Editor.Tests
             string merged = processor.GenerateAdditionalLinkXmlFile(null, null);
 
             var assemblies = XDocument.Load(merged).Root.Elements("assembly").Select(a => (string)a.Attribute("fullname")).ToList();
-            CollectionAssert.IsSubsetOf(new[] { "com.nexus.core", "com.nexus.core.dots" }, assemblies);
+            CollectionAssert.Contains(assemblies, "com.nexus.core");
             Assert.That(File.ReadAllText(merged), Does.Contain("<namespace fullname=\"Nexus.Core.Services\" preserve=\"all\""));
         }
     }

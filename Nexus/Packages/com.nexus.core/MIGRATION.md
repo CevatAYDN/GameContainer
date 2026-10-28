@@ -4,6 +4,7 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ## Table of Contents
 
+- [After 0.5.0 (not released yet)](#after-050-not-released-yet)
 - [Version 0.4.0 → 0.5.0](#version-040--050)
   - [Scene integration and large currency update](#scene-integration-and-large-currency-update)
 - [Version 0.3.2 → 0.4.0](#version-032--040)
@@ -11,6 +12,23 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 - [Version 0.2.0 → 0.3.0](#version-020--030)
 - [Version 0.1.0 → 0.2.0](#version-010--020)
 - [General Migration Tips](#general-migration-tips)
+
+---
+
+## After 0.5.0 (not released yet)
+
+The [changelog](CHANGELOG.md)'s Unreleased section lists every change since 0.5.0. This one needs a
+step in the game:
+
+#### The FSM and the DOTS bridge are packages of their own
+
+`GameStateMachine`, `IGameState`, `IGameStateMachine` and the window's State Machine tab moved to
+`com.nexus.fsm`; `NativeSignalQueue<T>` and `DOTSSignalBridge<T>` moved to `com.nexus.dots` (issue #112).
+The namespaces (`Nexus.Core.FSM`, `Nexus.DOTS`) are unchanged. A game whose code names these types adds the
+package at the same commit as `com.nexus.core`, for example
+`"com.nexus.fsm": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.fsm#<commit>"`,
+and adds `com.nexus.fsm` (or `com.nexus.dots`) to the references of each assembly definition that names them;
+an assembly that referenced `com.nexus.core.dots` references `com.nexus.dots` instead.
 
 ---
 

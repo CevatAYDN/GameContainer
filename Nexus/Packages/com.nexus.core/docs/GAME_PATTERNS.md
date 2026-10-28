@@ -66,7 +66,7 @@ frame that saves (its `EncryptedStorageService` row) is outside such a budget.
   - Struct signals for high-level squad commands.
   - Jobs (unit pathfinding, combat calculation) write unmanaged signals through `NativeSignalQueue<T>`'s
     parallel writer; `DOTSSignalBridge<T>` drains them into the `SignalBus` on the main thread. Both live in
-    the package's `com.nexus.core.dots` assembly (namespace `Nexus.DOTS`), which compiles only when
+    the `com.nexus.dots` package (namespace `Nexus.DOTS`), which compiles only when
     `com.unity.collections` is installed.
 
 ---

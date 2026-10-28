@@ -41,7 +41,7 @@ Code never compares a displayed text with an English literal: `NetworkDashboardP
 | `graph_` | GraphPlugin | Architecture graph visualization |
 | `tracer_`, `tr_` | TracerPlugin | Causal trace log, filters, event details (`tr_` is the tracer's prefix, not the Turkish locale) |
 | `gm_`, `gamemanager_` | GameManagerPlugin | Models, signals, commands, views, services, live rates, signal test panel |
-| `fsm_` | FSMPlugin | Finite state machine visualizer (GameManagerPlugin also uses `fsm_fallback_context`) |
+| `fsm_` | FSMPlugin (`com.nexus.fsm`) | Finite state machine visualizer (GameManagerPlugin also uses `fsm_fallback_context`) |
 | `ed_` | ErrorDashboardPlugin | Error log: severity and category filters, capture, copy and CSV export |
 | `pd_` | PerformanceDashboardPlugin | FPS, Mono heap, GC Gen0, signal and command rates, alarms |
 | `nd_` | NetworkDashboardPlugin | Connection status, latency, network event log |

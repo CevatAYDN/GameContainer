@@ -1,0 +1,5 @@
+<linker>
+  <!-- A game's generated link.xml lists no package type (#110): the package preserves its own, so the reflection path
+       can construct GameStateMachine when a game binds it. -->
+  <assembly fullname="com.nexus.fsm" preserve="all"/>
+</linker>
