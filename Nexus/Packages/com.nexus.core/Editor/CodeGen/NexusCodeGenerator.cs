@@ -28,7 +28,9 @@ namespace Nexus.Editor
         {
             get
             {
-                return ScanForInjectables(AssemblyCatalog.RuntimeAssemblies(), stopOnFirstMatch: true);
+                // The binder leaves out the Nexus packages' own assemblies (#110).
+                return ScanForInjectables(AssemblyCatalog.RuntimeAssemblies()
+                    .Where(a => !AssemblyCatalog.IsNexusPackageAssembly(AssemblyCatalog.GetSimpleName(a))), stopOnFirstMatch: true);
             }
         }
 
