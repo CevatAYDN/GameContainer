@@ -5,9 +5,9 @@ All notable changes to the Nexus Core package will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-This is the changelog of the core and its adapter packages (`com.nexus.ads.admob`'s legacy
-`AdMobAdapter`, `com.nexus.iap.unity`, `com.nexus.firebase`); the ad package family has its own,
-`com.nexus.ads/CHANGELOG.md`. The package version in `package.json` is the released version;
+This is the changelog of the core and its adapter packages (`com.nexus.iap.unity`, `com.nexus.firebase`,
+and the history of `com.nexus.ads.admob`'s legacy `AdMobAdapter` until issue #14 removed it); the ad package
+family has its own, `com.nexus.ads/CHANGELOG.md`. The package version in `package.json` is the released version;
 everything under Unreleased is in the repository but not yet in a tagged package.
 
 ## [Unreleased]

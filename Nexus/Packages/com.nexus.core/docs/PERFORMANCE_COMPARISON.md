@@ -170,7 +170,7 @@ git-ignored): `Nexus/artifacts/comparison-20261015/after-reset-android-006/` and
 ## Limits
 
 Warm metadata only; cold reflection and code generation, full `Context`
-validation/service startup, scenes and providers, Windows IL2CPP (needs the Visual Studio C++ toolchain, not installed on the
-measuring machine) and frame p95/p99 are outside this evidence; the device numbers come
+validation/service startup, scenes and providers, Windows IL2CPP (the comparison tool builds
+no Windows IL2CPP player) and frame p95/p99 are outside this evidence; the device numbers come
 from one phone model. Do not
 compare isolated figures across machines.

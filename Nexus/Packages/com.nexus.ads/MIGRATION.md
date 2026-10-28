@@ -75,9 +75,11 @@ puts the family's controller behind the same service.
 
 ## Per-game map
 
-From the Phase 0 analysis in issue #8.
+From the Phase 0 analysis in issue #8. All three games have moved since (gate 11 of
+[`docs/RELEASE_GATES.md`](../../../docs/RELEASE_GATES.md)), each open for the owner's keys and store
+settings (Gigawatt#1, Wickling#1, ChipCrisis#1); the table keeps what each one changed.
 
-| Game | Today | After the migration |
+| Game | Before the migration | After the migration |
 |---|---|---|
 | Gigawatt | `MonetizationAdapters` picks the mock or `AdMobAdapter`; `InterstitialRules` keeps a per-day cap in `PlayerPrefs`; `MonetizationConfig` loads test or release ids from Resources; a `RealAdsForTest` switch | The bridge; the per-day cap and the cooldown become the interstitial placement's **Day Cap** and the policy floors; the ids move to the tabs (the Release tab stays out of public repositories); `RealAdsForTest` becomes the Test tab's device list. The delivered-customers condition is game state and stays in the game |
 | Wickling | `MonetizationAdapters` picks the mock or `AdMobAdapter`; a `wickling-ads.txt` request file turns on real test ads; `AudioListener.pause` mute; a 10 s watchdog ends an ad that never answers | The bridge; the request file becomes the Test tab's device list; the mute is deleted (the bootstrap pauses audio). The watchdog stays in the game: the core never times out a show, because a rewarded video runs as long as it runs, and ending the game's waiting state is game UI |

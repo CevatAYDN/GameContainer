@@ -77,7 +77,10 @@ Produces `Nexus/builds/standalone-mono/`. A success proves the whole game
   -logFile "tools/unity-verify/artifacts/il2cpp-build.log" -quit
 ```
 
-Produces `Nexus/builds/standalone-il2cpp/`. This is the strongest signal:
+Produces `Nexus/builds/standalone-il2cpp/`. It needs Visual Studio's C++ toolchain, which the machine
+`docs/RELEASE_GATES.md` measures on has had since 2026-10-23 (Build Tools 2022 with the C++ workload);
+run after step 3, it fails on the Mono player in the same folder (issue #102).
+This is the strongest signal:
 IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 - `Runtime/link.xml` preserves the generic dispatch entry points,
 - the `[Preserve]`-annotated runtime surface survives stripping,
@@ -103,7 +106,10 @@ The most realistic mobile pipeline (Android + IL2CPP + stripping).
 build (`Nexus/builds/android-il2cpp-dev.apk`) with `Assets/Scripts/Verify/DeviceProbe.cs`, which exists
 only there: on the phone it logs `[Probe]` lines (`adb logcat -s Unity`) with the managed allocations of
 each haptic play (issue #84) and, after each HOME and return, the time away by the wall clock,
-`Stopwatch`, `SystemClock.elapsedRealtime` and `OfflineTimeCalculator` (issue #77).
+`Stopwatch`, `SystemClock.elapsedRealtime` and `OfflineTimeCalculator` (issue #77). Both Android players
+have the same application id, so installing one replaces the other: before a probe run, compare
+`adb shell dumpsys package <application id> | grep lastUpdateTime` with the APK's time and look for a
+`[Probe]` line after the launch.
 
 ## Mode B: verify the Roslyn Source Generator binder (optional, opt-in)
 
