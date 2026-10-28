@@ -56,6 +56,7 @@ namespace NexusVerify
 
                 Console.WriteLine($"[NexusVerifyBuild] {targetName} ({backend}) succeeded: {summary.totalSize} bytes, " +
                     $"{summary.totalTime.TotalSeconds:F1}s, warnings={summary.totalWarnings}");
+                WriteCommitFile(targetName);
             }
             finally
             {
@@ -64,6 +65,42 @@ namespace NexusVerify
                 AssetDatabase.SaveAssets();
                 if (EditorUserBuildSettings.activeBuildTarget != previousTarget)
                     EditorUserBuildSettings.SwitchActiveBuildTarget(previousGroup, previousTarget);
+            }
+        }
+
+        /// <summary>
+        /// Writes the commit the player was built from to builds/&lt;name&gt;.commit, so tools/device-acceptance
+        /// names the player's commit rather than the HEAD it runs at (issue #105). Nothing is written when git fails.
+        /// </summary>
+        private static void WriteCommitFile(string targetName)
+        {
+            string path = $"builds/{targetName}.commit";
+            System.IO.File.Delete(path); // an older build's file must not name this player
+            string head = Git("rev-parse HEAD");
+            if (string.IsNullOrEmpty(head)) return;
+            if (!string.IsNullOrEmpty(Git("status --porcelain --untracked-files=no -- Packages Assets")))
+                head += " (Packages or Assets modified)";
+            System.IO.File.WriteAllText(path, head + "\n");
+        }
+
+        private static string Git(string arguments)
+        {
+            try
+            {
+                var start = new System.Diagnostics.ProcessStartInfo("git", arguments)
+                {
+                    RedirectStandardOutput = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                };
+                using var process = System.Diagnostics.Process.Start(start);
+                string output = process.StandardOutput.ReadToEnd().Trim();
+                process.WaitForExit();
+                return process.ExitCode == 0 ? output : null;
+            }
+            catch (Exception)
+            {
+                return null;
             }
         }
 

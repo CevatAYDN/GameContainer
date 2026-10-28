@@ -4,7 +4,10 @@ Runs an Android player on the connected phone and records what a build gate cann
 starts, survives a soak, comes back from the background, restarts after the OS kills it, and
 leaves no crash, ANR or Unity exception in logcat. Evidence lands under
 `Nexus/artifacts/<RunName>/` (`device-acceptance.json`, `logcat.log`; git-ignored). The
-repository's `docs/RELEASE_GATES.md` cites the latest run.
+result names the player's commit as `playerCommit`, read from the `<apk>.commit` file that
+`NexusVerifyBuild` writes beside the player (empty for a player built another way, such as a game's),
+and the repository's HEAD at the run as `repoHeadAtRun` (issue #105). The repository's
+`docs/RELEASE_GATES.md` cites the latest run.
 
 ```powershell
 # 1. Build the development project's Android IL2CPP player (Assets/Scenes/NexusStarter.unity)

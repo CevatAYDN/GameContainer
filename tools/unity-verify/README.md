@@ -66,6 +66,8 @@ dispatch, pooling, storage) against the real Unity runtime.
 ```
 
 Produces `Nexus/builds/standalone-mono/` (each Windows player builds into its own folder, issue #102).
+Every build also writes `Nexus/builds/<name>.commit`: the commit it was built from, marked
+"(Packages or Assets modified)" when those folders differed from it (issue #105).
 A success proves the whole game
 (scripts + scene + URP) compiles into a runnable Mono player.
 

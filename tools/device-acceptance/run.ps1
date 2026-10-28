@@ -26,6 +26,7 @@ if (-not $Aapt) {
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 # adb installs only files named *.apk; NexusVerifyBuild writes the player without an extension.
 $Apk = (Resolve-Path -LiteralPath $Apk).Path  # a relative -Apk resolves against the PowerShell location, not the process directory
+$playerCommitFile = "$Apk.commit"  # NexusVerifyBuild writes it beside the player (issue #105); the path is taken before $Apk may name a copy
 if ([IO.Path]::GetExtension($Apk) -ne '.apk') { $copy = Join-Path $evidence 'player.apk'; Copy-Item -LiteralPath $Apk -Destination $copy; $Apk = $copy }
 $adbArgs = @(); if ($AdbSerial) { $adbArgs = @('-s', $AdbSerial) }
 function Invoke-Adb([string[]]$a) { $out = & adb.exe @adbArgs @a 2>&1; return ($out | ForEach-Object { "$_" }) }
@@ -128,7 +129,9 @@ if ($ExpectAds) {
 }
 
 $result.passed = ($result.failures.Count -eq 0)
-$result.sourceCommit = (& git -C $repo rev-parse HEAD).Trim()
+# HEAD may be later than the player; the player's commit is what its build wrote (issue #105)
+$result.playerCommit = if (Test-Path -LiteralPath $playerCommitFile) { (Get-Content -LiteralPath $playerCommitFile -Raw).Trim() } else { $null }
+$result.repoHeadAtRun = (& git -C $repo rev-parse HEAD).Trim()
 $result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'device-acceptance.json') -Encoding utf8
 Write-Host ("Device acceptance {0}: {1}" -f ($(if ($result.passed) { 'PASSED' } else { 'FAILED' }), $evidence))
 if (-not $result.passed) { exit 1 }
