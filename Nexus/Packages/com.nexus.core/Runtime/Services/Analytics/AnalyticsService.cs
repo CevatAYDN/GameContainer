@@ -17,7 +17,6 @@ namespace Nexus.Core.Services
     // Derives from NexusService<IAnalyticsService> like every other service
     // (previously implemented INexusService directly — inconsistent base-class usage).
     [Preserve]
-    [StubService("Replace with Firebase Analytics or Amplitude before release")]
     public class AnalyticsService : NexusService<IAnalyticsService>, IAnalyticsService
     {
         public void LogEvent(string eventName)

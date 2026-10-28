@@ -108,8 +108,9 @@ tutun ve o sahip sona erdiğinde context'i dispose edin.
 Sahne sahipliği, parent/child context'ler, auto-discovery, mediator'lar ve editör yapılandırması için
 bir Root + ContextData asset'i ve bir IContextLifecycle kullanın. [English quickstart](10_MIN_QUICKSTART.md)
 veya [Türkçe hızlı başlangıç](10_MIN_QUICKSTART_TR.md) rehberini izleyin. Yapılandırmayı ilgisiz
-MonoBehaviour update'lerinde binding yapmak yerine lifecycle'da tutun. Oyun ihtiyaç duyduğunda gerçek
-analytics/reklam/IAP/backend adaptörlerini bağlayın; stub servisler entegrasyon noktalarıdır.
+MonoBehaviour update'lerinde binding yapmak yerine lifecycle'da tutun. `AnalyticsService` yalnızca log'a
+yazar; `AdService` ve `IapService` oyun gerçek bir adaptör bağlayana kadar mock adaptörle çalışır
+(`com.nexus.firebase`, `com.nexus.ads.bridge.nexus`, `com.nexus.iap.unity`).
 
 ## Performansa duyarlı composite'ler
 

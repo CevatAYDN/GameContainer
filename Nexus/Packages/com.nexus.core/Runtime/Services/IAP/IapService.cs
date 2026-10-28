@@ -50,7 +50,6 @@ namespace Nexus.Core.Services
     }
 
     [Preserve]
-    [StubService("Replace with Unity IAP / RevenueCat adapter before release")]
     public class IapService : NexusService<IIapService>, IIapService
     {
         // Guards adapter swap and read-use hand-off. The catalog has its own lock;

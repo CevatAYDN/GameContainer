@@ -135,6 +135,25 @@ namespace Nexus.Editor.Tests
             Assert.GreaterOrEqual(warningCount, 1, $"Expected at least 1 warning for command state leak, got {warningCount}.");
         }
 
+        // --- Dummy type for the stub-service check (issue #104) ---
+        [StubService("a game's placeholder")]
+        public class GameStubService { }
+
+        [Test]
+        public void StubServiceWarning_NamesOnlyTypesMarkedAsStubs_NotTheFrameworksServices()
+        {
+            // Every build warned that AdService, IapService, AnalyticsService and FeedbackService were stubs,
+            // whatever the game had connected (issue #104); a game's own placeholder must still be named.
+            var warnings = new List<string>();
+            BuildValidation.WarningLogger = warnings.Add;
+
+            GetPrivateStatic("ValidateNoStubServices").Invoke(null, new object[] { 0, 0 });
+
+            var stubWarnings = warnings.FindAll(w => w.Contains("Stub Service:"));
+            Assert.AreEqual(1, stubWarnings.Count, string.Join("\n", stubWarnings));
+            StringAssert.Contains(typeof(GameStubService).FullName, stubWarnings[0]);
+        }
+
         [Test]
         public void Validate_RunSilent_PublishesAReadableSummary()
         {

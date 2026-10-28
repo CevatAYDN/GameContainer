@@ -118,7 +118,7 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 
 | Service | Folder under `Runtime/Services` | Purpose |
 |---|---|---|
-| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; Google AdMob in the `com.nexus.ads.admob` package); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged` (also when its own interstitial cooldown ends, with an `ITickService` bound), privacy options through optional adapter capabilities |
+| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; the ad family's `NexusAdsBridge.Connect` in `com.nexus.ads.bridge.nexus` sets its adapter); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged` (also when its own interstitial cooldown ends, with an `ITickService` bound), privacy options through optional adapter capabilities |
 | `AnalyticsService` | `Analytics` | Stub `IAnalyticsService`: events (with an optional parameter dictionary) and user properties written to the log; replace it with a real backend such as `com.nexus.firebase` before release |
 | `AudioService` | `Audio` | BGM crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels, one mute for everything plus separate music and effects mutes (`IsMusicMuted`, `IsSfxMuted`); the root comes from an `IAudioRootProvider`, which gets it back through `ReleaseRoot` on dispose |
 | `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator; balances persist to `SettingsStores.Economy` when a game binds one |

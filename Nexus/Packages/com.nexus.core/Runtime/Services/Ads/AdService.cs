@@ -46,7 +46,6 @@ namespace Nexus.Core.Services
     // [Inject] Context/SignalBus are available and OnDispose/Dispose follow the shared
     // lifecycle contract (previously implemented INexusService directly — inconsistent).
     [Preserve]
-    [StubService("Replace with AdMob / IronSource adapter before release")]
     public class AdService : NexusService<IAdService>, IAdService, ITickable
     {
         // Without a tick service the end of the interstitial cooldown raises no ReadyChanged (issue #99).

@@ -108,8 +108,9 @@ field and dispose the context when that owner ends.
 Use a Root + ContextData asset and an IContextLifecycle for scene ownership, parent/child contexts,
 auto-discovery, mediators and editor configuration. Follow the [English quickstart](10_MIN_QUICKSTART.md)
 or [Türkçe hızlı başlangıç](10_MIN_QUICKSTART_TR.md). Keep configuration in the lifecycle rather
-than binding from unrelated MonoBehaviour updates. Bind real analytics/ad/IAP/backend adapters
-when the game needs them; stub services are integration seams.
+than binding from unrelated MonoBehaviour updates. `AnalyticsService` only writes to the log, and
+`AdService` and `IapService` run on a mock adapter until the game connects a real one
+(`com.nexus.firebase`, `com.nexus.ads.bridge.nexus`, `com.nexus.iap.unity`).
 
 ## Performance-sensitive composites
 
