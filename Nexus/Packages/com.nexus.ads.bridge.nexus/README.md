@@ -58,7 +58,7 @@ device id yet.
 | `ShowRewarded(placement, Action<bool>)` | true only on `Rewarded` |
 | `ShowInterstitial` | the guard's natural-break and frequency rules, then the SDK |
 | `ShowBanner(placement, position)` | `"top"` or anything else = bottom |
-| `ReadyChanged` | the controller's, which also fires when a pacing window runs out (a cooldown, a first-show delay, an interstitial gap, a day cap at the UTC day change; issue #95); follow it instead of polling the two `Is…Available` members |
+| `ReadyChanged` | the controller's, which also fires when a pacing window runs out (a cooldown, a first-show delay, an interstitial gap, a day cap at the UTC day change; issue #95); follow it instead of polling the two `Is…Available` members. `AdService` also raises it once when its own interstitial cooldown ends (issue #99); that cooldown starts at the show call and the controller's gap at the close, so in that handler `IsInterstitialAvailable` can still be false until the controller's event |
 | `PrivacyOptionsRequired`, `ShowPrivacyOptions` | the consent flow the bootstrap runs: Google UMP for AdMob, and for LevelPlay when `com.nexus.ads.admob` is installed (otherwise LevelPlay's pass-through, which never asks); the simulator's switch in the editor |
 | `OnImpressionRecorded` | every `AdRevenue` the mediation reports |
 

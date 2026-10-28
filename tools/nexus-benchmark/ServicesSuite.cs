@@ -945,6 +945,33 @@ namespace NexusBench
                 bool impression = net == "admob" && Math.Abs(rev - 0.42) < 1e-6 && place == "default";
                 Check("D4. Cooldown_Clamped_And_Impression_Event", instantlyAvailable && impression,
                     $"available={instantlyAvailable} impression=({net},{rev},{place})");
+
+                // D4b (issue #99): without the ad family's bridge nothing raised ReadyChanged when AdService's own
+                // interstitial cooldown ended, so a UI that follows the event kept its button hidden.
+                var tick = new TickService();
+                var paced = new AdService { TickService = tick };
+                _ = paced.InitializeAsync(default);
+                paced.SetNetworkAdapter(new SvcRecordingAdAdapter());
+                int wakes = 0;
+                paced.ReadyChanged += () => wakes++;
+                Time.realtimeSinceStartup = 300f;
+                paced.SetInterstitialCooldown(30f);
+                paced.ShowInterstitial("default");
+                Time.realtimeSinceStartup = 329.9f;
+                tick.OnTick(0.016f);
+                int inside = wakes;
+                Time.realtimeSinceStartup = 330.1f;
+                tick.OnTick(0.016f);
+                tick.OnTick(0.016f);
+                int atEnd = wakes;
+                bool availableAtEnd = paced.IsInterstitialAvailable("default");
+                paced.ShowInterstitial("default");
+                paced.Dispose();
+                Time.realtimeSinceStartup = 400f;
+                tick.OnTick(0.016f);
+                Check("D4b. InterstitialCooldownEnd_RaisesReadyChanged_Once_WithoutTheBridge",
+                    inside == 0 && atEnd == 1 && availableAtEnd && wakes == 1,
+                    $"events inside the 30 s cooldown={inside}, at its end over two ticks={atEnd} (expected 1), available then={availableAtEnd}, after Dispose={wakes - atEnd} (expected 0)");
             }
             finally
             {

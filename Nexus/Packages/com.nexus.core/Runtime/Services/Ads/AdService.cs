@@ -33,7 +33,8 @@ namespace Nexus.Core.Services
 
         /// <summary>Rewarded flow with a structured result; NotReady when nothing is loaded, without calling the adapter.</summary>
         void RequestReward(string placement, Action<AdOutcome> onOutcome);
-        /// <summary>Raised when ad readiness may have changed (adapter set and initialized, or the adapter reports a change).</summary>
+        /// <summary>Raised when ad readiness may have changed (adapter set and initialized, the adapter reports a change, or the
+        /// interstitial cooldown ends while an <see cref="ITickService"/> ticks the service).</summary>
         event Action ReadyChanged;
         /// <summary>True when the adapter's consent flow requires a privacy-options entry in the menu.</summary>
         bool PrivacyOptionsRequired { get; }
@@ -46,8 +47,11 @@ namespace Nexus.Core.Services
     // lifecycle contract (previously implemented INexusService directly — inconsistent).
     [Preserve]
     [StubService("Replace with AdMob / IronSource adapter before release")]
-    public class AdService : NexusService<IAdService>, IAdService
+    public class AdService : NexusService<IAdService>, IAdService, ITickable
     {
+        // Without a tick service the end of the interstitial cooldown raises no ReadyChanged (issue #99).
+        [OptionalInject] public ITickService TickService { get; set; }
+
         private IAdNetworkAdapter _adapter;
         // Anti-cheat: cooldown config and the last-show timestamp are XOR-masked in RAM
         // (SecureObservableFloat, matching the project's SecureObservableInt/Long story) so a
@@ -58,6 +62,9 @@ namespace Nexus.Core.Services
         private readonly SecureObservableFloat _lastInterstitialTime = new(-999f);
         private bool _isInitialized;
         private readonly object _lock = new();
+        // Set while the interstitial cooldown may still block; Tick clears it and raises ReadyChanged when the cooldown
+        // ends (issue #99). Read without the lock, so an idle frame costs one field read.
+        private volatile bool _cooldownWakeArmed;
 
         public bool IsInitialized => _isInitialized;
 
@@ -68,6 +75,25 @@ namespace Nexus.Core.Services
         public AdService()
         {
             _forwardReadyChanged = () => ReadyChanged?.Invoke();
+        }
+
+        public override ValueTask InitializeAsync(CancellationToken ct)
+        {
+            TickService?.RegisterTickable(this);
+            return default;
+        }
+
+        // The end of the cooldown is a readiness change no adapter reports: a UI that follows ReadyChanged
+        // kept an interstitial button hidden until something unrelated raised it.
+        public void Tick(float deltaTime)
+        {
+            if (!_cooldownWakeArmed) return;
+            lock (_lock)
+            {
+                if (!_cooldownWakeArmed || Time.realtimeSinceStartup - _lastInterstitialTime.Value < _interstitialCooldownSeconds.Value) return;
+                _cooldownWakeArmed = false;
+            }
+            ReadyChanged?.Invoke();
         }
 
         public void SetNetworkAdapter(IAdNetworkAdapter adapter)
@@ -142,6 +168,8 @@ namespace Nexus.Core.Services
             lock (_lock)
             {
                 _interstitialCooldownSeconds.Value = Mathf.Max(0f, seconds);
+                // After a show, a new cooldown moves the moment the interstitial returns; Tick checks it.
+                if (_lastInterstitialTime.Value >= 0f) _cooldownWakeArmed = true;
             }
         }
 
@@ -193,6 +221,7 @@ namespace Nexus.Core.Services
                 if (canShow)
                 {
                     _lastInterstitialTime.Value = Time.realtimeSinceStartup;
+                    if (_interstitialCooldownSeconds.Value > 0f) _cooldownWakeArmed = true;
                 }
                 adapter = _adapter;
             }
@@ -277,6 +306,8 @@ namespace Nexus.Core.Services
 
         public override void Dispose()
         {
+            TickService?.UnregisterTickable(this);
+            _cooldownWakeArmed = false;
             IAdNetworkAdapter adapter;
             lock (_lock) { adapter = _adapter; }
             if (adapter is IAdReadinessAdapter readiness) readiness.ReadyChanged -= _forwardReadyChanged;

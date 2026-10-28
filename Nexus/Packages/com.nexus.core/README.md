@@ -118,7 +118,7 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 
 | Service | Folder under `Runtime/Services` | Purpose |
 |---|---|---|
-| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; Google AdMob in the `com.nexus.ads.admob` package); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged`, privacy options through optional adapter capabilities |
+| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; Google AdMob in the `com.nexus.ads.admob` package); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged` (also when its own interstitial cooldown ends, with an `ITickService` bound), privacy options through optional adapter capabilities |
 | `AnalyticsService` | `Analytics` | Stub `IAnalyticsService`: events (with an optional parameter dictionary) and user properties written to the log; replace it with a real backend such as `com.nexus.firebase` before release |
 | `AudioService` | `Audio` | BGM crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels, one mute for everything plus separate music and effects mutes (`IsMusicMuted`, `IsSfxMuted`); the root comes from an `IAudioRootProvider`, which gets it back through `ReleaseRoot` on dispose |
 | `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator; balances persist to `SettingsStores.Economy` when a game binds one |
@@ -166,6 +166,7 @@ starting point, not a save system: a game keeps its own save format and decides 
 | Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup (EditMode `TypedComposite_SteadyStateHasNoManagedAllocation`) |
 | `ObservableProperty<T>` value change, `ObservableList<T>` add, remove and clear, with subscribers | 0 B after the first subscription (GCA2, stress 17 and 17b) |
 | `TickService` dispatch | 0 B per frame (GCA3; stress 20, 10k frames × 300 tickables) |
+| `AdService.Tick` with an `ITickService` bound: a frame with no cooldown running, a frame inside the interstitial cooldown, the frame it ends | 0 B (GCA9, with a `ReadyChanged` handler that counts) |
 | `HybridQueue` thread-safe and next-frame enqueue and drain | 0 B after warmup (`HybridQueue_ThreadSafe_ZeroGC`, stress 14) |
 | `NetworkSignalHistory` replay, `RemoveSignalsAfter` and `Prune`; `NetworkSignalBus.RollbackAndResimulate` | 0 B (`Netcode_Rollback_And_Replay_ZeroGC`, stress 9; PlayMode `NetcodeTests.Prune_SteadyState_ZeroAllocations`, EditMode `NestedRollback_SteadyStateHasNoManagedAllocation`) |
 | `InputService` update with a `PlayerMoveSignal` fire, a pool-warmed `AudioService.PlaySfx`, `LocalizationService.GetString` | 0 B (G1, G2, G3) |

@@ -37,6 +37,7 @@ namespace NexusBench
             failures += AssertPass("GCA6. SubscribedSignal_FirstFireAfterPrewarm_ZeroGC", TestSubscribedFirstFireAfterPrewarmZeroGC);
             failures += AssertPass("GCA7. EconomyService_SubscribedBalance_EarnSpend_ZeroGC", TestEconomySubscribedBalanceZeroGC);
             failures += AssertPass("GCA8. SaveThrottler_Tick_IdleAndDue_ZeroGC", TestSaveThrottlerTickZeroGC);
+            failures += AssertPass("GCA9. AdService_Tick_IdleCoolingAndEnd_ZeroGC", TestAdServiceTickZeroGC);
 
             if (failures == 0)
                 Console.WriteLine("\n[GCAudit] ALL ZERO-GC AUDIT TESTS PASSED ✓");
@@ -346,6 +347,58 @@ namespace NexusBench
                 return false;
             }
             return saves > savesBefore;
+        }
+
+        private sealed class ReadyAdAdapter : IAdNetworkAdapter
+        {
+            public void Initialize(Action onInitialized) => onInitialized?.Invoke();
+            public bool IsInterstitialReady(string placement) => true;
+            public void ShowInterstitial(string placement, Action onClosed) => onClosed?.Invoke();
+            public bool IsRewardedReady(string placement) => true;
+            public void ShowRewarded(string placement, Action<bool> onCompleted) => onCompleted?.Invoke(true);
+            public void ShowBanner(string placement, string position) { }
+            public void HideBanner() { }
+        }
+
+        // AdService ticks every frame once a tick service is bound (issue #99). Only the ticks are measured:
+        // idle, while the interstitial cooldown runs, and the frame it ends (a counting handler).
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TestAdServiceTickZeroGC()
+        {
+            var ads = new AdService();
+            ads.SetNetworkAdapter(new ReadyAdAdapter());
+            int wakes = 0;
+            ads.ReadyChanged += () => wakes++;
+            ads.SetInterstitialCooldown(30f);
+            UnityEngine.Time.realtimeSinceStartup = 1000f;
+
+            // Warmup
+            ads.ShowInterstitial("level_end");
+            UnityEngine.Time.realtimeSinceStartup += 31f;
+            ads.Tick(0.016f);
+            wakes = 0;
+
+            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 5000; i++) ads.Tick(0.016f);
+            long idle = GC.GetAllocatedBytesForCurrentThread() - allocBefore;
+
+            long cooling = 0;
+            for (int i = 0; i < 5000; i++)
+            {
+                ads.ShowInterstitial("level_end");
+                allocBefore = GC.GetAllocatedBytesForCurrentThread();
+                ads.Tick(0.016f);
+                UnityEngine.Time.realtimeSinceStartup += 31f;
+                ads.Tick(0.016f);
+                cooling += GC.GetAllocatedBytesForCurrentThread() - allocBefore;
+            }
+            ads.Dispose();
+            if (idle > 0 || cooling > 0)
+            {
+                Console.WriteLine($"      Allocated {idle} bytes in 5000 idle ticks, {cooling} bytes in 5000 cooldowns (a tick inside, a tick at the end)");
+                return false;
+            }
+            return wakes == 5000;
         }
     }
 }

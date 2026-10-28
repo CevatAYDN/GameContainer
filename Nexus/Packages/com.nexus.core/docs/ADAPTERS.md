@@ -84,14 +84,14 @@ and degrade predictably when an adapter lacks the capability:
 | Service member | With the capability | Without it |
 |---|---|---|
 | `IAdService.RequestReward(placement, Action<AdOutcome>)` | `IAdOutcomeAdapter.RequestReward` reports `Rewarded`, `Closed`, `NotReady` or `Failed` | `NotReady` when `IsRewardedReady` is false (the adapter is not called); otherwise the bool result maps to `Rewarded` / `Closed` |
-| `IAdService.ReadyChanged` | forwarded from `IAdReadinessAdapter.ReadyChanged` | raised once when the adapter's `Initialize` completes |
+| `IAdService.ReadyChanged` | forwarded from `IAdReadinessAdapter.ReadyChanged`; also raised once when `AdService`'s own interstitial cooldown ends, if an `ITickService` is bound (issue #99) | raised once when the adapter's `Initialize` completes, and at the end of the interstitial cooldown as on the left |
 | `IAdService.PrivacyOptionsRequired`, `ShowPrivacyOptions(onClosed)` | `IAdConsentAdapter` (the adapter owns the consent flow, for example Google UMP) | `false`; `onClosed` runs immediately |
 | `IIapService.Purchase(productId, Action<PurchaseOutcome>)` | `IIapOutcomeAdapter.PurchaseWithOutcome` reports `Purchased`, `Cancelled`, `Pending`, `Failed` or `Unavailable` | bool result maps to `Purchased`; `store_unavailable` / `not_initialized` to `Unavailable`; anything else to `Failed` |
 | `IIapService.GetLocalizedPrice(productId)` | `IIapStoreInfoAdapter.GetLocalizedPrice` (the store's string) | the catalog's `ProductDefinition.PriceString`, or null |
 | `IIapService.IsStoreAvailable`, `StoreChanged` | `IIapStoreInfoAdapter.IsAvailable` / `Changed` | available whenever an adapter is set (without one, only in the editor and development builds); no change events |
 
 `MonetizationContractTests` (EditMode) lock every row of this table against the mock adapters
-and bool-only adapters.
+and bool-only adapters; the event at the end of the cooldown is harness check D4b.
 
 `RequestRewardAsync(placement, ct)` and `PurchaseAsync(productId, ct)` (`MonetizationAsyncExtensions`) are the
 same two calls as tasks an `IAsyncCommand` awaits; a callback would arrive after a pooled command has
