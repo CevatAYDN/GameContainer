@@ -91,7 +91,11 @@ $head = (& git -C $repo rev-parse HEAD).Trim()
 @{ sourceCommit = $head; archive = $archive.FullName; archiveSha256 = (Get-FileHash -LiteralPath $archive.FullName).Hash
    workingTreeDiff = ((& git -C $repo diff --stat) -join "`n") } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'source-identity.json') -Encoding utf8
 foreach ($log in Get-ChildItem -LiteralPath $evidence -Filter '*.log' -Recurse) {
-    $raw = [IO.File]::ReadAllText($log.FullName)
+    # The last stage's editor can still hold its log for a moment after the Unity CLI returns (#108).
+    for ($attempt = 1; ; $attempt++) {
+        try { $raw = [IO.File]::ReadAllText($log.FullName); break }
+        catch [IO.IOException] { if ($attempt -ge 30) { throw }; Start-Sleep -Seconds 2 }
+    }
     [IO.File]::WriteAllText($log.FullName, [regex]::Replace($raw, '-accessToken\s+\S+', '-accessToken [REDACTED]'))
 }
 Write-Host "Clean consumer gate passed: $evidence"
