@@ -1,7 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using UnityEngine;
+
+[assembly: InternalsVisibleTo("com.nexus.ads.editor.tests")]
 
 namespace Nexus.Ads.Unity
 {
@@ -202,23 +205,13 @@ namespace Nexus.Ads.Unity
         {
             if (Application.isEditor) { onFetched("editor"); return; }
 #if UNITY_ANDROID
+            // Main thread only: read in the lookup thread's catch, it threw and the bootstrap never started (issue #117).
+            string fallback = SystemInfo.deviceUniqueIdentifier;
             new Thread(() =>
             {
                 string id;
                 AndroidJNI.AttachCurrentThread(); // JNI from a thread Unity did not attach aborts natively instead of throwing
-                try
-                {
-                    using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
-                    using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
-                    using (var client = new AndroidJavaClass("com.google.android.gms.ads.identifier.AdvertisingIdClient"))
-                    using (var info = client.CallStatic<AndroidJavaObject>("getAdvertisingIdInfo", activity))
-                        id = info.Call<string>("getId");
-                }
-                catch (Exception ex)
-                {
-                    id = SystemInfo.deviceUniqueIdentifier;
-                    Debug.LogWarning("[Nexus Ads] the advertising id is unavailable (" + ex.GetType().Name + ": " + ex.Message + "); the gate uses this device's SystemInfo.deviceUniqueIdentifier instead, which a mediation dashboard's test device list does not know");
-                }
+                try { id = ReadOrFallback(ReadPlayServicesId, fallback); }
                 finally { AndroidJNI.DetachCurrentThread(); }
                 onFetched(id);
             }) { IsBackground = true, Name = "Nexus.Ads.AdvertisingId" }.Start();
@@ -226,6 +219,31 @@ namespace Nexus.Ads.Unity
             onFetched(SystemInfo.deviceUniqueIdentifier);
 #endif
         }
+
+        /// <summary>
+        /// The id <paramref name="read"/> returns, or <paramref name="fallback"/> when it throws. Runs on the lookup thread,
+        /// so it touches no Unity API that only the main thread may call.
+        /// </summary>
+        internal static string ReadOrFallback(Func<string> read, string fallback)
+        {
+            try { return read(); }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[Nexus Ads] the advertising id is unavailable (" + ex.GetType().Name + ": " + ex.Message + "); the gate uses this device's SystemInfo.deviceUniqueIdentifier instead, which a mediation dashboard's test device list does not know");
+                return fallback;
+            }
+        }
+
+#if UNITY_ANDROID
+        private static string ReadPlayServicesId()
+        {
+            using (var player = new AndroidJavaClass("com.unity3d.player.UnityPlayer"))
+            using (var activity = player.GetStatic<AndroidJavaObject>("currentActivity"))
+            using (var client = new AndroidJavaClass("com.google.android.gms.ads.identifier.AdvertisingIdClient"))
+            using (var info = client.CallStatic<AndroidJavaObject>("getAdvertisingIdInfo", activity))
+                return info.Call<string>("getId");
+        }
+#endif
     }
 
     /// <summary>
