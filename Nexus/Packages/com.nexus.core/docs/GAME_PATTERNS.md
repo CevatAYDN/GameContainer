@@ -6,6 +6,9 @@
 # Nexus Game Architecture Patterns Guide
 
 This guide describes recommended Nexus Core architectural setups, context topologies, signal budgets, and performance parameters for 6 distinct game genres.
+A performance budget below is a target the game sets for its steady-state gameplay frames, not a framework
+guarantee: what the framework's own paths allocate is in the package README's [Performance scope](../README.md#performance-scope), and a
+frame that saves (its `EncryptedStorageService` row) is outside such a budget.
 
 ---
 
@@ -16,7 +19,7 @@ This guide describes recommended Nexus Core architectural setups, context topolo
 - **Setup Pattern:**
   - `GameplayModel`: Reactive score, move count, and board state.
   - `Sequential` signal dispatch for user input & move resolution.
-- **Performance Budget:** 60 FPS, < 1KB GC/frame, < 50 draw calls.
+- **Performance Budget (game target):** 60 FPS, < 1KB GC/frame, < 50 draw calls.
 
 ---
 
@@ -81,7 +84,7 @@ This guide describes recommended Nexus Core architectural setups, context topolo
   - `EncryptedStorageService` for offline earnings persistence.
   - `UIManager` (HUD → Shop → Prestige modal) layered UI navigation.
   - `Sequential` mode for discrete upgrades; `Composite` triggers for multi-resource milestones.
-- **Performance Budget:** 60 FPS, < 500B GC/frame, < 30 draw calls (UI-heavy).
+- **Performance Budget (game target):** 60 FPS, < 500B GC/frame, < 30 draw calls (UI-heavy); a save frame is outside it ([Performance scope](../README.md#performance-scope), storage row).
 - **Offline Earnings Example:**
   ```csharp
   using Nexus.Core;
