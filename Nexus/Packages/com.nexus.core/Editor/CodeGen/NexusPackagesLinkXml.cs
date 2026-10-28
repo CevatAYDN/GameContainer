@@ -30,17 +30,29 @@ namespace Nexus.Editor
         /// <summary>
         /// Writes the elements of every link.xml under <paramref name="packageRoots"/> into one linker file at
         /// <paramref name="outputPath"/> and returns its full path, or null when there is none. Folders ending in '~' are not
-        /// imported by Unity and are skipped. A file that does not parse is skipped with a warning: it loses its own
-        /// preservation, never the player build.
+        /// imported by Unity and are skipped. A file that does not parse, or a package folder that cannot be searched, is
+        /// skipped with a warning: it loses its own preservation, never the player build, and the other packages' files are
+        /// still handed over (#116). <paramref name="findLinkXmlFiles"/> replaces the folder search in tests.
         /// </summary>
-        internal static string Merge(IEnumerable<string> packageRoots, string outputPath)
+        internal static string Merge(IEnumerable<string> packageRoots, string outputPath, Func<string, string[]> findLinkXmlFiles = null)
         {
+            findLinkXmlFiles ??= root => Directory.GetFiles(root, "link.xml", SearchOption.AllDirectories);
             var linker = new XElement("linker");
             var merged = new List<string>();
             foreach (string root in packageRoots)
             {
                 if (string.IsNullOrEmpty(root) || !Directory.Exists(root)) continue;
-                foreach (string file in Directory.GetFiles(root, "link.xml", SearchOption.AllDirectories))
+                string[] files;
+                try
+                {
+                    files = findLinkXmlFiles(root);
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning($"[Nexus] {root} could not be searched for link.xml files; none of its files is handed to the linker: {ex.Message}");
+                    continue;
+                }
+                foreach (string file in files)
                 {
                     if (Path.GetRelativePath(root, file).Split('/', '\\').Any(part => part.EndsWith("~", StringComparison.Ordinal))) continue;
                     try

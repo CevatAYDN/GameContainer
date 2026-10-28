@@ -52,6 +52,28 @@ namespace Nexus.Editor.Tests
             Assert.That(File.ReadAllText(merged), Does.Contain("B.Services").And.Contain("ignoreIfMissing=\"true\""));
         }
 
+        // A package folder that could not be searched threw out of the processor, while a broken file only lost its own
+        // preservation (#116). The editor's .NET Standard 2.1 profile has no API to make a folder unreadable, so the search
+        // itself is replaced.
+        [Test]
+        public void AFolderThatCannotBeSearchedIsSkippedAndTheOtherPackagesStillReachTheLinker()
+        {
+            WriteFile("com.nexus.a/Runtime/link.xml", "<linker><assembly fullname=\"A\" preserve=\"all\"/></linker>");
+            WriteFile("com.nexus.b/Runtime/link.xml", "<linker><assembly fullname=\"B\" preserve=\"all\"/></linker>");
+            string unreadable = Path.Combine(_root, "com.nexus.b");
+            LogAssert.Expect(LogType.Warning, new Regex(@"com\.nexus\.b could not be searched for link\.xml files.*denied"));
+
+            string output = Path.Combine(_root, "out", "PackagesLink.xml");
+            string merged = NexusPackagesLinkXml.Merge(new[] { Path.Combine(_root, "com.nexus.a"), unreadable }, output,
+                root => root == unreadable
+                    ? throw new UnauthorizedAccessException("access denied")
+                    : Directory.GetFiles(root, "link.xml", SearchOption.AllDirectories));
+
+            Assert.That(merged, Is.EqualTo(Path.GetFullPath(output)));
+            var assemblies = XDocument.Load(merged).Root.Elements("assembly").Select(a => (string)a.Attribute("fullname")).ToList();
+            CollectionAssert.AreEqual(new[] { "A" }, assemblies);
+        }
+
         // Only the core is installed in every project that runs these tests; harness CG7 checks each package's own file.
         // Unity finds linker processors through TypeCache and calls them through the interface; so does this test (#115).
         [Test]
