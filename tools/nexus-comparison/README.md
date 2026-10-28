@@ -83,3 +83,8 @@ integration or a universal ranking.
   `android-results.json`, `android-device.json` (model, Android release, ABI, APK hash) and
   `android-logcat.log` land in the run folder. `-AdbSerial` picks the device when more than one
   is connected. Device numbers drift between launches; compare candidates within one run.
+- `-Apk <path>` (run-unity.ps1): installs and runs an APK that an earlier `-Android` run built
+  (`<run>/player-android/Comparison.apk`) into a new run folder, with no host run and no build;
+  `android-device.json` records `launchOnly`. Launches of several builds can then be interleaved, so
+  drift between launches is told apart from a difference between builds (#111). Pass `-Generated`
+  with a generated build's APK.
