@@ -66,21 +66,15 @@ namespace Nexus.Ads
             double sinceStart = _session.SecondsSinceSessionStart;
             if (sinceStart < Policy.NoInterstitialForFirstSeconds)
                 return Frequency("the session is " + Seconds(sinceStart) + " old; the first interstitial waits " + Seconds(Policy.NoInterstitialForFirstSeconds));
-            if (!double.IsNaN(_session.LastInterstitialAt))
-            {
-                double gap = _session.SecondsSinceSessionStart - (_session.LastInterstitialAt - _session.SessionStartedAt);
-                if (gap < Policy.MinInterstitialGapSeconds)
-                    return Frequency("the last interstitial was " + Seconds(gap) + " ago; the gap is " + Seconds(Policy.MinInterstitialGapSeconds));
-            }
-            if (!double.IsNaN(_session.LastRewardedAt))
-            {
-                double sinceRewarded = _session.SecondsSinceSessionStart - (_session.LastRewardedAt - _session.SessionStartedAt);
-                if (sinceRewarded < Policy.NoInterstitialAfterRewardedSeconds)
-                    return Frequency("a rewarded ad closed " + Seconds(sinceRewarded) + " ago; interstitials wait " + Seconds(Policy.NoInterstitialAfterRewardedSeconds));
-            }
-            if (Policy.MaxInterstitialsPerSession > 0 && _session.InterstitialsThisSession >= Policy.MaxInterstitialsPerSession)
+            double gap = SinceLastInterstitial;
+            if (gap < Policy.MinInterstitialGapSeconds)
+                return Frequency("the last interstitial was " + Seconds(gap) + " ago; the gap is " + Seconds(Policy.MinInterstitialGapSeconds));
+            double sinceRewarded = SinceLastRewarded;
+            if (sinceRewarded < Policy.NoInterstitialAfterRewardedSeconds)
+                return Frequency("a rewarded ad closed " + Seconds(sinceRewarded) + " ago; interstitials wait " + Seconds(Policy.NoInterstitialAfterRewardedSeconds));
+            if (InterstitialSessionCapped)
                 return Frequency("the session cap of " + Policy.MaxInterstitialsPerSession + " interstitials is reached");
-            if (Policy.MaxInterstitialsPerDay > 0 && _session.InterstitialsToday >= Policy.MaxInterstitialsPerDay)
+            if (InterstitialDayCapped)
                 return Frequency("the day cap of " + Policy.MaxInterstitialsPerDay + " interstitials is reached");
             return CheckPlacementPacing(placement);
         }
@@ -92,12 +86,45 @@ namespace Nexus.Ads
                 return Frequency("placement '" + placement.Name + "' waits " + Seconds(placement.FirstShowAfterSeconds) + " after session start");
             if (placement.CooldownSeconds > 0 && _session.SecondsSinceShown(placement.Name) < placement.CooldownSeconds)
                 return Frequency("placement '" + placement.Name + "' showed " + Seconds(_session.SecondsSinceShown(placement.Name)) + " ago; its cooldown is " + Seconds(placement.CooldownSeconds));
-            if (placement.SessionCap > 0 && _session.SessionCount(placement.Name) >= placement.SessionCap)
+            if (PlacementSessionCapped(placement))
                 return Frequency("placement '" + placement.Name + "' reached its session cap of " + placement.SessionCap);
-            if (placement.DayCap > 0 && _session.DayCount(placement.Name) >= placement.DayCap)
+            if (PlacementDayCapped(placement))
                 return Frequency("placement '" + placement.Name + "' reached its day cap of " + placement.DayCap);
             return PolicyVerdict.Ok;
         }
+
+        /// <summary>
+        /// Seconds until every time rule that blocks the placement now has run out, 0 when none does: the first-interstitial
+        /// delay, the gap after an interstitial and after a rewarded ad, the placement's first-show delay and cooldown.
+        /// A cap is not a time rule: see <see cref="SessionCapReached"/> and <see cref="DayCapReached"/>.
+        /// </summary>
+        public double SecondsUntilPacingEnds(AdPlacement placement)
+        {
+            double wait = Math.Max(Wait(_session.SecondsSinceSessionStart, placement.FirstShowAfterSeconds),
+                Wait(_session.SecondsSinceShown(placement.Name), placement.CooldownSeconds));
+            if (placement.Format != AdFormat.Interstitial) return wait;
+            wait = Math.Max(wait, Wait(_session.SecondsSinceSessionStart, Policy.NoInterstitialForFirstSeconds));
+            wait = Math.Max(wait, Wait(SinceLastInterstitial, Policy.MinInterstitialGapSeconds));
+            return Math.Max(wait, Wait(SinceLastRewarded, Policy.NoInterstitialAfterRewardedSeconds));
+        }
+
+        /// <summary>True while a session cap blocks the placement; it ends with the session.</summary>
+        public bool SessionCapReached(AdPlacement placement)
+            => PlacementSessionCapped(placement) || (placement.Format == AdFormat.Interstitial && InterstitialSessionCapped);
+
+        /// <summary>True while a day cap blocks the placement; it ends when <see cref="IAdClock.UtcDay"/> changes.</summary>
+        public bool DayCapReached(AdPlacement placement)
+            => PlacementDayCapped(placement) || (placement.Format == AdFormat.Interstitial && InterstitialDayCapped);
+
+        // The rules Check and the queries above share. A "since" is NaN while its event has not happened this session,
+        // and a comparison with NaN is false, so the rule does not block.
+        private double SinceLastInterstitial => _session.SecondsSinceSessionStart - (_session.LastInterstitialAt - _session.SessionStartedAt);
+        private double SinceLastRewarded => _session.SecondsSinceSessionStart - (_session.LastRewardedAt - _session.SessionStartedAt);
+        private bool InterstitialSessionCapped => Policy.MaxInterstitialsPerSession > 0 && _session.InterstitialsThisSession >= Policy.MaxInterstitialsPerSession;
+        private bool InterstitialDayCapped => Policy.MaxInterstitialsPerDay > 0 && _session.InterstitialsToday >= Policy.MaxInterstitialsPerDay;
+        private bool PlacementSessionCapped(AdPlacement placement) => placement.SessionCap > 0 && _session.SessionCount(placement.Name) >= placement.SessionCap;
+        private bool PlacementDayCapped(AdPlacement placement) => placement.DayCap > 0 && _session.DayCount(placement.Name) >= placement.DayCap;
+        private static double Wait(double elapsed, double required) => elapsed < required ? required - elapsed : 0;
 
         private static PolicyVerdict Frequency(string reason) => PolicyVerdict.Block(PolicyRules.InterstitialFrequency, reason);
 

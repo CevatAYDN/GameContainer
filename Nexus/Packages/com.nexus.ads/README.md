@@ -127,6 +127,13 @@ if (receipt.HasValue) { Wallet.Add(50); Ads.AcknowledgeReward(receipt.Value.Id);
 Or drop `AdRewardedButton` on a uGUI Button with a `CanvasGroup`: it hides itself while nothing can
 show and raises `OnRewarded` once per paid ad.
 
+A UI that shows or hides an ad button follows `Ads.OnReadyChanged` and asks `Ads.IsReady` when it
+fires, as `AdRewardedButton` does; it does not poll every frame. The event fires on a load, a load
+failure, the end of a show, consent, visibility, the kill switch, the ad-free entitlement and the end
+of a pacing window (a placement's cooldown or first-show delay, the interstitial gaps, a day cap at
+the UTC day change, issue #95). A poll reaches the SDK each time the 0.1 s answer reuse runs out,
+which on Android is a JNI call that allocates.
+
 Full-screen ads pause `AudioListener` and set `Time.timeScale` to 0 until they close (switches on
 the bootstrap). Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`. A paid reward is
 written to the store before the game hears of it (`PendingReward`); `AdRewardedButton` acknowledges

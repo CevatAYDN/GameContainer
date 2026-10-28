@@ -44,9 +44,17 @@ namespace Nexus.Ads
         private bool _fullScreenOpen, _killSwitch, _disposed, _lockHeld;
         private int _initFailures;
         private IDisposable _initRetry;
-        // UI polls IsReady every frame (an OnGUI button asks twice) and each provider call crossed into the SDK,
-        // which logs every IsAdReady in test mode: an answer is reused this long; Show and Preload ask live.
+        // A UI that polls IsReady every frame (an OnGUI button asks twice) instead of following ReadyChanged would cross
+        // into the SDK each time, which logs every IsAdReady in test mode: an answer is reused this long; Show and Preload ask live.
         private const double ProviderReadyWindowSeconds = 0.1;
+        // A time rule of the guard that runs out changes readiness with no provider or app event, so a wake raises ReadyChanged then.
+        private IDisposable _pacingWake;
+        private double _pacingWakeAt;
+        private long _pacingDay;
+        // the wake waits this much past the window's end: a timer that resumes a hair early would find the guard still blocking
+        private const double PacingWakeMarginSeconds = 0.01;
+        // the clock gives the UTC day, not the time to midnight: while a day cap blocks, the day is compared this often
+        private const double DayCapCheckSeconds = 60;
         private readonly double[] _providerReadyAt = { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity }; // per AdFormat
         private readonly bool[] _providerReady = new bool[3];
 
@@ -286,6 +294,8 @@ namespace Nexus.Ads
             if (_remote != null) _remote.Changed -= OnRemoteChanged;
             foreach (var slot in _slots.Values) { slot.Retry?.Dispose(); slot.Retry = null; }
             _initRetry?.Dispose();
+            _pacingWake?.Dispose();
+            _pacingWake = null;
             if (_lockHeld) MediationLock.Release(_provider.Name);
             State = Phase.Stopped;
         }
@@ -418,7 +428,45 @@ namespace Nexus.Ads
             Violation?.Invoke(violation);
         }
 
-        private void RaiseReadyChanged() => ReadyChanged?.Invoke();
+        private void RaiseReadyChanged()
+        {
+            try { ReadyChanged?.Invoke(); }
+            finally { ArmPacingWake(); }
+        }
+
+        // Arms one wake for the loaded placement whose time rules end first. Placements held back by anything else are left
+        // out: a load, a close, visibility, the kill switch, the ad-free entitlement and a new session raise ReadyChanged themselves.
+        private void ArmPacingWake()
+        {
+            _pacingWake?.Dispose();
+            _pacingWake = null;
+            if (_disposed || State != Phase.Running || _killSwitch || _fullScreenOpen || !_visibility.Visible) return;
+            double soonest = double.PositiveInfinity;
+            bool dayCapped = false;
+            var placements = _config.Placements;
+            for (int i = 0; i < placements.Count; i++)
+            {
+                var placement = placements[i];
+                if (!_slots.TryGetValue(placement.Format, out var slot) || slot.State != SlotState.Ready) continue;
+                if (placement.Format == AdFormat.Interstitial && (!placement.NaturalBreak || (_adFree != null && _adFree.AdFree))) continue;
+                if (Guard.SessionCapReached(placement)) continue;
+                if (Guard.DayCapReached(placement)) { dayCapped = true; continue; }
+                double wait = Guard.SecondsUntilPacingEnds(placement);
+                if (wait > 0 && wait < soonest) soonest = wait;
+            }
+            if (double.IsPositiveInfinity(soonest) && !dayCapped) return;
+            _pacingWakeAt = _clock.Seconds + soonest + PacingWakeMarginSeconds;
+            _pacingDay = dayCapped ? _clock.UtcDay : long.MinValue; // a day change matters only to a wake armed for a day cap
+            _pacingWake = _scheduler.Schedule(Math.Min(soonest + PacingWakeMarginSeconds, dayCapped ? DayCapCheckSeconds : double.PositiveInfinity), OnPacingWake);
+        }
+
+        private void OnPacingWake()
+        {
+            _pacingWake = null;
+            if (_disposed || State != Phase.Running) return;
+            if (_clock.Seconds >= _pacingWakeAt || (_pacingDay != long.MinValue && _clock.UtcDay != _pacingDay)) RaiseReadyChanged();
+            else ArmPacingWake();
+        }
 
         private void OnMain(Action action)
         {

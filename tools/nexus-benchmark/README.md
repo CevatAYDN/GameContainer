@@ -81,7 +81,7 @@ dotnet-trace collect -p <pid> --profile gc-verbose                  # allocation
 | Teardown leaks (`TeardownLeakSuite.cs`) | A disposed context and its services are collectable and leave `NexusRuntime`; a throwing view unbind still unbinds the mediator (TL1–TL3) |
 | Fix verification (`FixVerificationSuite.cs`) | Regressions for fixed defects, each failing on the pre-fix code (FV1–FV10) |
 | Evidence (`EvidenceSuite.cs`) | Post-context phases, save throttling and `GameSaveManager`, bounded performance samples, built-in metrics without recording, debug stripping (E1–E6) |
-| Ads core (`AdsCoreSuite.cs`) | `com.nexus.ads` `Runtime/Core` through hand-written ports: every `PolicyGuard` rule, retry back-off, preload, reward-once, the provider gate, session reset, simulator scenarios; fails if a Core source names `UnityEngine` or `UnityEditor` |
+| Ads core (`AdsCoreSuite.cs`) | `com.nexus.ads` `Runtime/Core` through hand-written ports: every `PolicyGuard` rule, `ReadyChanged` when a pacing window runs out (PW1–PW7, issue #95), retry back-off, preload, reward-once, the provider gate, session reset, simulator scenarios; fails if a Core source names `UnityEngine` or `UnityEditor` |
 | Service graph (`ServiceGraphSuite.cs`) | A real context with every package service under strict injection validates with zero issues, boots and resolves each service by interface and concrete type (SVC1) |
 
 The harness runs the operations of `PerformanceTests.cs` with tighter limits than the Unity

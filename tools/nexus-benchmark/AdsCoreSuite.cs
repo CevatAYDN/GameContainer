@@ -229,6 +229,7 @@ namespace NexusBench
                 RunPolicy();
                 RunGuard();
                 RunController();
+                RunPacingWake();
                 RunGate();
                 RunSimulator();
                 RunEngineFree();
@@ -575,6 +576,114 @@ namespace NexusBench
                 Check("AC40. IsReady_PolledEveryFrame_AsksProviderOncePerWindow",
                     allReady && polled <= 1 && afterWindow == polled + 1 && cachedAnswer && r == AdResult.NotReady && rig.Provider.ShowPlacement == null,
                     $"100 polls -> {polled} provider call(s) (at most 1; pre-fix 100), one more after the window ({afterWindow}); an ad that expired inside the window: IsReady={cachedAnswer}, Show={r} without reaching the provider");
+            }
+        }
+
+        // ----- ReadyChanged at the end of a pacing window (issue #95)
+
+        private static void RunPacingWake()
+        {
+            // A UI that follows ReadyChanged (AdRewardedButton) stayed hidden after a cooldown: nothing raised the event when it ran out.
+            // The wake is armed 0.01 s past a window's end, and 29.99 + 0.02 rounds below that in double arithmetic: each
+            // case steps to 0.01 s before the end (no event yet), then 0.05 s on, past the margin (exactly one event).
+            var policyNoFirst = new AdPolicy(30, 0, 30, 0, 0, 30);
+
+            using (var rig = new AdsRig(AdsRig.Config(placements: new AdPlacement("reward_cd", AdFormat.Rewarded, cooldownSeconds: 30))).Running())
+            {
+                rig.Show("reward_cd");
+                rig.Provider.ShowCallback(AdResult.Rewarded);
+                rig.Provider.Fill(AdFormat.Rewarded);
+                int before = rig.ReadyChanges, callsBefore = rig.Provider.IsReadyCalls, callsAtEvent = -1;
+                bool readyInHandler = false;
+                rig.Controller.ReadyChanged += () => { callsAtEvent = rig.Provider.IsReadyCalls; readyInHandler = rig.Controller.IsReady("reward_cd"); };
+                rig.Scheduler.Advance(29.99);
+                int inside = rig.ReadyChanges - before;
+                rig.Scheduler.Advance(0.05);
+                Check("PW1. RewardedCooldownEnd_RaisesReadyChanged_Once_WithoutAskingTheProvider",
+                    inside == 0 && rig.ReadyChanges - before == 1 && readyInHandler && callsAtEvent == callsBefore && rig.Scheduler.Pending == 0,
+                    $"events inside the cooldown={inside}, at its end={rig.ReadyChanges - before} (expected 1), IsReady in the handler={readyInHandler}, provider calls before the handler={callsAtEvent - callsBefore} (expected 0), wakes left={rig.Scheduler.Pending}");
+            }
+
+            using (var rig = new AdsRig(AdsRig.Config(policyNoFirst, placements: AdsRig.LevelEnd)).Running())
+            {
+                rig.Show("level_end");
+                rig.Provider.ShowCallback(AdResult.Closed);
+                rig.Provider.Fill(AdFormat.Interstitial);
+                int before = rig.ReadyChanges;
+                bool readyInHandler = false;
+                rig.Controller.ReadyChanged += () => readyInHandler = rig.Controller.IsReady("level_end");
+                rig.Scheduler.Advance(29.99);
+                int inside = rig.ReadyChanges - before;
+                rig.Scheduler.Advance(0.05);
+                Check("PW2. InterstitialGapEnd_RaisesReadyChanged_Once", inside == 0 && rig.ReadyChanges - before == 1 && readyInHandler,
+                    $"events inside the 30 s gap={inside}, at its end={rig.ReadyChanges - before} (expected 1), IsReady in the handler={readyInHandler}");
+            }
+
+            using (var rig = new AdsRig(AdsRig.Config(placements: new AdPlacement("reward_late", AdFormat.Rewarded, firstShowAfterSeconds: 45))).Running())
+            {
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(44.99);
+                int inside = rig.ReadyChanges - before;
+                rig.Scheduler.Advance(0.05);
+                Check("PW3. PlacementFirstShowDelayEnd_RaisesReadyChanged_Once", inside == 0 && rig.ReadyChanges - before == 1 && rig.Controller.IsReady("reward_late"),
+                    $"events inside the 45 s delay={inside}, at its end={rig.ReadyChanges - before} (expected 1)");
+            }
+
+            using (var rig = new AdsRig(AdsRig.Config(placements: AdsRig.LevelEnd)).Running())
+            {
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(59.99);
+                int inside = rig.ReadyChanges - before;
+                rig.Scheduler.Advance(0.05);
+                Check("PW4. FirstInterstitialDelayEnd_RaisesReadyChanged_Once", inside == 0 && rig.ReadyChanges - before == 1 && rig.Controller.IsReady("level_end"),
+                    $"default policy, events inside the first 60 s={inside}, at their end={rig.ReadyChanges - before} (expected 1)");
+            }
+
+            // Two windows on one interstitial: the gap ends at 30 s, the after-rewarded wait at 40 s; it flips once, at 40 s.
+            using (var rig = new AdsRig(AdsRig.Config(policyNoFirst, placements: new[] { AdsRig.Rewarded, AdsRig.LevelEnd })).Running())
+            {
+                rig.Show("level_end");
+                rig.Provider.ShowCallback(AdResult.Closed);
+                rig.Provider.Fill(AdFormat.Interstitial);
+                rig.Scheduler.Advance(10);
+                rig.Show("shop_refill");
+                rig.Provider.ShowCallback(AdResult.Rewarded);
+                rig.Provider.Fill(AdFormat.Rewarded);
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(25);
+                int pastGap = rig.ReadyChanges - before;
+                rig.Scheduler.Advance(5.05);
+                Check("PW5. OverlappingWindows_RaiseOncePerFlip_NotPerWindowEnd",
+                    pastGap == 0 && rig.ReadyChanges - before == 1 && rig.Controller.IsReady("level_end") && rig.Scheduler.Pending == 0,
+                    $"events when the gap ended at 30 s={pastGap} (expected 0, still waiting after the rewarded ad), at 40 s={rig.ReadyChanges - before} (expected 1), wakes left={rig.Scheduler.Pending}");
+            }
+
+            using (var rig = new AdsRig(AdsRig.Config(placements: new AdPlacement("reward_cd", AdFormat.Rewarded, cooldownSeconds: 30))).Running())
+            {
+                rig.Show("reward_cd");
+                rig.Provider.ShowCallback(AdResult.Rewarded);
+                rig.Provider.Fill(AdFormat.Rewarded);
+                int armed = rig.Scheduler.Pending;
+                rig.Controller.Dispose();
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(31);
+                Check("PW6. Dispose_CancelsThePacingWake", armed == 1 && rig.Scheduler.Pending == 0 && rig.ReadyChanges == before,
+                    $"wakes armed={armed}, after Dispose={rig.Scheduler.Pending}, events after Dispose={rig.ReadyChanges - before}");
+            }
+
+            using (var rig = new AdsRig(AdsRig.Config(placements: new AdPlacement("reward_day", AdFormat.Rewarded, dayCap: 1))).Running())
+            {
+                rig.Show("reward_day");
+                rig.Provider.ShowCallback(AdResult.Rewarded);
+                rig.Provider.Fill(AdFormat.Rewarded);
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(600);
+                int sameDay = rig.ReadyChanges - before;
+                rig.Clock.UtcDay++;
+                rig.Scheduler.Advance(60);
+                Check("PW7. DayCap_RaisesReadyChanged_OnceTheUtcDayChanges",
+                    sameDay == 0 && rig.ReadyChanges - before == 1 && rig.Controller.IsReady("reward_day") && rig.Scheduler.Pending == 0,
+                    $"events in 10 min of the same day={sameDay}, after the day changed={rig.ReadyChanges - before} (expected 1), wakes left={rig.Scheduler.Pending}");
             }
         }
 
