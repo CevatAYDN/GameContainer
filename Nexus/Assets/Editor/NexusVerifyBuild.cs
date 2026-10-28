@@ -22,8 +22,8 @@ namespace NexusVerify
         private static void Build(string targetName, BuildTargetGroup group, BuildTarget target, ScriptingImplementation backend,
             BuildOptions buildOptions = BuildOptions.None, ManagedStrippingLevel? stripping = null)
         {
-            // Restore the pre-existing backend when the batch finishes so this
-            // verification never pollutes ProjectSettings.asset. NamedBuildTarget is the
+            // Restore the pre-existing backend when the batch finishes (a stripping build still leaves
+            // its previous level written explicitly; see the finally block). NamedBuildTarget is the
             // non-obsolete Unity 6 API (the BuildTargetGroup overloads are CS0618).
             var namedTarget = NamedBuildTarget.FromBuildTargetGroup(group);
             var previous = PlayerSettings.GetScriptingBackend(namedTarget);
@@ -47,6 +47,7 @@ namespace NexusVerify
                     options = buildOptions,
                 };
 
+                var buildStart = DateTime.UtcNow;
                 var report = BuildPipeline.BuildPlayer(options);
                 var summary = report.summary;
                 if (summary.result != BuildResult.Succeeded)
@@ -55,6 +56,11 @@ namespace NexusVerify
                         $"Build FAILED ({targetName}, {backend}): result={summary.result}, errors={summary.totalErrors}.\n" +
                         "See the -logFile output for compiler errors.");
                 }
+                // IL2CPP always runs UnityLinker, and the packages' link.xml files reach it only through the core's
+                // NexusPackagesLinkXml, which writes this file (#110, #115).
+                const string packagesLinkXml = "Library/Nexus/PackagesLink.xml";
+                if (backend == ScriptingImplementation.IL2CPP && (!System.IO.File.Exists(packagesLinkXml) || System.IO.File.GetLastWriteTimeUtc(packagesLinkXml) < buildStart))
+                    throw new Exception($"Build {targetName}: the linker got no Nexus package link.xml ({packagesLinkXml} was not written by this build).");
 
                 Console.WriteLine($"[NexusVerifyBuild] {targetName} ({backend}, stripping {PlayerSettings.GetManagedStrippingLevel(namedTarget)}) succeeded: {summary.totalSize} bytes, " +
                     $"{summary.totalTime.TotalSeconds:F1}s, warnings={summary.totalWarnings}");

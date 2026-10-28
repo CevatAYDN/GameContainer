@@ -621,10 +621,12 @@ namespace NexusBench.PackageFixture
         // ─── CG7: every Nexus package assembly is recognized and preserves itself (#110) ───
         // Read from the repository's asmdefs, so a new package is covered the day it is added. A runtime assembly
         // the two package predicates (editor and source generator) miss would be registered by games again; one
-        // that references the core without an <assembly> element in its package's link.xml would lose its
-        // reflection-constructed types to IL2CPP stripping above the default level (the editor's NexusPackagesLinkXml
-        // hands those files to the linker); one compiled only under a define needs ignoreIfMissing, or a project
-        // without that SDK fails to build. A package link.xml that does not parse is skipped by the editor, so it fails here.
+        // that references the core without an <assembly> element preserving something in its package's link.xml would
+        // lose its reflection-constructed types to IL2CPP stripping above the default level (the editor's
+        // NexusPackagesLinkXml hands those files to the linker); one compiled only under a define or on some platforms
+        // needs ignoreIfMissing, or a project without it fails to build. A package link.xml that does not parse is
+        // skipped by the editor, so it fails here. Every game's linker reads the core's file, so each <type> it names
+        // must exist and each <namespace> must hold a type (#115).
 
         private static void Test_PackageAssemblies_Recognized_And_Preserved()
         {
@@ -673,12 +675,22 @@ namespace NexusBench.PackageFixture
                     if (!referencesCore) continue;
 
                     string package = Path.Combine(packages, Path.GetRelativePath(packages, asmdef).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)[0]);
-                    string element = Directory.GetFiles(package, "link.xml", SearchOption.AllDirectories)
-                        .SelectMany(File.ReadAllLines)
-                        .FirstOrDefault(l => l.Contains($"<assembly fullname=\"{assembly}\""));
-                    bool gated = root.TryGetProperty("defineConstraints", out var defines) && defines.GetArrayLength() > 0;
-                    if (element == null) problems.Add($"{assembly}: no <assembly> element in a link.xml of its package");
-                    else if (gated && !element.Contains("ignoreIfMissing=\"true\"")) problems.Add($"{assembly}: compiled under a define, but its link.xml element has no ignoreIfMissing");
+                    var elements = LinkerAssemblyElements(package).Where(e => (string)e.Attribute("fullname") == assembly).ToList();
+                    bool preserves = elements.Any(e => (string)e.Attribute("preserve") == "all" || e.Elements().Any(m => (string)m.Attribute("preserve") == "all"));
+                    bool gated = new[] { "defineConstraints", "includePlatforms", "excludePlatforms" }
+                        .Any(p => root.TryGetProperty(p, out var values) && values.GetArrayLength() > 0);
+                    if (!preserves) problems.Add($"{assembly}: no <assembly> element preserving it in a link.xml of its package");
+                    else if (gated && !elements.Any(e => (string)e.Attribute("ignoreIfMissing") == "true"))
+                        problems.Add($"{assembly}: compiled under a define or on some platforms, but its link.xml element has no ignoreIfMissing");
+
+                    if (assembly != "com.nexus.core") continue;
+                    Assembly runtime = typeof(ContextBuilder).Assembly;
+                    foreach (var named in elements.SelectMany(e => e.Elements()))
+                    {
+                        string fullName = (string)named.Attribute("fullname");
+                        if (named.Name == "type" && runtime.GetType(fullName) == null) problems.Add($"{assembly}: link.xml names the type {fullName}, which does not exist");
+                        if (named.Name == "namespace" && !runtime.GetTypes().Any(t => t.Namespace == fullName)) problems.Add($"{assembly}: link.xml names the namespace {fullName}, which holds no type");
+                    }
                 }
 
                 // Game assemblies, the harness runtime and empty names stay game code for both predicates.
@@ -700,10 +712,10 @@ namespace NexusBench.PackageFixture
         // ─── CG8: an interface method overloaded by generic arity keeps its implementation through stripping (#113) ───
         // At Medium and High stripping UnityLinker removed ContextBuilder.BindReactiveModel<T>() and kept the IModelBinder
         // method it implements, which has an overload of the same name and parameters with two type parameters; the
-        // game's call threw EntryPointNotFoundException. A class implementing such a method keeps the implementation by
-        // [Preserve] on it, or by a <type> or <namespace> element with preserve="all" in a package link.xml. Only the
-        // runtime the harness compiles is seen here; tools/unity-verify/check-stripped.ps1 covers the adapter packages
-        // on a player build.
+        // game's call threw EntryPointNotFoundException. A class implementing such a method keeps the implementation by a
+        // <type> or <namespace> element with preserve="all" under com.nexus.core in the core's link.xml, the fix measured
+        // on the phone ([Preserve] on the method was never built). Only the runtime the harness compiles is seen here;
+        // tools/unity-verify/check-stripped.ps1 covers the adapter packages on a player build.
 
         private static void Test_ArityOverloadImplementations_Preserved()
         {
@@ -718,8 +730,9 @@ namespace NexusBench.PackageFixture
                     Report(name, false, "Nexus/Packages not found from the working directory");
                     return;
                 }
-                var preserved = new HashSet<string>(Directory.GetFiles(packages, "link.xml", SearchOption.AllDirectories)
-                    .SelectMany(f => System.Xml.Linq.XDocument.Load(f).Descendants())
+                var preserved = new HashSet<string>(LinkerAssemblyElements(Path.Combine(packages, "com.nexus.core"))
+                    .Where(a => (string)a.Attribute("fullname") == "com.nexus.core")
+                    .SelectMany(a => a.Elements())
                     .Where(e => (e.Name == "type" || e.Name == "namespace") && (string)e.Attribute("preserve") == "all")
                     .Select(e => e.Name.LocalName + ":" + (string)e.Attribute("fullname")));
 
@@ -744,7 +757,7 @@ namespace NexusBench.PackageFixture
                             if (!overloaded.Contains(map.InterfaceMethods[i])) continue;
                             checkedMethods++;
                             MethodInfo target = map.TargetMethods[i];
-                            if (typePreserved || target.IsDefined(typeof(UnityEngine.Scripting.PreserveAttribute), false)) continue;
+                            if (typePreserved) continue;
                             problems.Add($"{type.FullName}.{target.Name}`{target.GetGenericArguments().Length} ({contract.Name})");
                         }
                     }
@@ -761,6 +774,22 @@ namespace NexusBench.PackageFixture
         }
 
         private static string PackagesDirectory() => new[] { "../../Nexus/Packages", "Nexus/Packages" }.FirstOrDefault(Directory.Exists);
+
+        /// <summary>
+        /// The &lt;assembly&gt; elements the editor's NexusPackagesLinkXml hands to the linker from one package: its link.xml
+        /// files outside folders ending in '~', which Unity does not import. CG7 reports a file that does not parse.
+        /// </summary>
+        private static IEnumerable<System.Xml.Linq.XElement> LinkerAssemblyElements(string package)
+        {
+            foreach (string file in Directory.GetFiles(package, "link.xml", SearchOption.AllDirectories))
+            {
+                if (Path.GetRelativePath(package, file).Split('/', '\\').Any(part => part.EndsWith("~", StringComparison.Ordinal))) continue;
+                System.Xml.Linq.XElement root;
+                try { root = System.Xml.Linq.XDocument.Load(file).Root; }
+                catch (System.Xml.XmlException) { continue; }
+                foreach (var assembly in root.Elements("assembly")) yield return assembly;
+            }
+        }
 
         private static void Test_ConstructorFactoryPolicy_Decisions()
         {

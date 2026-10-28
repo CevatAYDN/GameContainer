@@ -1,8 +1,11 @@
+using System;
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
 using NUnit.Framework;
+using UnityEditor;
+using UnityEditor.Build;
 using UnityEngine;
 using UnityEngine.TestTools;
 
@@ -50,10 +53,14 @@ namespace Nexus.Editor.Tests
         }
 
         // Only the core is installed in every project that runs these tests; harness CG7 checks each package's own file.
+        // Unity finds linker processors through TypeCache and calls them through the interface; so does this test (#115).
         [Test]
         public void TheInstalledCorePackagePreservesItsServicesThroughTheLinker()
         {
-            string merged = new NexusPackagesLinkXml().GenerateAdditionalLinkXmlFile(null, null);
+            Type processorType = TypeCache.GetTypesDerivedFrom<IUnityLinkerProcessor>().SingleOrDefault(t => t == typeof(NexusPackagesLinkXml));
+            Assert.That(processorType, Is.Not.Null, "Unity does not find NexusPackagesLinkXml as an IUnityLinkerProcessor");
+            var processor = (IUnityLinkerProcessor)Activator.CreateInstance(processorType);
+            string merged = processor.GenerateAdditionalLinkXmlFile(null, null);
 
             var assemblies = XDocument.Load(merged).Root.Elements("assembly").Select(a => (string)a.Attribute("fullname")).ToList();
             CollectionAssert.IsSubsetOf(new[] { "com.nexus.core", "com.nexus.core.dots" }, assemblies);

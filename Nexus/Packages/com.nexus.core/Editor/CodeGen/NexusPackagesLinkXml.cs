@@ -16,7 +16,7 @@ namespace Nexus.Editor
     /// do. A game's generated link.xml lists no package type (issue #110); without this, High stripping removed
     /// com.nexus.firebase, com.nexus.iap.unity and Nexus.Ads.Bridge.Nexus whole, types the reflection path constructs.
     /// </summary>
-    public sealed class NexusPackagesLinkXml : IUnityLinkerProcessor
+    internal sealed class NexusPackagesLinkXml : IUnityLinkerProcessor
     {
         private const string OutputPath = "Library/Nexus/PackagesLink.xml";
 

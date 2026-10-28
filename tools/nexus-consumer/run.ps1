@@ -46,6 +46,13 @@ function Invoke-UnityStage([string]$name, [string[]]$cliArguments) {
     Get-Content -LiteralPath $commandLog -Tail 8
     if ($stageExit -ne 0) { throw "Stage '$name' did not pass (exit $stageExit); see $commandLog" }
 }
+function Read-EvidenceLog([string]$path) {
+    # The last stage's editor can still hold its log for a moment after the Unity CLI returns (#108).
+    for ($attempt = 1; ; $attempt++) {
+        try { return [IO.File]::ReadAllText($path) }
+        catch [IO.IOException] { if ($attempt -ge 30) { throw }; Start-Sleep -Seconds 2 }
+    }
+}
 function Invoke-EditorMethod([string]$name, [string]$method, [string[]]$extra = @()) {
     Invoke-UnityStage $name (@('run', $consumer, '--non-interactive', '--json', '--') + $extra +
         @('-nographics', '-executeMethod', $method, '-logFile', (Join-Path $evidence ($name + '-editor.log'))))
@@ -86,16 +93,16 @@ if ($BuildPlayer) {
 }
 if ($BuildAndroid) {
     Invoke-EditorMethod 'consumer-build-android-il2cpp' 'CleanConsumerSetup.BuildAndroidIl2Cpp' @('-buildTarget', 'Android')
+    # The installed packages' link.xml files reach the linker only through the core's NexusPackagesLinkXml (#110, #115).
+    $linker = [regex]::Match((Read-EvidenceLog (Join-Path $evidence 'consumer-build-android-il2cpp-editor.log')), '\[Nexus\] (\d+) package link\.xml files handed to the linker')
+    if (-not $linker.Success -or [int]$linker.Groups[1].Value -lt 1) { throw 'The Android build handed no Nexus package link.xml to the linker; see consumer-build-android-il2cpp-editor.log' }
+    $steps[-1].packageLinkXmlFiles = [int]$linker.Groups[1].Value; Save-Steps
 }
 $head = (& git -C $repo rev-parse HEAD).Trim()
 @{ sourceCommit = $head; archive = $archive.FullName; archiveSha256 = (Get-FileHash -LiteralPath $archive.FullName).Hash
    workingTreeDiff = ((& git -C $repo diff --stat) -join "`n") } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $evidence 'source-identity.json') -Encoding utf8
 foreach ($log in Get-ChildItem -LiteralPath $evidence -Filter '*.log' -Recurse) {
-    # The last stage's editor can still hold its log for a moment after the Unity CLI returns (#108).
-    for ($attempt = 1; ; $attempt++) {
-        try { $raw = [IO.File]::ReadAllText($log.FullName); break }
-        catch [IO.IOException] { if ($attempt -ge 30) { throw }; Start-Sleep -Seconds 2 }
-    }
+    $raw = Read-EvidenceLog $log.FullName
     [IO.File]::WriteAllText($log.FullName, [regex]::Replace($raw, '-accessToken\s+\S+', '-accessToken [REDACTED]'))
 }
 Write-Host "Clean consumer gate passed: $evidence"
