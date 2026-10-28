@@ -49,15 +49,14 @@ namespace Nexus.Editor.Tests
             Assert.That(File.ReadAllText(merged), Does.Contain("B.Services").And.Contain("ignoreIfMissing=\"true\""));
         }
 
+        // Only the core is installed in every project that runs these tests; harness CG7 checks each package's own file.
         [Test]
-        public void TheInstalledNexusPackagesPreserveTheirAssembliesThroughTheLinker()
+        public void TheInstalledCorePackagePreservesItsServicesThroughTheLinker()
         {
             string merged = new NexusPackagesLinkXml().GenerateAdditionalLinkXmlFile(null, null);
 
             var assemblies = XDocument.Load(merged).Root.Elements("assembly").Select(a => (string)a.Attribute("fullname")).ToList();
-            CollectionAssert.IsSubsetOf(
-                new[] { "com.nexus.core", "com.nexus.core.dots", "com.nexus.firebase", "com.nexus.iap.unity", "Nexus.Ads.Bridge.Nexus", "Nexus.Ads.AdMob.Firebase" },
-                assemblies);
+            CollectionAssert.IsSubsetOf(new[] { "com.nexus.core", "com.nexus.core.dots" }, assemblies);
             Assert.That(File.ReadAllText(merged), Does.Contain("<namespace fullname=\"Nexus.Core.Services\" preserve=\"all\""));
         }
     }
