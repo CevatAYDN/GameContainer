@@ -65,7 +65,8 @@ dispatch, pooling, storage) against the real Unity runtime.
   -logFile "tools/unity-verify/artifacts/mono-build.log" -quit
 ```
 
-Produces `Nexus/builds/standalone-mono/`. A success proves the whole game
+Produces `Nexus/builds/standalone-mono/` (each Windows player builds into its own folder, issue #102).
+A success proves the whole game
 (scripts + scene + URP) compiles into a runnable Mono player.
 
 ### 4. IL2CPP player build — code-stripping + AOT verification
@@ -78,8 +79,7 @@ Produces `Nexus/builds/standalone-mono/`. A success proves the whole game
 ```
 
 Produces `Nexus/builds/standalone-il2cpp/`. It needs Visual Studio's C++ toolchain, which the machine
-`docs/RELEASE_GATES.md` measures on has had since 2026-10-23 (Build Tools 2022 with the C++ workload);
-run after step 3, it fails on the Mono player in the same folder (issue #102).
+`docs/RELEASE_GATES.md` measures on has had since 2026-10-23 (Build Tools 2022 with the C++ workload).
 This is the strongest signal:
 IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 - `Runtime/link.xml` preserves the generic dispatch entry points,

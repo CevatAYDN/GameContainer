@@ -37,7 +37,9 @@ namespace NexusVerify
                 var options = new BuildPlayerOptions
                 {
                     scenes = new[] { "Assets/Scenes/NexusStarter.unity" },
-                    locationPathName = $"builds/{targetName}",
+                    // A Windows player's path names its executable; each gets its own folder, or the IL2CPP
+                    // build refuses the folder the Mono build wrote (issue #102).
+                    locationPathName = target == BuildTarget.StandaloneWindows64 ? $"builds/{targetName}/{targetName}.exe" : $"builds/{targetName}",
                     target = target,
                     targetGroup = group,
                     options = buildOptions,
@@ -58,6 +60,8 @@ namespace NexusVerify
             finally
             {
                 PlayerSettings.SetScriptingBackend(namedTarget, previous);
+                // The build saved the settings with its backend; without this a failed build exits with it on disk (issue #102).
+                AssetDatabase.SaveAssets();
                 if (EditorUserBuildSettings.activeBuildTarget != previousTarget)
                     EditorUserBuildSettings.SwitchActiveBuildTarget(previousGroup, previousTarget);
             }
