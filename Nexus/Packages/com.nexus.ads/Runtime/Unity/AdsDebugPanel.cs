@@ -22,7 +22,9 @@ namespace Nexus.Ads.Unity
         private AdsBootstrap _bootstrap;
         private Drawer _drawer;
         private bool _open;
+#if ENABLE_LEGACY_INPUT_MANAGER
         private float _touchStart = -1f;
+#endif
         private Vector2 _scroll;
 
         public bool IsOpen => _open;

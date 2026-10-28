@@ -4,7 +4,7 @@ namespace Nexus.Ads.Unity
 {
     /// <summary>
     /// The fake full-screen ad the simulator shows in the editor and on unlisted devices: a dark
-    /// layer with the format and placement, a Close button, a Reward button for rewarded ads and a
+    /// layer with the format and the scenario, a Close button, a Reward button for rewarded ads and a
     /// Fail button for the show-failure path. Immediate-mode UI so the package needs no canvas.
     /// </summary>
     [DisallowMultipleComponent]
@@ -12,14 +12,13 @@ namespace Nexus.Ads.Unity
     {
         private SimulatorProvider _simulator;
         private AdFormat _format;
-        private string _placement;
         private Texture2D _backdrop;
 
         public void Bind(SimulatorProvider simulator)
         {
             _simulator = simulator;
             simulator.Interactive = true;
-            simulator.Opened += format => { _format = format; _placement = null; enabled = true; };
+            simulator.Opened += format => { _format = format; enabled = true; };
             enabled = false; // an enabled OnGUI costs IMGUI work every frame, so it is on only while a show is open (issue #83)
         }
 
