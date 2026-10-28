@@ -28,7 +28,8 @@ namespace Nexus.DOTS
     }
 
     /// <summary>
-    /// Thread-safe, lock-free, Job/Burst-compatible queue for queuing unmanaged signals inside Unity Jobs.
+    /// A <see cref="NativeQueue{T}"/> of unmanaged signals: jobs write through <see cref="AsParallelWriter"/>,
+    /// the main thread drains into the SignalBus. The package neither Burst-compiles nor Burst-tests it (#109).
     /// Bridges the high-performance Data-Oriented Technology Stack (DOTS) to the observable OOP Signal Bus.
     /// </summary>
     public struct NativeSignalQueue<T> : IDisposable where T : unmanaged
