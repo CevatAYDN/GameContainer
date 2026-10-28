@@ -13,6 +13,13 @@ param(
 # resume, kill and restart, logcat scan. Evidence lands under Nexus/artifacts/<RunName>/ (git-ignored).
 # Out of scope: storage interruption and gameplay-specific checks; see README.md.
 $ErrorActionPreference = 'Stop'
+# Exit codes: 0 passed, 1 failed, 2 could not run (a missing file or tool, no device, adb not reaching the phone; #114).
+function CouldNotRun([string]$why) {
+    if ($result) { $result.couldNotRun = $why; $result | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $evidence 'device-acceptance.json') -Encoding utf8 }
+    Write-Host "Device acceptance COULD NOT RUN: $why"
+    exit 2
+}
+trap { CouldNotRun "$_" }
 if ($RunName -notmatch '^[a-zA-Z0-9_-]+$') { throw 'RunName must be a simple folder name.' }
 $repo = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $evidence = Join-Path $repo ('Nexus/artifacts/' + $RunName)
@@ -30,9 +37,22 @@ $playerCommitFile = "$Apk.commit"  # NexusVerifyBuild writes it beside the playe
 if ([IO.Path]::GetExtension($Apk) -ne '.apk') { $copy = Join-Path $evidence 'player.apk'; Copy-Item -LiteralPath $Apk -Destination $copy; $Apk = $copy }
 $adbArgs = @(); if ($AdbSerial) { $adbArgs = @('-s', $AdbSerial) }
 function Invoke-Adb([string[]]$a) { $out = & adb.exe @adbArgs @a 2>&1; return ($out | ForEach-Object { "$_" }) }
-function Get-AppPid([string]$package) { $tokens = ((Invoke-Adb @('shell', 'pidof', $package)) -join ' ') -split '\s+'; return ($tokens | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1) }
+# A shell command whose answer the run reads. Its exit code cannot tell a dropped adb connection from an answer (pidof
+# exits 1 when the app is gone, and adb shell passes that on): a Unity editor restarting adb mid-soak made a live app
+# look dead (#114). The marker shows the command ran on the phone; without it the command is tried again.
+$adbMarker = 'nexus-adb-ran'
+function Invoke-AdbShell([string]$command) {
+    for ($attempt = 1; $attempt -le 6; $attempt++) {
+        $out = @(Invoke-Adb @('shell', "$command; echo $adbMarker"))
+        if (@($out | Where-Object { $_.Trim() -eq $adbMarker }).Count -gt 0) { return @($out | Where-Object { $_.Trim() -ne $adbMarker }) }
+        Write-Host "  adb did not run '$command' (attempt $attempt of 6): $($out -join ' ')"
+        Start-Sleep -Seconds 3
+    }
+    CouldNotRun "adb did not reach the phone for '$command' in 6 attempts"
+}
+function Get-AppPid([string]$package) { $tokens = ((Invoke-AdbShell "pidof $package") -join ' ') -split '\s+'; return ($tokens | Where-Object { $_ -match '^\d+$' } | Select-Object -Last 1) }
 function PssKb([string]$package) {
-    $lines = Invoke-Adb @('shell', 'dumpsys', 'meminfo', $package)
+    $lines = Invoke-AdbShell "dumpsys meminfo $package"
     foreach ($line in $lines) { if ($line -match 'TOTAL PSS:\s+(\d+)') { return [int]$Matches[1] } }
     foreach ($line in $lines) { if ($line -match '^\s*TOTAL\s+(\d+)') { return [int]$Matches[1] } }
     return -1
@@ -45,8 +65,8 @@ if (-not $package -or -not $activity) { throw 'Could not read package/activity f
 $component = "$package/$activity"
 $devices = @((& adb.exe devices) | Where-Object { $_ -match "`tdevice$" })
 if (-not $AdbSerial -and $devices.Count -ne 1) { throw "Expected exactly one adb device, found $($devices.Count); pass -AdbSerial." }
-$model = ((Invoke-Adb @('shell', 'getprop', 'ro.product.model')) -join '').Trim()
-$release = ((Invoke-Adb @('shell', 'getprop', 'ro.build.version.release')) -join '').Trim()
+$model = ((Invoke-AdbShell 'getprop ro.product.model') -join '').Trim()
+$release = ((Invoke-AdbShell 'getprop ro.build.version.release') -join '').Trim()
 Write-Host "Device: $model (Android $release); app: $component"
 
 $result = [ordered]@{
@@ -57,11 +77,11 @@ function Fail([string]$why) { $result.failures += $why; Write-Host "FAIL: $why" 
 
 $install = Invoke-Adb @('install', '-r', $Apk)
 if (($install -join "`n") -notmatch 'Success') { throw "adb install failed: $($install -join ' ')" }
-Invoke-Adb @('shell', 'am', 'force-stop', $package) | Out-Null
+Invoke-AdbShell "am force-stop $package" | Out-Null
 Invoke-Adb @('logcat', '-c') | Out-Null
 
 # 1. Cold start.
-Invoke-Adb @('shell', 'am', 'start', '-n', $component) | Out-Null
+Invoke-AdbShell "am start -n $component" | Out-Null
 Start-Sleep -Seconds 15
 $pid0 = Get-AppPid $package
 $result.phases.coldStart = [ordered]@{ pid = $pid0; ok = [bool]$pid0 }
@@ -85,10 +105,10 @@ if ($growth -gt $MaxPssGrowthPercent) { Fail "PSS grew $growth% over the soak (l
 
 # 3. Background and resume.
 if ($alive) {
-    Invoke-Adb @('shell', 'input', 'keyevent', 'KEYCODE_HOME') | Out-Null
+    Invoke-AdbShell 'input keyevent KEYCODE_HOME' | Out-Null
     Start-Sleep -Seconds 10
     $pidBackground = Get-AppPid $package
-    Invoke-Adb @('shell', 'am', 'start', '-n', $component) | Out-Null
+    Invoke-AdbShell "am start -n $component" | Out-Null
     Start-Sleep -Seconds 10
     $pidResumed = Get-AppPid $package
     $result.phases.backgroundResume = [ordered]@{ pidBeforeHome = $pid0; pidInBackground = $pidBackground; pidAfterResume = $pidResumed; samePid = ($pidResumed -eq $pid0); ok = [bool]$pidResumed }
@@ -96,20 +116,22 @@ if ($alive) {
 }
 
 # 4. Kill and restart (what a user sees after the OS reclaimed the app).
-Invoke-Adb @('shell', 'am', 'force-stop', $package) | Out-Null
+Invoke-AdbShell "am force-stop $package" | Out-Null
 Start-Sleep -Seconds 3
-Invoke-Adb @('shell', 'am', 'start', '-n', $component) | Out-Null
+Invoke-AdbShell "am start -n $component" | Out-Null
 Start-Sleep -Seconds 15
 $pidRestart = Get-AppPid $package
 $result.phases.killRestart = [ordered]@{ pid = $pidRestart; ok = [bool]$pidRestart }
 if (-not $pidRestart) { Fail 'the app did not start again after force-stop' }
-Invoke-Adb @('shell', 'am', 'force-stop', $package) | Out-Null
+Invoke-AdbShell "am force-stop $package" | Out-Null
 
 # 5. Logcat scan.
 $log = Invoke-Adb @('logcat', '-d')
 $pids = @($pid0, $pidResumed, $pidRestart) | Where-Object { $_ } | Select-Object -Unique  # a process Android recreated on resume is scanned too
 $own = @($log | Where-Object { $line = $_; @($pids | Where-Object { $line -match ('^\S+\s+\S+\s+' + $_ + '\s') }).Count -gt 0 })
 $log | Set-Content -LiteralPath (Join-Path $evidence 'logcat.log') -Encoding utf8
+# A player logs on every launch; no line of its processes means logcat did not answer, not a clean run.
+if ($own.Count -eq 0) { CouldNotRun 'logcat holds no line of the app''s processes' }
 $fatal = @($own | Where-Object { $_ -match 'FATAL EXCEPTION' }).Count
 $anr = @($log | Where-Object { $_ -match ('ANR in ' + [regex]::Escape($package)) }).Count
 $unityExceptions = @($own | Where-Object { $_ -match '\bUnity\b' -and $_ -match '(^|\s)[A-Za-z.]+Exception(:|\s)' -and $_ -notmatch 'ExceptionHelpers|Exceptions/' -and $_ -notmatch 'AssetPackManager' }).Count  # Unity's own Play Asset Delivery probe logs ClassNotFoundException on every APK without Play Core

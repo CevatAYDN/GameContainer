@@ -37,6 +37,14 @@ shows no ad. Whether the SDK then serves test ads is decided by the mediation's 
 LevelPlay adds no label of its own to a test ad (AdMob's "Test Ad" badge has no counterpart
 there) and logs no line naming one; only the creative itself may say "test".
 
+Exit codes: 0 passed, 1 failed (a phase above), 2 could not run: a missing APK or `aapt`, no device,
+or adb not reaching the phone. Every shell command the run reads ends with a marker the phone
+echoes back; a command whose marker does not come back is tried again, 6 times 3 s apart, because
+its exit code cannot tell a dropped adb connection from an answer (`pidof` exits 1 when the app is
+gone). A Unity editor restarting adb mid-soak once made a live app look dead this way (issue #114).
+A logcat with no line of the app's processes also ends the run with 2. When the run got as far as
+the device, `device-acceptance.json` names the reason under `couldNotRun`.
+
 Limits: no storage-interruption test (filling or detaching storage is not done safely on a
 phone), no gameplay assertions, one device model. Run it on a game's player as well; the
 framework's own player only shows that the runtime boots and idles.
