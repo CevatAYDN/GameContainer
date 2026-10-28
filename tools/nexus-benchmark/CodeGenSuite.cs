@@ -180,6 +180,7 @@ namespace NexusBench
             Test_ConstructorFactoryPolicy_Decisions();
             Test_LinkXml_Keeps_ActivatorCreatedTypes();
             Test_PackageAssemblies_Recognized_And_Preserved();
+            Test_ArityOverloadImplementations_Preserved();
             // Last: it loads an assembly named like a package, which every later scan would see.
             Test_Binders_Register_No_Package_Assembly_Type();
 
@@ -632,7 +633,7 @@ namespace NexusBench.PackageFixture
             string detail;
             try
             {
-                string packages = new[] { "../../Nexus/Packages", "Nexus/Packages" }.FirstOrDefault(Directory.Exists);
+                string packages = PackagesDirectory();
                 if (packages == null)
                 {
                     Report(name, false, "Nexus/Packages not found from the working directory");
@@ -695,6 +696,69 @@ namespace NexusBench.PackageFixture
             }
             Report(name, ok, detail);
         }
+
+        // ─── CG8: an interface method overloaded by generic arity keeps its implementation through stripping (#113) ───
+        // At High managed stripping UnityLinker removed ContextBuilder.BindReactiveModel<T>() and kept the IModelBinder
+        // method it implements, which has an overload of the same name and parameters with two type parameters; the
+        // game's call threw EntryPointNotFoundException. A class implementing such a method keeps the implementation by
+        // [Preserve] on it, or by a <type> or <namespace> element with preserve="all" in a package link.xml.
+
+        private static void Test_ArityOverloadImplementations_Preserved()
+        {
+            const string name = "CG8. ArityOverloadImplementations_Preserved";
+            bool ok = false;
+            string detail;
+            try
+            {
+                string packages = PackagesDirectory();
+                if (packages == null)
+                {
+                    Report(name, false, "Nexus/Packages not found from the working directory");
+                    return;
+                }
+                var preserved = new HashSet<string>(Directory.GetFiles(packages, "link.xml", SearchOption.AllDirectories)
+                    .SelectMany(f => System.Xml.Linq.XDocument.Load(f).Descendants())
+                    .Where(e => (e.Name == "type" || e.Name == "namespace") && (string)e.Attribute("preserve") == "all")
+                    .Select(e => e.Name.LocalName + ":" + (string)e.Attribute("fullname")));
+
+                var problems = new List<string>();
+                int checkedMethods = 0;
+                foreach (Type type in typeof(ContextBuilder).Assembly.GetTypes())
+                {
+                    if (!type.IsClass || type.IsAbstract || type.Namespace == null || !type.Namespace.StartsWith("Nexus.", StringComparison.Ordinal)) continue;
+                    bool typePreserved = preserved.Contains("type:" + type.FullName) || preserved.Contains("namespace:" + type.Namespace);
+                    foreach (Type contract in type.GetInterfaces())
+                    {
+                        var overloaded = contract.GetMethods()
+                            .GroupBy(m => (m.Name, m.GetParameters().Length))
+                            .Where(g => g.Select(m => m.GetGenericArguments().Length).Distinct().Count() > 1)
+                            .SelectMany(g => g)
+                            .ToHashSet();
+                        if (overloaded.Count == 0) continue;
+
+                        InterfaceMapping map = type.GetInterfaceMap(contract);
+                        for (int i = 0; i < map.InterfaceMethods.Length; i++)
+                        {
+                            if (!overloaded.Contains(map.InterfaceMethods[i])) continue;
+                            checkedMethods++;
+                            MethodInfo target = map.TargetMethods[i];
+                            if (typePreserved || target.IsDefined(typeof(UnityEngine.Scripting.PreserveAttribute), false)) continue;
+                            problems.Add($"{type.FullName}.{target.Name}`{target.GetGenericArguments().Length} ({contract.Name})");
+                        }
+                    }
+                }
+
+                ok = checkedMethods > 0 && problems.Count == 0;
+                detail = $"{checkedMethods} implementations checked; " + (problems.Count == 0 ? "all preserved" : "not preserved: " + string.Join(", ", problems));
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            Report(name, ok, detail);
+        }
+
+        private static string PackagesDirectory() => new[] { "../../Nexus/Packages", "Nexus/Packages" }.FirstOrDefault(Directory.Exists);
 
         private static void Test_ConstructorFactoryPolicy_Decisions()
         {

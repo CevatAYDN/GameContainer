@@ -133,15 +133,29 @@ namespace NexusVerify
         }
 
         /// <summary>
-        /// The development build above at High managed stripping (issue #110). The project and the games build at the default
-        /// level, Minimal, where the linker copies the package assemblies whole. Only this build tests what the packages'
-        /// link.xml files preserve (handed over by NexusPackagesLinkXml): their assemblies in
+        /// The development build above at the managed stripping level given by -nexusStripping Low|Medium|High (default High;
+        /// issues #110, #113), as builds/android-il2cpp-dev-&lt;level&gt;.apk. The project and the games build at the default level,
+        /// Minimal, where the linker copies the package assemblies whole. Only these builds test what the packages' link.xml
+        /// files preserve (handed over by NexusPackagesLinkXml): tools/unity-verify/check-stripped.ps1 on
         /// Library/Bee/artifacts/Android/ManagedStripped, and DeviceProbe's "framework services" line on the phone.
         /// </summary>
-        public static void BuildAndroidIL2CPPDevelopmentHighStripping()
+        public static void BuildAndroidIL2CPPDevelopmentStripped()
         {
-            Build("android-il2cpp-dev-high.apk", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP,
-                BuildOptions.Development, ManagedStrippingLevel.High);
+            var level = StrippingArgument();
+            Build($"android-il2cpp-dev-{level.ToString().ToLowerInvariant()}.apk", BuildTargetGroup.Android, BuildTarget.Android,
+                ScriptingImplementation.IL2CPP, BuildOptions.Development, level);
+        }
+
+        private static ManagedStrippingLevel StrippingArgument()
+        {
+            string[] args = Environment.GetCommandLineArgs();
+            int index = Array.IndexOf(args, "-nexusStripping");
+            if (index < 0) return ManagedStrippingLevel.High;
+            if (index + 1 < args.Length
+                && Enum.TryParse(args[index + 1], true, out ManagedStrippingLevel level)
+                && level is ManagedStrippingLevel.Low or ManagedStrippingLevel.Medium or ManagedStrippingLevel.High)
+                return level;
+            throw new ArgumentException("-nexusStripping takes Low, Medium or High.");
         }
 
         /// <summary>

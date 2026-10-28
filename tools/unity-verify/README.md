@@ -107,14 +107,23 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 
 The most realistic mobile pipeline (Android + IL2CPP + stripping).
 
-`NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopmentHighStripping` builds the development player
-below at High managed stripping (`Nexus/builds/android-il2cpp-dev-high.apk`; issue #110). The packages'
-assemblies in `Nexus/Library/Bee/artifacts/Android/ManagedStripped` show what their `link.xml` files kept,
-and the probe's `framework services resolved 4/4 injected 4/4` line shows the services still construct and
+`NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopmentStripped -nexusStripping Low|Medium|High`
+(default High) builds the development player below at that managed stripping level
+(`Nexus/builds/android-il2cpp-dev-<level>.apk`; issues #110, #113). The projects and the games build at
+Minimal, where the linker copies the assemblies whole, so only these builds test what is stripped. After
+one, check the assemblies the linker left in `Nexus/Library/Bee/artifacts/Android/ManagedStripped`:
+
+```powershell
+pwsh tools/unity-verify/check-stripped.ps1 -Out Nexus/artifacts/stripped-<level>.json
+```
+
+It fails when a method that a kept interface declares has lost its implementation on a class of the
+Nexus or game assemblies, which IL2CPP reports as `EntryPointNotFoundException` at the call (exit 0
+none missing, 1 missing, 2 could not run). It matches by name, generic arity and parameter count, not
+parameter types. The packages' assemblies in that folder show what their `link.xml` files kept, and the
+probe's `framework services resolved 4/4 injected 4/4` line shows the services still construct and
 inject. Unity has no call that unsets a stripping level, so the build writes the previous level back
-explicitly; run `git checkout -- Nexus/ProjectSettings/ProjectSettings.asset` after it. On 6000.5.6f1 this
-player's own start-up scene fails at High (`EntryPointNotFoundException` in `GameLifecycle.OnConfigure`,
-issue #113), with or without the #110 change; the projects build at Minimal, where it does not occur.
+explicitly; run `git checkout -- Nexus/ProjectSettings/ProjectSettings.asset` after it.
 
 `NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopment` builds the same player as a development
 build (`Nexus/builds/android-il2cpp-dev.apk`) with `Assets/Scripts/Verify/DeviceProbe.cs`, which exists
