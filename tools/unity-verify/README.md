@@ -87,7 +87,9 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 - the build succeeds with the packages' `link.xml` files handed to UnityLinker by `NexusPackagesLinkXml`
   (the build log says how many; Unity itself passes the linker only the files under `Assets`, so before
   issue #110 the packages' files were never read). At the project's level, Minimal, the linker copies the
-  package assemblies whole: what those files preserve is tested only by the High-stripping build below,
+  package assemblies whole: what those files preserve is tested only by the stripped builds below (Low,
+  Medium or High). `NexusVerifyBuild` fails an IL2CPP build that did not write
+  `Library/Nexus/PackagesLink.xml` (#115),
 - the `[Preserve]`-annotated runtime surface survives stripping,
 - a public type that exists only in the Editor and development builds
   (`Nexus/Assets/Scripts/Verify/DevOnlyProbe.cs`) is named in the generated binder only under its own
@@ -123,7 +125,8 @@ none missing, 1 missing, 2 could not run). It matches by name, generic arity and
 parameter types. The packages' assemblies in that folder show what their `link.xml` files kept, and the
 probe's `framework services resolved 4/4 injected 4/4` line shows the services still construct and
 inject. Unity has no call that unsets a stripping level, so the build writes the previous level back
-explicitly; run `git checkout -- Nexus/ProjectSettings/ProjectSettings.asset` after it.
+explicitly; run `git checkout -- Nexus/ProjectSettings/ProjectSettings.asset` after it (this also discards any
+other uncommitted change to that file).
 
 `NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopment` builds the same player as a development
 build (`Nexus/builds/android-il2cpp-dev.apk`) with `Assets/Scripts/Verify/DeviceProbe.cs`, which exists

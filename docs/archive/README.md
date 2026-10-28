@@ -26,6 +26,6 @@ describe the code at their date. Current state lives in the package documentatio
 | `HARDENING.md` | 2026-10-06 → 2026-10-07 | Correctness, integration and performance hardening R01–R20 with the verification of that time (harness 291, EditMode 352, PlayMode 160); it shipped in the package `docs/` until 2026-10-25 | `../RELEASE_GATES.md` |
 | `SLO.md` | 2026-08 → 2026-10-15 | Service-level objectives with harness "baselines" no run records, and a CI gate, self-hosted runner, crash reporting and device soak that did not exist | `../RELEASE_GATES.md`; the package README's Performance scope table |
 | `INTEGRATION.md` | 2026-08 | Turkish integration guide (UPM, submodule, npm) with Ads/IAP adapter registration examples that use pre-Unity-6 APIs | Package `docs/GETTING_STARTED.md`, `docs/INTEGRATION_PATHS*.md`; adapters: package `docs/ADAPTERS.md` |
-| `RELEASE_GATES-2026-10-28.md` | 2026-10-15 → 2026-10-28 | Release gates with the per-commit history from v0.5.0 (`8f19c20`) to `c7d5bf2`, the device readings of #77 and #84 and the ad family's earlier test counts included | `../RELEASE_GATES.md` |
+| `RELEASE_GATES-2026-10-28.md` | 2026-10-15 → 2026-10-28 | Release gates with the per-commit history from v0.5.0 (`8f19c20`) until the cycle on `3271239` (the games' target was then `c7d5bf2`), the device readings of #77 and #84 and the ad family's earlier test counts included | `../RELEASE_GATES.md` |
 
 Relative links inside archived files were written for their original locations and may not resolve.

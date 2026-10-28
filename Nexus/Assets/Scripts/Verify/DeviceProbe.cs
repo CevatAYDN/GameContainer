@@ -69,7 +69,8 @@ namespace NexusVerify.Device
         /// <summary>
         /// Issue #110: the four framework services Gigawatt binds, with the instances it binds beside them, resolved once
         /// from a new context. The first resolve constructs and injects each, through the generated binder or through
-        /// reflection; "resolved 4/4" on a player built at High stripping shows that the packages' link.xml kept them.
+        /// reflection. On a player built at High stripping "injected 4/4" shows that the packages' link.xml kept their
+        /// injected members; "resolved" alone shows nothing there, because the services' [Preserve] keeps the classes.
         /// </summary>
         private static void ResolveFrameworkServices()
         {

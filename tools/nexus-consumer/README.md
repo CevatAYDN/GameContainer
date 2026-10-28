@@ -35,7 +35,9 @@ What runs, in order (each stage is a separate Unity process; the first failure s
    writes `player-mono-result.json` with `passed: true` only when startup reached score 1 and
    disposal threw on resolve.
 9. `-BuildAndroid`: an Android ARM64 IL2CPP development APK is built (build evidence only; it is
-   not installed on a device).
+   not installed on a device). The stage fails unless the build log says the core's
+   `NexusPackagesLinkXml` handed at least one package `link.xml` to the linker; the count is recorded as
+   `packageLinkXmlFiles` (#115).
 
 Evidence: `consumer-results.json` (stage exit codes), the test XMLs, editor and CLI logs with
 access tokens redacted, `consumer-preparation.json` and `source-identity.json` (commit, tarball
