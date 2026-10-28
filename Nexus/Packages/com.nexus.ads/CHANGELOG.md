@@ -2,8 +2,7 @@
 
 The changelog of the ad package family: `com.nexus.ads` (core, Unity layer, editor), the provider
 packages (`com.nexus.ads.levelplay`, the `Nexus.Ads.AdMob` and `Nexus.Ads.AdMob.Firebase` assemblies of
-`com.nexus.ads.admob`, whose legacy `AdMobAdapter`, removed in #14, has its history in the core's changelog,
-and the planned `com.nexus.ads.max`, issue #86) and
+`com.nexus.ads.admob`, whose legacy `AdMobAdapter`, removed in #14, has its history in the core's changelog) and
 `com.nexus.ads.bridge.nexus`. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 `package.json` is the released version, everything newer is under Unreleased. The plan is
 [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8).
