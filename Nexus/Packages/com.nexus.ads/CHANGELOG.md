@@ -1,14 +1,17 @@
 # Changelog
 
 The changelog of the ad package family: `com.nexus.ads` (core, Unity layer, editor), the provider
-packages (`com.nexus.ads.levelplay`, the `Nexus.Ads.AdMob` provider assembly of `com.nexus.ads.admob`,
-whose legacy `AdMobAdapter` stays in the core's changelog until it is retired, and the planned
-`com.nexus.ads.max`, issue #14) and
+packages (`com.nexus.ads.levelplay`, the `Nexus.Ads.AdMob` and `Nexus.Ads.AdMob.Firebase` assemblies of
+`com.nexus.ads.admob`, whose legacy `AdMobAdapter`, removed in #14, has its history in the core's changelog,
+and the planned `com.nexus.ads.max`, issue #86) and
 `com.nexus.ads.bridge.nexus`. Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/);
 `package.json` is the released version, everything newer is under Unreleased. The plan is
 [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8).
 
 ## [Unreleased]
+
+### Added
+- **The analytics consent over Google's consent form** (`com.nexus.ads.admob`, issue #87): `UmpAnalyticsConsent`, the `IAnalyticsConsent` that `com.nexus.firebase`'s services read (`FirebaseBindings.Bind<UmpAnalyticsConsent>(builder)`), in the new assembly `Nexus.Ads.AdMob.Firebase`, compiled only with `com.nexus.firebase` installed too. Wickling and ChipCrisis each kept a copy with a different rule: Wickling read TCF purpose 1 as the analytics choice, ChipCrisis refused it always. Rule (b), the advisor's decision delegated by the owner: Google maps no TCF purpose to `analytics_storage`, so the form answers nothing about analytics, and where consent is required nothing is sent, analytics and Crashlytics (#78) alike. The state is UMP's status, read at start and again on `IAdService.ReadyChanged`; `Changed` fires and a line is logged only when it changes. EditMode `UmpAnalyticsConsentTests` (5 cases) in `Nexus/artifacts/admob-20261028/AdMobFirebaseConsumer` with Google Mobile Ads 11.6.0: EditMode 63 / 63 / 0 / 0; with the choice set to granted, the case for an answered form fails. The device line is a game's re-pin run.
 
 ### Fixed
 - `ReadyChanged` (and `Ads.OnReadyChanged`, `IAdService.ReadyChanged` through the bridge) was not raised when a time rule of the guard ran out (issue #95): a placement's cooldown and first-show delay, the first-interstitial delay, the gap after an interstitial or a rewarded ad, and a day cap at the UTC day change turned `IsReady` true with no event, so a UI that follows the event, `AdRewardedButton` included, stayed hidden until something unrelated happened. Polling instead is no way out: it reaches the SDK each time the 0.1 s answer reuse runs out, a LevelPlay JNI call on Android (in ChipCrisis, three mediators polling `IsRewardedAvailable` allocated in 672 of 3606 frames on the phone, its `docs/RELEASE_GATES.md` §3). `PolicyGuard.SecondsUntilPacingEnds`, `SessionCapReached` and `DayCapReached` answer from the same rules `Check` uses, and `AdController` arms one `IAdScheduler` wake for the loaded placement whose windows end first (a day cap compares the UTC day once a minute); the wake raises the event once without asking the provider and is cancelled on `Dispose`. `AdsCoreSuite` PW1–PW7 fail on the old code. `com.nexus.core`'s own `AdService` cooldown without the bridge had the same gap; its fix is in the core changelog (issue #99).

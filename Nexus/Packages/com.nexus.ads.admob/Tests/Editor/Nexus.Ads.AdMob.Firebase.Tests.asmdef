@@ -1,0 +1,40 @@
+{
+    "name": "Nexus.Ads.AdMob.Firebase.Tests",
+    "rootNamespace": "Nexus.Ads.AdMob.Tests",
+    "references": [
+        "com.nexus.core",
+        "com.nexus.firebase",
+        "Nexus.Ads.AdMob.Firebase",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll",
+        "GoogleMobileAds.Ump.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "NEXUS_ADMOB",
+        "NEXUS_ADMOB_FIREBASE"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.google.ads.mobile",
+            "expression": "11.3.0",
+            "define": "NEXUS_ADMOB"
+        },
+        {
+            "name": "com.nexus.firebase",
+            "expression": "0.1.0",
+            "define": "NEXUS_ADMOB_FIREBASE"
+        }
+    ],
+    "noEngineReferences": false
+}

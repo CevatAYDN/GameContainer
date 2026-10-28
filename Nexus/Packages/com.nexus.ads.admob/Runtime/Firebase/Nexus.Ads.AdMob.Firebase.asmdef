@@ -1,0 +1,31 @@
+{
+    "name": "Nexus.Ads.AdMob.Firebase",
+    "rootNamespace": "Nexus.Ads.AdMob",
+    "references": [
+        "com.nexus.core",
+        "com.nexus.firebase"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [
+        "NEXUS_ADMOB",
+        "NEXUS_ADMOB_FIREBASE"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.google.ads.mobile",
+            "expression": "11.3.0",
+            "define": "NEXUS_ADMOB"
+        },
+        {
+            "name": "com.nexus.firebase",
+            "expression": "0.1.0",
+            "define": "NEXUS_ADMOB_FIREBASE"
+        }
+    ],
+    "noEngineReferences": false
+}

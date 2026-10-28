@@ -10,7 +10,7 @@ Firebase Analytics, Remote Config and Crashlytics behind Nexus services, with th
 |---|---|
 | `AnalyticsEventName`, `AnalyticsUserProperty`, `AnalyticsParameterValue` | The name and value limits of events, parameters and user properties, and which Firebase parameter type a value becomes (text, 64-bit integer, double; a boolean is 1 or 0; anything else is not sent). |
 | `ConsentState`, `AnalyticsChoice`, `AnalyticsDecision`, `AnalyticsCollectionPolicy` | The consent answer, the player's choice, and whether an event is sent, held or dropped. |
-| `IAnalyticsConsent` | Where the services read the answer and the choice from. The game implements it over its consent flow. |
+| `IAnalyticsConsent` | Where the services read the answer and the choice from. Over Google's consent form, `com.nexus.ads.admob`'s `UmpAnalyticsConsent`; a game that asks its own analytics question implements it over that question. |
 | `AnalyticsGate`, `AnalyticsEvent` | Holds events until the answer is known, sends them in order once allowed, drops them when refused. The wait is bounded (256 events). |
 | `IRemoteConfigService`, `RemoteConfigFetchPolicy`, `RemoteConfigParser` | `FetchAsync`, typed reads with the game's fallback, a `Changed` event per key, a 12-hour fetch cache, and value parsing with the invariant culture. |
 | `ICrashReporter`, `LoggedErrorException` | Records an error the game survived as a non-fatal. |
@@ -29,7 +29,7 @@ The adapters were written against Firebase Unity SDK **14.0.0** (`expression` 14
 
 - **Event and parameter names.** Letters, digits and underscores, starting with a letter, at most 40 characters, and no reserved prefix (`firebase_`, `google_`, `ga_`). Firebase compares names case-sensitively, so case is kept. The 40-character and letter-first limits are stated in Google's documentation for parameter names; they are applied to event names too, and the event-name page should be checked before 1.0.
 - **User properties.** A name of at most 24 characters with the same shape, not `user_id`, `first_open_time` or `last_deep_link_referrer`; a value of at most 36 characters. A value over the limit is dropped, not truncated.
-- **Consent.** The consent status does not say which purposes the player accepted: `Obtained` means the form was answered. Analytics are sent when the choice is granted, dropped when it is refused, and held while the choice or the answer is unknown. Where consent is not required, events are sent at once. Where the choice is read from is the game's job, through `IAnalyticsConsent`.
+- **Consent.** The consent status does not say which purposes the player accepted: `Obtained` means the form was answered. Analytics are sent when the choice is granted, dropped when it is refused, and held while the choice or the answer is unknown. Where consent is not required, events are sent at once. Where the choice is read from is `IAnalyticsConsent`'s job. `com.nexus.ads.admob`'s `UmpAnalyticsConsent` reads Google's consent form, which answers nothing about analytics, so its choice is always refused (issue #87).
 - **Remote config.** Fetched at launch and reused for 12 hours. A clock set back forces a fetch. A value that cannot be read as the requested type returns the fallback. Numbers are read with the invariant culture, so a device language does not change them.
 
 ## Binding
@@ -37,7 +37,7 @@ The adapters were written against Firebase Unity SDK **14.0.0** (`expression` 14
 ```csharp
 public void OnConfigure(IContextBuilder builder)
 {
-    FirebaseBindings.Bind<GameConsent>(builder);   // GameConsent : NexusService<IAnalyticsConsent>, IAnalyticsConsent
+    FirebaseBindings.Bind<UmpAnalyticsConsent>(builder);   // com.nexus.ads.admob; or the game's own NexusService<IAnalyticsConsent>
 }
 ```
 

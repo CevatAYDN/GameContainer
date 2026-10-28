@@ -3,7 +3,9 @@
 > **Who this is for:** level 3, shipping a game with Google AdMob.
 
 `AdMobProvider` and `UmpConsentFlow` in the assembly `Nexus.Ads.AdMob` (`Runtime/Provider`), the ad
-family's `IAdProvider` over `com.nexus.ads`; changes go to the family's [CHANGELOG](../com.nexus.ads/CHANGELOG.md).
+family's `IAdProvider` over `com.nexus.ads`, and `UmpAnalyticsConsent` in `Nexus.Ads.AdMob.Firebase`
+(`Runtime/Firebase`), the analytics consent `com.nexus.firebase` reads; changes go to the family's
+[CHANGELOG](../com.nexus.ads/CHANGELOG.md).
 The legacy `AdMobAdapter` behind `com.nexus.core`'s `AdService` was removed once Gigawatt, Wickling and
 ChipCrisis had moved to the family (issue #14); a game still on it moves with [MIGRATION.md](../com.nexus.ads/MIGRATION.md)
 before it re-pins.
@@ -62,3 +64,27 @@ Proven against Google Mobile Ads 11.6.0 in a disposable project (`Nexus/artifact
 row in [`docs/RELEASE_GATES.md`](../../../docs/RELEASE_GATES.md)): the plugin's editor placeholders
 load, show, pay and close through the provider. Not covered: app-open, native and rewarded
 interstitial ads, mediation setup inside AdMob.
+
+## Analytics consent for `com.nexus.firebase`
+
+`UmpAnalyticsConsent` is the `IAnalyticsConsent` the Firebase services read, over Google's consent form
+(issue #87). Bind it with `FirebaseBindings.Bind<UmpAnalyticsConsent>(builder)`; it needs an `IAdService`
+in the context (the bridge's). The assembly `Nexus.Ads.AdMob.Firebase` compiles only while
+`com.google.ads.mobile` 11.3.0+ and `com.nexus.firebase` are installed (`NEXUS_ADMOB`,
+`NEXUS_ADMOB_FIREBASE`); it needs no Firebase SDK.
+
+- **State** is the User Messaging Platform's consent status, read at start and again on
+  `IAdService.ReadyChanged`, which the family raises after the consent answer, when ads start or are refused.
+  `Changed` fires only when the status changed, and each change is logged in every build
+  (`[Nexus Ads] analytics consent: ...`).
+- **Choice** is always `Denied`. Google maps no TCF purpose to `analytics_storage` (purpose 1 maps to
+  `ad_storage` and `ad_user_data`; [Implement TCF strings](https://developers.google.com/tag-platform/security/guides/implement-TCF-strings)),
+  so the form answers nothing about analytics. Where consent is required (EEA, UK) nothing is sent: no
+  analytics and, since #78, no Crashlytics reports. Where it is not required, collection runs. Before
+  the first answer, events are held.
+- A game that asks its own analytics question binds its own reader instead.
+
+EditMode `UmpAnalyticsConsentTests` (the decision for each UMP status; read again on `ReadyChanged`,
+reported only on a change), in `Nexus/artifacts/admob-20261028/AdMobFirebaseConsumer` with Google Mobile
+Ads 11.6.0. The device line (EEA debug geography: the form shown, collection stays off) is a game's
+re-pin run.

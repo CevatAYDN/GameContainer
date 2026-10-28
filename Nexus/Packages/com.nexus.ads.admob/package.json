@@ -2,7 +2,7 @@
   "name": "com.nexus.ads.admob",
   "version": "0.1.0",
   "displayName": "Nexus AdMob",
-  "description": "Google AdMob (Google Mobile Ads Unity plugin, with User Messaging Platform consent): AdMobProvider, the com.nexus.ads family's IAdProvider (assembly Nexus.Ads.AdMob, compiles only with com.nexus.ads and the plugin 11.3.0+), with UmpConsentFlow, Google's consent form, which the ads bootstrap also runs before LevelPlay.",
+  "description": "Google AdMob (Google Mobile Ads Unity plugin, with User Messaging Platform consent): AdMobProvider, the com.nexus.ads family's IAdProvider (assembly Nexus.Ads.AdMob, compiles only with com.nexus.ads and the plugin 11.3.0+), with UmpConsentFlow, Google's consent form, which the ads bootstrap also runs before LevelPlay; with com.nexus.firebase also installed, UmpAnalyticsConsent, the analytics consent its services read (assembly Nexus.Ads.AdMob.Firebase).",
   "unity": "6000.5",
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.ads.admob/README.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
