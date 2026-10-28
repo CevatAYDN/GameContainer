@@ -86,6 +86,44 @@ namespace Nexus.Core
         }
         private FastResolveCache _fastCache;
 
+        // Local default transient bindings without a factory, for ResolveConstructorParameter only (#111). Kept apart
+        // from _fastCache, which every Resolve<T> reads: putting transients there slowed cached resolves on IL2CPP.
+        private sealed class ParameterBindingCache
+        {
+            internal readonly long Version;
+            internal readonly Binding[] Slots;
+            internal ParameterBindingCache(long version, int capacity)
+            {
+                Version = version;
+                Slots = new Binding[capacity];
+            }
+        }
+        private ParameterBindingCache _parameterCache;
+
+        /// <summary>
+        /// Publishes the binding <see cref="ResolveCore"/> found locally for a default transient parameter, under the
+        /// same rules as <see cref="CacheFastSlot"/>: rechecked under the disposal lock, valid until the next bind.
+        /// </summary>
+        private void CacheParameterSlot(int typeId, Type type, Binding served)
+        {
+            lock (_disposeLock)
+            {
+                if (IsDisposed) return;
+                if (!_bindings.TryGetValue(type, out var binding) || !ReferenceEquals(binding, served)) return;
+                long version = Volatile.Read(ref _bindingVersion);
+                var cache = _parameterCache;
+                if (cache == null || cache.Version != version || typeId >= cache.Slots.Length)
+                {
+                    var replacement = new ParameterBindingCache(version, Math.Max(16, typeId + 16));
+                    if (cache != null && cache.Version == version)
+                        Array.Copy(cache.Slots, replacement.Slots, cache.Slots.Length);
+                    cache = replacement;
+                    Volatile.Write(ref _parameterCache, cache);
+                }
+                Volatile.Write(ref cache.Slots[typeId], binding);
+            }
+        }
+
         /// <summary>
         /// Only resolved local singleton instances enter the fast cache. Transients were tried as cached
         /// <see cref="Binding"/> objects on 2026-10-15: the extra type test on every hit cost more on
@@ -1741,7 +1779,7 @@ namespace Nexus.Core
         /// <param name="name">Optional <c>[Inject(Name=...)]</c> binding name.</param>
         public T ResolveConstructorParameter<T>(int parameterIndex, string ownerTypeName, string parameterTypeName, string name = null) where T : class
         {
-            T value = string.IsNullOrEmpty(name) ? TryResolve<T>() : TryResolve<T>(name);
+            T value = string.IsNullOrEmpty(name) ? TryResolveParameter<T>() : TryResolve<T>(name);
             if (value == null && StrictInjection)
             {
                 throw new InvalidOperationException(
@@ -1755,6 +1793,56 @@ namespace Nexus.Core
             }
             return value;
         }
+
+        /// <summary>
+        /// <see cref="TryResolve{T}()"/> for a constructor parameter (#111). A local default transient without a factory
+        /// comes from <c>_parameterCache</c>: the binding <see cref="ResolveCore"/> would find, with its counter, lazy
+        /// notification and disposal check, without the dictionary lookup. Singletons keep the fast cache; everything
+        /// else takes <see cref="ResolveCore"/>, as <see cref="TryResolve{T}()"/> does.
+        /// </summary>
+        private T TryResolveParameter<T>() where T : class
+        {
+            int typeId = TypeIdCache<T>.Id;
+            var cache = Volatile.Read(ref _fastCache);
+            if (cache != null && cache.Version == Volatile.Read(ref _bindingVersion)
+                && typeId < cache.Slots.Length)
+            {
+                var fastInstance = Volatile.Read(ref cache.Slots[typeId]);
+                if (fastInstance != null) return (T)fastInstance;
+            }
+            object resolved;
+            var parameters = Volatile.Read(ref _parameterCache);
+            Binding binding;
+            if (parameters != null && parameters.Version == Volatile.Read(ref _bindingVersion)
+                && typeId < parameters.Slots.Length
+                && (binding = Volatile.Read(ref parameters.Slots[typeId])) != null)
+            {
+                NexusProfiler.ResolvesPerformed.Value += 1;
+#if ENABLE_PROFILER
+                s_ResolveMarker.Begin();
+                try { resolved = ResolveAndNotifyLazy(typeof(T), binding); }
+                finally { s_ResolveMarker.End(); }
+#else
+                resolved = ResolveAndNotifyLazy(typeof(T), binding);
+#endif
+                if (resolved == null) return null;
+                ThrowIfDisposed();
+                return (T)resolved;
+            }
+            resolved = ResolveCore(typeof(T), throwIfMissing: false, out binding);
+            if (resolved == null) return null;
+            ThrowIfDisposed();
+            if (binding != null)
+            {
+                if (binding.IsSingleton)
+                {
+                    if (ReferenceEquals(binding.Instance, resolved)) CacheFastSlot(typeId, typeof(T), resolved);
+                }
+                else if (binding.Factory == null) CacheParameterSlot(typeId, typeof(T), binding);
+            }
+            return (T)resolved;
+        }
+
         public object TryResolve(Type type)
         {
             if (type == null) return null;
@@ -2477,6 +2565,7 @@ namespace Nexus.Core
                 _bindings.Clear();
                 Volatile.Read(ref _namedBindings)?.Clear();
                 Volatile.Write(ref _fastCache, null);
+                Volatile.Write(ref _parameterCache, null);
             }
             return true;
         }
