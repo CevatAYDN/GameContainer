@@ -698,10 +698,12 @@ namespace NexusBench.PackageFixture
         }
 
         // ─── CG8: an interface method overloaded by generic arity keeps its implementation through stripping (#113) ───
-        // At High managed stripping UnityLinker removed ContextBuilder.BindReactiveModel<T>() and kept the IModelBinder
+        // At Medium and High stripping UnityLinker removed ContextBuilder.BindReactiveModel<T>() and kept the IModelBinder
         // method it implements, which has an overload of the same name and parameters with two type parameters; the
         // game's call threw EntryPointNotFoundException. A class implementing such a method keeps the implementation by
-        // [Preserve] on it, or by a <type> or <namespace> element with preserve="all" in a package link.xml.
+        // [Preserve] on it, or by a <type> or <namespace> element with preserve="all" in a package link.xml. Only the
+        // runtime the harness compiles is seen here; tools/unity-verify/check-stripped.ps1 covers the adapter packages
+        // on a player build.
 
         private static void Test_ArityOverloadImplementations_Preserved()
         {

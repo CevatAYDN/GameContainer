@@ -356,8 +356,8 @@ public class MyClass
 }
 ```
 
-**`EntryPointNotFoundException` above Minimal stripping (issue #113):**
-`[Preserve]` on a class keeps the class, not its methods. An interface may declare two methods with the same name and parameters that differ only in their number of type parameters, such as `Bind<T>()` and `Bind<TInterface, TImplementation>()`. When the game calls both through the interface, UnityLinker (6000.5.6f1, High) kept only the implementation declared first, and the call to the other threw `EntryPointNotFoundException`. Nexus preserves its own such classes. For a game class, preserve it whole in the game's `link.xml` (`<type fullname="MyNamespace.MyClass" preserve="all"/>`) or put `[Preserve]` on each such method. In the Nexus repository, `tools/unity-verify/check-stripped.ps1` finds a missing implementation in a player's stripped assemblies.
+**`EntryPointNotFoundException` at Medium or High stripping (issue #113):**
+`[Preserve]` on a class keeps the class, not its methods. An interface may declare two methods with the same name and parameters that differ only in their number of type parameters, such as `Bind<T>()` and `Bind<TInterface, TImplementation>()`. When the game calls both through the interface, UnityLinker (6000.5.6f1, Medium and High; Low kept both) kept only the implementation declared first, and the call to the other threw `EntryPointNotFoundException`. Nexus preserves its own such classes. For a game class, preserve it whole in the game's `link.xml` (`<type fullname="MyNamespace.MyClass" preserve="all"/>`) or put `[Preserve]` on each such method. In the Nexus repository, `tools/unity-verify/check-stripped.ps1` finds a missing implementation in a player's stripped assemblies.
 
 ---
 

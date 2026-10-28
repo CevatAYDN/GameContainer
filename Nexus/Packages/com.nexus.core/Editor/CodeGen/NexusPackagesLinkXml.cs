@@ -13,8 +13,8 @@ namespace Nexus.Editor
     /// <summary>
     /// Hands the Nexus packages' link.xml files to UnityLinker. Unity passes the linker the link.xml files under Assets only;
     /// a package's own file reaches it through a processor like this one, as the Input System and Unity Services packages
-    /// do. A game's generated link.xml lists no package type (issue #110), so without this, managed stripping above Minimal
-    /// removes the package types that the reflection path constructs.
+    /// do. A game's generated link.xml lists no package type (issue #110); without this, High stripping removed
+    /// com.nexus.firebase, com.nexus.iap.unity and Nexus.Ads.Bridge.Nexus whole, types the reflection path constructs.
     /// </summary>
     public sealed class NexusPackagesLinkXml : IUnityLinkerProcessor
     {

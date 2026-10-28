@@ -33,7 +33,7 @@
     <type fullname="Nexus.Core.CommandHandlerInfo" preserve="all"/>
     <type fullname="Nexus.Core.CompositeTriggerState" preserve="all"/>
     <!-- Its Bind* methods implement interface methods overloaded only by generic arity (BindReactiveModel<T> and
-         BindReactiveModel<TInterface, TImplementation>). At High stripping UnityLinker kept the first declared of
+         BindReactiveModel<TInterface, TImplementation>). At Medium and High stripping UnityLinker kept the first declared of
          each pair and removed the other while keeping the interface method, so a game's call threw
          EntryPointNotFoundException (#113). Harness CG8 requires this for every such implementation. -->
     <type fullname="Nexus.Core.ContextBuilder" preserve="all"/>
