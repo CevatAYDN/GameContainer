@@ -9,6 +9,28 @@ namespace Nexus.Firebase.Tests
     /// </summary>
     public sealed class AnalyticsRulesTests
     {
+        // Event names an app cannot log, as Google publishes them (read 2026-10-29); the two lists differ and GA4's "isn't exhaustive".
+        // GA4 event naming rules, Mobile (Android and iOS): https://support.google.com/analytics/answer/13316687
+        private static readonly string[] Ga4ReservedAppEventNames =
+        {
+            "ad_activeview", "ad_click", "ad_exposure", "ad_query", "ad_reward", "adunit_exposure", "app_clear_data", "app_exception",
+            "app_install", "app_remove", "app_store_refund", "app_update", "app_upgrade", "dynamic_link_app_open", "dynamic_link_app_update",
+            "dynamic_link_first_open", "error", "firebase_campaign", "firebase_in_app_message_action", "firebase_in_app_message_dismiss",
+            "firebase_in_app_message_impression", "first_open", "first_visit", "notification_dismiss", "notification_foreground",
+            "notification_open", "notification_receive", "notification_send", "os_update", "session_start", "user_engagement",
+        };
+
+        // The Android SDK, "events with these names will be dropped":
+        // https://firebase.google.com/docs/reference/android/com/google/firebase/analytics/FirebaseAnalytics.Event
+        private static readonly string[] SdkDroppedEventNames =
+        {
+            "ad_activeview", "ad_click", "ad_exposure", "ad_query", "ad_reward", "adunit_exposure", "app_background", "app_clear_data",
+            "app_exception", "app_remove", "app_store_refund", "app_store_subscription_cancel", "app_store_subscription_convert",
+            "app_store_subscription_renew", "app_update", "app_upgrade", "dynamic_link_app_open", "dynamic_link_app_update",
+            "dynamic_link_first_open", "error", "first_open", "first_visit", "notification_dismiss", "notification_foreground",
+            "notification_open", "notification_receive", "os_update", "session_start", "session_start_with_rollout", "user_engagement",
+        };
+
         [TestCase("run_start")]
         [TestCase("Run_Start")]
         [TestCase("ad_result2")]
@@ -39,6 +61,27 @@ namespace Nexus.Firebase.Tests
         public void AnalyticsEventName_RefusesWhatFirebaseRefuses(string name)
         {
             Assert.IsFalse(AnalyticsEventName.IsValid(name));
+        }
+
+        [TestCaseSource(nameof(Ga4ReservedAppEventNames))]
+        public void AnalyticsEventName_RefusesEveryNameOnGoogleAnalyticsReservedAppList(string name)
+        {
+            Assert.IsFalse(AnalyticsEventName.IsValid(name), name);
+        }
+
+        [TestCaseSource(nameof(SdkDroppedEventNames))]
+        public void AnalyticsEventName_RefusesEveryNameTheAndroidSdkDrops(string name)
+        {
+            Assert.IsFalse(AnalyticsEventName.IsValid(name), name);
+        }
+
+        [TestCase("error", true)]
+        [TestCase("session_start", true)]
+        [TestCase("ga_session", false)]
+        [TestCase("run start", false)]
+        public void AnalyticsParameterName_KeepsTheShapeAndPrefixRulesButNotTheReservedEventNames(string name, bool valid)
+        {
+            Assert.AreEqual(valid, AnalyticsEventName.IsValidParameterName(name), name);
         }
 
         [TestCase("level_up", true)]

@@ -49,7 +49,7 @@ namespace Nexus.Firebase.Mocks
             var kept = new Dictionary<string, object>(parameters.Count);
             foreach (KeyValuePair<string, object> parameter in parameters)
             {
-                if (AnalyticsEventName.IsValid(parameter.Key))
+                if (AnalyticsEventName.IsValidParameterName(parameter.Key))
                 {
                     kept.Add(parameter.Key, parameter.Value);
                 }

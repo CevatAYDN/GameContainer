@@ -22,5 +22,17 @@ namespace Nexus.Firebase.Tests
             Assert.AreEqual(1, analytics.Events[0].Parameters.Count, "the refused parameter is dropped");
             Assert.AreEqual(3, analytics.Events[0].Parameters["night"], "the event keeps the value it was logged with");
         }
+
+        [Test]
+        public void MockAnalytics_DropsAReservedEventNameButKeepsAParameterNamedLikeOne()
+        {
+            var analytics = new MockAnalyticsService();
+
+            analytics.LogEvent("ad_reward");
+            analytics.LogEvent("run_start", new Dictionary<string, object> { { "error", "timeout" } });
+
+            Assert.AreEqual(1, analytics.Events.Count, "Firebase drops ad_reward on the device, so the mock does not record it");
+            Assert.AreEqual("timeout", analytics.Events[0].Parameters["error"], "error is reserved as an event name, not as a parameter name");
+        }
     }
 }

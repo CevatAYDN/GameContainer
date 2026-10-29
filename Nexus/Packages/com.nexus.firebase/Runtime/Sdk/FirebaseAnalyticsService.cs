@@ -108,7 +108,7 @@ namespace Nexus.Firebase.Sdk
             {
                 foreach (KeyValuePair<string, object> parameter in analyticsEvent.Parameters)
                 {
-                    if (AnalyticsEventName.IsValid(parameter.Key) && TryConvert(parameter.Key, parameter.Value, out FirebaseParameter converted))
+                    if (AnalyticsEventName.IsValidParameterName(parameter.Key) && TryConvert(parameter.Key, parameter.Value, out FirebaseParameter converted))
                     {
                         parameters.Add(converted);
                     }
