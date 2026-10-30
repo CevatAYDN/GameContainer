@@ -59,7 +59,7 @@ namespace Nexus.Ads.AdMob
         public AdMobProvider(ProviderConfig config)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
-            _consent = new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: config.UsesPublishedTestData);
+            _consent = new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: UmpConsentFlow.DebugAllowedFor(config));
             _consent.Changed += () => Changed?.Invoke();
         }
 
@@ -254,7 +254,7 @@ namespace Nexus.Ads.AdMob
         private static void Register()
         {
             AdsBootstrap.RegisterProvider(AdProviderKind.AdMob, (scheduler, config) => new AdMobProvider(config));
-            AdsBootstrap.RegisterSharedConsentFlow(config => new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: config.TestMode || config.UsesPublishedTestData), AdProviderKind.AdMob);
+            AdsBootstrap.RegisterSharedConsentFlow(config => new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: UmpConsentFlow.DebugAllowedFor(config)), AdProviderKind.AdMob);
         }
     }
 }

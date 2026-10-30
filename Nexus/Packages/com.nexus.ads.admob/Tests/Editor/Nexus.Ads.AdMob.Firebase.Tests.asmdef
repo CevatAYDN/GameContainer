@@ -5,6 +5,8 @@
         "com.nexus.core",
         "com.nexus.firebase",
         "Nexus.Ads.AdMob.Firebase",
+        "Nexus.Ads.Core",
+        "Nexus.Ads.AdMob",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

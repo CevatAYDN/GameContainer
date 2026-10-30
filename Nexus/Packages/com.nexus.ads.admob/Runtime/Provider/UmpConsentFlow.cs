@@ -50,6 +50,32 @@ namespace Nexus.Ads.AdMob
 
         internal bool DebugApplies => _debugAllowed && HasDebugSettings;
 
+        /// <summary>
+        /// The request the flow for <paramref name="config"/> sends: its age tag and, while debug settings may apply (never in
+        /// a release build), the debug devices and geography. A status update at launch must send the same request, or the
+        /// flow's later answer replaces it under another region or age tag (issue #121).
+        /// </summary>
+        public static ConsentRequestParameters RequestParameters(ProviderConfig config)
+        {
+            if (config == null) throw new ArgumentNullException(nameof(config));
+            return Parameters(config.UnderAgeOfConsent, DebugAllowedFor(config));
+        }
+
+        /// <summary>Debug settings may apply under a mediation's test mode or on Google's sample units; a release build has neither.</summary>
+        internal static bool DebugAllowedFor(ProviderConfig config) => config.TestMode || config.UsesPublishedTestData;
+
+        private static ConsentRequestParameters Parameters(bool underAgeOfConsent, bool debugAllowed)
+        {
+            var request = new ConsentRequestParameters { TagForUnderAgeOfConsent = underAgeOfConsent };
+            if (debugAllowed && HasDebugSettings)
+                request.ConsentDebugSettings = new ConsentDebugSettings
+                {
+                    DebugGeography = _eeaGeography ? DebugGeography.EEA : DebugGeography.Disabled,
+                    TestDeviceHashedIds = new List<string>(DebugDeviceIds),
+                };
+            return request;
+        }
+
         public bool Completed => _answered;
         public bool CanRequestAds => ConsentInformation.CanRequestAds();
         public bool PrivacyOptionsRequired => _answered && ConsentInformation.PrivacyOptionsRequirementStatus == PrivacyOptionsRequirementStatus.Required;
@@ -61,14 +87,7 @@ namespace Nexus.Ads.AdMob
             _onAnswered += onCompleted;
             if (_requested) return;
             _requested = true;
-            var request = new ConsentRequestParameters { TagForUnderAgeOfConsent = _underAgeOfConsent };
-            if (DebugApplies)
-                request.ConsentDebugSettings = new ConsentDebugSettings
-                {
-                    DebugGeography = _eeaGeography ? DebugGeography.EEA : DebugGeography.Disabled,
-                    TestDeviceHashedIds = new List<string>(DebugDeviceIds),
-                };
-            ConsentInformation.Update(request, updateError => OnMain(() =>
+            ConsentInformation.Update(Parameters(_underAgeOfConsent, _debugAllowed), updateError => OnMain(() =>
             {
                 if (updateError != null) Debug.LogWarning("[Nexus Ads] consent (Google UMP) update failed: " + updateError.Message);
                 ConsentForm.LoadAndShowConsentFormIfRequired(formError => OnMain(() =>

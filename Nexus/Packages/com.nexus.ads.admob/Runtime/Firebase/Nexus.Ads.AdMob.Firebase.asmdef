@@ -3,7 +3,10 @@
     "rootNamespace": "Nexus.Ads.AdMob",
     "references": [
         "com.nexus.core",
-        "com.nexus.firebase"
+        "com.nexus.firebase",
+        "Nexus.Ads.Core",
+        "Nexus.Ads.Unity",
+        "Nexus.Ads.AdMob"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

@@ -35,8 +35,9 @@ What it does:
   the AdMob provider never starts, the App ID in the plugin's settings asset picks the consent message
   published under AdMob's Privacy & messaging, and the validator fails a build without one (the Android SDK
   stops the app at launch) or with Google's sample App ID on the Release tab. Test devices for that form:
-  `UmpConsentFlow.SetDebugDevices(hashedIds, eeaGeography: true)` before the bootstrap starts, applied in
-  test mode only.
+  `UmpConsentFlow.SetDebugDevices(hashedIds, eeaGeography: true)` before the bootstrap starts (and, with
+  `UmpAnalyticsConsent` bound, before the context initializes), applied only in a test configuration (a
+  mediation's test mode, or Google's sample units).
 - **Request configuration** before `MobileAds.Initialize`: `AgeRestrictedTreatment.Child` when the
   settings mark the app child-directed or its users under the age of consent (Google's replacement for
   the deprecated `TagForChildDirectedTreatment` and `TagForUnderAgeOfConsent`, plugin 11.3.0), and the
@@ -73,10 +74,16 @@ in the context (the bridge's). The assembly `Nexus.Ads.AdMob.Firebase` compiles 
 `com.google.ads.mobile` 11.3.0+ and `com.nexus.firebase` are installed (`NEXUS_ADMOB`,
 `NEXUS_ADMOB_FIREBASE`); it needs no Firebase SDK.
 
-- **State** is the User Messaging Platform's consent status, read at start and again on
-  `IAdService.ReadyChanged`, which the family raises after the consent answer, when ads start or are refused.
-  `Changed` fires only when the status changed, and each change is logged in every build
-  (`[Nexus Ads] analytics consent: ...`).
+- **State** is the User Messaging Platform's consent status. UMP has none in a first session (or after
+  the app's data is cleared) until an update answers, so at start the reader asks UMP for an update with
+  the request the bootstrap's consent flow sends (`UmpConsentFlow.RequestParameters`: the settings' age
+  tag, and the debug devices only in a test configuration); a game that starts ads late no longer holds
+  its first session's events until the ads start (issue #121). The request comes from the bootstrap's
+  settings or the `AdsSettings` asset the bootstrap loads; without either no update is asked and a
+  warning is logged. The status is read at start, when the update answers (on the main thread, whichever
+  thread UMP answers on) and on `IAdService.ReadyChanged`, which the family raises after the consent
+  answer, when ads start or are refused. `Changed` fires only when the status changed, and each change is
+  logged in every build (`[Nexus Ads] analytics consent: ...`).
 - **Choice** is always `Denied`. Google maps no TCF purpose to `analytics_storage` (purpose 1 maps to
   `ad_storage` and `ad_user_data`; [Implement TCF strings](https://developers.google.com/tag-platform/security/guides/implement-TCF-strings)),
   so the form answers nothing about analytics. Where consent is required (EEA, UK) nothing is sent: no
@@ -85,6 +92,6 @@ in the context (the bridge's). The assembly `Nexus.Ads.AdMob.Firebase` compiles 
 - A game that asks its own analytics question binds its own reader instead.
 
 EditMode `UmpAnalyticsConsentTests` (the decision for each UMP status; read again on `ReadyChanged`,
-reported only on a change), in `Nexus/artifacts/admob-20261028/AdMobFirebaseConsumer` with Google Mobile
-Ads 11.6.0. The device line (EEA debug geography: the form shown, collection stays off) is a game's
+reported only on a change; the update at start and its request), in
+`Nexus/artifacts/admob-20261028/AdMobFirebaseConsumer` with Google Mobile Ads 11.6.0. The device line (EEA debug geography: the form shown, collection stays off) is a game's
 re-pin run.
