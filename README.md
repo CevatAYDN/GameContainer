@@ -65,6 +65,7 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 | `tools/unity-verify` | Player build verification of the development project |
 | `tools/device-acceptance` | Android player on the connected phone: soak, background/resume, kill/restart, logcat scan |
 | `tools/check-docs.py` | Markdown link checker used by the documentation gate |
+| `tools/check-versions.py` | Dependency versions against the Dependencies table of the release gates; `--newest` reads each source (gate 13) |
 | `tools/install-git-hook.ps1`, `tools/nexus-code-audit.ps1`, `tools/check-env.ps1` | Installs the pre-commit hook; a heuristic scan for `async void`, `Thread.Sleep` and mutable signal structs; lists the installed editors and .NET |
 | `docs/` | Repository-level documents: release gates, ADRs, dated research, archive of past audits |
 
@@ -83,6 +84,9 @@ dotnet run --project tools/nexus-benchmark
 
 # Documentation links
 python tools/check-docs.py
+
+# Dependency versions (offline; --newest also reads each dependency's newest release)
+python tools/check-versions.py --newest
 ```
 
 The gates a release must pass, with the latest measured numbers, are in
