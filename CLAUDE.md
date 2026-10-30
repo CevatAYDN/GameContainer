@@ -57,6 +57,7 @@ before tests, or the Standalone define `NEXUS_DEBUG` silently drops out of edito
 - Generated registrations (constructor factories, injectors, clearers) are code, not caches: `NexusDI.ClearCaches()` and `NexusRuntime.Reset()` keep them. Tests and tools that want the reflection path call `NexusDI.ClearGeneratedRegistrations()`.
 - Files use CRLF line endings on disk (`core.autocrlf=true`); new `.cs` and `.md` files follow that.
 - New source files under the package need their Unity `.meta` file: run any Unity command once and commit the generated `.meta` with the file.
+- UI the packages add from 2026-10-31 on, runtime and editor, is UI Toolkit (`UIDocument` or `EditorWindow.rootVisualElement`, UXML/USS, `VisualElement`): no new IMGUI (`OnGUI`, `GUILayout`, `EditorGUILayout`) and no new uGUI. What exists stays as it is (the owner's decision of 2026-10-31, #137): the uGUI `UIManager`/`UICanvasSystem` (ADR-0003 decision 2), the IMGUI development panels `AdsDebugPanel`, `SimulatorOverlay` and `NexusDebugHUD`, and the IMGUI editor code (the core's inspectors under `Editor/Inspector`, the ads Project Settings page, setup wizard and Placement Tester). A fix inside them is not a rewrite.
 
 **Tests**
 - A test locks a behaviour that was wrong or can regress, with a name that states the behaviour. No tests that restate the implementation, assert constants, duplicate another test, or exist to raise a count.
@@ -71,7 +72,8 @@ before tests, or the Standalone define `NEXUS_DEBUG` silently drops out of edito
 - No performance claim without workload, platform, Unity version, competitor versions and reproduction tool. "Verified" means a result file exists.
 
 **Consumers**
-- Games consume the package by git URL pinned to a commit. Framework fixes are made here with a regression test and the game re-pins; a game never keeps an edited copy of the package. Known consumers: Gigawatt, Wickling, ChipCrisis, Formatron, Pixel-Flow-Clone, IdleProject, PuzzleGame, RingFlow (sibling folders under `..\`).
+- Games consume the package by git URL pinned to a commit. Framework fixes are made here with a regression test and the game re-pins; a game never keeps an edited copy of the package.
+- A game that finds a framework bug, or needs something the framework lacks, opens an issue in this repository first (`gh issue create --repo CevatAYDN/GameContainer`, templates under `.github/ISSUE_TEMPLATE/`). A game session never edits this repository and keeps no unopened drafts. Until the fix ships, a workaround in the game names the issue in its code and is removed at the re-pin that brings the fix. Each game's own rule file carries this rule in these words (#137). Known consumers: Gigawatt, Wickling, ChipCrisis, Formatron, Pixel-Flow-Clone, IdleProject, PuzzleGame, RingFlow (sibling folders under `..\`).
 
 **Changes**
 - Every problem and every request starts as an issue in this repository (templates under `.github/ISSUE_TEMPLATE/`); nobody changes the repository or a consumer's pin on their own. Work inside a game (its migration, its re-pin) is an issue in that game's repository; gate 11 in `docs/RELEASE_GATES.md` links it. A change is committed directly on `main` with a message that names its issue; `main` is the only branch in this repository (no feature or pull request branches), and a game pins only commits on `main`.

@@ -2,8 +2,10 @@
 
 - **Status:** Accepted for the direction. The API sketch below is accepted with the answers to its three open
   questions ("Answers to the open questions", 2026-10-28; the owner had them decided by the advisor on
-  [#76](https://github.com/CevatAYDN/GameContainer/issues/76)). Names may still change in the stack cycle, which is
-  its own cycle and re-pin.
+  [#76](https://github.com/CevatAYDN/GameContainer/issues/76)). Names may still change in the stack cycle. On
+  2026-10-31 the owner moved the stack into v0.6.0 (it no longer waits for its own cycle after the tag), kept decision 2
+  (`UIManager` stays beside the stack) and ruled that the framework's existing IMGUI development panels stay as they
+  are while everything it adds from then on is UI Toolkit ([#137](https://github.com/CevatAYDN/GameContainer/issues/137)).
 - **Date:** 2026-10-28
 - **Decision makers:** Project owner. UI Toolkit in the framework was decided on 2026-10-25 (#76, option (a)). On
   2026-10-27 the stack was given its own cycle and re-pin. On 2026-10-28 the owner chose "this ADR and the API sketch

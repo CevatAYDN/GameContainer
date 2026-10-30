@@ -1,6 +1,6 @@
 # ADR-0001: UI Stack — In-Game UGUI, Editor UI Toolkit
 
-- **Status:** Superseded for in-game UI by [ADR-0003](0003-in-game-ui-toolkit-screen-stack.md) (2026-10-28); the editor decision (UI Toolkit) stands
+- **Status:** Superseded for in-game UI by [ADR-0003](0003-in-game-ui-toolkit-screen-stack.md) (2026-10-28); the editor decision (UI Toolkit) stands for new editor UI. The IMGUI editor code that exists stays as it is (the owner's decision of 2026-10-31, [#137](https://github.com/CevatAYDN/GameContainer/issues/137); the list is in the repository's `CLAUDE.md`, Rules, Code)
 - **Date:** 2026-08-01
 - **Decision makers:** Project owner
 
