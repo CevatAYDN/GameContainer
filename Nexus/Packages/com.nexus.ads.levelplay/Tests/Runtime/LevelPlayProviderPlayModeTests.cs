@@ -37,6 +37,37 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
         private static ProviderConfig Config() => new ProviderConfig("key",
             new Dictionary<AdFormat, string> { { AdFormat.Rewarded, "rewarded" }, { AdFormat.Interstitial, "interstitial" } }, true, new[] { "gaid" }, false, false, false, "G");
 
+        private static bool Online() => true; // the test machine's network must not decide these tests; the wait for one has its own test
+
+        private sealed class ManualScheduler : IAdScheduler
+        {
+            private sealed class Handle : System.IDisposable { public void Dispose() { } }
+            public System.Action Pending;
+            public System.IDisposable Schedule(double seconds, System.Action action) { Pending = action; return new Handle(); }
+            public void RunPending() { var action = Pending; Pending = null; action(); }
+        }
+
+        [Test]
+        public void Initialize_WithoutANetwork_StartsTheSdkOnlyWhenTheNetworkIsBack()
+        {
+            bool online = false;
+            var scheduler = new ManualScheduler();
+            var provider = new LevelPlayProvider(scheduler, () => online);
+            bool? ready = null;
+            var loaded = new List<AdFormat>();
+            provider.Loaded += f => loaded.Add(f);
+            provider.Initialize(Config(), r => ready = r);
+            Assert.IsNull(ready, "offline the SDK answers Init from its cache, and every load of the session then ends in 509 (#125)");
+            scheduler.RunPending();
+            Assert.IsNull(ready, "still offline at the next look");
+            online = true;
+            scheduler.RunPending();
+            Assert.AreEqual(true, ready, "the network is back: Init runs and the editor SDK answers at once");
+            Assert.IsNull(scheduler.Pending, "nothing left scheduled once Init ran");
+            provider.Load(AdFormat.Rewarded);
+            CollectionAssert.AreEqual(new[] { AdFormat.Rewarded }, loaded);
+        }
+
         [Test]
         public void TheBootstrapKnowsTheProvider_UnderItsKind()
         {
@@ -48,7 +79,7 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
         public void Initialize_WithTheEditorSdk_CreatesTheAdUnits_AndLoadsThem()
         {
             _host = new GameObject("scheduler");
-            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>());
+            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>(), Online);
             bool? ready = null;
             var loaded = new List<AdFormat>();
             provider.Loaded += f => loaded.Add(f);
@@ -64,7 +95,7 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
         public IEnumerator ARewardThatArrivesAfterClose_StillPays_Once()
         {
             _host = new GameObject("scheduler");
-            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>());
+            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>(), Online);
             provider.Initialize(Config(), _ => { });
             provider.Load(AdFormat.Rewarded);
             Assert.IsTrue(provider.IsReady(AdFormat.Rewarded));
@@ -88,7 +119,7 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
         public IEnumerator AnInterstitialClose_AnswersClosed_AtOnce()
         {
             _host = new GameObject("scheduler");
-            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>());
+            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>(), Online);
             provider.Initialize(Config(), _ => { });
             provider.Load(AdFormat.Interstitial);
             var results = new List<AdResult>();
@@ -103,7 +134,7 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
         public IEnumerator Revenue_CarriesTheFormatOfTheAdThatEarnedIt_WhateverFormatStringTheSdkSends()
         {
             _host = new GameObject("scheduler");
-            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>());
+            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>(), Online);
             var revenue = new List<AdFormat>();
             provider.Revenue += r => revenue.Add(r.Format);
             provider.Initialize(Config(), _ => { });

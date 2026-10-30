@@ -68,7 +68,7 @@ reverted, it comes back on the next open.
 
 | Core call | LevelPlay |
 |---|---|
-| `Initialize(config)` | `LevelPlayPrivacySettings.SetCOPPA` from the child-directed / under-age flags, then with test mode `SetMetaData("is_test_suite", "enable")` and `SetAdaptersDebug(true)`, then `LevelPlay.Init(appKey)`; on `OnInitSuccess` one `LevelPlayRewardedAd` and one `LevelPlayInterstitialAd` per configured ad unit |
+| `Initialize(config)` | `LevelPlayPrivacySettings.SetCOPPA` from the child-directed / under-age flags, then with test mode `SetMetaData("is_test_suite", "enable")` and `SetAdaptersDebug(true)`, then `LevelPlay.Init(appKey)` once `Application.internetReachability` reports a network (asked every 2 s, logged once as `[Nexus Ads] LevelPlay init waits for a network`; offline the SDK answers Init from its cached response and every load of the session then ends in `509 Mediation No fill`, issue #125); on `OnInitSuccess` one `LevelPlayRewardedAd` and one `LevelPlayInterstitialAd` per configured ad unit |
 | `Load(format)` | `LoadAd()`; `OnAdLoaded` → `Loaded`, `OnAdLoadFailed` → `LoadFailed` with the SDK's code and message |
 | `IsReady(format)` | `IsAdReady()` |
 | `Show(format, placement)` | `ShowAd(placement)`; `OnAdDisplayed` → `Opened`; a rewarded ad's `OnAdClosed` answers `Closed` after a grace period of 1.5 s unless `OnAdRewarded` arrived (the SDK documents that the reward can fire after the close), an interstitial's answers `Closed` at once; `OnAdDisplayFailed` → `Failed` |
@@ -101,4 +101,5 @@ EditMode tests (`Tests/Editor/LevelPlayProviderTests.cs`) lock the behaviour bef
 the pass-through consent flow. PlayMode tests (`Tests/Runtime/LevelPlayProviderPlayModeTests.cs`) run
 over the package's own editor platform and lock the bootstrap registration, the editor SDK's
 synchronous init and loads, a reward that arrives after the close paying once, an interstitial close
-answering `Closed` at once, and revenue carrying the format of the ad that earned it.
+answering `Closed` at once, revenue carrying the format of the ad that earned it, and Init waiting
+until a network is reachable.

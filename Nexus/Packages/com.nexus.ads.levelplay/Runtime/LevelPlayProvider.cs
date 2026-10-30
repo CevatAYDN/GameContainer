@@ -8,6 +8,7 @@ using UnityEngine;
 // Nothing references a provider assembly; it registers itself from a RuntimeInitializeOnLoadMethod. Without this
 // attribute the IL2CPP linker drops the whole assembly and the provider never registers (seen on a device, 2026-10-24, when the player then ran the simulator; since issue #19 a store build runs nothing).
 [assembly: UnityEngine.Scripting.AlwaysLinkAssembly]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("com.nexus.ads.levelplay.tests")]
 
 namespace Nexus.Ads.LevelPlay
 {
@@ -22,14 +23,18 @@ namespace Nexus.Ads.LevelPlay
     /// Consent: LevelPlay ships no form. GDPR consent collected by Google UMP or a compatible CMP is
     /// shared with the SDK automatically (SDK 7.7.0+); a game with another CMP calls
     /// <see cref="SetGdprConsent"/>. COPPA goes to <c>LevelPlayPrivacySettings.SetCOPPA</c> from the
-    /// settings' child-directed flag before Init.
+    /// settings' child-directed flag before Init. Init waits for a network: offline, the SDK answers
+    /// Init from its cached response and every load of the session ends in 509 (issue #125).
     /// </summary>
     public sealed class LevelPlayProvider : IAdProvider, IConsentFlow
     {
         public const string ProviderName = "levelplay";
         public const double RewardGraceSeconds = 1.5;
+        public const double NetworkPollSeconds = 2;
 
         private readonly IAdScheduler _scheduler;
+        private readonly Func<bool> _networkReachable;
+        private IDisposable _networkWait;
         private readonly Dictionary<AdFormat, string> _units = new Dictionary<AdFormat, string>();
         private LevelPlayRewardedAd _rewarded;
         private LevelPlayInterstitialAd _interstitial;
@@ -47,8 +52,12 @@ namespace Nexus.Ads.LevelPlay
         }
 
         public LevelPlayProvider(IAdScheduler scheduler)
+            : this(scheduler, () => Application.internetReachability != NetworkReachability.NotReachable) { }
+
+        internal LevelPlayProvider(IAdScheduler scheduler, Func<bool> networkReachable)
         {
             _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
+            _networkReachable = networkReachable ?? throw new ArgumentNullException(nameof(networkReachable));
         }
 
         // ----- IAdProvider
@@ -75,9 +84,21 @@ namespace Nexus.Ads.LevelPlay
                 global::Unity.Services.LevelPlay.LevelPlay.SetMetaData("is_test_suite", "enable");
                 global::Unity.Services.LevelPlay.LevelPlay.SetAdaptersDebug(true);
             }
+            _networkWait?.Dispose();
+            if (!_networkReachable()) Debug.Log("[Nexus Ads] LevelPlay init waits for a network");
+            InitWhenReachable(config.AppKey);
+        }
+
+        // Offline, LevelPlay answers Init from its cached response and every later load ends in 509, the network back or not,
+        // until the app restarts (device runs 2026-10-29 and -30, issue #125), so Init waits for a network.
+        // shortcut: reachability means a network, not the internet; a captive portal or a SIM without data still takes the cached path. Upgrade when a game sees it.
+        private void InitWhenReachable(string appKey)
+        {
+            _networkWait = null;
+            if (!_networkReachable()) { _networkWait = _scheduler.Schedule(NetworkPollSeconds, () => InitWhenReachable(appKey)); return; }
             global::Unity.Services.LevelPlay.LevelPlay.OnInitSuccess += OnInitSuccess;
             global::Unity.Services.LevelPlay.LevelPlay.OnInitFailed += OnInitFailed;
-            global::Unity.Services.LevelPlay.LevelPlay.Init(config.AppKey); // the editor platform answers only on an Android or iOS build target; elsewhere the SDK is absent and nothing fires
+            global::Unity.Services.LevelPlay.LevelPlay.Init(appKey); // the editor platform answers only on an Android or iOS build target; elsewhere the SDK is absent and nothing fires
         }
 
         private void OnInitSuccess(LevelPlayConfiguration configuration)
