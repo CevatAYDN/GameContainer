@@ -136,10 +136,13 @@ namespace NexusBench
         public bool IsReady(AdFormat format) { IsReadyCalls++; return Ready.Contains(format); }
         /// <summary>Thrown by the next <see cref="Show"/>, as an SDK's show call can throw; cleared when thrown.</summary>
         public Exception ShowThrows;
+        /// <summary>False: the show raises no <see cref="Opened"/>, as an SDK that drops the show does.</summary>
+        public bool RaiseOpened = true;
         public void Show(AdFormat format, string placement, Action<AdResult> onResult)
         {
             if (ShowThrows != null) { var ex = ShowThrows; ShowThrows = null; throw ex; }
-            Ready.Remove(format); ShowFormat = format; ShowPlacement = placement; ShowCallback = onResult; Opened?.Invoke(format);
+            Ready.Remove(format); ShowFormat = format; ShowPlacement = placement; ShowCallback = onResult;
+            if (RaiseOpened) Opened?.Invoke(format);
         }
         public void ShowBanner(string placement, BannerPosition position) => BannerShown = true;
         public void HideBanner() => BannerShown = false;
@@ -236,6 +239,7 @@ namespace NexusBench
                 RunGuard();
                 RunController();
                 RunPacingWake();
+                RunWatchdog();
                 RunGate();
                 RunSimulator();
                 RunEngineFree();
@@ -791,6 +795,93 @@ namespace NexusBench
         }
 
         // ----- ProviderGate
+
+        // ----- shows, consent and starts that never answer (issue #180)
+
+        private static void RunWatchdog()
+        {
+            double wait = AdController.ShowAnswerSeconds;
+
+            // A show the provider never opened nor answered held the full-screen flag for good: every later interstitial and
+            // rewarded show was refused (NoStackedAds) until a restart, and nothing was logged
+            using (var rig = new AdsRig().Running())
+            {
+                var results = new List<AdResult>();
+                rig.Provider.RaiseOpened = false;
+                rig.Controller.Show("shop_refill", r => results.Add(r));
+                rig.Scheduler.Advance(wait - 0.1);
+                int beforeDeadline = results.Count;
+                rig.Scheduler.Advance(0.2);
+                var failed = rig.Telemetry.Events.FindAll(e => e.Kind == AdEventKind.ShowFailed);
+                rig.Provider.RaiseOpened = true;
+                rig.Provider.Fill(AdFormat.Rewarded);
+                var next = rig.Show("shop_refill");
+                Check("AC45. ShowNeverOpened_EndsAsFailedOnce_AfterTheWindow_ScreenAndSlotFreed",
+                    beforeDeadline == 0 && results.Count == 1 && results[0] == AdResult.Failed
+                    && failed.Count == 1 && failed[0].Placement == "shop_refill" && failed[0].Detail != null && failed[0].Detail.Contains("no answer")
+                    && next == null && rig.Violations.Count == 0,
+                    $"results before the window={beforeDeadline} after=[{string.Join(",", results)}] ShowFailed=[{string.Join(" | ", failed)}] next show={next?.ToString() ?? "open"} violations={rig.Violations.Count} (pre-fix: no result, the next show Blocked)");
+            }
+
+            // An ad that took the focus (Android's ad activity) and whose close never arrived: the window counts from the app's return,
+            // not from the request, so an ad watched for a minute is not cut short
+            using (var rig = new AdsRig().Running())
+            {
+                var results = new List<AdResult>();
+                rig.Controller.Show("shop_refill", r => results.Add(r));
+                rig.Visibility.Visible = false;
+                rig.Scheduler.Advance(60);
+                int whileAway = results.Count;
+                rig.Visibility.Visible = true;
+                rig.Scheduler.Advance(wait - 0.1);
+                int beforeDeadline = results.Count;
+                rig.Scheduler.Advance(0.2);
+                int afterDeadline = results.Count;
+                // the provider answers after all: a reward is kept as the pending receipt the game pays at its next start
+                rig.Provider.ShowCallback(AdResult.Rewarded);
+                var pending = rig.Controller.PendingReward;
+                Check("AC46. AdThatLeftTheFocus_EndsAsFailed_AfterTheWindowFromTheReturn_ALateRewardIsKept",
+                    whileAway == 0 && beforeDeadline == 0 && afterDeadline == 1 && results.Count == 1 && results[0] == AdResult.Failed
+                    && pending.HasValue && pending.Value.Placement == "shop_refill",
+                    $"results away={whileAway} before the window={beforeDeadline} after={afterDeadline} all=[{string.Join(",", results)}] pending={(pending.HasValue ? pending.Value.Placement : "none")}");
+            }
+
+            // An ad shown in the game's own window (the editor's simulator, which waits for a button) keeps the focus: no window, it waits
+            using (var rig = new AdsRig().Running())
+            {
+                var results = new List<AdResult>();
+                rig.Controller.Show("shop_refill", r => results.Add(r));
+                rig.Scheduler.Advance(10 * wait);
+                int waited = results.Count;
+                rig.Provider.ShowCallback(AdResult.Rewarded);
+                Check("AC47. AdOpenInTheGamesWindow_WaitsForTheProvider",
+                    waited == 0 && results.Count == 1 && results[0] == AdResult.Rewarded && rig.Telemetry.Count(AdEventKind.ShowFailed) == 0,
+                    $"results after {10 * wait} s={waited} then=[{string.Join(",", results)}] ShowFailed={rig.Telemetry.Count(AdEventKind.ShowFailed)}");
+            }
+
+            // A consent flow or an SDK start that never answered left the controller waiting, silently in a release player
+            {
+                var consent = new AdsFakeConsent();
+                using var rig = new AdsRig(consent: consent);
+                rig.Controller.Start();
+                rig.Scheduler.Advance(AdController.AnswerWaitSeconds * 3);
+                var consentRows = rig.Telemetry.Events.FindAll(e => e.Kind == AdEventKind.Unanswered);
+                var stateWhileConsent = rig.Controller.State;
+                consent.Answer(true);
+                rig.Scheduler.Advance(AdController.AnswerWaitSeconds * 3);
+                var rows = rig.Telemetry.Events.FindAll(e => e.Kind == AdEventKind.Unanswered);
+                var stateWhileStart = rig.Controller.State;
+                rig.Provider.InitCallback(true);
+                var lines = new List<string>();
+                var log = new AdFailureLog(lines.Add, violations: false);
+                foreach (var row in rows) { log.Record(row); log.Record(row); }
+                Check("AC48. ConsentAndStartThatNeverAnswer_AreRecordedOnceEach_TheWaitGoesOn",
+                    consentRows.Count == 1 && consentRows[0].Detail.Contains("consent") && stateWhileConsent == AdController.Phase.AwaitingConsent
+                    && rows.Count == 2 && rows[1].Detail.Contains("SDK") && stateWhileStart == AdController.Phase.Initializing
+                    && rig.Controller.State == AdController.Phase.Running && lines.Count == 2,
+                    $"rows=[{string.Join(" | ", rows)}] states={stateWhileConsent}/{stateWhileStart}/{rig.Controller.State} log=[{string.Join(" | ", lines)}]");
+            }
+        }
 
         private static void RunGate()
         {

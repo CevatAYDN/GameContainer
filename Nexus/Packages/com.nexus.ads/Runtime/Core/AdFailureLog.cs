@@ -9,7 +9,8 @@ namespace Nexus.Ads
     /// <summary>
     /// Writes the ad failures a release player's log must show (issue #164), once per cause, because a load retries
     /// with a back-off for as long as the game runs: a load that failed or found no fill once per format and reason,
-    /// a refused consent once, a failed start once until the SDK starts and then one line saying it did, a policy block
+    /// a refused consent once, a consent flow or an SDK start still unanswered after its wait once each (issue #180), a failed
+    /// start once until the SDK starts and then one line saying it did, a policy block
     /// once per rule and placement (only with <c>violations</c>: outside a release build the bootstrap writes every
     /// block as an error), and every failed show, which only the player's tap starts. Successes are not written.
     /// </summary>
@@ -52,6 +53,9 @@ namespace Nexus.Ads
                     return;
                 case AdEventKind.ConsentRefused:
                     WriteOnce("ConsentRefused", Prefix + "ConsentRefused: " + e.Detail + Once);
+                    return;
+                case AdEventKind.Unanswered:
+                    WriteOnce("Unanswered|" + e.Detail, Prefix + "Unanswered: " + e.Detail + Once);
                     return;
                 case AdEventKind.LoadFailed:
                 case AdEventKind.NoFill:

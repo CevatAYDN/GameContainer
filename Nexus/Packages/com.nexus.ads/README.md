@@ -152,12 +152,20 @@ the bootstrap). Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`. 
 **Log Events** (on by default) the editor and development builds log every event; otherwise, and
 always in a release player, each ad failure is logged as a `[Nexus Ads]` warning once per cause
 (issue #164): a load that failed or found no fill (once per format and reason), a refused consent, a
-failed start (once until the SDK starts, then one `Initialized` line), every failed show (the AdMob
+failed start (once until the SDK starts, then one `Initialized` line), a consent flow or an SDK start
+still unanswered after 30 s (`Unanswered`, once each; the wait goes on), every failed show (the AdMob
 and LevelPlay providers write the SDK's reason on the line before), and in a release build the
-policy block above. Successes are not logged. `InitFailed`, `ConsentRefused` and `Initialized` are
-telemetry events too. A paid reward is written to the store before the game hears of it
-(`PendingReward`); `AdRewardedButton` acknowledges it after its listeners ran, a game that saves
+policy block above. Successes are not logged. `InitFailed`, `ConsentRefused`, `Unanswered` and
+`Initialized` are telemetry events too. A paid reward is written to the store before the game hears of
+it (`PendingReward`); `AdRewardedButton` acknowledges it after its listeners ran, a game that saves
 asynchronously acknowledges it itself.
+
+A show the provider never answers is ended as `Failed` after `AdController.ShowAnswerSeconds` (10 s)
+with the app visible, with a `ShowFailed` line that names the placement (issue #180). The time counts
+from the request until the ad opens, and again from the app's return when the ad took the focus, as
+Android's ad activity does. An ad shown in the game's own window, such as the editor's simulator that
+waits for a button, waits for the player. A reward the provider pays after the show was ended is kept
+as the `PendingReward` for the game's next start.
 
 ## Editor tools
 

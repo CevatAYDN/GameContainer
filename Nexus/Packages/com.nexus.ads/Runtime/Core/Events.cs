@@ -54,6 +54,9 @@ namespace Nexus.Ads
         ConsentRefused,
         /// <summary>The SDK started; after failed starts the detail counts them.</summary>
         Initialized,
+        /// <summary>The consent flow or the SDK start has not answered after <see cref="AdController.AnswerWaitSeconds"/>; the
+        /// detail names which. The controller keeps waiting (a consent form may still be open, an SDK may wait for a network).</summary>
+        Unanswered,
     }
 
     /// <summary>One telemetry row. The Unity layer forwards it to the game's analytics; every row carries the placement name.</summary>

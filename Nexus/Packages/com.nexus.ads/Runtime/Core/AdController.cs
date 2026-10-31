@@ -57,6 +57,16 @@ namespace Nexus.Ads
         private const double DayCapCheckSeconds = 60;
         private readonly double[] _providerReadyAt = { double.NegativeInfinity, double.NegativeInfinity, double.NegativeInfinity }; // per AdFormat
         private readonly bool[] _providerReady = new bool[3];
+        // The open show's watchdog (issue #180): an SDK that drops its show callback held the full-screen flag for good.
+        private Action<string> _expireOpenShow; // ends the open show as failed; null when no show is open
+        private AdFormat _openShowFormat;
+        private bool _openShowOpened, _openShowLeftFocus;
+        private IDisposable _showDeadline, _answerWait;
+
+        /// <summary>How long a show may go unanswered while the app is visible before it is ended as failed (issue #180).</summary>
+        public const double ShowAnswerSeconds = 10;
+        /// <summary>How long the consent flow or the SDK start may go unanswered before an <see cref="AdEventKind.Unanswered"/> row.</summary>
+        public const double AnswerWaitSeconds = 30;
 
         public PolicyGuard Guard { get; }
         public Phase State { get; private set; } = Phase.Stopped;
@@ -115,6 +125,7 @@ namespace Nexus.Ads
             if (_consent != null && !_consent.Completed)
             {
                 State = Phase.AwaitingConsent;
+                WaitForAnswer("the consent flow has not answered in {0} s: every show is blocked until it does (a consent form may still be open)");
                 _consent.Request(() => OnMain(OnConsentCompleted));
                 return;
             }
@@ -188,11 +199,25 @@ namespace Nexus.Ads
             slot.State = SlotState.Showing;
             _fullScreenOpen = true;
             _lastPlacement[format] = placement;
-            bool answered = false;
+            bool answered = false, expired = false;
             void Answer(AdResult result, string detail)
             {
-                if (answered) return; // a provider that answers twice pays once
+                if (answered)
+                {
+                    // The watchdog ended the show and the game heard Failed: a reward the SDK pays after all is kept as the
+                    // pending receipt, which the game pays at its next start. Any other late answer, or a second one, pays nothing.
+                    if (expired && result == AdResult.Rewarded)
+                    {
+                        expired = false;
+                        WriteReceipt(placement);
+                        _telemetry.Record(new AdEvent(AdEventKind.Rewarded, format, placement, "after the show was ended as failed: kept as the pending reward"));
+                    }
+                    return;
+                }
                 answered = true;
+                _expireOpenShow = null;
+                _showDeadline?.Dispose();
+                _showDeadline = null;
                 _fullScreenOpen = false;
                 slot.State = SlotState.Idle;
                 if (result == AdResult.Rewarded) WriteReceipt(placement); // durable before the game hears of it: a kill in between keeps the reward
@@ -203,6 +228,10 @@ namespace Nexus.Ads
                 RaiseReadyChanged();
                 onResult?.Invoke(result);
             }
+            _expireOpenShow = detail => { expired = true; Answer(AdResult.Failed, detail); };
+            _openShowFormat = format;
+            _openShowOpened = _openShowLeftFocus = false;
+            ArmShowDeadline();
             try { _provider.Show(format, placement, result => OnMain(() => Answer(result, null))); }
             catch (Exception ex)
             {
@@ -210,6 +239,24 @@ namespace Nexus.Ads
                 Answer(AdResult.Failed, "provider threw " + ex.GetType().Name + ": " + ex.Message);
                 throw;
             }
+        }
+
+        // The window counts while the app is visible: from the request until the ad opens, and again from the app's return when
+        // the ad took the focus (Android's ad activity), whose close comes right after. An ad that opened in the game's own window
+        // (the editor's simulator, which waits for a button) gets no window: only the player ends it.
+        // shortcut: an ad that opens without taking the focus and whose close never comes still holds the screen (an iOS ad view
+        // controller may be one; gate 12 runs Android only). Add a long cap when a device shows one.
+        private void ArmShowDeadline()
+        {
+            _showDeadline?.Dispose();
+            _showDeadline = null;
+            if (_expireOpenShow == null || !_visibility.Visible || (_openShowOpened && !_openShowLeftFocus)) return;
+            _showDeadline = _scheduler.Schedule(ShowAnswerSeconds, () =>
+            {
+                _showDeadline = null;
+                _expireOpenShow?.Invoke("no answer from the provider in " + ShowAnswerSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)
+                    + " s with the app visible: ended as failed");
+            });
         }
 
         public void HideBanner() => _provider.HideBanner();
@@ -305,6 +352,10 @@ namespace Nexus.Ads
             _initRetry?.Dispose();
             _pacingWake?.Dispose();
             _pacingWake = null;
+            _showDeadline?.Dispose();
+            _showDeadline = null;
+            _answerWait?.Dispose();
+            _answerWait = null;
             if (_lockHeld) MediationLock.Release(_provider.Name);
             State = Phase.Stopped;
         }
@@ -314,6 +365,8 @@ namespace Nexus.Ads
         private void OnConsentCompleted()
         {
             if (_disposed) return;
+            _answerWait?.Dispose();
+            _answerWait = null;
             if (_consent.CanRequestAds) InitializeProvider();
             else RefuseConsent();
         }
@@ -325,12 +378,30 @@ namespace Nexus.Ads
             RaiseReadyChanged();
         }
 
+        /// <summary>Records one <see cref="AdEventKind.Unanswered"/> row if the consent flow or the SDK start is still out after
+        /// <see cref="AnswerWaitSeconds"/>; the wait itself goes on (issue #180).</summary>
+        private void WaitForAnswer(string detail)
+        {
+            _answerWait?.Dispose();
+            var phase = State;
+            _answerWait = _scheduler.Schedule(AnswerWaitSeconds, () =>
+            {
+                _answerWait = null;
+                if (!_disposed && State == phase)
+                    _telemetry.Record(new AdEvent(AdEventKind.Unanswered, AdFormat.Interstitial, "",
+                        string.Format(System.Globalization.CultureInfo.InvariantCulture, detail, AnswerWaitSeconds)));
+            });
+        }
+
         private void InitializeProvider()
         {
             State = Phase.Initializing;
+            WaitForAnswer("the SDK has not answered its start in {0} s: no ad loads until it does (an SDK may wait for a network)");
             _provider.Initialize(_config.Provider, ok => OnMain(() =>
             {
                 if (_disposed) return;
+                _answerWait?.Dispose();
+                _answerWait = null;
                 if (ok)
                 {
                     _telemetry.Record(new AdEvent(AdEventKind.Initialized, AdFormat.Interstitial, "", _initFailures == 0 ? null : "after " + _initFailures + " failed start(s)"));
@@ -394,6 +465,11 @@ namespace Nexus.Ads
         {
             if (_disposed) return;
             _session.OnVisibilityChanged(visible, Guard.Policy);
+            if (_expireOpenShow != null)
+            {
+                if (!visible) _openShowLeftFocus = true;
+                ArmShowDeadline(); // stops while the app is away, restarts in full when it returns
+            }
             if (!visible)
             {
                 foreach (var slot in _slots.Values) { slot.Retry?.Dispose(); slot.Retry = null; }
@@ -408,7 +484,18 @@ namespace Nexus.Ads
 
         // ----- provider events
 
-        private void OnOpened(AdFormat format) => OnMain(() => { if (!_disposed) { _fullScreenOpen = true; _telemetry.Record(new AdEvent(AdEventKind.Shown, format, PlacementOf(format))); AdOpened?.Invoke(format); } });
+        private void OnOpened(AdFormat format) => OnMain(() =>
+        {
+            if (_disposed) return;
+            _fullScreenOpen = true;
+            if (_expireOpenShow != null && format == _openShowFormat && !_openShowOpened)
+            {
+                _openShowOpened = true;
+                ArmShowDeadline(); // opened in the game's window: no window until the app leaves and returns
+            }
+            _telemetry.Record(new AdEvent(AdEventKind.Shown, format, PlacementOf(format)));
+            AdOpened?.Invoke(format);
+        });
 
         private string PlacementOf(AdFormat format) => _lastPlacement.TryGetValue(format, out var placement) ? placement : "";
 
