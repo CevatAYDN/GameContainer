@@ -196,7 +196,7 @@ namespace Nexus.Editor
         private static List<string> GetAvailableAssemblies()
         {
             var assemblies = new List<string>();
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var asm in AssemblyCatalog.LoadedAssemblies)
             {
                 var name = asm.GetName().Name;
                 if (!name.StartsWith("System") && !name.StartsWith("Unity") && !name.StartsWith("mscorlib") && !name.StartsWith("Mono"))

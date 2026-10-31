@@ -543,7 +543,7 @@ namespace Nexus.Editor
 
         private static Type FindType(string fullTypeName)
         {
-            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var asm in AssemblyCatalog.LoadedAssemblies)
             {
                 try
                 {
@@ -571,7 +571,7 @@ namespace Nexus.Editor
         {
             // Check if Input System package is actually installed
             bool hasInputSystem = false;
-            foreach (var asm in System.AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var asm in AssemblyCatalog.LoadedAssemblies)
             {
                 try
                 {

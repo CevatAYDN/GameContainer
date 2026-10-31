@@ -90,7 +90,7 @@ namespace Nexus.Ads.Editor
             foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(ConsumerManifestJson, "\"(com\\.[a-z0-9.\\-]+)\"\\s*:"))
                 _manifestPackages.Add(m.Groups[1].Value);
             foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages()) { _manifestPackages.Add(package.name); _packages[package.name] = package; }
-            foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) _assemblies.Add(asm.GetName().Name);
+            foreach (var asm in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies()) _assemblies.Add(asm.GetName().Name);
             foreach (var network in KnownNetworks) if (Mentions(network.keywords)) _networks.Add(network.id);
             if (Directory.Exists("Assets"))
                 foreach (var file in Directory.GetFiles("Assets", "link.xml", SearchOption.AllDirectories)) _linkXml.Add(File.ReadAllText(file));

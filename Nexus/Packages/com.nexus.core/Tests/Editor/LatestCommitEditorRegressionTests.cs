@@ -16,7 +16,7 @@ namespace Nexus.Editor.Tests
     public class InspectorRegressionData : ContextData { public InspectorRegressionSetting ExtraSetting; }
     public class InspectorRegressionRoot : Root { public InspectorRegressionSetting ExtraSetting; }
     public class InspectorRegressionScope : NexusLifetimeScope { public InspectorRegressionSetting ExtraSetting; }
-    public class InspectorRegressionTarget : MonoBehaviour { [Inject] public InspectorRegressionService Service; }
+    public class InspectorRegressionTarget : MonoBehaviour { [Inject, System.NonSerialized] public InspectorRegressionService Service; }
     public class InspectorRegressionService { }
 
     [CustomPropertyDrawer(typeof(InspectorRegressionSetting))]

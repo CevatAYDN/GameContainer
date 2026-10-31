@@ -129,6 +129,7 @@ namespace NexusBench
     /// the non-emittable case is exercised through the member type instead.</summary>
     public static class CodeGenHierarchy
     {
+#pragma warning disable 0649 // [Inject] fields: assigned by injection at resolve time
         public class CodeGenVisibleBase
         {
             [Inject] private CodeGenDep _dep;
@@ -150,6 +151,7 @@ namespace NexusBench
             [Inject] private InternalDep _dep;
             public bool HasDep => _dep != null;
         }
+#pragma warning restore 0649
     }
 
     /// <summary>

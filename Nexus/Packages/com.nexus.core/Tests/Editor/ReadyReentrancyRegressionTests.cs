@@ -10,7 +10,7 @@ namespace Nexus.Editor.Tests
     public sealed class ReadyReentrantBehaviour : NexusBehaviour
     {
         public int PostConstructCount, AwakeCount;
-        public Task<Context> AuxiliaryBoot;
+        [System.NonSerialized] public Task<Context> AuxiliaryBoot;
         private bool _auxiliaryRequested;
 
         [PostConstruct]
@@ -29,7 +29,7 @@ namespace Nexus.Editor.Tests
     public sealed class ReadyReentrantBindingTarget : MonoBehaviour
     {
         public int PostConstructCount;
-        public Task<Context> AuxiliaryBoot;
+        [System.NonSerialized] public Task<Context> AuxiliaryBoot;
         public NexusBinding Binding;
         public bool ReenterManually;
         private bool _auxiliaryRequested;

@@ -50,7 +50,7 @@ namespace Nexus.Editor.Tests
             Assert.IsTrue(Nexus.Core.NexusAssemblyPolicy.IsFrameworkAssembly("StandardSocketsHttpHandler"));
             if (File.Exists(dll))
             {
-                var assembly = System.Reflection.Assembly.LoadFrom(dll);
+                var assembly = UnityEngine.Assemblies.CurrentAssemblies.LoadFromPath(dll);
                 Assert.IsFalse(AssemblyCatalog.RuntimeAssemblies().Contains(assembly));
             }
             Assert.IsTrue(Nexus.Core.NexusAssemblyPolicy.IsEditorAssembly("Assembly-CSharp-Editor"));

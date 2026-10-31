@@ -468,7 +468,7 @@ namespace Nexus.Ads.Editor
             // after the downloads: a declaration replaced above leaves its old version in the template (#145)
             if (!string.IsNullOrEmpty(sdk.resolvedMarker) && File.Exists(MainTemplatePath) && UnresolvedSpecs(File.ReadAllText(MainTemplatePath), sdk, probe.ProjectFileText).Count > 0)
             {
-                var resolver = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("GooglePlayServices.PlayServicesResolver")).FirstOrDefault(t => t != null);
+                var resolver = UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies().Select(a => a.GetType("GooglePlayServices.PlayServicesResolver")).FirstOrDefault(t => t != null);
                 var resolveSync = resolver?.GetMethods().FirstOrDefault(m => m.Name == "ResolveSync" && m.GetParameters().Length == 1);
                 if (resolveSync == null) result.Log.Add("resolve: no dependency resolver in the editor yet");
                 else
@@ -484,7 +484,7 @@ namespace Nexus.Ads.Editor
             if (Pending("admob.appid"))
             {
                 string appId = (tab == AdsValidator.Tab.Release ? settings.Release : settings.Test).AdMob.Android.AppKey.Trim();
-                var type = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("GoogleMobileAds.Editor.GoogleMobileAdsSettings")).FirstOrDefault(t => t != null);
+                var type = UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies().Select(a => a.GetType("GoogleMobileAds.Editor.GoogleMobileAdsSettings")).FirstOrDefault(t => t != null);
                 var load = type?.GetMethod("LoadInstance", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public);
                 if (load == null) result.Log.Add("App ID: the Google Mobile Ads editor settings type was not found; enter it in Assets > Google Mobile Ads > Settings");
                 else

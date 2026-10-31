@@ -28,7 +28,7 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
             if (_host != null) Object.Destroy(_host);
             // each ad object leaves its mock prefab in the scene; a later Close would otherwise find a stale one
             foreach (var name in new[] { "RewardedPrefab", "InterstitialPrefab" })
-                foreach (var prefab in Object.FindObjectsByType(PrefabType(name), FindObjectsSortMode.None))
+                foreach (var prefab in Object.FindObjectsByType(PrefabType(name)))
                     Object.DestroyImmediate(((MonoBehaviour)prefab).gameObject);
         }
 
