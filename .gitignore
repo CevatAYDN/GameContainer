@@ -138,6 +138,8 @@ tools/nexus-compile-check/obj/
 !tools/nexus-benchmark/NexusBenchmark.csproj
 # Keep the standalone Unity runtime compile gate tracked as well.
 !tools/nexus-compile-check/nexus-compile-check.csproj
+# The source generator's project is the build recipe of SourceGenerators~/Nexus.SourceGenerator.dll (#150).
+!Nexus/Packages/com.nexus.core/SourceGenerator~/Nexus.SourceGenerator.csproj
 
 # Test results and runner artifacts
 Nexus/TestResults*.xml

@@ -1,0 +1,56 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Nexus AOT Binder — Roslyn Source Generator (Unity shipping assembly)
+
+    Unity 6000.6's compiler is Roslyn 4.10, and Unity only loads generators built
+    against the SAME or OLDER Microsoft.CodeAnalysis than its own compiler, so the
+    version is pinned here — do NOT bump it to 5.x for "a newer SDK" (that DLL will
+    silently not load inside Unity).
+
+    Build: `dotnet build Nexus.SourceGenerator.csproj -c Release` (needs NuGet access
+    for the pinned Roslyn; on an offline box use the SDK-shipped Roslyn fallback at
+    the bottom of this file). Ship the resulting Nexus.SourceGenerator.dll into the
+    package as `SourceGenerators~/Nexus.SourceGenerator.dll` and reference it from
+    game asmdefs via `"RoslynAnalyzer": "SourceGenerators~/Nexus.SourceGenerator.dll"`.
+
+    The generator's LOGIC is proven outside Unity by tools/nexus-benchmark (CodeGenSuite
+    CG2): the same source file is compiled into the harness and driven through
+    CSharpGeneratorDriver against a synthetic compilation — emitted output is compiled
+    and booted end to end.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>Nexus.SourceGenerator</AssemblyName>
+    <RootNamespace>Nexus.Generator</RootNamespace>
+    <IsRoslynComponent>true</IsRoslynComponent>
+    <EnforceExtendedAnalyzerRules>true</EnforceExtendedAnalyzerRules>
+    <!-- ReleaseTrackingAnalyzers rule-release suggestions (RS2008) are not relevant for an
+         in-package generator that is not shipped as a NuGet analyzer pack. -->
+    <NoWarn>$(NoWarn);RS2008</NoWarn>
+    <GeneratePackageOnBuild>false</GeneratePackageOnBuild>
+    <OutputPath>bin/$(Configuration)</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" Version="4.10.0" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Offline fallback: uncomment to build against the .NET SDK's own Roslyn instead of
+       NuGet (fine for local iteration; NOT for the shipped Unity DLL — see header). -->
+  <!--
+  <ItemGroup Condition="'$(NEXUS_SG_OFFLINE)' == 'true'">
+    <Reference Include="Microsoft.CodeAnalysis">
+      <HintPath>$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.CodeAnalysis.CSharp">
+      <HintPath>$(MSBuildSDKsPath)\..\Roslyn\bincore\Microsoft.CodeAnalysis.CSharp.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  -->
+
+</Project>
