@@ -233,7 +233,7 @@ namespace Nexus.Core.Services
             catch (Exception ex)
             {
                 // Fallback in case of corruption: generate new and log warning
-                NexusRuntime.Logger?.LogWarning($"[EncryptedStorageService] Storage seed decoding failed ({ex.Message}). Regenerating new secure seed.");
+                NexusLog.WarnAlways($"[EncryptedStorageService] Storage seed decoding failed ({ex.Message}). Regenerating new secure seed.");
                 var seed = NewSeed();
                 StoreSeed(prefsKey, seed, obfuscationKey);
                 return seed;
@@ -257,7 +257,7 @@ namespace Nexus.Core.Services
             {
                 if (s_activeInstance != null && !ReferenceEquals(s_activeInstance, this) && !s_activeInstance._disposed)
                 {
-                    NexusRuntime.Logger?.LogWarning(
+                    NexusLog.WarnAlways(
                         "[EncryptedStorageService] A second instance was constructed while another is still active. " +
                         "Application focus/quit save events now route to the NEW instance; dispose the old one to avoid split-brain saves.");
                 }
@@ -315,7 +315,7 @@ namespace Nexus.Core.Services
                     try { self.Save(); }
                     catch (Exception ex)
                     {
-                        logger?.LogWarning($"[EncryptedStorage] Background save on focus loss failed: {ex.Message}");
+                        NexusLog.WarnAlways(logger, $"[EncryptedStorage] Background save on focus loss failed: {ex.Message}");
                     }
                 });
             }
@@ -506,12 +506,12 @@ namespace Nexus.Core.Services
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 // Transient (file locked by another process, disk busy): not cached, the next read retries the disk.
-                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Could not read save key '{key}' this time: {ex.Message}");
+                NexusLog.WarnAlways($"[EncryptedStorage] Could not read save key '{key}' this time: {ex.Message}");
                 return defaultValue;
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
+                NexusLog.WarnAlways($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
                 CacheNegativeResult(key);
                 return defaultValue;
             }
@@ -546,7 +546,7 @@ namespace Nexus.Core.Services
 
         private void LogTamperWarning(string key)
         {
-            NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
+            NexusLog.WarnAlways($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
         }
 
         /// <summary>
@@ -627,7 +627,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex) when (ex is not OutOfMemoryException)
             {
-                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Legacy decode failed: {ex.Message}");
+                NexusLog.WarnAlways($"[EncryptedStorage] Legacy decode failed: {ex.Message}");
                 return false;
             }
         }
@@ -744,7 +744,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save write failed for key '{key}': {ex.Message}");
+                NexusLog.WarnAlways($"[EncryptedStorage] Save write failed for key '{key}': {ex.Message}");
                 return false;
             }
         }
@@ -817,7 +817,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Save import failed for key '{key}': {ex.Message}");
+                NexusLog.WarnAlways($"[EncryptedStorage] Save import failed for key '{key}': {ex.Message}");
                 return false;
             }
         }
@@ -858,7 +858,8 @@ namespace Nexus.Core.Services
                     {
                         // Platforms without replacement support use a recoverable
                         // two-rename commit. The previous complete file stays in .bak
-                        // until the staged file reaches its final path.
+                        // until the staged file reaches its final path. A diagnostic, not a failure: the save is
+                        // kept, so it stays in development builds (#164).
                         NexusRuntime.Logger?.LogWarning(
                             "[EncryptedStorage] File.Replace not supported; preserving a recoverable backup during commit.");
                         // Preserve a complete previous save throughout the fallback. On
@@ -943,7 +944,7 @@ namespace Nexus.Core.Services
                 try { if (File.Exists(recoveryPath)) File.Delete(recoveryPath); }
                 catch (Exception ex)
                 {
-                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Recovery file delete failed for '{key}': {ex.Message}");
+                    NexusLog.WarnAlways($"[EncryptedStorage] Recovery file delete failed for '{key}': {ex.Message}");
                     ok = false;
                 }
             }
@@ -953,7 +954,7 @@ namespace Nexus.Core.Services
                 try { File.Delete(path); }
                 catch (Exception ex)
                 {
-                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
+                    NexusLog.WarnAlways($"[EncryptedStorage] Delete failed for key '{key}': {ex.Message}");
                     ok = false;
                 }
             }
@@ -963,7 +964,7 @@ namespace Nexus.Core.Services
                 try { File.Delete(legacyPath); }
                 catch (Exception ex)
                 {
-                    NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Delete (legacy) failed for key '{key}': {ex.Message}");
+                    NexusLog.WarnAlways($"[EncryptedStorage] Delete (legacy) failed for key '{key}': {ex.Message}");
                     ok = false;
                 }
             }
@@ -1056,7 +1057,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[EncryptedStorage] Legacy file cleanup failed for key '{key}': {ex.Message}");
+                NexusLog.WarnAlways($"[EncryptedStorage] Legacy file cleanup failed for key '{key}': {ex.Message}");
             }
         }
 

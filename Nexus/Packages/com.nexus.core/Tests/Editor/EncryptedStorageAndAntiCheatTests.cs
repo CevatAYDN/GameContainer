@@ -424,5 +424,34 @@ namespace Nexus.Editor.Tests
             reloaded.DeleteKey(key);
             reloaded.Dispose();
         }
+
+        // Issue #164: a release player drops LogWarning, so a save read back as its default or a replaced seed left no trace in its log
+        [Test]
+        public void ASaveReadAsTamperedOrAReplacedSeed_IsWarnedInAReleasePlayerToo()
+        {
+            const string salt = "Test_Salt_Release164";
+            ForgetStore(salt);
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables; a logger another test left cached may be enabled
+            NexusBuild.OverrideForTests(false);
+            try
+            {
+                Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops LogWarning");
+                Write(salt, StorageKeyBinding.Device, "phone-A", 1234);
+
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"tampering detected for key: Coins"));
+                Assert.AreEqual(-1, Read(salt, StorageKeyBinding.Device, "phone-B"), "another phone's key reads the save as tampered");
+
+                UnityEngine.PlayerPrefs.SetString($"NT_StorageSeed_{salt}", "%%%");
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"Storage seed decoding failed"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"tampering detected for key: Coins"));
+                Assert.AreEqual(-1, Read(salt, StorageKeyBinding.Device, "phone-A"), "a replaced seed cannot read the old save");
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+                ForgetStore(salt);
+            }
+        }
     }
 }
