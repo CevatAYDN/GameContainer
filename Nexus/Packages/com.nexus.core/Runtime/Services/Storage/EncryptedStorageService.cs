@@ -803,23 +803,7 @@ namespace Nexus.Core.Services
             string filePath = GetFilePath(key);
             try
             {
-                byte[] plainBytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
-                using var aes = Aes.Create();
-                aes.Key = _encryptionKey;
-                aes.GenerateIV();
-
-                using var encryptor = aes.CreateEncryptor();
-                byte[] cipherText = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
-                // v3: bind the key name into the HMAC so a payload copied under another
-                // key's filename fails verification on read.
-                byte[] hmac = ComputeHmac(cipherText, aes.IV, key);
-
-                // VERSION(1) + IV(16) + HMAC(32) + cipherText
-                byte[] finalBuffer = new byte[HeaderSize + cipherText.Length];
-                finalBuffer[0] = CurrentFormatVersion;
-                Buffer.BlockCopy(aes.IV, 0, finalBuffer, 1, 16);
-                Buffer.BlockCopy(hmac, 0, finalBuffer, 17, 32);
-                Buffer.BlockCopy(cipherText, 0, finalBuffer, HeaderSize, cipherText.Length);
+                byte[] finalBuffer = EncodeCurrentFormat(key, value);
 
                 // Atomic write: stage to temp, then overwrite-rename (single operation on
                 // the same volume). Never Delete-then-Move — the pre-fix data-loss window.
@@ -837,77 +821,148 @@ namespace Nexus.Core.Services
             }
         }
 
-        public string ExportEncryptedSaveData(string key)
+        private byte[] EncodeCurrentFormat(string key, string value)
         {
-            if (string.IsNullOrEmpty(key)) return null;
+            byte[] plainBytes = Encoding.UTF8.GetBytes(value ?? string.Empty);
+            using var aes = Aes.Create();
+            aes.Key = _encryptionKey;
+            aes.GenerateIV();
 
-            // Save() performs multiple SaveKeyToDisk calls (each acquires _writeLock
-            // and does blocking file I/O) — running it inside _lock would stall every other
-            // cache/dirty-set operation for the full save duration. Flush outside the lock
-            // first, then read the path under a brief lock.
-            Save();
+            using var encryptor = aes.CreateEncryptor();
+            byte[] cipherText = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+            // v3: bind the key name into the HMAC so a payload copied under another
+            // key's filename fails verification on read.
+            byte[] hmac = ComputeHmac(cipherText, aes.IV, key);
 
-            string filePath;
-            lock (_lock)
-            {
-                filePath = GetFilePath(key);
-            }
-
-            if (!File.Exists(filePath)) return null;
-
-            // B1 parity: file I/O outside the shared lock so a slow read cannot stall
-            // every other key operation.
-            byte[] raw = File.ReadAllBytes(filePath);
-            return Convert.ToBase64String(raw);
+            // VERSION(1) + IV(16) + HMAC(32) + cipherText
+            byte[] finalBuffer = new byte[HeaderSize + cipherText.Length];
+            finalBuffer[0] = CurrentFormatVersion;
+            Buffer.BlockCopy(aes.IV, 0, finalBuffer, 1, 16);
+            Buffer.BlockCopy(hmac, 0, finalBuffer, 17, 32);
+            Buffer.BlockCopy(cipherText, 0, finalBuffer, HeaderSize, cipherText.Length);
+            return finalBuffer;
         }
 
-        public bool ImportEncryptedSaveData(string key, string base64Data)
+        public string ExportEncryptedSaveData(string key) => ExportEncryptedSaveData(key, out _);
+
+        /// <summary>
+        /// The key's value as a Base64 payload that <see cref="ImportEncryptedSaveData(string, string)"/> accepts under the
+        /// same storage seed. It is the value the store reads, an unsaved write included. Null when there is nothing to
+        /// export: <paramref name="failure"/> then says why, and a failure (not a key that has no value) is also warned in
+        /// every build.
+        /// </summary>
+        public string ExportEncryptedSaveData(string key, out string failure)
         {
-            if (string.IsNullOrEmpty(key) || string.IsNullOrEmpty(base64Data)) return false;
+            if (string.IsNullOrEmpty(key)) return ExportFailed(key, "the key is empty", out failure);
+            if (_disposed) return ExportFailed(key, "the store is disposed", out failure);
+            // The export read the save file: after a failed save it held an older value, and a key kept only in .bak or under
+            // its older (MD5) file name exported as null (issue #166). It now encodes what the store reads.
+            string value = GetString(key, null);
+            if (value == null)
+            {
+                if (File.Exists(ResolveExistingFilePath(key)))
+                    return ExportFailed(key, "its save file could not be read (the warning before this line says why)", out failure);
+                failure = "the key has no value";
+                return null;
+            }
             try
             {
-                byte[] rawData = Convert.FromBase64String(base64Data);
+                string payload = Convert.ToBase64String(EncodeCurrentFormat(key, value));
+                failure = null;
+                return payload;
+            }
+            catch (Exception ex)
+            {
+                return ExportFailed(key, $"it could not be encrypted: {ex.Message}", out failure);
+            }
+        }
+
+        private static string ExportFailed(string key, string reason, out string failure)
+        {
+            failure = reason;
+            NexusLog.WarnAlways($"[EncryptedStorage] Export of key '{key}' failed: {reason}.");
+            return null;
+        }
+
+        public bool ImportEncryptedSaveData(string key, string base64Data) => ImportEncryptedSaveData(key, base64Data, out _);
+
+        /// <summary>
+        /// Replaces the key's save with a payload from <see cref="ExportEncryptedSaveData(string)"/>. False when it is
+        /// refused: <paramref name="failure"/> then says why, and every refusal is also warned in every build. The local
+        /// save is untouched by a refused import.
+        /// </summary>
+        public bool ImportEncryptedSaveData(string key, string base64Data, out string failure)
+        {
+            // Each of these refusals returned false with no reason and no log in any build (issue #166).
+            if (string.IsNullOrEmpty(key)) return ImportRefused(key, "the key is empty", out failure);
+            if (string.IsNullOrEmpty(base64Data)) return ImportRefused(key, "the data is empty", out failure);
+            string refused = null;
+            try
+            {
+                byte[] rawData;
+                try { rawData = Convert.FromBase64String(base64Data); }
+                catch (FormatException) { return ImportRefused(key, "the data is not Base64", out failure); }
                 // Accept v2 (migrates to v3 on the next read) and v3; anything else is rejected.
-                if (rawData.Length < HeaderSize
-                    || (rawData[0] != CurrentFormatVersion && rawData[0] != LegacyV2FormatVersion))
-                    return false;
+                if (rawData.Length < HeaderSize)
+                    return ImportRefused(key, $"the data is {rawData.Length} bytes, shorter than any save", out failure);
+                if (rawData[0] != CurrentFormatVersion && rawData[0] != LegacyV2FormatVersion)
+                    return ImportRefused(key, $"the data has format version {rawData[0]}, and this build imports {LegacyV2FormatVersion} and {CurrentFormatVersion}", out failure);
 
                 // Validate before replacing the local file so a corrupt cloud backup cannot
                 // destroy a valid save already stored on the device.
-                if (!TryReadCurrentFormat(rawData, key, out string value)) return false;
+                if (!TryReadCurrentFormat(rawData, key, out string value))
+                    return ImportRefused(key, "the data fails its integrity check: it was exported for another key or under another storage seed " +
+                        "(StorageKeyBinding.Device on another phone, another salt, or a seed replaced since), or it was changed", out failure);
 
                 string path;
                 long version;
                 lock (_lock)
                 {
-                    if (_disposed || _disposing) return false;
+                    if (_disposed || _disposing) refused = "the store is disposed";
                     path = GetFilePath(key);
                     _keyVersions.TryGetValue(key, out version);
                 }
                 // A queued import cannot replace a newer accepted cache mutation.
                 // Cache operations stay nonblocking while disk commits are serialized.
-                lock (_writeLock)
+                if (refused == null)
                 {
-                    lock (_lock)
-                        if (_disposed || _disposing || !IsCurrentVersionLocked(key, version)) return false;
-                    WriteRawDataAtomically(path, rawData);
-                    lock (_lock)
+                    lock (_writeLock)
                     {
-                        if (IsCurrentVersionLocked(key, version))
+                        lock (_lock)
                         {
-                            _cache[key] = value;
-                            BumpKeyVersionLocked(key);
-                            _dirtyKeys.Remove(key);
+                            if (_disposed || _disposing) refused = "the store is disposed";
+                            else if (!IsCurrentVersionLocked(key, version)) refused = "the key was written while the import waited, and that newer value is kept";
+                        }
+                        if (refused == null)
+                        {
+                            WriteRawDataAtomically(path, rawData);
+                            lock (_lock)
+                            {
+                                if (IsCurrentVersionLocked(key, version))
+                                {
+                                    _cache[key] = value;
+                                    BumpKeyVersionLocked(key);
+                                    _dirtyKeys.Remove(key);
+                                }
+                            }
                         }
                     }
                 }
-                return true;
             }
             catch (Exception ex)
             {
-                NexusLog.WarnAlways($"[EncryptedStorage] Save import failed for key '{key}': {ex.Message}");
-                return false;
+                refused = $"{ex.GetType().Name}: {ex.Message}";
             }
+            if (refused != null) return ImportRefused(key, refused, out failure);
+            failure = null;
+            return true;
+        }
+
+        private static bool ImportRefused(string key, string reason, out string failure)
+        {
+            failure = reason;
+            NexusLog.WarnAlways($"[EncryptedStorage] Import of key '{key}' refused: {reason}.");
+            return false;
         }
 
         private void WriteRawDataAtomically(string filePath, byte[] rawData)

@@ -245,6 +245,99 @@ namespace Nexus.Editor.Tests
             finally { ForgetStore(salt); }
         }
 
+        private static string Decoded(EncryptedStorageService store, string key, string payload)
+        {
+            if (payload == null) return "(null)";
+            var args = new object[] { System.Convert.FromBase64String(payload), key, null };
+            return Private<bool>(store, "TryReadCurrentFormat", args) ? (string)args[2] : "(fails the import check)";
+        }
+
+        // Issue #166: the export read the save file, so a key kept only in its backup or under the older file name exported
+        // as null, and after a failed save it exported the value before
+        [Test]
+        public void TheExport_IsTheValueTheStoreReads_AlsoFromTheBackupTheOlderFileNameOrAnUnsavedWrite()
+        {
+            const string salt = "Test_Salt_Export166";
+            ForgetStore(salt);
+            var store = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A") { AutoSave = true };
+            string blocked = null;
+            try
+            {
+                store.SetString("bak", "first");
+                store.SetString("bak", "second");
+                File.Delete(Private<string>(store, "GetFilePath", "bak")); // only the version before is left, in .bak
+                WriteUnversioned(store, "legacy", "from-2026-07", Private<byte[]>(store, "_encryptionKey"), Private<byte[]>(store, "_hmacKey"), 0x41);
+                store.SetString("unsaved", "old");
+                blocked = Private<string>(store, "GetFilePath", "unsaved") + ".tmp";
+                Directory.CreateDirectory(blocked); // the next write of 'unsaved' fails
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"Save write failed for key 'unsaved'"));
+                store.SetString("unsaved", "new");
+                Private<System.Collections.IDictionary>(store, "_cache").Remove("bak"); // read from disk, as after a restart; 'unsaved' stays in memory only
+
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'bak' is missing and its backup is not"));
+                string exported = "bak=" + Decoded(store, "bak", store.ExportEncryptedSaveData("bak"))
+                    + "; legacy=" + Decoded(store, "legacy", store.ExportEncryptedSaveData("legacy"))
+                    + "; unsaved=" + Decoded(store, "unsaved", store.ExportEncryptedSaveData("unsaved"));
+                Assert.AreEqual("bak=first; legacy=from-2026-07; unsaved=new", exported);
+                Directory.Delete(blocked);
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                if (blocked != null && Directory.Exists(blocked)) Directory.Delete(blocked);
+                store.Dispose();
+                ForgetStore(salt);
+            }
+        }
+
+        // Issue #166: an import refused for any reason, and an export that failed, returned false or null with no reason
+        // and no log in any build
+        [Test]
+        public void ImportAndExport_SayWhyTheyRefuse_InTheirResultAndInEveryBuild()
+        {
+            const string salt = "Test_Salt_Import166";
+            ForgetStore(salt);
+            var store = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A") { AutoSave = true };
+            try
+            {
+                store.SetString("coins", "40");
+                string payload = store.ExportEncryptedSaveData("coins", out string failure);
+                Assert.IsNull(failure);
+                Assert.IsNull(store.ExportEncryptedSaveData("never-written", out failure));
+                Assert.AreEqual("the key has no value", failure, "not a failure: no line");
+
+                var refusals = new (string key, string data, string reason)[]
+                {
+                    ("coins", "%%%", "the data is not Base64"),
+                    ("coins", System.Convert.ToBase64String(new byte[10]), "the data is 10 bytes, shorter than any save"),
+                    ("coins", System.Convert.ToBase64String(new byte[60]), "the data has format version 0, and this build imports 2 and 3"),
+                    ("gems", payload, "the data fails its integrity check: it was exported for another key or under another storage seed"),
+                };
+                foreach (var (key, data, reason) in refusals)
+                {
+                    UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(
+                        System.Text.RegularExpressions.Regex.Escape($"[EncryptedStorage] Import of key '{key}' refused: {reason}")));
+                    Assert.IsFalse(store.ImportEncryptedSaveData(key, data, out failure), reason);
+                    StringAssert.StartsWith(reason, failure);
+                }
+                Assert.AreEqual("40", store.GetString("coins", null), "a refused import leaves the save as it was");
+
+                store.Dispose();
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, "[EncryptedStorage] Import of key 'coins' refused: the store is disposed.");
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, "[EncryptedStorage] Export of key 'coins' failed: the store is disposed.");
+                Assert.IsFalse(store.ImportEncryptedSaveData("coins", payload, out failure));
+                Assert.AreEqual("the store is disposed", failure);
+                Assert.IsNull(store.ExportEncryptedSaveData("coins", out failure));
+                Assert.AreEqual("the store is disposed", failure);
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                store.Dispose();
+                ForgetStore(salt);
+            }
+        }
+
         [Test]
         public void AppBinding_ReadsDataRestoredOnAnotherPhone_DeviceBindingDoesNot()
         {

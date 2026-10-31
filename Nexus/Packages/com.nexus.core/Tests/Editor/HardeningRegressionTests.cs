@@ -562,14 +562,15 @@ namespace Nexus.Editor.Tests
                 storage.SetString(key, "old"); string backup = storage.ExportEncryptedSaveData(key);
                 storage.AutoSave = false;
                 object writeLock = typeof(EncryptedStorageService).GetField("_writeLock", Private).GetValue(storage);
-                bool accepted = true, blocked; Exception error = null;
-                var worker = new Thread(() => { try { accepted = storage.ImportEncryptedSaveData(key, backup); } catch (Exception ex) { error = ex; } });
+                bool accepted = true, blocked; Exception error = null; string reason = null;
+                var worker = new Thread(() => { try { accepted = storage.ImportEncryptedSaveData(key, backup, out reason); } catch (Exception ex) { error = ex; } });
                 lock (writeLock)
                 {
                     worker.Start(); blocked = SpinWait.SpinUntil(() => (worker.ThreadState & ThreadState.WaitSleepJoin) != 0, 3000);
                     if (blocked) storage.SetString(key, "new");
                 }
                 Assert.IsTrue(worker.Join(3000)); Assert.IsTrue(blocked); Assert.IsNull(error); Assert.IsFalse(accepted);
+                Assert.AreEqual("the key was written while the import waited, and that newer value is kept", reason); // issue #166
                 Assert.AreEqual("new", storage.GetString(key)); storage.Save(); Cache(storage).Clear();
                 Assert.AreEqual("new", storage.GetString(key));
             }
