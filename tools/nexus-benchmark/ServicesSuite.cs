@@ -1007,6 +1007,12 @@ namespace NexusBench
                 Check("D5. Product_Catalog_Registration", catalog,
                     $"gems={iap.GetProduct("gems_100")?.PriceString} vip={iap.GetProduct("vip_1mo")?.Id ?? "null"} missing={iap.GetProduct("missing") == null}");
 
+                // D5b (#163): a product registered without a price has none; the old "$0.99" default showed a price
+                // nobody set until the store answered.
+                string unpriced = iap.GetLocalizedPrice("vip_1mo");
+                Check("D5b. Unpriced_Product_Shows_No_Price", iap.GetProduct("vip_1mo").PriceString == null && unpriced == null,
+                    $"catalog={iap.GetProduct("vip_1mo").PriceString ?? "null"} localized={unpriced ?? "null"}");
+
                 // D6: no adapter → graceful failure, no throw (P0.2 fix).
                 bool ok = true; string msg = null;
                 iap.PurchaseProduct("gems_100", (o, m) => { ok = o; msg = m; });

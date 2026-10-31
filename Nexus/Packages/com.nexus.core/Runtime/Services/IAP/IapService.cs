@@ -19,7 +19,8 @@ namespace Nexus.Core.Services
     {
         public string Id { get; set; }
         public ProductType Type { get; set; }
-        public string PriceString { get; set; } = "$0.99";
+        /// <summary>The catalog price shown until the store reports its localized one; null (the default) shows none (#163).</summary>
+        public string PriceString { get; set; }
     }
 
     public interface IIapStoreAdapter

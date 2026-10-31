@@ -90,7 +90,7 @@ and degrade predictably when an adapter lacks the capability:
 | `IAdService.ReadyChanged` | forwarded from `IAdReadinessAdapter.ReadyChanged`; also raised once when `AdService`'s own interstitial cooldown ends, if an `ITickService` is bound (issue #99) | raised once when the adapter's `Initialize` completes, and at the end of the interstitial cooldown as on the left |
 | `IAdService.PrivacyOptionsRequired`, `ShowPrivacyOptions(onClosed)` | `IAdConsentAdapter` (the adapter owns the consent flow, for example Google UMP) | `false`; `onClosed` runs immediately |
 | `IIapService.Purchase(productId, Action<PurchaseOutcome>)` | `IIapOutcomeAdapter.PurchaseWithOutcome` reports `Purchased`, `Cancelled`, `Pending`, `Failed` or `Unavailable` | bool result maps to `Purchased`; `store_unavailable` / `not_initialized` to `Unavailable`; anything else to `Failed` |
-| `IIapService.GetLocalizedPrice(productId)` | `IIapStoreInfoAdapter.GetLocalizedPrice` (the store's string) | the catalog's `ProductDefinition.PriceString`, or null |
+| `IIapService.GetLocalizedPrice(productId)` | `IIapStoreInfoAdapter.GetLocalizedPrice` (the store's string) | the catalog's `ProductDefinition.PriceString` when the game set one, else null (no default price, #163) |
 | `IIapService.IsStoreAvailable`, `StoreChanged` | `IIapStoreInfoAdapter.IsAvailable` / `Changed` | available whenever an adapter is set (without one, never); no change events |
 
 `MonetizationContractTests` (EditMode) lock every row of this table against the testing kit's
