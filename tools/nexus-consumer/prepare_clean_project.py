@@ -62,7 +62,7 @@ namespace NexusIntegrationSmoke
     {
         public static Type Find(string name)
         {
-            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            foreach (var assembly in UnityEngine.Assemblies.CurrentAssemblies.GetLoadedAssemblies())
             {
                 var type = assembly.GetType(name, false);
                 if (type != null) return type;
