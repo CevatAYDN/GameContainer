@@ -136,16 +136,19 @@ namespace Nexus.Tests
         {
             var throttler = new SaveThrottler(new TestTickService(), TimeSpan.FromSeconds(2)) { TimeProvider = new TestTimeProvider() };
             throttler.InitializeAsync(CancellationToken.None);
-            int saves = 0;
-            throttler.TryRequestSave(() => saves++);
-            throttler.TryRequestSave(() => saves++); // inside the window: pending
-            var onFocus = typeof(SaveThrottler).GetMethod("OnFocusChanged", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            Assert.IsNotNull(onFocus, "the throttler has a focus handler");
-            onFocus.Invoke(throttler, new object[] { true });
-            Assert.AreEqual(1, saves, "gaining focus writes nothing");
-            onFocus.Invoke(throttler, new object[] { false });
-            Assert.AreEqual(2, saves, "the pending save is written on focus loss");
-            throttler.OnDispose();
+            try
+            {
+                int saves = 0;
+                throttler.TryRequestSave(() => saves++);
+                throttler.TryRequestSave(() => saves++); // inside the window: pending
+                var onFocus = typeof(SaveThrottler).GetMethod("OnFocusChanged", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                Assert.IsNotNull(onFocus, "the throttler has a focus handler");
+                onFocus.Invoke(throttler, new object[] { true });
+                Assert.AreEqual(1, saves, "gaining focus writes nothing");
+                onFocus.Invoke(throttler, new object[] { false });
+                Assert.AreEqual(2, saves, "the pending save is written on focus loss");
+            }
+            finally { throttler.OnDispose(); } // unhooks Application.focusChanged even when an assert fails
         }
     }
 }
