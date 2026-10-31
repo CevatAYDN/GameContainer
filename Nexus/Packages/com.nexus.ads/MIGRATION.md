@@ -19,7 +19,7 @@ puts the family's controller behind the same service.
 1. **Packages.** In `Packages/manifest.json`, every family package at one commit of this repository:
    `com.nexus.core`, `com.nexus.ads`, `com.nexus.ads.bridge.nexus`, and the provider of the selected
    mediation (the validator's `manifest.pins` check fails when the `com.nexus.ads*` entries differ, and
-   **Tools > Nexus Ads > Pin family packages to one commit** rewrites those; neither covers
+   **Nexus > Ads > Pin family packages to one commit** rewrites those; neither covers
    `com.nexus.core`, which is re-pinned to the same commit by hand):
    - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x; to keep Google's consent
      form (the form the legacy `AdMobAdapter` showed), also keep `com.google.ads.mobile` and add
@@ -35,7 +35,7 @@ puts the family's controller behind the same service.
    **Natural Break**; an undeclared name is blocked with `UnknownPlacement`), fill the Release tab with the
    live ids, and the Test tab (AdMob: Google's sample ids, filled by the page; LevelPlay: a copy of
    the Release tab plus the test device list).
-3. **Android and scene.** Press **Tools > Nexus Ads > Setup > Prepare Android** until every step is
+3. **Android and scene.** Press **Nexus > Ads > Setup > Prepare Android** until every step is
    Done (the resolver, LevelPlay's native SDK and Gradle lines, the AdMob App ID; see the
    [README](README.md#editor-tools)), and put an `AdsBootstrap` component in the first scene. A game
    that starts ads late (after its own explanation, or never for a player who owns its ad-free product)
@@ -67,7 +67,7 @@ puts the family's controller behind the same service.
    | Load retries | `AdController`'s back-off, paused while the app is hidden |
    | A build script or code gate that refuses a release with test ids | `AdsValidator` pre-build hook on Android and iOS builds |
 
-6. **Check.** Run **Tools > Nexus Ads > Setup** and the validator on both tabs (or
+6. **Check.** Run **Nexus > Ads > Setup** and the validator on both tabs (or
    `AdsValidator.RunCli`, see the [README](README.md#validator)); then a development build on a
    listed device and the device acceptance run.
 7. **Record.** The re-pin commit and its test numbers go into gate 11 of

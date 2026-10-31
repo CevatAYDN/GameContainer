@@ -20,7 +20,7 @@ namespace Nexus.Editor
     public static class NexusSceneOverlay
     {
         private const string k_EnabledPref = "Nexus.SceneOverlay.Enabled";
-        private const string k_MenuItem = "Tools/Nexus/Scene Overlay";
+        private const string k_MenuItem = "Nexus/Scene Overlay";
         // Data is live only during Play Mode (registrations + bounds move); a half-second
         // refresh is plenty and keeps edit-mode repaints cheap.
         private const double k_RefreshInterval = 0.5;
@@ -67,10 +67,10 @@ namespace Nexus.Editor
             }
         }
 
-        [MenuItem(k_MenuItem)]
+        [MenuItem(k_MenuItem, false, 66)]
         private static void ToggleEnabled() => Enabled = !Enabled;
 
-        [MenuItem(k_MenuItem, true)]
+        [MenuItem(k_MenuItem, true, 66)]
         private static bool ToggleEnabled_Validate()
         {
             Menu.SetChecked(k_MenuItem, Enabled);

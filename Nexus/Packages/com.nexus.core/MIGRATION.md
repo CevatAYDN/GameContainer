@@ -383,7 +383,7 @@ New editor tools available:
 - Network Signal Tracer
 - Game Manager Inspector
 
-They are tabs of the Dashboard: **Window > Nexus > Dashboard** (`Ctrl+Shift+N`).
+They are tabs of the Nexus window: **Nexus > Open Window** (`Ctrl+Shift+N`).
 
 ### Deprecated Features
 

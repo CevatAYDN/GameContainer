@@ -22,7 +22,7 @@ Manager, `com.unity.external-dependency-manager`, as its own dependency and reso
 libraries during the build), list
 `com.nexus.ads` and this package at the same commit, or list `com.nexus.ads` alone and let Prepare
 Android add this package at the commit of `com.nexus.ads`; select **AdMob** in **Project Settings > Nexus
-Ads**, press **Tools > Nexus Ads > Setup > Prepare Android** (it writes the tab's App ID into the
+Ads**, press **Nexus > Ads > Setup > Prepare Android** (it writes the tab's App ID into the
 plugin's settings asset) and put an `AdsBootstrap` in the first scene; the provider registers itself
 before the first scene loads. A Nexus game adds `com.nexus.ads.bridge.nexus` and calls `NexusAdsBridge.Connect`.
 

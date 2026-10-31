@@ -18,6 +18,7 @@ namespace Nexus.Editor
         public override string Id => "FSM";
         public override string DisplayName => NexusLang.Get("action_fsm_title");
         public override int Order => 13;
+        public override string Category => "cat_live";
 
         private const int MaxHistory = 24;
 

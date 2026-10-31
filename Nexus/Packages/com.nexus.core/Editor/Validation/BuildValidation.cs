@@ -215,7 +215,7 @@ namespace Nexus.Editor
             public static void LogError(string msg) => ErrorLogger(msg);
         }
 
-        [MenuItem("Nexus/Validate Architecture")]
+        [MenuItem("Nexus/Validate Architecture", false, 62)]
         public static bool Validate()
         {
             s_lastResults.Clear();

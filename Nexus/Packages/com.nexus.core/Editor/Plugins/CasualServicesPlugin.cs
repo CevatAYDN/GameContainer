@@ -11,6 +11,7 @@ namespace Nexus.Editor.Plugins
         public override string Id => "casual_services";
         public override string DisplayName => NexusLang.Get("action_casual_services_title");
         public override int Order => 25;
+        public override string Category => "cat_live";
 
         private VisualElement _container;
         private ScrollView _content;

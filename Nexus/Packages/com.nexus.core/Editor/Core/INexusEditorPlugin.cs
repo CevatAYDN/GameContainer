@@ -13,7 +13,8 @@ namespace Nexus.Editor
         string DisplayName { get; }
         int Order { get; }
 
-        /// <summary>Category key for sidebar grouping (e.g. "cat_overview", "cat_diagnostics").</summary>
+        /// <summary>The sidebar section: "cat_status", "cat_setup", "cat_architecture" or "cat_live"
+        /// (<see cref="NexusWindow.Sections"/>); any other key is a section listed after them.</summary>
         string Category { get; }
 
         /// <summary>Accent color for the sidebar icon dot.</summary>

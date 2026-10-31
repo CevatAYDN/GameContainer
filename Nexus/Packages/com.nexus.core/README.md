@@ -46,7 +46,7 @@ Samples (Package Manager → Nexus Observable Architecture → Samples): **Code-
 (attach `ScoreBootstrap` to a GameObject and press Play), **Counter Example**
 ([README](Samples~/Counter/README.md), the full view/mediator tour) and **Nexus Starter Package**
 (six scripts: lifecycle, signal, model, command, view and mediator; no scene). The Setup Wizard in
-the Nexus Dashboard generates a starter project additively.
+the Nexus window's Setup section generates a starter project additively.
 
 ## What is in the package
 
@@ -94,10 +94,13 @@ needs is installed below its asmdef's `versionDefines` expression (issue #143; t
 `NexusBinderSelfHeal` recovers a binder that no longer compiles, and a stale generated injector
 falls back to reflection at runtime with a warning.
 
-**Editor suite** (Window → Nexus → Dashboard, `Ctrl+Shift+N`): 15 plugins, one tab each:
-Dashboard, GameManager, Hierarchy, Explorer, Graph, TypeAnalyzer, ContextInspector, Tracer,
-ErrorDashboard, PerformanceDashboard, NetworkDashboard, Setup Wizard (project scaffolding), Context
-Wizard (Root, Service, View/Mediator and Signal/Command generators), CasualServices, Help; `com.nexus.fsm` adds a State Machine tab. The Dashboard's build-readiness card shows the AOT binder state,
+**Editor window** (menu **Nexus**, **Open Window** `Ctrl+Shift+N`): one window, 14 plugins, one tab each, in
+four sidebar sections. **Status**: Dashboard. **Setup**: Setup Wizard (project scaffolding), Context Wizard (Root,
+Service, View/Mediator and Signal/Command generators), Help. **Architecture**: Explorer, Graph, GameManager,
+TypeAnalyzer. **Live**: Hierarchy, Tracer, ContextInspector, ErrorDashboard, PerformanceDashboard, CasualServices;
+`com.nexus.fsm` adds a State Machine tab. The Nexus menu opens each section, and holds the binder generator,
+validation, the Code Health Analyzer, the scene overlay toggle, the editor settings and, with `com.nexus.ads`, the Ads
+items; GameObject > Nexus creates Roots, scopes, bindings and the UI canvas. The Dashboard's build-readiness card shows the AOT binder state,
 `link.xml`, the active build target and its scripting defines, generated injectors that fell back
 to reflection, and DI validation issues of the active contexts, with one-click check and
 generate. Also custom inspectors, a scene-view overlay of context boundaries, a Unity
@@ -228,7 +231,7 @@ frame budget or full `Context` startup, and no universal winner is claimed.
 | `Runtime/Queue`, `Runtime/Recovery`, `Runtime/Plugins`, `Runtime/Tracing`, `Runtime/Debug`, `Runtime/Data`, `Runtime/Extensions` | Hybrid queue, recovery strategies, runtime plugin system, causal tracing, debug HUD, `BigDouble`, save manager and scene helpers |
 | `Runtime/Testing` | Test harness assembly (`com.nexus.core.testing`) |
 | `Editor/Core` | `NexusWindow` host, plugin base class, styles, localization, hierarchy menus |
-| `Editor/Plugins` | The 15 plugins, one Dashboard tab each |
+| `Editor/Plugins` | The 14 plugins, one window tab each |
 | `Editor/CodeGen` | Binder generator, build guard, self-heal, editor settings asset |
 | `Editor/Validation`, `Editor/Analyzer`, `Editor/Inspector`, `Editor/Overlay`, `Editor/Profiling`, `Editor/LiveReload` | Build validation rules, architecture analyzer, custom inspectors, scene overlay, profiler module, hot reload |
 | `SourceGenerator~` | Roslyn source generator project; built DLL ships in `SourceGenerators~` |

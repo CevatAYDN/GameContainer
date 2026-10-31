@@ -9,7 +9,7 @@ namespace Nexus.Editor
 {
     public static class NexusSystemDiagnostic
     {
-        [MenuItem("Nexus/Run System Diagnostic Audit %&d", false, 1)]
+        [MenuItem("Nexus/Run System Diagnostic Audit %&d", false, 64)]
         public static void RunDiagnostic()
         {
             var sw = Stopwatch.StartNew();

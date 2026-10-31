@@ -23,6 +23,7 @@ namespace Nexus.Editor
         public override string Id => "SetupWizard";
         public override string DisplayName => NexusLang.Get("setup_name");
         public override int Order => -1;
+        public override string Category => "cat_setup";
 
         private VisualElement _root;
         private VisualElement _progressFill;
@@ -98,7 +99,7 @@ namespace Nexus.Editor
                 () => File.Exists(GameRoot + "/Lifecycle/GameLifecycle.cs") && File.Exists("Assets/Scenes/NexusStarter.unity"));
 
             AddStep(NexusLang.Get("setup_dashboard"), NexusLang.Get("setup_dashboard_description"),
-                NexusLang.Get("setup_dashboard"), () => EditorApplication.ExecuteMenuItem("Window/Nexus/Dashboard %#n"),
+                NexusLang.Get("setup_dashboard"), () => Window?.SwitchToPlugin("Dashboard"),
                 () => true);
 
             foreach (var step in _steps)
@@ -533,7 +534,7 @@ namespace Nexus.Editor
         {
             Debug.Log("[Nexus] Creating scene with GameRoot + Canvas/UI...");
             CreateSceneWithRootAndUI();
-            Debug.Log("[Nexus] Setup complete! Open Window/Nexus/Dashboard to inspect.");
+            Debug.Log("[Nexus] Setup complete! Open Nexus > Status to inspect.");
         }
 
         private static bool IsGameViewCompiled()

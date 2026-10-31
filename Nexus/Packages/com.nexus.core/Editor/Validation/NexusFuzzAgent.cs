@@ -12,7 +12,7 @@ namespace Nexus.Editor
     /// </summary>
     public static class NexusFuzzAgent
     {
-        [MenuItem("Nexus/Run Play-Mode Chaos Fuzzing Test", false, 2)]
+        [MenuItem("Nexus/Run Play-Mode Chaos Fuzzing Test", false, 65)]
         public static void RunFuzzingTest()
         {
             if (!Application.isPlaying)

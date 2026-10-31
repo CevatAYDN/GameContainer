@@ -15,6 +15,7 @@ namespace Nexus.Editor
         public override string Id => "Hierarchy";
         public override string DisplayName => NexusLang.Get("action_hierarchy_title");
         public override int Order => 2;
+        public override string Category => "cat_live";
 
         private VisualElement _view;
         private VisualElement _leftPanel;
@@ -204,7 +205,7 @@ namespace Nexus.Editor
                 {
                     if (Window != null)
                     {
-                        Window.OpenPlugin("GameManager");
+                        Window.SwitchToPlugin("GameManager");
                     }
                 }
                 else
@@ -253,9 +254,9 @@ namespace Nexus.Editor
             card.Add(header);
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_gamemanager"), () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
-            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.OpenPlugin("Explorer"), NexusEditorStyles.BtnPurple));
-            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_gamemanager"), () => Window?.SwitchToPlugin("GameManager"), NexusEditorStyles.BtnBlue));
+            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal));
             card.Add(actionRow);
 
             // Nested active singletons list

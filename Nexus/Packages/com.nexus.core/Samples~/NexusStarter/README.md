@@ -28,4 +28,4 @@ For the recommended onboarding sample, import the **Counter Example** sample.
 
 Click the button → counter increments. The View updates via the reactive model.
 
-Check **Window > Nexus > Dashboard** to inspect the live signal flow.
+Open **Nexus > Live** to inspect the live signal flow.

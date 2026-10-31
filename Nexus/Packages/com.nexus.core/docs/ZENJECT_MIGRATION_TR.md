@@ -120,7 +120,7 @@ Zenject'te `Dispose` senkron çağrılırdı; Nexus `OnDispose` üzerinden non-b
 - [ ] Durumu değiştiren tüm signal handler'lar `ICommand<T>` (veya adapter); her `Subscribe` aboneliği dispose ediliyor — abonelik sızıntısı yok
 - [ ] Tüm `OnChanged` abonelikleri `RemoveOnChanged` ile kaldırılıyor
 - [ ] `async void` yok; teardown'da sync-over-async yok
-- [ ] `Window > Nexus > Code Health Analyzer` temiz (0 sorun); CI'da aynı analiz `-executeMethod Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless` ile koşar
+- [ ] `Nexus > Code Health Analyzer` temiz (0 sorun); CI'da aynı analiz `-executeMethod Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless` ile koşar
 - [ ] `BuildValidation.RunSilent()` geçiyor
 - [ ] EditMode test suite'i geçiyor (Nexus'un kendi sayıları: repo'nun `docs/RELEASE_GATES.md` dosyası)
 

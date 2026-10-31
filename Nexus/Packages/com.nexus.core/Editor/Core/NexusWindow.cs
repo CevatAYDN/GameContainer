@@ -1,7 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Reflection;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -10,24 +9,14 @@ using Nexus.Core;
 namespace Nexus.Editor
 {
     /// <summary>
-    /// Host shell for the Nexus Architecture Suite.
-    /// Dynamically loads all implementations of <see cref="INexusEditorPlugin"/> and manages tab switching,
-    /// branding sidebar, and event-driven status updates.
+    /// The one Nexus editor window (menu Nexus, Ctrl+Shift+N). It discovers every <see cref="INexusEditorPlugin"/>,
+    /// shows each as a tab in its sidebar section and forwards status updates to the open tab.
     /// </summary>
     public partial class NexusWindow : EditorWindow
     {
-        // Plugin icon colors and sidebar categories are now declared on each plugin
-        // via INexusEditorPlugin.IconColor and INexusEditorPlugin.Category.
-        // NexusWindow groups plugins by their self-declared category.
-        // The Context Wizard ("Wizard") stays visible: its Service, View/Mediator and Signal/Command generators have no
-        // other entry point, and the Dashboard and Game Manager buttons switch to it (hidden, they did nothing).
-        private static readonly HashSet<string> HiddenPluginIds = new()
-        {
-            "TestPlugin",
-            "CustomPlugin"
-        };
-
-        internal static bool IsHiddenPlugin(string pluginId) => HiddenPluginIds.Contains(pluginId);
+        /// <summary>The sidebar sections in their order; a plugin's <see cref="INexusEditorPlugin.Category"/> names one,
+        /// and a plugin with any other category is listed after them.</summary>
+        internal static readonly string[] Sections = { "cat_status", "cat_setup", "cat_architecture", "cat_live" };
 
         // Discovered plugin TYPES are cached across window open/close: the assembly-wide
         // scan is the expensive part of discovery (it was re-run on every OnEnable). Fresh
@@ -51,33 +40,51 @@ namespace Nexus.Editor
         private Label _statusBar;
         private readonly Dictionary<string, Label> _tabLabels = new();
         private bool _uiCallbacksRegistered;
+        // serialized, so a recompile or a play-mode domain reload reopens the tab that was open
+        [SerializeField] private string _activePluginId;
 
-        [MenuItem("Window/Nexus/Dashboard %#n")]
-        public static void ShowWindow()
+        /// <summary>Opens the window, on the tab with this plugin id when one is given.</summary>
+        public static NexusWindow Open(string pluginId = null)
         {
-            var window = GetWindow<NexusWindow>("Nexus Dashboard");
+            var window = GetWindow<NexusWindow>();
             window.minSize = new Vector2(750, 500);
-            window.Show();
+            if (pluginId != null) window.SwitchToPlugin(pluginId);
+            return window;
         }
+
+        /// <summary>Opens the window on the first tab of a sidebar section (one of <see cref="Sections"/>).</summary>
+        public static NexusWindow OpenSection(string category)
+        {
+            var window = Open();
+            var first = window._plugins.FirstOrDefault(p => p.Category == category);
+            if (first != null) window.SwitchToPlugin(first.Id);
+            return window;
+        }
+
+        [MenuItem("Nexus/Open Window %#n", priority = 0)]
+        private static void OpenFromMenu() => Open();
+
+        [MenuItem("Nexus/Status", priority = 20)]
+        private static void OpenStatus() => OpenSection("cat_status");
+
+        [MenuItem("Nexus/Setup", priority = 21)]
+        private static void OpenSetup() => OpenSection("cat_setup");
+
+        [MenuItem("Nexus/Architecture", priority = 22)]
+        private static void OpenArchitecture() => OpenSection("cat_architecture");
+
+        [MenuItem("Nexus/Live", priority = 23)]
+        private static void OpenLive() => OpenSection("cat_live");
 
         private void OnEnable()
         {
+            titleContent = new GUIContent("Nexus");
             DiscoverPlugins();
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
             EditorApplication.hierarchyChanged += OnHierarchyChanged;
 
             NexusRuntime.OnContextRegistered += OnContextEvent;
             NexusRuntime.OnContextUnregistered += OnContextEvent;
-
-            foreach (var plugin in _plugins)
-            {
-                try { plugin.OnEnable(); } catch (Exception ex) { Debug.LogException(ex); }
-            }
-
-            if (_plugins.Count > 0)
-            {
-                _activePlugin ??= _plugins[0];
-            }
         }
 
         private void OnDisable()
@@ -90,10 +97,7 @@ namespace Nexus.Editor
             NexusRuntime.OnContextRegistered -= OnContextEvent;
             NexusRuntime.OnContextUnregistered -= OnContextEvent;
 
-            foreach (var plugin in _plugins)
-            {
-                try { plugin.OnDisable(); } catch (Exception ex) { Debug.LogException(ex); }
-            }
+            DeactivatePlugin();
         }
 
         private void OnPlayModeStateChanged(PlayModeStateChange change)
@@ -119,12 +123,6 @@ namespace Nexus.Editor
             Repaint();
         }
 
-        public void OpenPlugin(string pluginId)
-        {
-            SwitchToPlugin(pluginId);
-            Repaint();
-        }
-
         private void CreateGUI()
         {
             var root = rootVisualElement;
@@ -145,7 +143,7 @@ namespace Nexus.Editor
             brandLabel.AddToClassList(NexusEditorStyles.ClassBrandTitle);
             _sidebar.Add(brandLabel);
 
-            var subtitleLabel = new Label("Architecture Suite");
+            var subtitleLabel = new Label(NexusLang.Get("brand_subtitle"));
             subtitleLabel.AddToClassList(NexusEditorStyles.ClassBrandSubtitle);
             _sidebar.Add(subtitleLabel);
 
@@ -154,15 +152,11 @@ namespace Nexus.Editor
             sep.AddToClassList(NexusEditorStyles.ClassSidebarSep);
             _sidebar.Add(sep);
 
-            // Group plugins by their self-declared Category
-            var grouped = _plugins
-                .GroupBy(p => p.Category)
-                .OrderBy(g => g.Min(p => p.Order)); // sort categories by lowest plugin order
-
-            foreach (var group in grouped)
+            // _plugins is in sidebar order already (DiscoverPlugins)
+            foreach (var group in _plugins.GroupBy(p => p.Category))
             {
                 AddCategoryHeader(NexusLang.Get(group.Key));
-                foreach (var plugin in group.OrderBy(p => p.Order))
+                foreach (var plugin in group)
                 {
                     string key = $"tab_{plugin.Id.ToLower()}";
                     string label = NexusLang.Get(key);
@@ -244,11 +238,8 @@ namespace Nexus.Editor
 
             root.Add(rightPanel);
 
-            // Select default tab
-            if (_plugins.Count > 0)
-            {
-                SwitchToPlugin(_plugins[0].Id);
-            }
+            // the tab that was open, or the first tab of the first section
+            ActivatePlugin(_plugins.FirstOrDefault(p => p.Id == _activePluginId) ?? _plugins.FirstOrDefault());
 
             // Keyboard shortcuts: Ctrl+1..9 for tabs.
             // Guard against double registration: RefreshDiscovery() and SetLocale() re-run
@@ -282,7 +273,8 @@ namespace Nexus.Editor
                     {
                         foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                         {
-                            if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract)
+                            if (pluginType.IsAssignableFrom(type) && type.IsClass && !type.IsAbstract
+                                && type.GetConstructor(Type.EmptyTypes) != null)
                                 s_discoveredPluginTypes.Add(type);
                         }
                     }
@@ -292,14 +284,18 @@ namespace Nexus.Editor
                 foreach (var type in s_discoveredPluginTypes)
                 {
                     var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
-                    if (HiddenPluginIds.Contains(plugin.Id))
-                        continue;
                     plugin.Initialize(this);
                     foundPlugins.Add(plugin);
                 }
 
-                // Sort plugins by their predefined order
-                _plugins = foundPlugins.OrderBy(p => p.Order).ToList();
+                // Sidebar order: the sections in their order, then the other categories; by Order inside each.
+                // Ctrl+1..9 index this list, so it is grouped exactly as the sidebar shows it.
+                _plugins = foundPlugins
+                    .OrderBy(p => SectionRank(p.Category))
+                    .ThenBy(p => p.Order)
+                    .GroupBy(p => p.Category)
+                    .SelectMany(g => g)
+                    .ToList();
             }
             catch (Exception ex)
             {
@@ -308,6 +304,12 @@ namespace Nexus.Editor
                 Debug.LogError($"[NexusWindow] Plugin discovery failed: {ex.Message}\n{ex.StackTrace}");
                 _plugins.Clear();
             }
+        }
+
+        private static int SectionRank(string category)
+        {
+            int index = Array.IndexOf(Sections, category);
+            return index < 0 ? Sections.Length : index;
         }
 
         private void AddCategoryHeader(string label)
@@ -338,60 +340,60 @@ namespace Nexus.Editor
         {
             var targetPlugin = _plugins.FirstOrDefault(p => p.Id == pluginId);
             if (targetPlugin == null) return;
+            if (_contentArea == null)
+            {
+                // the window has no UI yet (opened this frame): CreateGUI opens this tab
+                _activePluginId = targetPlugin.Id;
+                return;
+            }
             if (targetPlugin == _activePlugin)
             {
-                // Same tab re-clicked: do NOT recreate the view. The old RefreshActivePlugin()
-                // call here ran CreateView() without OnDisable() on the previous view,
-                // leaking event subscriptions (e.g. ErrorCollection.OnErrorAdded) and churning
-                // the whole UI on every click. Just refresh the action bar + status text.
+                // Same tab re-clicked: keep its view, refresh the action bar and status text.
                 UpdateContextActionBar();
                 UpdateStatusBarText();
                 return;
             }
 
-            if (_activePlugin != null)
-            {
-                try { _activePlugin.OnDisable(); } catch (Exception ex) { Debug.LogException(ex); }
-            }
-
-            _activePlugin = targetPlugin;
-
-            try { _activePlugin.OnEnable(); } catch (Exception ex) { Debug.LogException(ex); }
-
-            foreach (var plugin in _plugins)
-            {
-                var btn = _sidebar.Q<Button>($"Tab_{plugin.Id}");
-                if (btn != null)
-                {
-                    if (plugin.Id == pluginId)
-                    {
-                        btn.AddToClassList("active");
-                    }
-                    else
-                    {
-                        btn.RemoveFromClassList("active");
-                    }
-                }
-            }
-
-            RefreshActivePlugin();
+            ActivatePlugin(targetPlugin);
         }
 
         private void RefreshActivePlugin()
         {
-            if (_contentArea == null || _activePlugin == null) return;
+            if (_activePlugin != null) ActivatePlugin(_activePlugin);
+        }
+
+        // OnEnable and OnDisable bracket every view a plugin builds: a view rebuilt for play mode, a language
+        // switch or a rediscovery first disables the old one, so no subscription of the old view stays behind.
+        private void ActivatePlugin(INexusEditorPlugin plugin)
+        {
+            DeactivatePlugin();
+            if (plugin == null || _contentArea == null) return;
+
+            _activePlugin = plugin;
+            _activePluginId = plugin.Id;
+            try { plugin.OnEnable(); } catch (Exception ex) { Debug.LogException(ex); }
+
+            foreach (var btn in _sidebar.Query<Button>(className: NexusEditorStyles.ClassSidebarBtn).ToList())
+                btn.EnableInClassList("active", btn.name == $"Tab_{plugin.Id}");
+
             UpdateContextActionBar();
             _contentArea.Clear();
-
             try
             {
-                _contentArea.Add(_activePlugin.CreateView());
+                _contentArea.Add(plugin.CreateView());
             }
             catch (Exception ex)
             {
                 Debug.LogException(ex);
                 _contentArea.Add(new Label(string.Format(NexusLang.Get("error_plugin_view"), ex.Message)) { style = { color = Color.red } });
             }
+        }
+
+        private void DeactivatePlugin()
+        {
+            if (_activePlugin == null) return;
+            try { _activePlugin.OnDisable(); } catch (Exception ex) { Debug.LogException(ex); }
+            _activePlugin = null;
         }
 
         private void UpdateContextActionBar()
@@ -517,8 +519,6 @@ namespace Nexus.Editor
         {
             EditorPrefs.SetString("Nexus_Locale", locale);
             NexusLang.LoadLocale(locale);
-            _uiCallbacksRegistered = false;
-            rootVisualElement.Clear();
             CreateGUI();
         }
     }

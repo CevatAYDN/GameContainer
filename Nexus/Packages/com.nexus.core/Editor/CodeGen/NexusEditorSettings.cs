@@ -77,7 +77,7 @@ namespace Nexus.Editor
             AssetDatabase.SaveAssets();
         }
 
-        [MenuItem("Nexus/Editor Settings")]
+        [MenuItem("Nexus/Editor Settings", false, 80)]
         public static void OpenSettings()
         {
             var settings = GetOrCreateSettings();

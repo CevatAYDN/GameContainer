@@ -19,6 +19,7 @@ namespace Nexus.Editor
         public override string Id => "ContextInspector";
         public override string DisplayName => NexusLang.Get("tab_contextinspector");
         public override int Order => 7;
+        public override string Category => "cat_live";
 
         // ── State ─────────────────────────────────────────────────
         private IContext _selectedContext;

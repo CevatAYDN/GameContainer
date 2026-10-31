@@ -181,7 +181,7 @@ public class ScoreView : View
 
 1. **Play** tuşuna basın ☝️
 2. Butona tıklayın — skor yazısı güncellenir
-3. **Window > Nexus > Dashboard**'u açarak canlı inceleme yapın:
+3. **Nexus > Live** menüsünü açarak canlı inceleme yapın:
    - Anlık signal ve command akışı
    - Reactive model durumu
    - Causal trace log'u

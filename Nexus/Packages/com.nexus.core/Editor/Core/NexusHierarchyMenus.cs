@@ -62,37 +62,6 @@ namespace Nexus.Editor
             Selection.activeObject = canvasGo;
         }
 
-        // ─── Top-Level Nexus Menu Shortcuts ───
-
-        [MenuItem("Nexus/Open Dashboard", false, 0)]
-        public static void OpenDashboard()
-        {
-            EditorApplication.ExecuteMenuItem("Window/Nexus/Dashboard %#n");
-        }
-
-        [MenuItem("Nexus/Create/Context Data Asset", false, 10)]
-        public static void CreateContextDataAsset()
-        {
-            var asset = ScriptableObject.CreateInstance<ContextData>();
-            string path = AssetDatabase.GenerateUniqueAssetPath("Assets/NewContextData.asset");
-            AssetDatabase.CreateAsset(asset, path);
-            AssetDatabase.SaveAssets();
-            EditorUtility.FocusProjectWindow();
-            Selection.activeObject = asset;
-        }
-
-        [MenuItem("Nexus/Create/Scene Root in Active Scene", false, 11)]
-        public static void CreateSceneRootInActiveScene()
-        {
-            CreateSceneRoot(null);
-        }
-
-        [MenuItem("Nexus/Create/Global Project Root in Active Scene", false, 12)]
-        public static void CreateGlobalRootInActiveScene()
-        {
-            CreateGlobalProjectRoot(null);
-        }
-
         internal static Root CreateSceneRootWithAsset(ContextData data)
         {
             string name = string.IsNullOrEmpty(data.ScopeTag) ? "NexusRoot" : $"[{data.ScopeTag}_Root]";

@@ -18,7 +18,7 @@ In `Packages/manifest.json`, by git URL pinned to a commit:
 `<commit>` is the full 40-character commit hash. The Package Manager does not take a short one:
 `#9e793d5` ends in `Could not clone ... Make sure [9e793d5] is a valid branch name, tag or full commit hash`.
 The package brings `com.unity.ugui` with it. Every other family package goes in at the same commit (the
-validator's `manifest.pins` check; **Tools > Nexus Ads > Pin family packages to one commit** aligns
+validator's `manifest.pins` check; **Nexus > Ads > Pin family packages to one commit** aligns
 them), and **Prepare Android** adds the LevelPlay or AdMob provider package at that commit itself.
 Next: the settings ([Using it without Nexus](#using-it-without-nexus)), then the mediation's README
 ([LevelPlay](../com.nexus.ads.levelplay/README.md), [AdMob](../com.nexus.ads.admob/README.md)).
@@ -120,7 +120,7 @@ stays hidden and the reason is logged as an error. A release build never runs th
    calls `AdsBootstrap.Instance.StartAds()` when it is ready; until then nothing reads the advertising id
    or touches the consent flow and the SDK, a show answers `NotReady`, and `NexusAdsBridge.Connect` and
    `Ads.OnReadyChanged` complete when it starts (issue #62).
-3. Generate the `AdPlacements` constants (**Tools > Nexus Ads > Generate Placements**, path on the
+3. Generate the `AdPlacements` constants (**Nexus > Ads > Generate Placements**, path on the
    settings) and show ads through the facade:
 
 ```csharp
@@ -173,7 +173,7 @@ asynchronously acknowledges it itself.
   the decision `AdsBootstrap` runs; the setup wizard shows the same lines and the debug panel shows
   `this build:`. A line is what the build decides to run; whether the mediation's server accepts the keys
   and fills an ad is known only from a run on a device.
-- **Tools > Nexus Ads > Setup**: the wizard. Every provider and network row from the catalog with its
+- **Nexus > Ads > Setup**: the wizard. Every provider and network row from the catalog with its
   status badge, next step, registration / docs / policy links, "Install SDK" (LevelPlay from the Unity
   registry, AdMob from OpenUPM with the scoped registry written for you, MAX through AppLovin's
   installer), the setup steps in English and Turkish, the project buttons (generate placements, write
@@ -197,7 +197,7 @@ asynchronously acknowledges it itself.
   shows Manual rows until its provider exists. Command line:
   `Unity.exe -batchmode -nographics -projectPath <project> -buildTarget Android -executeMethod Nexus.Ads.Editor.AndroidSetup.PrepareCli -adsTab Test`
   without `-quit` (exit 0 all Done, 1 steps remain, 2 could not run, 3 packages added: run it again).
-- **Window > Nexus Ads > Placement Tester**: in Play Mode, every placement with its readiness, a Show
+- **Nexus > Ads > Placement Tester**: in Play Mode, every placement with its readiness, a Show
   button, the result and the rule that blocked it, the simulator scenario and buttons, the pending
   reward, and the live event log.
 

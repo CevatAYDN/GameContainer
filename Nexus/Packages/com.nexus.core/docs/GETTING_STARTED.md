@@ -24,8 +24,8 @@ This package targets Unity 6; older Unity versions are not promised by this guid
 
 Select Nexus in Package Manager, expand **Samples**, and import **Counter Example**.
 Follow the sample README. The sample includes the complete MVCS tour; no files from the
-repository's `Assets` directory are prerequisites. For a generated scene, open Nexus Dashboard's
-Setup Wizard. It preserves existing starter files, settings and scenes and creates a new scene additively.
+repository's `Assets` directory are prerequisites. For a generated scene, open the Setup Wizard
+(**Nexus > Setup**). It preserves existing starter files, settings and scenes and creates a new scene additively.
 
 ## Code-first: one startup call
 

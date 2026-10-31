@@ -16,9 +16,9 @@ This document lists the localization key namespaces used by the editor window (`
 A few `tr.json` entries deliberately keep the English text:
 
 - `cs_default_currency` (`Coins`): it is the default currency ID the Casual Debugger sends to the economy service, not a label.
-- Symbols and units (`pd_value_placeholder`, `graph_port_output`, `graph_port_input`, `hier_bullet`, `tr_tree_prefix`, `exp_btn_copy`, `exp_btn_open`, `pd_unit_mb`, `nd_latency_default`, `nd_latency_range`), `brand_title` and the `null` labels.
+- Symbols and units (`pd_value_placeholder`, `graph_port_output`, `graph_port_input`, `hier_bullet`, `tr_tree_prefix`, `exp_btn_copy`, `exp_btn_open`, `pd_unit_mb`), `brand_title` and the `null` labels.
 
-Code never compares a displayed text with an English literal: `NetworkDashboardPlugin` keeps the event type behind each filter button and `ExplorerPlugin` treats the assembly dropdown's first entry and an empty preset list by position, so their labels are translated like any other.
+Code never compares a displayed text with an English literal: `ExplorerPlugin` treats the assembly dropdown's first entry and an empty preset list by position, so its labels are translated like any other.
 
 ---
 
@@ -27,9 +27,9 @@ Code never compares a displayed text with an English literal: `NetworkDashboardP
 | Prefix | Component / Plugin | Description |
 |:---|:---|:---|
 | `window_`, `brand_`, `sidebar_`, `discovery_`, `error_`, `actions_`, `status_`, `statusbar_` | NexusWindow | Window shell: brand, sidebar, plugin discovery errors, action bar, status bar |
-| `cat_` | NexusWindow sidebar | Category headers; `INexusEditorPlugin.Category` returns one of these keys (default `cat_other`) |
-| `tab_` | NexusWindow sidebar | Sidebar button label per plugin, `tab_<plugin id in lower case>`; without the key the plugin's `DisplayName` is used. Also the `DisplayName` of the Dashboard, Context Inspector, Error, Performance and Network plugins |
-| `action_` | DashboardPlugin, other plugins | `action_<tool>_title` / `action_<tool>_desc`: the Dashboard's ALL TOOLS cards; the `_title` keys are also the `DisplayName` of the Casual Services, Explorer, FSM, Game Manager, Graph, Help, Hierarchy, Tracer, Type Analyzer and Wizard plugins |
+| `cat_` | NexusWindow sidebar | Section headers: `cat_status`, `cat_setup`, `cat_architecture` and `cat_live`, in that order (`NexusWindow.Sections`); `INexusEditorPlugin.Category` returns one of them, and any other key, such as the default `cat_other`, is a section after them |
+| `tab_` | NexusWindow sidebar | Sidebar button label per plugin, `tab_<plugin id in lower case>`; without the key the plugin's `DisplayName` is used. Also the `DisplayName` of the Dashboard, Context Inspector, Error and Performance plugins |
+| `action_` | Plugins | `action_<tool>_title`: the `DisplayName` of the Casual Services, Explorer, FSM, Game Manager, Graph, Help, Hierarchy, Tracer, Type Analyzer and Wizard plugins |
 | `nav_` | GameManagerPlugin, HierarchyPlugin | Buttons that open another plugin |
 | no namespace prefix (`dashboard`, `contexts`, `build_validation`, `clear`, ...), `system_`, `perf_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | System status, project overview, build validation, runtime metrics, framework card |
 | `dash_`, `db_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | Quick actions, QuickFind, card tooltips, Nexus Health and Build readiness cards |
@@ -44,7 +44,6 @@ Code never compares a displayed text with an English literal: `NetworkDashboardP
 | `fsm_` | FSMPlugin (`com.nexus.fsm`) | Finite state machine visualizer (GameManagerPlugin also uses `fsm_fallback_context`) |
 | `ed_` | ErrorDashboardPlugin | Error log: severity and category filters, capture, copy and CSV export |
 | `pd_` | PerformanceDashboardPlugin | FPS, Mono heap, GC Gen0, signal and command rates, alarms |
-| `nd_` | NetworkDashboardPlugin | Connection status, latency, network event log |
 | `cs_` | CasualServicesPlugin | Economy, progression, UI stack, haptics and TimeScale debug helper |
 | `typeanalyzer_`, `ta_` | TypeAnalyzerPlugin | Type coupling and `[Inject]` dependency inspector |
 | `help_` | HelpPlugin | Documentation & framework guide |

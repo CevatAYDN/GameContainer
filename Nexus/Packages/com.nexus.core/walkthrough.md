@@ -34,7 +34,7 @@ when its owner ends. Do not add bindings after startup and call initialization a
    package content; in your project **Nexus → Editor Settings** creates
    `Assets/NexusEditorSettings.asset` on first use. The demo was removed in 0.5.0; the Setup
    Wizard generates the example project.
-3. Open **Window → Nexus → Dashboard** (`Ctrl+Shift+N`). If code generation or the assembly scan
+3. Open the Nexus window (**Nexus > Open Window**, `Ctrl+Shift+N`). If code generation or the assembly scan
    misbehaves, see [AOT Code Generation Errors](TROUBLESHOOTING.md#aot-code-generation-errors).
 
 ## 2. Your first context

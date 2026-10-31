@@ -15,6 +15,7 @@ namespace Nexus.Editor
         public override string Id => "Explorer";
         public override string DisplayName => NexusLang.Get("action_explorer_title");
         public override int Order => 3;
+        public override string Category => "cat_architecture";
 
         private VisualElement _view;
         private ScrollView _explorerScrollView;
@@ -603,8 +604,8 @@ namespace Nexus.Editor
             var contextChoices = activeContexts.Select(c => c is Context ctx ? ctx.ScopeTag : "Unknown").ToList();
 
             var topActions = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginBottom = 6 } };
-            topActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_tracer"), () => Window?.OpenPlugin("Tracer"), NexusEditorStyles.BtnTeal));
-            topActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_gamemanager"), () => Window?.OpenPlugin("GameManager"), NexusEditorStyles.BtnBlue));
+            topActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_tracer"), () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal));
+            topActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("tab_gamemanager"), () => Window?.SwitchToPlugin("GameManager"), NexusEditorStyles.BtnBlue));
             topActions.Add(NexusEditorStyles.CreateButton(NexusLang.Get("common_refresh"), RefreshTesterView, NexusEditorStyles.BtnGray));
             _testerFormContainer.Add(topActions);
 

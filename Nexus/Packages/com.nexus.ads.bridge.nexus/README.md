@@ -13,7 +13,7 @@ Three packages by git URL, pinned to the same commit, the full 40-character hash
 `com.nexus.core` and `com.nexus.ads`, and the Package Manager does not install a git package's
 dependencies, so each is listed (without the `com.nexus.core` line a bare project stops at
 `Package [com.nexus.core@0.5.0] cannot be found`). The ads validator's `manifest.pins` check and
-**Tools > Nexus Ads > Pin family packages to one commit** cover the `com.nexus.ads*` entries only;
+**Nexus > Ads > Pin family packages to one commit** cover the `com.nexus.ads*` entries only;
 `com.nexus.core` is set to the same commit by hand:
 
 ```json

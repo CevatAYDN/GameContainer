@@ -52,29 +52,6 @@ namespace Nexus.Editor
             return lbl;
         }
 
-        // ─── Action Card ────────────────────────────────────────
-        internal static void AddActionCard(VisualElement parent, string title, string description, Color btnColor, Action onClick)
-        {
-            var card = new VisualElement();
-            card.AddToClassList(NexusEditorStyles.ClassDashboardActionCard);
-
-            var titleLabel = new Label(title);
-            titleLabel.AddToClassList("nexus-action-card-title");
-            card.Add(titleLabel);
-
-            var descLabel = new Label(description);
-            descLabel.AddToClassList("nexus-action-card-desc");
-            card.Add(descLabel);
-
-            var btn = NexusEditorStyles.CreateButton(NexusLang.Get("open"), onClick, btnColor);
-            btn.style.marginTop = 0;
-            btn.style.marginBottom = 0;
-            btn.style.alignSelf = Align.FlexStart;
-            card.Add(btn);
-
-            parent.Add(card);
-        }
-
         // ─── Health text builder ────────────────────────────────
         internal static string BuildHealthText()
         {

@@ -14,6 +14,7 @@ namespace Nexus.Editor
         public override string Id => "TypeAnalyzer";
         public override string DisplayName => NexusLang.Get("action_typeanalyzer_title");
         public override int Order => 8;
+        public override string Category => "cat_architecture";
 
         private TextField _searchField;
         private ScrollView _scrollView;

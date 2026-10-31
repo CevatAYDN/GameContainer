@@ -13,6 +13,7 @@ namespace Nexus.Editor
         public override string Id => "Tracer";
         public override string DisplayName => NexusLang.Get("action_tracer_title");
         public override int Order => 4;
+        public override string Category => "cat_live";
 
         private VisualElement _view;
         private ListView _listView;

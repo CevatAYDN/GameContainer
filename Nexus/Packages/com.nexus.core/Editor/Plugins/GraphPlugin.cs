@@ -15,6 +15,7 @@ namespace Nexus.Editor
         public override string Id => "Graph";
         public override string DisplayName => NexusLang.Get("action_graph_title");
         public override int Order => 5;
+        public override string Category => "cat_architecture";
 
         private int _maxNodes = 50;
 

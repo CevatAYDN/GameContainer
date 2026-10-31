@@ -19,7 +19,7 @@ namespace Nexus.Ads.Editor
         private Vector2 _scroll, _logScroll;
         private string _lastViolation;
 
-        [MenuItem("Window/Nexus Ads/Placement Tester")]
+        [MenuItem("Nexus/Ads/Placement Tester", priority = 42)]
         public static void Open() => GetWindow<PlacementTesterWindow>("Placement Tester").Show();
 
         private void OnEnable() => EditorApplication.update += Poll;

@@ -123,7 +123,6 @@ namespace Nexus.Editor
             s_strings["project_overview"] = "PROJECT OVERVIEW";
             s_strings["runtime_metrics"] = "RUNTIME METRICS";
             s_strings["live_models"] = "LIVE MODELS";
-            s_strings["quick_actions"] = "ALL TOOLS";
             s_strings["open"] = "Open";
             s_strings["framework"] = "FRAMEWORK";
             s_strings["framework_desc"] = "Nexus Observable Architecture v{0}\n" +
@@ -150,25 +149,15 @@ namespace Nexus.Editor
             s_strings["perf_signals"] = "Signals/s";
             s_strings["perf_commands"] = "Commands/s";
             s_strings["action_wizard_title"] = "Context Wizard";
-            s_strings["action_wizard_desc"] = "Create Root contexts & generate code";
             s_strings["action_hierarchy_title"] = "Hierarchy & Data";
-            s_strings["action_hierarchy_desc"] = "Inspect DI container & context tree (live)";
             s_strings["action_explorer_title"] = "Signal Explorer";
-            s_strings["action_explorer_desc"] = "View signal/command mappings & test fire";
             s_strings["action_tracer_title"] = "Live Tracer";
-            s_strings["action_tracer_desc"] = "Monitor signal chains in real-time";
             s_strings["action_graph_title"] = "Signal Graph";
-            s_strings["action_graph_desc"] = "Visual graph of signal → command flow";
             s_strings["action_gamemanager_title"] = "Game Manager";
-            s_strings["action_gamemanager_desc"] = "Model/signal/command overview & performance";
             s_strings["action_typeanalyzer_title"] = "Type Analyzer";
-            s_strings["action_typeanalyzer_desc"] = "Analyze type coupling & [Inject] dependencies";
             s_strings["action_help_title"] = "Help & Docs";
-            s_strings["action_help_desc"] = "Quick start guides, API reference, samples";
             s_strings["action_casual_services_title"] = "Casual Debugger";
-            s_strings["action_casual_services_desc"] = "Play-mode live control for Economy, Level, UI, Audio & Haptics";
             s_strings["action_fsm_title"] = "State Machine";
-            s_strings["action_fsm_desc"] = "Live view of IGameStateMachine state, transitions & history";
             s_strings["tab_dashboard"] = "Dashboard";
             s_strings["tab_wizard"] = "Wizard";
             s_strings["tab_hierarchy"] = "Hierarchy";
@@ -181,14 +170,13 @@ namespace Nexus.Editor
             s_strings["tab_help"] = "Help";
             s_strings["tab_errordashboard"] = "Error Dashboard";
             s_strings["tab_performancedashboard"] = "Performance";
-            s_strings["tab_networkdashboard"] = "Network";
             s_strings["tab_contextinspector"] = "Context Inspector";
             s_strings["tab_fsm"] = "State Machine";
 
-            s_strings["cat_overview"] = "Overview";
+            s_strings["cat_status"] = "Status";
+            s_strings["cat_setup"] = "Setup";
             s_strings["cat_architecture"] = "Architecture";
-            s_strings["cat_diagnostics"] = "Diagnostics";
-            s_strings["cat_tools"] = "Tools";
+            s_strings["cat_live"] = "Live";
             s_strings["cat_other"] = "Other";
 
             // NexusWindow — sidebar, status bar, discovery, actions
@@ -219,36 +207,6 @@ namespace Nexus.Editor
             s_strings["pd_gc_gen0_value"] = "gen0 +{0:F0}";
 
             // Network Dashboard plugin
-            s_strings["nd_title"] = "🌐 NETWORK MONITOR";
-            s_strings["nd_action_clear"] = "🗑 Clear Log";
-            s_strings["nd_action_export"] = "💾 Export Log";
-            s_strings["nd_section_connection"] = "🔗 Connection Status";
-            s_strings["nd_disconnected"] = "● DISCONNECTED";
-            s_strings["nd_connected"] = "● CONNECTED";
-            s_strings["nd_section_latency"] = "📡 Latency";
-            s_strings["nd_latency_default"] = "— ms";
-            s_strings["nd_latency_range"] = "0 — 500 ms";
-            s_strings["nd_section_stats"] = "📊 Statistics";
-            s_strings["nd_stat_sent"] = "Sent";
-            s_strings["nd_stat_received"] = "Received";
-            s_strings["nd_stat_errors"] = "Errors";
-            s_strings["nd_filter_type"] = "Type:";
-            s_strings["nd_filter_all"] = "All";
-            s_strings["nd_filter_sent"] = "Sent";
-            s_strings["nd_filter_received"] = "Received";
-            s_strings["nd_filter_failed"] = "Failed";
-            s_strings["nd_filter_timeout"] = "Timeout";
-            s_strings["nd_filter_search"] = "  Search:";
-            s_strings["nd_autoscroll"] = "Auto Scroll";
-            s_strings["nd_section_events"] = "📜 Event Log (last 200)";
-            s_strings["nd_no_events"] = "No network events recorded";
-            s_strings["nd_col_type"] = "Type";
-            s_strings["nd_col_signal"] = "Signal";
-            s_strings["nd_col_direction"] = "Direction";
-            s_strings["nd_col_time"] = "Time";
-            s_strings["nd_dir_out"] = "→ Out";
-            s_strings["nd_dir_in"] = "← In";
-            s_strings["nd_dir_err"] = "⚠ Err";
 
             // Hierarchy plugin
             s_strings["hier_action_select_root"] = "🎯 Select Root";
@@ -605,12 +563,6 @@ namespace Nexus.Editor
             s_strings["db_rd_note"] = "These rows mirror the release gates: a stale binder or link.xml stops a player build, and scripting defines belong to the active target.";
             s_strings["ta_enter_type"] = "Please enter a type name to analyze.";
 
-            s_strings["action_error_dashboard_title"] = "Error Dashboard";
-            s_strings["action_error_dashboard_desc"] = "Centralized error collection and monitoring";
-            s_strings["action_performance_dashboard_title"] = "Performance Dashboard";
-            s_strings["action_performance_dashboard_desc"] = "Real-time performance metrics and monitoring";
-            s_strings["action_network_dashboard_title"] = "Network Dashboard";
-            s_strings["action_network_dashboard_desc"] = "Network event tracking and latency monitoring";
 
             s_strings["wizard_title"] = "CONTEXT CREATION & UTILITIES WIZARD";
             s_strings["wizard_create_manifest"] = "Create Default Bootstrap Manifest";

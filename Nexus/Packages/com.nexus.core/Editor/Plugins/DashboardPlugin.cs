@@ -17,6 +17,7 @@ namespace Nexus.Editor
         public override string Id => "Dashboard";
         public override string DisplayName => NexusLang.Get("tab_dashboard");
         public override int Order => 0;
+        public override string Category => "cat_status";
 
         private VisualElement _view;
         private Label _statusLabel;
@@ -120,7 +121,6 @@ namespace Nexus.Editor
             BuildStatusSection(scroll);
             BuildQuickFindSection(scroll);
             BuildOverviewSection(scroll);
-            BuildQuickActions(scroll);
 
             _runtimeCardContainer = new VisualElement();
             scroll.Add(_runtimeCardContainer);
@@ -484,52 +484,12 @@ namespace Nexus.Editor
             }
         }
 
-        private void BuildQuickActions(VisualElement parent)
-        {
-            var groupCard = NexusEditorStyles.CreateActionGroup(parent, NexusLang.Get("quick_actions"));
-
-            var actions = new[]
-            {
-                ("action_wizard_title", "action_wizard_desc", "Wizard", NexusEditorStyles.BtnBlue),
-                ("action_hierarchy_title", "action_hierarchy_desc", "Hierarchy", NexusEditorStyles.BtnTeal),
-                ("action_explorer_title", "action_explorer_desc", "Explorer", NexusEditorStyles.BtnPurple),
-                ("action_tracer_title", "action_tracer_desc", "Tracer", new Color(0.5f, 0.5f, 0.6f)),
-                ("action_graph_title", "action_graph_desc", "Graph", new Color(0.8f, 0.3f, 0.3f)),
-                ("action_gamemanager_title", "action_gamemanager_desc", "GameManager", new Color(0.3f, 0.7f, 0.6f)),
-                ("action_typeanalyzer_title", "action_typeanalyzer_desc", "TypeAnalyzer", new Color(0.6f, 0.5f, 0.5f)),
-                ("action_help_title", "action_help_desc", "Help", new Color(0.5f, 0.5f, 0.8f)),
-                ("action_error_dashboard_title", "action_error_dashboard_desc", "ErrorDashboard", new Color(0.8f, 0.4f, 0.4f)),
-                ("action_performance_dashboard_title", "action_performance_dashboard_desc", "PerformanceDashboard", new Color(0.4f, 0.8f, 0.4f)),
-                ("action_network_dashboard_title", "action_network_dashboard_desc", "NetworkDashboard", new Color(0.4f, 0.6f, 0.8f))
-            };
-
-            var buttonGrid = new VisualElement
-            {
-                style =
-                {
-                    flexDirection = FlexDirection.Row,
-                    flexWrap = Wrap.Wrap,
-                    justifyContent = Justify.FlexStart,
-                }
-            };
-            for (int i = 0; i < actions.Length; i++)
-            {
-                var a = actions[i];
-                AddActionCard(buttonGrid, NexusLang.Get(a.Item1), NexusLang.Get(a.Item2), a.Item4, () => Window?.SwitchToPlugin(a.Item3));
-            }
-
-            groupCard.Add(buttonGrid);
-        }
-
         // Delegated to DashboardSections — keep these shims for backward compat
         private Label CreateStatBox(VisualElement parent, string value, string label, Color accentColor)
             => DashboardSections.CreateStatBox(parent, value, label, accentColor);
 
         private Button CreateMetricJumpButton(string label, string tooltip, Color accentColor, Action onClick)
             => DashboardSections.CreateMetricJumpButton(label, tooltip, accentColor, onClick);
-
-        private void AddActionCard(VisualElement parent, string title, string description, Color btnColor, Action onClick)
-            => DashboardSections.AddActionCard(parent, title, description, btnColor, onClick);
 
         private void BuildValidationSection(VisualElement parent)
         {

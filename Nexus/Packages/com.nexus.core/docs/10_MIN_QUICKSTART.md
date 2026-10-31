@@ -181,7 +181,7 @@ public class ScoreView : View
 
 1. Press **Play** ☝️
 2. Click the button — the score text updates
-3. Open **Window > Nexus > Dashboard** to inspect:
+3. Open **Nexus > Live** to inspect:
    - Live signals and commands
    - Reactive model state
    - Causal trace log

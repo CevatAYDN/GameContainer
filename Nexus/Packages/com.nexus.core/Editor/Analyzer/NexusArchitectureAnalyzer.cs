@@ -33,7 +33,7 @@ namespace Nexus.Editor
         private List<AnalysisIssue> _issues = new();
         private Vector2 _scrollPos;
 
-        [MenuItem("Window/Nexus/Code Health Analyzer", false, 20)]
+        [MenuItem("Nexus/Code Health Analyzer", false, 63)]
         public static void ShowWindow()
         {
             var win = GetWindow<NexusArchitectureAnalyzer>("Nexus Code Health Analyzer");

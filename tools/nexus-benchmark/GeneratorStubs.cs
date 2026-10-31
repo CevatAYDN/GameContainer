@@ -14,6 +14,7 @@ namespace UnityEditor
     {
         public MenuItemAttribute(string itemName) { }
         public MenuItemAttribute(string itemName, bool isValidateFunction) { }
+        public MenuItemAttribute(string itemName, bool isValidateFunction, int priority) { }
     }
 
     public static class Menu

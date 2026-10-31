@@ -96,7 +96,6 @@ namespace Nexus.Editor
         internal const string ClassToolbarTitle = "nexus-toolbar-title";
         internal const string ClassEmptyState = "nexus-empty-state";
         internal const string ClassSectionTitle = "nexus-section-title";
-        internal const string ClassDashboardActionCard = "nexus-dashboard-action-card";
         internal const string ClassStatBox = "nexus-stat-box";
         internal const string ClassStatValue = "nexus-stat-value";
         internal const string ClassStatLabel = "nexus-stat-label";

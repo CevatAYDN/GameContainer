@@ -88,9 +88,9 @@ namespace Nexus.Editor.Inspector
                 CreateSceneRootWithAsset(data);
             }
 
-            if (NexusInspectorGUI.DrawActionButton("🔍 Open Nexus Dashboard", StatusType.Info, 22))
+            if (NexusInspectorGUI.DrawActionButton("🔍 Open Nexus Window", StatusType.Info, 22))
             {
-                EditorApplication.ExecuteMenuItem("Window/Nexus/Dashboard %#n");
+                NexusWindow.Open();
             }
             NexusInspectorGUI.EndCard();
 

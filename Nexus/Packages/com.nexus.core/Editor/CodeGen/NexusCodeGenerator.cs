@@ -86,7 +86,7 @@ namespace Nexus.Editor
             return false;
         }
 
-        [MenuItem("Nexus/Auto-Generate AOT on Script Reload")]
+        [MenuItem("Nexus/Auto-Generate AOT on Script Reload", false, 61)]
         private static void ToggleAutoGenerate()
         {
             AutoGenerateEnabled = !AutoGenerateEnabled;
@@ -94,7 +94,7 @@ namespace Nexus.Editor
             Debug.Log($"[Nexus] Auto-Generate AOT Binder on script reload: {(AutoGenerateEnabled ? "ENABLED" : "DISABLED")}");
         }
 
-        [MenuItem("Nexus/Auto-Generate AOT on Script Reload", true)]
+        [MenuItem("Nexus/Auto-Generate AOT on Script Reload", true, 61)]
         private static bool ToggleAutoGenerateValidate()
         {
             Menu.SetChecked("Nexus/Auto-Generate AOT on Script Reload", AutoGenerateEnabled);
@@ -281,7 +281,7 @@ namespace Nexus.Editor
             return sb.ToString();
         }
 
-        [MenuItem("Nexus/Generate AOT Binder")]
+        [MenuItem("Nexus/Generate AOT Binder", false, 60)]
         public static void GenerateBinder() => GenerateBinderCore(write: true);
 
         /// <summary>

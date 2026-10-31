@@ -120,7 +120,7 @@ In Zenject `Dispose` was called synchronously; Nexus does a non-blocking teardow
 - [ ] Every signal handler that changes state is an `ICommand<T>` (or adapter); every `Subscribe` subscription is disposed — no subscription leak
 - [ ] Every `OnChanged` subscription is removed with `RemoveOnChanged`
 - [ ] No `async void`; no sync-over-async in teardown
-- [ ] `Window > Nexus > Code Health Analyzer` is clean (0 issues); in CI the same analysis runs with `-executeMethod Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless`
+- [ ] `Nexus > Code Health Analyzer` is clean (0 issues); in CI the same analysis runs with `-executeMethod Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless`
 - [ ] `BuildValidation.RunSilent()` passes
 - [ ] The EditMode test suite passes (Nexus's own numbers: the repository's `docs/RELEASE_GATES.md`)
 

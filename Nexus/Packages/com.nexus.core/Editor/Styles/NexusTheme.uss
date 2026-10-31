@@ -378,40 +378,6 @@
 }
 .nexus-metric-btn:hover { opacity: 0.85; }
 
-/* ─── Dashboard Action Cards ─── */
-.nexus-dashboard-action-card {
-    flex-direction: column;
-    flex-grow: 1;
-    min-width: 180px;
-    max-width: 260px;
-    background-color: rgb(41, 41, 46);
-    border-radius: 6px;
-    padding: 10px;
-    margin: 0 8px 8px 0;
-    border-width: 1px;
-    border-color: transparent;
-    transition: background-color 0.15s, border-color 0.15s;
-}
-.nexus-dashboard-action-card:hover {
-    background-color: rgb(51, 51, 56);
-    border-color: rgb(77, 204, 255);
-}
-.nexus-dashboard-action-card:active {
-    background-color: rgb(60, 60, 66);
-}
-.nexus-action-card-title {
-    font-size: 11px;
-    -unity-font-style: bold;
-    color: rgb(77, 204, 255);
-    margin-bottom: 4px;
-}
-.nexus-action-card-desc {
-    font-size: 9px;
-    color: rgb(153, 153, 153);
-    margin-bottom: 8px;
-    white-space: normal;
-}
-
 /* ─── Section Tabs (GameManager breadcrumb) ─── */
 .nexus-section-tab {
     -unity-font-style: bold;

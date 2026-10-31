@@ -33,13 +33,13 @@ namespace Nexus.Ads.Editor
             _catalog = PlatformCatalog.Load(fresh: true);
         }
 
-        [MenuItem("Tools/Nexus Ads/Setup", priority = 10)]
+        [MenuItem("Nexus/Ads/Setup", priority = 40)]
         public static void Open() => GetWindow<AdsSetupWizard>("Nexus Ads Setup").Show();
 
-        [MenuItem("Tools/Nexus Ads/Project Settings", priority = 11)]
+        [MenuItem("Nexus/Ads/Project Settings", priority = 41)]
         public static void OpenSettings() => AdsSettingsProvider.Open();
 
-        [MenuItem("Tools/Nexus Ads/Generate Placements", priority = 20)]
+        [MenuItem("Nexus/Ads/Generate Placements", priority = 55)]
         public static void GeneratePlacements()
         {
             var settings = AdsSettingsProvider.LoadOrCreate();
@@ -47,10 +47,10 @@ namespace Nexus.Ads.Editor
             catch (System.Exception ex) { Debug.LogError("[Nexus Ads] " + ex.Message); }
         }
 
-        [MenuItem("Tools/Nexus Ads/Write link.xml", priority = 21)]
+        [MenuItem("Nexus/Ads/Write link.xml", priority = 56)]
         public static void WriteLinkXml() => Debug.Log("[Nexus Ads] wrote " + LinkXml.Write(AdsSettingsProvider.LoadOrCreate().SelectedMediation));
 
-        [MenuItem("Tools/Nexus Ads/Pin family packages to one commit", priority = 22)]
+        [MenuItem("Nexus/Ads/Pin family packages to one commit", priority = 57)]
         public static void PinPackages()
         {
             string manifest = File.ReadAllText("Packages/manifest.json");

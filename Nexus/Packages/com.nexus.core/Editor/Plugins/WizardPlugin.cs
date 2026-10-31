@@ -9,6 +9,7 @@ namespace Nexus.Editor
         public override string Id => "Wizard";
         public override string DisplayName => NexusLang.Get("action_wizard_title");
         public override int Order => 1;
+        public override string Category => "cat_setup";
 
         private enum SubTab
         {

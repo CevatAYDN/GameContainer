@@ -18,6 +18,7 @@ namespace Nexus.Editor
         public override string Id => "ErrorDashboard";
         public override string DisplayName => NexusLang.Get("tab_errordashboard");
         public override int Order => 9;
+        public override string Category => "cat_live";
 
         private const int DefaultLimit = 100;
 

@@ -127,9 +127,9 @@ namespace Nexus.Editor.Inspector
 
             // 4. Quick Actions
             NexusInspectorGUI.BeginCard("Actions");
-            if (NexusInspectorGUI.DrawActionButton("🔍 Open Nexus Dashboard", StatusType.Info, 26))
+            if (NexusInspectorGUI.DrawActionButton("🔍 Open Nexus Window", StatusType.Info, 26))
             {
-                EditorApplication.ExecuteMenuItem("Window/Nexus/Dashboard %#n");
+                NexusWindow.Open();
             }
             NexusInspectorGUI.EndCard();
 

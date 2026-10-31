@@ -18,6 +18,7 @@ namespace Nexus.Editor
         public override string Id => "GameManager";
         public override string DisplayName => NexusLang.Get("action_gamemanager_title");
         public override int Order => 6;
+        public override string Category => "cat_architecture";
 
         // ─── Categories ────────────────────────────────────────
         private enum Section { Overview, Contexts, Models, Signals, Commands, Views, Services, Live, SignalTest }

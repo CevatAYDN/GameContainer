@@ -17,6 +17,7 @@ namespace Nexus.Editor
         public override string Id => "PerformanceDashboard";
         public override string DisplayName => NexusLang.Get("tab_performancedashboard");
         public override int Order => 10;
+        public override string Category => "cat_live";
 
         // ── Metric ring buffers ───────────────────────────────────
         private const int BufferSize = 120; // 60 s @ 0.5 s interval
