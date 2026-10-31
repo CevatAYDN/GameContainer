@@ -66,7 +66,7 @@ namespace Nexus.Core.Extensions
             {
                 if (!_loadingScenes.Add(sceneName))
                 {
-                    NexusRuntime.Logger?.LogWarning($"[Nexus] Scene '{sceneName}' is already being loaded.");
+                    NexusLog.WarnAlways($"[Nexus] Scene '{sceneName}' is already being loaded.");
                     return;
                 }
             }
@@ -116,7 +116,7 @@ namespace Nexus.Core.Extensions
             {
                 if (!_unloadingScenes.Add(sceneName))
                 {
-                    NexusRuntime.Logger?.LogWarning($"[Nexus] Scene '{sceneName}' is already being unloaded.");
+                    NexusLog.WarnAlways($"[Nexus] Scene '{sceneName}' is already being unloaded.");
                     return;
                 }
             }
@@ -126,7 +126,7 @@ namespace Nexus.Core.Extensions
                 var op = SceneManager.UnloadSceneAsync(sceneName);
                 if (op == null)
                 {
-                    NexusRuntime.Logger?.LogWarning($"[Nexus] Scene '{sceneName}' is not loaded or cannot be unloaded.");
+                    NexusLog.WarnAlways($"[Nexus] Scene '{sceneName}' is not loaded or cannot be unloaded.");
                     return;
                 }
 
@@ -156,7 +156,7 @@ namespace Nexus.Core.Extensions
             }
             else
             {
-                NexusRuntime.Logger?.LogWarning($"[Nexus] Cannot set active scene '{sceneName}': not loaded or invalid.");
+                NexusLog.WarnAlways($"[Nexus] Cannot set active scene '{sceneName}': not loaded or invalid.");
             }
         }
     }

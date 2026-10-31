@@ -119,6 +119,35 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        private sealed class FlakyCommand { }
+
+        // Issue #164: a command that failed and is retried, and a scene that could not be made active, were warned through LogWarning only
+        [Test]
+        public void ACommandRetryAndASceneThatCannotBeActivated_AreWarnedInAReleasePlayerToo()
+        {
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables; a logger another test left cached may be enabled
+            NexusBuild.OverrideForTests(false);
+            try
+            {
+                Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops LogWarning");
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Command FlakyCommand failed \(attempt 1/3\)\. Retrying"));
+                new DefaultRecoveryStrategy().OnCommandFailed(new CommandFailureContext(new InvalidOperationException("save slot locked"), typeof(FlakyCommand), null, 0));
+
+                var di = new NexusDI();
+                using (var bus = new SignalBus(di, new CommandPoolManager(di), null))
+                {
+                    LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Cannot set active scene 'NoSuchScene': not loaded or invalid"));
+                    new Nexus.Core.Extensions.SceneLoader(bus).SetActiveScene("NoSuchScene");
+                }
+                di.Dispose();
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+            }
+        }
+
         [Test]
         public void WarnAlways_UsesTheRegisteredLogger_WhileItIsEnabled()
         {

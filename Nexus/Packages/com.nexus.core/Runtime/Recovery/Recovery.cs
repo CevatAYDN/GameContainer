@@ -112,7 +112,7 @@ namespace Nexus.Core
 
     /// <summary>
     /// Default recovery strategy: retries up to 3 times, then aborts.
-    /// Logs warnings on retry and errors on abort via UnityEngine.Debug.
+    /// Logs a warning on each retry and an error on abort, in every build (#164).
     /// </summary>
     [Preserve]
     public sealed class DefaultRecoveryStrategy : IRecoveryStrategy
@@ -129,7 +129,7 @@ namespace Nexus.Core
             var logger = NexusRuntime.Logger;
             if (failure.RetryCount < _maxRetries)
             {
-                logger?.LogWarning($"[Nexus] Command {failure.CommandType.Name} failed (attempt {failure.RetryCount + 1}/{_maxRetries}). Retrying...\n{failure.Exception.Message}");
+                NexusLog.WarnAlways(logger, $"[Nexus] Command {failure.CommandType.Name} failed (attempt {failure.RetryCount + 1}/{_maxRetries}). Retrying...\n{failure.Exception.Message}");
                 return RecoveryDecision.Retry(_maxRetries);
             }
 
