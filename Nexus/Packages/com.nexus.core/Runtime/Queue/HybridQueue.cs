@@ -302,7 +302,15 @@ namespace Nexus.Core
         {
             if (System.Threading.Interlocked.CompareExchange(ref _threadSafeDrainInProgress, 1, 0) != 0)
                 return; // another drain is already in progress — queued items will be picked up by it
-            try { Drain(_threadSafeQueue, _threadSafeLock); }
+            try
+            {
+                // Only what was queued before this drain runs now: a handler that fires thread-safe again (a poll that re-fires
+                // itself, two handlers bouncing a signal) or a producer arriving mid-drain waits for the next drain, as a
+                // re-entrant FireNextFrame does. Draining until empty never ended for a re-firing handler (issue #169).
+                int queued;
+                lock (_threadSafeLock) queued = _threadSafeQueue.Count;
+                Drain(_threadSafeQueue, _threadSafeLock, queued);
+            }
             finally { System.Threading.Interlocked.Exchange(ref _threadSafeDrainInProgress, 0); }
         }
 
@@ -327,22 +335,22 @@ namespace Nexus.Core
                 // queueToDrain is detached from producers for the whole drain.  Drain keeps
                 // the lock boundary for Clear() and diagnostics, but all reentrant enqueues
                 // target the newly active queue above and therefore wait for the next call.
-                Drain(queueToDrain, _nextFrameLock);
+                Drain(queueToDrain, _nextFrameLock, int.MaxValue);
             }
             finally { System.Threading.Interlocked.Exchange(ref _nextFrameDrainInProgress, 0); }
         }
 
-        private void Drain(QueuedSignalRingBuffer queue, object queueLock)
+        private void Drain(QueuedSignalRingBuffer queue, object queueLock, int limit)
         {
             // Audit note 2.5 (intentional design, documented): the lock is RELEASED between
             // the dequeue and the dispatch so a concurrent EnqueueThreadSafe is never blocked
-            // behind a slow handler — a producer arriving mid-drain is processed in the same
-            // frame. Consequence: _totalDrained increments in the finally AFTER dispatch, not
+            // behind a slow handler. A producer arriving mid-drain is processed by the next
+            // drain: DrainThreadSafe passes the count queued when it started (issue #169). Consequence: _totalDrained increments in the finally AFTER dispatch, not
             // in the same atomic step as the dequeue, so the dashboard counters
             // (_totalEnqueued vs _totalDrained) can TRANSIENTLY disagree while a drain is in
             // flight. They converge when the queue empties; do not treat a momentary mismatch
             // as a lost signal.
-            while (true)
+            for (int drained = 0; drained < limit; drained++)
             {
                 IQueuedSignal queuedSignal = null;
                 lock (queueLock)

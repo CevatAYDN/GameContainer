@@ -163,6 +163,10 @@ namespace Nexus.Core
         public NexusDI Container { get; }
         public CommandPoolManager PoolManager { get; }
         public HybridQueue HybridQueue { get; }
+
+        /// <summary>True for a Root's context: its <see cref="QueueDrainer"/> drains the queues, and the runtime's drainer for
+        /// contexts without a Root skips it, so a next-frame signal never runs twice in one frame (issue #169).</summary>
+        internal bool DrainedByRoot { get; set; }
         public string ScopeTag => _contextData?.ScopeTag;
         public ContextData ContextData => _contextData;
         public SignalBus SignalBusInternal { get; }

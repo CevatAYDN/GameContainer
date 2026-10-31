@@ -286,6 +286,7 @@ namespace Nexus.Core
 
             Context parentContext = parentRoot != null ? parentRoot.Context : null;
             Context = new Context(parentContext, contextData);
+            Context.DrainedByRoot = true;   // this Root's QueueDrainer drains it, not the runtime's drainer (issue #169)
 
             // Register any IContextLifecycle component on this GameObject
             // Also cache locally because NexusDI's Dictionary<Type, Binding> only stores one

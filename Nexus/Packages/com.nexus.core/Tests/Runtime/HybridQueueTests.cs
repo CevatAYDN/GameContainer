@@ -1,6 +1,10 @@
 using NUnit.Framework;
 using Nexus.Core;
+using System.Collections;
+using System.Collections.Generic;
 using System.Threading;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Nexus.Tests
 {
@@ -101,6 +105,30 @@ namespace Nexus.Tests
         }
 
         [Test]
+        public void FireThreadSafe_ReentrantEnqueue_WaitsForFollowingDrain()
+        {
+            var received = new List<int>();
+            _signalBus.Subscribe<QueueTestSignal>(sig =>
+            {
+                received.Add(sig.Id);
+                // re-fires itself up to 50 so a drain that runs until empty (issue #169) fails here instead of hanging
+                if (sig.Id < 50)
+                    _queue.EnqueueThreadSafe(new QueueTestSignal(sig.Id + 1));
+            });
+
+            _queue.EnqueueThreadSafe(new QueueTestSignal(1));
+            _queue.DrainThreadSafe();
+
+            CollectionAssert.AreEqual(new[] { 1 }, received,
+                "A signal a thread-safe handler enqueues belongs to the following drain.");
+            Assert.AreEqual(1, _queue.ThreadSafeQueueDepth);
+
+            _queue.DrainThreadSafe();
+
+            CollectionAssert.AreEqual(new[] { 1, 2 }, received);
+        }
+
+        [Test]
         public void ThreadSafeDrained_Before_NextFrame()
         {
             var order = new System.Collections.Generic.List<string>();
@@ -155,6 +183,65 @@ namespace Nexus.Tests
             Assert.AreEqual("A", order[0]);
             Assert.AreEqual("B", order[1]);
             Assert.AreEqual("A", order[2]);
+        }
+
+        [UnityTest]
+        public IEnumerator ContextWithoutRoot_RunsFireThreadSafeAndFireNextFrame()
+        {
+            var boot = ContextFactory.StartAsync("QueueWithoutRoot", _ => { });
+            while (!boot.IsCompleted) yield return null;
+            var context = boot.GetAwaiter().GetResult();
+            try
+            {
+                var received = new List<int>();
+                context.SignalBus.Subscribe<QueueTestSignal>(sig => received.Add(sig.Id));
+
+                context.SignalBus.FireThreadSafe(new QueueTestSignal(1));
+                context.SignalBus.FireNextFrame(new QueueTestSignal(2));
+                yield return null;
+                yield return null;
+
+                CollectionAssert.AreEquivalent(new[] { 1, 2 }, received,
+                    "A context without a Root drains its queues every frame (issue #169).");
+            }
+            finally { context.Dispose(); }
+        }
+
+        [UnityTest]
+        public IEnumerator RootContext_IsDrainedOncePerFrame()
+        {
+            var data = ScriptableObject.CreateInstance<ContextData>();
+            data.EnableAutoDiscovery = false;
+            var go = new GameObject("Queue root");
+            go.SetActive(false);
+            var root = go.AddComponent<Root>();
+            root.SetUp(data);
+            go.SetActive(true);
+            try
+            {
+                for (int i = 0; i < 10 && !root.IsInitialized; i++) yield return null;
+                Assert.IsTrue(root.IsInitialized);
+                var frames = new List<int>();
+                root.Context.SignalBus.Subscribe<QueueTestSignal>(sig =>
+                {
+                    frames.Add(Time.frameCount);
+                    if (sig.Id == 1) root.Context.SignalBus.FireNextFrame(new QueueTestSignal(2));
+                });
+
+                root.Context.SignalBus.FireNextFrame(new QueueTestSignal(1));
+                yield return null;
+                yield return null;
+                yield return null;
+
+                Assert.AreEqual(2, frames.Count);
+                Assert.Less(frames[0], frames[1],
+                    "Only the Root's QueueDrainer drains its context, so a re-fired next-frame signal runs on a later frame.");
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
+                Object.DestroyImmediate(data);
+            }
         }
     }
 }
