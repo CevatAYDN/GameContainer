@@ -349,7 +349,7 @@ is what was chosen and why:
 5. **Documents:** the core README's UI section, the core CHANGELOG, the `UILayer` summary, and a row in
    `docs/RELEASE_GATES.md`.
 6. **Adoption** happens at the re-pin after the stack ships, in each game's repository. The stack items are open in
-   Wickling#2 and ChipCrisis#2. Gigawatt#2 is closed, so Gigawatt gets a new issue.
+   Wickling#2 and ChipCrisis#2. Gigawatt#2 is closed, so Gigawatt has its own, Gigawatt#5.
 
 ## Consequences
 
