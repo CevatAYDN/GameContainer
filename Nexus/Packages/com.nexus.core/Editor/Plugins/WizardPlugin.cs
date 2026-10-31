@@ -1,9 +1,9 @@
-using System;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace Nexus.Editor
 {
+    /// <summary>The Context Wizard: creates a context (ContextData and Root) and generates services, views and signals.</summary>
     public class WizardPlugin : NexusEditorPlugin
     {
         public override string Id => "Wizard";
@@ -11,78 +11,44 @@ namespace Nexus.Editor
         public override int Order => 1;
         public override string Category => "cat_setup";
 
-        private enum SubTab
+        private readonly IWizardTab[] _tabs =
         {
-            CreateRoot = 0,
-            ServiceGen = 1,
-            ViewMediatorGen = 2,
-            CleanDeletion = 3,
-            SignalCommandGen = 4
-        }
-
-        // UI Element References
-        private VisualElement _contentRoot;
-        private VisualElement _subTabContent;
-
-
-
-        private SubTab _selectedSubTab = SubTab.CreateRoot;
-
-        // Must match SubTab enum value order: CreateRoot, ServiceGen, ViewMediatorGen, CleanDeletion, SignalCommandGen
-        private readonly IWizardTab[] _tabs = new IWizardTab[]
-        {
-            new CreateRootTab(),       // [0] CreateRoot
-            new ServiceGenTab(),       // [1] ServiceGen
-            new ViewMediatorGenTab(),  // [2] ViewMediatorGen
-            new CleanDeletionTab(),    // [3] CleanDeletion
-            new SignalCommandGenTab()  // [4] SignalCommandGen
+            new ContextTab(),
+            new ServiceGenTab(),
+            new ViewMediatorGenTab(),
+            new SignalCommandGenTab()
         };
+
+        private int _selected;
+        private VisualElement _tabHeader;
+        private ScrollView _content;
 
         public override VisualElement CreateView()
         {
-            _contentRoot = new VisualElement { style = { flexGrow = 1 } };
+            var root = new VisualElement { style = { flexGrow = 1 } };
+            root.Add(NexusEditorStyles.CreateToolbar(NexusLang.Get("wizard_title")));
 
-            var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("wizard_title"));
-            _contentRoot.Add(toolbar);
+            _tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
+            for (int i = 0; i < _tabs.Length; i++)
+                _tabHeader.Add(CreateSubTabButton(i));
+            root.Add(_tabHeader);
 
-            // Tab navigation buttons
-            var tabHeader = new VisualElement { style = { flexDirection = FlexDirection.Row, backgroundColor = new StyleColor(NexusEditorStyles.ToolbarBg), borderBottomWidth = 1, borderBottomColor = new StyleColor(NexusEditorStyles.BorderColor) } };
-
-            var btnCreateRoot = CreateSubTabButton(NexusLang.Get("wizard_subtab_create_root"), SubTab.CreateRoot);
-            var btnServiceGen = CreateSubTabButton(NexusLang.Get("wizard_subtab_service_gen"), SubTab.ServiceGen);
-            var btnViewGen = CreateSubTabButton(NexusLang.Get("wizard_subtab_view_gen"), SubTab.ViewMediatorGen);
-            var btnSignalCmdGen = CreateSubTabButton(NexusLang.Get("wizard_subtab_signal_gen"), SubTab.SignalCommandGen);
-            var btnDelete = CreateSubTabButton(NexusLang.Get("wizard_subtab_clean_deletion"), SubTab.CleanDeletion);
-
-            tabHeader.Add(btnCreateRoot);
-            tabHeader.Add(btnServiceGen);
-            tabHeader.Add(btnViewGen);
-            tabHeader.Add(btnSignalCmdGen);
-            tabHeader.Add(btnDelete);
-            _contentRoot.Add(tabHeader);
-
-            _subTabContent = new ScrollView { style = { flexGrow = 1, paddingLeft = 15, paddingRight = 15, paddingTop = 15, paddingBottom = 15 } };
-            _contentRoot.Add(_subTabContent);
-
+            _content = new ScrollView { style = { flexGrow = 1, paddingLeft = 15, paddingRight = 15, paddingTop = 15, paddingBottom = 15 } };
+            root.Add(_content);
             RenderSubTab();
-
-
-            return _contentRoot;
+            return root;
         }
 
-        private Button CreateSubTabButton(string label, SubTab tab)
+        public override void OnDisable()
         {
-            var btn = new Button(() =>
-            {
-                _selectedSubTab = tab;
-                HighlightActiveSubTab();
-                RenderSubTab();
-            })
-            { text = label };
+            _tabHeader = null;
+            _content = null;
+            base.OnDisable();
+        }
 
-            btn.name = $"SubTab_{(int)tab}";
-            btn.style.backgroundColor = new StyleColor(Color.clear);
-            btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
+        private Button CreateSubTabButton(int index)
+        {
+            var btn = new Button(() => { _selected = index; RenderSubTab(); }) { text = _tabs[index].Title };
             btn.style.borderTopWidth = 0;
             btn.style.borderBottomWidth = 0;
             btn.style.borderLeftWidth = 0;
@@ -93,43 +59,20 @@ namespace Nexus.Editor
             btn.style.paddingBottom = 8;
             btn.style.fontSize = 11;
             btn.style.unityFontStyleAndWeight = FontStyle.Bold;
-
             return btn;
-        }
-
-        private void HighlightActiveSubTab()
-        {
-            if (_contentRoot == null) return;
-            foreach (SubTab tab in Enum.GetValues(typeof(SubTab)))
-            {
-                int idx = (int)tab;
-                var btn = _contentRoot.Q<Button>($"SubTab_{idx}");
-                if (btn != null)
-                {
-                    if (tab == _selectedSubTab)
-                    {
-                        btn.style.backgroundColor = new StyleColor(NexusEditorStyles.HighlightBg);
-                        btn.style.color = new StyleColor(NexusEditorStyles.AccentBlue);
-                    }
-                    else
-                    {
-                        btn.style.backgroundColor = new StyleColor(Color.clear);
-                        btn.style.color = new StyleColor(NexusEditorStyles.TextPrimary);
-                    }
-                }
-            }
         }
 
         private void RenderSubTab()
         {
-            if (_subTabContent == null) return;
-            _subTabContent.Clear();
-            HighlightActiveSubTab();
-
-            int idx = (int)_selectedSubTab;
-            if (idx >= 0 && idx < _tabs.Length)
-                _tabs[idx].BuildUI(_subTabContent);
+            if (_content == null) return;
+            for (int i = 0; i < _tabHeader.childCount; i++)
+            {
+                bool active = i == _selected;
+                _tabHeader[i].style.backgroundColor = new StyleColor(active ? NexusEditorStyles.HighlightBg : Color.clear);
+                _tabHeader[i].style.color = new StyleColor(active ? NexusEditorStyles.AccentBlue : NexusEditorStyles.TextPrimary);
+            }
+            _content.Clear();
+            _tabs[_selected].BuildUI(_content);
         }
-
     }
 }

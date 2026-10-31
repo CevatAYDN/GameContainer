@@ -62,20 +62,20 @@ namespace Nexus.Editor
             Selection.activeObject = canvasGo;
         }
 
-        internal static Root CreateSceneRootWithAsset(ContextData data)
+        internal static Root CreateSceneRootWithAsset(ContextData data, Root parentRoot = null)
         {
             string name = string.IsNullOrEmpty(data.ScopeTag) ? "NexusRoot" : $"[{data.ScopeTag}_Root]";
-            return CreateRoot<Root>(name, null, data, false, $"Create {name}");
+            return CreateRoot<Root>(name, null, data, false, $"Create {name}", parentRoot);
         }
 
-        private static T CreateRoot<T>(string name, GameObject parent, ContextData data, bool isGlobal, string undoName) where T : Root
+        private static T CreateRoot<T>(string name, GameObject parent, ContextData data, bool isGlobal, string undoName, Root parentRoot = null) where T : Root
         {
             // Parent and settings must be in place before activation invokes Root/Scope.Awake.
             var go = new GameObject(name);
             go.SetActive(false);
             if (!isGlobal) GameObjectUtility.SetParentAndAlign(go, parent);
             var root = go.AddComponent<T>();
-            root.SetUp(data);
+            root.SetUp(data, parentRoot);
             var serializedRoot = new SerializedObject(root);
             serializedRoot.FindProperty("isGlobalContext").boolValue = isGlobal;
             serializedRoot.ApplyModifiedPropertiesWithoutUndo();

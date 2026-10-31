@@ -15,8 +15,8 @@ using Object = UnityEngine.Object;
 namespace Nexus.Editor
 {
     /// <summary>
-    /// Nexus Setup Wizard — one-click project scaffolding.
-    /// Creates folder structure, ContextData, scene, Root, Canvas/UI, and starter code.
+    /// The Setup section's start page: generates the starter scene, imports the package samples,
+    /// leads an existing project to the Context Wizard, and opens the canonical documents.
     /// </summary>
     public class NexusSetupWizard : NexusEditorPlugin
     {
@@ -26,8 +26,6 @@ namespace Nexus.Editor
         public override string Category => "cat_setup";
 
         private VisualElement _root;
-        private VisualElement _progressFill;
-        private readonly List<SetupStep> _steps = new();
         internal const string GameRoot = "Assets/Scripts/Game/Samples";
         private const string ContextDataPath = "Assets/GameContextData.asset";
         private const string StarterScenePath = "Assets/Scenes/NexusStarter.unity";
@@ -37,205 +35,89 @@ namespace Nexus.Editor
             "UI/Views", "UI/Mediators", "Lifecycle"
         };
 
-        private class SetupStep
-        {
-            public string Title, Description, ButtonText;
-            public Action Action;
-            public Func<bool> IsComplete;
-            public VisualElement StatusElement;
-            public VisualElement CardElement;
-        }
-
         public override VisualElement CreateView()
         {
-            _root = new VisualElement { style = { paddingLeft = 24, paddingRight = 24, paddingTop = 20, paddingBottom = 20 } };
+            _root = new VisualElement { style = { flexGrow = 1 } };
             NexusEditorStyles.LoadTheme(_root);
+            var scroll = new ScrollView { style = { flexGrow = 1, paddingLeft = 24, paddingRight = 24, paddingTop = 20, paddingBottom = 20 } };
+            _root.Add(scroll);
 
-            var title = new Label(NexusLang.Get("setup_title"))
+            scroll.Add(new Label(NexusLang.Get("setup_title"))
             {
-                style = { fontSize = 22, unityFontStyleAndWeight = FontStyle.Bold,
-                    color = new StyleColor(NexusEditorStyles.AccentBlue), marginBottom = 2 }
-            };
-            _root.Add(title);
-
-            var subtitle = new Label(
-                NexusLang.Get("setup_description"))
+                style = { fontSize = 22, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue), marginBottom = 2 }
+            });
+            scroll.Add(new Label(NexusLang.Get("setup_description"))
             {
-                style = { fontSize = 11, color = new StyleColor(NexusEditorStyles.TextSecondary),
-                    marginBottom = 16, whiteSpace = WhiteSpace.Normal }
-            };
-            _root.Add(subtitle);
+                style = { fontSize = 11, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 16, whiteSpace = WhiteSpace.Normal }
+            });
 
-            // Progress bar
-            var progressBar = new VisualElement
+            var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(NexusSetupWizard).Assembly);
+
+            // A new project: the generated starter scene.
+            var starter = NexusEditorStyles.CreateInfoCard(scroll, NexusLang.Get("setup_scaffold"), NexusEditorStyles.AccentBlue, NexusEditorStyles.CardBg, NexusLang.Get("setup_scaffold_description"));
+            bool generated = HasScaffoldConflict(Directory.GetCurrentDirectory());
+            var generate = NexusEditorStyles.CreateButton(NexusLang.Get("setup_create"), () => { ScaffoldProject(); Window?.RefreshActivePlugin(); }, NexusEditorStyles.BtnPrimary);
+            generate.name = "nexus-starter-generate";
+            generate.SetEnabled(!generated);
+            starter.Add(generate);
+            if (generated) starter.Add(NexusEditorStyles.CreateHint(NexusLang.Get("setup_scaffold_exists")));
+            starter.Add(NexusEditorStyles.CreateHint(NexusLang.Get("setup_tip")));
+
+            // The package's samples, imported in place.
+            var samples = NexusEditorStyles.CreateInfoCard(scroll, NexusLang.Get("setup_samples"), NexusEditorStyles.AccentOrange, NexusEditorStyles.CardBg, NexusLang.Get("setup_samples_description"));
+            if (package != null)
             {
-                style = { height = 6, backgroundColor = new StyleColor(NexusEditorStyles.DarkPanel),
-                    borderTopLeftRadius = 3, borderTopRightRadius = 3,
-                    borderBottomLeftRadius = 3, borderBottomRightRadius = 3,
-                    marginBottom = 20, overflow = Overflow.Hidden }
-            };
-            _progressFill = new VisualElement
-            {
-                style = { height = 6, width = Length.Percent(0),
-                    backgroundColor = new StyleColor(NexusEditorStyles.AccentGreen),
-                    borderTopLeftRadius = 3, borderTopRightRadius = 3,
-                    borderBottomLeftRadius = 3, borderBottomRightRadius = 3 }
-            };
-            progressBar.Add(_progressFill);
-            _root.Add(progressBar);
-
-            _steps.Clear();
-
-            AddStep(NexusLang.Get("setup_install"), NexusLang.Get("setup_install_description"),
-                NexusLang.Get("setup_package_manager"), () => EditorApplication.ExecuteMenuItem("Window/Package Manager"),
-                () => true);
-
-            AddStep(NexusLang.Get("setup_scaffold"), NexusLang.Get("setup_scaffold_description"),
-                NexusLang.Get("setup_create"),
-                () =>
+                foreach (var sample in UnityEditor.PackageManager.UI.Sample.FindByPackage(package.name, package.version))
                 {
-                    ScaffoldProject();
-                },
-                () => File.Exists(GameRoot + "/Lifecycle/GameLifecycle.cs") && File.Exists("Assets/Scenes/NexusStarter.unity"));
-
-            AddStep(NexusLang.Get("setup_dashboard"), NexusLang.Get("setup_dashboard_description"),
-                NexusLang.Get("setup_dashboard"), () => Window?.SwitchToPlugin("Dashboard"),
-                () => true);
-
-            foreach (var step in _steps)
-                RenderStep(step);
-
-            var infoBox = new VisualElement
-            {
-                style =
-                {
-                    backgroundColor = new StyleColor(NexusEditorStyles.SurfaceDark),
-                    borderLeftWidth = 3, borderLeftColor = new StyleColor(NexusEditorStyles.AccentBlue),
-                    borderTopLeftRadius = 4, borderTopRightRadius = 4,
-                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4,
-                    paddingLeft = 14, paddingRight = 14, paddingTop = 10, paddingBottom = 10,
-                    marginTop = 12
+                    var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginTop = 4 } };
+                    row.Add(new Label($"<b>{sample.displayName}</b>  {sample.description}")
+                    {
+                        style = { flexGrow = 1, flexShrink = 1, fontSize = 10, whiteSpace = WhiteSpace.Normal, color = new StyleColor(NexusEditorStyles.TextPrimary) }
+                    });
+                    var toImport = sample;
+                    var import = NexusEditorStyles.CreateButton(NexusLang.Get(sample.isImported ? "setup_sample_imported" : "setup_sample_import"),
+                        () => { toImport.Import(); Window?.RefreshActivePlugin(); }, NexusEditorStyles.BtnBlue);
+                    import.SetEnabled(!sample.isImported);
+                    row.Add(import);
+                    samples.Add(row);
                 }
-            };
-            infoBox.Add(new Label(NexusLang.Get("setup_tip_title"))
-            {
-                style = { fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentBlue), marginBottom = 4 }
-            });
-            infoBox.Add(new Label(NexusLang.Get("setup_tip"))
-            {
-                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), whiteSpace = WhiteSpace.Normal }
-            });
-            _root.Add(infoBox);
+            }
 
-            var guide = new UnityEngine.UIElements.Button(OpenIntegrationGuide)
-            {
-                text = NexusLang.Get("setup_guide"), name = "nexus-integration-guide"
-            };
-            guide.style.marginTop = 12;
-            _root.Add(guide);
+            // An existing project: a context in the open scene.
+            var existing = NexusEditorStyles.CreateInfoCard(scroll, NexusLang.Get("setup_existing"), NexusEditorStyles.AccentGreen, NexusEditorStyles.CardBg, NexusLang.Get("setup_existing_description"));
+            existing.Add(NexusEditorStyles.CreateButton(NexusLang.Get("gamemanager_open_wizard"), () => Window?.SwitchToPlugin("Wizard"), NexusEditorStyles.BtnBlue));
 
-            RefreshStepStatus();
+            // The canonical documents, in the editor's language when a translation exists.
+            var docs = NexusEditorStyles.CreateInfoCard(scroll, NexusLang.Get("setup_docs"), NexusEditorStyles.AccentPurple, NexusEditorStyles.CardBg, null);
+            var guide = NexusEditorStyles.CreateButton(NexusLang.Get("setup_guide"), () => OpenDocument("docs/INTEGRATION_PATHS.md"), NexusEditorStyles.BtnBlue);
+            guide.name = "nexus-integration-guide";
+            docs.Add(guide);
+            docs.Add(NexusEditorStyles.CreateButton(NexusLang.Get("setup_doc_quickstart"), () => OpenDocument("docs/10_MIN_QUICKSTART.md"), NexusEditorStyles.BtnGray));
+            docs.Add(NexusEditorStyles.CreateButton(NexusLang.Get("setup_doc_getting_started"), () => OpenDocument("docs/GETTING_STARTED.md"), NexusEditorStyles.BtnGray));
+            docs.Add(NexusEditorStyles.CreateButton(NexusLang.Get("setup_doc_troubleshooting"), () => OpenDocument("TROUBLESHOOTING.md"), NexusEditorStyles.BtnGray));
+            docs.Add(NexusEditorStyles.CreateButton(NexusLang.Get("setup_doc_changelog"), () => OpenDocument("CHANGELOG.md"), NexusEditorStyles.BtnGray));
+
+            scroll.Add(new Label(string.Format(NexusLang.Get("setup_version"), package?.version, Application.unityVersion))
+            {
+                style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.DimText), marginTop = 12 }
+            });
             return _root;
         }
 
-        private static void OpenIntegrationGuide()
+        private static void OpenDocument(string relativePath)
         {
             var package = UnityEditor.PackageManager.PackageInfo.FindForAssembly(typeof(NexusSetupWizard).Assembly);
             if (package == null) throw new InvalidOperationException("Nexus package location could not be resolved.");
-            string file = NexusLang.CurrentLocale == "tr" ? "INTEGRATION_PATHS_TR.md" : "INTEGRATION_PATHS.md";
-            EditorUtility.OpenWithDefaultApp(Path.Combine(package.resolvedPath, "docs", file));
+            string path = Path.Combine(package.resolvedPath, relativePath);
+            string translated = Path.Combine(Path.GetDirectoryName(path), Path.GetFileNameWithoutExtension(path) + "_TR.md");
+            if (NexusLang.CurrentLocale == "tr" && File.Exists(translated)) path = translated;
+            EditorUtility.OpenWithDefaultApp(path);
         }
-
-        public override void OnUpdate() { }
 
         public override void OnDisable()
         {
-            _steps.Clear();
             _root = null;
-            _progressFill = null;
-        }
-
-        private void AddStep(string title, string description, string buttonText, Action action, Func<bool> isComplete)
-        {
-            _steps.Add(new SetupStep
-            {
-                Title = title,
-                Description = description,
-                ButtonText = buttonText,
-                Action = action,
-                IsComplete = isComplete
-            });
-        }
-
-        private void RenderStep(SetupStep step)
-        {
-            var card = new VisualElement
-            {
-                style =
-                {
-                    backgroundColor = new StyleColor(NexusEditorStyles.CardBg),
-                    borderTopLeftRadius = 6, borderTopRightRadius = 6,
-                    borderBottomLeftRadius = 6, borderBottomRightRadius = 6,
-                    paddingLeft = 14, paddingRight = 14, paddingTop = 12, paddingBottom = 12,
-                    marginBottom = 8, borderLeftWidth = 3,
-                    borderLeftColor = new StyleColor(NexusEditorStyles.DimText)
-                }
-            };
-            step.CardElement = card;
-
-            var header = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 4 } };
-            var dot = NexusEditorStyles.CreateStatusDot(NexusEditorStyles.DimText, 10);
-            step.StatusElement = dot;
-            header.Add(dot);
-            header.Add(new Label(step.Title)
-            {
-                style = { fontSize = 13, unityFontStyleAndWeight = FontStyle.Bold,
-                    color = new StyleColor(NexusEditorStyles.TextPrimary), marginLeft = 8 }
-            });
-            card.Add(header);
-
-            if (!string.IsNullOrEmpty(step.Description))
-                card.Add(new Label(step.Description)
-                {
-                    style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary),
-                        whiteSpace = WhiteSpace.Normal, marginBottom = 8, marginLeft = 18 }
-                });
-
-            var btn = new UnityEngine.UIElements.Button(() => { step.Action?.Invoke(); RefreshStepStatus(); })
-            {
-                text = step.ButtonText,
-                style =
-                {
-                    marginLeft = 18, paddingLeft = 16, paddingRight = 16, paddingTop = 8, paddingBottom = 8,
-                    fontSize = 11, unityFontStyleAndWeight = FontStyle.Bold,
-                    backgroundColor = new StyleColor(NexusEditorStyles.BtnPrimary),
-                    color = Color.white,
-                    borderTopLeftRadius = 4, borderTopRightRadius = 4,
-                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4,
-                    borderLeftWidth = 0, borderRightWidth = 0, borderTopWidth = 0, borderBottomWidth = 0
-                }
-            };
-            card.Add(btn);
-            _root.Add(card);
-        }
-
-        private void RefreshStepStatus()
-        {
-            int completed = 0;
-            foreach (var step in _steps)
-            {
-                bool done = step.IsComplete?.Invoke() ?? false;
-                if (done) completed++;
-                if (step.StatusElement != null)
-                    step.StatusElement.style.backgroundColor = new StyleColor(
-                        done ? NexusEditorStyles.AccentGreen : NexusEditorStyles.DimText);
-                if (step.CardElement != null)
-                    step.CardElement.style.borderLeftColor = new StyleColor(
-                        done ? NexusEditorStyles.AccentGreen : NexusEditorStyles.DimText);
-            }
-            float pct = _steps.Count > 0 ? (float)completed / _steps.Count * 100f : 0f;
-            if (_progressFill != null)
-                _progressFill.style.width = Length.Percent(pct);
+            base.OnDisable();
         }
 
         // ─── Folder Structure ─────────────────────────────────
@@ -859,7 +741,7 @@ namespace Game
         /// copy — the same atomic-write idiom as
         /// <c>EncryptedStorageService.WriteRawDataAtomically</c>.
         /// </summary>
-        private static void WriteFileAtomically(string fullPath, string content)
+        internal static void WriteFileAtomically(string fullPath, string content)
         {
             string tempPath = fullPath + ".tmp" + Guid.NewGuid().ToString("N");
             try

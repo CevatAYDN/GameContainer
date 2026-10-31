@@ -151,11 +151,24 @@ namespace Nexus.Editor.Tests
         public void GeneratedFiles_CompileWithUnityRoslyn()
         {
             string tempRoot = Path.Combine(Path.GetTempPath(), "NexusWizardCompile_" + Guid.NewGuid().ToString("N"));
-            string outputDll = Path.Combine(Path.GetTempPath(), "NexusWizardCompileOut_" + Guid.NewGuid().ToString("N") + ".dll");
             try
             {
                 NexusSetupWizard.WriteGeneratedFiles(tempRoot);
+                AssertCompiles(tempRoot);
+            }
+            finally
+            {
+                if (Directory.Exists(tempRoot))
+                    Directory.Delete(tempRoot, true);
+            }
+        }
 
+        /// <summary>Compiles every .cs file under <paramref name="sourceRoot"/> with the Roslyn compiler Unity ships.</summary>
+        internal static void AssertCompiles(string sourceRoot)
+        {
+            string outputDll = Path.Combine(Path.GetTempPath(), "NexusWizardCompileOut_" + Guid.NewGuid().ToString("N") + ".dll");
+            try
+            {
                 string runner, compiler;
                 Assert.IsTrue(TryFindRoslynCompiler(out runner, out compiler),
                     "Unity's bundled Roslyn compiler was not found under the editor's Data folder.");
@@ -182,7 +195,7 @@ namespace Nexus.Editor.Tests
                 startInfo.ArgumentList.Add("-out:" + outputDll);
                 foreach (string reference in references)
                     startInfo.ArgumentList.Add("-r:" + reference);
-                foreach (string file in Directory.GetFiles(tempRoot, "*.cs", SearchOption.AllDirectories))
+                foreach (string file in Directory.GetFiles(sourceRoot, "*.cs", SearchOption.AllDirectories))
                     startInfo.ArgumentList.Add(file);
 
                 using (var process = Process.Start(startInfo))
@@ -199,8 +212,6 @@ namespace Nexus.Editor.Tests
             }
             finally
             {
-                if (Directory.Exists(tempRoot))
-                    Directory.Delete(tempRoot, true);
                 if (File.Exists(outputDll))
                     File.Delete(outputDll);
             }

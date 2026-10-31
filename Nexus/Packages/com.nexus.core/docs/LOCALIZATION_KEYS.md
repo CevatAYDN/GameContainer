@@ -29,12 +29,12 @@ Code never compares a displayed text with an English literal: `ExplorerPlugin` t
 | `window_`, `brand_`, `sidebar_`, `discovery_`, `error_`, `actions_`, `status_`, `statusbar_` | NexusWindow | Window shell: brand, sidebar, plugin discovery errors, action bar, status bar |
 | `cat_` | NexusWindow sidebar | Section headers: `cat_status`, `cat_setup`, `cat_architecture` and `cat_live`, in that order (`NexusWindow.Sections`); `INexusEditorPlugin.Category` returns one of them, and any other key, such as the default `cat_other`, is a section after them |
 | `tab_` | NexusWindow sidebar | Sidebar button label per plugin, `tab_<plugin id in lower case>`; without the key the plugin's `DisplayName` is used. Also the `DisplayName` of the Dashboard, Context Inspector, Error and Performance plugins |
-| `action_` | Plugins | `action_<tool>_title`: the `DisplayName` of the Casual Services, Explorer, FSM, Game Manager, Graph, Help, Hierarchy, Tracer, Type Analyzer and Wizard plugins |
+| `action_` | Plugins | `action_<tool>_title`: the `DisplayName` of the Casual Services, Explorer, FSM, Game Manager, Graph, Hierarchy, Tracer, Type Analyzer and Wizard plugins |
 | `nav_` | GameManagerPlugin, HierarchyPlugin | Buttons that open another plugin |
 | no namespace prefix (`dashboard`, `contexts`, `build_validation`, `clear`, ...), `system_`, `perf_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | System status, project overview, build validation, runtime metrics, framework card |
 | `dash_`, `db_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | Quick actions, QuickFind, card tooltips, Nexus Health and Build readiness cards |
-| `setup_` | NexusSetupWizard | Localized setup steps, descriptions, actions and integration guide |
-| `wizard_` | WizardPlugin (`Wizard/WizardTabs.cs`) | Bootstrap manifest, Root and code generation, clean deletion, dead code scan |
+| `setup_` | NexusSetupWizard | The Setup section's start page: starter scene, package samples, the way into the Context Wizard, document buttons, version line |
+| `wizard_` | WizardPlugin (`Wizard/WizardTabs.cs`, `Wizard/ScriptGenerator.cs`) | Context creation and the service, view/mediator and signal/command generators: fields, validation, results and next steps |
 | `ci_` | ContextInspectorPlugin | Live context overview, DI bindings, singletons, services, signal handlers, extensions, test fire |
 | `exp_`, `explorer_`, `ex_`, `common_` | ExplorerPlugin | Signal wiring, handlers, play-mode tester, presets |
 | `hierarchy_`, `hier_` | HierarchyPlugin | Active context hierarchy tree and DI container inspector |
@@ -46,7 +46,6 @@ Code never compares a displayed text with an English literal: `ExplorerPlugin` t
 | `pd_` | PerformanceDashboardPlugin | FPS, Mono heap, GC Gen0, signal and command rates, alarms |
 | `cs_` | CasualServicesPlugin | Economy, progression, UI stack, haptics and TimeScale debug helper |
 | `typeanalyzer_`, `ta_` | TypeAnalyzerPlugin | Type coupling and `[Inject]` dependency inspector |
-| `help_` | HelpPlugin | Documentation & framework guide |
 
 ---
 

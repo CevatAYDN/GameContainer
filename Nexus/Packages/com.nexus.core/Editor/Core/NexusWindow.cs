@@ -357,7 +357,7 @@ namespace Nexus.Editor
             ActivatePlugin(targetPlugin);
         }
 
-        private void RefreshActivePlugin()
+        internal void RefreshActivePlugin()
         {
             if (_activePlugin != null) ActivatePlugin(_activePlugin);
         }
