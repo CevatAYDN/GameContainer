@@ -158,7 +158,7 @@ namespace Nexus.Ads.Tests.Runtime
         {
             var previous = AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, (scheduler, _) => new SimulatorProvider(scheduler));
             AdsBootstrap.BuildForTests = BuildKind.Release;
-            AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+            var previousConsent = AdsBootstrap.SwapSharedConsentForTests(null, AdProviderKind.None);
             try
             {
                 LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] no ads run: the settings name the game's own consent flow before LevelPlay, and none is registered"));
@@ -176,7 +176,7 @@ namespace Nexus.Ads.Tests.Runtime
             }
             finally
             {
-                AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+                AdsBootstrap.SwapSharedConsentForTests(previousConsent.Factory, previousConsent.RunBy); // a later test reads Google's form, registered before the first scene
                 AdsBootstrap.BuildForTests = null;
                 AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, previous);
             }
@@ -190,7 +190,7 @@ namespace Nexus.Ads.Tests.Runtime
             SimulatorProvider provider = null;
             var previous = AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, (scheduler, _) => provider = new SimulatorProvider(scheduler, SimulatorScenario.NoFill));
             AdsBootstrap.BuildForTests = BuildKind.Release;
-            AdsBootstrap.RegisterSharedConsentFlow(_ => new SimulatorProvider(new NeverScheduler()), AdProviderKind.None);
+            var previousConsent = AdsBootstrap.SwapSharedConsentForTests(_ => new SimulatorProvider(new NeverScheduler()), AdProviderKind.None);
             var warnings = new List<string>();
             Application.LogCallback capture = (message, _, type) => { if (type == LogType.Warning && message.StartsWith("[Nexus Ads] ")) warnings.Add(message); };
             Application.logMessageReceived += capture;
@@ -226,7 +226,7 @@ namespace Nexus.Ads.Tests.Runtime
             finally
             {
                 Application.logMessageReceived -= capture;
-                AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+                AdsBootstrap.SwapSharedConsentForTests(previousConsent.Factory, previousConsent.RunBy);
                 AdsBootstrap.BuildForTests = null;
                 AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, previous);
             }

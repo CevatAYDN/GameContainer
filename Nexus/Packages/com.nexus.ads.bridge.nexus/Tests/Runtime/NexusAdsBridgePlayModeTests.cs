@@ -65,7 +65,7 @@ namespace Nexus.Ads.Bridge.Tests.Runtime
         {
             var previous = AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, (scheduler, _) => new SimulatorProvider(scheduler));
             AdsBootstrap.BuildForTests = BuildKind.Release;
-            AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+            var previousConsent = AdsBootstrap.SwapSharedConsentForTests(null, AdProviderKind.None);
             try
             {
                 _settings = ScriptableObject.CreateInstance<AdsSettings>();
@@ -102,7 +102,7 @@ namespace Nexus.Ads.Bridge.Tests.Runtime
             }
             finally
             {
-                AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+                AdsBootstrap.SwapSharedConsentForTests(previousConsent.Factory, previousConsent.RunBy);
                 AdsBootstrap.BuildForTests = null;
                 AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, previous);
             }

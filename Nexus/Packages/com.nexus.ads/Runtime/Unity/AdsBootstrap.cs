@@ -82,6 +82,15 @@ namespace Nexus.Ads.Unity
             return previous;
         }
 
+        /// <summary>Tests: puts <paramref name="factory"/> in as the shared consent flow (null clears it) and returns the
+        /// registration it replaced, which a test puts back: com.nexus.ads.admob registers Google's form before the first scene.</summary>
+        internal static (Func<ProviderConfig, IConsentFlow> Factory, AdProviderKind RunBy) SwapSharedConsentForTests(Func<ProviderConfig, IConsentFlow> factory, AdProviderKind runByProvider)
+        {
+            var previous = (_sharedConsent, _sharedConsentRunBy);
+            RegisterSharedConsentFlow(factory, runByProvider);
+            return previous;
+        }
+
         /// <summary>
         /// Starts the ad stack once: reads the advertising id where the gate needs it (<see cref="BuildOutlook.ReadsAdvertisingId"/>),
         /// then builds the provider or the simulator and the controller, which runs the consent flow before the SDK. Awake calls it unless startOnAwake is off; a game that starts ads
