@@ -103,6 +103,48 @@ namespace Nexus.Editor.Tests
             finally { ForgetStore(salt); }
         }
 
+        // Issue #166: a save file emptied by a power loss read as missing with no log, though File.Replace had kept the
+        // version before it in .bak; a save file that fails its check did not look at the backup either
+        [Test]
+        public void AnEmptyOrDamagedSaveFile_FallsBackToTheVersionBefore_AndSaysSo()
+        {
+            const string salt = "Test_Salt_Backup166";
+            ForgetStore(salt);
+            try
+            {
+                var writer = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A") { AutoSave = true };
+                writer.SetString("coins", "100");
+                writer.SetString("coins", "250"); // 250 in the save file, 100 in its .bak
+                writer.SetString("gems", "7");
+                writer.SetString("gems", "9");
+                writer.SetString("lives", "3"); // written once: no .bak
+                string coins = Private<string>(writer, "GetFilePath", "coins"), gems = Private<string>(writer, "GetFilePath", "gems"), lives = Private<string>(writer, "GetFilePath", "lives");
+                writer.Dispose();
+
+                File.WriteAllBytes(coins, new byte[0]); // what a power loss after the rename can leave
+                byte[] damaged = File.ReadAllBytes(gems);
+                damaged[damaged.Length - 1] ^= 0xFF;
+                File.WriteAllBytes(gems, damaged);
+                File.WriteAllBytes(lives, new byte[5]);
+
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'coins' is 0 bytes, shorter than any save: read the version before its last write from the backup, so that write is lost"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'gems' fails its integrity check: read the version before its last write from the backup"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'lives' is 5 bytes, shorter than any save: read as missing"));
+                var reader = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A");
+                Assert.AreEqual("100", reader.GetString("coins", null));
+                Assert.AreEqual("7", reader.GetString("gems", null));
+                Assert.IsNull(reader.GetString("lives", null), "no backup: nothing to fall back to");
+                reader.Dispose();
+
+                var again = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A");
+                Assert.AreEqual("100", again.GetString("coins", null), "the recovered value was written back");
+                Assert.AreEqual("7", again.GetString("gems", null));
+                again.Dispose();
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally { ForgetStore(salt); }
+        }
+
         [Test]
         public void AppBinding_ReadsDataRestoredOnAnotherPhone_DeviceBindingDoesNot()
         {

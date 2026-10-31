@@ -411,7 +411,7 @@ namespace Nexus.Core.Services
             if (_disposed) return defaultValue;
             if (string.IsNullOrEmpty(key)) return defaultValue;
 
-            string filePath;
+            string filePath, mainPath;
             long readVersion;
             lock (_lock)
             {
@@ -419,6 +419,7 @@ namespace Nexus.Core.Services
                     return cachedVal ?? defaultValue;
 
                 filePath = ResolveExistingFilePath(key);
+                mainPath = GetFilePath(key);
                 _keyVersions.TryGetValue(key, out readVersion);
             }
 
@@ -431,63 +432,39 @@ namespace Nexus.Core.Services
 
             try
             {
-                byte[] rawData = File.ReadAllBytes(filePath);
-                if (rawData.Length < LegacyHeaderSize)
+                string backupPath = mainPath + ".bak";
+                string problem = Decode(File.ReadAllBytes(filePath), key, out string val, out bool olderFormat, out bool unversioned);
+                // File.Replace keeps the previous version in .bak: a main file emptied by a power loss, or one that fails
+                // its check, falls back to it, and so does a main file an interrupted two-rename commit never put back (#166)
+                bool fromBackup = filePath == backupPath;
+                if (problem != null && filePath == mainPath && File.Exists(backupPath)
+                    && Decode(File.ReadAllBytes(backupPath), key, out string backupValue, out olderFormat, out unversioned) == null)
                 {
+                    NexusLog.WarnAlways($"[EncryptedStorage] The save file for key '{key}' {problem}: read the version before its last write from the backup, so that write is lost, and writes it back.");
+                    val = backupValue;
+                    fromBackup = true;
+                    problem = null;
+                }
+                else if (fromBackup && problem == null)
+                {
+                    NexusLog.WarnAlways($"[EncryptedStorage] The save file for key '{key}' is missing and its backup is not (an interrupted save): read the version before the last write from the backup and writes it back.");
+                }
+
+                if (problem != null)
+                {
+                    if (problem == IntegrityFailure) LogTamperWarning(key);
+                    else NexusLog.WarnAlways($"[EncryptedStorage] The save file for key '{key}' {problem}: read as missing.");
                     CacheNegativeResult(key);
                     return defaultValue;
                 }
 
-                // Detect format from header length.
-                // Version 2/3: 1 (version) + 16 (IV) + 32 (HMAC) = 49 bytes minimum header.
-                // Version 1 (legacy): 16 (IV) + 16 (HMAC) = 32 bytes minimum header.
-                bool isCurrentFormat = rawData.Length >= HeaderSize
-                    && (rawData[0] == CurrentFormatVersion || rawData[0] == LegacyV2FormatVersion);
-
-                string val;
-                if (isCurrentFormat)
-                {
-                    if (TryReadCurrentFormat(rawData, key, out val))
-                    {
-                        // A v2 file (pre key-name-binding) decoded successfully: re-encrypt it
-                        // under the current v3 format so the on-disk payload becomes key-bound.
-                        // Same B1 discipline as the v1 migration below — SaveKeyToDisk performs
-                        // blocking file I/O and must NOT run under the shared _lock.
-                        if (rawData[0] == LegacyV2FormatVersion)
-                            MigrateKeyIfCurrent(key, val, readVersion, false);
-                    }
-                    else if (TryReadLegacy(rawData, out val))
-                    {
-                        // An unversioned file whose first IV byte happens to be 2 or 3 (issue #166).
-                        MigrateKeyIfCurrent(key, val, readVersion, true);
-                    }
-                    else
-                    {
-                        LogTamperWarning(key);
-                        CacheNegativeResult(key);
-                        return defaultValue;
-                    }
-                }
-                else
-                {
-                    if (!TryReadLegacy(rawData, out val))
-                    {
-                        LogTamperWarning(key);
-                        CacheNegativeResult(key);
-                        return defaultValue;
-                    }
-
-                    // Successfully migrated: re-encrypt with AES-256 (v2 format) under the
-                    // current (FNV-1a) filename, then drop the legacy MD5-named file (A6).
-                    // B1 invariant: SaveKeyToDisk performs blocking file I/O (encrypt +
-                    // atomic stage/rename under _writeLock) — it must NOT run under the
-                    // shared _lock or a slow disk could stall every other key operation
-                    // (the pre-B1 code path this migration used to sit in). A concurrent
-                    // SetString during migration leaves the key dirty, so the next Save()
-                    // re-writes the fresher cached value over this file; the TOCTOU guard
-                    // below keeps the cache authoritative in the meantime.
-                    MigrateKeyIfCurrent(key, val, readVersion, true);
-                }
+                // A recovered, v2 or unversioned value is re-encrypted as v3 under the current (FNV-1a) name; an unversioned
+                // file's legacy MD5-named copy is then dropped (A6). B1 invariant: SaveKeyToDisk performs blocking file I/O
+                // (encrypt + atomic stage/rename under _writeLock), so it must NOT run under the shared _lock. A concurrent
+                // SetString during the rewrite leaves the key dirty, so the next Save() writes the fresher cached value over
+                // this file; the TOCTOU guard below keeps the cache authoritative in the meantime.
+                if (fromBackup || olderFormat || unversioned)
+                    MigrateKeyIfCurrent(key, val, readVersion, unversioned);
 
                 lock (_lock)
                 {
@@ -537,6 +514,35 @@ namespace Nexus.Core.Services
                 if (_cache.TryGetValue(key, out var existing) && existing != null) return;
                 _cache[key] = null;
             }
+        }
+
+        private const string IntegrityFailure = "fails its integrity check";
+
+        /// <summary>
+        /// Decodes a save file of any format. Returns null when it decoded, else what is wrong with it.
+        /// <paramref name="olderFormat"/>: a v2 file; <paramref name="unversioned"/>: a file with no version byte.
+        /// </summary>
+        private string Decode(byte[] rawData, string key, out string value, out bool olderFormat, out bool unversioned)
+        {
+            value = null;
+            olderFormat = unversioned = false;
+            if (rawData.Length < LegacyHeaderSize) return $"is {rawData.Length} bytes, shorter than any save";
+
+            // Version 2/3: 1 (version) + 16 (IV) + 32 (HMAC) = 49 bytes minimum header; an unversioned file: 16 (IV) + 16 (HMAC).
+            bool looksVersioned = rawData.Length >= HeaderSize
+                && (rawData[0] == CurrentFormatVersion || rawData[0] == LegacyV2FormatVersion);
+            if (looksVersioned && TryReadCurrentFormat(rawData, key, out value))
+            {
+                olderFormat = rawData[0] == LegacyV2FormatVersion;
+                return null;
+            }
+            // Also when it looked versioned: an unversioned file's first IV byte can be 2 or 3 (issue #166).
+            if (TryReadLegacy(rawData, out value))
+            {
+                unversioned = true;
+                return null;
+            }
+            return IntegrityFailure;
         }
 
         private void MigrateKeyIfCurrent(string key, string value, long readVersion, bool deleteLegacy)
