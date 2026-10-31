@@ -101,8 +101,12 @@ stays hidden and the reason is logged as an error. A release build never runs th
    build while no mediation is selected, the simulator runs with a full-screen overlay; where the gate
    chose the SDK, a selected provider that is not installed runs nothing. In every build it logs what it
    started, without ids: `[Nexus Ads] started mode=<Provider|Simulator|Idle> mediation=<kind>
-   gate=<Provider|Simulator|Blocked> rule=<rule or -> testMode=<on|off>` (one line;
-   `tools/device-acceptance/run.ps1 -ExpectAds` reads it). A game that starts ads later (after its own
+   gate=<Provider|Simulator|Blocked> rule=<rule or -> testMode=<on|off> consent=<flow>(<from>)` (one line;
+   `tools/device-acceptance/run.ps1 -ExpectAds` reads it). `consent` names the flow that runs before the
+   mediation and where it came from (#154): `registered` (Google's UMP from `com.nexus.ads.admob`, or a
+   flow the game passed to `AdsBootstrap.RegisterSharedConsentFlow`), `provider` (the provider's own:
+   AdMob runs UMP; LevelPlay's is a pass-through that shows no form and forwards what the game passed with
+   `LevelPlayProvider.SetGdprConsent`), `simulator`, or `none` when no ads start. A game that starts ads later (after its own
    explanation, or never for a player who owns its ad-free product) turns the bootstrap's
    `startOnAwake` off (or passes `startOnAwake: false` to `Configure` on a bootstrap made in code) and
    calls `AdsBootstrap.Instance.StartAds()` when it is ready; until then nothing reads the advertising id

@@ -145,9 +145,9 @@ namespace Nexus.Ads.Tests.Runtime
         // Issue #52: the real SDK's start logged nothing, so logcat could not tell it from a silent failure;
         // tools/device-acceptance/run.ps1 -ExpectAds reads this line.
         [UnityTest]
-        public IEnumerator Start_LogsOneLine_WithTheModeTheGateAndTestMode()
+        public IEnumerator Start_LogsOneLine_WithTheModeTheGateTestModeAndConsentFlow()
         {
-            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] started mode=Simulator mediation=LevelPlay gate=Simulator rule=- testMode=(on|off)$"));
+            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] started mode=Simulator mediation=LevelPlay gate=Simulator rule=- testMode=(on|off) consent=SimulatorProvider\(simulator\)$"));
             yield return Boot(SimulatorScenario.Normal);
         }
 

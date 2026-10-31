@@ -50,6 +50,23 @@ namespace Nexus.Ads.Tests
             Assert.AreSame(levelPlay, AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, levelPlay, config), "a null factory clears the registration");
         }
 
+        [Test]
+        public void TheStartLine_NamesTheConsentFlowThatRunsAndWhereItCameFrom()
+        {
+            // issue #154: a release build that started LevelPlay with only its pass-through left no trace of it
+            var flow = new SimulatorProvider(NoScheduler.Instance);
+            Assert.AreEqual("SimulatorProvider(provider)", AdsBootstrap.DescribeConsent(AdProviderKind.LevelPlay, HostMode.Provider, flow), "nothing registered: the provider's own flow");
+            Assert.AreEqual("SimulatorProvider(simulator)", AdsBootstrap.DescribeConsent(AdProviderKind.LevelPlay, HostMode.Simulator, flow));
+            Assert.AreEqual("none", AdsBootstrap.DescribeConsent(AdProviderKind.LevelPlay, HostMode.Idle, flow), "an idle host runs no flow");
+            AdsBootstrap.RegisterSharedConsentFlow(c => flow, AdProviderKind.AdMob);
+            try
+            {
+                Assert.AreEqual("SimulatorProvider(registered)", AdsBootstrap.DescribeConsent(AdProviderKind.LevelPlay, HostMode.Provider, flow));
+                Assert.AreEqual("SimulatorProvider(provider)", AdsBootstrap.DescribeConsent(AdProviderKind.AdMob, HostMode.Provider, flow), "the AdMob provider runs UMP itself");
+            }
+            finally { AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None); }
+        }
+
         private void FillLevelPlay()
         {
             foreach (var tab in new[] { _settings.Test, _settings.Release })

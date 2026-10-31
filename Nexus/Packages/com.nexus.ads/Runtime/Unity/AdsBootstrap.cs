@@ -118,6 +118,19 @@ namespace Nexus.Ads.Unity
         public static IConsentFlow ConsentFlowFor(AdProviderKind selected, IAdProvider provider, ProviderConfig config)
             => _sharedConsent != null && selected != _sharedConsentRunBy ? _sharedConsent(config) : provider as IConsentFlow;
 
+        /// <summary>
+        /// How the start line names the consent flow that runs before the mediation (issue #154): its type and where it came
+        /// from. "registered" is <see cref="RegisterSharedConsentFlow"/> (Google's UMP from com.nexus.ads.admob, or the game's
+        /// own); "provider" is the provider's own flow (LevelPlay's is a pass-through that shows no form and forwards what the
+        /// game passed with <c>LevelPlayProvider.SetGdprConsent</c>); "simulator" is the simulator's; "none" when no ads start.
+        /// </summary>
+        public static string DescribeConsent(AdProviderKind selected, HostMode mode, IConsentFlow consent)
+        {
+            if (mode == HostMode.Idle || consent == null) return "none";
+            string from = mode == HostMode.Simulator ? "simulator" : _sharedConsent != null && selected != _sharedConsentRunBy ? "registered" : "provider";
+            return consent.GetType().Name + "(" + from + ")";
+        }
+
         public static BuildKind CurrentBuild => Application.isEditor ? BuildKind.Editor : Debug.isDebugBuild ? BuildKind.Development : BuildKind.Release;
 
         public static AdPlatform CurrentPlatform => Application.platform == RuntimePlatform.IPhonePlayer ? AdPlatform.Ios : AdPlatform.Android;
@@ -175,7 +188,8 @@ namespace Nexus.Ads.Unity
             if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
             // one line per start in every build, no ids: tools/device-acceptance -ExpectAds reads it (issue #52)
             Debug.Log("[Nexus Ads] started mode=" + Mode + " mediation=" + _settings.SelectedMediation + " gate=" + Gate.Decision
-                + " rule=" + (Gate.Rule ?? "-") + " testMode=" + (config.Provider.TestMode ? "on" : "off"));
+                + " rule=" + (Gate.Rule ?? "-") + " testMode=" + (config.Provider.TestMode ? "on" : "off")
+                + " consent=" + DescribeConsent(_settings.SelectedMediation, Mode, consent));
             Started?.Invoke();
         }
 
