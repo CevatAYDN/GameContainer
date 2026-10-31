@@ -12,6 +12,13 @@ namespace Nexus.Ads.Unity
     /// <summary>Google's content-rating scale; every provider maps it to its own.</summary>
     public enum ContentRating { G, PG, T, MA }
 
+    /// <summary>
+    /// The consent flow that runs before a mediation that ships no form (LevelPlay), issue #154: Google's UMP (com.nexus.ads.admob
+    /// registers it), the game's own flow registered with <c>AdsBootstrap.RegisterSharedConsentFlow</c>, or none, which the
+    /// validator fails in a release build.
+    /// </summary>
+    public enum ConsentSource { GoogleUmp, GameFlow, None }
+
     [Serializable]
     public sealed class PlatformKeys
     {
@@ -139,12 +146,17 @@ namespace Nexus.Ads.Unity
         public List<string> AppAdsTxtLines = new List<string>();
 
         [Header("Privacy")]
+        [Tooltip("The consent flow before LevelPlay, which ships no form: Google's UMP (com.nexus.ads.admob), the game's own flow registered with AdsBootstrap.RegisterSharedConsentFlow before StartAds(), or none (a release build fails the validator)")]
+        public ConsentSource Consent = ConsentSource.GoogleUmp;
         public bool ChildDirected;
         public bool UnderAgeOfConsent;
         public ContentRating MaxAdContentRating = ContentRating.G;
         public string PrivacyPolicyUrl = "";
 
         public static AdsSettings Load() => Resources.Load<AdsSettings>(ResourceName);
+
+        /// <summary>The selected mediation ships no consent form and the settings name a flow that must be registered before it starts (issue #154).</summary>
+        public bool ConsentNeedsRegisteredFlow => SelectedMediation == AdProviderKind.LevelPlay && Consent != ConsentSource.None;
 
         /// <summary>The tab a build kind reads; fixed by design.</summary>
         public static bool UsesReleaseTab(BuildKind build) => build == BuildKind.Release;

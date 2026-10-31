@@ -217,17 +217,36 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
-        public void LevelPlay_RunsGooglesConsentForm_WhenItsPackagesAreIn_AndWarnsWithoutAnyConsentPlatform()
+        public void LevelPlay_RunsGooglesConsentForm_WhenItsPackagesAreIn_AndFailsARelease_WarnsADevelopmentBuild_WithoutIt()
         {
-            // issue #63: LevelPlay ships no consent form
+            // issue #63: LevelPlay ships no consent form; issue #154: a release build without the flow the settings name fails
             var bare = Run(AdsValidator.Tab.Release);
-            Assert.AreEqual(CheckResult.Warn, Check(bare, "consent.form").Result);
+            Assert.AreEqual(CheckResult.Fail, Check(bare, "consent.form").Result, "Consent: GoogleUmp without its packages");
             StringAssert.Contains("SetGdprConsent", Check(bare, "consent.form").fix, "the way out for a game with its own consent platform");
+            StringAssert.Contains("RegisterSharedConsentFlow", Check(bare, "consent.form").fix);
+            Assert.AreEqual(CheckResult.Warn, Check(Run(AdsValidator.Tab.Test), "consent.form").Result, "a development build warns");
 
             WithGoogleConsent("ca-app-pub-1111111111111111~2222222222");
             var report = Run(AdsValidator.Tab.Release);
             Assert.AreEqual(CheckResult.Pass, Check(report, "consent.form").Result);
             Assert.AreEqual(CheckResult.Pass, Check(report, "mediation.admob").Result);
+        }
+
+        [Test]
+        public void LevelPlay_WithTheGamesOwnConsentFlow_Passes_AndWithNone_FailsARelease()
+        {
+            // issue #154: the settings name the flow before LevelPlay; a game with its own consent platform says so
+            _settings.Consent = ConsentSource.GameFlow;
+            Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "consent.form").Result);
+
+            _settings.Consent = ConsentSource.None;
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "consent.form").Result, "no consent before LevelPlay in a release build");
+            Assert.AreEqual(CheckResult.Warn, Check(Run(AdsValidator.Tab.Test), "consent.form").Result);
+
+            WithGoogleConsent("ca-app-pub-1111111111111111~2222222222");
+            var both = Check(Run(AdsValidator.Tab.Release), "consent.form");
+            Assert.AreEqual(CheckResult.Warn, both.Result, "UMP runs although the settings say None");
+            StringAssert.Contains("GoogleUmp", both.fix);
         }
 
         [Test]

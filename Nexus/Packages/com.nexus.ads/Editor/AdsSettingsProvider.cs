@@ -171,6 +171,8 @@ namespace Nexus.Ads.Editor
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Privacy", EditorStyles.boldLabel);
+            if (settings.SelectedMediation == AdProviderKind.LevelPlay) // LevelPlay ships no consent form (issue #154)
+                EditorGUILayout.PropertyField(so.FindProperty(nameof(AdsSettings.Consent)), new GUIContent("Consent before LevelPlay"));
             EditorGUILayout.PropertyField(so.FindProperty(nameof(AdsSettings.ChildDirected)));
             EditorGUILayout.PropertyField(so.FindProperty(nameof(AdsSettings.UnderAgeOfConsent)));
             EditorGUILayout.PropertyField(so.FindProperty(nameof(AdsSettings.MaxAdContentRating)));

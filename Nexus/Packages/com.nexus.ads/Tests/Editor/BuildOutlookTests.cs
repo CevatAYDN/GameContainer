@@ -67,6 +67,34 @@ namespace Nexus.Ads.Tests
             finally { AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None); }
         }
 
+        [Test]
+        public void LevelPlay_StartsNoAds_WithoutTheConsentFlowTheSettingsName()
+        {
+            // issue #154: LevelPlay ships no consent form, and a provider host started it with only its pass-through
+            AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+            try
+            {
+                _settings.SelectedMediation = AdProviderKind.LevelPlay;
+                _settings.Consent = ConsentSource.GoogleUmp;
+                StringAssert.Contains("com.nexus.ads.admob", AdsBootstrap.MissingConsent(_settings));
+                _settings.Consent = ConsentSource.GameFlow;
+                StringAssert.Contains("RegisterSharedConsentFlow", AdsBootstrap.MissingConsent(_settings));
+                _settings.Consent = ConsentSource.None;
+                Assert.IsNull(AdsBootstrap.MissingConsent(_settings), "None names no flow to wait for; the validator fails it in a release build");
+
+                _settings.Consent = ConsentSource.GameFlow;
+                AdsBootstrap.RegisterSharedConsentFlow(c => new SimulatorProvider(NoScheduler.Instance), AdProviderKind.None);
+                Assert.IsNull(AdsBootstrap.MissingConsent(_settings), "the game's flow is registered");
+                AdsBootstrap.RegisterSharedConsentFlow(c => new SimulatorProvider(NoScheduler.Instance), AdProviderKind.LevelPlay);
+                Assert.IsNotNull(AdsBootstrap.MissingConsent(_settings), "a flow the selected provider runs itself is not one that runs before it");
+
+                AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+                _settings.SelectedMediation = AdProviderKind.AdMob;
+                Assert.IsNull(AdsBootstrap.MissingConsent(_settings), "the AdMob provider runs Google's form itself");
+            }
+            finally { AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None); }
+        }
+
         private void FillLevelPlay()
         {
             foreach (var tab in new[] { _settings.Test, _settings.Release })
