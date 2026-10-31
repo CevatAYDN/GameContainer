@@ -19,6 +19,12 @@ namespace Nexus.Tests
             }
         }
 
+        private class TestUnpausableTickable : IUnpausableTickable
+        {
+            public int TickCount;
+            public void Tick(float deltaTime) => TickCount++;
+        }
+
         private class TestFixedTickable : IFixedTickable
         {
             public int FixedTickCount;
@@ -122,6 +128,25 @@ namespace Nexus.Tests
             service.IsPaused = false;
             service.OnTick(0.1f);
             Assert.AreEqual(1, tickable.TickCount);
+            service.Dispose();
+        }
+
+        // Issue #202: work that runs on real time, such as the save throttler, kept waiting for a screen or an ad to close
+        [Test]
+        public void AnUnpausableTickable_TicksWhileTheServiceIsPaused_AndAGameplayTickableDoesNot()
+        {
+            var service = new TickService();
+            var gameplay = new TestTickable();
+            var saves = new TestUnpausableTickable();
+            service.RegisterTickable(gameplay);
+            service.RegisterTickable(saves);
+
+            using (service.HoldPause()) service.OnTick(0.1f);
+            service.IsPaused = true;
+            service.OnTick(0.1f);
+
+            Assert.AreEqual(0, gameplay.TickCount, "gameplay stays paused");
+            Assert.AreEqual(2, saves.TickCount, "the unpausable tickable ticks under a hold and under the flag");
             service.Dispose();
         }
     }

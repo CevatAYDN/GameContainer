@@ -34,7 +34,7 @@ namespace Nexus.Core.Services
     /// owner başına izole edilmiştir: sürekli başarısız olan bir sahibin tavanı, diğer
     /// sahibin bekleyen bayrağını temizleyemez.
     /// </summary>
-    public class SaveThrottler : ISaveThrottler, INexusService, ITickable
+    public class SaveThrottler : ISaveThrottler, INexusService, IUnpausableTickable
     {
         [Inject] public ITickService TickService { get; set; }
         [Inject] public ITimeProvider TimeProvider { get; set; }
@@ -106,6 +106,8 @@ namespace Nexus.Core.Services
 
         public ValueTask InitializeAsync(CancellationToken ct)
         {
+            // Unpausable: a save already pending when a screen or an ad holds the pause is written when its window ends,
+            // not when the pause ends, so a crash during the pause does not lose it (issue #202)
             TickService?.RegisterTickable(this);
             // A pending save waited for Tick, which a paused TickService skips (an ad holds the pause) and a process killed in
             // the background never reaches: the economy or progression change was lost with no line (issue #167). The app

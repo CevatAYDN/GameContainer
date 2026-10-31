@@ -13,7 +13,8 @@ namespace Nexus.Core.Services
     public interface ITickService
     {
         float TimeScale { get; set; }
-        /// <summary>True while the flag is set or any <see cref="HoldPause"/> handle is held; the setter sets the flag only.</summary>
+        /// <summary>True while the flag is set or any <see cref="HoldPause"/> handle is held; the setter sets the flag only.
+        /// A paused service ticks only its <see cref="IUnpausableTickable"/>s.</summary>
         bool IsPaused { get; set; }
         /// <summary>
         /// Pauses ticking until the returned handle is disposed, for screens and ads that open over each other: ticking
@@ -252,7 +253,7 @@ namespace Nexus.Core.Services
 
         internal void OnTick(float deltaTime)
         {
-            if (IsPaused) return;
+            bool paused = IsPaused; // a paused service still ticks its unpausable tickables (issue #202)
             s_UpdateMarker.Begin();
             try
             {
@@ -281,6 +282,7 @@ namespace Nexus.Core.Services
                             deadCount++;
                             continue;
                         }
+                        if (paused && !(tickable is IUnpausableTickable)) continue;
                         tickable.Tick(deltaTime);
                     }
                     catch (Exception ex)

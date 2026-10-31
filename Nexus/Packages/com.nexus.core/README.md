@@ -77,7 +77,7 @@ also routes the back button, with `ToolkitPanelInput` for their `EventSystem` in
 
 **Lifecycle**: `IContextLifecycle` (`OnConfigure`, `OnInitializeAsync`, `OnStartAsync`,
 `OnDispose`), `IPostContextLifecycle`, `IStartable` / `IAsyncStartable` / `IStoppable` /
-`IAsyncStoppable`, `ITickable` / `IFixedTickable` / `ILateTickable`; `Root` scene anchor,
+`IAsyncStoppable`, `ITickable` / `IUnpausableTickable` / `IFixedTickable` / `ILateTickable`; `Root` scene anchor,
 `NexusLifetimeScope` child scopes, `NexusBehaviour` and `NexusBinding` for scene objects, one
 persistent global root; `ContextFactory.StartAsync` for scan-free code-first startup;
 `context.Instantiate(prefab, parent)` and `container.InjectGameObject(go)` inject a prefab clone
@@ -144,7 +144,7 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 | `ProgressionService` | `Progression` | Level index, max unlocked level, upgrade cost formulas; levels persist to `SettingsStores.Progression` when a game binds one |
 | `ResourcesAssetLoadService` | `Assets` | Default `IAssetLoadService` over `Resources`; an Addressables adapter is described in [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) |
 | `ScreenStack` | `UI/Stack` | The UI Toolkit screen history of one context over `ToolkitScreen`s, USS transitions, and the back button's chain (`IBackRouter`: the game's steps, the screens, the root behaviour); bound with `BindServiceInterfacesAndSelfTo<ScreenStack>()` ([SCREEN_STACK.md](docs/SCREEN_STACK.md)) |
-| `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause |
+| `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause (`IsPaused`, `HoldPause`); a paused service still ticks its `IUnpausableTickable`s |
 | `UIManager` | `UI` | Typed uGUI `ScreenView` stack over the seven `UILayer` layers (`Background`, `HUD`, `Screen`, `Popup`, `Modal`, `Overlay`, `System`) with async open/close |
 
 Localization: a game supplies its tables with
@@ -171,7 +171,8 @@ seed can read, and the next start logs an error in every build that names the ca
 `ISaveDataProvider` to a JSON slot file under the persistent data path and reads it back; it is a
 starting point, not a save system: a game keeps its own save format and decides when to save.
 `SaveThrottler` (used by `EconomyService` and `ProgressionService`) limits how often a service writes;
-a write it holds back is made when the app loses focus or pauses, also while the `TickService` is paused (issue #167).
+a write it holds back is made when the app loses focus or pauses (issue #167), and when its window ends also while a screen
+or an ad holds the `TickService` paused: the throttler is an `IUnpausableTickable` (issue #202).
 
 Logging: `LoggerService`, and the fallback logger `NexusRuntime.Logger` returns while no `ILoggerService` is
 bound, drop `Log` and `LogWarning` in a release player (not the editor, not a development build); `LogError` and
@@ -192,7 +193,7 @@ refused consent, a policy block) reach a release player's log once per cause (`c
 | Warmed DI resolution | A cached resolve 0 B/op on host in the pinned comparison runs (`after-reset-android-006` and `generated-android-002`, `host-results.json`; [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md)), a measurement, not a check run on every commit; a resolved `LazyInjection<T>` read 0 B (stress 12) |
 | Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup (EditMode `TypedComposite_SteadyStateHasNoManagedAllocation`) |
 | `ObservableProperty<T>` value change, `ObservableList<T>` add, remove and clear, with subscribers | 0 B after the first subscription (GCA2, stress 17 and 17b) |
-| `TickService` dispatch | 0 B per frame (GCA3; stress 20, 10k frames × 300 tickables) |
+| `TickService` dispatch | 0 B per frame, running and paused (GCA3; stress 20, 10k frames × 300 tickables) |
 | `AdService.Tick` with an `ITickService` bound: a frame with no cooldown running, a frame inside the interstitial cooldown, the frame it ends | 0 B (GCA9, with a `ReadyChanged` handler that counts) |
 | `ScreenStack` back-button poll in a frame without a press | 0 B (GCA10: 5000 polls of the back chain with a fake input service) |
 | An `EventSystem` frame with `ToolkitPanelInput`, touched or not | 0 B (PlayMode `ToolkitPanelInputTests`: 0 `GC.Alloc` samples over 10 `EventSystem` frames; on the device 0 B per frame over 60 s with a 30 s drag, Android IL2CPP development player, Unity 6000.6.7f1, 2311DRK48G on Android 16, `StackProbe`); without it uGUI 2.6.0 allocates 32 B per panel on every frame |

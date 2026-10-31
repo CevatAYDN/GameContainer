@@ -184,12 +184,21 @@ namespace NexusBench
             public void Tick(float deltaTime) => Ticks++;
         }
 
+        private sealed class DummyUnpausableTickable : IUnpausableTickable
+        {
+            public int Ticks;
+            public void Tick(float deltaTime) => Ticks++;
+        }
+
+        // Running and paused (#202: a paused service still ticks its unpausable tickables)
         [MethodImpl(MethodImplOptions.NoInlining)]
         private static bool TestTickServiceOnTickZeroGC()
         {
             var tickService = new TickService();
             var tickable = new DummyTickable();
+            var unpausable = new DummyUnpausableTickable();
             tickService.RegisterTickable(tickable);
+            tickService.RegisterTickable(unpausable);
 
             // Warmup
             tickService.OnTick(0.016f);
@@ -201,13 +210,23 @@ namespace NexusBench
             }
             long allocAfter = GC.GetAllocatedBytesForCurrentThread();
 
-            long allocated = allocAfter - allocBefore;
-            if (allocated > 0)
+            var hold = tickService.HoldPause();
+            long pausedBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 5000; i++)
             {
-                Console.WriteLine($"      Allocated {allocated} bytes during 5000 TickService.OnTick calls");
+                tickService.OnTick(0.016f);
+            }
+            long pausedAfter = GC.GetAllocatedBytesForCurrentThread();
+            hold.Dispose();
+
+            long allocated = allocAfter - allocBefore;
+            long allocatedPaused = pausedAfter - pausedBefore;
+            if (allocated > 0 || allocatedPaused > 0)
+            {
+                Console.WriteLine($"      Allocated {allocated} bytes running and {allocatedPaused} bytes paused during 5000 TickService.OnTick calls each");
                 return false;
             }
-            return tickable.Ticks == 5001;
+            return tickable.Ticks == 5001 && unpausable.Ticks == 10001;
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]

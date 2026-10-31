@@ -69,6 +69,36 @@ namespace Nexus.Tests
             throttler.OnDispose();
         }
 
+        // Issue #202: a save already pending when a screen or an ad held the pause waited for the pause to end, so a crash
+        // during the pause lost it with no line
+        [Test]
+        public void APendingSave_IsWrittenWhenItsWindowEnds_WhileThePauseIsHeld()
+        {
+            var tickService = new TickService();
+            var time = new TestTimeProvider();
+            var throttler = new SaveThrottler(tickService, TimeSpan.FromSeconds(2)) { TimeProvider = time };
+            throttler.InitializeAsync(CancellationToken.None);
+            try
+            {
+                int economy = 0;
+                throttler.TryRequestSave("economy", () => economy++);
+                throttler.TryRequestSave("economy", () => economy++); // inside the window: pending
+                Assert.AreEqual(1, economy);
+
+                using (tickService.HoldPause())
+                {
+                    time.Now = 3f;
+                    tickService.OnTick(0.016f);
+                    Assert.AreEqual(2, economy, "the pending save is written while the pause is held");
+                }
+            }
+            finally
+            {
+                throttler.OnDispose();
+                tickService.Dispose();
+            }
+        }
+
         private sealed class ThrottledSaves : IContextLifecycle
         {
             public void OnConfigure(IContextBuilder builder)
