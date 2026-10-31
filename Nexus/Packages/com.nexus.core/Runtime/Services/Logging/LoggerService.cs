@@ -145,9 +145,7 @@ namespace Nexus.Core.Services
         /// <summary>Release builds (not editor, not development) drop Log and LogWarning; errors and exceptions always pass. See <see cref="NexusLog.WarnAlways"/>.</summary>
         public override ValueTask InitializeAsync(CancellationToken ct)
         {
-#if !UNITY_EDITOR && !DEVELOPMENT_BUILD
-            IsEnabled = false;
-#endif
+            if (!NexusBuild.IsDevelopment) IsEnabled = false;
             NexusLog.Initialize(this);
             return default;
         }

@@ -323,12 +323,10 @@ namespace Nexus.Core
                 }
             }
 
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (ImplementsGenericInterface(commandType, typeof(ICommand<>)) || ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>)))
+            if (NexusBuild.IsDevelopment && (ImplementsGenericInterface(commandType, typeof(ICommand<>)) || ImplementsGenericInterface(commandType, typeof(IAsyncCommand<>))))
             {
                 NexusRuntime.Logger?.LogWarning($"[Nexus] Composite command '{commandType.Name}' implements a single-signal generic command interface (ICommand<T>/IAsyncCommand<T>), which is not supported for composites. Implement ICompositeCommand / IAsyncCompositeCommand to receive all trigger payloads, or non-generic ICommand / IAsyncCommand if no payload is needed.");
             }
-#endif
 
             var state = new CompositeTriggerState(commandType, signalTypes, oneShot, priority);
 

@@ -48,12 +48,8 @@ namespace Nexus.Core
         // Volatile: s_enabled is toggled from any thread while the Record* methods read it
         // on the hot path (same rationale as PerformanceMonitor.s_enabled — a plain bool
         // could be cached in a register and never observe the toggle).
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-        internal const bool DefaultEnabled = true;
-#else
-        // A release player records no network events unless the game sets Enabled (issue #77).
-        internal const bool DefaultEnabled = false;
-#endif
+        // On in the editor and in development players; a release player records no network events unless the game sets Enabled (issue #77).
+        internal static bool DefaultEnabled => NexusBuild.IsDevelopment;
         private static volatile bool s_enabled = DefaultEnabled;
         // True once user code has explicitly assigned Enabled; lets NexusRuntime's startup
         // default skip flags the user already chose (see NexusRuntime.InitializeMonitoring).

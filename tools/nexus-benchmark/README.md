@@ -179,8 +179,9 @@ only by Unity editor tests:
 - **`Root.Start()` async main-thread mechanics**: the harness invokes `Awake`/`Start`/
   `OnDestroy` directly and pumps a `TestSyncContext` (one continuation per frame) to
   stand in for Unity's frame loop; it does not run the real Unity message pipeline.
-- **Editor-only code**: `OnValidate` (UNITY_EDITOR), `UnityEditor.*` references, and
-  `#if UNITY_EDITOR || DEVELOPMENT_BUILD` warning branches in SignalBus.
+- **Editor-only code**: `OnValidate` (UNITY_EDITOR) and `UnityEditor.*` references. The development-build
+  paths read `NexusBuild.IsDevelopment` at run time (#140); `DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild`
+  runs them through its test override, not through `Debug.isDebugBuild`.
 - **`NEXUS_DEBUG` compiled-out tracing**: `PluginTraceSink.BeginEvent` asserts 0
   without the define (test 27) — the ring-buffer path itself only exists under the
   define and is not exercised.

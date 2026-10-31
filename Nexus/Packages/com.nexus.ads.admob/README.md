@@ -54,9 +54,8 @@ What it does:
   Xcode console as `testDeviceIdentifiers`; on iOS add the id UMP prints as well):
 
   ```csharp
-  #if DEVELOPMENT_BUILD
-  Nexus.Ads.AdMob.AdMobProvider.SetTestDevices(new[] { "33BE2250B43518CCDA7DE426D04EE231" }, eeaConsentGeography: true);
-  #endif
+  if (UnityEngine.Debug.isDebugBuild) // DEVELOPMENT_BUILD is deprecated from Unity 6000.6
+      Nexus.Ads.AdMob.AdMobProvider.SetTestDevices(new[] { "33BE2250B43518CCDA7DE426D04EE231" }, eeaConsentGeography: true);
   ```
 
   The ids reach `RequestConfiguration.TestDeviceIds` and the consent debug settings only while the

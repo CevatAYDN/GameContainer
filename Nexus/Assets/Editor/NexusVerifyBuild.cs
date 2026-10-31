@@ -26,6 +26,15 @@ namespace NexusVerify
             // its previous level written explicitly; see the finally block). NamedBuildTarget is the
             // non-obsolete Unity 6 API (the BuildTargetGroup overloads are CS0618).
             var namedTarget = NamedBuildTarget.FromBuildTargetGroup(group);
+            // Every development player holds Assets/Scripts/Verify/DeviceProbe.cs and no release player does: the
+            // define replaces DEVELOPMENT_BUILD, which Unity 6000.6 deprecates (#140).
+            if ((buildOptions & BuildOptions.Development) != 0)
+            {
+                var all = new string[(defines?.Length ?? 0) + 1];
+                defines?.CopyTo(all, 0);
+                all[all.Length - 1] = "NEXUS_DEVICE_PROBE";
+                defines = all;
+            }
             var previous = PlayerSettings.GetScriptingBackend(namedTarget);
             // BuildPlayer switches the editor's active build target and leaves it there, which changes
             // which scripting defines (e.g. the Standalone NEXUS_DEBUG) later editor runs compile with.

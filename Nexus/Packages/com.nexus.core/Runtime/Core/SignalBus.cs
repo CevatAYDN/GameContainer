@@ -211,11 +211,9 @@ namespace Nexus.Core
         [ThreadStatic]
         private static int s_stackDepth;
 
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-        // One "no subscribers" warning per signal type: a signal fired every frame without a listener would otherwise
-        // log, and build its message for, every fire.
-        private readonly System.Collections.Generic.HashSet<Type> _warnedNoHandlers = new System.Collections.Generic.HashSet<Type>();
-#endif
+        // One "no subscribers" warning per signal type in development builds: a signal fired every frame without a listener
+        // would otherwise log, and build its message for, every fire. Created with the first warning, so a release player has none.
+        private System.Collections.Generic.HashSet<Type> _warnedNoHandlers;
 
         // Reentrancy guard for the async path. Must be async-local, NOT thread-static: an
         // async dispatch is incremented on the caller's thread but its continuations (and
@@ -639,15 +637,13 @@ namespace Nexus.Core
             }
 
             // === FAST PATH: All handlers are synchronous ===
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            if (!_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _))
+            if (NexusBuild.IsDevelopment && !_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _))
             {
                 // A disabled logger drops warnings, so the message is not built for it (a test context measuring its hot path).
                 var logger = NexusRuntime.Logger;
-                if (logger.IsEnabled && _warnedNoHandlers.Add(type))
+                if (logger.IsEnabled && (_warnedNoHandlers ??= new System.Collections.Generic.HashSet<Type>()).Add(type))
                     logger.LogWarning($"[Nexus] Signal '{typeof(T).FullName}' fired but has no subscribers or command handlers registered. This may indicate a missing BindCommand or Subscribe call.");
             }
-#endif
 
             s_stackDepth++;
             if (s_stackDepth > MaxStackDepth)

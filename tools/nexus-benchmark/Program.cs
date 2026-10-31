@@ -38,6 +38,8 @@ namespace NexusBench
 
     public class TestCounter { public int Value; }
 
+    public struct UnheardSignal { }
+
     public class PerfCommand : ICommand<PerfSignal>
     {
         [Inject] public TestCounter Counter;
@@ -52,7 +54,7 @@ namespace NexusBench
         private static TestCounter _counter;
         private static int _failures;
 
-        // Issue #77: the harness compiles without UNITY_EDITOR and DEVELOPMENT_BUILD, as a release player does. It runs
+        // Issue #77: the harness compiles without UNITY_EDITOR and its Debug.isDebugBuild is false, as in a release player. It runs
         // first, before any suite assigns Enabled; the first context registered applies the defaults.
         private static void ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn()
         {
@@ -61,6 +63,57 @@ namespace NexusBench
             context.Dispose();
             Report(nameof(ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn), !performance && !network,
                 $"PerformanceMonitor.Enabled={performance} NetworkMonitor.Enabled={network} (expected both false)");
+        }
+
+        // Issue #140: the development defaults and diagnostics follow NexusBuild at run time, not the DEVELOPMENT_BUILD symbol
+        // Unity 6000.6 deprecates. The harness is a release build (its Debug.isDebugBuild is false); the override runs both.
+        private static void DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild()
+        {
+            var failures = new List<string>();
+            try
+            {
+                foreach (bool development in new[] { false, true })
+                {
+                    NexusBuild.OverrideForTests(development);
+                    string build = development ? "development" : "release";
+
+                    if (PerformanceMonitor.DefaultEnabled != development || NetworkMonitor.DefaultEnabled != development)
+                        failures.Add($"{build}: monitor defaults performance={PerformanceMonitor.DefaultEnabled} network={NetworkMonitor.DefaultEnabled}");
+
+                    if (NexusRuntime.CurrentContext != null)
+                        failures.Add($"{build}: a context is still registered, so the fallback logger cannot be read");
+                    else if (NexusRuntime.Logger.IsEnabled != development)
+                        failures.Add($"{build}: fallback logger IsEnabled={NexusRuntime.Logger.IsEnabled}");
+
+                    var service = new Nexus.Core.Services.LoggerService();
+                    service.InitializeAsync(CancellationToken.None);
+                    bool serviceEnabled = service.IsEnabled;
+                    service.OnDispose();
+                    if (serviceEnabled != development) failures.Add($"{build}: LoggerService IsEnabled={serviceEnabled} after InitializeAsync");
+
+                    var ctx = NexusTestHarness.CreateContext();
+                    try
+                    {
+                        var logger = new SvcLoggerRecorder();
+                        ctx.Context.Container.BindInstance<Nexus.Core.Services.ILoggerService>(logger);
+                        ctx.Dispatch(new UnheardSignal());
+                        ctx.Dispatch(new UnheardSignal());
+                        int warnings = logger.Messages.FindAll(m => m.Contains("has no subscribers")).Count;
+                        if (warnings != (development ? 1 : 0))
+                            failures.Add($"{build}: {warnings} no-subscriber warnings for two fires (expected {(development ? 1 : 0)})");
+                    }
+                    finally
+                    {
+                        ctx.Dispose();
+                    }
+                }
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+            }
+            Report(nameof(DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild), failures.Count == 0,
+                failures.Count == 0 ? "release and development: monitor defaults, fallback logger, LoggerService, one no-subscriber warning" : string.Join("; ", failures));
         }
 
         private static void Setup()
@@ -478,6 +531,7 @@ namespace NexusBench
         {
             _failures = 0;
             Run("ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn", ReleasePlayer_MonitorsStayOffUntilTheGameTurnsThemOn);
+            Run("DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild", DevelopmentBuild_DefaultsAndDiagnostics_FollowTheBuild);
             Run("Dispatch1000Signals_CompletesUnderTime", Dispatch1000Signals_CompletesUnderTime);
             Run("Subscribe1000AndFire_AllReceived", Subscribe1000AndFire_AllReceived);
             Run("CommandPool_ReusesInstances", CommandPool_ReusesInstances);

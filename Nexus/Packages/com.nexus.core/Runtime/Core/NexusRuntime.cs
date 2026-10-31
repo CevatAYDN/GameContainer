@@ -236,11 +236,10 @@ namespace Nexus.Core
 
         private sealed class FallbackLogger : Services.ILoggerService
         {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            public bool IsEnabled { get; set; } = true;
-#else
-            public bool IsEnabled { get; set; }
-#endif
+            // Log and LogWarning pass in the editor and in development players; errors always pass. Read when asked, not
+            // when the logger is built, which can be before NexusBuild has read the build (#140).
+            private bool? _enabled;
+            public bool IsEnabled { get => _enabled ?? NexusBuild.IsDevelopment; set => _enabled = value; }
             public void Log(string message) { if (IsEnabled) Debug.Log(message); }
             public void LogWarning(string message) { if (IsEnabled) Debug.LogWarning(message); }
             public void LogError(string message) => Debug.LogError(message);

@@ -91,7 +91,7 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
   Medium or High). `NexusVerifyBuild` fails an IL2CPP build that did not write
   `Library/Nexus/PackagesLink.xml` (#115),
 - the `[Preserve]`-annotated runtime surface survives stripping,
-- a public type that exists only in the Editor and development builds
+- a public type that exists only in the Editor and in players whose Managed Code Variant is Checked or Debug
   (`Nexus/Assets/Scripts/Verify/DevOnlyProbe.cs`) is named in the generated binder only under its own
   `#if` (issue #85; the release Mono build checks the same),
 - nothing relies on runtime JIT (`Expression.Compile` in `CommandRegistry.cs` and the
@@ -130,7 +130,7 @@ other uncommitted change to that file).
 
 `NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopment` builds the same player as a development
 build (`Nexus/builds/android-il2cpp-dev.apk`) with `Assets/Scripts/Verify/DeviceProbe.cs`, which exists
-only there: on the phone it logs `[Probe]` lines (`adb logcat -s Unity`) with the first resolve of the
+only in the development players (their builds define `NEXUS_DEVICE_PROBE`): on the phone it logs `[Probe]` lines (`adb logcat -s Unity`) with the first resolve of the
 framework services Gigawatt binds (issue #110), the managed allocations of each haptic play (issue #84) and, after each HOME and return, the time away by the wall clock,
 `Stopwatch`, `SystemClock.elapsedRealtime` and `OfflineTimeCalculator` (issue #77). Both Android players
 have the same application id, so installing one replaces the other: before a probe run, compare

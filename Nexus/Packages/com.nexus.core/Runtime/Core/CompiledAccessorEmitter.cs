@@ -176,9 +176,8 @@ namespace Nexus.Core
             // Prevent unbounded growth in long-running editor sessions
             if (s_setterCompileWarnings.Count > MaxSetterCompileWarnings) return;
             if (!s_setterCompileWarnings.TryAdd((targetType, memberName), 0)) return;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            NexusRuntime.Logger?.LogWarning($"[Nexus] Setter compilation failed for {targetType.FullName}.{memberName}: {ex.Message}. Falling back to reflection.");
-#endif
+            if (NexusBuild.IsDevelopment)
+                NexusRuntime.Logger?.LogWarning($"[Nexus] Setter compilation failed for {targetType.FullName}.{memberName}: {ex.Message}. Falling back to reflection.");
         }
 
         /// <summary>Clears the bounded warning tracker (used when DI caches are reset).</summary>

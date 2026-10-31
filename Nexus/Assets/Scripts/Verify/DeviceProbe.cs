@@ -1,4 +1,4 @@
-#if UNITY_ANDROID && DEVELOPMENT_BUILD && !UNITY_EDITOR
+#if UNITY_ANDROID && NEXUS_DEVICE_PROBE && !UNITY_EDITOR
 using System;
 using System.Collections;
 using System.Diagnostics;
@@ -12,7 +12,8 @@ namespace NexusVerify.Device
 {
     /// <summary>
     /// Phone checks for issues #77, #84 and #110, compiled only into development Android players of this project
-    /// (NexusVerifyBuild.BuildAndroidIL2CPPDevelopment). Logs "[Probe]" lines for logcat: the first resolve of the
+    /// (NexusVerifyBuild.BuildAndroidIL2CPPDevelopment), whose builds define NEXUS_DEVICE_PROBE (#140: Unity 6000.6
+    /// deprecates DEVELOPMENT_BUILD). A release player never holds it, so its references keep nothing from the linker. Logs "[Probe]" lines for logcat: the first resolve of the
     /// framework services a game binds, the GC.Alloc samples of every haptic Play (the first and later plays of two
     /// built effects), and on each resume the wall-clock, Stopwatch and elapsedRealtime time since the pause beside
     /// OfflineTimeCalculator's answer.
@@ -33,6 +34,9 @@ namespace NexusVerify.Device
         private IEnumerator Start()
         {
             ResolveFrameworkServices();
+            // Issue #140: the framework reads Debug.isDebugBuild at run time for its development defaults, not DEVELOPMENT_BUILD.
+            Debug.Log($"[Probe] development build isDebugBuild={Debug.isDebugBuild} performanceMonitor={PerformanceMonitor.Enabled} " +
+                $"networkMonitor={NetworkMonitor.Enabled} loggerEnabled={NexusRuntime.Logger.IsEnabled}");
             _haptics = new HapticService();
             _haptics.InitializeAsync(default);
             var a = _haptics.CreateEffect(45, 170);
