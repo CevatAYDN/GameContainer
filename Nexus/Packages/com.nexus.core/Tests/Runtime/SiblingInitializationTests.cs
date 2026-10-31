@@ -71,6 +71,16 @@ namespace Nexus.Tests
             }
         }
 
+        // Waits on the unscaled clock until the roots have logged `count` entries: a fixed WaitForSeconds ended
+        // early when one editor frame was slow, and the order tests failed at random (#198). The cap stays well
+        // under Root's 15 s sibling timeout, so a root that waits for a sibling it should skip still fails.
+        private IEnumerator WaitForEntries(int count, float timeoutSeconds = 5f)
+        {
+            float deadline = Time.realtimeSinceStartup + timeoutSeconds;
+            while (_initOrder.Count < count && Time.realtimeSinceStartup < deadline)
+                yield return null;
+        }
+
         [UnityTest]
         public IEnumerator SiblingRoots_InitializeInPriorityOrder()
         {
@@ -102,9 +112,7 @@ namespace Nexus.Tests
             // Activate game objects to trigger Awake/Start
             parentGo.SetActive(true);
 
-            // Wait for initialization to complete (delay should be around 100-200ms total)
-            var wait = new WaitForSeconds(0.3f);
-            yield return wait;
+            yield return WaitForEntries(6);
 
             // B (priority 10) must initialize and start before A (priority 5) starts initializing
             // Expected sequence of logs:
@@ -151,8 +159,7 @@ namespace Nexus.Tests
 
             parentGo.SetActive(true);
 
-            var wait = new WaitForSeconds(0.3f);
-            yield return wait;
+            yield return WaitForEntries(6);
 
             // SiblingA (earlier alphabetically) must start/finish first
             Assert.AreEqual(6, _initOrder.Count);
@@ -190,7 +197,7 @@ namespace Nexus.Tests
             childGoB.SetActive(false);
 
             parentGo.SetActive(true);
-            yield return new WaitForSeconds(0.1f);
+            yield return WaitForEntries(3);
 
             Assert.That(_initOrder.Count, Is.EqualTo(3).Or.EqualTo(4));
             Assert.AreEqual("ChildA_InitStart", _initOrder[0]);
@@ -218,11 +225,12 @@ namespace Nexus.Tests
             SetPrivateField(childRoot, "initializationPriority", 0);
 
             parentGo.SetActive(true);
-            yield return new WaitForSeconds(0.2f);
+            yield return WaitForEntries(3);
 
             parentGo.SetActive(false);
             parentGo.SetActive(true);
-            yield return new WaitForSeconds(0.2f);
+            // a second initialization would log its InitStart on the re-enable, before its delay
+            for (int i = 0; i < 10; i++) yield return null;
 
             var initStarts = 0;
             foreach (var entry in _initOrder)
