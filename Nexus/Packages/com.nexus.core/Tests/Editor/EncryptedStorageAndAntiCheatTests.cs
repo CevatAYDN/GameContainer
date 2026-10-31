@@ -145,6 +145,32 @@ namespace Nexus.Editor.Tests
             finally { ForgetStore(salt); }
         }
 
+        // Issue #166: a seed missing from PlayerPrefs (PlayerPrefs.DeleteAll, or a switch from App to Device binding) was replaced
+        // with no log in any build, though the save files written under it stayed on disk and could never be read again
+        [Test]
+        public void ANewSeedWithSavesOnDisk_IsAnErrorThatNamesTheCause_AndAFirstRunIsSilent()
+        {
+            const string salt = "Test_Salt_Seed166";
+            ForgetStore(salt);
+            try
+            {
+                Write(salt, StorageKeyBinding.Device, "phone-A", 1234); // a first run: no line
+
+                UnityEngine.PlayerPrefs.DeleteKey($"NT_StorageSeed_{salt}");
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"storage seed 'NT_StorageSeed_Test_Salt_Seed166' is missing from PlayerPrefs \(PlayerPrefs.DeleteAll.*\), and the 1 save file\(s\) in '.*SecureData_Test_Salt_Seed166' were written under it: they cannot be read"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'Coins' was written under the storage seed this run replaced"));
+                Assert.AreEqual(-1, Read(salt, StorageKeyBinding.Device, "phone-A"));
+
+                ForgetStore(salt);
+                Write(salt, StorageKeyBinding.App, "phone-A", 1234);
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"storage seed 'NT_StorageSeed_Test_Salt_Seed166' is missing from PlayerPrefs: the store ran with StorageKeyBinding.App, and Device binding does not take over the App seed"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'Coins' was written under the storage seed this run replaced"));
+                Assert.AreEqual(-1, Read(salt, StorageKeyBinding.Device, "phone-A"));
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally { ForgetStore(salt); }
+        }
+
         [Test]
         public void AppBinding_ReadsDataRestoredOnAnotherPhone_DeviceBindingDoesNot()
         {
@@ -554,8 +580,8 @@ namespace Nexus.Editor.Tests
                 Assert.AreEqual(-1, Read(salt, StorageKeyBinding.Device, "phone-B"), "another phone's key reads the save as tampered");
 
                 UnityEngine.PlayerPrefs.SetString($"NT_StorageSeed_{salt}", "%%%");
-                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"Storage seed decoding failed"));
-                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"tampering detected for key: Coins"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"storage seed 'NT_StorageSeed_Test_Salt_Release164' could not be decoded .*, and the 1 save file\(s\) in '.*' were written under it"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'Coins' was written under the storage seed this run replaced"));
                 Assert.AreEqual(-1, Read(salt, StorageKeyBinding.Device, "phone-A"), "a replaced seed cannot read the old save");
                 UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
             }

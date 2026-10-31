@@ -93,6 +93,8 @@ namespace Nexus.Core.Services
         private readonly object _lock = new();
         private volatile bool _disposed;
         private bool _disposing;
+        // The seed was created while save files written under the previous one existed (issue #166).
+        private readonly bool _seedReplaced;
 
         // Serializes the atomic-write critical section (stage-to-temp + rename).
         // AutoSave writes and Save() batches can otherwise race on the SAME fixed temp
@@ -143,32 +145,46 @@ namespace Nexus.Core.Services
             if (customSalt != "Nexus_Secure_Salt_2026")
                 seedKey = $"NT_StorageSeed_{customSalt}";
 
+            _storageFolderPath = customSalt == "Nexus_Secure_Salt_2026"
+                ? Path.Combine(Application.persistentDataPath, "SecureData")
+                : Path.Combine(Application.persistentDataPath, $"SecureData_{customSalt}");
+
+            const string missing = "is missing from PlayerPrefs (PlayerPrefs.DeleteAll, or PlayerPrefs reset without the save files)";
             byte[] seedBytes;
+            string appSeedKey = seedKey + "_App";
             if (binding == StorageKeyBinding.App)
             {
                 byte[] appBoundKey = sha256.ComputeHash(Encoding.UTF8.GetBytes($"app_{customSalt}_{Application.identifier}"));
-                string appSeedKey = seedKey + "_App";
-                if (!string.IsNullOrEmpty(PlayerPrefs.GetString(appSeedKey, null)))
+                if (HasSeed(appSeedKey))
                 {
-                    seedBytes = ReadOrRegenerateSeed(appSeedKey, appBoundKey);
+                    seedBytes = ReadOrRegenerateSeed(appSeedKey, appBoundKey, _storageFolderPath, out _seedReplaced);
                 }
                 else
                 {
                     // Take over the device-bound seed (same keys, so existing files stay readable), or start one.
-                    seedBytes = !string.IsNullOrEmpty(PlayerPrefs.GetString(seedKey, null))
-                        ? ReadOrRegenerateSeed(seedKey, deviceBoundKey)
-                        : NewSeed();
+                    if (HasSeed(seedKey))
+                    {
+                        seedBytes = ReadOrRegenerateSeed(seedKey, deviceBoundKey, _storageFolderPath, out _seedReplaced);
+                    }
+                    else
+                    {
+                        seedBytes = NewSeed();
+                        _seedReplaced = ReportNewSeed(appSeedKey, missing, _storageFolderPath, corrupt: false);
+                    }
                     StoreSeed(appSeedKey, seedBytes, appBoundKey);
                 }
             }
-            else if (string.IsNullOrEmpty(PlayerPrefs.GetString(seedKey, null)))
+            else if (!HasSeed(seedKey))
             {
                 seedBytes = NewSeed();
                 StoreSeed(seedKey, seedBytes, deviceBoundKey);
+                _seedReplaced = ReportNewSeed(seedKey, HasSeed(appSeedKey)
+                    ? "is missing from PlayerPrefs: the store ran with StorageKeyBinding.App, and Device binding does not take over the App seed"
+                    : missing, _storageFolderPath, corrupt: false);
             }
             else
             {
-                seedBytes = ReadOrRegenerateSeed(seedKey, deviceBoundKey);
+                seedBytes = ReadOrRegenerateSeed(seedKey, deviceBoundKey, _storageFolderPath, out _seedReplaced);
             }
 
             // Derive actual encryption & HMAC keys from the secure random seed
@@ -190,10 +206,6 @@ namespace Nexus.Core.Services
             _legacyHmacKey = new byte[16];
             Array.Copy(finalHash, 0, _legacyEncryptionKey, 0, 16);
             Array.Copy(finalHash, 16, _legacyHmacKey, 0, 16);
-
-            _storageFolderPath = customSalt == "Nexus_Secure_Salt_2026"
-                ? Path.Combine(Application.persistentDataPath, "SecureData")
-                : Path.Combine(Application.persistentDataPath, $"SecureData_{customSalt}");
 
             if (!Directory.Exists(_storageFolderPath))
                 Directory.CreateDirectory(_storageFolderPath);
@@ -224,20 +236,43 @@ namespace Nexus.Core.Services
             PlayerPrefs.Save();
         }
 
-        private static byte[] ReadOrRegenerateSeed(string prefsKey, byte[] obfuscationKey)
+        private static bool HasSeed(string prefsKey) => !string.IsNullOrEmpty(PlayerPrefs.GetString(prefsKey, null));
+
+        private static byte[] ReadOrRegenerateSeed(string prefsKey, byte[] obfuscationKey, string folder, out bool savesLost)
         {
+            savesLost = false;
             try
             {
                 return Xor(Convert.FromBase64String(PlayerPrefs.GetString(prefsKey, null)), obfuscationKey);
             }
             catch (Exception ex)
             {
-                // Fallback in case of corruption: generate new and log warning
-                NexusLog.WarnAlways($"[EncryptedStorageService] Storage seed decoding failed ({ex.Message}). Regenerating new secure seed.");
                 var seed = NewSeed();
                 StoreSeed(prefsKey, seed, obfuscationKey);
+                savesLost = ReportNewSeed(prefsKey, $"could not be decoded ({ex.Message})", folder, corrupt: true);
                 return seed;
             }
+        }
+
+        /// <summary>
+        /// A new seed is a first run only while no save files exist: files on disk were written under the seed that is gone
+        /// and cannot be read again, which is an error in every build (issue #166). Returns true when save files existed.
+        /// </summary>
+        private static bool ReportNewSeed(string prefsKey, string cause, string folder, bool corrupt)
+        {
+            int saves = 0;
+            if (Directory.Exists(folder))
+                foreach (var file in Directory.EnumerateFiles(folder))
+                    if (file.EndsWith(".dat", StringComparison.Ordinal) || file.EndsWith(".dat.bak", StringComparison.Ordinal)) saves++;
+            if (saves > 0)
+            {
+                NexusRuntime.Logger?.LogError(
+                    $"[EncryptedStorageService] The storage seed '{prefsKey}' {cause}, and the {saves} save file(s) in '{folder}' were written under it: " +
+                    "they cannot be read, and each of their keys reads as its default until it is written again. A new seed was created.");
+                return true;
+            }
+            if (corrupt) NexusLog.WarnAlways($"[EncryptedStorageService] The storage seed '{prefsKey}' {cause}; no save file existed, so a new seed was created.");
+            return false;
         }
 
         // Instance method-group handlers on the STATIC Application.focusChanged /
@@ -559,7 +594,10 @@ namespace Nexus.Core.Services
 
         private void LogTamperWarning(string key)
         {
-            NexusLog.WarnAlways($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
+            if (_seedReplaced)
+                NexusLog.WarnAlways($"[EncryptedStorage] The save file for key '{key}' was written under the storage seed this run replaced (see the error at start): reverting to default.");
+            else
+                NexusLog.WarnAlways($"[EncryptedStorage] Save file tampering detected for key: {key}! Reverting to default.");
         }
 
         /// <summary>

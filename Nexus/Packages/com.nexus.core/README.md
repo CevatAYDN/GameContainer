@@ -158,7 +158,10 @@ new phone, where every value then reads as tampered and reverts to its default. 
 must keep on a new phone (purchases, progress, reward ledgers) construct it with
 `new EncryptedStorageService(salt, StorageKeyBinding.App)`: the seed is bound to the app and the salt,
 the first run takes over the device-bound seed so existing data stays readable, and a copied save
-then also opens on another phone. Keep `Device` where a save must not move between phones. `SettingsStores` names, per service (audio, haptics, economy, progression), the
+then also opens on another phone. Keep `Device` where a save must not move between phones. The seed is kept in
+PlayerPrefs and the saves in files: `PlayerPrefs.DeleteAll`, or a switch from `App` back to `Device`, leaves files no
+seed can read, and the next start logs an error in every build that names the cause and the file count (issue #166).
+`SettingsStores` names, per service (audio, haptics, economy, progression), the
 `IPlayerPrefsService` that keeps its state, for a game that keeps it in its own save; a slot left null uses the bound
 `IPlayerPrefsService`, and the key names stay the same. `GameSaveManager` (`Nexus.Core.Extensions`) writes one registered
 `ISaveDataProvider` to a JSON slot file under the persistent data path and reads it back; it is a
