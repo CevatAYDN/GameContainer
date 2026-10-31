@@ -166,7 +166,8 @@ seed can read, and the next start logs an error in every build that names the ca
 `IPlayerPrefsService`, and the key names stay the same. `GameSaveManager` (`Nexus.Core.Extensions`) writes one registered
 `ISaveDataProvider` to a JSON slot file under the persistent data path and reads it back; it is a
 starting point, not a save system: a game keeps its own save format and decides when to save.
-`SaveThrottler` (used by `EconomyService` and `ProgressionService`) limits how often a service writes.
+`SaveThrottler` (used by `EconomyService` and `ProgressionService`) limits how often a service writes;
+a write it holds back is made when the app loses focus or pauses, also while the `TickService` is paused (issue #167).
 
 Logging: `LoggerService`, and the fallback logger `NexusRuntime.Logger` returns while no `ILoggerService` is
 bound, drop `Log` and `LogWarning` in a release player (not the editor, not a development build); `LogError` and

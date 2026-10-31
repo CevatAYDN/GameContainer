@@ -2,9 +2,11 @@ using NUnit.Framework;
 using Nexus.Core;
 using Nexus.Core.Services;
 using System;
+using System.Collections;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Nexus.Tests
 {
@@ -70,6 +72,79 @@ namespace Nexus.Tests
             throttler.Tick(0.016f);
 
             Assert.GreaterOrEqual(prefs.SaveCount, 1);
+            throttler.OnDispose();
+        }
+
+        private sealed class ThrottledSaves : IContextLifecycle
+        {
+            public void OnConfigure(IContextBuilder builder)
+            {
+                builder.BindInstance<ITickService>(new TestTickService { IsPaused = true }); // an ad holds the pause: Tick does not run
+                builder.BindInstance<ITimeProvider>(new TestTimeProvider());
+                builder.BindService<ISaveThrottler, SaveThrottler>();
+            }
+            public ValueTask OnInitializeAsync(CancellationToken ct) => default;
+            public ValueTask OnStartAsync(CancellationToken ct) => default;
+            public void OnDispose() { }
+        }
+
+        // Issue #167: a save requested inside the throttle window waited for Tick, which a paused TickService skips and a
+        // process killed in the background never reaches, so a level-end Earn followed by Home could be lost with no line
+        [UnityTest]
+        public IEnumerator APendingSave_IsWrittenWhenTheAppPauses_WhateverTheTickState()
+        {
+            Root.ClearRegistry();
+            var go = new GameObject("ThrottleRoot");
+            try
+            {
+                go.SetActive(false);
+                var root = go.AddComponent<Root>();
+                var data = ScriptableObject.CreateInstance<ContextData>();
+                data.ScopeTag = "ThrottleRoot";
+                data.AssemblyScopes = Array.Empty<string>();
+                root.SetUp(data);
+                root.RegisterLifecycle(new ThrottledSaves());
+                go.SetActive(true);
+                float deadline = Time.realtimeSinceStartup + 5f;
+                while (!root.IsInitialized && Time.realtimeSinceStartup < deadline) yield return null;
+                Assert.That(root.IsInitialized, Is.True, "the root did not start in 5 s");
+
+                var throttler = root.Context.Resolve<ISaveThrottler>();
+                int economy = 0, progression = 0;
+                throttler.TryRequestSave("economy", () => economy++);
+                throttler.TryRequestSave("economy", () => economy++); // inside the window: pending
+                throttler.TryRequestSave("progression", () => progression++);
+                Assert.AreEqual(1, economy);
+
+                go.SendMessage("OnApplicationPause", false);
+                Assert.AreEqual(1, economy, "a resume writes nothing");
+                go.SendMessage("OnApplicationPause", true);
+                Assert.AreEqual(2, economy, "the pending save is written on pause");
+                Assert.AreEqual(1, progression, "an owner with nothing pending is not written again");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(go);
+                Root.ClearRegistry();
+            }
+        }
+
+        // Issue #167: focus loss comes first on Android and also covers a context without a Root. Unity's focusChanged
+        // event cannot be raised from a test, so the handler is called directly.
+        [Test]
+        public void APendingSave_IsWrittenWhenTheAppLosesFocus()
+        {
+            var throttler = new SaveThrottler(new TestTickService(), TimeSpan.FromSeconds(2)) { TimeProvider = new TestTimeProvider() };
+            throttler.InitializeAsync(CancellationToken.None);
+            int saves = 0;
+            throttler.TryRequestSave(() => saves++);
+            throttler.TryRequestSave(() => saves++); // inside the window: pending
+            var onFocus = typeof(SaveThrottler).GetMethod("OnFocusChanged", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            Assert.IsNotNull(onFocus, "the throttler has a focus handler");
+            onFocus.Invoke(throttler, new object[] { true });
+            Assert.AreEqual(1, saves, "gaining focus writes nothing");
+            onFocus.Invoke(throttler, new object[] { false });
+            Assert.AreEqual(2, saves, "the pending save is written on focus loss");
             throttler.OnDispose();
         }
     }

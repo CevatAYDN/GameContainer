@@ -38,6 +38,11 @@ namespace Nexus.Core.Services
     {
         [Inject] public ITickService TickService { get; set; }
         [Inject] public ITimeProvider TimeProvider { get; set; }
+        /// <summary>The context's bus, for <see cref="ApplicationPauseSignal"/>; optional so a throttler built by hand still works.</summary>
+        [OptionalInject] public ISignalBus SignalBus { get; set; }
+
+        private ISignalSubscription _pauseSubscription;
+        private bool _focusHooked;
 
         private readonly float _throttleSeconds = 2f;
 
@@ -102,16 +107,59 @@ namespace Nexus.Core.Services
         public ValueTask InitializeAsync(CancellationToken ct)
         {
             TickService?.RegisterTickable(this);
+            // A pending save waited for Tick, which a paused TickService skips (an ad holds the pause) and a process killed in
+            // the background never reaches: the economy or progression change was lost with no line (issue #167). The app
+            // losing focus or pausing now writes it, synchronously, because Android may freeze the process right after.
+            _pauseSubscription = SignalBus?.Subscribe<ApplicationPauseSignal>(OnApplicationPause);
+            Application.focusChanged += OnFocusChanged;
+            _focusHooked = true;
             return default;
+        }
+
+        private void OnApplicationPause(ApplicationPauseSignal signal)
+        {
+            if (signal.IsPaused) FlushPending();
+        }
+
+        private void OnFocusChanged(bool hasFocus)
+        {
+            if (!hasFocus) FlushPending();
         }
 
         public void OnDispose()
         {
             TickService?.UnregisterTickable(this);
+            _pauseSubscription?.Dispose();
+            _pauseSubscription = null;
+            if (_focusHooked)
+            {
+                Application.focusChanged -= OnFocusChanged;
+                _focusHooked = false;
+            }
             // Persist every owner's pending (or last) save so no throttled write is lost
             // at teardown, then drop the slots.
             Flush();
             lock (_lock) { _slots.Clear(); }
+        }
+
+        /// <summary>
+        /// Writes every owner's pending save now, whatever its throttle window, for the app going to the background. An owner
+        /// with nothing pending is not written again, so focus loss followed by pause (Android) writes once.
+        /// </summary>
+        private void FlushPending()
+        {
+            List<SaveSlot> due = null;
+            lock (_lock)
+            {
+                foreach (var kvp in _slots)
+                {
+                    if (!kvp.Value.Pending) continue;
+                    kvp.Value.Pending = false; // claim before releasing the lock, as Tick does
+                    (due ??= new List<SaveSlot>(2)).Add(kvp.Value);
+                }
+            }
+            if (due == null) return;
+            for (int i = 0; i < due.Count; i++) FlushSlot(due[i]);
         }
 
         public void TryRequestSave(Action saveAction) => TryRequestSave(DefaultOwner, saveAction);
@@ -204,8 +252,8 @@ namespace Nexus.Core.Services
             FlushSlot(slot);
         }
 
-        /// <summary>Flushes EVERY owner's last save — the "persist everything now" path
-        /// (dispose, focus loss, explicit flush). One owner's failure never stops the others.</summary>
+        /// <summary>Flushes EVERY owner's last save, pending or not — the "persist everything now" path (dispose,
+        /// explicit flush). Focus loss and pause write only the pending saves. One owner's failure never stops the others.</summary>
         public void Flush()
         {
             SaveSlot[] all;
