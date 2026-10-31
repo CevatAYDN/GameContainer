@@ -67,7 +67,7 @@ One row per dependency (#138; the rule is in `CLAUDE.md`, Dependencies). Minimum
 | `com.unity.ide.rider` (development project) | none | 3.1.0 (6000.6.7f1 took it at the first open) | 3.1.0 (2026-09-07) | |
 | `com.unity.ide.visualstudio` (development project) | none | 2.0.29 (`devpackages-20261031`) | 2.0.29 (2026-10-28) | |
 | `com.unity.render-pipelines.universal` (development project) | none | 17.6.0, the editor's built-in package (17.5.0 on 6000.5.6f1) | set by the editor | |
-| `com.unity.test-framework` (development project) | none | 1.8.0, the editor's built-in package (1.7.0 on 6000.5.6f1) | set by the editor | |
+| `com.unity.test-framework` | 1.8.0 (core editor asmdef: the filter that keeps a test run out of the Error Dashboard compiles with it, #193) | 1.8.0, the editor's built-in package (1.7.0 on 6000.5.6f1) | set by the editor | |
 
 ## Policy
 

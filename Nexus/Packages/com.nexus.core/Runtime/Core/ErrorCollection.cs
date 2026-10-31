@@ -74,6 +74,8 @@ namespace Nexus.Core
         // Opt-out for the global Unity log hook (see InitializeLogHook). Volatile: read by
         // logMessageReceivedThreaded on arbitrary threads.
         private static volatile bool s_captureUnityLogs = true;
+        // Set by the editor while tests run (issue #193). Volatile for the same reason as s_enabled.
+        private static volatile bool s_suspended;
 
         /// <summary>
         /// Raised for every collected entry.
@@ -108,6 +110,16 @@ namespace Nexus.Core
             set => s_captureUnityLogs = value;
         }
 
+        /// <summary>
+        /// True while the editor runs tests (issue #193): nothing is collected, so the errors tests provoke on purpose
+        /// stay out of the Error Dashboard. Console lines are still written, where <c>LogAssert</c> expects them.
+        /// </summary>
+        internal static bool Suspended
+        {
+            get => s_suspended;
+            set => s_suspended = value;
+        }
+
         public static int MaxErrors
         {
             get => s_maxErrors;
@@ -122,7 +134,41 @@ namespace Nexus.Core
         public static void Collect(ErrorSeverity severity, ErrorCategory category, string message, string stackTrace = null, string context = null, string relatedType = null, bool logToConsole = true)
         {
             if (!s_enabled) return;
+            if (!s_suspended) Add(severity, category, message, stackTrace, context, relatedType);
 
+            // Log to Unity console for backward compatibility (unless disabled)
+            if (logToConsole)
+            {
+                // This entry is already collected: keep the log callback from collecting its console line a second time.
+                bool wasInLogCallback = s_inLogCallback;
+                s_inLogCallback = true;
+                try
+                {
+                    switch (severity)
+                    {
+                        case ErrorSeverity.Info:
+                            Debug.Log($"[Nexus Info] {message}");
+                            break;
+                        case ErrorSeverity.Warning:
+                            Debug.LogWarning($"[Nexus Warning] {message}");
+                            break;
+                        case ErrorSeverity.Error:
+                            Debug.LogError($"[Nexus Error] {message}");
+                            break;
+                        case ErrorSeverity.Critical:
+                            Debug.LogError($"[Nexus CRITICAL] {message}");
+                            break;
+                    }
+                }
+                finally
+                {
+                    s_inLogCallback = wasInLogCallback;
+                }
+            }
+        }
+
+        private static void Add(ErrorSeverity severity, ErrorCategory category, string message, string stackTrace, string context, string relatedType)
+        {
             var entry = new ErrorEntry
             {
                 Id = System.Threading.Interlocked.Increment(ref s_nextId),
@@ -185,36 +231,6 @@ namespace Nexus.Core
             // silently.
             RaiseErrorAdded(entry);
             RaiseErrorCountChanged(s_errors.Count, s_maxErrors);
-
-            // Log to Unity console for backward compatibility (unless disabled)
-            if (logToConsole)
-            {
-                // This entry is already collected: keep the log callback from collecting its console line a second time.
-                bool wasInLogCallback = s_inLogCallback;
-                s_inLogCallback = true;
-                try
-                {
-                    switch (severity)
-                    {
-                        case ErrorSeverity.Info:
-                            Debug.Log($"[Nexus Info] {message}");
-                            break;
-                        case ErrorSeverity.Warning:
-                            Debug.LogWarning($"[Nexus Warning] {message}");
-                            break;
-                        case ErrorSeverity.Error:
-                            Debug.LogError($"[Nexus Error] {message}");
-                            break;
-                        case ErrorSeverity.Critical:
-                            Debug.LogError($"[Nexus CRITICAL] {message}");
-                            break;
-                    }
-                }
-                finally
-                {
-                    s_inLogCallback = wasInLogCallback;
-                }
-            }
         }
 
         public static void CollectException(Exception ex, ErrorCategory category = ErrorCategory.General, string context = null)
@@ -327,7 +343,7 @@ namespace Nexus.Core
 
         private static void OnUnityLogReceived(string condition, string stackTrace, LogType type)
         {
-            if (!s_enabled || !s_captureUnityLogs) return;
+            if (!s_enabled || !s_captureUnityLogs || s_suspended) return;
             // Guard against infinite loop: if a subscriber of OnErrorAdded calls Debug.Log,
             // that re-enters this callback. Without the guard, the call stack grows until
             // a StackOverflowException crashes the process.

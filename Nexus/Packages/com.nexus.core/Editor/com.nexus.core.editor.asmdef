@@ -3,7 +3,9 @@
     "rootNamespace": "Nexus.Editor",
     "references": [
         "Unity.Profiling.Core",
-        "com.nexus.core"
+        "com.nexus.core",
+        "UnityEditor.TestRunner",
+        "UnityEngine.TestRunner"
     ],
     "includePlatforms": [
         "Editor"
@@ -14,6 +16,12 @@
     "precompiledReferences": [],
     "autoReferenced": true,
     "defineConstraints": [],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.test-framework",
+            "expression": "1.8.0",
+            "define": "NEXUS_TEST_FRAMEWORK"
+        }
+    ],
     "noEngineReferences": false
 }
