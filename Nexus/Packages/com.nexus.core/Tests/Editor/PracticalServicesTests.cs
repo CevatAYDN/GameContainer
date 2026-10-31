@@ -95,6 +95,22 @@ namespace Nexus.Editor.Tests
             storage.DeleteKey("NT_LastQuitMonotonicMs");
         }
 
+        // Issue #205: every timestamp key shared one monotonic tick, so recording slot B clamped slot A's offline time
+        // to the time since B's quit.
+        [Test]
+        public void OfflineTimeCalculator_RecordingOneKey_DoesNotClampTheOfflineTimeOfAnother()
+        {
+            var prefs = new InMemoryPlayerPrefsService();
+            OfflineTimeCalculator.RecordQuitTimestamp(prefs, "slotA");
+            // slot A quit an hour ago: move every value it stored back by an hour (seconds and milliseconds)
+            foreach (var key in new System.Collections.Generic.List<string>(prefs.Keys))
+                prefs.SetLong(key, prefs.GetLong(key) - (key == "slotA" ? 3600L : 3600L * 1000L));
+
+            OfflineTimeCalculator.RecordQuitTimestamp(prefs, "slotB");
+
+            Assert.GreaterOrEqual(OfflineTimeCalculator.CalculateOfflineSeconds(prefs, 28800L, "slotA"), 3590L);
+        }
+
         [Test]
         public void InputService_MoveInput_And_PlayerMoveSignal_Works()
         {

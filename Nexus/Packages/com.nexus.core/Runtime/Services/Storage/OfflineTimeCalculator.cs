@@ -27,6 +27,9 @@ namespace Nexus.Core.Services
         private const string DefaultTimestampKey = "NT_LastQuitTimestamp";
         private const string DefaultMonotonicKey = "NT_LastQuitMonotonicMs";
 
+        // Each timestamp key keeps its own tick: a shared one clamped slot A to the time since slot B's quit (issue #205).
+        private static string MonotonicKeyFor(string key) => key == DefaultTimestampKey ? DefaultMonotonicKey : key + "_MonotonicMs";
+
         private static long GetMonotonicMs()
         {
 #if UNITY_ANDROID && !UNITY_EDITOR
@@ -42,7 +45,8 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// Saves the current UTC timestamp and hardware monotonic tick into storage.
+        /// Saves the current UTC timestamp under <paramref name="key"/> and the hardware monotonic tick beside it
+        /// (<c>NT_LastQuitMonotonicMs</c> for the default key, <c>&lt;key&gt;_MonotonicMs</c> for any other).
         /// Call in OnApplicationPause / OnApplicationQuit.
         /// </summary>
         public static void RecordQuitTimestamp(IPlayerPrefsService storage, string key = DefaultTimestampKey)
@@ -50,7 +54,7 @@ namespace Nexus.Core.Services
             if (storage == null) return;
             long now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             storage.SetLong(key, now);
-            storage.SetLong(DefaultMonotonicKey, GetMonotonicMs());
+            storage.SetLong(MonotonicKeyFor(key), GetMonotonicMs());
             storage.Save();
         }
 
@@ -79,7 +83,7 @@ namespace Nexus.Core.Services
             // Hardware monotonic validation. On the same boot session, the true elapsed
             // time cannot exceed what the hardware monotonic clock measured, so a clock pushed
             // forward (wall diff inflated) is clamped back to real elapsed time.
-            long lastMonotonic = storage.GetLong(DefaultMonotonicKey, 0L);
+            long lastMonotonic = storage.GetLong(MonotonicKeyFor(key), 0L);
             if (lastMonotonic > 0)
             {
                 long monoDiffMs = GetMonotonicMs() - lastMonotonic;

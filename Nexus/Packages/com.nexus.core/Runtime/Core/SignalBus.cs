@@ -506,11 +506,13 @@ namespace Nexus.Core
             await FireInternalAsync(signal, isCrossContextSource: false);
         }
 
-        private HybridQueue _cachedHybridQueue;
+        // volatile: FireThreadSafe reads it without the lock from any thread (issue #205).
+        private volatile HybridQueue _cachedHybridQueue;
         private readonly object _hybridQueueLock = new();
         private HybridQueue GetHybridQueue()
         {
-            if (_cachedHybridQueue != null) return _cachedHybridQueue;
+            var cached = _cachedHybridQueue;
+            if (cached != null) return cached;
             lock (_hybridQueueLock)
             {
                 if (_cachedHybridQueue != null) return _cachedHybridQueue;
@@ -519,12 +521,17 @@ namespace Nexus.Core
                 // bus.  Standalone/test buses are also valid, however; provision a private
                 // queue instead of turning FireThreadSafe into an unregistered-dependency
                 // exception.  This fallback is initialized once and never runs on the hot path.
-                _cachedHybridQueue = _container.IsRegistered(typeof(HybridQueue))
-                    ? _container.Resolve<HybridQueue>()
-                    : new HybridQueue(this);
-                if (!_container.IsRegistered(typeof(HybridQueue)))
-                    _container.BindInstance(_cachedHybridQueue);
-                return _cachedHybridQueue;
+                HybridQueue queue;
+                if (_container.IsRegistered(typeof(HybridQueue)))
+                    queue = _container.Resolve<HybridQueue>();
+                else
+                {
+                    queue = new HybridQueue(this);
+                    _container.BindInstance(queue);
+                }
+                // published last, so a thread that reads it without the lock finds it bound
+                _cachedHybridQueue = queue;
+                return queue;
             }
         }
 

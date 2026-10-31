@@ -79,7 +79,7 @@ context, or in the root container with `Lifetime.Singleton`.
   automatic registration when the view is enabled (OnEnable), the mediator is taken from the pool/resolved,
   `mediator.Bind(view, bus)` is called. **The view is injected BEFORE Bind**
   (guaranteed access to `[Inject]` services inside OnBind).
-- Mediator **pooling**: `IResettable.Reset()` is called on every pool pop/return;
+- Mediator **pooling**: `IResettable.Reset()` is called on every pool pop;
   `ClearInjectedReferences` clears on pool return; `OnReset()` clears derived
   state (idempotent contract). There is `PoolPopCount`/`PoolLeakWarnings` telemetry.
 - `ScreenMediator<TView>` — adds screen lifecycle hooks (`OnScreenOpened`/

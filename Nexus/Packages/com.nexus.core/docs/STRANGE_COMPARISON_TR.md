@@ -79,7 +79,7 @@ bağlamda ya da `Lifetime.Singleton` ile root container'da kaydedilebilir.
   view OnEnable olunca otomatik kayıt, mediator havuzdan alınır/çözülür,
   `mediator.Bind(view, bus)` çağrılır. **Inject view'a Bind'den ÖNCE yapılır**
   (OnBind içinde `[Inject]` servislere erişim garantisi).
-- Mediator **havuzlama**: `IResettable.Reset()` her pool pop/return'de çağrılır;
+- Mediator **havuzlama**: `IResettable.Reset()` her pool pop'ta çağrılır;
   `ClearInjectedReferences` pool return'de temizler; `OnReset()` türemiş durumu
   temizler (idempotent sözleşme). `PoolPopCount`/`PoolLeakWarnings` telemetrisi var.
 - `ScreenMediator<TView>` — ekran yaşam döngüsü hook'ları (`OnScreenOpened`/

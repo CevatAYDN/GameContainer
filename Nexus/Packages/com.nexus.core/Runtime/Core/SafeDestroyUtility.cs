@@ -27,14 +27,7 @@ namespace Nexus.Core
         public static void SafeDestroy(UnityEngine.Object obj)
         {
             if (ReferenceEquals(obj, null)) return;
-            if (s_mainThreadId != -1 && Thread.CurrentThread.ManagedThreadId != s_mainThreadId)
-            {
-                // Unity objects, their == operator included, belong to the main thread.
-                var context = s_mainThreadContext;
-                if (context != null) context.Post(state => SafeDestroy((UnityEngine.Object)state), obj);
-                else NexusRuntime.Logger?.LogError("[Nexus] SafeDestroy was called off the main thread and no main-thread context was captured; the object was not destroyed.");
-                return;
-            }
+            if (PostedToMainThread(state => SafeDestroy((UnityEngine.Object)state), obj)) return;
             if (obj == null) return;
 #if UNITY_EDITOR
             if (!Application.isPlaying)
@@ -44,6 +37,25 @@ namespace Nexus.Core
             }
 #endif
             UnityEngine.Object.Destroy(obj);
+        }
+
+        /// <summary>Destroys the component's GameObject; <c>gameObject</c> is read on the main thread too.</summary>
+        public static void SafeDestroyGameObject(Component component)
+        {
+            if (ReferenceEquals(component, null)) return;
+            if (PostedToMainThread(state => SafeDestroyGameObject((Component)state), component)) return;
+            if (component == null) return;
+            SafeDestroy(component.gameObject);
+        }
+
+        private static bool PostedToMainThread(SendOrPostCallback callback, object state)
+        {
+            if (s_mainThreadId == -1 || Thread.CurrentThread.ManagedThreadId == s_mainThreadId) return false;
+            // Unity objects, their == operator included, belong to the main thread.
+            var context = s_mainThreadContext;
+            if (context != null) context.Post(callback, state);
+            else NexusRuntime.Logger?.LogError("[Nexus] SafeDestroy was called off the main thread and no main-thread context was captured; the object was not destroyed.");
+            return true;
         }
     }
 }

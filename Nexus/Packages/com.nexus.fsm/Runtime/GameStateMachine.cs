@@ -380,9 +380,11 @@ namespace Nexus.Core.FSM
 
             // Subscriber exceptions must not propagate up into ChangeStateAsync and cause
             // a spurious StateTransitionStatus.Failed. Log them independently.
-            if (OnStateChanged != null)
+            // One read: the last subscriber can leave between a null check and a second read (issue #205).
+            var stateChanged = OnStateChanged;
+            if (stateChanged != null)
             {
-                var handlers = OnStateChanged.GetInvocationList();
+                var handlers = stateChanged.GetInvocationList();
                 for (int i = 0; i < handlers.Length; i++)
                 {
                     try { ((Action<StateTransitionRecord>)handlers[i])(record); }

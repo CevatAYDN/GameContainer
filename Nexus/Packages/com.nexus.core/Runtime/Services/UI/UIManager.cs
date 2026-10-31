@@ -228,7 +228,7 @@ namespace Nexus.Core.Services
                     if (screen == null) return null; // already destroyed — nothing to clean up
                     if (instantiated)
                     {
-                        SafeDestroy(screen.gameObject);
+                        SafeDestroyUtility.SafeDestroy(screen.gameObject);
                     }
                     else
                     {
@@ -252,7 +252,7 @@ namespace Nexus.Core.Services
                         // Defensive: reservation should prevent this, but if a pool was
                         // reused while an instance is active, destroy the duplicate.
                         NexusRuntime.Logger?.LogWarning($"[UIManager] Screen '{key}' already active; discarding duplicate instance.");
-                        SafeDestroy(screen.gameObject);
+                        SafeDestroyUtility.SafeDestroy(screen.gameObject);
                         return _activeScreens[key] as TScreen;
                     }
                 }
@@ -318,7 +318,7 @@ namespace Nexus.Core.Services
                 if (screen == null)
                 {
                     NexusRuntime.Logger?.LogError($"[UIManager] Prefab for '{key}' has no {typeof(TScreen).Name} component.");
-                    SafeDestroy(instance);
+                    SafeDestroyUtility.SafeDestroy(instance);
                     return null;
                 }
                 if (Context != null) instance.AddComponent<ScreenOwner>().Context = Context;
@@ -327,7 +327,7 @@ namespace Nexus.Core.Services
             }
             finally
             {
-                SafeDestroy(holder);
+                SafeDestroyUtility.SafeDestroy(holder);
             }
         }
 
@@ -344,7 +344,7 @@ namespace Nexus.Core.Services
                 if (pool.Count < MaxPooledPerScreenKey)
                     pool.Push(screen);
                 else
-                    SafeDestroy(screen.gameObject);
+                    SafeDestroyUtility.SafeDestroy(screen.gameObject);
             }
         }
 
@@ -446,12 +446,12 @@ namespace Nexus.Core.Services
                     }
                     if (!pooled)
                     {
-                        SafeDestroy(screen.gameObject);
+                        SafeDestroyUtility.SafeDestroy(screen.gameObject);
                     }
                 }
                 else
                 {
-                    SafeDestroy(screen.gameObject);
+                    SafeDestroyUtility.SafeDestroy(screen.gameObject);
                 }
 
                 _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
@@ -567,15 +567,6 @@ namespace Nexus.Core.Services
             return typeof(TScreen).AssemblyQualifiedName;
         }
 
-        private static void SafeDestroy(UnityEngine.Object obj)
-        {
-            if (obj == null) return;
-            if (Application.isPlaying)
-                UnityEngine.Object.Destroy(obj);
-            else
-                UnityEngine.Object.DestroyImmediate(obj);
-        }
-
         public override void Dispose()
         {
             if (_disposed) return;
@@ -595,11 +586,9 @@ namespace Nexus.Core.Services
                 _pendingCloses.Clear();
             }
 
+            // Dispose may run on a worker: the utility reads gameObject and destroys on the main thread.
             foreach (var screen in toDestroy)
-            {
-                if (screen != null)
-                    SafeDestroy(screen.gameObject);
-            }
+                SafeDestroyUtility.SafeDestroyGameObject(screen);
 
             // NOTE: do not destroy the shared [Nexus_UICanvas] here. It is a DontDestroyOnLoad
             // singleton shared by every UI canvas owner across scene/context teardown;
