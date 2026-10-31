@@ -63,16 +63,11 @@ One row per dependency (#138; the rule is in `CLAUDE.md`, Dependencies). Minimum
 | `Reflex` (gate 10) | none | 14.4.0 (pinned commit) | 14.4.0 (2026-10-10) | |
 | `Zenject` (gate 10) | none | 9.2.0 (pinned commit) | 9.2.0 (2020-05-25, no release since) | |
 | `com.coplaydev.unity-mcp` (development project) | none | 10.3.0 (`aa5fc63`, the commit of its tag `v10.3.0`, which the manifest pins) | 10.3.0 (2026-10-04) | |
-| `com.unity.pipeline` (development project) | none | 0.8.0-exp.1 | 0.9.1-exp.1 (2026-10-23; the package has only pre-releases) | 0.9.1-exp.1 in the cycle on the next target |
-| `com.unity.ai.navigation` (development project) | none | 2.0.16 (6000.6.7f1 took it at the first open) | 2.0.16 (2026-10-07) | The template packages move to their newest in the cycle on the next target, or leave the project if nothing uses them |
-| `com.unity.collab-proxy` (development project) | none | 2.13.6 (6000.6.7f1 took it at the first open) | 2.14.0 (2026-10-26) | As above |
-| `com.unity.ide.rider` (development project) | none | 3.1.0 (6000.6.7f1 took it at the first open) | 3.1.0 (2026-09-07) | As above |
-| `com.unity.ide.visualstudio` (development project) | none | 2.0.27 | 2.0.29 (2026-10-28) | As above |
-| `com.unity.timeline` (development project) | none | 6.6.0, the editor's built-in package since 6000.6 (1.8.12 from the registry before) | set by the editor | As above |
+| `com.unity.pipeline` (development project) | none | 0.9.1-exp.1 (`devpackages-20261031`) | 0.9.1-exp.1 (2026-10-23; the package has only pre-releases) | |
+| `com.unity.ide.rider` (development project) | none | 3.1.0 (6000.6.7f1 took it at the first open) | 3.1.0 (2026-09-07) | |
+| `com.unity.ide.visualstudio` (development project) | none | 2.0.29 (`devpackages-20261031`) | 2.0.29 (2026-10-28) | |
 | `com.unity.render-pipelines.universal` (development project) | none | 17.6.0, the editor's built-in package (17.5.0 on 6000.5.6f1) | set by the editor | |
 | `com.unity.test-framework` (development project) | none | 1.8.0, the editor's built-in package (1.7.0 on 6000.5.6f1) | set by the editor | |
-| `com.unity.multiplayer.center` (development project) | none | 2.1.0, the editor's built-in package (1.0.1 on 6000.5.6f1) | set by the editor | A template package like the ones above: it leaves the project in the cycle on the next target if nothing uses it |
-| `com.unity.visualscripting` (development project) | none | 1.9.12 | 1.9.13 (2026-10-29) | As above |
 
 ## Policy
 
