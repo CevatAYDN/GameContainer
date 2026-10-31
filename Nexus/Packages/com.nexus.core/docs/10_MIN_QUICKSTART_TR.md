@@ -9,7 +9,7 @@
 
 ## ✅ Başlamadan Önce
 
-- Unity **6000.5+** (Unity 6)
+- Unity **6000.6+** (Unity 6)
 - Yeni veya mevcut bir Unity projesi (herhangi bir şablon)
 - Temel C# ve Unity Editor bilgisi
 

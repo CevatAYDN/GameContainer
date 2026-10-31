@@ -3,7 +3,7 @@ param(
     [string]$Out = '',
     # the assemblies whose classes are checked; interfaces and base classes may come from any assembly in $Dir
     [string]$Include = '^(com\.nexus\.|Nexus\.|Assembly-CSharp)',
-    [string]$UnityEditor = 'C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor'
+    [string]$UnityEditor = 'C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor'
 )
 # Reads the managed assemblies a player build left after UnityLinker (issue #113). For every class in the included
 # assemblies, each method the linker kept on an interface the class implements needs its implementation on the class

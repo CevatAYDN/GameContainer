@@ -9,7 +9,7 @@ must be current, consistent and verifiable. Read this file before changing code 
 | Path | Role |
 |---|---|
 | `Nexus/Packages/com.nexus.core/` | The product. `Runtime/` (player code), `Editor/` (tools, codegen, validation), `Tests/Editor` + `Tests/Runtime` (Unity NUnit), `Samples~/` (3 importable samples), `SourceGenerator~/` (Roslyn binder generator), `SourceGenerators~/` (its built analyzer DLL), `docs/` (user documentation), `CHANGELOG.md` (the changelog of the core and its adapter packages) |
-| `Nexus/` | Unity 6000.5.6f1 development project hosting the package. `Assets/Scripts/Game/Samples` holds the wizard's canonical generated files; `Assets/Scripts/Nexus/` holds the git-ignored generated binder |
+| `Nexus/` | Unity 6000.6.7f1 development project hosting the package. `Assets/Scripts/Game/Samples` holds the wizard's canonical generated files; `Assets/Scripts/Nexus/` holds the git-ignored generated binder |
 | `tools/nexus-benchmark/` | .NET host harness; compiles the runtime against stubs (`UnityStubs.cs`, `GeneratorStubs.cs`) and runs every proof suite. Runs as the git pre-commit hook |
 | `tools/nexus-compile-check/` | Compiles every runtime file, the files the harness leaves out included, against the installed editor's engine modules |
 | `tools/nexus-comparison/` | Pinned VContainer/Zenject/Reflex DI comparison (host, Unity Mono player and Android IL2CPP device) |
@@ -33,11 +33,11 @@ dotnet run --project tools/nexus-benchmark -- --coverage         # which runtime
 dotnet build tools/nexus-compile-check                           # every runtime file against the real engine modules
 python tools/check-docs.py                                       # markdown link check
 python tools/check-versions.py [--newest]                        # dependency versions; --newest reads each source (gate 13)
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder   # after removing or renaming an injectable type add -ignorecompilererrors (TROUBLESHOOTING "Stale Generated Binder"); never empty the binder by hand
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Ads.Editor.AdsValidator.RunCli -adsTab Release -adsPlatform Android -adsReport artifacts/ads-validation.json   # ads settings check; exit 0 pass, 1 fail, 2 could not run; the report path is relative to the project folder
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath <consumer> -buildTarget Android -executeMethod Nexus.Ads.Editor.AndroidSetup.PrepareCli -adsTab Test   # Prepare Android for the selected mediation, without -quit; exit 0 done, 1 steps remain, 2 could not run, 3 packages added (run again)
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder   # after removing or renaming an injectable type add -ignorecompilererrors (TROUBLESHOOTING "Stale Generated Binder"); never empty the binder by hand
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Ads.Editor.AdsValidator.RunCli -adsTab Release -adsPlatform Android -adsReport artifacts/ads-validation.json   # ads settings check; exit 0 pass, 1 fail, 2 could not run; the report path is relative to the project folder
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -projectPath <consumer> -buildTarget Android -executeMethod Nexus.Ads.Editor.AndroidSetup.PrepareCli -adsTab Test   # Prepare Android for the selected mediation, without -quit; exit 0 done, 1 steps remain, 2 could not run, 3 packages added (run again)
 ./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date> -Android            # reflection configuration: host, Mono player, Android device
 ./tools/nexus-comparison/run-unity.ps1 -RunName <name> -ArtifactFolder comparison-<date>-generated -Android -Generated   # generated bindings (own artifact folder: the analyzer and the define stay in the project)
 ```

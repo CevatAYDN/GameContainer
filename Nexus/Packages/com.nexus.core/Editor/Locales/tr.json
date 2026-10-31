@@ -252,7 +252,7 @@
     {"key": "help_title", "value": "NEXUS YARDIM ve DOKÜMANTASYON"},
     {"key": "help_version", "value": "com.nexus.core v{0}"},
     {"key": "help_platform", "value": "Unity 6 (6000.x) | C# 9+ | .NET Standard 2.1 | UI Toolkit"},
-    {"key": "help_whats_new", "value": "v{0}'deki yenilikler: typed factory'ler ve Construct<T>, prefab enjeksiyonu, monetizasyon sözleşmesi\n(AdOutcome / PurchaseOutcome, hazırlık ve mağaza olayları), Dashboard build hazırlığı kartı, binder build guard\nve self-heal, 2 kat hızlı transient resolve. Üretilmiş kayıtlar artık NexusRuntime.Reset() sonrasında korunur.\nUnity 6000.5 veya üstü gerektirir."},
+    {"key": "help_whats_new", "value": "v{0}'deki yenilikler: typed factory'ler ve Construct<T>, prefab enjeksiyonu, monetizasyon sözleşmesi\n(AdOutcome / PurchaseOutcome, hazırlık ve mağaza olayları), Dashboard build hazırlığı kartı, binder build guard\nve self-heal, 2 kat hızlı transient resolve. Üretilmiş kayıtlar artık NexusRuntime.Reset() sonrasında korunur.\nUnity 6000.6 veya üstü gerektirir."},
     {"key": "help_import_sample", "value": "Counter Örneğini İçe Aktar"},
     {"key": "help_quickstart", "value": "HIZLI BAŞLANGIÇ"},
     {"key": "help_coreapi", "value": "TEMEL API"},

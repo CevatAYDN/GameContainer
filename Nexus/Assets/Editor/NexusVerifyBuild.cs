@@ -7,7 +7,7 @@ namespace NexusVerify
 {
     /// <summary>
     /// Headless player-build targets for Mono + IL2CPP compile verification of the
-    /// Nexus demo project (Unity 6000.5.6f1). Invoked from the Unity CLI via
+    /// Nexus demo project (Unity 6000.6.7f1). Invoked from the Unity CLI via
     /// -executeMethod — see tools/unity-verify/README.md for the full command list.
     ///
     /// Why both backends: Mono catches C# compile + editor/player Mono errors fast;

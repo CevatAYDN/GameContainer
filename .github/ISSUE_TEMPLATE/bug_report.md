@@ -23,7 +23,7 @@ A clear and concise description of what you expected to happen.
 If applicable, add screenshots or Nexus tracer output to help explain your problem.
 
 ## Environment
-- Unity Version: [e.g. 6000.5.6f1]
+- Unity Version: [e.g. 6000.6.7f1]
 - Nexus Version: [e.g. 0.5.0, or the commit you pinned]
 - Platform: [e.g. Windows, macOS, Android, WebGL]
 - Build Target: [e.g. IL2CPP, Mono]

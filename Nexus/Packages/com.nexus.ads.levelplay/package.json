@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "displayName": "Nexus Ads LevelPlay Provider",
   "description": "Unity LevelPlay (Ads Mediation package com.unity.services.levelplay 9.x) behind the com.nexus.ads core as its IAdProvider: rewarded and interstitial ad units, banner, impression-level revenue, the test suite, COPPA and GDPR forwarding. Compiles only while the LevelPlay package is installed (versionDefines NEXUS_LEVELPLAY).",
-  "unity": "6000.5",
+  "unity": "6000.6",
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.ads.levelplay/README.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {

@@ -31,7 +31,7 @@
 //     factory when overrides are present) — the generated factory resolves from the
 //     container, so explicit constructor arguments always win.
 //
-// Compatibility: compiled against Microsoft.CodeAnalysis.CSharp 4.10.0 (Unity 6000.5's
+// Compatibility: compiled against Microsoft.CodeAnalysis.CSharp 4.10.0 (Unity 6000.6's
 // Roslyn) as a netstandard2.0 assembly shipping inside the package; the same source is
 // compiled directly into tools/nexus-benchmark (Roslyn from the .NET SDK) and driven by
 // the CG2 harness test, so the shipped generator cannot drift from what is proven there.

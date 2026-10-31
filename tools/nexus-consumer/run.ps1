@@ -1,6 +1,6 @@
 param(
     [string]$RunName = ('consumer-' + (Get-Date -Format 'yyyyMMdd-HHmm')),
-    [string]$UnityEditor = 'C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe',
+    [string]$UnityEditor = 'C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe',
     [string]$UnityCli = (Join-Path $env:LOCALAPPDATA 'Unity/bin/unity.exe'),
     [switch]$BuildPlayer,
     [switch]$BuildAndroid,

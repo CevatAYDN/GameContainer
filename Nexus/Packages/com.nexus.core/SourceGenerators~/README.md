@@ -13,7 +13,7 @@ cp Nexus/Packages/com.nexus.core/SourceGenerator~/bin/Release/netstandard2.0/Nex
    Nexus/Packages/com.nexus.core/SourceGenerators~/
 ```
 
-Pinned to **Microsoft.CodeAnalysis.CSharp 4.10** (Unity 6000.5's Roslyn) as a
+Pinned to **Microsoft.CodeAnalysis.CSharp 4.10** (Unity 6000.6's Roslyn, the same as 6000.5's) as a
 netstandard2.0 assembly — do not bump, or Unity will silently refuse to load it.
 
 ## One-file rule

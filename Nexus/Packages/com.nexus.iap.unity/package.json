@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "displayName": "Nexus Unity IAP Adapter",
   "description": "Unity IAP 5 (Google Play, App Store) behind Nexus IapService: catalog, purchase with structured outcomes, restore, ownership, localized prices and store events.",
-  "unity": "6000.5",
+  "unity": "6000.6",
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.iap.unity/README.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {

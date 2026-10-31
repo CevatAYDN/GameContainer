@@ -5,7 +5,7 @@ tarball and imported into a fresh project that has none of the development proje
 settings or generated files. This is release gate 8 in `docs/RELEASE_GATES.md`.
 
 ```powershell
-# from the repository root; Windows, Unity 6000.5.6f1 with the Unity CLI (unity.exe under %LOCALAPPDATA%\Unity\bin)
+# from the repository root; Windows, Unity 6000.6.7f1 with the Unity CLI (unity.exe under %LOCALAPPDATA%\Unity\bin)
 ./tools/nexus-consumer/run.ps1 -RunName consumer-001
 ./tools/nexus-consumer/run.ps1 -RunName consumer-002 -BuildPlayer -BuildAndroid -ValidatePerformance
 ```

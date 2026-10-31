@@ -26,7 +26,7 @@ $evidence = Join-Path $repo ('Nexus/artifacts/' + $RunName)
 if (Test-Path -LiteralPath $evidence) { throw "Refusing to reuse evidence folder: $evidence" }
 if (-not (Test-Path -LiteralPath $Apk)) { throw "APK not found: $Apk (build it with NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPP)" }
 if (-not $Aapt) {
-    $buildTools = 'C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\build-tools'
+    $buildTools = 'C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Data\PlaybackEngines\AndroidPlayer\SDK\build-tools'
     $Aapt = Get-ChildItem -LiteralPath $buildTools -Directory | Sort-Object Name -Descending | ForEach-Object { Join-Path $_.FullName 'aapt.exe' } | Where-Object { Test-Path $_ } | Select-Object -First 1
     if (-not $Aapt) { throw 'aapt.exe not found; pass -Aapt.' }
 }

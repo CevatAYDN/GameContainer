@@ -806,7 +806,7 @@ namespace Nexus.Editor
             s_strings["help_title"] = "NEXUS HELP & DOCUMENTATION";
             s_strings["help_version"] = "com.nexus.core v{0}";
             s_strings["help_platform"] = "Unity 6 (6000.x) | C# 9+ | .NET Standard 2.1 | UI Toolkit";
-            s_strings["help_whats_new"] = "New in v{0}: typed factories and Construct<T>, prefab injection, the monetization contract\n(AdOutcome / PurchaseOutcome, readiness and store events), the Dashboard build-readiness card, binder build guard\nand self-heal, and a 2x faster transient resolve. Generated registrations now survive NexusRuntime.Reset().\nRequires Unity 6000.5 or higher.";
+            s_strings["help_whats_new"] = "New in v{0}: typed factories and Construct<T>, prefab injection, the monetization contract\n(AdOutcome / PurchaseOutcome, readiness and store events), the Dashboard build-readiness card, binder build guard\nand self-heal, and a 2x faster transient resolve. Generated registrations now survive NexusRuntime.Reset().\nRequires Unity 6000.6 or higher.";
             s_strings["help_import_sample"] = "Import Counter Sample";
             s_strings["help_quickstart"] = "QUICK START";
             s_strings["help_coreapi"] = "CORE API";

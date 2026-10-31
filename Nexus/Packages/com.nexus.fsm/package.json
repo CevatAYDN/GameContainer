@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "displayName": "Nexus FSM",
   "description": "An async game state machine (GameStateMachine, IGameState) with an error state, transition history, and the State Machine tab of the Nexus window. Moved out of com.nexus.core with its namespace (Nexus.Core.FSM) unchanged.",
-  "unity": "6000.5",
+  "unity": "6000.6",
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.fsm/README.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {

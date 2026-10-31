@@ -8,7 +8,7 @@ mobile and PC games, and an editor tool suite in one package.
 | | |
 |---|---|
 | Package | `Nexus/Packages/com.nexus.core` (version in `package.json`: **0.5.0**; unreleased work is listed in its `CHANGELOG.md`) |
-| Unity | 6000.5 minimum (`package.json`); verified on **6000.5.6f1** |
+| Unity | 6000.6 minimum (`package.json`); verified on **6000.6.7f1** |
 | License | MIT |
 | Verification status | [docs/RELEASE_GATES.md](docs/RELEASE_GATES.md) |
 
@@ -57,7 +57,7 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 | `Nexus/Packages/com.nexus.core` | The package: `Runtime`, `Editor`, `Tests`, `Samples~`, `SourceGenerator~` (Roslyn binder generator source), `SourceGenerators~` (its built analyzer DLL), `docs`, `CHANGELOG.md` |
 | `Nexus/Packages/com.nexus.ads`, `com.nexus.ads.bridge.nexus`, `com.nexus.ads.levelplay` | The ad package family (engine-free core, Unity layer, editor; the bridge to `com.nexus.core`'s `AdService`; the LevelPlay provider), changelog in `com.nexus.ads/CHANGELOG.md` |
 | `Nexus/Packages/com.nexus.ads.admob`, `com.nexus.iap.unity`, `com.nexus.firebase` | Adapter packages: Google AdMob (the ad family's provider with Google's consent form), Unity IAP 5, Firebase |
-| `Nexus/` | Unity 6000.5.6f1 development project that hosts the packages and their EditMode/PlayMode tests |
+| `Nexus/` | Unity 6000.6.7f1 development project that hosts the packages and their EditMode/PlayMode tests |
 | `tools/nexus-benchmark` | .NET host harness: compiles the runtime against Unity stubs and runs stress, fuzz, zero-allocation, lifecycle, codegen, ads-core and evidence suites; also the pre-commit hook |
 | `tools/nexus-compile-check` | Compiles every runtime file against the installed editor's engine modules (`dotnet build tools/nexus-compile-check`) |
 | `tools/nexus-comparison` | Pinned VContainer/Zenject/Reflex core DI comparison (host, Unity Mono player and Android IL2CPP device) |
@@ -75,12 +75,12 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 # Host harness (also runs on every commit through the pre-commit hook)
 dotnet run --project tools/nexus-benchmark
 
-# Unity tests, headless (Unity 6000.5.6f1)
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
+# Unity tests, headless (Unity 6000.6.7f1)
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -projectPath Nexus -runTests -testPlatform EditMode -testResults artifacts\editmode.xml -logFile Nexus\artifacts\editmode.log
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -projectPath Nexus -runTests -testPlatform PlayMode -testResults artifacts\playmode.xml -logFile Nexus\artifacts\playmode.log
 
 # Regenerate the AOT binder of the development project
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
 
 # Documentation links
 python tools/check-docs.py

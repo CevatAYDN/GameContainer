@@ -11,7 +11,7 @@ and the repository's HEAD at the run as `repoHeadAtRun` (issue #105). The reposi
 
 ```powershell
 # 1. Build the development project's Android IL2CPP player (Assets/Scenes/NexusStarter.unity)
-& "C:\Program Files\Unity\Hub\Editor\6000.5.6f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPP -logFile Nexus\artifacts\android-build.log
+& "C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Unity.exe" -batchmode -nographics -quit -projectPath Nexus -executeMethod NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPP -logFile Nexus\artifacts\android-build.log
 # 2. Run the acceptance on the connected device (the phone owner accepts the USB install)
 ./tools/device-acceptance/run.ps1 -RunName device-<date> -SoakSeconds 300
 ```

@@ -9,7 +9,7 @@
 
 ## ✅ Before You Begin
 
-- Unity **6000.5+** (Unity 6)
+- Unity **6000.6+** (Unity 6)
 - A new or existing Unity project (any template works)
 - Basic familiarity with C# and Unity Editor
 

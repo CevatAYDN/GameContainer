@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# Unity 6000.5.6 (Mono + IL2CPP) compile verification for the Nexus demo project.
-# Requires: Unity 6000.5.6f1 (Hub install) with the Windows Build Support module.
+# Unity 6000.6.7 (Mono + IL2CPP) compile verification for the Nexus demo project.
+# Requires: Unity 6000.6.7f1 (Hub install) with the Windows Build Support module.
 # Optional: Android Build Support (SDK + NDK) for the Android IL2CPP step.
 #
 # Usage (from the repo root):
-#   UNITY_PATH="C:/Program Files/Unity/Hub/Editor/6000.5.6f1/Editor/Unity.exe" \
+#   UNITY_PATH="C:/Program Files/Unity/Hub/Editor/6000.6.7f1/Editor/Unity.exe" \
 #     bash tools/unity-verify/verify-unity-build.sh
 #
 # Each step is a separate Unity batch process; any failure exits non-zero and
 # prints the tail of the relevant log under tools/unity-verify/artifacts/.
 set -euo pipefail
 
-UNITY="${UNITY_PATH:-C:/Program Files/Unity/Hub/Editor/6000.5.6f1/Editor/Unity.exe}"
+UNITY="${UNITY_PATH:-C:/Program Files/Unity/Hub/Editor/6000.6.7f1/Editor/Unity.exe}"
 PROJECT="$(cd "$(dirname "$0")/../.." && pwd)/Nexus"
 ARTIFACTS="$(cd "$(dirname "$0")" && pwd)/artifacts"
 mkdir -p "$ARTIFACTS"
@@ -70,5 +70,5 @@ fi
 echo "IL2CPP build OK"
 
 echo ""
-echo "ALL UNITY 6000.5.6 COMPILE-VERIFICATION STEPS PASSED"
+echo "ALL UNITY 6000.6.7 COMPILE-VERIFICATION STEPS PASSED"
 echo "Artifacts: $ARTIFACTS"

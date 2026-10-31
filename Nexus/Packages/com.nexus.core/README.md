@@ -7,7 +7,7 @@
 
 # Nexus Core
 
-[![Unity](https://img.shields.io/badge/Unity-6000.5-blue.svg)](https://unity.com/)
+[![Unity](https://img.shields.io/badge/Unity-6000.6-blue.svg)](https://unity.com/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Version](https://img.shields.io/badge/Version-0.5.0-orange.svg)](package.json)
 
@@ -27,7 +27,7 @@ https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.co
 Pin a commit (the full 40-character hash: the Package Manager does not take a short one) or release
 tag in production. Unity resolves the declared dependencies
 (`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`,
-`com.unity.modules.androidjni`). Minimum Unity is 6000.5; the package is verified on 6000.5.6f1.
+`com.unity.modules.androidjni`). Minimum Unity is 6000.6; the package is verified on 6000.6.7f1.
 
 ## Start: pick your level
 

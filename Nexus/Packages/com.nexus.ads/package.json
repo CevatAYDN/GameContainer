@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "displayName": "Nexus Ads",
   "description": "Engine-independent ad core (placements, PolicyGuard, state machine, retry) with a Unity layer, an editor setup wizard and validator, and a simulator provider. Mediation SDKs are separate provider packages; Nexus games connect through com.nexus.ads.bridge.nexus.",
-  "unity": "6000.5",
+  "unity": "6000.6",
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.ads/docs/POLICY_COMPLIANCE.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {
