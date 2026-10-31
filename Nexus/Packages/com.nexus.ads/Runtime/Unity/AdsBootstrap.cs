@@ -70,6 +70,17 @@ namespace Nexus.Ads.Unity
         /// <summary>Tests: stands in for <see cref="DeviceIdentity.FetchAdvertisingId"/>.</summary>
         internal static Action<Action<string>> AdvertisingIdReader = DeviceIdentity.FetchAdvertisingId;
 
+        /// <summary>Tests: the build kind the next Awake reads instead of <see cref="CurrentBuild"/> (the editor gate never picks the SDK).</summary>
+        internal static BuildKind? BuildForTests;
+
+        /// <summary>Tests: puts <paramref name="factory"/> in for <paramref name="kind"/> (null removes it) and returns the one it replaced.</summary>
+        internal static Func<IAdScheduler, ProviderConfig, IAdProvider> SwapProviderForTests(AdProviderKind kind, Func<IAdScheduler, ProviderConfig, IAdProvider> factory)
+        {
+            Factories.TryGetValue(kind, out var previous);
+            if (factory == null) Factories.Remove(kind); else Factories[kind] = factory;
+            return previous;
+        }
+
         /// <summary>
         /// Starts the ad stack once: reads the advertising id where the gate needs it (<see cref="BuildOutlook.ReadsAdvertisingId"/>),
         /// then builds the provider or the simulator and the controller, which runs the consent flow before the SDK. Awake calls it unless startOnAwake is off; a game that starts ads
@@ -129,7 +140,7 @@ namespace Nexus.Ads.Unity
         {
             if (settings == null || !settings.ConsentNeedsRegisteredFlow || SharedConsentApplies(settings.SelectedMediation)) return null;
             return settings.Consent == ConsentSource.GoogleUmp
-                ? "the settings name Google's consent form (UMP) before " + settings.SelectedMediation + ", and none is registered: install com.google.ads.mobile and com.nexus.ads.admob, which register it"
+                ? "the settings name Google's consent form (UMP) before " + settings.SelectedMediation + ", and none is registered: install com.google.ads.mobile and com.nexus.ads.admob, which register it (with both installed, Nexus.Ads.AdMob was left out of the player)"
                 : "the settings name the game's own consent flow before " + settings.SelectedMediation + ", and none is registered: call AdsBootstrap.RegisterSharedConsentFlow before StartAds()";
         }
 
@@ -157,7 +168,7 @@ namespace Nexus.Ads.Unity
             DontDestroyOnLoad(gameObject);
             if (_settings == null) _settings = AdsSettings.Load();
             if (_settings == null) { Debug.LogError("[Nexus Ads] No AdsSettings: create one with Nexus > Ads Settings or assign it on the bootstrap."); return; }
-            Build = CurrentBuild;
+            Build = BuildForTests ?? CurrentBuild;
             Platform = CurrentPlatform;
             if (_startOnAwake) StartAds();
         }

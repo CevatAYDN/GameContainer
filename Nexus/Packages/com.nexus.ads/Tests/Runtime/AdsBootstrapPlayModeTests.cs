@@ -151,6 +151,59 @@ namespace Nexus.Ads.Tests.Runtime
             yield return Boot(SimulatorScenario.Normal);
         }
 
+        // Issue #154: LevelPlay ships no consent form; a release build started it with only its pass-through
+        [UnityTest]
+        public IEnumerator ReleaseLevelPlay_StartsNoAds_UntilTheConsentFlowTheSettingsNameIsRegistered()
+        {
+            var previous = AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, (scheduler, _) => new SimulatorProvider(scheduler));
+            AdsBootstrap.BuildForTests = BuildKind.Release;
+            AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+            try
+            {
+                LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] no ads run: the settings name the game's own consent flow before LevelPlay, and none is registered"));
+                LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] started mode=Idle mediation=LevelPlay gate=Provider rule=- testMode=off consent=none$"));
+                yield return BootRelease();
+                Assert.AreEqual(HostMode.Idle, _bootstrap.Mode, "no flow registered: nothing starts");
+                Assert.AreEqual(AdResult.NotReady, ShowNow());
+                TearDown();
+                yield return null; // the first bootstrap is gone before the second wakes
+
+                AdsBootstrap.RegisterSharedConsentFlow(_ => new SimulatorProvider(new NeverScheduler()), AdProviderKind.None);
+                LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] started mode=Provider mediation=LevelPlay gate=Provider rule=- testMode=off consent=SimulatorProvider\(registered\)$"));
+                yield return BootRelease();
+                Assert.AreEqual(HostMode.Provider, _bootstrap.Mode, "the game's flow is registered: the SDK starts after it");
+            }
+            finally
+            {
+                AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+                AdsBootstrap.BuildForTests = null;
+                AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, previous);
+            }
+        }
+
+        private IEnumerator BootRelease()
+        {
+            _settings = ScriptableObject.CreateInstance<AdsSettings>();
+            _settings.SelectedMediation = AdProviderKind.LevelPlay;
+            _settings.Consent = ConsentSource.GameFlow;
+            _settings.Placements.Add(new PlacementEntry { Name = "shop_refill", Format = AdFormat.Rewarded });
+            _settings.Release.LevelPlay.Android.AppKey = "live";
+            _settings.Release.LevelPlay.Android.RewardedUnitId = "live-rewarded";
+            _root = new GameObject("AdsBootstrapTest");
+            _root.SetActive(false);
+            _bootstrap = _root.AddComponent<AdsBootstrap>();
+            _bootstrap.Configure(_settings, SimulatorScenario.Normal, logEvents: false);
+            _root.SetActive(true);
+            float deadline = Time.realtimeSinceStartup + 5f;
+            while (_bootstrap.Controller == null && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.IsNotNull(_bootstrap.Controller, "the bootstrap started within 5 s");
+        }
+
+        private sealed class NeverScheduler : IAdScheduler
+        {
+            public System.IDisposable Schedule(double seconds, System.Action action) => null;
+        }
+
         [UnityTest]
         public IEnumerator Scheduler_FiresOnUnscaledTime_AndACancelledDelayNeverFires()
         {
