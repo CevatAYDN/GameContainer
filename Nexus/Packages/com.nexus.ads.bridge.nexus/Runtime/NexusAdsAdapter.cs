@@ -81,7 +81,11 @@ namespace Nexus.Ads.Bridge
         }
     }
 
-    /// <summary>"Remove ads" bought in the store: interstitials stop, rewarded ads stay.</summary>
+    /// <summary>
+    /// "Remove ads" bought in the store: interstitials stop, rewarded ads stay. While the store has not said whether the
+    /// product is owned (offline, or before its purchase fetch answered), interstitials stop too, so a paying player never
+    /// sees one (issue #183).
+    /// </summary>
     public sealed class IapAdFreeEntitlement : IAdFreeEntitlement
     {
         private readonly IIapService _store;
@@ -97,6 +101,6 @@ namespace Nexus.Ads.Bridge
             _store.StoreChanged += () => Changed?.Invoke();
         }
 
-        public bool AdFree => _store.IsProductOwned(_productId);
+        public bool AdFree => _store.GetOwnership(_productId) != Ownership.NotOwned;
     }
 }

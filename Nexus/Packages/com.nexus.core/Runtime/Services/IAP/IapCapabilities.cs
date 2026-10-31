@@ -26,11 +26,23 @@ namespace Nexus.Core.Services
         void PurchaseWithOutcome(string productId, Action<PurchaseOutcome> onOutcome);
     }
 
+    /// <summary>What the store has said about a product (issue #183).</summary>
+    public enum Ownership
+    {
+        /// <summary>The store has not answered yet (no store, not started, offline, or its purchase fetch failed).</summary>
+        Unknown,
+        NotOwned,
+        Owned,
+    }
+
     /// <summary>Optional adapter capability: store availability, the store's localized prices and a change notification.</summary>
     [Preserve]
     public interface IIapStoreInfoAdapter
     {
         bool IsAvailable { get; }
+        /// <summary>True once the store answered which products this account owns; until then a false
+        /// <see cref="IIapStoreAdapter.IsOwned"/> means "not known yet", not "not owned".</summary>
+        bool OwnershipKnown { get; }
         /// <summary>The store's localized price string, or null until the store answered.</summary>
         string GetLocalizedPrice(string productId);
         /// <summary>Raised after connecting, after products or purchases were fetched, and after a restore.</summary>

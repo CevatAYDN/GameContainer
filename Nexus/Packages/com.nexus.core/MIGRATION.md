@@ -36,6 +36,13 @@ an assembly that referenced `com.nexus.core.dots` references `com.nexus.dots` in
 their last parameter (issue #184): it moved the pool's root, and the inactive instances died with that object. Remove
 the argument. To place the spawned objects, pass the parent to `Spawn`.
 
+#### Ownership can be unknown
+
+`IIapService.GetOwnership(productId)` answers `Owned`, `NotOwned` or `Unknown` (issue #183). `IsProductOwned` stays false
+while the store has not answered which products the account owns, offline or before its purchase fetch. A game that
+hides its own interstitials or ad offers by `IsProductOwned` hides them while `GetOwnership` is not `NotOwned`, as the ads
+bridge's entitlement now does. Register every product before `SetStoreAdapter`: a later `RegisterProducts` is an error.
+
 #### A custom `IUIAssetProvider` gets its instances back
 
 `UIManager` now calls `ReleaseWindow` for each instance `InstantiateWindowAsync` returned (issue #185), once, on the main

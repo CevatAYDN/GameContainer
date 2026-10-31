@@ -33,6 +33,9 @@ namespace Nexus.Ads.Bridge.Tests
         public void Purchase(string productId, Action<PurchaseOutcome> onOutcome) => onOutcome?.Invoke(PurchaseOutcome.Unavailable);
         public void RestorePurchases(Action<bool> onComplete) => onComplete?.Invoke(false);
         public bool IsProductOwned(string productId) => Owned.Contains(productId);
+        public bool OwnershipKnown = true;
+        public void AnswerOwnership() { OwnershipKnown = true; StoreChanged?.Invoke(); }
+        public Ownership GetOwnership(string productId) => Owned.Contains(productId) ? Ownership.Owned : OwnershipKnown ? Ownership.NotOwned : Ownership.Unknown;
         public ProductDefinition GetProduct(string productId) => null;
         public string GetLocalizedPrice(string productId) => null;
         public bool IsStoreAvailable => true;
@@ -180,6 +183,19 @@ namespace Nexus.Ads.Bridge.Tests
             _store.Own("remove_ads");
             Assert.IsFalse(_service.IsInterstitialAvailable("level_end"));
             Assert.IsTrue(_service.IsRewardedAvailable("shop_refill"));
+        }
+
+        // Issue #183: a player who bought remove_ads saw interstitials offline, or until the store answered what the account owns.
+        [Test]
+        public void WhileTheStoreHasNotSaidWhetherRemoveAdsIsOwned_NoInterstitialIsAvailable()
+        {
+            _clock.Seconds = 61;
+            _store.OwnershipKnown = false;
+            Assert.IsFalse(_service.IsInterstitialAvailable("level_end"), "ownership unknown: no interstitial");
+            Assert.IsTrue(_service.IsRewardedAvailable("shop_refill"), "rewarded ads stay");
+
+            _store.AnswerOwnership();
+            Assert.IsTrue(_service.IsInterstitialAvailable("level_end"), "the store answered: not owned");
         }
 
         [Test]

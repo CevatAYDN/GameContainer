@@ -123,5 +123,54 @@ namespace Nexus.Editor.Tests
                 NexusBuild.OverrideForTests(null);
             }
         }
+
+        // Issue #183: a false IsProductOwned meant both "not owned" and "the store has not said yet", so a player who bought
+        // remove_ads and opened the game offline, or before Play Billing returned purchases, was shown interstitials.
+        [Test]
+        public async Task Ownership_IsUnknown_UntilTheStoreAnswersWhatThePlayerOwns()
+        {
+            using var iap = new IapService();
+            await iap.InitializeAsync(default);
+            iap.RegisterProducts(new ProductDefinition { Id = "no_ads", Type = ProductType.NonConsumable });
+            Assert.AreEqual(Ownership.Unknown, iap.GetOwnership("no_ads"), "no store yet");
+
+            var store = new PricedStoreAdapter { OwnershipKnown = false };
+            iap.SetStoreAdapter(store);
+            Assert.AreEqual(Ownership.Unknown, iap.GetOwnership("no_ads"), "the store's purchase fetch has not answered");
+            Assert.IsFalse(iap.IsProductOwned("no_ads"));
+
+            store.OwnershipKnown = true;
+            Assert.AreEqual(Ownership.NotOwned, iap.GetOwnership("no_ads"));
+            store.Owned.Add("no_ads");
+            Assert.AreEqual(Ownership.Owned, iap.GetOwnership("no_ads"));
+            Assert.IsTrue(iap.IsProductOwned("no_ads"));
+        }
+
+        // Issue #183: a store without store info whose Initialize answered false still read as available.
+        [Test]
+        public async Task AStoreThatDidNotStart_ReadsAsUnavailable_AndItsOwnershipAsUnknown()
+        {
+            using var iap = new IapService();
+            await iap.InitializeAsync(default);
+            iap.RegisterProducts(new ProductDefinition { Id = "no_ads", Type = ProductType.NonConsumable });
+
+            LogAssert.Expect(LogType.Warning, new Regex(@"\[IapService\] Store adapter initialized: False"));
+            iap.SetStoreAdapter(new StoreThatDoesNotStart());
+
+            Assert.IsFalse(iap.IsStoreAvailable);
+            Assert.AreEqual(Ownership.Unknown, iap.GetOwnership("no_ads"));
+        }
+
+        // Issue #183: a product registered after the store started never reached it, and nothing said so.
+        [Test]
+        public async Task AProductRegisteredAfterTheStoreStarted_IsAnError()
+        {
+            using var iap = new IapService();
+            await iap.InitializeAsync(default);
+            iap.SetStoreAdapter(new MockIapStoreAdapter());
+
+            LogAssert.Expect(LogType.Error, new Regex(@"RegisterProducts\(late\) after SetStoreAdapter"));
+            iap.RegisterProducts(new ProductDefinition { Id = "late", Type = ProductType.Consumable });
+        }
     }
 }

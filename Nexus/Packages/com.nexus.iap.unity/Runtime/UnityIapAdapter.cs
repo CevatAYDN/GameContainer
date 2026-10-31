@@ -52,6 +52,8 @@ namespace Nexus.Iap.Unity
 
         public event Action Changed;
         public bool IsAvailable => _connected && _productsFetched;
+        /// <summary>True once a purchase fetch answered (each start and <see cref="Restore"/>); a failed fetch leaves it as it was (#183).</summary>
+        public bool OwnershipKnown { get; private set; }
 
         public string GetLocalizedPrice(string productId) => _store?.GetProductById(productId)?.metadata?.localizedPriceString;
         public bool IsOwned(string productId) => _owned.Contains(productId);
@@ -78,22 +80,11 @@ namespace Nexus.Iap.Unity
             }
             if (_connecting) { onInitialized?.Invoke(false); return; }
             _initializePending = onInitialized;
-            if (_store == null)
-            {
-                _store = UnityIAPServices.StoreController();
-                _store.OnPurchasePending += OnPending;
-                _store.OnPurchaseConfirmed += OnConfirmed;
-                _store.OnPurchaseFailed += OnFailed;
-                _store.OnPurchaseDeferred += order => { Defer(order, true); Complete(PurchaseOutcome.Pending); };
-                _store.OnPurchasesFetched += OnFetched;
-                _store.OnPurchasesFetchFailed += failure => { Warn(Describe(failure)); FinishRestore(false); };
-                _store.OnProductsFetched += _ => { _productsFetched = true; _store.FetchPurchases(); FinishInitialize(true); Changed?.Invoke(); };
-                _store.OnProductsFetchFailed += failure => { Warn(Describe(failure)); FinishInitialize(false); Changed?.Invoke(); };
-                _store.OnStoreDisconnected += failure => { _connected = false; Warn("Disconnected: " + failure?.Message); Changed?.Invoke(); };
-            }
             _connecting = true;
+            // the store's creation is inside the try: in this async void a throw there went unobserved and the caller was never answered
             try
             {
+                if (_store == null) _store = CreateStore();
                 if (!_connected) await _store.Connect();
                 _connected = true;
             }
@@ -105,8 +96,23 @@ namespace Nexus.Iap.Unity
                 return;
             }
             finally { _connecting = false; }
-            if (definitions.Count == 0) { _productsFetched = true; FinishInitialize(true); Changed?.Invoke(); return; }
+            if (definitions.Count == 0) { _productsFetched = true; OwnershipKnown = true; FinishInitialize(true); Changed?.Invoke(); return; }   // nothing to own
             _store.FetchProducts(definitions);
+        }
+
+        private StoreController CreateStore()
+        {
+            var store = UnityIAPServices.StoreController();
+            store.OnPurchasePending += OnPending;
+            store.OnPurchaseConfirmed += OnConfirmed;
+            store.OnPurchaseFailed += OnFailed;
+            store.OnPurchaseDeferred += order => { Defer(order, true); Complete(PurchaseOutcome.Pending); };
+            store.OnPurchasesFetched += OnFetched;
+            store.OnPurchasesFetchFailed += failure => { Warn(Describe(failure)); FinishRestore(false); };
+            store.OnProductsFetched += _ => { _productsFetched = true; _store.FetchPurchases(); FinishInitialize(true); Changed?.Invoke(); };
+            store.OnProductsFetchFailed += failure => { Warn(Describe(failure)); FinishInitialize(false); Changed?.Invoke(); };
+            store.OnStoreDisconnected += failure => { _connected = false; Warn("Disconnected: " + failure?.Message); Changed?.Invoke(); };
+            return store;
         }
 
         public void Purchase(string productId, Action<bool, string> onComplete)
@@ -154,6 +160,7 @@ namespace Nexus.Iap.Unity
             foreach (var order in orders.DeferredOrders) Defer(order, true);
             foreach (var order in orders.ConfirmedOrders) Own(order);
             foreach (var order in orders.PendingOrders) { Own(order); Track(order); }
+            OwnershipKnown = true;
             Changed?.Invoke();
             foreach (var order in orders.PendingOrders) Confirm(order);
             FinishRestore(true);

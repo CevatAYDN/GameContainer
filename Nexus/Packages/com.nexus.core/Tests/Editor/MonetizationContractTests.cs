@@ -23,13 +23,15 @@ namespace Nexus.Editor.Tests
     internal sealed class PricedStoreAdapter : IIapStoreAdapter, IIapStoreInfoAdapter
     {
         public bool IsAvailable => true;
+        public bool OwnershipKnown { get; set; } = true;
+        public readonly HashSet<string> Owned = new HashSet<string>();
         public event Action Changed;
         public void RaiseChanged() => Changed?.Invoke();
         public string GetLocalizedPrice(string productId) => productId == "pass" ? "19,99 TL" : null;
         public void Initialize(List<ProductDefinition> products, Action<bool> onInitialized) => onInitialized?.Invoke(true);
         public void Purchase(string productId, Action<bool, string> onComplete) => onComplete?.Invoke(false, "user_cancelled");
         public void Restore(Action<bool> onComplete) => onComplete?.Invoke(true);
-        public bool IsOwned(string productId) => false;
+        public bool IsOwned(string productId) => Owned.Contains(productId);
     }
 
     /// <summary>

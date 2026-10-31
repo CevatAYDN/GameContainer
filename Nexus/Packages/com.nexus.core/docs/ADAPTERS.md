@@ -91,7 +91,8 @@ and degrade predictably when an adapter lacks the capability:
 | `IAdService.PrivacyOptionsRequired`, `ShowPrivacyOptions(onClosed)` | `IAdConsentAdapter` (the adapter owns the consent flow, for example Google UMP) | `false`; `onClosed` runs immediately |
 | `IIapService.Purchase(productId, Action<PurchaseOutcome>)` | `IIapOutcomeAdapter.PurchaseWithOutcome` reports `Purchased`, `Cancelled`, `Pending`, `Failed` or `Unavailable` | bool result maps to `Purchased`; `store_unavailable` / `not_initialized` to `Unavailable`; anything else to `Failed` |
 | `IIapService.GetLocalizedPrice(productId)` | `IIapStoreInfoAdapter.GetLocalizedPrice` (the store's string) | the catalog's `ProductDefinition.PriceString` when the game set one, else null (no default price, #163) |
-| `IIapService.IsStoreAvailable`, `StoreChanged` | `IIapStoreInfoAdapter.IsAvailable` / `Changed` | available whenever an adapter is set (without one, never); no change events |
+| `IIapService.IsStoreAvailable`, `StoreChanged` | `IIapStoreInfoAdapter.IsAvailable` / `Changed` | available once the adapter's `Initialize` answered true (without an adapter, or after a false answer, never; #183); no change events |
+| `IIapService.GetOwnership(productId)` | `Owned` when `IsOwned`; otherwise `NotOwned` once `IIapStoreInfoAdapter.OwnershipKnown` is true, else `Unknown` (#183) | `Owned` when `IsOwned`; otherwise `NotOwned` once `Initialize` answered true, else `Unknown`. Without an adapter, `Unknown` |
 
 `MonetizationContractTests` (EditMode) lock every row of this table against the testing kit's
 doubles and bool-only adapters; the event at the end of the cooldown is harness check D4b.

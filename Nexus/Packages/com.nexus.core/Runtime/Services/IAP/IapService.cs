@@ -37,7 +37,10 @@ namespace Nexus.Core.Services
         void RegisterProducts(params ProductDefinition[] products);
         void PurchaseProduct(string productId, Action<bool, string> onComplete);
         void RestorePurchases(Action<bool> onComplete);
+        /// <summary>True only when the store says the product is owned; false also while ownership is unknown (see <see cref="GetOwnership"/>).</summary>
         bool IsProductOwned(string productId);
+        /// <summary>Owned, NotOwned, or Unknown until the store answered what this account owns (offline, or before Play Billing returns purchases).</summary>
+        Ownership GetOwnership(string productId);
         ProductDefinition GetProduct(string productId);
 
         /// <summary>Purchase with a structured result; bool-only adapters are mapped to Purchased, Unavailable or Failed.</summary>
@@ -59,6 +62,8 @@ namespace Nexus.Core.Services
         // needs its own discipline (mirrors AdService's _lock pattern).
         private readonly object _adapterLock = new();
         private IIapStoreAdapter _adapter;
+        // The adapter whose Initialize answered true: a store-info-less adapter is available and its ownership known only then (#183)
+        private IIapStoreAdapter _startedAdapter;
         public event Action StoreChanged;
         private readonly Action _forwardStoreChanged;
         private readonly Dictionary<string, ProductDefinition> _catalog = new();
@@ -86,6 +91,7 @@ namespace Nexus.Core.Services
             {
                 previous = _adapter;
                 _adapter = adapter;
+                _startedAdapter = null;
                 toInitialize = adapter;
             }
             if (previous is IIapStoreInfoAdapter previousInfo) previousInfo.Changed -= _forwardStoreChanged;
@@ -95,14 +101,19 @@ namespace Nexus.Core.Services
             // would deadlock any other caller.
             toInitialize?.Initialize(productList, (success) =>
             {
+                // a late answer of a replaced adapter does not mark the current one
+                lock (_adapterLock) { if (ReferenceEquals(_adapter, toInitialize)) _startedAdapter = success ? toInitialize : null; }
                 // a store that did not start is a failure: every build's log names it (#164)
                 if (success) NexusRuntime.Logger?.Log("[IapService] Store adapter initialized: True");
                 else NexusLog.WarnAlways("[IapService] Store adapter initialized: False");
             });
         }
 
+        /// <summary>Adds products to the catalog. Register every product before <see cref="SetStoreAdapter"/>: the store
+        /// receives the catalog when it starts, and a product registered later is logged as an error (#183).</summary>
         public void RegisterProducts(params ProductDefinition[] products)
         {
+            if (products == null) return;
             lock (_catalog)
             {
                 foreach (var p in products)
@@ -113,6 +124,13 @@ namespace Nexus.Core.Services
                     }
                 }
             }
+            bool late;
+            lock (_adapterLock) { late = _adapter != null; }
+            if (!late) return;
+            var ids = new List<string>();
+            foreach (var p in products) if (!string.IsNullOrEmpty(p?.Id)) ids.Add(p.Id);
+            NexusRuntime.Logger?.LogError($"[IapService] RegisterProducts({string.Join(", ", ids)}) after SetStoreAdapter: the store started " +
+                "with the catalog it had then and does not sell these. Register every product before SetStoreAdapter.");
         }
 
         public void Purchase(string productId, Action<PurchaseOutcome> onOutcome)
@@ -146,11 +164,12 @@ namespace Nexus.Core.Services
         {
             get
             {
-                IIapStoreAdapter adapter;
-                lock (_adapterLock) { adapter = _adapter; }
+                IIapStoreAdapter adapter, started;
+                lock (_adapterLock) { adapter = _adapter; started = _startedAdapter; }
                 if (adapter is IIapStoreInfoAdapter info) return info.IsAvailable;
                 // No store, no purchase: the editor too goes through a real adapter (Unity IAP's editor store), #162.
-                return adapter != null;
+                // A store that did not start is unavailable too (#183).
+                return adapter != null && ReferenceEquals(adapter, started);
             }
         }
 
@@ -210,6 +229,16 @@ namespace Nexus.Core.Services
             lock (_adapterLock) { adapter = _adapter; }
             // Ownership comes only from a store; without one nothing is owned (#162).
             return adapter != null && adapter.IsOwned(productId);
+        }
+
+        public Ownership GetOwnership(string productId)
+        {
+            IIapStoreAdapter adapter, started;
+            lock (_adapterLock) { adapter = _adapter; started = _startedAdapter; }
+            if (adapter == null) return Ownership.Unknown;
+            if (adapter.IsOwned(productId)) return Ownership.Owned;
+            bool known = adapter is IIapStoreInfoAdapter info ? info.OwnershipKnown : ReferenceEquals(adapter, started);
+            return known ? Ownership.NotOwned : Ownership.Unknown;
         }
 
         public ProductDefinition GetProduct(string productId)

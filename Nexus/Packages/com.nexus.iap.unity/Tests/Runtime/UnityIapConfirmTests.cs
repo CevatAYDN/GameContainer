@@ -34,7 +34,9 @@ namespace Nexus.Iap.Unity.Tests
                 foreach (var product in products) found.Add(new ProductDescription(product.storeSpecificId, new ProductMetadata("$1.99", product.id, "", "USD", 1.99m)));
                 ProductsCallback?.OnProductsFetched(found);
             }
-            public override void FetchPurchases() => PurchaseFetchCallback?.OnAllPurchasesRetrieved(new List<Order>());
+            public bool HoldPurchases;   // answers the purchase fetch only when the test calls AnswerPurchases
+            public override void FetchPurchases() { if (!HoldPurchases) AnswerPurchases(); }
+            public void AnswerPurchases() => PurchaseFetchCallback?.OnAllPurchasesRetrieved(new List<Order>());
             public override void Purchase(ICart cart) => PurchaseCallback?.OnPurchaseSucceeded(new PendingOrder(cart, new TestOrderInfo("tx-" + Name)));
             public override void FinishTransaction(PendingOrder order)
             {
@@ -173,6 +175,32 @@ namespace Nexus.Iap.Unity.Tests
                 for (int i = 0; i < 10; i++) yield return null;
                 Assert.AreEqual(3, store.Confirms, "no confirm after the last retry");
                 Assert.IsTrue(adapter.IsConfirmationPending("rewards_pass"));
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #183: before the store answered which products the account owns, every product read as not owned, so a player who
+        // bought remove_ads was shown interstitials offline or until Play Billing returned purchases.
+        [UnityTest]
+        public IEnumerator OwnershipIsUnknown_UntilThePurchaseFetchAnswers()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusOwnershipLater", failConfirms: 0);
+            store.HoldPurchases = true;
+            try
+            {
+                ExpectTheConnectWarning();
+                var adapter = new UnityIapAdapter();
+                bool? ready = null;
+                adapter.Initialize(new List<NexusProduct> { new NexusProduct { Id = "remove_ads", Type = NexusProductType.NonConsumable } }, ok => ready = ok);
+                yield return Until(() => ready != null, "the store initialized");
+                Assert.IsTrue(adapter.IsAvailable, "the products were fetched");
+                Assert.IsFalse(adapter.OwnershipKnown, "the purchase fetch has not answered");
+
+                store.AnswerPurchases();
+                yield return Until(() => adapter.OwnershipKnown, "ownership became known");
+                Assert.IsFalse(adapter.IsOwned("remove_ads"));
                 LogAssert.NoUnexpectedReceived();
             }
             finally { UnityIAPServices.SetStoreAsDefault(previous); }

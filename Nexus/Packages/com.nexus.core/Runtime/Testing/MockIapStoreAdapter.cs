@@ -11,6 +11,16 @@ namespace Nexus.Core.Services
     {
         public event Action Changed;
         public bool IsAvailable => _initialized;
+        /// <summary>True after Initialize, unless the test keeps it unknown with <see cref="SetOwnershipKnown"/>.</summary>
+        public bool OwnershipKnown => _initialized && _ownershipAnswered;
+        private bool _ownershipAnswered = true;
+
+        /// <summary>Answers ownership (the default) or keeps it unknown, as a store does offline or before its purchase fetch.</summary>
+        public void SetOwnershipKnown(bool known)
+        {
+            _ownershipAnswered = known;
+            Changed?.Invoke();
+        }
 
         /// <summary>The catalog's price string stands in for the store's localized price.</summary>
         public string GetLocalizedPrice(string productId) => _catalog.Find(p => p.Id == productId)?.PriceString;
