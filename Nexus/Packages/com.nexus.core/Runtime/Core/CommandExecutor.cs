@@ -222,7 +222,7 @@ namespace Nexus.Core
                     await asyncCmd.ExecuteAsync(ct);
                 }
             }
-            catch (OperationCanceledException canceled) when (timeoutCts != null && timeoutCts.IsCancellationRequested && !executorLinkedCts.Token.IsCancellationRequested)
+            catch (Exception canceled) when (TimedOut(canceled, timeoutCts, executorLinkedCts))
             {
                 // The command's own [CommandTimeout] expired, not the context: a failure the recovery engine logs and
                 // hands to the strategy. As an OperationCanceledException it was dropped as a shutdown (issue #168).
@@ -261,7 +261,7 @@ namespace Nexus.Core
                     await asyncCmd.ExecuteAsync(signal, ct);
                 }
             }
-            catch (OperationCanceledException canceled) when (timeoutCts != null && timeoutCts.IsCancellationRequested && !executorLinkedCts.Token.IsCancellationRequested)
+            catch (Exception canceled) when (TimedOut(canceled, timeoutCts, executorLinkedCts))
             {
                 // The command's own [CommandTimeout] expired, not the context: a failure the recovery engine logs and
                 // hands to the strategy. As an OperationCanceledException it was dropped as a shutdown (issue #168).
@@ -298,11 +298,21 @@ namespace Nexus.Core
                     await asyncDispatcher(command, signal, ct);
                 }
             }
+            catch (Exception canceled) when (TimedOut(canceled, timeoutCts, executorLinkedCts))
+            {
+                throw new CommandTimeoutException(command.GetType(), timeoutMs, canceled);
+            }
             finally
             {
                 timeoutCts?.Dispose();
             }
         }
+
+        // The command's own [CommandTimeout] fired and the context did not cancel: a failure, not a shutdown (issue #168).
+        // A decorator may hand the cancellation on wrapped, so its inner exception counts too.
+        private static bool TimedOut(Exception ex, CancellationTokenSource timeoutCts, CancellationTokenSource executorLinkedCts)
+            => timeoutCts != null && timeoutCts.IsCancellationRequested && !executorLinkedCts.Token.IsCancellationRequested
+               && (ex is OperationCanceledException || ex.InnerException is OperationCanceledException);
 
         public void Execute(CommandHandlerInfo handler, object signal)
         {
