@@ -237,9 +237,10 @@ into the sketch above.
 
 ## As built (2026-10-31)
 
-The stack was built in three commits: the read-only observable, the engine-free history and back chain, and the engine
-side (`Runtime/Services/UI/Stack/Toolkit/`). Where the sketch left a choice or the build found something, this is what
-was chosen and why:
+The stack was built in parts, one commit each: the read-only observable (`01f128f`), the engine-free history and back
+chain (`3ef3a6d`), the engine side (`Runtime/Services/UI/Stack/Toolkit/`, `21670f8`, with a fix for a disabled
+document in `03cf21e`) and the user documentation. Where the sketch left a choice or the build found something, this
+is what was chosen and why:
 
 - **One service, both interfaces.** `ScreenStack` implements `IScreenStack` and `IBackRouter` and is bound with
   `builder.BindServiceInterfacesAndSelfTo<ScreenStack>()`, so a context never has a stack without its router or a

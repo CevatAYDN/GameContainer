@@ -72,7 +72,8 @@ sets) and `ObservableList<T>`; `SecureObservableInt`,
 `SecureObservableLong`, `SecureObservableFloat`, `SecureObservableString` and
 `SecureObservableBigDouble` (memory obfuscation with a tamper canary); `IReactiveModel`; `View` and `Mediator<TView>` bound by
 `[Mediator(typeof(...))]` with pooled mediators and automatic unsubscribe on unbind; `ScreenView`
-screens managed by `UIManager`.
+uGUI screens managed by `UIManager`, and UI Toolkit screens (`ToolkitScreen`) in a `ScreenStack` that
+also routes the back button ([SCREEN_STACK.md](docs/SCREEN_STACK.md)).
 
 **Lifecycle**: `IContextLifecycle` (`OnConfigure`, `OnInitializeAsync`, `OnStartAsync`,
 `OnDispose`), `IPostContextLifecycle`, `IStartable` / `IAsyncStartable` / `IStoppable` /
@@ -135,8 +136,9 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 | `ObjectPoolService` | `Pool` | GameObject/component pools with prewarm, `IPoolable` callbacks and timed despawn |
 | `ProgressionService` | `Progression` | Level index, max unlocked level, upgrade cost formulas; levels persist to `SettingsStores.Progression` when a game binds one |
 | `ResourcesAssetLoadService` | `Assets` | Default `IAssetLoadService` over `Resources`; an Addressables adapter is described in [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) |
+| `ScreenStack` | `UI/Stack` | The UI Toolkit screen history of one context over `ToolkitScreen`s, USS transitions, and the back button's chain (`IBackRouter`: the game's steps, the screens, the root behaviour); bound with `BindServiceInterfacesAndSelfTo<ScreenStack>()` ([SCREEN_STACK.md](docs/SCREEN_STACK.md)) |
 | `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause |
-| `UIManager` | `UI` | Typed `ScreenView` stack over the seven `UILayer` layers (`Background`, `HUD`, `Screen`, `Popup`, `Modal`, `Overlay`, `System`) with async open/close |
+| `UIManager` | `UI` | Typed uGUI `ScreenView` stack over the seven `UILayer` layers (`Background`, `HUD`, `Screen`, `Popup`, `Modal`, `Overlay`, `System`) with async open/close |
 
 Localization: a game supplies its tables with
 `builder.BindInstance<ILocalizationTableProvider>(JsonLocalizationTableProvider.FromResources("Localization", "en", "tr"))`
@@ -171,6 +173,7 @@ starting point, not a save system: a game keeps its own save format and decides 
 | `ObservableProperty<T>` value change, `ObservableList<T>` add, remove and clear, with subscribers | 0 B after the first subscription (GCA2, stress 17 and 17b) |
 | `TickService` dispatch | 0 B per frame (GCA3; stress 20, 10k frames × 300 tickables) |
 | `AdService.Tick` with an `ITickService` bound: a frame with no cooldown running, a frame inside the interstitial cooldown, the frame it ends | 0 B (GCA9, with a `ReadyChanged` handler that counts) |
+| `ScreenStack` back-button poll in a frame without a press | 0 B (GCA10: 5000 polls of the back chain with a fake input service) |
 | `HybridQueue` thread-safe and next-frame enqueue and drain | 0 B after warmup (`HybridQueue_ThreadSafe_ZeroGC`, stress 14) |
 | `NetworkSignalHistory` replay, `RemoveSignalsAfter` and `Prune`; `NetworkSignalBus.RollbackAndResimulate` | 0 B (`Netcode_Rollback_And_Replay_ZeroGC`, stress 9; PlayMode `NetcodeTests.Prune_SteadyState_ZeroAllocations`, EditMode `NestedRollback_SteadyStateHasNoManagedAllocation`) |
 | `InputService` update with a `PlayerMoveSignal` fire, a pool-warmed `AudioService.PlaySfx`, `LocalizationService.GetString` | 0 B (G1, G2, G3) |
@@ -253,6 +256,7 @@ The state machine and the jobs-to-signals bridge are packages of their own since
 | [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) ([TR](docs/ZENJECT_MIGRATION_TR.md)) | Concept mapping and migration steps from Zenject/Extenject |
 | [STRANGE_COMPARISON.md](docs/STRANGE_COMPARISON.md) ([TR](docs/STRANGE_COMPARISON_TR.md)) | Feature-by-feature comparison with StrangeIoC |
 | [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) ([TR](docs/ADDRESSABLES_ADAPTER_TR.md)) | Implementing `IAssetLoadService` over Addressables without a package dependency |
+| [SCREEN_STACK.md](docs/SCREEN_STACK.md) | The UI Toolkit screen stack, its screens, transitions and the back button |
 | [ADAPTERS.md](docs/ADAPTERS.md) | Registering real ad and store SDKs behind `AdService` / `IapService`, and what a shipped game needed beyond them |
 | [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md) | Pinned DI comparison with VContainer, Zenject and Reflex (host, Mono player, Android IL2CPP device) |
 | [STABILITY.md](docs/STABILITY.md) | Pre-1.0 stability policy |

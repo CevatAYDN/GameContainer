@@ -1,9 +1,10 @@
 namespace Nexus.Core.Services
 {
     /// <summary>
-    /// Canvas stacking order for Nexus in-game UI (UGUI). Higher values render on top.
-    /// Used by <see cref="UIManager"/> (screen layering) and <see cref="UICanvasSystem"/>
-    /// (per-layer roots + modal interactivity policy).
+    /// The layers of Nexus in-game UI. For the uGUI <see cref="UIManager"/> and <see cref="UICanvasSystem"/> (per-layer
+    /// roots and the modal interactivity policy) they are the canvas stacking order: higher values render on top. For the
+    /// UI Toolkit <c>ScreenStack</c> a layer decides only which screens are shown: inside one layer the screen
+    /// opened last is shown, and lower layers stay shown; the draw order is the game's <c>UIDocument</c> sort order.
     /// </summary>
     public enum UILayer
     {

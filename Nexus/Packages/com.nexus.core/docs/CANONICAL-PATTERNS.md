@@ -280,10 +280,35 @@ A service the game constructs itself (its constructor takes game values) is boun
 
 ## 🥇 Canonical UI Manager
 
-**Use `UIManager` (`IUIManager`) — the single runtime UI manager. There is no second window API.**
+**One screen API per UI technology: new UI is UI Toolkit through `ScreenStack` (`IScreenStack`); uGUI screens use
+`UIManager` (`IUIManager`). A screen belongs to one of the two, never both.**
 
 ```csharp
-// ✅ CANONICAL — type-safe ScreenView screens, opened by type
+// ✅ CANONICAL for new UI — UI Toolkit screens in the context's ScreenStack (docs/SCREEN_STACK.md)
+public class AppLifecycle : IContextLifecycle
+{
+    public void OnConfigure(IContextBuilder builder)
+    {
+        builder.BindService<IInputService, InputService>();     // the back button
+        builder.BindServiceInterfacesAndSelfTo<ScreenStack>(); // IScreenStack + IBackRouter
+    }
+}
+
+public class OpenSettingsCommand : ICommand<OpenSettingsSignal>
+{
+    [Inject] public IScreenStack Screens { get; set; }
+    public void Execute(OpenSettingsSignal signal) => Screens.Push<SettingsScreen>();
+}
+
+// A screen is a ToolkitScreen beside a UIDocument under the context's Root; it registers itself when it binds.
+public sealed class SettingsScreen : ToolkitScreen
+{
+    public override UILayer Layer => UILayer.Modal;
+}
+```
+
+```csharp
+// ✅ CANONICAL for uGUI — type-safe ScreenView screens, opened by type
 public class GameplayLifecycle : IContextLifecycle
 {
     public void OnConfigure(IContextBuilder builder)
@@ -305,15 +330,17 @@ public class OpenSettingsCommand : ICommand<OpenSettingsSignal>
 public class SettingsScreen : ScreenView { ... }
 ```
 
-**Rationale:** `UIManager` is the canonical, type-safe screen manager — open by type
+**Rationale:** Since 2026-10-31 the UI the packages add is UI Toolkit (the owner's decision, #137), and the
+screen stack (#76, ADR-0003) gives it one history and one back-button chain per context. `UIManager` stays for games
+whose screens are uGUI. It is the type-safe uGUI screen manager — open by type
 (`OpenScreenAsync<TScreen>`), pooled instances, `UICanvasSystem` layer policy, and
 `ScreenOpenedSignal`/`ScreenClosedSignal`. The legacy string-keyed `WindowManager` was
 **removed** (2026-08-06); its migration analyzer rule was retired with it (the id NEXUS004 now
 belongs to the leftover debug trace logging rule), so new code has no alternative to diverge to.
 `UILayer` and `IUIWindowLifecycle` live in their own files under
-`Runtime/Services/UI/` and are shared by `UIManager`/`ScreenView`/`UICanvasSystem`. Screens
-are opened/closed only through `UIManager`; scene-anchored views that are not screens stay
-plain `View`s.
+`Runtime/Services/UI/` and are shared by `UIManager`/`ScreenView`/`UICanvasSystem` and the
+screen stack. uGUI screens are opened/closed only through `UIManager`, UI Toolkit screens only
+through `IScreenStack`; scene-anchored views that are not screens stay plain `View`s.
 
 ---
 

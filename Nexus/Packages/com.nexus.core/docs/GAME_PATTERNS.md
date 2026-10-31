@@ -82,7 +82,7 @@ frame that saves (its `EncryptedStorageService` row) is outside such a budget.
   - `ProgressionService` for linear/exponential upgrade cost curves.
   - `TickService` + `ITickable` for passive income per-second simulation.
   - `EncryptedStorageService` for offline earnings persistence.
-  - `UIManager` (HUD → Shop → Prestige modal) layered UI navigation.
+  - `ScreenStack` with UI Toolkit `ToolkitScreen`s (HUD → Shop → Prestige modal): layered navigation and the back button ([SCREEN_STACK.md](SCREEN_STACK.md)); `UIManager` when the game's screens are uGUI.
   - `Sequential` mode for discrete upgrades; `Composite` triggers for multi-resource milestones.
 - **Performance Budget (game target):** 60 FPS, < 500B GC/frame, < 30 draw calls (UI-heavy); a save frame is outside it ([Performance scope](../README.md#performance-scope), storage row).
 - **Offline Earnings Example:**
