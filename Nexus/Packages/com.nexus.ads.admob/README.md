@@ -29,7 +29,9 @@ before the first scene loads. A Nexus game adds `com.nexus.ads.bridge.nexus` and
 What it does:
 - **Consent:** asks the User Messaging Platform for an update on every launch (Google's privacy page
   requires it) and shows the form where the law needs it; consent kept from an earlier session lets ads
-  load while this session's update runs. The privacy options form is `ShowPrivacyOptions`; a withdrawal
+  load while this session's update runs. An update that fails without a network and with no consent kept
+  (a first launch offline) is not answered as a refusal: it is asked again when a network returns, checked
+  every 2 s, with one warning (issue #180). The privacy options form is `ShowPrivacyOptions`; a withdrawal
   destroys the loaded ads and further loads report "consent does not allow ad requests". The flow is
   `UmpConsentFlow`; the package also registers it with the bootstrap, which runs it before another
   mediation that ships no form (LevelPlay reads the consent UMP stores, issue #63). With LevelPlay selected
