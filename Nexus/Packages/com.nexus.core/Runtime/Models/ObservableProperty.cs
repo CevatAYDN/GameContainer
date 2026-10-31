@@ -21,7 +21,7 @@ namespace Nexus.Core
     /// </code>
     /// </summary>
     [Preserve]
-    public sealed class ObservableProperty<T>
+    public sealed class ObservableProperty<T> : IReadOnlyObservableProperty<T>
     {
         // ── State ──────────────────────────────────────────────
         private T _value;

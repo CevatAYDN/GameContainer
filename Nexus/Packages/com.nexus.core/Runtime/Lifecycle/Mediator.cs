@@ -91,6 +91,14 @@ namespace Nexus.Core
             return Track<T>(property.OnChanged, property.RemoveOnChanged, handler);
         }
 
+        /// <summary>Subscribes to a read-only observable, state a service alone sets, and tracks the subscription for automatic unbind cleanup.</summary>
+        protected IDisposable TrackObservable<T>(IReadOnlyObservableProperty<T> property, Action<T, T> handler)
+        {
+            if (property == null) throw new ArgumentNullException(nameof(property));
+            if (handler == null) throw new ArgumentNullException(nameof(handler));
+            return Track<T>(property.OnChanged, property.RemoveOnChanged, handler);
+        }
+
         /// <summary>
         /// Overloads for SecureObservable types so Mediator consumers don't have to manually
         /// subscribe/unsubscribe and risk leaking listeners. Each overload wraps the

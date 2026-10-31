@@ -53,6 +53,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/INexusService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/IReactiveModel.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/ObservableProperty.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/IReadOnlyObservableProperty.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/SecureObservableProperty.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Models/SecureObservableCore.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Data/BigDouble.cs" />

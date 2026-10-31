@@ -67,7 +67,8 @@ handlers pooled per signal; execution modes `Sequential`, `Concurrent`, `Exclusi
 `FireAsyncWithTimeout`; `Subscribe<T>` for plain handlers; recovery strategies (retry, fallback,
 abort) and `CommandFailedSignal`; loading-time `Context.Prewarm<TSignal>()`.
 
-**Models and views**: `ObservableProperty<T>` and `ObservableList<T>`; `SecureObservableInt`,
+**Models and views**: `ObservableProperty<T>` (its read side `IReadOnlyObservableProperty<T>` for state a service alone
+sets) and `ObservableList<T>`; `SecureObservableInt`,
 `SecureObservableLong`, `SecureObservableFloat`, `SecureObservableString` and
 `SecureObservableBigDouble` (memory obfuscation with a tamper canary); `IReactiveModel`; `View` and `Mediator<TView>` bound by
 `[Mediator(typeof(...))]` with pooled mediators and automatic unsubscribe on unbind; `ScreenView`

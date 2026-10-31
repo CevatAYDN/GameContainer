@@ -29,6 +29,13 @@ namespace NexusBench
             public void Unbind() => Unbound = true;
         }
 
+        public class ReadOnlyTrackingMediator : Mediator<object>
+        {
+            public IReadOnlyObservableProperty<int> Source;
+            public int Changes;
+            protected override void OnBind() => TrackObservable(Source, (oldValue, newValue) => Changes++);
+        }
+
         [Mediator(typeof(UnbindProbeMediator))]
         public class ThrowingUnbindView : IView
         {
@@ -46,6 +53,7 @@ namespace NexusBench
             failures += AssertPass("TL1. PureContext_Teardown_Frees_ContextAndServices", TestPureContextTeardownFreesAll);
             failures += AssertPass("TL2. DisposedContext_Removed_From_NexusRuntime_ActiveContexts", TestDisposedContextRemovedFromRegistry);
             failures += AssertPass("TL3. ViewBinderDispose_Unbinds_Mediator_When_View_Unbind_Throws", TestViewBinderDisposeUnbindsMediatorWhenViewThrows);
+            failures += AssertPass("TL4. ReadOnlyObservable_TrackedByAMediator_IsReleasedOnUnbind", TestReadOnlyObservableReleasedOnUnbind);
 
             if (failures == 0)
                 Console.WriteLine("\n[TeardownLeak] ALL TEARDOWN LEAK AUDIT TESTS PASSED ✓");
@@ -153,6 +161,25 @@ namespace NexusBench
                 return false;
             }
 
+            return true;
+        }
+
+        // ADR-0003: a mediator watches a service's read-only state; the subscription must go with Unbind like any other
+        private static bool TestReadOnlyObservableReleasedOnUnbind()
+        {
+            var state = new ObservableProperty<int>(0);
+            var mediator = new ReadOnlyTrackingMediator { Source = state };
+            using var di = new NexusDI();
+            mediator.Bind(new object(), new SignalBus(di, new CommandPoolManager(di), new MockContext()));
+            state.Value = 1;
+            mediator.Unbind();
+            state.Value = 2;
+
+            if (mediator.Changes != 1)
+            {
+                Console.WriteLine($"      {mediator.Changes} change(s) seen; expected 1 (one while bound, none after Unbind)");
+                return false;
+            }
             return true;
         }
 
