@@ -132,7 +132,18 @@ the padding.
 
 ## Input setup
 
-The stack works with both setups in use: an `EventSystem` with `InputSystemUIInputModule`, and UI Toolkit's own input
-(InputForUI) without an `EventSystem`. These documents recommend one only after the device capture that ADR-0003
-decision 7 asks for: the managed allocation per touched frame of the `EventSystem` setup, on the phone where InputForUI
-was measured.
+Use an `EventSystem` with `InputSystemUIInputModule`, and keep uGUI from making the panels' event objects itself:
+
+1. Before the first panel exists, add a `PanelInputConfiguration` whose `autoCreatePanelComponents` is off and whose
+   `panelInputRedirection` is `AutoSwitch`.
+2. Once a `UIDocument`'s `runtimePanel` exists, give that panel one GameObject with `PanelEventHandler` and
+   `PanelRaycaster`, set the `panel` of both to it, and set the panel's `selectableGameObject` to that GameObject.
+   Do this once for each panel (each `PanelSettings` asset), not for each document.
+
+Measured on 2311DRK48G (Android 16) with Unity 6000.6.7f1 and uGUI 2.6.0, in a development IL2CPP player with one
+panel, over 60 s with a 30 s drag (ADR-0003, "As built"): this setup allocates nothing per frame, touched or not. The
+same `EventSystem` as Unity sets it up allocates 32 B for each panel on every frame, because uGUI's bridge retries the
+panels' event objects each frame. UI Toolkit's own input (InputForUI, without an `EventSystem`) allocates nothing on a
+frame without a touch and 172 B on a touched frame, and the screen heard twice as many `PointerDownEvent`s under it
+(56 against 28). The stack works under all three, and the back button goes through none of them (see
+[The back button](#the-back-button)).

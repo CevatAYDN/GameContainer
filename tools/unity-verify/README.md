@@ -137,6 +137,18 @@ have the same application id, so installing one replaces the other: before a pro
 `adb shell dumpsys package <application id> | grep lastUpdateTime` with the APK's time and look for a
 `[Probe]` line after the launch.
 
+`NexusVerify.NexusVerifyBuild.BuildAndroidStackProbe` builds the development player with the define
+`NEXUS_STACK_PROBE` (`Nexus/builds/android-il2cpp-stackprobe.apk`), which compiles
+`Assets/Scripts/Verify/StackProbe.cs`, the phone check of the screen stack (issue #76, ADR-0003 verification
+plan item 4). `pwsh tools/unity-verify/stack-probe.ps1 -AdbSerial <serial>` installs it and launches it once for
+each UI input setup of the ADR's decision 7 (the intent extra `nexusInputMode`: `eventsystem`, `eventsystem-once`,
+`inputforui`). Each launch sends `KEYCODE_BACK` three times in each of 10 rounds (sheet, modal, root), drags over
+the screen for 30 s of a 60 s capture of the managed allocation per frame, then presses back twice, which must quit
+the app; a launch passes only when every press reached the expected screen and the drag reached the screen as
+pointer events. The evidence goes to `Nexus/artifacts/<RunName>/` (`stack-probe.json`, and `probe-<mode>.txt` and
+`logcat-<mode>.txt` for each launch); exit 0 passed, 1 failed, 2 could not run. It has the same application id as
+the players above, so it replaces them on the phone.
+
 ## Mode B: verify the Roslyn Source Generator binder (optional, opt-in)
 
 The four steps above compile the game with the **editor-time generator's** binder

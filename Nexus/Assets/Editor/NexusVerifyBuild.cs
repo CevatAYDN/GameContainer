@@ -20,7 +20,7 @@ namespace NexusVerify
     public static class NexusVerifyBuild
     {
         private static void Build(string targetName, BuildTargetGroup group, BuildTarget target, ScriptingImplementation backend,
-            BuildOptions buildOptions = BuildOptions.None, ManagedStrippingLevel? stripping = null)
+            BuildOptions buildOptions = BuildOptions.None, ManagedStrippingLevel? stripping = null, string[] defines = null)
         {
             // Restore the pre-existing backend when the batch finishes (a stripping build still leaves
             // its previous level written explicitly; see the finally block). NamedBuildTarget is the
@@ -45,6 +45,7 @@ namespace NexusVerify
                     target = target,
                     targetGroup = group,
                     options = buildOptions,
+                    extraScriptingDefines = defines,
                 };
 
                 var buildStart = DateTime.UtcNow;
@@ -150,6 +151,16 @@ namespace NexusVerify
             var level = StrippingArgument();
             Build($"android-il2cpp-dev-{level.ToString().ToLowerInvariant()}.apk", BuildTargetGroup.Android, BuildTarget.Android,
                 ScriptingImplementation.IL2CPP, BuildOptions.Development, level);
+        }
+
+        /// <summary>
+        /// Android, IL2CPP, development build with NEXUS_STACK_PROBE: holds Assets/Scripts/Verify/StackProbe.cs, the phone
+        /// check of the screen stack (issue #76), as builds/android-il2cpp-stackprobe.apk; tools/unity-verify/stack-probe.ps1 runs it.
+        /// </summary>
+        public static void BuildAndroidStackProbe()
+        {
+            Build("android-il2cpp-stackprobe.apk", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP,
+                BuildOptions.Development, defines: new[] { "NEXUS_STACK_PROBE" });
         }
 
         private static ManagedStrippingLevel StrippingArgument()

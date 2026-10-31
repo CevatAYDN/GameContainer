@@ -278,6 +278,27 @@ is what was chosen and why:
 - **Compile check (verification plan, item 2).** `UnityStubs.cs` gains no UIElements types: the four files under
   `Toolkit/` join the files the harness leaves out and are compiled by `tools/nexus-compile-check`. The core's
   `package.json` declares `com.unity.modules.uielements` 1.0.0, which it now uses.
+- **Device (verification plan, item 4).** On 2311DRK48G (Android 16), Unity 6000.6.7f1, a development IL2CPP player
+  (`NexusVerifyBuild.BuildAndroidStackProbe`, driven by `tools/unity-verify/stack-probe.ps1`; result files in
+  `Nexus/artifacts/stack-probe-20261031-run3/`), launched once for each input setup. In each launch, 10 rounds of
+  `KEYCODE_BACK` reached the sheet, the modal and the root in that order, each round's press at the root raised the
+  press-again hint, and a second press within 2 s quit: 32 of 32 presses heard, in all three launches. The capture of
+  decision 7 (60 s: 15 s without a touch, then a 30 s drag; the managed allocation of each frame from the
+  `GC Allocated In Frame` recorder; one panel), apart from frames that allocate once in every setup (about 190 KB at
+  the first touch, and a few up to 18 KB):
+  - `EventSystem` with `InputSystemUIInputModule`, as Unity sets it up: 32 B on every frame, touched or not (457 of
+    457 frames without a touch). uGUI 2.6.0's `UIToolkitInteroperabilityBridge.UpdatePanelGameObjects` calls
+    `CreatePanelGameObject` for each panel on each frame, and that method's lambda, which captures the panel,
+    allocates its closure on entry also when the panel already has its event objects (found by ChipCrisis, its
+    `444989c`).
+  - The same `EventSystem` with a `PanelInputConfiguration` whose `autoCreatePanelComponents` is off, added before
+    the panel existed, and the panel's `PanelEventHandler` and `PanelRaycaster` made once: 0 B per frame, touched
+    or not.
+  - InputForUI, no `EventSystem`: 0 B on a frame without a touch, 172 B on a touched frame (819 of 847 touched
+    frames allocated; ChipCrisis measured about 150 B, decision 7).
+
+  The screen heard 56 `PointerDownEvent`s under InputForUI and 28 under each `EventSystem` setup, over drags of the
+  same length. `SCREEN_STACK.md` recommends the second setup.
 
 ## Verification plan for the stack cycle
 
