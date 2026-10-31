@@ -94,6 +94,32 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        private sealed class DisposableStore : IIapStoreAdapter, System.IDisposable
+        {
+            public int Disposed;
+            public void Initialize(System.Collections.Generic.List<ProductDefinition> products, System.Action<bool> onInitialized) => onInitialized?.Invoke(true);
+            public void Purchase(string productId, System.Action<bool, string> onComplete) => onComplete?.Invoke(false, "test");
+            public void Restore(System.Action<bool> onComplete) => onComplete?.Invoke(false);
+            public bool IsOwned(string productId) => false;
+            public void Dispose() => Disposed++;
+        }
+
+        // Issue #118: a replaced store adapter was never disposed and kept handling Unity IAP's process-wide purchases. Gigawatt sets
+        // the same adapter again to restart it, which must not dispose it.
+        [Test]
+        public void SetStoreAdapter_DisposesTheAdapterItReplaces_NotTheSameAdapterSetAgain()
+        {
+            using var iap = new IapService();
+            var first = new DisposableStore();
+            var second = new DisposableStore();
+            iap.SetStoreAdapter(first);
+            iap.SetStoreAdapter(first);
+            Assert.AreEqual(0, first.Disposed, "set again to restart it");
+            iap.SetStoreAdapter(second);
+            Assert.AreEqual(1, first.Disposed, "replaced");
+            Assert.AreEqual(0, second.Disposed);
+        }
+
         private sealed class StoreThatDoesNotStart : IIapStoreAdapter
         {
             public void Initialize(System.Collections.Generic.List<ProductDefinition> products, System.Action<bool> onInitialized) => onInitialized?.Invoke(false);

@@ -22,7 +22,8 @@ unknown name, and `null` with an error when the creator throws.
 Bind the services and factories in `OnConfigure`, then select the adapter once the context is
 built. `AdService.SetNetworkAdapter` calls the adapter's `Initialize` itself (outside the service
 lock, because SDKs may call back synchronously); `IapService.SetStoreAdapter` does the same with
-the registered product catalog. The lifecycle below is a component on the Root's GameObject:
+the registered product catalog, and disposes an `IDisposable` adapter it replaces (setting the same
+adapter again only restarts it). The lifecycle below is a component on the Root's GameObject:
 `Root` registers every `IContextLifecycle` component there and exposes the context it built as
 `Root.Context`.
 

@@ -29,9 +29,13 @@ iapService.StoreChanged += RefreshShop;
 
 Register every product before `SetStoreAdapter`: it passes the catalog of that moment to the
 adapter's `Initialize`, and a product registered later is unknown to the store (`Unavailable`).
+Unity IAP's store services are process-wide: an adapter that is replaced must be disposed, or it
+keeps handling the store's purchases. `SetStoreAdapter` disposes the adapter it replaces, and
+`IapService` disposes its adapter with itself.
 
 Order of events: `Initialize` connects, fetches the catalog's products and the purchases this
-account already owns, then confirms every pending order. A purchase reports `Purchased` to the
+account already owns, then confirms every pending order. A start whose connect or product fetch
+fails answers false and leaves the store unavailable; the next start connects again. A purchase reports `Purchased` to the
 game first and is confirmed with the store right after, so the game records ownership before
 acknowledgement. A confirm the store refuses is warned in every build and sent again after 5 s,
 30 s and 2 min; after that the next purchase fetch (each start and `Restore`) confirms it.

@@ -14,6 +14,8 @@ namespace Nexus.Ads.Bridge
     public static class NexusAdsBridge
     {
         private static readonly System.Collections.Generic.HashSet<AdController> Forwarded = new System.Collections.Generic.HashSet<AdController>();
+        // the entitlement each controller got last: the next Attach disposes it, or every Attach left one subscribed to the store (issue #118)
+        private static readonly System.Collections.Generic.Dictionary<AdController, IapAdFreeEntitlement> Entitlements = new System.Collections.Generic.Dictionary<AdController, IapAdFreeEntitlement>();
 
         /// <summary>
         /// Connects <paramref name="ads"/> to the controller of <see cref="AdsBootstrap.Instance"/> (or the one given).
@@ -40,7 +42,13 @@ namespace Nexus.Ads.Bridge
             if (!string.IsNullOrEmpty(providerName)) factory.RegisterProvider(providerName, () => adapter);
             ads.SetInterstitialCooldown((float)controller.Guard.Policy.MinInterstitialGapSeconds);
             if (ads is AdService service && Forwarded.Add(controller)) controller.Revenue += r => service.RaiseImpression(r.Network, r.Value, r.Placement); // one forward per controller, however often Connect runs
-            if (store != null && !string.IsNullOrEmpty(removeAdsProductId)) controller.SetAdFreeEntitlement(new IapAdFreeEntitlement(store, removeAdsProductId));
+            if (store != null && !string.IsNullOrEmpty(removeAdsProductId))
+            {
+                if (Entitlements.TryGetValue(controller, out var previous)) previous.Dispose();
+                var entitlement = new IapAdFreeEntitlement(store, removeAdsProductId);
+                Entitlements[controller] = entitlement;
+                controller.SetAdFreeEntitlement(entitlement);
+            }
             ads.SetNetworkAdapter(factory.CreateAdapter(NexusAdsAdapter.ProviderName));
             return adapter;
         }

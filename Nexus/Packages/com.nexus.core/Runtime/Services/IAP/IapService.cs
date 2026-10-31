@@ -78,6 +78,8 @@ namespace Nexus.Core.Services
             return default;
         }
 
+        /// <summary>Sets the store and starts it with the registered catalog. The adapter it replaces is disposed when it is
+        /// <see cref="IDisposable"/> (issue #118); setting the same adapter again only starts it again.</summary>
         public void SetStoreAdapter(IIapStoreAdapter adapter)
         {
             IIapStoreAdapter toInitialize;
@@ -95,6 +97,8 @@ namespace Nexus.Core.Services
                 toInitialize = adapter;
             }
             if (previous is IIapStoreInfoAdapter previousInfo) previousInfo.Changed -= _forwardStoreChanged;
+            // a replaced adapter kept handling the store's purchases and confirmed them beside the live one (issue #118)
+            if (previous is IDisposable replaced && !ReferenceEquals(previous, adapter)) replaced.Dispose();
             if (adapter is IIapStoreInfoAdapter info) info.Changed += _forwardStoreChanged;
             // Initialize OUTSIDE the lock: store SDKs may block or re-enter this service
             // (e.g. invoke the callback synchronously), and holding the lock across that

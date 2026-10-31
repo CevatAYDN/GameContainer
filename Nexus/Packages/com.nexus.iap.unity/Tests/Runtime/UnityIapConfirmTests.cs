@@ -27,9 +27,16 @@ namespace Nexus.Iap.Unity.Tests
             public int FailConfirms, Confirms;
             public ConnectionState State = ConnectionState.Disconnected;
 
-            public override void Connect() { State = ConnectionState.Connected; ConnectCallback?.OnStoreConnectionSucceeded(); }
+            public bool FailConnect, FailProducts;   // a billing service that does not answer; a product fetch that fails
+            public override void Connect()
+            {
+                if (FailConnect) { State = ConnectionState.Disconnected; ConnectCallback?.OnStoreConnectionFailed(new StoreConnectionFailureDescription("billing service unavailable")); return; }
+                State = ConnectionState.Connected;
+                ConnectCallback?.OnStoreConnectionSucceeded();
+            }
             public override void FetchProducts(IReadOnlyCollection<StoreProduct> products)
             {
+                if (FailProducts) { ProductsCallback?.OnProductsFetchFailed(new ProductFetchFailureDescription(ProductFetchFailureReason.ProviderUnavailable, "offline")); return; }
                 var found = new List<ProductDescription>();
                 foreach (var product in products) found.Add(new ProductDescription(product.storeSpecificId, new ProductMetadata("$1.99", product.id, "", "USD", 1.99m)));
                 ProductsCallback?.OnProductsFetched(found);
@@ -76,16 +83,14 @@ namespace Nexus.Iap.Unity.Tests
             return store;
         }
 
-        // Issue #182: the adapter does not observe OnStoreConnected, and Unity IAP warns about that on every Connect.
-        private static void ExpectTheConnectWarning()
-            => LogAssert.Expect(LogType.Warning, "InAppPurchasing: IStoreService.Connect called without a callback defined for IStoreService.OnStoreConnected.");
-
         private static UnityIapAdapter AdapterRetryingAfter(TimeSpan delay, int retries)
         {
             var adapter = new UnityIapAdapter { ConfirmRetryDelays = new TimeSpan[retries] };
             for (int i = 0; i < retries; i++) adapter.ConfirmRetryDelays[i] = delay;
             return adapter;
         }
+
+        private static List<NexusProduct> Pass() => new List<NexusProduct> { new NexusProduct { Id = "rewards_pass", Type = NexusProductType.NonConsumable } };
 
         private static IEnumerator Until(Func<bool> done, string what)
         {
@@ -115,7 +120,6 @@ namespace Nexus.Iap.Unity.Tests
             var store = UseTestStore("NexusConfirmRefused", failConfirms: 1);
             try
             {
-                ExpectTheConnectWarning();
                 var adapter = AdapterRetryingAfter(TimeSpan.FromMilliseconds(1), retries: 1);
                 LogAssert.Expect(LogType.Warning, new Regex(@"\[UnityIAP\] The store did not confirm the purchase of rewards_pass \(Unknown: billing service unavailable\)"));
                 PurchaseOutcome? outcome = null;
@@ -136,7 +140,6 @@ namespace Nexus.Iap.Unity.Tests
             UseTestStore("NexusConfirmLater", failConfirms: 1);
             try
             {
-                ExpectTheConnectWarning();
                 var adapter = AdapterRetryingAfter(TimeSpan.FromMilliseconds(200), retries: 1);
                 int changed = 0;
                 adapter.Changed += () => changed++;
@@ -164,7 +167,6 @@ namespace Nexus.Iap.Unity.Tests
             var store = UseTestStore("NexusConfirmNever", failConfirms: int.MaxValue);
             try
             {
-                ExpectTheConnectWarning();
                 var adapter = AdapterRetryingAfter(TimeSpan.FromMilliseconds(1), retries: 2);
                 LogAssert.Expect(LogType.Warning, new Regex(@"The store did not confirm the purchase of rewards_pass .*attempt 1 of 3"));
                 LogAssert.Expect(LogType.Warning, new Regex(@"The store did not confirm the purchase of rewards_pass .*attempt 2 of 3"));
@@ -180,6 +182,93 @@ namespace Nexus.Iap.Unity.Tests
             finally { UnityIAPServices.SetStoreAsDefault(previous); }
         }
 
+        // Issue #118: Unity IAP's store services are process-wide, so an adapter IapService replaced kept handling the store's
+        // purchases: it owned the order and sent a second confirm beside the live adapter's.
+        [UnityTest]
+        public IEnumerator AReplacedAdapter_NoLongerHandlesTheStoresPurchases()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusReplacedAdapter", failConfirms: 0);
+            using var service = new IapService();
+            try
+            {
+                service.RegisterProducts(Pass().ToArray());
+                var replaced = new UnityIapAdapter();
+                var live = new UnityIapAdapter();
+                LogAssert.Expect(LogType.Log, "[IapService] Store adapter initialized: True");   // each adapter's start
+                LogAssert.Expect(LogType.Log, "[IapService] Store adapter initialized: True");
+                service.SetStoreAdapter(replaced);
+                yield return Until(() => replaced.IsAvailable, "the first adapter started");
+                service.SetStoreAdapter(live);
+                yield return Until(() => live.IsAvailable, "the second adapter started");
+
+                PurchaseOutcome? outcome = null;
+                service.Purchase("rewards_pass", o => outcome = o);
+                yield return Until(() => outcome != null && store.Confirms >= 1, "the purchase answered and was confirmed");
+                for (int i = 0; i < 10; i++) yield return null;
+                Assert.AreEqual(PurchaseOutcome.Purchased, outcome);
+                Assert.AreEqual(1, store.Confirms, "only the live adapter confirmed the order");
+                Assert.IsFalse(replaced.IsOwned("rewards_pass"), "the replaced adapter did not handle the order");
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #118: Unity IAP completes Connect's task when the connection fails too, and the adapter took that as connected, so
+        // every later start skipped the connect and the store never connected in that session
+        [UnityTest]
+        public IEnumerator AStoreThatFailedToConnect_IsConnectedByTheNextStart()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusConnectFails", failConfirms: 0);
+            store.FailConnect = true;
+            try
+            {
+                var adapter = new UnityIapAdapter();
+                LogAssert.Expect(LogType.Warning, new Regex(@"^\[UnityIAP\] Disconnected: billing service unavailable"));
+                bool? ready = null;
+                adapter.Initialize(Pass(), ok => ready = ok);
+                yield return Until(() => ready != null, "the first start answered");
+                Assert.AreEqual(false, ready);
+
+                store.FailConnect = false;   // the billing service is back
+                ready = null;
+                adapter.Initialize(Pass(), ok => ready = ok);
+                yield return Until(() => ready != null, "the second start answered");
+                Assert.AreEqual(true, ready, "the second start connected");
+                Assert.IsTrue(adapter.IsAvailable);
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #118: a start cleared the catalog but not the "products fetched" flag, so a restart whose product fetch failed read
+        // as available with products the store never returned
+        [UnityTest]
+        public IEnumerator ARestartWhoseProductFetchFails_LeavesTheStoreUnavailable()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusRefetchFails", failConfirms: 0);
+            try
+            {
+                var adapter = new UnityIapAdapter();
+                bool? ready = null;
+                adapter.Initialize(Pass(), ok => ready = ok);
+                yield return Until(() => ready != null, "the first start answered");
+                Assert.IsTrue(adapter.IsAvailable);
+
+                store.FailProducts = true;
+                LogAssert.Expect(LogType.Warning, new Regex(@"^\[UnityIAP\] Products not fetched \(rewards_pass\)"));
+                ready = null;
+                adapter.Initialize(Pass(), ok => ready = ok);
+                yield return Until(() => ready != null, "the restart answered");
+                Assert.AreEqual(false, ready);
+                Assert.IsFalse(adapter.IsAvailable, "the products of this start were not fetched");
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
         // Issue #183: before the store answered which products the account owns, every product read as not owned, so a player who
         // bought remove_ads was shown interstitials offline or until Play Billing returned purchases.
         [UnityTest]
@@ -190,7 +279,6 @@ namespace Nexus.Iap.Unity.Tests
             store.HoldPurchases = true;
             try
             {
-                ExpectTheConnectWarning();
                 var adapter = new UnityIapAdapter();
                 bool? ready = null;
                 adapter.Initialize(new List<NexusProduct> { new NexusProduct { Id = "remove_ads", Type = NexusProductType.NonConsumable } }, ok => ready = ok);

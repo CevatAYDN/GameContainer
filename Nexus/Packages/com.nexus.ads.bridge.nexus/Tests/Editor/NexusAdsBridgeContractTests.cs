@@ -26,6 +26,7 @@ namespace Nexus.Ads.Bridge.Tests
     {
         public readonly HashSet<string> Owned = new HashSet<string>();
         public event Action StoreChanged;
+        public int StoreChangedHandlers => StoreChanged?.GetInvocationList().Length ?? 0;
         public void Own(string id) { Owned.Add(id); StoreChanged?.Invoke(); }
         public void SetStoreAdapter(IIapStoreAdapter adapter) { }
         public void RegisterProducts(params ProductDefinition[] products) { }
@@ -75,6 +76,14 @@ namespace Nexus.Ads.Bridge.Tests
 
         [TearDown]
         public void TearDown() { _controller.Dispose(); _service.Dispose(); }
+
+        // Issue #118: every Attach created an entitlement that stayed subscribed to the store
+        [Test]
+        public void ASecondAttach_LeavesOneEntitlementSubscribedToTheStore()
+        {
+            NexusAdsBridge.Attach(_service, _factory, _controller, _simulator.Name, _store, "remove_ads");
+            Assert.AreEqual(1, _store.StoreChangedHandlers);
+        }
 
         [Test]
         public void TheFactoryKnowsTheBridge_UnderBothNames()

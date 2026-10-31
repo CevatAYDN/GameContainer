@@ -21,9 +21,10 @@ namespace Nexus.Iap.Unity
     /// Unity IAP 5 behind <see cref="IapService"/>. The store connects at <see cref="Initialize"/>,
     /// fetches the catalog's products and the purchases this account already owns, and confirms every
     /// pending order after the game was told about it. Prices are the store's localized strings.
-    /// Ported from the first shipped Nexus game's store.
+    /// Unity IAP's store services are process-wide, so a replaced adapter must be disposed: it removes its handlers
+    /// (<see cref="IapService.SetStoreAdapter"/> disposes the adapter it replaces). Ported from the first shipped Nexus game's store.
     /// </summary>
-    public sealed class UnityIapAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter
+    public sealed class UnityIapAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter, IDisposable
     {
         public const string ProviderName = "unity";
 
@@ -35,7 +36,7 @@ namespace Nexus.Iap.Unity
         }
 
         private StoreController _store;
-        private bool _connected, _connecting, _productsFetched;
+        private bool _connected, _connecting, _productsFetched, _disposed;
         private readonly Dictionary<string, NexusProductType> _catalog = new();
         private readonly HashSet<string> _owned = new();
         private readonly HashSet<string> _deferred = new();
@@ -70,7 +71,9 @@ namespace Nexus.Iap.Unity
 
         public async void Initialize(List<NexusProduct> products, Action<bool> onInitialized)
         {
+            if (_disposed) { onInitialized?.Invoke(false); return; }
             _catalog.Clear();
+            _productsFetched = false;   // the new catalog is available only once the store fetched it (issue #118)
             var definitions = new List<StoreProduct>();
             foreach (var product in products ?? new List<NexusProduct>())
             {
@@ -86,7 +89,6 @@ namespace Nexus.Iap.Unity
             {
                 if (_store == null) _store = CreateStore();
                 if (!_connected) await _store.Connect();
-                _connected = true;
             }
             catch (Exception e)
             {
@@ -96,6 +98,10 @@ namespace Nexus.Iap.Unity
                 return;
             }
             finally { _connecting = false; }
+            if (_disposed) { FinishInitialize(false); return; }
+            // Unity IAP completes Connect's task on a failed connect too, after OnStoreDisconnected (which warned): only
+            // OnStoreConnected says the store connected (issue #118)
+            if (!_connected) { FinishInitialize(false); Changed?.Invoke(); return; }
             if (definitions.Count == 0) { _productsFetched = true; OwnershipKnown = true; FinishInitialize(true); Changed?.Invoke(); return; }   // nothing to own
             _store.FetchProducts(definitions);
         }
@@ -103,17 +109,52 @@ namespace Nexus.Iap.Unity
         private StoreController CreateStore()
         {
             var store = UnityIAPServices.StoreController();
+            store.OnStoreConnected += OnStoreConnected;
+            store.OnStoreDisconnected += OnStoreDisconnected;
             store.OnPurchasePending += OnPending;
             store.OnPurchaseConfirmed += OnConfirmed;
             store.OnPurchaseFailed += OnFailed;
-            store.OnPurchaseDeferred += order => { Defer(order, true); Complete(PurchaseOutcome.Pending); };
+            store.OnPurchaseDeferred += OnDeferred;
             store.OnPurchasesFetched += OnFetched;
-            store.OnPurchasesFetchFailed += failure => { Warn(Describe(failure)); FinishRestore(false); };
-            store.OnProductsFetched += _ => { _productsFetched = true; _store.FetchPurchases(); FinishInitialize(true); Changed?.Invoke(); };
-            store.OnProductsFetchFailed += failure => { Warn(Describe(failure)); FinishInitialize(false); Changed?.Invoke(); };
-            store.OnStoreDisconnected += failure => { _connected = false; Warn("Disconnected: " + failure?.Message); Changed?.Invoke(); };
+            store.OnPurchasesFetchFailed += OnPurchasesFetchFailed;
+            store.OnProductsFetched += OnProductsFetched;
+            store.OnProductsFetchFailed += OnProductsFetchFailed;
             return store;
         }
+
+        /// <summary>Removes the adapter's handlers from Unity IAP's process-wide store services and answers what waits: a purchase
+        /// <see cref="PurchaseOutcome.Unavailable"/>, a restore and a start false (issue #118).</summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            var store = _store;
+            _store = null;
+            if (store != null)
+            {
+                store.OnStoreConnected -= OnStoreConnected;
+                store.OnStoreDisconnected -= OnStoreDisconnected;
+                store.OnPurchasePending -= OnPending;
+                store.OnPurchaseConfirmed -= OnConfirmed;
+                store.OnPurchaseFailed -= OnFailed;
+                store.OnPurchaseDeferred -= OnDeferred;
+                store.OnPurchasesFetched -= OnFetched;
+                store.OnPurchasesFetchFailed -= OnPurchasesFetchFailed;
+                store.OnProductsFetched -= OnProductsFetched;
+                store.OnProductsFetchFailed -= OnProductsFetchFailed;
+            }
+            _connected = _productsFetched = false;
+            Complete(PurchaseOutcome.Unavailable);
+            FinishRestore(false);
+            FinishInitialize(false);
+        }
+
+        private void OnStoreConnected() { _connected = true; Changed?.Invoke(); }
+        private void OnStoreDisconnected(StoreConnectionFailureDescription failure) { _connected = false; Warn("Disconnected: " + failure?.Message); Changed?.Invoke(); }
+        private void OnDeferred(DeferredOrder order) { Defer(order, true); Complete(PurchaseOutcome.Pending); }
+        private void OnPurchasesFetchFailed(PurchasesFetchFailureDescription failure) { Warn(Describe(failure)); FinishRestore(false); }
+        private void OnProductsFetched(List<Product> products) { _productsFetched = true; _store.FetchPurchases(); FinishInitialize(true); Changed?.Invoke(); }
+        private void OnProductsFetchFailed(ProductFetchFailed failure) { _productsFetched = false; Warn(Describe(failure)); FinishInitialize(false); Changed?.Invoke(); }
 
         public void Purchase(string productId, Action<bool, string> onComplete)
             => PurchaseWithOutcome(productId, outcome => onComplete?.Invoke(outcome == PurchaseOutcome.Purchased,
@@ -222,7 +263,7 @@ namespace Nexus.Iap.Unity
                 // Unity IAP drops the refused request only after this callback returns: a confirm sent inside it is refused as a duplicate
                 await Task.Yield();
                 await Task.Delay(delay);
-                if (!_unconfirmed.TryGetValue(id, out var order)) return;   // confirmed meanwhile
+                if (_disposed || !_unconfirmed.TryGetValue(id, out var order)) return;   // disposed, or confirmed meanwhile
                 if (!_connected)
                 {
                     Warn($"The purchase of {Products(order)} is not confirmed: the store is disconnected. The next purchase fetch (each start and Restore) confirms it.");

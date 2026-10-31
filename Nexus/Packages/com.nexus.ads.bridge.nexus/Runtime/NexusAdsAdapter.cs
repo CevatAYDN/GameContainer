@@ -84,12 +84,13 @@ namespace Nexus.Ads.Bridge
     /// <summary>
     /// "Remove ads" bought in the store: interstitials stop, rewarded ads stay. While the store has not said whether the
     /// product is owned (offline, or before its purchase fetch answered), interstitials stop too, so a paying player never
-    /// sees one (issue #183).
+    /// sees one (issue #183). <see cref="Dispose"/> unsubscribes it from the store.
     /// </summary>
-    public sealed class IapAdFreeEntitlement : IAdFreeEntitlement
+    public sealed class IapAdFreeEntitlement : IAdFreeEntitlement, IDisposable
     {
         private readonly IIapService _store;
         private readonly string _productId;
+        private readonly Action _forward;
 
         public event Action Changed;
 
@@ -98,9 +99,12 @@ namespace Nexus.Ads.Bridge
             _store = store ?? throw new ArgumentNullException(nameof(store));
             if (string.IsNullOrWhiteSpace(productId)) throw new ArgumentException("A product id is required.", nameof(productId));
             _productId = productId;
-            _store.StoreChanged += () => Changed?.Invoke();
+            _forward = () => Changed?.Invoke();
+            _store.StoreChanged += _forward;
         }
 
         public bool AdFree => _store.GetOwnership(_productId) != Ownership.NotOwned;
+
+        public void Dispose() => _store.StoreChanged -= _forward;
     }
 }
