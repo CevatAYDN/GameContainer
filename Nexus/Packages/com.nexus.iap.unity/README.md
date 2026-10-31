@@ -33,7 +33,11 @@ adapter's `Initialize`, and a product registered later is unknown to the store (
 Order of events: `Initialize` connects, fetches the catalog's products and the purchases this
 account already owns, then confirms every pending order. A purchase reports `Purchased` to the
 game first and is confirmed with the store right after, so the game records ownership before
-acknowledgement. Consumables are never reported as owned; non-consumables and subscriptions are
+acknowledgement. A confirm the store refuses is warned in every build and sent again after 5 s,
+30 s and 2 min; after that the next purchase fetch (each start and `Restore`) confirms it.
+`IsConfirmationPending(productId)` is true until the store confirms the purchase (Google Play
+refunds a purchase not acknowledged within three days), and `Changed` is raised when it turns
+false. Consumables are never reported as owned; non-consumables and subscriptions are
 owned once their order is confirmed or fetched. `Restore` fetches purchases again. A purchase
 whose payment the store holds (deferred) reports `Pending`, and buying that product again answers
 `Pending` without a second store call until the order completes or a fetch no longer lists it.

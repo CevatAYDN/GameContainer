@@ -1,7 +1,9 @@
 #if NEXUS_UNITY_IAP
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Threading.Tasks;
 using Nexus.Core;
 using Nexus.Core.Services;
 using UnityEngine.Purchasing;
@@ -39,12 +41,29 @@ namespace Nexus.Iap.Unity
         private Action<PurchaseOutcome> _pending;
         private Action<bool> _restorePending;
         private Action<bool> _initializePending;
+        // Orders granted to the player and sent for confirmation, by transaction id, until the store confirms them (issue #172)
+        private readonly Dictionary<string, PendingOrder> _unconfirmed = new();
+        private readonly Dictionary<string, int> _confirmAttempts = new();
+
+        /// <summary>The wait before each new confirm of an order the store refused. After the last one the adapter warns and leaves
+        /// the order to the next purchase fetch (each start and <see cref="Restore"/>).</summary>
+        internal TimeSpan[] ConfirmRetryDelays = { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2) };
 
         public event Action Changed;
         public bool IsAvailable => _connected && _productsFetched;
 
         public string GetLocalizedPrice(string productId) => _store?.GetProductById(productId)?.metadata?.localizedPriceString;
         public bool IsOwned(string productId) => _owned.Contains(productId);
+
+        /// <summary>True while a purchase of the product is granted but not yet confirmed (acknowledged) with the store. Google Play
+        /// refunds a purchase not acknowledged within three days. <see cref="Changed"/> is raised when it becomes false.</summary>
+        public bool IsConfirmationPending(string productId)
+        {
+            foreach (var order in _unconfirmed.Values)
+                foreach (var item in order.CartOrdered.Items())
+                    if (item.Product?.definition?.id == productId) return true;
+            return false;
+        }
 
         public async void Initialize(List<NexusProduct> products, Action<bool> onInitialized)
         {
@@ -62,6 +81,7 @@ namespace Nexus.Iap.Unity
             {
                 _store = UnityIAPServices.StoreController();
                 _store.OnPurchasePending += OnPending;
+                _store.OnPurchaseConfirmed += OnConfirmed;
                 _store.OnPurchaseFailed += OnFailed;
                 _store.OnPurchaseDeferred += order => { Defer(order, true); Complete(PurchaseOutcome.Pending); };
                 _store.OnPurchasesFetched += OnFetched;
@@ -122,8 +142,9 @@ namespace Nexus.Iap.Unity
             Own(order);
             // The game records ownership before the order is acknowledged with the store.
             Complete(PurchaseOutcome.Purchased);
+            Track(order);
             Changed?.Invoke();
-            _store.ConfirmPurchase(order);
+            Confirm(order);
         }
 
         private void OnFetched(Orders orders)
@@ -131,10 +152,87 @@ namespace Nexus.Iap.Unity
             _deferred.Clear();   // a deferral the player cancelled is gone from the next fetch
             foreach (var order in orders.DeferredOrders) Defer(order, true);
             foreach (var order in orders.ConfirmedOrders) Own(order);
-            foreach (var order in orders.PendingOrders) Own(order);
+            foreach (var order in orders.PendingOrders) { Own(order); Track(order); }
             Changed?.Invoke();
-            foreach (var order in orders.PendingOrders) _store.ConfirmPurchase(order);
+            foreach (var order in orders.PendingOrders) Confirm(order);
             FinishRestore(true);
+        }
+
+        /// <summary>Starts a new round of confirms for an order: a purchase, or a fetch that lists it again.</summary>
+        private void Track(PendingOrder order)
+        {
+            string id = order?.Info?.TransactionID;
+            if (string.IsNullOrEmpty(id)) return;   // Unity IAP refuses its confirm; OnConfirmed warns
+            _unconfirmed[id] = order;
+            _confirmAttempts[id] = 0;
+        }
+
+        private void Confirm(PendingOrder order)
+        {
+            string id = order?.Info?.TransactionID;
+            if (!string.IsNullOrEmpty(id) && _confirmAttempts.TryGetValue(id, out int sent)) _confirmAttempts[id] = sent + 1;
+            _store.ConfirmPurchase(order);
+        }
+
+        private void OnConfirmed(Order order)
+        {
+            string id = order?.Info?.TransactionID;
+            if (order is FailedOrder failed)
+            {
+                // the same order is already being confirmed (a fetch and a retry crossed); that confirm's answer follows
+                if (failed.FailureReason == PurchaseFailureReason.ExistingPurchasePending) return;
+                string reason = $"{failed.FailureReason}: {failed.Details}";
+                if (string.IsNullOrEmpty(id) || !_unconfirmed.TryGetValue(id, out var pending))
+                {
+                    Warn($"The store did not confirm an order of {Products(failed)} ({reason}).");
+                    return;
+                }
+                int attempt = _confirmAttempts[id], total = ConfirmRetryDelays.Length + 1;
+                if (attempt < total)
+                {
+                    var delay = ConfirmRetryDelays[attempt - 1];
+                    Warn($"The store did not confirm the purchase of {Products(pending)} ({reason}), attempt {attempt} of {total}; it is sent again in {delay.TotalSeconds.ToString("0.###", CultureInfo.InvariantCulture)} s.");
+                    RetryConfirm(id, delay);
+                }
+                else
+                {
+                    Warn($"The store did not confirm the purchase of {Products(pending)} after {total} attempts ({reason}). The player has it; the next purchase fetch (each start and Restore) confirms it again; Google Play refunds a purchase not acknowledged within three days.");
+                }
+                return;
+            }
+            if (!string.IsNullOrEmpty(id) && _unconfirmed.Remove(id))
+            {
+                _confirmAttempts.Remove(id);
+                Changed?.Invoke();
+            }
+        }
+
+        private async void RetryConfirm(string id, TimeSpan delay)
+        {
+            try
+            {
+                // Unity IAP drops the refused request only after this callback returns: a confirm sent inside it is refused as a duplicate
+                await Task.Yield();
+                await Task.Delay(delay);
+                if (!_unconfirmed.TryGetValue(id, out var order)) return;   // confirmed meanwhile
+                if (!_connected)
+                {
+                    Warn($"The purchase of {Products(order)} is not confirmed: the store is disconnected. The next purchase fetch (each start and Restore) confirms it.");
+                    return;
+                }
+                Confirm(order);
+            }
+            catch (Exception e)
+            {
+                Warn($"The confirm retry of transaction {id} failed: {e.GetType().Name}: {e.Message}");
+            }
+        }
+
+        private static string Products(Order order)
+        {
+            var ids = new List<string>();
+            foreach (var item in order.CartOrdered.Items()) ids.Add(item.Product?.definition?.id);
+            return string.Join(", ", ids);
         }
 
         private void OnFailed(FailedOrder failed)
