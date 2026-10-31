@@ -53,16 +53,18 @@ namespace Nexus.Core.Extensions
         /// <summary>Registers the model that provides save data. A single model is held at
         /// a time; registering a new model replaces the previous one.</summary>
         void RegisterModel(ISaveDataProvider model);
-        /// <summary>Saves the registered model's state to persistent storage.</summary>
+        /// <summary>Saves the registered model's state to persistent storage. Saves of one slot land in call order:
+        /// a snapshot is not written over a newer one.</summary>
         Task SaveAsync(string slotName, CancellationToken ct = default);
-        /// <summary>Loads and restores model state from persistent storage.</summary>
+        /// <summary>Loads and restores model state from persistent storage. A save that stopped between deleting the
+        /// old file and moving the staged one in is loaded from the staged file, which becomes the save file.</summary>
         Task<bool> LoadAsync(string slotName, CancellationToken ct = default);
-        /// <summary>Returns true if a save exists for the given slot.
+        /// <summary>Returns true if a save exists for the given slot, the staged file of an interrupted save included.
         /// Intentionally synchronous — File.Exists is a sub-millisecond metadata
         /// call, not payload I/O; converting it would break this interface's sync contract
         /// without a real main-thread blocking win.</summary>
         bool SaveExists(string slotName);
-        /// <summary>Deletes a save slot from persistent storage.
+        /// <summary>Deletes a save slot from persistent storage, its staged file included.
         /// Intentionally synchronous metadata operation (same rationale as SaveExists).</summary>
         void DeleteSave(string slotName);
     }
@@ -115,6 +117,10 @@ namespace Nexus.Core.Extensions
         }
 
         private readonly object _saveLock = new();
+        // Issue #119: each capture takes the next number (captures run on the main thread, in call order); a write whose
+        // slot already holds a later number is skipped. Only used under _saveLock, except the increment.
+        private long _captureSequence;
+        private readonly System.Collections.Generic.Dictionary<string, long> _writtenSequence = new();
         // Retry jitter source, hoisted from the retry loop (a new Random per retry could
         // reseed identically under rapid retries). Only used under _saveLock.
         private readonly System.Random _retryJitter = new();
@@ -144,15 +150,17 @@ namespace Nexus.Core.Extensions
             ct.ThrowIfCancellationRequested();
 
             byte[] modelData = null;
+            long sequence = 0;
             var ctx = MainThreadContext;
             if (ctx != null && SynchronizationContext.Current != ctx)
             {
-                await RunOnCapturedContextAsync(() => { CaptureMainThreadValues(); modelData = model.CaptureSaveData(); }, ctx, ct);
+                await RunOnCapturedContextAsync(() => { CaptureMainThreadValues(); modelData = model.CaptureSaveData(); sequence = Interlocked.Increment(ref _captureSequence); }, ctx, ct);
             }
             else
             {
                 CaptureMainThreadValues();
                 modelData = model.CaptureSaveData();
+                sequence = Interlocked.Increment(ref _captureSequence);
             }
 
             string dir = SaveDirectory;
@@ -172,18 +180,19 @@ namespace Nexus.Core.Extensions
 
             // Write atomically via temporary file to prevent save corruption on crash.
             // NOTE: the lambda is intentionally NOT async — the whole stage+rename+retry
-            // sequence stays inside one _saveLock critical section. Releasing the lock
-            // between attempts (to await the backoff) would let a concurrent SaveAsync on
-            // the SAME slot interleave: a retrying thread could then overwrite the newer
-            // concurrent save with its own stale data (silent lost update). Serializing the
-            // full retry keeps retry-writes ordered; the cancellable backoff below blocks
-            // only this worker thread during rare IO errors (disk busy, antivirus scan).
+            // sequence stays inside one _saveLock critical section, so one save's attempts never
+            // interleave with another save's. The lock does not order separate saves: their
+            // Task.Run bodies reach it in any order, so the capture sequence does (a write whose
+            // slot already holds a later snapshot is skipped, issue #119). The cancellable backoff
+            // below blocks only this worker thread during rare IO errors (disk busy, antivirus scan).
             await Task.Run(() =>
             {
                 ct.ThrowIfCancellationRequested();
                 string json = JsonUtility.ToJson(data);
                 lock (_saveLock)
                 {
+                    if (_writtenSequence.TryGetValue(path, out long written) && written > sequence)
+                        return; // a later snapshot of this slot is already on disk
                     // Stage + rename must be one critical section (see _saveLock).
                     // Add robust retry logic with exponential backoff to improve resilience
                     // against transient I/O errors (disk busy, antivirus scan, etc.).
@@ -227,6 +236,7 @@ namespace Nexus.Core.Extensions
                             {
                                 File.Move(tempPath, path);
                             }
+                            _writtenSequence[path] = sequence;
                             break; // success
                         }
                         catch (Exception ex)
@@ -268,27 +278,39 @@ namespace Nexus.Core.Extensions
             }
 
             string path = Path.Combine(SaveDirectory, SanitizeSlotName(slotName) + ".sav");
-            if (!File.Exists(path))
+            if (!File.Exists(path) && !File.Exists(path + ".tmp"))
                 return Task.FromResult(false);
 
-            return LoadAndRestoreAsync(model, path, MainThreadContext, ct);
+            return LoadAndRestoreAsync(model, slotName, path, MainThreadContext, ct);
         }
 
-        private async Task<bool> LoadAndRestoreAsync(ISaveDataProvider model, string path, SynchronizationContext synchronizationContext, CancellationToken ct)
+        private async Task<bool> LoadAndRestoreAsync(ISaveDataProvider model, string slotName, string path, SynchronizationContext synchronizationContext, CancellationToken ct)
         {
             byte[] modelData = await Task.Run(() =>
             {
                 ct.ThrowIfCancellationRequested();
-                try
+                byte[] saved = File.Exists(path) ? ReadSave(path) : null;
+                if (saved != null) return saved;
+                // Issue #119: where File.Replace is missing, a save deletes the old file before it moves the staged one
+                // in, and a crash between the two leaves only the staged file. Read and promote it under the save lock,
+                // where no save is half-written.
+                string tempPath = path + ".tmp";
+                lock (_saveLock)
                 {
-                    string json = File.ReadAllText(path);
-                    var data = JsonUtility.FromJson<GameSaveData>(json);
-                    return data?.ModelData;
-                }
-                catch (Exception ex)
-                {
-                    NexusRuntime.Logger?.LogError($"[GameSaveManager] Failed to read save from '{path}': {ex.Message}");
-                    return null;
+                    if (!File.Exists(tempPath)) return null;
+                    byte[] staged = ReadSave(tempPath);
+                    if (staged == null) return null;
+                    try
+                    {
+                        if (File.Exists(path)) File.Delete(path);
+                        File.Move(tempPath, path);
+                    }
+                    catch (Exception ex)
+                    {
+                        NexusRuntime.Logger?.LogError($"[GameSaveManager] Slot '{slotName}' was read from its staged file, which could not become the save file: {ex.Message}");
+                    }
+                    Services.NexusLog.WarnAlways($"[GameSaveManager] Slot '{slotName}' was restored from its staged file: the save that wrote it stopped before it replaced the save file.");
+                    return staged;
                 }
             }, ct);
 
@@ -303,19 +325,35 @@ namespace Nexus.Core.Extensions
             return true;
         }
 
+        private static byte[] ReadSave(string file)
+        {
+            try
+            {
+                return JsonUtility.FromJson<GameSaveData>(File.ReadAllText(file))?.ModelData;
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[GameSaveManager] Failed to read save from '{file}': {ex.Message}");
+                return null;
+            }
+        }
+
         public bool SaveExists(string slotName)
         {
             ValidateSlotName(slotName);
             string path = Path.Combine(SaveDirectory, SanitizeSlotName(slotName) + ".sav");
-            return File.Exists(path);
+            return File.Exists(path) || File.Exists(path + ".tmp");
         }
 
         public void DeleteSave(string slotName)
         {
             ValidateSlotName(slotName);
             string path = Path.Combine(SaveDirectory, SanitizeSlotName(slotName) + ".sav");
-            if (File.Exists(path))
-                File.Delete(path);
+            lock (_saveLock) // a save mid-write keeps its staged file until it is done
+            {
+                if (File.Exists(path)) File.Delete(path);
+                if (File.Exists(path + ".tmp")) File.Delete(path + ".tmp");
+            }
         }
 
         private static string SanitizeSlotName(string slotName)

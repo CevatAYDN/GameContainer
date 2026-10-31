@@ -99,7 +99,8 @@ pools mediators and clears injected references on return.
 
 - `GameSaveManager` writes model snapshots to a temporary file and swaps it in with
   `File.Replace`; where the platform does not support `File.Replace` it logs a warning and
-  falls back to a non-atomic delete-then-move.
+  falls back to a non-atomic delete-then-move. A load finds a save that stopped between the
+  delete and the move in its staged file, and saves of one slot land in call order (issue #119).
 - `EncryptedStorageService` provides AES-256 + HMAC-SHA256 integrity and device-bound
   keys by default (`StorageKeyBinding.App` keeps data readable after a backup restore on
   another phone; README, "Services"). It uses atomic replacement where available and a recoverable backup elsewhere.
