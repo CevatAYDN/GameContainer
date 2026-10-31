@@ -181,7 +181,7 @@ namespace Nexus.Ads.Unity
             var config = _settings.ToConfig(Build, Platform);
             var scheduler = gameObject.GetComponent<UnityAdScheduler>() ?? gameObject.AddComponent<UnityAdScheduler>();
             var visibility = gameObject.GetComponent<UnityAppVisibility>() ?? gameObject.AddComponent<UnityAppVisibility>();
-            _telemetry = new UnityAdTelemetry(_logEvents && Build != BuildKind.Release);
+            _telemetry = new UnityAdTelemetry(_logEvents && Build != BuildKind.Release, violations: Build == BuildKind.Release);
 
             Factories.TryGetValue(_settings.SelectedMediation, out var factory);
             var decision = BuildOutlook.Decide(_settings, Build, config.Provider, advertisingId, factory != null);
@@ -225,7 +225,8 @@ namespace Nexus.Ads.Unity
             Controller = new AdController(config, Provider, new UnityAdClock(), visibility, mainThread, scheduler, new PlayerPrefsPacingStore(), _telemetry, consent);
             Controller.AdOpened += OnAdOpened;
             Controller.AdClosed += OnAdClosed;
-            // tools/device-acceptance counts "[Nexus Ads] PolicyViolation" lines; keep the token
+            // tools/device-acceptance counts "[Nexus Ads] PolicyViolation" lines; keep the token. A release build writes
+            // each rule and placement's first block as a warning with the same token (UnityAdTelemetry, issue #164)
             if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] PolicyViolation " + v);
             Controller.Start(); // an idle host (ad-free, blocked, consent flow or provider missing) stays Stopped: its provider is NoAdsProvider
             if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);

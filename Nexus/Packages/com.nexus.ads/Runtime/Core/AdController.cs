@@ -118,7 +118,7 @@ namespace Nexus.Ads
                 _consent.Request(() => OnMain(OnConsentCompleted));
                 return;
             }
-            if (_consent != null && !_consent.CanRequestAds) { State = Phase.ConsentRefused; RaiseReadyChanged(); return; }
+            if (_consent != null && !_consent.CanRequestAds) { RefuseConsent(); return; }
             InitializeProvider();
         }
 
@@ -315,7 +315,14 @@ namespace Nexus.Ads
         {
             if (_disposed) return;
             if (_consent.CanRequestAds) InitializeProvider();
-            else { State = Phase.ConsentRefused; RaiseReadyChanged(); }
+            else RefuseConsent();
+        }
+
+        private void RefuseConsent()
+        {
+            State = Phase.ConsentRefused;
+            _telemetry.Record(new AdEvent(AdEventKind.ConsentRefused, AdFormat.Interstitial, "", "the consent flow allows no ad request; no ads until the player changes it in the privacy options"));
+            RaiseReadyChanged();
         }
 
         private void InitializeProvider()
@@ -326,6 +333,7 @@ namespace Nexus.Ads
                 if (_disposed) return;
                 if (ok)
                 {
+                    _telemetry.Record(new AdEvent(AdEventKind.Initialized, AdFormat.Interstitial, "", _initFailures == 0 ? null : "after " + _initFailures + " failed start(s)"));
                     _initFailures = 0;
                     State = Phase.Running;
                     foreach (var format in _slots.Keys) Preload(format);
@@ -334,8 +342,10 @@ namespace Nexus.Ads
                 {
                     State = Phase.InitFailed;
                     _initFailures++;
+                    double delay = RetryPolicy.DelaySeconds(_initFailures);
+                    _telemetry.Record(new AdEvent(AdEventKind.InitFailed, AdFormat.Interstitial, "", "attempt " + _initFailures + ", retry in " + delay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " s"));
                     _initRetry?.Dispose();
-                    _initRetry = _scheduler.Schedule(RetryPolicy.DelaySeconds(_initFailures), () => { if (!_disposed && State == Phase.InitFailed) InitializeProvider(); });
+                    _initRetry = _scheduler.Schedule(delay, () => { if (!_disposed && State == Phase.InitFailed) InitializeProvider(); });
                 }
                 RaiseReadyChanged();
             }));

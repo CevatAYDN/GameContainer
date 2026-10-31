@@ -48,6 +48,12 @@ namespace Nexus.Ads
         Violation,
         NotReady,
         KillSwitch,
+        /// <summary>The SDK did not start; the detail names the attempt and the retry's delay.</summary>
+        InitFailed,
+        /// <summary>The consent flow allows no ad request; nothing starts until the player changes it in the privacy options.</summary>
+        ConsentRefused,
+        /// <summary>The SDK started; after failed starts the detail counts them.</summary>
+        Initialized,
     }
 
     /// <summary>One telemetry row. The Unity layer forwards it to the game's analytics; every row carries the placement name.</summary>

@@ -92,23 +92,32 @@ namespace Nexus.Ads.Unity
     }
 
     /// <summary>
-    /// Fans every ad event out to the registered sinks (analytics bridges, the debug panel) and logs
-    /// it in the editor and development builds when event logging is on. Violations are not logged here:
-    /// <see cref="AdsBootstrap"/> writes each one as an error in every non-release build, once.
+    /// Fans every ad event out to the registered sinks (analytics bridges, the debug panel). With
+    /// <c>verbose</c> (event logging on, editor and development builds) it logs every event; otherwise it
+    /// warns of each failure once per cause, in every build (issue #164): a load that failed or found no fill,
+    /// a refused consent, a failed start and its recovery, every failed show, and with <c>violations</c> (a
+    /// release build) a policy block once per rule and placement. Outside a release build
+    /// <see cref="AdsBootstrap"/> writes every block as an error, so this class does not log violations there.
     /// </summary>
     public sealed class UnityAdTelemetry : IAdTelemetry
     {
         private readonly List<IAdTelemetry> _sinks = new List<IAdTelemetry>();
         private readonly bool _verbose;
+        private readonly AdFailureLog _failures;
 
-        public UnityAdTelemetry(bool verbose) => _verbose = verbose;
+        public UnityAdTelemetry(bool verbose, bool violations = false)
+        {
+            _verbose = verbose;
+            _failures = new AdFailureLog(line => Debug.LogWarning(line), violations);
+        }
 
         public void AddSink(IAdTelemetry sink) { if (sink != null && !_sinks.Contains(sink)) _sinks.Add(sink); }
         public void RemoveSink(IAdTelemetry sink) => _sinks.Remove(sink);
 
         public void Record(in AdEvent e)
         {
-            if (_verbose && e.Kind != AdEventKind.Violation) Debug.Log("[Nexus Ads] " + e);
+            if (!_verbose) _failures.Record(e);
+            else if (e.Kind != AdEventKind.Violation) Debug.Log("[Nexus Ads] " + e);
             for (int i = 0; i < _sinks.Count; i++) _sinks[i].Record(e);
         }
     }

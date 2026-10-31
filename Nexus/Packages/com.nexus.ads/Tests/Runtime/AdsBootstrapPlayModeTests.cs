@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using NUnit.Framework;
 using Nexus.Ads.Unity;
 using UnityEngine;
@@ -175,6 +176,56 @@ namespace Nexus.Ads.Tests.Runtime
             }
             finally
             {
+                AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
+                AdsBootstrap.BuildForTests = null;
+                AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, previous);
+            }
+        }
+
+        // Issue #164: a release build logged no ad event, so a load without fill, a failed show, a policy block and a
+        // refused consent left no line in the player's log. Each cause is warned once, and every failed show.
+        [UnityTest]
+        public IEnumerator Release_WarnsEachAdFailureOncePerCause_AndEveryFailedShow()
+        {
+            SimulatorProvider provider = null;
+            var previous = AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, (scheduler, _) => provider = new SimulatorProvider(scheduler, SimulatorScenario.NoFill));
+            AdsBootstrap.BuildForTests = BuildKind.Release;
+            AdsBootstrap.RegisterSharedConsentFlow(_ => new SimulatorProvider(new NeverScheduler()), AdProviderKind.None);
+            var warnings = new List<string>();
+            Application.LogCallback capture = (message, _, type) => { if (type == LogType.Warning && message.StartsWith("[Nexus Ads] ")) warnings.Add(message); };
+            Application.logMessageReceived += capture;
+            try
+            {
+                yield return BootRelease();
+                Assert.AreEqual(AdController.Phase.Running, _bootstrap.Controller.State, "the registered flow allows ads: the SDK started");
+                provider.Load(AdFormat.Rewarded); // the same no fill again, as the retry after its back-off
+                provider.Scenario = SimulatorScenario.ShowFails;
+                provider.Load(AdFormat.Rewarded);
+                var results = new List<AdResult>();
+                _bootstrap.Controller.Show("shop_refill", results.Add);
+                _bootstrap.Controller.Show("shop_refill", results.Add); // the failed show reloaded the slot
+                _bootstrap.Controller.Show("no_such_placement", results.Add);
+                _bootstrap.Controller.Show("no_such_placement", results.Add);
+                CollectionAssert.AreEqual(new[] { AdResult.Failed, AdResult.Failed, AdResult.Blocked, AdResult.Blocked }, results);
+                CollectionAssert.AreEqual(new[]
+                {
+                    "[Nexus Ads] NoFill Rewarded '': no fill (first this session; repeats are not logged)",
+                    "[Nexus Ads] ShowFailed Rewarded 'shop_refill'",
+                    "[Nexus Ads] ShowFailed Rewarded 'shop_refill'",
+                    "[Nexus Ads] PolicyViolation UnknownPlacement (Interstitial 'no_such_placement'): placement 'no_such_placement' is not declared in the settings (first for this rule and placement this session; repeats are not logged)",
+                }, warnings);
+                TearDown();
+                yield return null; // the first bootstrap is gone before the second wakes
+
+                warnings.Clear();
+                AdsBootstrap.RegisterSharedConsentFlow(_ => new SimulatorProvider(new NeverScheduler(), SimulatorScenario.ConsentRefused), AdProviderKind.None);
+                yield return BootRelease();
+                Assert.AreEqual(AdController.Phase.ConsentRefused, _bootstrap.Controller.State);
+                CollectionAssert.AreEqual(new[] { "[Nexus Ads] ConsentRefused: the consent flow allows no ad request; no ads until the player changes it in the privacy options (first this session; repeats are not logged)" }, warnings);
+            }
+            finally
+            {
+                Application.logMessageReceived -= capture;
                 AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
                 AdsBootstrap.BuildForTests = null;
                 AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, previous);

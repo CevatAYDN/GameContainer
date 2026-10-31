@@ -172,8 +172,8 @@ what runs, reaches every build's log through `NexusLog.WarnAlways` or `LogError`
 unknown provider name, an adapter's SDK failure); a diagnostic stays in the editor and development builds (a
 signal nobody hears, an interstitial on cooldown or not loaded yet, a performance hint). A game follows the same
 rule: `NexusLog.WarnAlways` for what a store build's log must show. Every site in the core and its adapter packages
-follows it; the ad family's own controller events (a load that failed, a policy block, consent refused) do not reach
-a release log yet (issue #164).
+follows it, and so does the ad family: its failures (a load that failed or found no fill, a failed show or start, a
+refused consent, a policy block) reach a release player's log once per cause (`com.nexus.ads` README).
 
 ## Performance scope
 

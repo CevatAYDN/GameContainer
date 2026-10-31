@@ -615,6 +615,71 @@ namespace NexusBench
                     rig.Controller.State == AdController.Phase.Stopped && MediationLock.Holder == holderBefore && result == AdResult.NotReady && !ready && rig.Violations.Count == 0,
                     $"state={rig.Controller.State}, lock holder={MediationLock.Holder ?? "-"} (before {holderBefore ?? "-"}), show={result?.ToString() ?? "open"}, IsReady={ready}, violations={rig.Violations.Count} (without the guard: the lock is taken as \"none\" and the failed init retries)");
             }
+
+            // Issue #164: a failed start and a refused consent changed the state and recorded nothing, so no log and no analytics sink saw them
+            using (var rig = new AdsRig())
+            {
+                rig.Controller.Start();
+                rig.Provider.InitCallback(false);
+                var failed = rig.Telemetry.Events.FindAll(e => e.Kind == AdEventKind.InitFailed);
+                rig.Provider.InitCallback = null;
+                rig.Scheduler.Advance(2);
+                rig.Provider.InitCallback(true);
+                var started = rig.Telemetry.Events.FindAll(e => e.Kind == AdEventKind.Initialized);
+                var consent = new AdsFakeConsent();
+                using var refused = new AdsRig(consent: consent);
+                refused.Controller.Start();
+                consent.Answer(false);
+                var refusedAlready = new AdsFakeConsent { Completed = true, CanRequestAds = false };
+                using var refusedAtStart = new AdsRig(consent: refusedAlready);
+                refusedAtStart.Controller.Start();
+                Check("AC43. FailedStartRecoveryAndRefusedConsent_AreRecorded",
+                    failed.Count == 1 && failed[0].Detail == "attempt 1, retry in 2 s"
+                    && started.Count == 1 && started[0].Detail == "after 1 failed start(s)"
+                    && refused.Telemetry.Count(AdEventKind.ConsentRefused) == 1 && refusedAtStart.Telemetry.Count(AdEventKind.ConsentRefused) == 1,
+                    $"InitFailed=[{string.Join(" | ", failed)}] Initialized=[{string.Join(" | ", started)}] ConsentRefused after the flow={refused.Telemetry.Count(AdEventKind.ConsentRefused)}, at start={refusedAtStart.Telemetry.Count(AdEventKind.ConsentRefused)}");
+            }
+
+            // Issue #164: a release player's log had no line for any ad failure; the log writes each cause once, every failed show, and no success
+            {
+                var lines = new List<string>();
+                var log = new AdFailureLog(lines.Add, violations: true);
+                for (int i = 0; i < 3; i++) log.Record(new AdEvent(AdEventKind.NoFill, AdFormat.Rewarded, "", "509 Mediation No fill"));
+                log.Record(new AdEvent(AdEventKind.NoFill, AdFormat.Interstitial, "", "509 Mediation No fill"));
+                log.Record(new AdEvent(AdEventKind.LoadFailed, AdFormat.Rewarded, "", "simulated SDK error"));
+                log.Record(new AdEvent(AdEventKind.ShowFailed, AdFormat.Rewarded, "shop_refill"));
+                log.Record(new AdEvent(AdEventKind.ShowFailed, AdFormat.Rewarded, "shop_refill"));
+                for (int i = 0; i < 3; i++) log.Record(new AdEvent(AdEventKind.InitFailed, AdFormat.Interstitial, "", "attempt " + (i + 1) + ", retry in 2 s"));
+                log.Record(new AdEvent(AdEventKind.Initialized, AdFormat.Interstitial, "", "after 3 failed start(s)"));
+                log.Record(new AdEvent(AdEventKind.Initialized, AdFormat.Interstitial, ""));
+                log.Record(new AdEvent(AdEventKind.ConsentRefused, AdFormat.Interstitial, "", "no consent"));
+                log.Record(new AdEvent(AdEventKind.ConsentRefused, AdFormat.Interstitial, "", "no consent"));
+                log.Record(new AdEvent(AdEventKind.Violation, AdFormat.Interstitial, "level_end", "InterstitialFrequency: 16.1 s since the last interstitial"));
+                log.Record(new AdEvent(AdEventKind.Violation, AdFormat.Interstitial, "level_end", "InterstitialFrequency: 30.4 s since the last interstitial"));
+                foreach (var kind in new[] { AdEventKind.Loaded, AdEventKind.Shown, AdEventKind.Rewarded, AdEventKind.Closed, AdEventKind.Revenue, AdEventKind.NotReady, AdEventKind.KillSwitch })
+                    log.Record(new AdEvent(kind, AdFormat.Rewarded, "shop_refill", "x"));
+                var expected = new[]
+                {
+                    "[Nexus Ads] NoFill Rewarded '': 509 Mediation No fill (first this session; repeats are not logged)",
+                    "[Nexus Ads] NoFill Interstitial '': 509 Mediation No fill (first this session; repeats are not logged)",
+                    "[Nexus Ads] LoadFailed Rewarded '': simulated SDK error (first this session; repeats are not logged)",
+                    "[Nexus Ads] ShowFailed Rewarded 'shop_refill'",
+                    "[Nexus Ads] ShowFailed Rewarded 'shop_refill'",
+                    "[Nexus Ads] InitFailed: attempt 1, retry in 2 s (later failed starts are not logged until the SDK starts)",
+                    "[Nexus Ads] Initialized: after 3 failed start(s)",
+                    "[Nexus Ads] ConsentRefused: no consent (first this session; repeats are not logged)",
+                    "[Nexus Ads] PolicyViolation InterstitialFrequency (Interstitial 'level_end'): 16.1 s since the last interstitial (first for this rule and placement this session; repeats are not logged)",
+                };
+                var development = new List<string>();
+                var devLog = new AdFailureLog(development.Add, violations: false);
+                devLog.Record(new AdEvent(AdEventKind.Violation, AdFormat.Interstitial, "level_end", "InterstitialFrequency: 16.1 s"));
+                var capped = new List<string>();
+                var capLog = new AdFailureLog(capped.Add, violations: false);
+                for (int i = 0; i < AdFailureLog.MaxCauses + 10; i++) capLog.Record(new AdEvent(AdEventKind.LoadFailed, AdFormat.Rewarded, "", "error id " + i));
+                Check("AC44. FailureLog_WritesEachCauseOnce_EveryFailedShow_TheRecovery_NoSuccess",
+                    string.Join("|", lines) == string.Join("|", expected) && development.Count == 0 && capped.Count == AdFailureLog.MaxCauses + 1 && capped[^1].Contains("new ones are not logged"),
+                    $"lines=[{string.Join(" | ", lines)}] violation outside release={development.Count} capped={capped.Count}");
+            }
         }
 
         // ----- ReadyChanged at the end of a pacing window (issue #95)

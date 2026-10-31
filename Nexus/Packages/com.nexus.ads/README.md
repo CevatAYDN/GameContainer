@@ -37,11 +37,12 @@ Next: the settings ([Using it without Nexus](#using-it-without-nexus)), then the
 ## Rules the core enforces
 
 `PolicyGuard` answers every show with one of the rule ids in `PolicyRules`; a block raises a
-`PolicyViolation` event, logged as an error in the editor and development builds and reported to
-telemetry in release builds. The guard cannot be turned off; the floors in `AdPolicy` can only be
-tightened, by the settings, a game or remote configuration alike. The kill switch and the ad-free
-entitlement are not violations: they answer `NotReady`. The policies behind each rule, with the
-pages they were read from, are in the register.
+`PolicyViolation` event and a `Violation` telemetry event. The editor and development builds log
+every block as an error; a release build logs the first block of each rule and placement as a
+warning (`[Nexus Ads] PolicyViolation <rule> (<format> '<placement>'): <reason>`). The guard cannot
+be turned off; the floors in `AdPolicy` can only be tightened, by the settings, a game or remote
+configuration alike. The kill switch and the ad-free entitlement are not violations: they answer
+`NotReady`. The policies behind each rule, with the pages they were read from, are in the register.
 
 | Rule | Blocks |
 |---|---|
@@ -147,9 +148,16 @@ the UTC day change, issue #95). A poll reaches the SDK each time the 0.1 s answe
 which on Android is a JNI call that allocates.
 
 Full-screen ads pause `AudioListener` and set `Time.timeScale` to 0 until they close (switches on
-the bootstrap). Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`. A paid reward is
-written to the store before the game hears of it (`PendingReward`); `AdRewardedButton` acknowledges
-it after its listeners ran, a game that saves asynchronously acknowledges it itself.
+the bootstrap). Ad events reach `AdsBootstrap.Instance.Telemetry.AddSink(...)`. With the bootstrap's
+**Log Events** (on by default) the editor and development builds log every event; otherwise, and
+always in a release player, each ad failure is logged as a `[Nexus Ads]` warning once per cause
+(issue #164): a load that failed or found no fill (once per format and reason), a refused consent, a
+failed start (once until the SDK starts, then one `Initialized` line), every failed show (the AdMob
+and LevelPlay providers write the SDK's reason on the line before), and in a release build the
+policy block above. Successes are not logged. `InitFailed`, `ConsentRefused` and `Initialized` are
+telemetry events too. A paid reward is written to the store before the game hears of it
+(`PendingReward`); `AdRewardedButton` acknowledges it after its listeners ran, a game that saves
+asynchronously acknowledges it itself.
 
 ## Editor tools
 

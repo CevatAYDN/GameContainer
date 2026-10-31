@@ -112,7 +112,7 @@ namespace Nexus.Ads.LevelPlay
                 _rewarded.OnAdLoaded += _ => Loaded?.Invoke(AdFormat.Rewarded);
                 _rewarded.OnAdLoadFailed += error => LoadFailed?.Invoke(AdFormat.Rewarded, Describe(error));
                 _rewarded.OnAdDisplayed += _ => Opened?.Invoke(AdFormat.Rewarded);
-                _rewarded.OnAdDisplayFailed += (_, error) => Finish(AdFormat.Rewarded, AdResult.Failed);
+                _rewarded.OnAdDisplayFailed += (_, error) => ShowFailed(AdFormat.Rewarded, error);
                 _rewarded.OnAdRewarded += (_, __) => OnRewarded();
                 _rewarded.OnAdClosed += _ => OnClosed(AdFormat.Rewarded);
                 _rewarded.OnAdImpressionDataReady += data => OnImpression(AdFormat.Rewarded, data);
@@ -123,7 +123,7 @@ namespace Nexus.Ads.LevelPlay
                 _interstitial.OnAdLoaded += _ => Loaded?.Invoke(AdFormat.Interstitial);
                 _interstitial.OnAdLoadFailed += error => LoadFailed?.Invoke(AdFormat.Interstitial, Describe(error));
                 _interstitial.OnAdDisplayed += _ => Opened?.Invoke(AdFormat.Interstitial);
-                _interstitial.OnAdDisplayFailed += (_, error) => Finish(AdFormat.Interstitial, AdResult.Failed);
+                _interstitial.OnAdDisplayFailed += (_, error) => ShowFailed(AdFormat.Interstitial, error);
                 _interstitial.OnAdClosed += _ => OnClosed(AdFormat.Interstitial);
                 _interstitial.OnAdImpressionDataReady += data => OnImpression(AdFormat.Interstitial, data);
             }
@@ -186,6 +186,13 @@ namespace Nexus.Ads.LevelPlay
             if (format != AdFormat.Rewarded) { Finish(format, AdResult.Closed); return; }
             if (show.Rewarded) { Finish(format, AdResult.Rewarded); return; }
             show.Grace = _scheduler.Schedule(RewardGraceSeconds, () => Finish(AdFormat.Rewarded, show.Rewarded ? AdResult.Rewarded : AdResult.Closed));
+        }
+
+        // the show result carries no reason: the SDK's is written here, in every build, as the AdMob provider does (issue #164)
+        private void ShowFailed(AdFormat format, LevelPlayAdError error)
+        {
+            Debug.LogWarning("[Nexus Ads] LevelPlay " + format + " failed to show: " + Describe(error));
+            Finish(format, AdResult.Failed);
         }
 
         private void Finish(AdFormat format, AdResult result)
