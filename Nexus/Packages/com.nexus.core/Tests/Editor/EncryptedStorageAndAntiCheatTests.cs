@@ -229,7 +229,7 @@ namespace Nexus.Editor.Tests
                 Directory.CreateDirectory(Private<string>(store, "GetFilePath", "coins") + ".tmp"); // the staged write of 'coins' cannot be created
 
                 UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"Save write failed for key 'coins'"));
-                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"Disposed with 1 key\(s\) its final save could not write, so their last values are lost: 'coins' in '.*SecureData_Test_Salt_Dispose166'"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"Disposed with 1 key\(s\) its final save could not write or delete, so their last changes are lost: 'coins' in '.*SecureData_Test_Salt_Dispose166'"));
                 store.Dispose();
                 Assert.IsTrue(File.Exists(Private<string>(store, "GetFilePath", "gems")), "the key that could be written was saved");
 
@@ -240,6 +240,30 @@ namespace Nexus.Editor.Tests
                 store.SetString("coins", "7"); // a repeat: no second line
                 store.DeleteKey("gems");
                 Assert.AreEqual("none", store.GetString("gems", "none"));
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally { ForgetStore(salt); }
+        }
+
+        // Issue #166: a DeleteKey whose file could not be removed stays pending, and Dispose dropped it with the store
+        [Test]
+        [UnityEngine.TestTools.UnityPlatform(UnityEngine.RuntimePlatform.WindowsEditor)] // an open file blocks its deletion on Windows only
+        public void DisposeNamesAKeyWhoseDeleteItCouldNotFinish()
+        {
+            const string salt = "Test_Salt_DisposeDelete166";
+            ForgetStore(salt);
+            try
+            {
+                var store = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A") { AutoSave = true };
+                store.SetString("lives", "1");
+                using (File.Open(Private<string>(store, "GetFilePath", "lives"), FileMode.Open, FileAccess.Read, FileShare.None))
+                {
+                    UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"Delete failed for key 'lives'"));
+                    store.DeleteKey("lives");
+                    UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"Delete failed for key 'lives'"));
+                    UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"Disposed with 1 key\(s\) its final save could not write or delete, so their last changes are lost: 'lives'"));
+                    store.Dispose();
+                }
                 UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
             }
             finally { ForgetStore(salt); }

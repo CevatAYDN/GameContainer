@@ -404,9 +404,9 @@ namespace Nexus.Core.Services
                 }
                 // The final save is the last chance to write them: dropping them without a word lost a player's data (issue #166).
                 if (unsaved.Length > 0)
-                    NexusRuntime.Logger.LogError(
-                        $"[EncryptedStorageService] Disposed with {unsaved.Length} key(s) its final save could not write, so their last values are lost: " +
-                        $"'{string.Join("', '", unsaved)}' in '{_storageFolderPath}'. The warnings before this line say why each write failed.");
+                    NexusRuntime.Logger?.LogError(
+                        $"[EncryptedStorageService] Disposed with {unsaved.Length} key(s) its final save could not write or delete, so their last changes are lost: " +
+                        $"'{string.Join("', '", unsaved)}' in '{_storageFolderPath}'. The warnings before this line say why each one failed.");
             }
             // Detach the instance from the static forwarders. The static hook
             // itself intentionally stays (one delegate, retains no instance) — per-instance
