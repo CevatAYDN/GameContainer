@@ -174,35 +174,5 @@ namespace NexusVerify
                 return level;
             throw new ArgumentException("-nexusStripping takes Low, Medium or High.");
         }
-
-        /// <summary>
-        /// Packs the embedded package into a UPM tarball at the folder named by NEXUS_PACK_OUTPUT
-        /// (tools/nexus-consumer uses it to verify a fresh project that installs the archive).
-        /// Package Manager requests complete on the editor loop, so the method polls from
-        /// EditorApplication.update and exits the editor itself; run it without -quit.
-        /// </summary>
-        public static void PackPackage()
-        {
-            string output = Environment.GetEnvironmentVariable("NEXUS_PACK_OUTPUT");
-            if (string.IsNullOrEmpty(output)) throw new Exception("NEXUS_PACK_OUTPUT is required.");
-            System.IO.Directory.CreateDirectory(output);
-            var request = UnityEditor.PackageManager.Client.Pack("Packages/com.nexus.core", output);
-            void Poll()
-            {
-                if (!request.IsCompleted) return;
-                EditorApplication.update -= Poll;
-                if (request.Status == UnityEditor.PackageManager.StatusCode.Success)
-                {
-                    Console.WriteLine("[NexusVerifyBuild] packed " + request.Result.tarballPath);
-                    EditorApplication.Exit(0);
-                }
-                else
-                {
-                    Console.WriteLine("[NexusVerifyBuild] pack FAILED: " + request.Error?.message);
-                    EditorApplication.Exit(2);
-                }
-            }
-            EditorApplication.update += Poll;
-        }
     }
 }

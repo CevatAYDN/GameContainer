@@ -16,7 +16,7 @@ REPO = Path(__file__).resolve().parents[2]
 DEV_PROJECT = REPO / "Nexus"
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--archive", type=Path, required=True, help="com.nexus.core-<version>.tgz produced by NexusVerifyBuild.PackPackage")
+parser.add_argument("--archive", type=Path, required=True, help="com.nexus.core-<version>.tgz that run.ps1 packs with git archive")
 parser.add_argument("--output", type=Path, required=True, help="evidence folder; the project is created at <output>/CleanConsumer")
 parser.add_argument("--testables", action="store_true", help="list com.nexus.core in testables, so the package's own tests compile in the consumer")
 args = parser.parse_args()
@@ -38,9 +38,9 @@ original = json.loads((DEV_PROJECT / "Packages/manifest.json").read_text(encodin
 dependencies = {key: value for key, value in original["dependencies"].items() if key.startswith("com.unity.modules.")}
 dependencies.update({
     "com.nexus.core": "file:" + archive.as_posix(),
-    "com.unity.test-framework": original["dependencies"].get("com.unity.test-framework", "1.7.0"),
+    "com.unity.test-framework": original["dependencies"].get("com.unity.test-framework", "1.8.0"),
     # The Unity CLI (`unity run` / `unity test`) drives the project through this package; the development project carries the same version.
-    "com.unity.pipeline": original["dependencies"].get("com.unity.pipeline", "0.8.0-exp.1"),
+    "com.unity.pipeline": original["dependencies"].get("com.unity.pipeline", "0.9.1-exp.1"),
 })
 # A game lists no testables; only the package's own suites need them (issue #74).
 manifest = {"dependencies": dependencies, **({"testables": ["com.nexus.core"]} if args.testables else {})}

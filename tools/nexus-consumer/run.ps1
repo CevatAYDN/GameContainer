@@ -20,16 +20,22 @@ New-Item -ItemType Directory -Path $evidence -Force | Out-Null
 $steps = [System.Collections.Generic.List[object]]::new()
 function Save-Steps { $steps | ConvertTo-Json -Depth 6 -AsArray | Set-Content -LiteralPath (Join-Path $evidence 'consumer-results.json') -Encoding utf8 }
 
-# 1. Pack (editor method polls the Package Manager request and exits the editor itself; no -quit).
+# 1. Pack the package as a game pinned to this commit receives it: git archive of the tracked files at HEAD.
+# Uncommitted changes and git-ignored build outputs (SourceGenerator~/bin, obj) are not in a git URL
+# install, so the gate refuses to run with uncommitted changes under the package instead of testing other content.
 $packDir = Join-Path $evidence 'package'
-$env:NEXUS_PACK_OUTPUT = $packDir
-# Unity.exe is a GUI-subsystem process: PowerShell does not wait for it and $LASTEXITCODE stays unset, so run it through Start-Process.
-$pack = Start-Process -FilePath $UnityEditor -ArgumentList @('-batchmode', '-nographics', '-projectPath', ('"' + $devProject + '"'),
-    '-executeMethod', 'NexusVerify.NexusVerifyBuild.PackPackage', '-logFile', ('"' + (Join-Path $evidence 'pack-editor.log') + '"')) -Wait -PassThru -WindowStyle Hidden
-$steps.Add([ordered]@{ stage = 'pack'; exitCode = $pack.ExitCode }); Save-Steps
-if ($pack.ExitCode -ne 0) { throw "Packing failed (exit $($pack.ExitCode)); see pack-editor.log" }
-$archive = Get-ChildItem -LiteralPath $packDir -Filter '*.tgz' | Select-Object -First 1
-if (-not $archive) { throw 'No tarball was produced.' }
+New-Item -ItemType Directory -Path $packDir -Force | Out-Null
+$packagePath = 'Nexus/Packages/com.nexus.core'
+$dirty = & git -C $repo status --porcelain -- $packagePath
+if ($LASTEXITCODE -ne 0) { throw 'git status failed.' }
+if ($dirty) { throw ("Uncommitted changes under ${packagePath}; the gate packs HEAD. Commit or stash them first:`n" + ($dirty -join "`n")) }
+$commit = (& git -C $repo rev-parse HEAD).Trim()
+$version = ((& git -C $repo show "HEAD:$packagePath/package.json") -join "`n" | ConvertFrom-Json).version
+$archivePath = Join-Path $packDir ('com.nexus.core-' + $version + '.tgz')
+& git -C $repo archive --format=tar.gz --prefix=package/ -o $archivePath "HEAD:$packagePath"
+$steps.Add([ordered]@{ stage = 'pack'; exitCode = $LASTEXITCODE; commit = $commit; archive = $archivePath }); Save-Steps
+if ($LASTEXITCODE -ne 0) { throw "git archive failed (exit $LASTEXITCODE)." }
+$archive = Get-Item -LiteralPath $archivePath
 
 # 2. Fresh consumer project.
 $prepare = @('--archive', $archive.FullName, '--output', $evidence)

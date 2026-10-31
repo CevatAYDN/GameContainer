@@ -12,8 +12,9 @@ settings or generated files. This is release gate 8 in `docs/RELEASE_GATES.md`.
 
 What runs, in order (each stage is a separate Unity process; the first failure stops the run):
 
-1. `NexusVerifyBuild.PackPackage` packs `Nexus/Packages/com.nexus.core` with the Package Manager
-   into `Nexus/artifacts/<RunName>/package/*.tgz`.
+1. `git archive` packs `Nexus/Packages/com.nexus.core` at `HEAD` into
+   `Nexus/artifacts/<RunName>/package/com.nexus.core-<version>.tgz`: the tracked files a game pinned to that
+   commit receives, without git-ignored build outputs. The run stops when the package has uncommitted changes.
 2. `prepare_clean_project.py` creates `Nexus/artifacts/<RunName>/CleanConsumer`: a manifest with
    only the built-in modules, the test framework, `com.unity.pipeline` (which the Unity CLI needs)
    and the tarball, without `testables` as in a game (`-ValidatePerformance` adds them), the development project's
