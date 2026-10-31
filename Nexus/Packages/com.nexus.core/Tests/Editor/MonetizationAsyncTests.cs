@@ -102,6 +102,33 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        // Issue #164: the line went through LogWarning, which a release player drops, so a reward the player earned and never got left no trace
+        [Test]
+        public async Task ARewardGrantedAfterTheWaitWasCancelled_IsWarnedInAReleasePlayerToo()
+        {
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables; a logger another test left cached may be enabled
+            NexusBuild.OverrideForTests(false);
+            try
+            {
+                var (ads, adapter) = await Ads();
+                using (ads)
+                using (var cts = new CancellationTokenSource())
+                {
+                    Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops LogWarning");
+                    var wait = ads.RequestRewardAsync("level_end", cts.Token);
+                    cts.Cancel();
+
+                    LogAssert.Expect(LogType.Warning, new Regex("granted its reward after the wait was cancelled"));
+                    adapter.Answer(AdOutcome.Rewarded);
+                    Assert.That(wait.IsCanceled, Is.True);
+                }
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+            }
+        }
+
         [Test]
         public async Task APurchaseAwaitReturnsTheOutcomeTheStoreReportsLater()
         {

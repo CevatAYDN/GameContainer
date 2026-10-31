@@ -496,13 +496,13 @@ namespace Nexus.Core.Services
                 if (_disposed || _disposing) return;
                 if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
                 else PersistAllBalancesNow();
-                NexusRuntime.Logger?.LogWarning($"[Economy] Server rejected spend of {amount} '{currencyId}' — balance restored.");
+                NexusLog.WarnAlways($"[Economy] Server rejected spend of {amount} '{currencyId}' — balance restored.");
             }
             catch (Exception ex)
             {
                 // Network failure: keep the optimistic balance; a later reconciliation (or the
                 // server's authoritative ledger) settles the difference. Surface for debugging.
-                NexusRuntime.Logger?.LogWarning($"[Economy] Spend validation failed for '{currencyId}': {ex.Message}");
+                NexusLog.WarnAlways($"[Economy] Spend validation failed for '{currencyId}': {ex.Message}");
             }
         }
 
@@ -515,7 +515,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[Economy] Earn validation failed for '{currencyId}': {ex.Message}");
+                NexusLog.WarnAlways($"[Economy] Earn validation failed for '{currencyId}': {ex.Message}");
             }
         }
 
@@ -535,13 +535,13 @@ namespace Nexus.Core.Services
                 if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
                 else PersistAllBalancesNow();
             }
-            catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Big spend validation failed for '{currencyId}': {ex.Message}"); }
+            catch (Exception ex) { NexusLog.WarnAlways($"[Economy] Big spend validation failed for '{currencyId}': {ex.Message}"); }
         }
 
         private async Task SafeValidateBigEarnAsync(INetworkBigEconomyValidator validator, string currencyId, BigDouble amount, string reason)
         {
             try { await validator.ValidateEarnBigAsync(currencyId, amount, reason); }
-            catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Big earn validation failed for '{currencyId}': {ex.Message}"); }
+            catch (Exception ex) { NexusLog.WarnAlways($"[Economy] Big earn validation failed for '{currencyId}': {ex.Message}"); }
         }
 
         public override void Dispose()
@@ -557,7 +557,7 @@ namespace Nexus.Core.Services
                 // directly before clearing it; queued actions become harmless after disposal.
                 PersistAllBalancesNow();
             }
-            catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Economy] Final persist failed on dispose: {ex.Message}"); }
+            catch (Exception ex) { NexusLog.WarnAlways($"[Economy] Final persist failed on dispose: {ex.Message}"); }
             finally
             {
                 lock (_balanceLock)

@@ -168,7 +168,7 @@ namespace Nexus.Core.Services
             if (SaveThrottler != null)
             {
                 try { SaveThrottler.ForceSave(SaveOwner, PersistNow); }
-                catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[Progression] Final persist failed on dispose: {ex.Message}"); }
+                catch (Exception ex) { NexusLog.WarnAlways($"[Progression] Final persist failed on dispose: {ex.Message}"); }
             }
             CurrentLevel.RemoveOnChanged(OnLevelChanged);
             MaxUnlockedLevel.RemoveOnChanged(OnLevelChanged);

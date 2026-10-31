@@ -45,7 +45,7 @@ namespace Nexus.Core.Services
                 {
                     registration.Dispose();
                     if (!tcs.TrySetResult(outcome) && isGrant(outcome))
-                        NexusRuntime.Logger?.LogWarning("[Nexus] " + lateGrantWarning);
+                        NexusLog.WarnAlways("[Nexus] " + lateGrantWarning);
                 });
             }
             catch

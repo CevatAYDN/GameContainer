@@ -52,6 +52,28 @@ namespace Nexus.Editor.Tests
             LogAssert.NoUnexpectedReceived();
         }
 
+        // Issue #164: SaveThrottler said "the failure is always logged — never silent", through LogWarning, which a release player drops
+        [Test]
+        public void ASaveThatFails_IsWarnedInAReleasePlayerToo()
+        {
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables; a logger another test left cached may be enabled
+            NexusBuild.OverrideForTests(false);
+            try
+            {
+                Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops LogWarning");
+                var throttler = new SaveThrottler();
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"\[SaveThrottler\] Save execution failed \(1/5 consecutive\): disk full"));
+
+                throttler.ForceSave("economy", () => throw new System.IO.IOException("disk full"));
+
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+            }
+        }
+
         [Test]
         public void WarnAlways_UsesTheRegisteredLogger_WhileItIsEnabled()
         {

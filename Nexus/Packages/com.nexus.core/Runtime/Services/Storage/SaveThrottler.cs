@@ -289,7 +289,7 @@ namespace Nexus.Core.Services
                     slot.LastSaveTime = Now;
                     slot.Pending = superseded || slot.ConsecutiveFailures < MaxConsecutiveSaveFailures;
                 }
-                NexusRuntime.Logger?.LogWarning(
+                NexusLog.WarnAlways(
                     $"[SaveThrottler] Save execution failed ({slot.ConsecutiveFailures}/{MaxConsecutiveSaveFailures} consecutive): {ex.Message}");
             }
             finally
