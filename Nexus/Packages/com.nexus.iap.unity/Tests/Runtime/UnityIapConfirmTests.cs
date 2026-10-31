@@ -2,7 +2,6 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using Nexus.Core.Services;
 using NUnit.Framework;
@@ -81,10 +80,8 @@ namespace Nexus.Iap.Unity.Tests
 
         private static UnityIapAdapter AdapterRetryingAfter(TimeSpan delay, int retries)
         {
-            var adapter = new UnityIapAdapter();
-            var delays = new TimeSpan[retries];
-            for (int i = 0; i < retries; i++) delays[i] = delay;
-            typeof(UnityIapAdapter).GetField("ConfirmRetryDelays", BindingFlags.Instance | BindingFlags.NonPublic)?.SetValue(adapter, delays);
+            var adapter = new UnityIapAdapter { ConfirmRetryDelays = new TimeSpan[retries] };
+            for (int i = 0; i < retries; i++) adapter.ConfirmRetryDelays[i] = delay;
             return adapter;
         }
 
@@ -95,14 +92,14 @@ namespace Nexus.Iap.Unity.Tests
             Assert.IsTrue(done(), what + " within 5 s");
         }
 
-        private static IEnumerator Buy(UnityIapAdapter adapter, string productId, Action<PurchaseOutcome?> outcome)
+        private static IEnumerator Buy(UnityIapAdapter adapter, string productId, Action<PurchaseOutcome?> outcome, Action whenTold = null)
         {
             bool? ready = null;
             adapter.Initialize(new List<NexusProduct> { new NexusProduct { Id = productId, Type = NexusProductType.NonConsumable } }, ok => ready = ok);
             yield return Until(() => ready != null, "the store initialized");
             Assert.AreEqual(true, ready);
             PurchaseOutcome? result = null;
-            adapter.PurchaseWithOutcome(productId, o => result = o);
+            adapter.PurchaseWithOutcome(productId, o => { result = o; whenTold?.Invoke(); });
             yield return Until(() => result != null, "the purchase answered");
             outcome(result);
         }
@@ -143,8 +140,10 @@ namespace Nexus.Iap.Unity.Tests
                 adapter.Changed += () => changed++;
                 LogAssert.Expect(LogType.Warning, new Regex(@"The store did not confirm the purchase of rewards_pass .*attempt 1 of 2"));
                 PurchaseOutcome? outcome = null;
-                yield return Buy(adapter, "rewards_pass", o => outcome = o);
+                bool pendingWhenTold = false;
+                yield return Buy(adapter, "rewards_pass", o => outcome = o, () => pendingWhenTold = adapter.IsConfirmationPending("rewards_pass"));
                 Assert.AreEqual(PurchaseOutcome.Purchased, outcome);
+                Assert.IsTrue(pendingWhenTold, "not yet acknowledged when the game is told Purchased");
                 Assert.IsTrue(adapter.IsOwned("rewards_pass"));
                 Assert.IsTrue(adapter.IsConfirmationPending("rewards_pass"), "granted, not yet acknowledged");
                 int changedBefore = changed;

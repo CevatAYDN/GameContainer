@@ -13,6 +13,7 @@ using StoreProduct = UnityEngine.Purchasing.ProductDefinition;
 using StoreProductType = UnityEngine.Purchasing.ProductType;
 
 [assembly: InternalsVisibleTo("com.nexus.iap.unity.tests")]
+[assembly: InternalsVisibleTo("com.nexus.iap.unity.runtime.tests")]
 
 namespace Nexus.Iap.Unity
 {
@@ -140,9 +141,9 @@ namespace Nexus.Iap.Unity
         private void OnPending(PendingOrder order)
         {
             Own(order);
+            Track(order);   // before Complete: the game told Purchased sees the purchase as not yet confirmed
             // The game records ownership before the order is acknowledged with the store.
             Complete(PurchaseOutcome.Purchased);
-            Track(order);
             Changed?.Invoke();
             Confirm(order);
         }
