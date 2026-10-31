@@ -6,6 +6,7 @@ using UnityEngine;
 
 [assembly: InternalsVisibleTo("com.nexus.ads.editor.tests")]
 [assembly: InternalsVisibleTo("com.nexus.ads.tests")]
+[assembly: InternalsVisibleTo("com.nexus.ads.bridge.nexus.tests")]
 
 namespace Nexus.Ads.Unity
 {
@@ -205,11 +206,20 @@ namespace Nexus.Ads.Unity
                     Debug.LogError("[Nexus Ads] no ads run: " + BuildOutlook.IdleReason(_settings, Gate));
                 else if (Gate.Rule != null)
                     Debug.LogWarning("[Nexus Ads] " + Gate.Rule + ": " + Gate.Reason + "; the simulator runs (labelled, not a real ad)");
-                // an idle host keeps a simulator that is never started, so every show answers NotReady
-                var simulator = new SimulatorProvider(scheduler, _simulatorScenario) { Interactive = Mode == HostMode.Simulator };
-                if (Mode == HostMode.Simulator) { _overlay = gameObject.AddComponent<SimulatorOverlay>(); _overlay.Bind(simulator); }
-                Provider = simulator;
-                consent = simulator;
+                if (Mode == HostMode.Simulator)
+                {
+                    var simulator = new SimulatorProvider(scheduler, _simulatorScenario) { Interactive = true };
+                    _overlay = gameObject.AddComponent<SimulatorOverlay>();
+                    _overlay.Bind(simulator);
+                    Provider = simulator;
+                    consent = simulator;
+                }
+                else
+                {
+                    // nothing can start an idle host's controller, the bridge's Initialize included: every show answers NotReady (issue #165)
+                    Provider = new NoAdsProvider();
+                    consent = null;
+                }
             }
 
             Controller = new AdController(config, Provider, new UnityAdClock(), visibility, mainThread, scheduler, new PlayerPrefsPacingStore(), _telemetry, consent);
@@ -217,7 +227,7 @@ namespace Nexus.Ads.Unity
             Controller.AdClosed += OnAdClosed;
             // tools/device-acceptance counts "[Nexus Ads] PolicyViolation" lines; keep the token
             if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] PolicyViolation " + v);
-            if (Mode != HostMode.Idle) Controller.Start(); // an idle host (ad-free, blocked, provider missing) builds the controller and never starts it
+            Controller.Start(); // an idle host (ad-free, blocked, consent flow or provider missing) stays Stopped: its provider is NoAdsProvider
             if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
             // one line per start in every build, no ids: tools/device-acceptance -ExpectAds reads it (issue #52)
             Debug.Log("[Nexus Ads] started mode=" + Mode + " mediation=" + _settings.SelectedMediation + " gate=" + Gate.Decision

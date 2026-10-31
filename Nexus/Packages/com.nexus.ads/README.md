@@ -86,7 +86,8 @@ selected and test mode on; elsewhere nothing reads the id (issue #133).
 runs. The simulator (a full-screen overlay labelled "Simulated Rewarded ad" or "Simulated Interstitial ad") runs only where the gate chose it,
 or in the editor and development builds while no mediation is selected. A blocked gate, or a selected
 provider that is not in the player (package not installed, assembly stripped) where the gate chose the
-SDK, runs nothing: the controller is never started, every show answers `NotReady`, the rewarded button
+SDK, runs nothing: its provider is `NoAdsProvider`, so the controller never starts, whoever calls `Start` (the bridge's
+`Initialize` included, issue #165), every show answers `NotReady`, the rewarded button
 stays hidden and the reason is logged as an error. A release build never runs the simulator (issue #19; locked by
 `AdsCoreSuite` GT10–GT13).
 

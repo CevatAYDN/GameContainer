@@ -602,6 +602,19 @@ namespace NexusBench
                     && ready && next == null && rig.Provider.ShowPlacement == "shop_refill" && rig.Violations.Count == 0,
                     $"thrown={thrown?.Message ?? "none"} results=[{string.Join(",", results)}] ShowFailed names it={named}; IsReady={ready}, next show={next?.ToString() ?? "open"}, violations={rig.Violations.Count} (pre-fix: no result, next show Blocked by NoStackedAds)");
             }
+
+            // A host that runs no ads (issue #165): the bridge's Initialize starts a Stopped controller, and the idle host's simulator paid every reward
+            using (var rig = new AdsRig(provider: new NoAdsProvider()))
+            {
+                string holderBefore = MediationLock.Holder;
+                rig.Controller.Start();
+                rig.Controller.Start();
+                var result = rig.Show("shop_refill");
+                bool ready = rig.Controller.IsReady("shop_refill");
+                Check("AC42. NoAdsProvider_ControllerNeverStarts_TakesNoLock_EveryShowNotReady",
+                    rig.Controller.State == AdController.Phase.Stopped && MediationLock.Holder == holderBefore && result == AdResult.NotReady && !ready && rig.Violations.Count == 0,
+                    $"state={rig.Controller.State}, lock holder={MediationLock.Holder ?? "-"} (before {holderBefore ?? "-"}), show={result?.ToString() ?? "open"}, IsReady={ready}, violations={rig.Violations.Count} (without the guard: the lock is taken as \"none\" and the failed init retries)");
+            }
         }
 
         // ----- ReadyChanged at the end of a pacing window (issue #95)

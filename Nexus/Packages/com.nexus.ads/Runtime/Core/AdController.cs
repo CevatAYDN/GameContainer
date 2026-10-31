@@ -93,7 +93,7 @@ namespace Nexus.Ads
         /// <summary>Takes the mediation lock, runs consent, starts the SDK and preloads. Safe to call once.</summary>
         public void Start()
         {
-            if (State != Phase.Stopped || _disposed) return;
+            if (State != Phase.Stopped || _disposed || _provider is NoAdsProvider) return; // a host that runs no ads stays Stopped (issue #165)
             if (!MediationLock.TryAcquire(_provider.Name))
             {
                 Raise(new PolicyViolation(PolicyRules.SingleMediation, "", AdFormat.Interstitial,

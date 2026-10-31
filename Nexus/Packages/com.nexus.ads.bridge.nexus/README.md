@@ -59,7 +59,7 @@ device id yet.
 | `ShowInterstitial` | the guard's natural-break and frequency rules, then the SDK |
 | `ShowBanner(placement, position)` | `"top"` or anything else = bottom |
 | `ReadyChanged` | the controller's, which also fires when a pacing window runs out (a cooldown, a first-show delay, an interstitial gap, a day cap at the UTC day change; issue #95); follow it instead of polling the two `Is…Available` members. `AdService` also raises it once when its own interstitial cooldown ends (issue #99); that cooldown starts at the show call and the controller's gap at the close, so in that handler `IsInterstitialAvailable` can still be false until the controller's event |
-| `PrivacyOptionsRequired`, `ShowPrivacyOptions` | the consent flow the bootstrap runs: Google UMP for AdMob, and for LevelPlay when `com.nexus.ads.admob` is installed (otherwise LevelPlay's pass-through, which never asks); the simulator's switch in the editor |
+| `PrivacyOptionsRequired`, `ShowPrivacyOptions` | the consent flow the bootstrap runs before the mediation: Google UMP for AdMob; for LevelPlay the one the ad settings name (issue #154): Google UMP from `com.nexus.ads.admob`, the game's own flow, or with `None` LevelPlay's pass-through, which never asks; the simulator's switch in the editor; none on a host that runs no ads |
 | `OnImpressionRecorded` | every `AdRevenue` the mediation reports |
 
 Remote configuration: with `com.nexus.firebase` installed, `Nexus.Ads.Bridge.Nexus.Firebase`
@@ -76,4 +76,5 @@ A paid reward is written to the store before the game hears of it: check
 with hand-written ports: the capability rows of `com.nexus.core/docs/ADAPTERS.md` (outcomes,
 readiness, privacy options, the cooldown floor, revenue, the ad-free entitlement, the outcome map).
 `Tests/Runtime/NexusAdsBridgePlayModeTests` connect before the bootstrap started and take a reward
-through the service over the editor's simulator overlay.
+through the service over the editor's simulator overlay, and connect to a release host that runs no ads:
+its controller stays Stopped and a reward request answers `NotReady` (issue #165).
