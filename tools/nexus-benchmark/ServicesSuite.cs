@@ -36,8 +36,9 @@ namespace NexusBench
     {
         public readonly List<string> Messages = new();
         public bool IsEnabled { get; set; } = true;
-        public void Log(string message) => Messages.Add(message);
-        public void LogWarning(string message) => Messages.Add(message);
+        // as LoggerService: a release player's logger (IsEnabled false) drops Log and LogWarning (#198)
+        public void Log(string message) { if (IsEnabled) Messages.Add(message); }
+        public void LogWarning(string message) { if (IsEnabled) Messages.Add(message); }
         public void LogError(string message) => Messages.Add(message);
         public void LogException(Exception exception) => Messages.Add(exception?.Message);
     }
@@ -1028,6 +1029,19 @@ namespace NexusBench
                 bool availableWithoutAdapter = iap.IsStoreAvailable;
                 Check("D6. No_Adapter_Graceful_Failure", purchaseFailed && restoreFailed && logged && !ownedWithoutAdapter && !availableWithoutAdapter,
                     $"ok={ok} msg={msg} restoreOk={restoreOk} logged={logger.Messages.Count} owned={ownedWithoutAdapter} available={availableWithoutAdapter}");
+
+                // D6r (#198): a release player's logger drops LogWarning, so a failure must still reach Unity's log.
+                logger.IsEnabled = false;
+                var unityWarnings = new List<string>();
+                Action<string, string> listen = (level, text) => { if (level == "Warning") unityWarnings.Add(text); };
+                UnityEngine.Debug.Logged += listen;
+                int recorded = logger.Messages.Count;
+                iap.PurchaseProduct("gems_100", (o, m) => { });
+                UnityEngine.Debug.Logged -= listen;
+                logger.IsEnabled = true;
+                bool releaseWarned = unityWarnings.Exists(t => t.Contains("PurchaseProduct('gems_100') called without a store adapter"));
+                Check("D6r. Release_Logger_Failure_Still_Reaches_Unity_Log", releaseWarned && logger.Messages.Count == recorded,
+                    $"unityWarnings={unityWarnings.Count} warned={releaseWarned} recorderGrew={logger.Messages.Count - recorded}");
 
                 // D7: with an adapter bound, purchase/restore/ownership delegate.
                 var adapter = new SvcRecordingIapAdapter();

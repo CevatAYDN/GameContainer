@@ -6,19 +6,35 @@
     <Nullable>disable</Nullable>
     <ImplicitUsings>disable</ImplicitUsings>
     <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
-    <!-- Match Unity's optional DOTS assembly (com.nexus.dots): compile NexusDOTSBridge only when the
-         generated Unity.Collections assembly is available. -->
     <!-- The installed editor's engine modules; pass -p:UNITY_MODULES=<...\Data\Managed\UnityEngine\> for another install. -->
     <UNITY_MODULES Condition="'$(UNITY_MODULES)' == ''">C:\Program Files\Unity\Hub\Editor\6000.6.7f1\Editor\Data\Managed\UnityEngine\</UNITY_MODULES>
     <UNITY_COLLECTIONS_DLL Condition="'$(UNITY_COLLECTIONS_DLL)' == ''">..\..\Nexus\Library\ScriptAssemblies\Unity.Collections.dll</UNITY_COLLECTIONS_DLL>
-    <UNITY_COLLECTIONS_DEFINE Condition="Exists('$(UNITY_COLLECTIONS_DLL)')">;UNITY_COLLECTIONS</UNITY_COLLECTIONS_DEFINE>
+    <UNITY_INPUTSYSTEM_DLL Condition="'$(UNITY_INPUTSYSTEM_DLL)' == ''">..\..\Nexus\Library\ScriptAssemblies\Unity.InputSystem.dll</UNITY_INPUTSYSTEM_DLL>
     <UNITY_UGUI_DLL Condition="'$(UNITY_UGUI_DLL)' == '' and Exists('$(UNITY_UGUI)UnityEngine.UI.dll')">$(UNITY_UGUI)UnityEngine.UI.dll</UNITY_UGUI_DLL>
     <UNITY_UGUI_DLL Condition="'$(UNITY_UGUI_DLL)' == ''">..\..\Nexus\Library\ScriptAssemblies\UnityEngine.UI.dll</UNITY_UGUI_DLL>
-    <DefineConstants>UNITY_6000;UNITY_6000_5_OR_NEWER;DEVELOPMENT_BUILD$(UNITY_COLLECTIONS_DEFINE)</DefineConstants>
+    <!-- What Unity defines in every player and the editor; com.nexus.dots compiles with com.unity.collections and the
+         input service with the Input System the core depends on (#198). -->
+    <DefineConstants>UNITY_6000;UNITY_6000_5_OR_NEWER;UNITY_5_3_OR_NEWER;UNITY_COLLECTIONS;UNITY_INPUT_SYSTEM;ENABLE_INPUT_SYSTEM;ENABLE_LEGACY_INPUT_MANAGER</DefineConstants>
     <NoWarn>CS0067;CS0649;CS0414;CS0219;CS8019</NoWarn>
     <WarningLevel>4</WarningLevel>
     <Deterministic>true</Deterministic>
     <AssemblyName>com.nexus.core</AssemblyName>
+  </PropertyGroup>
+
+  <!-- Variants (#198): the default build is a release player; "editor" adds the development and editor branches,
+       "android" and "ios" the IL2CPP device branches. A build without -p:Variant builds all four. -->
+  <PropertyGroup Condition="'$(Variant)' == 'editor'">
+    <DefineConstants>$(DefineConstants);NEXUS_DEBUG;UNITY_EDITOR;UNITY_STANDALONE;ENABLE_PROFILER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Variant)' == 'android'">
+    <DefineConstants>$(DefineConstants);NEXUS_DEBUG;UNITY_ANDROID;ENABLE_IL2CPP;ENABLE_PROFILER</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Variant)' == 'ios'">
+    <DefineConstants>$(DefineConstants);UNITY_IOS;ENABLE_IL2CPP</DefineConstants>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Variant)' != ''">
+    <IntermediateOutputPath>obj\$(Variant)\</IntermediateOutputPath>
+    <OutputPath>bin\$(Variant)\</OutputPath>
   </PropertyGroup>
 
   <ItemGroup>
@@ -69,8 +85,27 @@
     <Reference Include="$(UNITY_MODULES)UnityEngine.AssetBundleModule.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.UnityCurlModule.dll" />
     <Reference Include="$(UNITY_MODULES)UnityEngine.TLSModule.dll" />
-    <Reference Include="$(UNITY_UGUI_DLL)" Condition="Exists('$(UNITY_UGUI_DLL)')" />
-    <Reference Include="$(UNITY_COLLECTIONS_DLL)" Condition="Exists('$(UNITY_COLLECTIONS_DLL)')" />
+    <Reference Include="$(UNITY_UGUI_DLL)" />
+    <Reference Include="$(UNITY_COLLECTIONS_DLL)" />
+    <Reference Include="$(UNITY_INPUTSYSTEM_DLL)" />
   </ItemGroup>
+  <ItemGroup Condition="'$(Variant)' == 'editor'">
+    <Reference Include="$(UNITY_MODULES)UnityEditor.CoreModule.dll" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(Variant)' == 'android'">
+    <Reference Include="$(UNITY_MODULES)UnityEngine.AndroidJNIModule.dll" />
+  </ItemGroup>
+
+  <!-- A missing assembly stops the check instead of compiling less than it claims (#198). -->
+  <Target Name="RequireUnityAssemblies" BeforeTargets="ResolveAssemblyReferences">
+    <Error Condition="!Exists('$(UNITY_MODULES)UnityEngine.CoreModule.dll')" Text="No engine modules at $(UNITY_MODULES): install Unity 6000.6.7f1 or pass -p:UNITY_MODULES=..." />
+    <Error Condition="!Exists('$(UNITY_COLLECTIONS_DLL)') or !Exists('$(UNITY_UGUI_DLL)') or !Exists('$(UNITY_INPUTSYSTEM_DLL)')" Text="Nexus/Library/ScriptAssemblies lacks Unity.Collections, UnityEngine.UI or Unity.InputSystem: open or batch-compile the Nexus project once." />
+  </Target>
+
+  <Target Name="CompileVariants" AfterTargets="Build" Condition="'$(Variant)' == ''">
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Variant=editor;Configuration=$(Configuration)" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Variant=android;Configuration=$(Configuration)" />
+    <MSBuild Projects="$(MSBuildProjectFullPath)" Targets="Build" Properties="Variant=ios;Configuration=$(Configuration)" />
+  </Target>
 
 </Project>

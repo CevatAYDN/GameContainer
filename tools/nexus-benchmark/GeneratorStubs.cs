@@ -5,6 +5,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 
 namespace UnityEditor
@@ -103,10 +104,20 @@ namespace Nexus.Editor
             return new Dictionary<string, (string[] Files, string[] Defines)>();
         }
 
+        /// <summary>As the editor's: a partial load returns the types that loaded and warns, so a partial-load regression shows (#198).</summary>
         public static Type[] GetTypesSafe(Assembly assembly)
         {
             try { return assembly.GetTypes(); }
-            catch { return Array.Empty<Type>(); }
+            catch (ReflectionTypeLoadException ex)
+            {
+                Console.WriteLine($"[Nexus] Partial type load in '{assembly.GetName().Name}' — some types skipped. {ex.LoaderExceptions?.FirstOrDefault(e => e != null)?.Message}");
+                return ex.Types.Where(t => t != null).ToArray();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Nexus] Failed to scan assembly '{assembly.GetName().Name}': {ex.Message}");
+                return Array.Empty<Type>();
+            }
         }
     }
 

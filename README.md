@@ -59,14 +59,14 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 | `Nexus/Packages/com.nexus.ads.admob`, `com.nexus.iap.unity`, `com.nexus.firebase` | Adapter packages: Google AdMob (the ad family's provider with Google's consent form), Unity IAP 5, Firebase |
 | `Nexus/` | Unity 6000.6.7f1 development project that hosts the packages and their EditMode/PlayMode tests |
 | `tools/nexus-benchmark` | .NET host harness: compiles the runtime against Unity stubs and runs stress, fuzz, zero-allocation, lifecycle, codegen, ads-core and evidence suites; also the pre-commit hook |
-| `tools/nexus-compile-check` | Compiles every runtime file against the installed editor's engine modules (`dotnet build tools/nexus-compile-check`) |
+| `tools/nexus-compile-check` | Compiles every runtime file against the installed editor's engine modules (`dotnet build tools/nexus-compile-check`) four times: a release player, the editor with `NEXUS_DEBUG`, Android IL2CPP and iOS IL2CPP; a missing engine or package assembly is an error |
 | `tools/nexus-comparison` | Pinned VContainer/Zenject/Reflex core DI comparison (host, Unity Mono player and Android IL2CPP device) |
 | `tools/nexus-consumer` | Clean UPM consumer gate: pack, fresh project, sample import, tests, player |
 | `tools/unity-verify` | Player build verification of the development project |
 | `tools/device-acceptance` | Android player on the connected phone: soak, background/resume, kill/restart, logcat scan |
 | `tools/check-docs.py` | Markdown link checker used by the documentation gate |
 | `tools/check-versions.py` | Dependency versions against the Dependencies table of the release gates; `--newest` reads each source (gate 13) |
-| `tools/install-git-hook.ps1`, `tools/nexus-code-audit.ps1`, `tools/check-env.ps1` | Installs the pre-commit hook; a heuristic scan for `async void`, `Thread.Sleep` and mutable signal structs; lists the installed editors and .NET |
+| `tools/install-git-hook.ps1`, `tools/nexus-code-audit.ps1`, `tools/check-env.ps1` | Installs the pre-commit hook; a heuristic scan of the tracked C# files for `async void`, `Thread.Sleep` (exit 1) and mutable signal structs; lists the installed editors and .NET |
 | `docs/` | Repository-level documents: release gates, ADRs, dated research, archive of past audits |
 
 ## Verify a change

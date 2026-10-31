@@ -128,10 +128,12 @@ namespace UnityEngine
     /// <summary>Unity Debug — a no-op outside Unity.</summary>
     public static class Debug
     {
-        public static void Log(object message) { }
-        public static void LogWarning(object message) { }
-        public static void LogError(object message) { }
-        public static void LogException(Exception exception) { }
+        /// <summary>The harness's view of Unity's log (level, text): null unless a check listens (#198).</summary>
+        public static event Action<string, string> Logged;
+        public static void Log(object message) => Logged?.Invoke("Log", message?.ToString());
+        public static void LogWarning(object message) => Logged?.Invoke("Warning", message?.ToString());
+        public static void LogError(object message) => Logged?.Invoke("Error", message?.ToString());
+        public static void LogException(Exception exception) => Logged?.Invoke("Exception", exception?.Message);
         /// <summary>Mirrors UnityEngine.Debug.isDebugBuild; false in the benchmark harness.</summary>
         public static bool isDebugBuild => false;
     }

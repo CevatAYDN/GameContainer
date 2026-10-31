@@ -38,6 +38,13 @@ def first_version(text):
     return match.group(0) if match else None
 
 
+def names(cell, version):
+    """True when the table cell names this exact version (or this short git hash), not one that contains it (#198)."""
+    if re.fullmatch(r"[0-9a-f]{7}", version):
+        return re.search(r"\b" + version, cell) is not None
+    return version in VERSION.findall(cell)
+
+
 def order(version):
     numbers, _, pre = version.partition("-")
     return [int(n) for n in re.findall(r"\d+", numbers)], 0 if pre else 1, [int(n) for n in re.findall(r"\d+", pre)]
@@ -99,12 +106,19 @@ def offline(rows, problems):
                 problems.append(f"{name}: the development project takes {wanted}, not a 40-character commit")
             resolved[name] = (entry.get("hash") or "")[:7]
             continue
-        if entry.get("source") == "registry":
+        if entry.get("source") in ("registry", "builtin"):
             resolved[name] = entry["version"]
             if name not in rows:
                 problems.append(f"{name}: in the development project, no row in the Dependencies table")
+        if entry.get("source") == "builtin":  # a built-in package follows the editor (#198)
+            shipped = EDITOR_ROOT / editor / "Editor/Data/Resources/PackageManager/BuiltInPackages" / name / "package.json"
+            if not shipped.exists():
+                problems.append(f"{name}: built in, but {editor} is not installed at {EDITOR_ROOT} to compare it")
+            elif json.loads(shipped.read_text(encoding="utf-8"))["version"] != entry["version"]:
+                problems.append(f"{name}: packages-lock.json resolves {entry['version']}, {editor} ships "
+                                f"{json.loads(shipped.read_text(encoding='utf-8'))['version']}")
     for name, version in resolved.items():
-        if name in rows and version and version not in rows[name]["proven"]:
+        if name in rows and version and not names(rows[name]["proven"], version):
             problems.append(f"{name}: the development project runs {version}, the table's proven is {rows[name]['proven']!r}")
     for name, row in rows.items():
         minimum, proven, newest = (first_version(row[c]) for c in ("minimum", "proven", "newest"))
@@ -125,8 +139,8 @@ def offline(rows, problems):
                 problems.append(f"{path}: names the editor {match.group(1)}, the project is on {editor}")
     roslyn = EDITOR_ROOT / editor / "Editor/Data/DotNetSdk"
     compilers = list(roslyn.glob("sdk/*/Roslyn/bincore/Microsoft.CodeAnalysis.CSharp.dll")) if roslyn.exists() else []
-    if not compilers:
-        print(f"  not checked: the Roslyn of {editor} (editor not installed at {EDITOR_ROOT})")
+    if not compilers:  # an unchecked rule fails rather than passes (#198)
+        problems.append(f"Microsoft.CodeAnalysis.CSharp: not checked, {editor} is not installed at {EDITOR_ROOT}")
     else:
         ps = f"[Reflection.AssemblyName]::GetAssemblyName('{compilers[0]}').Version.ToString(3)"
         shipped = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True).stdout.strip()
