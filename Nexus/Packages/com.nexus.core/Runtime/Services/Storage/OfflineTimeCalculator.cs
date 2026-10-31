@@ -63,8 +63,15 @@ namespace Nexus.Core.Services
         /// Returns 0 if time manipulation is detected (current wall time is earlier than
         /// quit time, or the hardware monotonic tick contradicts the wall-clock claim).
         /// </summary>
+        /// <param name="maxOfflineSeconds">The most seconds granted. A negative cap is a configuration error: it is logged in
+        /// every build and grants 0 (issue #120).</param>
         public static long CalculateOfflineSeconds(IPlayerPrefsService storage, long maxOfflineSeconds = 28800L, string key = DefaultTimestampKey)
         {
+            if (maxOfflineSeconds < 0)
+            {
+                NexusLog.WarnAlways($"[OfflineTimeCalculator] The cap of {maxOfflineSeconds} s is negative: no offline progress is granted. Pass 0 or more.");
+                return 0L;
+            }
             if (storage == null || !storage.HasKey(key)) return 0L;
 
             long lastQuit = storage.GetLong(key, 0L);

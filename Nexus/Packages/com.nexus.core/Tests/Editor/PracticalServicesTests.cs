@@ -111,6 +111,20 @@ namespace Nexus.Editor.Tests
             Assert.GreaterOrEqual(OfflineTimeCalculator.CalculateOfflineSeconds(prefs, 28800L, "slotA"), 3590L);
         }
 
+        // Issue #120: the cap went unchecked into Math.Min, so a negative cap from a game's configuration returned negative
+        // offline seconds, which the game then paid as negative income
+        [Test]
+        public void OfflineTimeCalculator_ANegativeCap_GrantsNothing_AndIsLogged()
+        {
+            var prefs = new InMemoryPlayerPrefsService();
+            OfflineTimeCalculator.RecordQuitTimestamp(prefs, "quit");
+            foreach (var key in new System.Collections.Generic.List<string>(prefs.Keys))
+                prefs.SetLong(key, prefs.GetLong(key) - (key == "quit" ? 100L : 100L * 1000L)); // quit 100 s ago
+
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[OfflineTimeCalculator\] The cap of -5 s is negative"));
+            Assert.AreEqual(0L, OfflineTimeCalculator.CalculateOfflineSeconds(prefs, -5L, "quit"));
+        }
+
         [Test]
         public void InputService_MoveInput_And_PlayerMoveSignal_Works()
         {
