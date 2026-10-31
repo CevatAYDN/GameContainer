@@ -146,27 +146,24 @@ def fetch(url):
 
 def newest_of(name, row, editor):
     if row["newest"].startswith("set by the editor"):
-        return None, None
-    if name == "unity":
-        minor = ".".join(editor.split(".")[:2])
-        api = "https://services.api.unity.com/unity/editor/release/v1/releases?limit=1&order=RELEASE_DATE_DESC"
-        patch = fetch(f"{api}&version={minor}")["results"][0]["version"]
-        supported = fetch(f"{api}&stream=SUPPORTED")["results"][0]["version"]
-        return patch, f"Supported {supported}" if supported not in row["newest"] else None
+        return None
+    if name == "unity":  # the newest patch of Unity's Supported stream (#139)
+        api = "https://services.api.unity.com/unity/editor/release/v1/releases?limit=25&order=RELEASE_DATE_DESC&stream=SUPPORTED"
+        return max((r["version"] for r in fetch(api)["results"]), key=order)
     if name == "dotnet":
         channel = re.search(r"net(\d+\.\d+)", row["minimum"]).group(1)
-        return fetch(f"https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/{channel}/releases.json")["latest-sdk"], None
+        return fetch(f"https://dotnetcli.blob.core.windows.net/dotnet/release-metadata/{channel}/releases.json")["latest-sdk"]
     if name in GITHUB:
         releases = fetch(f"https://api.github.com/repos/{GITHUB[name]}/releases?per_page=30")
         tags = [first_version(r["tag_name"]) for r in releases if not r["prerelease"] and not r["draft"]]
-        return max((t for t in tags if t), key=order), None
+        return max((t for t in tags if t), key=order)
     if name.startswith("com.unity."):
         data = fetch(f"https://packages.unity.com/{name}")
         minor = order(".".join(editor.split(".")[:2]))
         allow_pre = "-" in (first_version(row["proven"]) or "")
         usable = [v for v, info in data["versions"].items()
                   if (allow_pre or "-" not in v) and order(info.get("unity", "0.0")) <= minor]
-        return max(usable, key=order), None
+        return max(usable, key=order)
     raise ValueError("no source for this row")
 
 
@@ -179,7 +176,7 @@ def main() -> int:
     if newest:
         for name, row in rows.items():
             try:
-                latest, missing = newest_of(name, row, editor)
+                latest = newest_of(name, row, editor)
             except Exception as error:  # a source that cannot be read leaves its row unchecked, and says so
                 problems.append(f"{name}: newest not read ({error})")
                 continue
@@ -187,8 +184,6 @@ def main() -> int:
             print(f"  {name:42} proven {first_version(row['proven']) or '-':14} newest {latest or 'set by the editor'}")
             if latest and latest != listed:
                 problems.append(f"{name}: the table's newest is {listed}, the source says {latest}")
-            if missing:
-                problems.append(f"{name}: the table's newest does not name {missing}")
     print(f"dependency rows: {len(rows)}; problems: {len(problems)}" + ("" if newest else " (offline; --newest reads the sources)"))
     for problem in problems:
         print(f"  {problem}")
