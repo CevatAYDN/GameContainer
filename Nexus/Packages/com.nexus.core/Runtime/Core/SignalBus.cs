@@ -116,7 +116,9 @@ namespace Nexus.Core
             {
                 SignalBus.RaiseUnhandledException(ex, errorContext);
             }
-            NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
+            // a command failure the recovery engine already wrote is not written again (issue #168)
+            if (!RecoveryEngine.WasLogged(ex))
+                NexusRuntime.Logger?.LogError($"[Nexus] {errorContext}: {ex.Message}\n{ex.StackTrace}");
         }
     }
 

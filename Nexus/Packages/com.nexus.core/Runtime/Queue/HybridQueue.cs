@@ -357,7 +357,9 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Exception during queued signal drain: {ex.Message}\n{ex.StackTrace}");
+                    // a command failure the recovery engine already wrote is not written again (issue #168)
+                    if (!RecoveryEngine.WasLogged(ex))
+                        NexusRuntime.Logger?.LogError($"[Nexus] Exception during queued signal drain: {ex.Message}\n{ex.StackTrace}");
                 }
                 finally
                 {

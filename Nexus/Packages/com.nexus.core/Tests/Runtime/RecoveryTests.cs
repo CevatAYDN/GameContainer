@@ -178,7 +178,6 @@ namespace Nexus.Tests
             _strategy.DecisionFactory = ctx => RecoveryDecision.Retry(3);
 
             ExpectCommandFailed("ThrowCommand", "Command failed intendedly: RetryTest", attempts: 4); // 1 initial + 3 retries
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, "[Nexus Error] Retry limit reached for command ThrowCommand.");
 
             // The recovery engine surfaces the retry-limit abort as the TYPED
             // NexusRecoveryAbortException (an InvalidOperationException subclass).
@@ -294,44 +293,104 @@ namespace Nexus.Tests
             Assert.AreEqual("SkipTest", ((FailSignal)caughtFailedSignal.Value.SourceSignal).Message);
         }
 
+        public enum FireMode { AsyncAndForget, NextFrame, ThreadSafe }
+
+        private void FireIn(FireMode mode, FailSignal signal, Action<Exception> onError = null)
+        {
+            switch (mode)
+            {
+                case FireMode.AsyncAndForget: _signalBus.FireAsyncAndForget(signal, onError); break;
+                case FireMode.NextFrame: _signalBus.FireNextFrame(signal); _container.Resolve<HybridQueue>().DrainNextFrame(); break;
+                case FireMode.ThreadSafe: _signalBus.FireThreadSafe(signal); _container.Resolve<HybridQueue>().DrainThreadSafe(); break;
+            }
+        }
+
+        private static async Task Until(Func<bool> done, string what)
+        {
+            var deadline = DateTime.UtcNow.AddSeconds(5);
+            while (!done() && DateTime.UtcNow < deadline) await Task.Delay(10);
+            Assert.IsTrue(done(), what + " within 5 s");
+        }
+
+        // Issue #168: a [CommandTimeout] expiry was an OperationCanceledException, which the recovery engine rethrew as if
+        // the context were shutting down: no line, no CommandFailedSignal, no strategy. It is a failure the strategy sees
+        // now, so a Retry strategy retries it, and the loop still ends at the strategy's limit.
         [Test]
-        public async Task CommandTimeout_CancelsHangingCommand_DoesNotBlockRetryLoop()
+        public async Task ACommandTimeout_IsAFailureTheStrategyRetries_AndTheRetryLoopEnds()
         {
             _signalBus.RegisterCommand(typeof(FailSignal), typeof(HangingAsyncCommand), ExecutionMode.Sequential, 0, true);
-            _strategy.DecisionFactory = ctx => RecoveryDecision.Retry(10); // would loop forever if timeout didn't break out
+            var timeouts = new System.Collections.Generic.List<bool>();
+            _strategy.DecisionFactory = ctx => { timeouts.Add(ctx.IsTimeout); return RecoveryDecision.Retry(3); };
+            ExpectCommandFailed("HangingAsyncCommand", @"timed out after 50 ms \(\[CommandTimeout\]\)", attempts: 4);
 
-            // Race FireAsync against a bounded delay: if the timeout mechanism regresses and
-            // never fires, the task never completes — a plain await (or a blocking ThrowsAsync)
-            // would hang CI forever. The race turns that regression into a fast, clearly-
-            // messaged failure instead.
+            // Raced against 5 s: a timeout that never fires would hang the signal line, and the test with it.
             var fireTask = _signalBus.FireAsync(new FailSignal("Timeout")).AsTask();
             var completed = await Task.WhenAny(fireTask, Task.Delay(TimeSpan.FromSeconds(5)));
+            Assert.AreSame(fireTask, completed, "FireAsync completes within 5 s: the [CommandTimeout] token fires and the retries end");
 
-            // fireTask winning the 5s race already proves prompt completion (the 50ms
-            // timeout fired well inside the bound); no separate elapsed assertion needed.
-            Assert.AreSame(fireTask, completed,
-                "FireAsync must complete within 5s — if the [CommandTimeout] linked token stops firing, a hanging command blocks the signal line forever.");
+            Exception surfaced = null;
+            try { await fireTask; }
+            catch (Exception e) { surfaced = e; }
+            Assert.IsInstanceOf<NexusRecoveryAbortException>(surfaced, "the retry limit aborts the chain");
+            Assert.IsInstanceOf<TimeoutException>(surfaced.InnerException);
+            Assert.AreEqual(4, _results.ThrowCount, "1 run + 3 retries");
+            CollectionAssert.AreEqual(new[] { true, true, true, true }, timeouts, "the strategy is told every failure was a timeout");
+        }
 
-            // fireTask is guaranteed complete here (proven by the AreSame race above), so
-            // re-awaiting it cannot deadlock or hang. Surface its exception manually instead of
-            // using Assert.ThrowsAsync: that API's return type differs across NUnit versions
-            // (some return Task<T>; Unity's ext.nunit returns the exception directly and is
-            // NOT awaitable — CS1061), so the try/catch form is version-agnostic. The command
-            // must surface an OCE (rethrow, P1-3), NOT a retried generic failure (which would
-            // loop Retry(10) and blow ThrowCount).
-            bool threwOperationCanceled = false;
-            try
-            {
-                await fireTask;
-            }
-            catch (OperationCanceledException)
-            {
-                threwOperationCanceled = true;
-            }
-            Assert.IsTrue(threwOperationCanceled,
-                "A [CommandTimeout] async command must surface as OperationCanceledException.");
-            Assert.AreEqual(1, _results.ThrowCount,
-                "A timed-out command must NOT be retried: OperationCanceledException rethrows (P1-3) instead of entering the retry loop.");
+        // Issue #168: on the fire modes that do not await, a timeout reaches the strategy as a timeout, raises
+        // CommandFailedSignal and is written once
+        [TestCase(FireMode.AsyncAndForget)]
+        [TestCase(FireMode.NextFrame)]
+        [TestCase(FireMode.ThreadSafe)]
+        public async Task ACommandTimeout_ReachesTheStrategyAndTheFailedSignal_WhateverTheFireMode(FireMode mode)
+        {
+            _signalBus.RegisterCommand(typeof(FailSignal), typeof(HangingAsyncCommand), ExecutionMode.Sequential, 0, true);
+            bool? isTimeout = null;
+            _strategy.DecisionFactory = ctx => { isTimeout = ctx.IsTimeout; return RecoveryDecision.Skip(); };
+            CommandFailedSignal? failed = null;
+            _signalBus.Subscribe<CommandFailedSignal>(s => failed = s);
+            ExpectCommandFailed("HangingAsyncCommand", "timed out after 50 ms");
+
+            FireIn(mode, new FailSignal("Timeout"));
+            await Until(() => failed != null, "CommandFailedSignal");
+            Assert.AreEqual(true, isTimeout);
+            Assert.AreEqual(typeof(HangingAsyncCommand), failed.Value.SourceCommand);
+        }
+
+        // Issue #168: an aborted failure on the queued and fire-and-forget paths was written twice, by the recovery engine
+        // and again by the queue drain or the fire-and-forget runner. onError still receives it.
+        [TestCase(FireMode.AsyncAndForget, true)]
+        [TestCase(FireMode.NextFrame, false)]
+        [TestCase(FireMode.ThreadSafe, true)]
+        public async Task AnAbortedFailure_IsOneConsoleLine_OnTheQueuedAndFireAndForgetPaths(FireMode mode, bool asyncCommand)
+        {
+            var command = asyncCommand ? typeof(AsyncThrowCommand) : typeof(ThrowCommand);
+            _signalBus.RegisterCommand(typeof(FailSignal), command, ExecutionMode.Sequential, 0, asyncCommand);
+            int decisions = 0;
+            _strategy.DecisionFactory = ctx => { decisions++; return RecoveryDecision.Abort(); };
+            Exception reported = null;
+            ExpectCommandFailed(command.Name, "");
+
+            FireIn(mode, new FailSignal("Abort"), e => reported = e);
+            await Until(() => decisions == 1, "the strategy decided");
+            await Task.Delay(100);   // a second line, if any, comes after the decision
+            if (mode == FireMode.AsyncAndForget)
+                Assert.IsInstanceOf<NexusRecoveryAbortException>(reported, "onError receives the abort");
+        }
+
+        // Issue #168: a context shutting down still cancels its commands quietly; only a command's own timeout is a failure
+        [Test]
+        public async Task ACommandCancelledByShutdown_IsNoFailure_AndWritesNothing()
+        {
+            _signalBus.RegisterCommand(typeof(FailSignal), typeof(HangingAsyncCommand), ExecutionMode.Sequential, 0, true);
+            int decisions = 0;
+            _strategy.DecisionFactory = ctx => { decisions++; return RecoveryDecision.Skip(); };
+            _signalBus.FireAsyncAndForget(new FailSignal("Shutdown"));
+            await Until(() => _results.ThrowCount == 1, "the command started");
+
+            _signalBus.Dispose();
+            await Task.Delay(200);   // past the command's 50 ms timeout
+            Assert.AreEqual(0, decisions, "a shutdown is not a failure");
         }
 
         [Test]

@@ -222,6 +222,12 @@ namespace Nexus.Core
                     await asyncCmd.ExecuteAsync(ct);
                 }
             }
+            catch (OperationCanceledException canceled) when (timeoutCts != null && timeoutCts.IsCancellationRequested && !executorLinkedCts.Token.IsCancellationRequested)
+            {
+                // The command's own [CommandTimeout] expired, not the context: a failure the recovery engine logs and
+                // hands to the strategy. As an OperationCanceledException it was dropped as a shutdown (issue #168).
+                throw new CommandTimeoutException(asyncCmd.GetType(), timeoutMs, canceled);
+            }
             finally
             {
                 timeoutCts?.Dispose();
@@ -254,6 +260,12 @@ namespace Nexus.Core
                 {
                     await asyncCmd.ExecuteAsync(signal, ct);
                 }
+            }
+            catch (OperationCanceledException canceled) when (timeoutCts != null && timeoutCts.IsCancellationRequested && !executorLinkedCts.Token.IsCancellationRequested)
+            {
+                // The command's own [CommandTimeout] expired, not the context: a failure the recovery engine logs and
+                // hands to the strategy. As an OperationCanceledException it was dropped as a shutdown (issue #168).
+                throw new CommandTimeoutException(asyncCmd.GetType(), timeoutMs, canceled);
             }
             finally
             {

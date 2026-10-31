@@ -113,7 +113,10 @@ namespace NexusBench
         // race keeps this check a fast failure instead of a hang if the bug regresses.
         private static void TestCommandTimeoutCancelsHangingCommand()
         {
-            var strategy = new TestRecoveryStrategy { DecisionFactory = ctx => RecoveryDecision.Retry(10) };
+            // Issue #168: a timeout is a failure the strategy sees (IsTimeout), not a shutdown; a Retry strategy retries it
+            // and the loop still ends at the strategy's limit. Before, the OperationCanceledException bypassed recovery.
+            var timeouts = new System.Collections.Generic.List<bool>();
+            var strategy = new TestRecoveryStrategy { DecisionFactory = ctx => { timeouts.Add(ctx.IsTimeout); return RecoveryDecision.Retry(3); } };
             var (container, bus, pool, counter, _) = Setup(strategy);
             try
             {
@@ -124,19 +127,19 @@ namespace NexusBench
                     fireTask, System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(2))).GetAwaiter().GetResult();
 
                 bool completedPromptly = ReferenceEquals(fireTask, completed);
-                bool threwOce = false;
+                Exception surfaced = null;
                 if (completedPromptly)
                 {
                     try { fireTask.GetAwaiter().GetResult(); }
-                    catch (OperationCanceledException) { threwOce = true; }
+                    catch (Exception e) { surfaced = e; }
                 }
 
                 Check("REC1. CommandTimeout_CancelsHangingCommand_WithinBound",
-                    completedPromptly && threwOce,
-                    $"completed={completedPromptly} oce={threwOce} executions={counter.Value}");
-                Check("REC2. CommandTimeout_DoesNotEnterRetryLoop",
-                    counter.Value == 1,
-                    $"executions={counter.Value} (must be 1 — OCE rethrows instead of retrying)");
+                    completedPromptly && surfaced is NexusRecoveryAbortException && surfaced.InnerException is CommandTimeoutException,
+                    $"completed={completedPromptly} surfaced={surfaced?.GetType().Name} inner={surfaced?.InnerException?.GetType().Name}");
+                Check("REC2. CommandTimeout_IsRetriedAsATimeout_UntilTheStrategyLimit",
+                    counter.Value == 4 && timeouts.Count == 4 && timeouts.TrueForAll(x => x),
+                    $"executions={counter.Value} decisions={timeouts.Count} allTimeout={timeouts.TrueForAll(x => x)} (1 run + 3 retries)");
             }
             finally
             {

@@ -31,6 +31,28 @@ namespace Nexus.Core
     }
 
     /// <summary>
+    /// A command marked <see cref="CommandTimeoutAttribute"/> did not finish in time (issue #168). It is a command
+    /// failure like any other: logged, raised as <see cref="CommandFailedSignal"/> and given to the recovery strategy
+    /// with <see cref="CommandFailureContext.IsTimeout"/> true. A context shutting down still cancels its commands
+    /// quietly with <see cref="OperationCanceledException"/>, which <see cref="Exception.InnerException"/> holds here.
+    /// </summary>
+    [Preserve]
+    public sealed class CommandTimeoutException : TimeoutException
+    {
+        /// <summary>The command that ran past its timeout.</summary>
+        public Type CommandType { get; }
+        /// <summary>The command's <see cref="CommandTimeoutAttribute"/> value.</summary>
+        public int TimeoutMilliseconds { get; }
+
+        public CommandTimeoutException(Type commandType, int timeoutMilliseconds, Exception innerException)
+            : base($"timed out after {timeoutMilliseconds} ms ([CommandTimeout])", innerException)
+        {
+            CommandType = commandType;
+            TimeoutMilliseconds = timeoutMilliseconds;
+        }
+    }
+
+    /// <summary>
     /// Represents a recovery decision made when a command fails.
     /// Created via static factory methods: <see cref="Skip"/>, <see cref="Retry"/>, <see cref="Abort"/>, <see cref="Fallback{T}"/>.
     /// </summary>
@@ -93,7 +115,7 @@ namespace Nexus.Core
         public readonly object Signal;
         /// <summary>The number of retry attempts made (0 for first failure).</summary>
         public readonly int RetryCount;
-        /// <summary>True if the failure was caused by a timeout (OperationCanceledException from timeout).</summary>
+        /// <summary>True when the command ran past its <see cref="CommandTimeoutAttribute"/>: the exception is a <see cref="CommandTimeoutException"/>.</summary>
         public readonly bool IsTimeout;
 
         /// <summary>Creates a new <see cref="CommandFailureContext"/>.</summary>

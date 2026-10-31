@@ -68,6 +68,14 @@ namespace Nexus.Core
             catch (NotSupportedException) { return false; } // an exception type may expose a read-only or custom Data
         }
 
+        // An abort carries a failure this engine already wrote: Fire's catch, the queue drain and the fire-and-forget
+        // runner do not write a second line for it (issue #168)
+        private static Exception Logged(Exception abort)
+        {
+            MarkLogged(abort);
+            return abort;
+        }
+
         private static void MarkLogged(Exception ex)
         {
             try { ex.Data[LoggedKey] = true; }
@@ -86,8 +94,9 @@ namespace Nexus.Core
         /// </summary>
         private RecoveryPlan BuildPlan(Exception ex, Type commandType, object signal, int retryCount, bool asyncContext)
         {
-            if (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException ||
-                (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException)))
+            // A CommandTimeoutException holds the timeout's OperationCanceledException as its inner exception (issue #168)
+            if (!(ex is CommandTimeoutException) && (ex is OperationCanceledException || ex is NexusReentrancyException || ex is NexusAsyncOverflowException ||
+                (ex.InnerException != null && (ex.InnerException is OperationCanceledException || ex.InnerException is NexusReentrancyException || ex.InnerException is NexusAsyncOverflowException))))
             {
                 // Preserve the original stack trace when rethrowing.
                 ExceptionDispatchInfo.Capture(ex).Throw();
@@ -110,7 +119,7 @@ namespace Nexus.Core
                 try
                 {
                     var strategy = _container.Resolve<IRecoveryStrategy>();
-                    var ctx = new CommandFailureContext(ex, commandType, signal, retryCount);
+                    var ctx = new CommandFailureContext(ex, commandType, signal, retryCount, ex is CommandTimeoutException);
                     var decision = strategy.OnCommandFailed(ctx);
 
                     if (decision.Action == RecoveryAction.Skip)
@@ -123,7 +132,7 @@ namespace Nexus.Core
                         // InvalidOperationException. The strategy-failure catch filter below
                         // matches on TYPE now, so it can no longer misfire when a strategy
                         // wraps the original exception as InnerException for its own reasons.
-                        throw new NexusRecoveryAbortException("Execution aborted by recovery strategy.", ex);
+                        throw Logged(new NexusRecoveryAbortException("Execution aborted by recovery strategy.", ex));
                     }
                     if (decision.Action == RecoveryAction.Fallback)
                     {
@@ -167,7 +176,7 @@ namespace Nexus.Core
                             // Typed abort exception (see Abort path above) so the
                             // strategy-failure filter below does not swallow it as a strategy
                             // error via InnerException identity.
-                            throw new NexusRecoveryAbortException($"Retry limit reached for command {commandType.Name}.", ex);
+                            throw Logged(new NexusRecoveryAbortException($"Retry limit reached for command {commandType.Name}.", ex));
                         }
                         return RecoveryPlan.RetryPlan(failedSignal);
                     }
