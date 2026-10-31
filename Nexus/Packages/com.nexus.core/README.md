@@ -73,7 +73,7 @@ sets) and `ObservableList<T>`; `SecureObservableInt`,
 `SecureObservableBigDouble` (memory obfuscation with a tamper canary); `IReactiveModel`; `View` and `Mediator<TView>` bound by
 `[Mediator(typeof(...))]` with pooled mediators and automatic unsubscribe on unbind; `ScreenView`
 uGUI screens managed by `UIManager`, and UI Toolkit screens (`ToolkitScreen`) in a `ScreenStack` that
-also routes the back button ([SCREEN_STACK.md](docs/SCREEN_STACK.md)).
+also routes the back button, with `ToolkitPanelInput` for their `EventSystem` input ([SCREEN_STACK.md](docs/SCREEN_STACK.md)).
 
 **Lifecycle**: `IContextLifecycle` (`OnConfigure`, `OnInitializeAsync`, `OnStartAsync`,
 `OnDispose`), `IPostContextLifecycle`, `IStartable` / `IAsyncStartable` / `IStoppable` /
@@ -174,6 +174,7 @@ starting point, not a save system: a game keeps its own save format and decides 
 | `TickService` dispatch | 0 B per frame (GCA3; stress 20, 10k frames × 300 tickables) |
 | `AdService.Tick` with an `ITickService` bound: a frame with no cooldown running, a frame inside the interstitial cooldown, the frame it ends | 0 B (GCA9, with a `ReadyChanged` handler that counts) |
 | `ScreenStack` back-button poll in a frame without a press | 0 B (GCA10: 5000 polls of the back chain with a fake input service) |
+| An `EventSystem` frame with `ToolkitPanelInput`, touched or not | 0 B (PlayMode `ToolkitPanelInputTests`: 0 `GC.Alloc` samples over 10 `EventSystem` frames; on the device 0 B per frame over 60 s with a 30 s drag, Android IL2CPP development player, Unity 6000.6.7f1, 2311DRK48G on Android 16, `StackProbe`); without it uGUI 2.6.0 allocates 32 B per panel on every frame |
 | `HybridQueue` thread-safe and next-frame enqueue and drain | 0 B after warmup (`HybridQueue_ThreadSafe_ZeroGC`, stress 14) |
 | `NetworkSignalHistory` replay, `RemoveSignalsAfter` and `Prune`; `NetworkSignalBus.RollbackAndResimulate` | 0 B (`Netcode_Rollback_And_Replay_ZeroGC`, stress 9; PlayMode `NetcodeTests.Prune_SteadyState_ZeroAllocations`, EditMode `NestedRollback_SteadyStateHasNoManagedAllocation`) |
 | `InputService` update with a `PlayerMoveSignal` fire, a pool-warmed `AudioService.PlaySfx`, `LocalizationService.GetString` | 0 B (G1, G2, G3) |

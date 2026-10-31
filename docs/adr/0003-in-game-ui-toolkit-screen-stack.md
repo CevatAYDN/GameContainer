@@ -275,12 +275,13 @@ is what was chosen and why:
   scheduled items of a detached element do not run, so a transition on it would never end; enabled again, the
   document builds a new root. The screen hears its root leave the panel (`DetachFromPanelEvent`), completes the
   running task at once, and gives the screen's state to the new root on the first frame it is there.
-- **Compile check (verification plan, item 2).** `UnityStubs.cs` gains no UIElements types: the four files under
+- **Compile check (verification plan, item 2).** `UnityStubs.cs` gains no UIElements types: the files under
   `Toolkit/` join the files the harness leaves out and are compiled by `tools/nexus-compile-check`. The core's
   `package.json` declares `com.unity.modules.uielements` 1.0.0, which it now uses.
 - **Device (verification plan, item 4).** On 2311DRK48G (Android 16), Unity 6000.6.7f1, a development IL2CPP player
   (`NexusVerifyBuild.BuildAndroidStackProbe`, driven by `tools/unity-verify/stack-probe.ps1`; result files in
-  `Nexus/artifacts/stack-probe-20261031-run3/`), launched once for each input setup. In each launch, 10 rounds of
+  `Nexus/artifacts/stack-probe-20261031-run3/`, and in `stack-probe-20261031-run4/` with the second setup made by
+  `ToolkitPanelInput`, below: the same figures, InputForUI's 171 B aside), launched once for each input setup. In each launch, 10 rounds of
   `KEYCODE_BACK` reached the sheet, the modal and the root in that order, each round's press at the root raised the
   press-again hint, and a second press within 2 s quit: 32 of 32 presses heard, in all three launches. The capture of
   decision 7 (60 s: 15 s without a touch, then a 30 s drag; the managed allocation of each frame from the
@@ -298,7 +299,19 @@ is what was chosen and why:
     frames allocated; ChipCrisis measured about 150 B, decision 7).
 
   The screen heard 56 `PointerDownEvent`s under InputForUI and 28 under each `EventSystem` setup, over drags of the
-  same length. `SCREEN_STACK.md` recommends the second setup.
+  same length. `SCREEN_STACK.md` recommends the second setup, which `ToolkitPanelInput` makes.
+- **`ToolkitPanelInput`** (the owner's decision of 2026-10-31: the core ships the recommended setup, so no game keeps
+  its own, as ChipCrisis's `UiInput`). A component for the `EventSystem`'s GameObject. Enabled, it turns
+  `autoCreatePanelComponents` off on the scene's `PanelInputConfiguration`, adding one when there is none; disabled, it
+  gives the previous value back. It gives each panel one GameObject with `PanelEventHandler` and `PanelRaycaster`: the
+  panels of the documents of each scene that loads, of every `ToolkitScreen` when its root is found, and of the
+  documents a game passes to `Attach`; a document whose panel is not there yet waits for it. Unity has no public list
+  of panels and no public event for a new one, so these three are the ways in. The bridge applies a configuration at
+  once (`PanelInputState.onApply`) and drops the objects it made, so the component never meets them; it still tells
+  its own objects by identity, because the bridge's sit under the `EventSystem` too. World-space panels are left out.
+  PlayMode `ToolkitPanelInputTests` (5 cases); taking out the configuration change, the screen's announcement, the
+  value given back, or the check for a destroyed object fails a case. Ownership by parent survives as a mutant, for the
+  reason above. On the device: 0 B per frame, touched or not (run4, 849 touched frames).
 
 ## Verification plan for the stack cycle
 

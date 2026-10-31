@@ -6,6 +6,7 @@
         "UnityEngine.TestRunner",
         "com.nexus.core",
         "com.nexus.core.testing",
+        "UnityEngine.UI",
         "Unity.InputSystem",
         "Unity.InputSystem.TestFramework"
     ],

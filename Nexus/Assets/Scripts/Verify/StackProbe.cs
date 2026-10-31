@@ -18,8 +18,8 @@ namespace NexusVerify.Device
     /// the player NexusVerifyBuild.BuildAndroidStackProbe builds with NEXUS_STACK_PROBE; tools/unity-verify/stack-probe.ps1
     /// drives it over adb, once for each UI input setup of ADR-0003 decision 7, named by the launch intent's string extra
     /// "nexusInputMode": "eventsystem" (the starter scene's EventSystem with InputSystemUIInputModule, as it is),
-    /// "eventsystem-once" (the same EventSystem, with a PanelInputConfiguration whose autoCreatePanelComponents is off and
-    /// the panel's handler made once, as ChipCrisis does) and "inputforui" (no EventSystem).
+    /// "eventsystem-once" (the same EventSystem with the core's ToolkitPanelInput, which turns uGUI's per-frame panel
+    /// objects off and makes the panel's event objects once) and "inputforui" (no EventSystem).
     /// A context of its own binds InputService and ScreenStack beside the starter scene's Root, and three screens: Home
     /// (root, with a full-screen element that counts pointer events), Modal (UILayer.Modal) and Sheet (UILayer.Popup,
     /// opened last, so on top). Every back press logs the screen that heard it; each round is sheet, modal, root. After
@@ -133,7 +133,6 @@ namespace NexusVerify.Device
             AddScreen<Modal>(panel);
             AddScreen<Sheet>(panel);
             yield return null;
-            if (_mode == "eventsystem-once" && !HandleOnce(home.runtimePanel)) yield break;
             _surface = new VisualElement { pickingMode = PickingMode.Position };
             _surface.style.position = Position.Absolute;
             _surface.style.left = 0;
@@ -174,35 +173,12 @@ namespace NexusVerify.Device
                     Destroy(eventSystem.gameObject);
                     return true;
                 case "eventsystem-once":
-                    // The bridge listens for the configuration (PanelInputState.onApply), so it applies before any panel exists.
-                    var go = new GameObject("StackProbePanelInput");
-                    go.SetActive(false);
-                    DontDestroyOnLoad(go);
-                    var config = go.AddComponent<PanelInputConfiguration>();
-                    config.panelInputRedirection = PanelInputConfiguration.PanelInputRedirection.AutoSwitch;
-                    config.autoCreatePanelComponents = false;
-                    go.SetActive(true);
+                    eventSystem.gameObject.AddComponent<ToolkitPanelInput>(); // the screens' panels reach it as they bind
                     return true;
                 default:
                     Debug.Log($"[StackProbe] FAILED: unknown nexusInputMode {_mode}");
                     return false;
             }
-        }
-
-        private bool HandleOnce(IRuntimePanel panel)
-        {
-            if (panel == null) { Debug.Log("[StackProbe] FAILED: Home's document has no panel"); return false; }
-            if (panel.selectableGameObject != null)
-            {
-                Debug.Log("[StackProbe] FAILED: the bridge made the panel's handler although autoCreatePanelComponents is off");
-                return false;
-            }
-            var handler = new GameObject("StackProbePanelHandler", typeof(PanelEventHandler), typeof(PanelRaycaster));
-            DontDestroyOnLoad(handler);
-            handler.GetComponent<PanelEventHandler>().panel = panel;
-            handler.GetComponent<PanelRaycaster>().panel = panel;
-            panel.selectableGameObject = handler;
-            return true;
         }
 
         private UIDocument AddScreen<T>(PanelSettings panel) where T : ToolkitScreen

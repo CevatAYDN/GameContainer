@@ -132,18 +132,19 @@ the padding.
 
 ## Input setup
 
-Use an `EventSystem` with `InputSystemUIInputModule`, and keep uGUI from making the panels' event objects itself:
+Use an `EventSystem` with `InputSystemUIInputModule`, and add `ToolkitPanelInput` to the `EventSystem`'s GameObject.
+uGUI's bridge retries each panel's event objects on every frame; the component turns that off and makes them itself:
 
-1. Before the first panel exists, add a `PanelInputConfiguration` whose `autoCreatePanelComponents` is off and whose
-   `panelInputRedirection` is `AutoSwitch`.
-2. Once a `UIDocument`'s `runtimePanel` exists, give that panel one GameObject with `PanelEventHandler` and
-   `PanelRaycaster`, set the `panel` of both to it, and set the panel's `selectableGameObject` to that GameObject.
-   Do this once for each panel (each `PanelSettings` asset), not for each document.
+- It sets `autoCreatePanelComponents` off on the scene's `PanelInputConfiguration`, adding one (with
+  `panelInputRedirection` `AutoSwitch`) when the scene has none, and gives the previous value back when it is disabled.
+- It gives each panel (each `PanelSettings` asset) one GameObject with `PanelEventHandler` and `PanelRaycaster`, once:
+  the panels of the documents of each scene that loads, and of every `ToolkitScreen`.
+- A document created after its scene loaded that is not a screen's, on a `PanelSettings` no other document uses, is
+  passed to `ToolkitPanelInput.Attach`, or its panel gets no `EventSystem` input. World-space panels are not covered.
 
 Measured on 2311DRK48G (Android 16) with Unity 6000.6.7f1 and uGUI 2.6.0, in a development IL2CPP player with one
-panel, over 60 s with a 30 s drag (ADR-0003, "As built"): this setup allocates nothing per frame, touched or not. The
-same `EventSystem` as Unity sets it up allocates 32 B for each panel on every frame, because uGUI's bridge retries the
-panels' event objects each frame. UI Toolkit's own input (InputForUI, without an `EventSystem`) allocates nothing on a
-frame without a touch and 172 B on a touched frame, and the screen heard twice as many `PointerDownEvent`s under it
-(56 against 28). The stack works under all three, and the back button goes through none of them (see
-[The back button](#the-back-button)).
+panel, over 60 s with a 30 s drag (ADR-0003, "As built"): with `ToolkitPanelInput` the `EventSystem` allocates nothing
+per frame, touched or not; without it, 32 B for each panel on every frame. UI Toolkit's own input (InputForUI, without
+an `EventSystem`) allocates nothing on a frame without a touch and 171 B on a touched frame, and the screen heard twice
+as many `PointerDownEvent`s under it (56 against 28). The stack works under all three, and the back button goes
+through none of them (see [The back button](#the-back-button)).

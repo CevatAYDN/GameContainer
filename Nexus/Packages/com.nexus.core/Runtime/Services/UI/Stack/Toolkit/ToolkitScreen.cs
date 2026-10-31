@@ -165,6 +165,7 @@ namespace Nexus.Core.Services
             _root = root;
             _motionOverridden = false;
             root.RegisterCallback<DetachFromPanelEvent>(OnRootDetached);
+            ToolkitPanelInput.Current?.Attach(UIDocument.FindUIDocument(root));
             return root;
         }
 
