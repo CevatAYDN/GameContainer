@@ -356,7 +356,7 @@ namespace Nexus.Core
             if (_activeMediatorSet.Contains(mediator))
             {
                 _poolLeakWarnings++;
-                NexusRuntime.Logger?.LogWarning(
+                Services.NexusLog.WarnAlways(
                     $"[Nexus] Mediator '{type.Name}' returned to the pool while still tracked as active — " +
                     "possible mediator leak (double-unregister). The binding map was not cleared for this instance.");
             }

@@ -74,6 +74,51 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        public interface IUnboundDependency { }
+
+        public sealed class NeedsAnUnboundDependency
+        {
+            public readonly IUnboundDependency Dependency;
+            public NeedsAnUnboundDependency(IUnboundDependency dependency) => Dependency = dependency;
+        }
+
+        public struct ReleaseLogSignal { }
+
+        // Issue #164: a binding injected as null, a rebind and a behaviour with no context to fire into or inject from were warned
+        // through LogWarning, which a release player drops; Inject with no context said nothing at all
+        [Test]
+        public void AMissingBindingARebindAndAMissingContext_AreWarnedInAReleasePlayerToo()
+        {
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables; no context is registered
+            NexusBuild.OverrideForTests(false);
+            var go = new GameObject("no context");
+            try
+            {
+                Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops LogWarning");
+                using (var di = new NexusDI())
+                {
+                    di.Bind<NeedsAnUnboundDependency>();
+                    LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Constructor parameter 0 \('.*IUnboundDependency'\) on '.*NeedsAnUnboundDependency' is not registered; passing null"));
+                    Assert.IsNull(di.Resolve<NeedsAnUnboundDependency>().Dependency);
+
+                    LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Rebinding '.*NeedsAnUnboundDependency'"));
+                    di.Bind<NeedsAnUnboundDependency>(Lifetime.Transient);
+                }
+
+                var behaviour = go.AddComponent<ReleaseLogBehaviour>();
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Cannot Fire<ReleaseLogSignal>: No active Nexus Context found"));
+                behaviour.Fire(new ReleaseLogSignal());
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Cannot Inject 'ReleaseLogBehaviour': No active Nexus Context found"));
+                behaviour.Inject();
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+                UnityEngine.Object.DestroyImmediate(go);
+            }
+        }
+
         [Test]
         public void WarnAlways_UsesTheRegisteredLogger_WhileItIsEnabled()
         {
@@ -85,4 +130,6 @@ namespace Nexus.Editor.Tests
             LogAssert.NoUnexpectedReceived();
         }
     }
+
+    public sealed class ReleaseLogBehaviour : NexusBehaviour { }
 }

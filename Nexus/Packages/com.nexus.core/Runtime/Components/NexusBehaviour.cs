@@ -72,7 +72,7 @@ namespace Nexus.Core
             }
             else
             {
-                NexusRuntime.Logger?.LogWarning($"[NexusBehaviour] Cannot Fire<{typeof(T).Name}>: No active Nexus Context found.");
+                Services.NexusLog.WarnAlways($"[NexusBehaviour] Cannot Fire<{typeof(T).Name}>: No active Nexus Context found.");
             }
         }
 
@@ -85,7 +85,7 @@ namespace Nexus.Core
             var ctx = Context;
             if (ctx?.SignalBus == null)
             {
-                NexusRuntime.Logger?.LogWarning($"[NexusBehaviour] Cannot Subscribe<{typeof(T).Name}>: No active Nexus Context found.");
+                Services.NexusLog.WarnAlways($"[NexusBehaviour] Cannot Subscribe<{typeof(T).Name}>: No active Nexus Context found.");
                 return null;
             }
 
@@ -136,6 +136,11 @@ namespace Nexus.Core
             if (ctx?.Container != null)
             {
                 ctx.Container.Inject(target ?? this);
+            }
+            else
+            {
+                // nothing was injected, so the target's dependencies stay null (#164)
+                Services.NexusLog.WarnAlways($"[NexusBehaviour] Cannot Inject '{(target ?? this).GetType().Name}': No active Nexus Context found.");
             }
         }
 
@@ -214,7 +219,7 @@ namespace Nexus.Core
                     }
                     catch (Exception ex)
                     {
-                        NexusRuntime.Logger?.LogWarning($"[NexusBehaviour] Error disposing subscription: {ex.Message}");
+                        Services.NexusLog.WarnAlways($"[NexusBehaviour] Error disposing subscription: {ex.Message}");
                     }
                 }
                 _subscriptions.Clear();

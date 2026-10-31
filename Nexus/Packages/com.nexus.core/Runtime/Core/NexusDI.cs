@@ -970,7 +970,7 @@ namespace Nexus.Core
                     // binding is a configuration error and must never be silent in production.
                     if (args[i] == null && !_di.StrictInjection)
                     {
-                        NexusRuntime.Logger?.LogWarning(
+                        Services.NexusLog.WarnAlways(
                             $"[Nexus] Constructor parameter {i} ('{paramTypes[i].FullName}') on '{type.FullName}' is not registered; passing null. " +
                             "Enable StrictInjection or mark the dependency [OptionalInject] to make this explicit.");
                     }
@@ -1030,7 +1030,7 @@ namespace Nexus.Core
                 s_customInjectors.TryRemove(type, out _);
                 s_customClearers.TryRemove(type, out _);
                 Interlocked.Increment(ref s_cacheGeneration);
-                NexusRuntime.Logger?.LogWarning($"[Nexus] The generated binder does not inject '{type.FullName}.{missing}' (it was generated before that member existed). " +
+                Services.NexusLog.WarnAlways($"[Nexus] The generated binder does not inject '{type.FullName}.{missing}' (it was generated before that member existed). " +
                     "Falling back to reflection for this type; regenerate the binder (Nexus > Generate AOT Binder).");
                 InjectFields(instance, type, meta);
                 InjectProperties(instance, type, meta);
@@ -1372,7 +1372,7 @@ namespace Nexus.Core
                     && existing.Instance == null && binding.Instance == null;
                 if (!equivalent)
                 {
-                    NexusRuntime.Logger?.LogWarning(
+                    Services.NexusLog.WarnAlways(
                         $"[Nexus] Rebinding '{key.FullName}': an existing registration is being replaced." +
                         (existing.Instance != null
                             ? " The previous binding already produced a singleton instance; it stays alive until the container is disposed."
@@ -1398,7 +1398,7 @@ namespace Nexus.Core
             var namedBindings = GetOrCreateOptionalMap(ref _namedBindings);
             if (namedBindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
             {
-                NexusRuntime.Logger?.LogWarning(
+                Services.NexusLog.WarnAlways(
                     $"[Nexus] Rebinding '{key.Type.FullName}' (name '{key.Name}'): an existing registration is being replaced.");
             }
             namedBindings[key] = binding;
@@ -1787,7 +1787,7 @@ namespace Nexus.Core
             }
             if (value == null && !StrictInjection)
             {
-                NexusRuntime.Logger?.LogWarning(
+                Services.NexusLog.WarnAlways(
                     $"[Nexus] Constructor parameter {parameterIndex} ('{parameterTypeName}') on '{ownerTypeName}' is not registered; passing null. " +
                     "Enable StrictInjection or mark the dependency [OptionalInject] to make this explicit.");
             }

@@ -83,7 +83,7 @@ namespace Nexus.Core
         public void BindInstance<T>(T instance) where T : class
         {
             if (instance is INexusService)
-                NexusRuntime.Logger?.LogWarning($"[Nexus] '{instance.GetType().Name}' is an INexusService bound with BindInstance: it gets no [Inject] members and no InitializeAsync. Bind it with BindServiceInstance.");
+                Services.NexusLog.WarnAlways($"[Nexus] '{instance.GetType().Name}' is an INexusService bound with BindInstance: it gets no [Inject] members and no InitializeAsync. Bind it with BindServiceInstance.");
             _container.BindInstance(instance);
         }
 

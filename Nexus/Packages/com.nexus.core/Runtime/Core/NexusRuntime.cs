@@ -393,7 +393,7 @@ namespace Nexus.Core
 
             if (cycle)
             {
-                NexusRuntime.Logger?.LogWarning(
+                Services.NexusLog.WarnAlways(
                     "[Nexus] FinalizeInitializationAsync: ContextData.DependsOn contains a dependency cycle; falling back to registration order.");
                 return new List<IContext>(contexts);
             }

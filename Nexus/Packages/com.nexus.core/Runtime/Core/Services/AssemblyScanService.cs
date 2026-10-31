@@ -53,9 +53,7 @@ namespace Nexus.Core.Services
         {
             string assemblyName = assembly.FullName ?? "<dynamic-assembly>";
             string message = $"[Nexus] Type scan failed for assembly '{assemblyName}': {ex.GetType().Name}: {ex.Message}";
-            var logger = NexusRuntime.Logger;
-            if (logger != null) logger.LogWarning(message);
-            else UnityEngine.Debug.LogWarning(message);
+            NexusLog.WarnAlways(message); // an assembly whose types were not scanned: every build's log names it (#164)
         }
 
         /// <summary>

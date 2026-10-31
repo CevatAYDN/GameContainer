@@ -282,7 +282,7 @@ namespace Nexus.Core
                 // Configure would lose the first builder's reactive model and service type lists.
                 if (_configured)
                 {
-                    NexusRuntime.Logger?.LogWarning(
+                    Services.NexusLog.WarnAlways(
                         $"[Nexus] Context '{ScopeTag}' Configure() called more than once. Subsequent calls are ignored.");
                     return;
                 }
@@ -295,7 +295,7 @@ namespace Nexus.Core
                 {
                     // A harness-created builder already exists; keep it (it holds the harness's
                     // bindings) and do not silently merge the prebuilt one.
-                    NexusRuntime.Logger?.LogWarning(
+                    Services.NexusLog.WarnAlways(
                         $"[Nexus] Context '{ScopeTag}' ConfigureWithBuilder: a builder already exists (GetOrCreateBuilder); the prebuilt builder's bindings were not merged.");
                 }
                 _configured = true;
@@ -332,6 +332,7 @@ namespace Nexus.Core
                         }
                     }
 
+                    // a hint, not a failure (a context may only bind), so it stays in development builds (#164)
                     if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
                         NexusRuntime.Logger?.LogWarning("[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
                 }
@@ -488,7 +489,7 @@ namespace Nexus.Core
 
             if (_configuredBuilder == null)
             {
-                NexusRuntime.Logger?.LogWarning(
+                Services.NexusLog.WarnAlways(
                     $"[Nexus] Context '{ScopeTag}': RunPostContextAsync skipped because context was never configured.");
                 return default;
             }
@@ -701,7 +702,7 @@ namespace Nexus.Core
                 try { var assembly = Assembly.Load(scopeName); if (assembly != null) assemblies.Add(assembly); }
                 catch (Exception ex)
                 {
-                    if (logWarnings) NexusRuntime.Logger?.LogWarning($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
+                    if (logWarnings) Services.NexusLog.WarnAlways($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
                 }
             }
             return assemblies;
@@ -732,7 +733,7 @@ namespace Nexus.Core
                     }
                     catch (Exception ex)
                     {
-                        NexusRuntime.Logger?.LogWarning($"[Nexus] Failed to check assembly references for '{assembly.GetName().Name}': {ex.Message}");
+                        Services.NexusLog.WarnAlways($"[Nexus] Failed to check assembly references for '{assembly.GetName().Name}': {ex.Message}");
                         shouldScan = false;
                     }
                 }
