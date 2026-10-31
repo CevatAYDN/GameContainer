@@ -69,7 +69,8 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
    `"com.nexus.ads.levelplay": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads.levelplay#<commit>"`.
 
 The assembly compiles only while the LevelPlay package is installed (`versionDefines` →
-`NEXUS_LEVELPLAY`); without it the package is inert.
+`NEXUS_LEVELPLAY`, 9.0.0 or newer); without it the package is inert. Installed below that version, the
+provider is compiled out too: the validator fails `provider.compiled` and names both versions (issue #143).
 
 The Ads Mediation package adds the scripting define `LEVELPLAY_DEPENDENCIES_INSTALLED` to the Player
 Settings of the selected build target whenever the editor opens outside batch mode without it

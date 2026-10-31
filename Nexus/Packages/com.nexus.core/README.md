@@ -89,6 +89,8 @@ dispatchers; only the editor generator writes `link.xml`. Both cover the game's 
 take the reflection path and each package preserves them in its own `link.xml` (handed to UnityLinker by
 `NexusPackagesLinkXml`; Unity reads only the files under `Assets`), so a package update does not leave a
 binder naming a removed type (issue #110). `NexusBinderBuildGuard` stops a player build with a stale binder,
+`VersionDefineBuildGuard` stops one in which a Nexus package's optional code is compiled out because the package it
+needs is installed below its asmdef's `versionDefines` expression (issue #143; the editor logs it after each compile),
 `NexusBinderSelfHeal` recovers a binder that no longer compiles, and a stale generated injector
 falls back to reflection at runtime with a warning.
 

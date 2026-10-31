@@ -28,6 +28,8 @@ namespace Nexus.Ads.Tests
         public bool SdkInstalled(AdProviderKind kind) => Sdks.Contains(kind);
         public bool SdkViaUpm(AdProviderKind kind) => Upm.Contains(kind);
         public bool ProviderPackageInstalled(AdProviderKind kind) => ProviderPackages.Contains(kind);
+        public readonly Dictionary<AdProviderKind, string> CompiledOut = new Dictionary<AdProviderKind, string>();
+        public string ProviderCompiledOut(AdProviderKind kind) => CompiledOut.TryGetValue(kind, out var reason) ? reason : null;
         public IReadOnlyList<string> DetectedNetworks => Networks;
         public bool ExternalDependencyManagerInstalled => Edm;
         public bool DisabledEdmStub => EdmStub;
@@ -134,6 +136,44 @@ namespace Nexus.Ads.Tests
             Assert.AreEqual("pass", release.outcome, release.Summary());
             Assert.AreEqual("pass", test.outcome, test.Summary());
             Assert.AreEqual("Active", release.status);
+        }
+
+        [Test]
+        public void AProviderCompiledOutByAPackageBelowItsExpression_FailsBothTabs_AndNamesTheVersions()
+        {
+            // issue #143: com.nexus.ads.levelplay at expression 9.7.0 with LevelPlay 9.6.0 compiled to an empty assembly
+            // (define-cliff-20261031: Nexus.Ads.LevelPlay.dll 4096 bytes, no NEXUS_LEVELPLAY) while the validator said Active
+            const string asmdef = "{ \"name\": \"Nexus.Ads.LevelPlay\", \"versionDefines\": [ { \"name\": \"com.unity.services.levelplay\", \"expression\": \"9.7.0\", \"define\": \"NEXUS_LEVELPLAY\" } ] }";
+            string reason = UnityProjectProbe.CompiledOutReason("com.nexus.ads.levelplay", asmdef, p => p == FakeProbe.LevelPlayPackage ? "9.6.0" : null);
+            StringAssert.Contains("NEXUS_LEVELPLAY needs com.unity.services.levelplay 9.7.0 or newer, the project has 9.6.0", reason);
+            WithGoogleConsent("ca-app-pub-1111111111111111~2222222222");
+            _probe.ProviderPackages.Remove(AdProviderKind.LevelPlay);
+            _probe.CompiledOut[AdProviderKind.LevelPlay] = reason;
+
+            foreach (var tab in new[] { AdsValidator.Tab.Release, AdsValidator.Tab.Test })
+            {
+                var report = Run(tab);
+                Assert.AreEqual(CheckResult.Fail, Check(report, "provider.compiled").Result, tab.ToString());
+                StringAssert.Contains("the project has 9.6.0", Check(report, "provider.compiled").message);
+                Assert.AreNotEqual("Active", report.status);
+                StringAssert.StartsWith("provider.compiled", Check(report, "mediation.status").fix, "the status names the cause, not a missing install");
+            }
+            StringAssert.Contains("its provider is compiled out", Check(Run(AdsValidator.Tab.Release), "mediation.status").message, "not \"SDK is not installed\": the SDK is there");
+
+            _probe.ProviderPackages.Add(AdProviderKind.LevelPlay);
+            _probe.CompiledOut.Clear();
+            Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "provider.compiled").Result);
+        }
+
+        [Test]
+        public void CompiledOutReason_IsNull_WhenAPackageTheExpressionNamesIsNotInstalled_AndReadsAnIntervalAsOne()
+        {
+            // without the SDK the provider is inert by design; the reason is only for an SDK that is there
+            const string asmdef = "{ \"name\": \"Nexus.Ads.AdMob\", \"versionDefines\": [ { \"name\": \"com.google.ads.mobile\", \"expression\": \"[11.3.0,12.0.0)\", \"define\": \"NEXUS_ADMOB\" }, { \"name\": \"com.nexus.ads\", \"expression\": \"0.1.0\", \"define\": \"NEXUS_ADS\" } ] }";
+            Assert.IsNull(UnityProjectProbe.CompiledOutReason("com.nexus.ads.admob", asmdef, p => p == "com.nexus.ads" ? "0.1.0" : null));
+            string reason = UnityProjectProbe.CompiledOutReason("com.nexus.ads.admob", asmdef, p => p == "com.nexus.ads" ? "0.1.0" : "12.1.0");
+            StringAssert.Contains("NEXUS_ADMOB needs com.google.ads.mobile in [11.3.0,12.0.0), the project has 12.1.0", reason);
+            StringAssert.Contains("NEXUS_ADS needs com.nexus.ads 0.1.0 or newer, the project has 0.1.0", reason);
         }
 
         [Test]

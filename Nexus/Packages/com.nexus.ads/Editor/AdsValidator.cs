@@ -113,6 +113,14 @@ namespace Nexus.Ads.Editor
                     ? new AdsCheck("consent.form", CheckResult.Pass, "Google's consent form (UMP) runs before LevelPlay starts; LevelPlay reads the consent UMP stores")
                     : new AdsCheck("consent.form", CheckResult.Warn, "no consent form runs before LevelPlay starts (LevelPlay ships none); players in the EEA, the UK and Switzerland need one from a certified consent platform.", "install com.google.ads.mobile and com.nexus.ads.admob (Google's UMP then runs before LevelPlay), or turn the bootstrap's startOnAwake off, collect consent with your own platform and pass it with LevelPlayProvider.SetGdprConsent before calling StartAds()."));
 
+            // a package below the provider asmdef's versionDefines expression compiles the provider out, and nothing else says so (issue #143)
+            string compiledOut = kind == AdProviderKind.None ? null : probe.ProviderCompiledOut(kind);
+            const string compiledOutFix = "move the package to a version the expression holds, or pin the Nexus ad packages at a commit whose expression the installed version meets.";
+            if (kind != AdProviderKind.None)
+                report.Add(compiledOut != null
+                    ? new AdsCheck("provider.compiled", CheckResult.Fail, compiledOut + "; no build runs " + kind + " ads.", compiledOutFix)
+                    : new AdsCheck("provider.compiled", CheckResult.Pass, probe.ProviderPackageInstalled(kind) ? "the " + kind + " provider is compiled" : "the " + kind + " provider is not in the project or its SDK is not; mediation.status says what runs"));
+
             // status from the single resolver
             bool sdk = probe.SdkInstalled(kind) && probe.ProviderPackageInstalled(kind);
             var status = ProviderStatusResolver.Resolve(settings, kind, platform, sdk, conflict);
@@ -131,12 +139,12 @@ namespace Nexus.Ads.Editor
                 else if (status.Status == ProviderStatus.Active)
                     report.Add(new AdsCheck("mediation.status", CheckResult.Pass, kind + " is Active on " + platform));
                 else
-                    report.Add(new AdsCheck("mediation.status", CheckResult.Fail, kind + " is " + status + "; a release build would ship without ads.", status.Status == ProviderStatus.NotInstalled ? "install the SDK and the provider package (Tools > Nexus Ads > Setup)." : "fill the Release tab: " + string.Join(", ", status.Missing) + "."));
+                    report.Add(new AdsCheck("mediation.status", CheckResult.Fail, kind + " is " + (compiledOut != null ? status.Status + " (its provider is compiled out, see provider.compiled)" : status.ToString()) + "; a release build would ship without ads.", status.Status == ProviderStatus.NotInstalled ? (compiledOut != null ? "provider.compiled: " + compiledOutFix : "install the SDK and the provider package (Tools > Nexus Ads > Setup).") : "fill the Release tab: " + string.Join(", ", status.Missing) + "."));
             }
             else
             {
                 report.Add(status.Status == ProviderStatus.NotInstalled
-                    ? new AdsCheck("mediation.status", CheckResult.Warn, kind + " is NotInstalled; the editor runs the simulator, a development build runs the simulator on a device that is not listed and no ads on a listed one.", "install the SDK and the provider package (Tools > Nexus Ads > Setup).")
+                    ? new AdsCheck("mediation.status", CheckResult.Warn, kind + " is NotInstalled; the editor runs the simulator, a development build runs the simulator on a device that is not listed and no ads on a listed one.", compiledOut != null ? "provider.compiled: " + compiledOutFix : "install the SDK and the provider package (Tools > Nexus Ads > Setup).")
                     : new AdsCheck("mediation.status", CheckResult.Pass, kind + " is " + status.Status + " on " + platform));
             }
 

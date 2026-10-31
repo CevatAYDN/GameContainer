@@ -17,8 +17,13 @@ namespace Nexus.Ads.Editor
         bool SdkInstalled(AdProviderKind kind);
         /// <summary>The SDK came as a UPM package (versionDefines works) rather than a .unitypackage import.</summary>
         bool SdkViaUpm(AdProviderKind kind);
-        /// <summary>The Nexus provider package (com.nexus.ads.levelplay, ...) is compiled in.</summary>
+        /// <summary>The Nexus provider package (com.nexus.ads.levelplay, ...) is compiled in: its provider type exists, not only its assembly.</summary>
         bool ProviderPackageInstalled(AdProviderKind kind);
+        /// <summary>
+        /// Why the provider is not compiled although its Nexus package and every package its asmdef's versionDefines name are in
+        /// the project (a package below the asmdef's expression leaves the define off and the assembly empty, issue #143), or null.
+        /// </summary>
+        string ProviderCompiledOut(AdProviderKind kind);
         /// <summary>Lower-case ids of the network adapters found (mintegral, pangle, chartboost, meta, inmobi, liftoff, dtexchange, unityads, admob); a heuristic.</summary>
         IReadOnlyList<string> DetectedNetworks { get; }
         /// <summary>A dependency resolver that works is in the project (a disabled stub does not count).</summary>
@@ -54,9 +59,12 @@ namespace Nexus.Ads.Editor
         {
             { AdProviderKind.LevelPlay, new[] { "Unity.Services.LevelPlay", "IronSource" } }, { AdProviderKind.Max, new[] { "AppLovin.MAX", "MaxSdk" } }, { AdProviderKind.AdMob, new[] { "GoogleMobileAds" } },
         };
-        private static readonly Dictionary<AdProviderKind, string> ProviderAssembly = new Dictionary<AdProviderKind, string>
+        // The type each Nexus provider package compiles and the asmdef whose versionDefines gate it: an assembly can exist and be
+        // empty (issue #143), so the type is what tells
+        private static readonly Dictionary<AdProviderKind, (string package, string type, string asmdef)> ProviderSource = new Dictionary<AdProviderKind, (string, string, string)>
         {
-            { AdProviderKind.LevelPlay, "Nexus.Ads.LevelPlay" }, { AdProviderKind.Max, "Nexus.Ads.Max" }, { AdProviderKind.AdMob, "Nexus.Ads.AdMob" },
+            { AdProviderKind.LevelPlay, ("com.nexus.ads.levelplay", "Nexus.Ads.LevelPlay.LevelPlayProvider, Nexus.Ads.LevelPlay", "Runtime/com.nexus.ads.levelplay.asmdef") },
+            { AdProviderKind.AdMob, ("com.nexus.ads.admob", "Nexus.Ads.AdMob.AdMobProvider, Nexus.Ads.AdMob", "Runtime/Provider/Nexus.Ads.AdMob.asmdef") },
         };
         // The ad system domain each network's app-ads.txt line starts with, from the network's own app-ads.txt page (read
         // 2026-10-31, issue #124). Unity Ads: unity.com is what its dashboard gives (Wickling's hosted file), unity3d.com the
@@ -93,7 +101,35 @@ namespace Nexus.Ads.Editor
 
         public bool SdkInstalled(AdProviderKind kind) => SdkViaUpm(kind) || (SdkAssemblies.TryGetValue(kind, out var names) && Array.Exists(names, _assemblies.Contains));
         public bool SdkViaUpm(AdProviderKind kind) => UpmPackage.TryGetValue(kind, out var name) && _manifestPackages.Contains(name);
-        public bool ProviderPackageInstalled(AdProviderKind kind) => ProviderAssembly.TryGetValue(kind, out var name) && _assemblies.Contains(name);
+        public bool ProviderPackageInstalled(AdProviderKind kind) => ProviderSource.TryGetValue(kind, out var source) && Type.GetType(source.type) != null;
+        public string ProviderCompiledOut(AdProviderKind kind)
+            => ProviderSource.TryGetValue(kind, out var source) && _packages.ContainsKey(source.package) && Type.GetType(source.type) == null
+                ? CompiledOutReason(source.package, PackageFileText(source.package, source.asmdef), PackageVersion)
+                : null;
+
+        [Serializable] private sealed class Asmdef { public string name; public VersionDefine[] versionDefines; }
+        [Serializable] private sealed class VersionDefine { public string name; public string expression; public string define; }
+
+        /// <summary>
+        /// The sentence for a provider package whose provider type is missing: each versionDefines symbol with the package and
+        /// expression it needs and the version installed. Null when a package the asmdef names is not installed, so the provider is
+        /// inert by design. Unity reads a bare version as that version or newer, brackets as an interval.
+        /// </summary>
+        public static string CompiledOutReason(string package, string asmdefJson, Func<string, string> installedVersion)
+        {
+            var asmdef = string.IsNullOrEmpty(asmdefJson) ? null : JsonUtility.FromJson<Asmdef>(asmdefJson);
+            if (asmdef?.versionDefines == null || asmdef.versionDefines.Length == 0)
+                return package + " is in the project but its provider is not compiled, and its asmdef names no versionDefines that explain it";
+            var needs = new List<string>();
+            foreach (var d in asmdef.versionDefines)
+            {
+                string installed = installedVersion(d.name);
+                if (installed == null) return null;
+                bool interval = d.expression.StartsWith("[", StringComparison.Ordinal) || d.expression.StartsWith("(", StringComparison.Ordinal);
+                needs.Add(d.define + " needs " + d.name + (interval ? " in " + d.expression : " " + d.expression + " or newer") + ", the project has " + installed);
+            }
+            return package + " is in the project but " + asmdef.name + " compiled without its provider (" + string.Join("; ", needs) + ")";
+        }
         public IReadOnlyList<string> DetectedNetworks => _networks;
         /// <summary>The ad system domains a detected network's app-ads.txt line starts with; empty for an id the probe does not detect.</summary>
         public static IReadOnlyList<string> AppAdsDomains(string networkId)

@@ -190,7 +190,8 @@ Kurulum sihirbazı bunları kontrol listesi olarak gösterir; yayıncı her biri
 ## Test verisi ve SDK dağıtımı
 
 Her sağlayıcının test için yayımladıkları ve Unity eklentisinin nasıl kurulduğu. Paketin
-`versionDefines` girişleri bir sağlayıcıyı yalnızca SDK'nın UPM paketi varken derler; `.unitypackage`
+`versionDefines` girişleri bir sağlayıcıyı yalnızca SDK'nın UPM paketi asmdef'teki sürümde ya da daha yenisinde
+varken derler (daha eskisinde doğrulayıcı `provider.compiled` ile başarısız olur); `.unitypackage`
 içe aktarması paket adı taşımaz, o yüzden bu yolda doğrulayıcı uyarır ve elle konulacak scripting define'ı
 adlandırır (`sdk.unitypackage`); UPM yolu tercih edilir.
 

@@ -771,6 +771,16 @@ NEXUS_VALIDATION_WARN_ONLY=1  report validation failures as warnings and continu
 // Review their logic
 ```
 
+### Optional Package Code Compiled Out
+
+**Symptoms:**
+- Error after a compile: `[Nexus] <assembly> is compiled without <DEFINE>: <DEFINE> needs <package> <expression>, the project has <version>`, or `[Nexus] <assembly> is not compiled although every package its defineConstraints name is installed`
+- A player build stops with the same message (`VersionDefineBuildGuard`)
+
+**Cause:** a Nexus package compiles its optional code only while the package it needs is installed at its asmdef's `versionDefines` expression (a bare version means that version or newer). Below it, Unity compiles the code out, or leaves out an assembly the symbol gates, and reports nothing: `com.nexus.ads.levelplay` at expression 9.7.0 with LevelPlay 9.6.0 compiled to an empty `Nexus.Ads.LevelPlay.dll` (4096 bytes) and the game ran no ads (issue #143, `Nexus/artifacts/define-cliff-20261031/`). A package that is not installed at all is not reported: its Nexus code is meant to stay out.
+
+**Fix:** move the named package to a version the expression holds, or pin the Nexus package at a commit whose expression the installed version meets. The ad family's validator reports the same state for the selected provider as `provider.compiled`.
+
 ---
 
 ## AOT/IL2CPP Issues

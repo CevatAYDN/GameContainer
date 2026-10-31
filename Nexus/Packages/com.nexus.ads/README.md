@@ -215,6 +215,7 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | `android.edm` | fail (release): External Dependency Manager missing |
 | `android.nativesdk` | fail: the selected mediation's native SDK declaration is missing, names another version than Prepare Android's plan, or is not resolved at that version into the Gradle template (LevelPlay's Gradle build would stop at `IronSourceError` without it) |
 | `android.gradle` | fail: the custom main Gradle template or one of the catalog's Gradle lines is missing (LevelPlay's native SDK 9.5.0 on Unity 6000.5: duplicate Kotlin classes) |
+| `provider.compiled` | fail: the selected provider's Nexus package and its SDK are in the project but the provider is not compiled, because the SDK is below the provider asmdef's `versionDefines` expression; the message names the expression and the installed version (issue #143; before it the status read Active and no build ran ads) |
 | `android.adapter` | fail: the network adapter the mediation needs to fill is not declared, or names another version than Prepare Android's plan (LevelPlay without the Unity Ads adapter builds, but every request ends in `509 Mediation No fill`) |
 | `android.minsdk` | warn: minimum API below the provider's |
 | `child.mediation` | fail: child-directed with a mediation whose policies forbid children's apps (MAX) |

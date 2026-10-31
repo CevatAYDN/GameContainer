@@ -119,7 +119,9 @@ still on it moves with the family's [MIGRATION.md](../../com.nexus.ads/MIGRATION
 
 One optional package in this repository implements the full store contract (base adapter plus every
 capability) against a real SDK. It compiles only while its SDK package is installed
-(`versionDefines` in the assembly definition), so installing it without the SDK is inert. Ads go
+(`versionDefines` in the assembly definition), so installing it without the SDK is inert. With the SDK
+installed below the expression the adapter is compiled out as well; the core's `VersionDefineGuard` then logs an
+error after each compile and stops the player build, naming both versions (issue #143). Ads go
 through the ad family (above).
 
 The define `NEXUS_UNITY_IAP` exists only inside the adapter assembly, as the ad family's `NEXUS_ADMOB`

@@ -190,7 +190,8 @@ The setup wizard shows these as a checklist; the publisher confirms each one.
 ## Test data and SDK distribution
 
 What each provider publishes for testing, and how its Unity plugin is installed. The package's
-`versionDefines` compile a provider only while the SDK's UPM package is present; a `.unitypackage`
+`versionDefines` compile a provider only while the SDK's UPM package is present at the asmdef's version or newer
+(below it the validator fails `provider.compiled`); a `.unitypackage`
 import carries no package name, so for that route the validator warns and names the scripting define to
 set by hand (`sdk.unitypackage`), and the UPM route is preferred.
 

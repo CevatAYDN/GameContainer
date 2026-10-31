@@ -14,7 +14,8 @@ before it re-pins.
 
 `Nexus.Ads.AdMob` compiles only while both `com.google.ads.mobile` 11.3.0 or newer and `com.nexus.ads`
 are installed (assembly definition `versionDefines` `NEXUS_ADMOB` and `NEXUS_ADS`, both in its
-`defineConstraints`), so the package is inert without them.
+`defineConstraints`), so the package is inert without them. With the plugin installed below 11.3.0 the
+assembly is left out as well, and the validator fails `provider.compiled` with both versions (issue #143).
 Install the plugin from OpenUPM (Prepare Android, below, adds the scoped registry
 `https://package.openupm.com` with the scope `com.google`; 11.6.0 brings Unity's External Dependency
 Manager, `com.unity.external-dependency-manager`, as its own dependency and resolves its Android
