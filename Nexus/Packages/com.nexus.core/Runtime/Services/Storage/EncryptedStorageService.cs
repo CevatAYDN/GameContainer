@@ -95,6 +95,7 @@ namespace Nexus.Core.Services
         private bool _disposing;
         // The seed was created while save files written under the previous one existed (issue #166).
         private readonly bool _seedReplaced;
+        private readonly HashSet<string> _reportedAfterDispose = new(StringComparer.Ordinal);
 
         // Serializes the atomic-write critical section (stage-to-temp + rename).
         // AutoSave writes and Save() batches can otherwise race on the SAME fixed temp
@@ -393,11 +394,19 @@ namespace Nexus.Core.Services
             }
             finally
             {
+                string[] unsaved;
                 lock (_lock)
                 {
+                    unsaved = new string[_dirtyKeys.Count];
+                    _dirtyKeys.CopyTo(unsaved);
                     _disposed = true;
                     _disposing = false;
                 }
+                // The final save is the last chance to write them: dropping them without a word lost a player's data (issue #166).
+                if (unsaved.Length > 0)
+                    NexusRuntime.Logger.LogError(
+                        $"[EncryptedStorageService] Disposed with {unsaved.Length} key(s) its final save could not write, so their last values are lost: " +
+                        $"'{string.Join("', '", unsaved)}' in '{_storageFolderPath}'. The warnings before this line say why each write failed.");
             }
             // Detach the instance from the static forwarders. The static hook
             // itself intentionally stays (one delegate, retains no instance) — per-instance
@@ -457,7 +466,11 @@ namespace Nexus.Core.Services
         /// </summary>
         public string GetString(string key, string defaultValue = "")
         {
-            if (_disposed) return defaultValue;
+            if (_disposed)
+            {
+                ReportUseAfterDispose("GetString", key, "returns the default, not the saved value");
+                return defaultValue;
+            }
             if (string.IsNullOrEmpty(key)) return defaultValue;
 
             string filePath, mainPath;
@@ -711,7 +724,7 @@ namespace Nexus.Core.Services
             long version;
             lock (_lock)
             {
-                if (_disposed || _disposing) return;
+                if (_disposed || _disposing) goto disposed;
                 // Only skip when the cache actually holds the same value: an unread key
                 // must not swallow SetString(key, null) (the tombstone still has to
                 // propagate to Save() so the on-disk file is deleted).
@@ -771,6 +784,10 @@ namespace Nexus.Core.Services
                         _dirtyKeys.Remove(key);
                 }
             }
+            return;
+
+        disposed: // reported outside _lock
+            ReportUseAfterDispose("SetString", key, "the value is not stored");
         }
 
         /// <summary>
@@ -977,7 +994,7 @@ namespace Nexus.Core.Services
             long version;
             lock (_lock)
             {
-                if (_disposed || _disposing) return;
+                if (_disposed || _disposing) goto disposed;
                 _cache[key] = null;
                 _dirtyKeys.Remove(key);
                 version = BumpKeyVersionLocked(key);
@@ -998,6 +1015,22 @@ namespace Nexus.Core.Services
                     }
                 }
             }
+            return;
+
+        disposed: // reported outside _lock
+            ReportUseAfterDispose("DeleteKey", key, "the key is not deleted");
+        }
+
+        // A call on a disposed store did nothing and said nothing (issue #166). Once per operation and key, so a loop does not flood the log.
+        private void ReportUseAfterDispose(string operation, string key, string consequence)
+        {
+            lock (_lock)
+            {
+                if (!_reportedAfterDispose.Add(operation + "|" + key)) return;
+            }
+            NexusLog.WarnAlways(
+                $"[EncryptedStorageService] {operation}('{key}') on the store for '{_storageFolderPath}' after Dispose: {consequence} " +
+                "(first for this call and key; repeats are not logged).");
         }
 
         /// <summary>

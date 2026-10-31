@@ -214,6 +214,37 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        // Issue #166: Dispose dropped the keys its final save could not write, and a call on a disposed store did nothing,
+        // both without a line in any build
+        [Test]
+        public void DisposeNamesTheKeysItCouldNotSave_AndACallAfterDisposeIsWarnedOncePerKey()
+        {
+            const string salt = "Test_Salt_Dispose166";
+            ForgetStore(salt);
+            try
+            {
+                var store = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A");
+                store.SetString("coins", "5");
+                store.SetString("gems", "2");
+                Directory.CreateDirectory(Private<string>(store, "GetFilePath", "coins") + ".tmp"); // the staged write of 'coins' cannot be created
+
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"Save write failed for key 'coins'"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"Disposed with 1 key\(s\) its final save could not write, so their last values are lost: 'coins' in '.*SecureData_Test_Salt_Dispose166'"));
+                store.Dispose();
+                Assert.IsTrue(File.Exists(Private<string>(store, "GetFilePath", "gems")), "the key that could be written was saved");
+
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"SetString\('coins'\) on the store for '.*SecureData_Test_Salt_Dispose166' after Dispose: the value is not stored"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"DeleteKey\('gems'\) on the store .* after Dispose: the key is not deleted"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"GetString\('gems'\) on the store .* after Dispose: returns the default, not the saved value"));
+                store.SetString("coins", "6");
+                store.SetString("coins", "7"); // a repeat: no second line
+                store.DeleteKey("gems");
+                Assert.AreEqual("none", store.GetString("gems", "none"));
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally { ForgetStore(salt); }
+        }
+
         [Test]
         public void AppBinding_ReadsDataRestoredOnAnotherPhone_DeviceBindingDoesNot()
         {
