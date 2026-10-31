@@ -120,6 +120,42 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(0, second.Disposed);
         }
 
+        private sealed class UnrequestedStore : IIapStoreAdapter, IIapUnrequestedPurchaseAdapter
+        {
+            public event UnrequestedPurchaseHandler UnrequestedPurchase;
+            public bool Handled => UnrequestedPurchase != null;
+            public void Report(string productId, string transactionId) => UnrequestedPurchase?.Invoke(productId, transactionId);
+            public void Initialize(System.Collections.Generic.List<ProductDefinition> products, System.Action<bool> onInitialized) => onInitialized?.Invoke(true);
+            public void Purchase(string productId, System.Action<bool, string> onComplete) => onComplete?.Invoke(false, "test");
+            public void Restore(System.Action<bool> onComplete) => onComplete?.Invoke(false);
+            public bool IsOwned(string productId) => false;
+        }
+
+        // Issue #204: an adapter keeps a paid consumable with the store while nothing grants it, so the service must be subscribed
+        // to the adapter only while the game handles UnrequestedPurchase, and follow the adapter it is given
+        [Test]
+        public void UnrequestedPurchase_ReachesTheAdapter_OnlyWhileTheGameHandlesIt()
+        {
+            using var iap = new IapService();
+            var first = new UnrequestedStore();
+            iap.SetStoreAdapter(first);
+            Assert.IsFalse(first.Handled, "the game handles nothing: the adapter keeps the order");
+
+            var heard = new System.Collections.Generic.List<string>();
+            UnrequestedPurchaseHandler grant = (product, transaction) => heard.Add(product + " " + transaction);
+            iap.UnrequestedPurchase += grant;
+            Assert.IsTrue(first.Handled);
+            first.Report("coins_100", "tx-1");
+
+            var second = new UnrequestedStore();
+            iap.SetStoreAdapter(second);
+            Assert.IsFalse(first.Handled, "the replaced adapter");
+            Assert.IsTrue(second.Handled, "the new adapter");
+            iap.UnrequestedPurchase -= grant;
+            Assert.IsFalse(second.Handled, "the game's last handler is gone");
+            CollectionAssert.AreEqual(new[] { "coins_100 tx-1" }, heard);
+        }
+
         private sealed class StoreThatDoesNotStart : IIapStoreAdapter
         {
             public void Initialize(System.Collections.Generic.List<ProductDefinition> products, System.Action<bool> onInitialized) => onInitialized?.Invoke(false);

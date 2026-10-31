@@ -24,7 +24,7 @@ namespace Nexus.Iap.Unity
     /// Unity IAP's store services are process-wide, so a replaced adapter must be disposed: it removes its handlers
     /// (<see cref="IapService.SetStoreAdapter"/> disposes the adapter it replaces). Ported from the first shipped Nexus game's store.
     /// </summary>
-    public sealed class UnityIapAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter, IDisposable
+    public sealed class UnityIapAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter, IIapUnrequestedPurchaseAdapter, IDisposable
     {
         public const string ProviderName = "unity";
 
@@ -53,6 +53,9 @@ namespace Nexus.Iap.Unity
         internal TimeSpan[] ConfirmRetryDelays = { TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(2) };
 
         public event Action Changed;
+        /// <summary>A paid consumable the game did not request in this session; see <see cref="IIapUnrequestedPurchaseAdapter"/>.</summary>
+        public event UnrequestedPurchaseHandler UnrequestedPurchase;
+        private readonly HashSet<string> _keptUnrequested = new();   // orders left with the store for want of a handler, warned once
         public bool IsAvailable => _connected && _productsFetched;
         /// <summary>True once a purchase fetch answered (each start and <see cref="Restore"/>); a failed fetch leaves it as it was (#183).</summary>
         public bool OwnershipKnown { get; private set; }
@@ -191,10 +194,14 @@ namespace Nexus.Iap.Unity
         private void OnPending(PendingOrder order)
         {
             Own(order);
+            // An order for another product (a deferred payment approved, a promo code, and on Google Play and the App Store every
+            // pending order a fetch finds, which Unity IAP routes here first) is not the waiting request's answer: an owned product is
+            // reported through Changed, a consumable through UnrequestedPurchase, and without a handler the order is kept (#204).
+            bool answers = Answers(order);
+            if (!answers && !IsTracked(order) && !GrantUnrequested(order)) { Changed?.Invoke(); return; }
             Track(order);   // before Complete: the game told Purchased sees the purchase as not yet confirmed
-            // The game records ownership before the order is acknowledged with the store. An order for another product (a
-            // deferred payment approved, a promo code) is not the waiting request's answer: it is owned, Changed tells the game.
-            if (Answers(order)) Complete(PurchaseOutcome.Purchased);
+            // The game records ownership before the order is acknowledged with the store.
+            if (answers) Complete(PurchaseOutcome.Purchased);
             Changed?.Invoke();
             Confirm(order);
         }
@@ -204,11 +211,57 @@ namespace Nexus.Iap.Unity
             _deferred.Clear();   // a deferral the player cancelled is gone from the next fetch
             foreach (var order in orders.DeferredOrders) Defer(order, true);
             foreach (var order in orders.ConfirmedOrders) Own(order);
-            foreach (var order in orders.PendingOrders) { Own(order); Track(order); }
+            var confirm = new List<PendingOrder>();
+            foreach (var order in orders.PendingOrders)
+            {
+                Own(order);
+                // an order granted in this session (its confirm is being retried, or OnPending just took it) is not granted again
+                if (!IsTracked(order) && !GrantUnrequested(order)) continue;
+                Track(order);
+                confirm.Add(order);
+            }
             OwnershipKnown = true;
             Changed?.Invoke();
-            foreach (var order in orders.PendingOrders) Confirm(order);
+            foreach (var order in confirm) Confirm(order);
             FinishRestore(true);
+        }
+
+        private bool IsTracked(PendingOrder order)
+        {
+            string id = order?.Info?.TransactionID;
+            return !string.IsNullOrEmpty(id) && _unconfirmed.ContainsKey(id);
+        }
+
+        /// <summary>Hands the consumables of an order the game did not request to <see cref="UnrequestedPurchase"/>; true when the order
+        /// may be confirmed. Confirming it with no handler consumed a paid purchase and granted nothing (issue #204).</summary>
+        private bool GrantUnrequested(PendingOrder order)
+        {
+            var consumables = new List<string>();
+            foreach (var item in order.CartOrdered.Items())
+            {
+                string id = item.Product?.definition?.id;
+                if (!string.IsNullOrEmpty(id) && _catalog.TryGetValue(id, out var type) && type == NexusProductType.Consumable) consumables.Add(id);
+            }
+            if (consumables.Count == 0) return true;   // an owned product: Changed reports it
+            string transaction = order.Info?.TransactionID;
+            var handler = UnrequestedPurchase;
+            if (handler == null)
+            {
+                // once per order and session: on Google Play and the App Store a fetch hands the order to OnPending and OnFetched
+                if (!_keptUnrequested.Add(transaction ?? "")) return false;
+                Warn($"A paid purchase of {string.Join(", ", consumables)} (transaction {transaction}) was not requested in this session and nothing handles UnrequestedPurchase: it is not confirmed, and the store lists it again at the next purchase fetch (each start and Restore). Subscribe IapService.UnrequestedPurchase before SetStoreAdapter.");
+                return false;
+            }
+            try
+            {
+                foreach (var id in consumables) handler(id, transaction);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Warn($"UnrequestedPurchase for {string.Join(", ", consumables)} (transaction {transaction}) threw {e.GetType().Name}: {e.Message}. The order is not confirmed; the next purchase fetch reports it again.");
+                return false;
+            }
         }
 
         /// <summary>Starts a new round of confirms for an order: a purchase, or a fetch that lists it again.</summary>

@@ -25,7 +25,16 @@ iapService.SetStoreAdapter(iapFactory.CreateAdapter("unity"));   // after the pr
 iapService.Purchase("rewards_pass", outcome => { if (outcome == PurchaseOutcome.Purchased) Unlock(); });
 label.text = iapService.GetLocalizedPrice("rewards_pass") ?? "...";
 iapService.StoreChanged += RefreshShop;
+iapService.UnrequestedPurchase += (productId, transactionId) => GrantOnce(productId, transactionId);   // before SetStoreAdapter
 ```
+
+A paid consumable the game did not request in this session reaches `UnrequestedPurchase` before
+the store consumes it: one paid in a session whose process died before the game heard of it
+(the store lists it as pending at the next start), a deferred payment approved later, a promo
+code. With no handler the adapter does not confirm the order, warns once in every build, and the
+store lists it again at the next purchase fetch. The adapter cannot tell an order it never
+reported from one the game granted in an earlier session whose confirm failed every retry, so it
+reports both: keep the transaction ids you granted and grant each once.
 
 Register every product before `SetStoreAdapter`: it passes the catalog of that moment to the
 adapter's `Initialize`, and a product registered later is unknown to the store (`Unavailable`).

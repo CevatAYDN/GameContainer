@@ -12,7 +12,7 @@ below is in `Nexus.Core.Services`.
 | Service | Adapter contract | Factory | Test double (testing kit) |
 |---|---|---|---|
 | `AdService` (`IAdService`) | `IAdNetworkAdapter`: `Initialize(Action)`, `IsInterstitialReady`, `ShowInterstitial`, `IsRewardedReady`, `ShowRewarded`, `ShowBanner`, `HideBanner`; optional `IAdOutcomeAdapter`, `IAdReadinessAdapter`, `IAdConsentAdapter` | `AdAdapterFactory` (`IAdAdapterFactory`): `RegisterProvider(name, Func<IAdNetworkAdapter>)`, `CreateAdapter(name)` | `MockAdNetworkAdapter` (implements every capability); a test passes it to `SetNetworkAdapter` |
-| `IapService` (`IIapService`) | `IIapStoreAdapter`: `Initialize(List<ProductDefinition>, Action<bool>)`, `Purchase`, `Restore`, `IsOwned`; optional `IIapOutcomeAdapter`, `IIapStoreInfoAdapter` | `IapAdapterFactory` (`IIapAdapterFactory`) | `MockIapStoreAdapter` (implements every capability); a test passes it to `SetStoreAdapter` |
+| `IapService` (`IIapService`) | `IIapStoreAdapter`: `Initialize(List<ProductDefinition>, Action<bool>)`, `Purchase`, `Restore`, `IsOwned`; optional `IIapOutcomeAdapter`, `IIapStoreInfoAdapter`, `IIapUnrequestedPurchaseAdapter` | `IapAdapterFactory` (`IIapAdapterFactory`) | `MockIapStoreAdapter` (implements every capability); a test passes it to `SetStoreAdapter` |
 
 Provider names are case-insensitive. `CreateAdapter` returns `null` and logs a warning for an
 unknown name, and `null` with an error when the creator throws.

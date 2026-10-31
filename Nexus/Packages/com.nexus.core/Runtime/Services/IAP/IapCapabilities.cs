@@ -35,6 +35,23 @@ namespace Nexus.Core.Services
         Owned,
     }
 
+    /// <summary>A paid consumable the game did not request in this session (issue #204). <paramref name="transactionId"/> is the
+    /// store's id of the order: an order whose confirm failed in an earlier session is reported again, so a game that keeps the
+    /// ids it granted grants each order once.</summary>
+    public delegate void UnrequestedPurchaseHandler(string productId, string transactionId);
+
+    /// <summary>
+    /// Optional adapter capability (issue #204): paid consumables the game did not request in this session, for example one paid
+    /// in a session whose process died before the game heard of it, a deferred payment approved, or a promo code. The adapter
+    /// raises <see cref="UnrequestedPurchase"/> before it confirms (consumes) the order; with no handler it does not confirm it,
+    /// warns in every build, and the store lists it again at the next purchase fetch.
+    /// </summary>
+    [Preserve]
+    public interface IIapUnrequestedPurchaseAdapter
+    {
+        event UnrequestedPurchaseHandler UnrequestedPurchase;
+    }
+
     /// <summary>Optional adapter capability: store availability, the store's localized prices and a change notification.</summary>
     [Preserve]
     public interface IIapStoreInfoAdapter

@@ -27,6 +27,7 @@ namespace Nexus.Ads.Bridge.Tests
         public readonly HashSet<string> Owned = new HashSet<string>();
         public event Action StoreChanged;
         public int StoreChangedHandlers => StoreChanged?.GetInvocationList().Length ?? 0;
+        public event UnrequestedPurchaseHandler UnrequestedPurchase { add { } remove { } }
         public void Own(string id) { Owned.Add(id); StoreChanged?.Invoke(); }
         public void SetStoreAdapter(IIapStoreAdapter adapter) { }
         public void RegisterProducts(params ProductDefinition[] products) { }

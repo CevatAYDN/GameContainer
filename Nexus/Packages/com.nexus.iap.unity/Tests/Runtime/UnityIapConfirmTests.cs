@@ -43,7 +43,7 @@ namespace Nexus.Iap.Unity.Tests
             }
             public bool HoldPurchases;   // answers the purchase fetch only when the test calls AnswerPurchases
             public override void FetchPurchases() { if (!HoldPurchases) AnswerPurchases(); }
-            public void AnswerPurchases() => PurchaseFetchCallback?.OnAllPurchasesRetrieved(new List<Order>());
+            public void AnswerPurchases(params Order[] orders) => PurchaseFetchCallback?.OnAllPurchasesRetrieved(new List<Order>(orders));
             public string DeferProduct;   // a purchase of this product is deferred (Ask to Buy, a cash payment)
             public bool HoldOrders;       // a purchase waits until the test answers it
             public readonly List<ICart> Deferred = new(), Held = new();
@@ -98,6 +98,22 @@ namespace Nexus.Iap.Unity.Tests
             var adapter = new UnityIapAdapter { ConfirmRetryDelays = new TimeSpan[retries] };
             for (int i = 0; i < retries; i++) adapter.ConfirmRetryDelays[i] = delay;
             return adapter;
+        }
+
+        private static List<NexusProduct> Coins() => new List<NexusProduct> { new NexusProduct { Id = "coins_100", Type = NexusProductType.Consumable } };
+
+        // An order of coins_100 that was paid in an earlier session whose process died before the game heard of it: the store lists
+        // it as pending at this session's purchase fetch.
+        private static PendingOrder PaidEarlier(string transactionId)
+            => new PendingOrder(new Cart(new CartItem(UnityIAPServices.StoreController().GetProductById("coins_100"))), new TestOrderInfo(transactionId));
+
+        private static IEnumerator StartWithPurchasesHeld(ConfirmTestStore store, UnityIapAdapter adapter)
+        {
+            store.HoldPurchases = true;
+            bool? ready = null;
+            adapter.Initialize(Coins(), ok => ready = ok);
+            yield return Until(() => ready != null, "the store initialized");
+            Assert.AreEqual(true, ready);
         }
 
         private static List<NexusProduct> Pass() => new List<NexusProduct> { new NexusProduct { Id = "rewards_pass", Type = NexusProductType.NonConsumable } };
@@ -315,6 +331,79 @@ namespace Nexus.Iap.Unity.Tests
                 yield return Until(() => skin != null, "skin_pack answered");
                 Assert.AreEqual(PurchaseOutcome.Cancelled, skin);
                 Assert.IsFalse(adapter.IsOwned("skin_pack"));
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #204: the adapter confirmed (consumed) a paid consumable it found pending at a fetch, and nothing told the game, so
+        // the player paid and got nothing. With no handler the order now stays with the store.
+        [UnityTest]
+        public IEnumerator APaidConsumableFoundAtAFetch_WithNothingToGrantIt_IsNotConsumed_AndIsWarned()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusFoundUnhandled", failConfirms: 0);
+            try
+            {
+                var adapter = new UnityIapAdapter();
+                yield return StartWithPurchasesHeld(store, adapter);
+                LogAssert.Expect(LogType.Warning, new Regex(@"^\[UnityIAP\] A paid purchase of coins_100 \(transaction tx-found\) was not requested in this session and nothing handles UnrequestedPurchase: it is not confirmed"));
+                store.AnswerPurchases(PaidEarlier("tx-found"));
+                yield return Until(() => adapter.OwnershipKnown, "the purchase fetch answered");
+                for (int i = 0; i < 10; i++) yield return null;
+                Assert.AreEqual(0, store.Confirms, "the store keeps the order until something grants it");
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #204: the game hears of a paid consumable found pending at a fetch before the store consumes it
+        [UnityTest]
+        public IEnumerator APaidConsumableFoundAtAFetch_ReachesTheGame_BeforeTheStoreConsumesIt()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusFoundHandled", failConfirms: 0);
+            try
+            {
+                var adapter = new UnityIapAdapter();
+                var granted = new List<string>();
+                int confirmsWhenGranted = -1;
+                adapter.UnrequestedPurchase += (product, transaction) => { granted.Add(product + " " + transaction); confirmsWhenGranted = store.Confirms; };
+                yield return StartWithPurchasesHeld(store, adapter);
+                store.AnswerPurchases(PaidEarlier("tx-found"));
+                yield return Until(() => store.Confirms >= 1, "the order was confirmed");
+                CollectionAssert.AreEqual(new[] { "coins_100 tx-found" }, granted);
+                Assert.AreEqual(0, confirmsWhenGranted, "the game heard of it before the store consumed it");
+                Assert.IsFalse(adapter.IsOwned("coins_100"), "a consumable is never owned");
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #204: a deferred consumable approved later went through the purchase path with no request waiting, and was consumed
+        // without a word. Google Play and the App Store route every pending order a fetch finds through the same path.
+        [UnityTest]
+        public IEnumerator ADeferredConsumableApprovedLater_ReachesTheGame()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusDeferredConsumable", failConfirms: 0);
+            store.DeferProduct = "coins_100";
+            try
+            {
+                var adapter = new UnityIapAdapter();
+                var granted = new List<string>();
+                adapter.UnrequestedPurchase += (product, transaction) => granted.Add(product + " " + transaction);
+                bool? ready = null;
+                adapter.Initialize(Coins(), ok => ready = ok);
+                yield return Until(() => ready != null, "the store initialized");
+                PurchaseOutcome? outcome = null;
+                adapter.PurchaseWithOutcome("coins_100", o => outcome = o);
+                yield return Until(() => outcome != null, "the purchase answered");
+                Assert.AreEqual(PurchaseOutcome.Pending, outcome);
+
+                store.Approve(store.Deferred[0], "tx-approved");
+                yield return Until(() => store.Confirms >= 1, "the approved order was confirmed");
+                CollectionAssert.AreEqual(new[] { "coins_100 tx-approved" }, granted);
                 LogAssert.NoUnexpectedReceived();
             }
             finally { UnityIAPServices.SetStoreAsDefault(previous); }

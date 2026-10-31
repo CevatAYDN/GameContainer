@@ -43,6 +43,13 @@ while the store has not answered which products the account owns, offline or bef
 hides its own interstitials or ad offers by `IsProductOwned` hides them while `GetOwnership` is not `NotOwned`, as the ads
 bridge's entitlement now does. Register every product before `SetStoreAdapter`: a later `RegisterProducts` is an error.
 
+#### Paid consumables nobody requested reach the game
+
+`IIapService` gains `event UnrequestedPurchaseHandler UnrequestedPurchase` (issue #204). A class of the game that implements
+`IIapService` (a test fake) adds the event. A game that sells consumables subscribes before `SetStoreAdapter` and grants
+each transaction id once: `UnityIapAdapter` no longer consumes a paid consumable nobody handles, and it reports an order
+whose confirm failed in an earlier session again.
+
 #### A custom `IUIAssetProvider` gets its instances back
 
 `UIManager` now calls `ReleaseWindow` for each instance `InstantiateWindowAsync` returned (issue #185), once, on the main

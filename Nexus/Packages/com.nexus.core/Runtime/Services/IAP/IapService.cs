@@ -51,6 +51,10 @@ namespace Nexus.Core.Services
         bool IsStoreAvailable { get; }
         /// <summary>Raised when the adapter reports a store change (connected, products or purchases fetched, restore).</summary>
         event Action StoreChanged;
+        /// <summary>A paid consumable the game did not request in this session (issue #204): grant it here. Subscribe before
+        /// <see cref="SetStoreAdapter"/>: the store's purchase fetch at its start reports one. Without a handler the adapter leaves
+        /// the order unconfirmed and warns. Dedupe by the transaction id: an order whose confirm failed is reported again.</summary>
+        event UnrequestedPurchaseHandler UnrequestedPurchase;
     }
 
     [Preserve]
@@ -66,11 +70,38 @@ namespace Nexus.Core.Services
         private IIapStoreAdapter _startedAdapter;
         public event Action StoreChanged;
         private readonly Action _forwardStoreChanged;
+        // The game's handlers. The service subscribes to the adapter only while the game has one, so an adapter can tell that
+        // nothing grants a purchase and keep the order (issue #204).
+        private UnrequestedPurchaseHandler _unrequested;
+        private readonly UnrequestedPurchaseHandler _forwardUnrequested;
         private readonly Dictionary<string, ProductDefinition> _catalog = new();
 
         public IapService()
         {
             _forwardStoreChanged = () => StoreChanged?.Invoke();
+            _forwardUnrequested = (productId, transactionId) => _unrequested?.Invoke(productId, transactionId);
+        }
+
+        public event UnrequestedPurchaseHandler UnrequestedPurchase
+        {
+            add
+            {
+                lock (_adapterLock)
+                {
+                    bool first = _unrequested == null;
+                    _unrequested += value;
+                    if (first && _unrequested != null && _adapter is IIapUnrequestedPurchaseAdapter adapter) adapter.UnrequestedPurchase += _forwardUnrequested;
+                }
+            }
+            remove
+            {
+                lock (_adapterLock)
+                {
+                    if (_unrequested == null) return;
+                    _unrequested -= value;
+                    if (_unrequested == null && _adapter is IIapUnrequestedPurchaseAdapter adapter) adapter.UnrequestedPurchase -= _forwardUnrequested;
+                }
+            }
         }
 
         public override ValueTask InitializeAsync(CancellationToken ct)
@@ -95,6 +126,8 @@ namespace Nexus.Core.Services
                 _adapter = adapter;
                 _startedAdapter = null;
                 toInitialize = adapter;
+                if (previous is IIapUnrequestedPurchaseAdapter previousUnrequested) previousUnrequested.UnrequestedPurchase -= _forwardUnrequested;
+                if (_unrequested != null && adapter is IIapUnrequestedPurchaseAdapter unrequested) unrequested.UnrequestedPurchase += _forwardUnrequested;
             }
             if (previous is IIapStoreInfoAdapter previousInfo) previousInfo.Changed -= _forwardStoreChanged;
             // a replaced adapter kept handling the store's purchases and confirmed them beside the live one (issue #118)
@@ -267,6 +300,7 @@ namespace Nexus.Core.Services
                 _adapter = null;
             }
             if (adapter is IIapStoreInfoAdapter info) info.Changed -= _forwardStoreChanged;
+            if (adapter is IIapUnrequestedPurchaseAdapter unrequested) unrequested.UnrequestedPurchase -= _forwardUnrequested;
             if (adapter is IDisposable disposable)
             {
                 disposable.Dispose();

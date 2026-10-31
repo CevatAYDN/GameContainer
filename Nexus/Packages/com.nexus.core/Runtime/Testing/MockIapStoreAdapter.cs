@@ -7,9 +7,21 @@ namespace Nexus.Core.Services
     /// Test double of a store: after Initialize every catalog product can be bought and is then owned, and a restore
     /// succeeds. Testing kit only (editor and test builds); a player has no simulated store (#162).
     /// </summary>
-    public sealed class MockIapStoreAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter
+    public sealed class MockIapStoreAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter, IIapUnrequestedPurchaseAdapter
     {
         public event Action Changed;
+        /// <summary>Raised by <see cref="ReportUnrequestedPurchase"/>.</summary>
+        public event UnrequestedPurchaseHandler UnrequestedPurchase;
+
+        /// <summary>Reports a paid consumable the game did not request, as a store's purchase fetch does (issue #204); false when
+        /// nothing handles it, in which case a store keeps the order.</summary>
+        public bool ReportUnrequestedPurchase(string productId, string transactionId)
+        {
+            var handler = UnrequestedPurchase;
+            if (handler == null) return false;
+            handler(productId, transactionId);
+            return true;
+        }
         public bool IsAvailable => _initialized;
         /// <summary>True after Initialize, unless the test keeps it unknown with <see cref="SetOwnershipKnown"/>.</summary>
         public bool OwnershipKnown => _initialized && _ownershipAnswered;
