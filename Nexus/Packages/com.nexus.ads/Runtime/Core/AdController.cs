@@ -150,6 +150,8 @@ namespace Nexus.Ads
         /// <summary>
         /// Shows the placement. <paramref name="onResult"/> runs exactly once, on the main thread.
         /// <see cref="AdResult.Blocked"/> comes with a <see cref="Violation"/>; <see cref="AdResult.NotReady"/> is silent.
+        /// When the provider's show throws, the screen and the slot are released, <paramref name="onResult"/> gets
+        /// <see cref="AdResult.Failed"/>, the format reloads, and the exception then reaches the caller.
         /// </summary>
         public void Show(string placement, Action<AdResult> onResult)
         {
@@ -187,7 +189,7 @@ namespace Nexus.Ads
             _fullScreenOpen = true;
             _lastPlacement[format] = placement;
             bool answered = false;
-            _provider.Show(format, placement, result => OnMain(() =>
+            void Answer(AdResult result, string detail)
             {
                 if (answered) return; // a provider that answers twice pays once
                 answered = true;
@@ -195,12 +197,19 @@ namespace Nexus.Ads
                 slot.State = SlotState.Idle;
                 if (result == AdResult.Rewarded) WriteReceipt(placement); // durable before the game hears of it: a kill in between keeps the reward
                 if (result == AdResult.Rewarded || result == AdResult.Closed) _session.RecordShown(declared);
-                _telemetry.Record(new AdEvent(result == AdResult.Failed ? AdEventKind.ShowFailed : result == AdResult.Rewarded ? AdEventKind.Rewarded : AdEventKind.Closed, format, placement));
+                _telemetry.Record(new AdEvent(result == AdResult.Failed ? AdEventKind.ShowFailed : result == AdResult.Rewarded ? AdEventKind.Rewarded : AdEventKind.Closed, format, placement, detail));
                 AdClosed?.Invoke(format, result);
                 Preload(format);
                 RaiseReadyChanged();
                 onResult?.Invoke(result);
-            }));
+            }
+            try { _provider.Show(format, placement, result => OnMain(() => Answer(result, null))); }
+            catch (Exception ex)
+            {
+                // the open flag would block every later full-screen show (NoStackedAds) and the slot would never reload (#151)
+                Answer(AdResult.Failed, "provider threw " + ex.GetType().Name + ": " + ex.Message);
+                throw;
+            }
         }
 
         public void HideBanner() => _provider.HideBanner();

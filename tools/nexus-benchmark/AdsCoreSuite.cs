@@ -134,7 +134,13 @@ namespace NexusBench
         public void Load(AdFormat format) => Loads.Add(format);
         public int IsReadyCalls;
         public bool IsReady(AdFormat format) { IsReadyCalls++; return Ready.Contains(format); }
-        public void Show(AdFormat format, string placement, Action<AdResult> onResult) { Ready.Remove(format); ShowFormat = format; ShowPlacement = placement; ShowCallback = onResult; Opened?.Invoke(format); }
+        /// <summary>Thrown by the next <see cref="Show"/>, as an SDK's show call can throw; cleared when thrown.</summary>
+        public Exception ShowThrows;
+        public void Show(AdFormat format, string placement, Action<AdResult> onResult)
+        {
+            if (ShowThrows != null) { var ex = ShowThrows; ShowThrows = null; throw ex; }
+            Ready.Remove(format); ShowFormat = format; ShowPlacement = placement; ShowCallback = onResult; Opened?.Invoke(format);
+        }
         public void ShowBanner(string placement, BannerPosition position) => BannerShown = true;
         public void HideBanner() => BannerShown = false;
         public void OpenTestSuite() { }
@@ -576,6 +582,25 @@ namespace NexusBench
                 Check("AC40. IsReady_PolledEveryFrame_AsksProviderOncePerWindow",
                     allReady && polled <= 1 && afterWindow == polled + 1 && cachedAnswer && r == AdResult.NotReady && rig.Provider.ShowPlacement == null,
                     $"100 polls -> {polled} provider call(s) (at most 1; pre-fix 100), one more after the window ({afterWindow}); an ad that expired inside the window: IsReady={cachedAnswer}, Show={r} without reaching the provider");
+            }
+
+            // a provider whose Show threw left the full-screen flag set and the slot Showing: every later full-screen show was
+            // blocked by NoStackedAds, the format never reloaded and onResult never ran (issue #151)
+            using (var rig = new AdsRig().Running())
+            {
+                var results = new List<AdResult>();
+                Exception thrown = null;
+                rig.Provider.ShowThrows = new InvalidOperationException("JNI show failed");
+                try { rig.Controller.Show("shop_refill", r => results.Add(r)); }
+                catch (InvalidOperationException ex) { thrown = ex; }
+                var failed = rig.Telemetry.Events.Find(e => e.Kind == AdEventKind.ShowFailed);
+                bool named = failed.Kind == AdEventKind.ShowFailed && failed.Detail != null && failed.Detail.Contains("JNI show failed");
+                bool ready = rig.Controller.IsReady("shop_refill"); // the slot asked the provider again, which still holds its ad
+                var next = rig.Show("shop_refill");
+                Check("AC41. ProviderShowThrows_AnswersFailedOnce_FreesTheScreen_Rethrows",
+                    thrown != null && results.Count == 1 && results[0] == AdResult.Failed && named
+                    && ready && next == null && rig.Provider.ShowPlacement == "shop_refill" && rig.Violations.Count == 0,
+                    $"thrown={thrown?.Message ?? "none"} results=[{string.Join(",", results)}] ShowFailed names it={named}; IsReady={ready}, next show={next?.ToString() ?? "open"}, violations={rig.Violations.Count} (pre-fix: no result, next show Blocked by NoStackedAds)");
             }
         }
 

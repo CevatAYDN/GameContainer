@@ -182,8 +182,12 @@ namespace Nexus.Ads.AdMob
             if (_show != null && !_show.Done) { onResult(AdResult.NotReady); return; } // one full-screen ad at a time; the guard blocks earlier
             if (!IsReady(format)) { onResult(AdResult.NotReady); return; }
             var show = _show = new ShowState { Format = format, Placement = placement ?? "", OnResult = onResult };
-            if (format == AdFormat.Rewarded) _rewarded.Show(_ => OnMain(() => show.Rewarded = true)); // Google pays before the close
-            else _interstitial.Show();
+            try
+            {
+                if (format == AdFormat.Rewarded) _rewarded.Show(_ => OnMain(() => show.Rewarded = true)); // Google pays before the close
+                else _interstitial.Show();
+            }
+            catch { if (_show == show) _show = null; throw; } // an open show would answer NotReady to every later one (#151)
         }
 
         /// <summary>Ends the show once; a null result is a close, paid when the reward arrived.</summary>

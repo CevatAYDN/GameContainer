@@ -165,8 +165,9 @@ namespace Nexus.Ads.LevelPlay
             if (onResult == null) throw new ArgumentNullException(nameof(onResult));
             if (_show != null && !_show.Done) { onResult(AdResult.NotReady); return; } // one full-screen ad at a time; the guard blocks earlier
             if (!IsReady(format)) { onResult(AdResult.NotReady); return; }
-            _show = new ShowState { Format = format, OnResult = onResult };
-            if (format == AdFormat.Rewarded) _rewarded.ShowAd(placement); else _interstitial.ShowAd(placement);
+            var show = _show = new ShowState { Format = format, OnResult = onResult };
+            try { if (format == AdFormat.Rewarded) _rewarded.ShowAd(placement); else _interstitial.ShowAd(placement); }
+            catch { if (_show == show) _show = null; throw; } // an open show would answer NotReady to every later one (#151)
         }
 
         private void OnRewarded()
