@@ -117,6 +117,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ScreenMediator.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/UIManager.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/ScreenOwner.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/UI/Stack/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Ads/AdService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/IAP/IapService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/MonetizationAsyncExtensions.cs" />

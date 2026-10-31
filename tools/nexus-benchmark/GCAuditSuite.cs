@@ -38,6 +38,7 @@ namespace NexusBench
             failures += AssertPass("GCA7. EconomyService_SubscribedBalance_EarnSpend_ZeroGC", TestEconomySubscribedBalanceZeroGC);
             failures += AssertPass("GCA8. SaveThrottler_Tick_IdleAndDue_ZeroGC", TestSaveThrottlerTickZeroGC);
             failures += AssertPass("GCA9. AdService_Tick_IdleCoolingAndEnd_ZeroGC", TestAdServiceTickZeroGC);
+            failures += AssertPass("GCA10. BackChain_PollWithoutAPress_FakeInput_ZeroGC", TestBackChainPollWithoutAPressZeroGC);
 
             if (failures == 0)
                 Console.WriteLine("\n[GCAudit] ALL ZERO-GC AUDIT TESTS PASSED ✓");
@@ -68,6 +69,29 @@ namespace NexusBench
                 Console.WriteLine($"[GCAudit] FAIL  {testName}: {ex.GetType().Name}: {ex.Message}");
                 return 1;
             }
+        }
+
+        // The screen stack's per-frame back poll (#76, ADR-0003) with a fake input service; the real InputService
+        // path is measured in PlayMode and on the device.
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TestBackChainPollWithoutAPressZeroGC()
+        {
+            var history = new ScreenHistory();
+            var chain = new BackChain(history.Back, () => 0, null, null);
+            chain.AddStep(() => false, BackOrder.BeforeScreens);
+            var input = new ScreenStackSuite.FakeInput();
+            chain.Poll(input);
+
+            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 0; i < 5000; i++) chain.Poll(input);
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - allocBefore;
+            if (allocated > 0)
+            {
+                Console.WriteLine($"      Allocated {allocated} bytes during 5000 BackChain.Poll calls without a press");
+                return false;
+            }
+            input.CancelDown = true;
+            return !chain.Poll(input);
         }
 
         [MethodImpl(MethodImplOptions.NoInlining)]
