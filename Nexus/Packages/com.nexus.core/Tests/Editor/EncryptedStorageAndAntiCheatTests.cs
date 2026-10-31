@@ -321,6 +321,8 @@ namespace Nexus.Editor.Tests
                     StringAssert.StartsWith(reason, failure);
                 }
                 Assert.AreEqual("40", store.GetString("coins", null), "a refused import leaves the save as it was");
+                Assert.IsFalse(store.ImportEncryptedSaveData("coins", "", out failure));
+                Assert.AreEqual("the data is empty", failure, "nothing to import: no line");
 
                 store.Dispose();
                 UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, "[EncryptedStorage] Import of key 'coins' refused: the store is disposed.");

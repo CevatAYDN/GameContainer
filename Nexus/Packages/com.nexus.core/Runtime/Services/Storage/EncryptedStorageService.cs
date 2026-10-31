@@ -895,7 +895,12 @@ namespace Nexus.Core.Services
         {
             // Each of these refusals returned false with no reason and no log in any build (issue #166).
             if (string.IsNullOrEmpty(key)) return ImportRefused(key, "the key is empty", out failure);
-            if (string.IsNullOrEmpty(base64Data)) return ImportRefused(key, "the data is empty", out failure);
+            if (string.IsNullOrEmpty(base64Data))
+            {
+                // Nothing to import (no cloud copy yet), like an export of a key that has no value: the reason, no line.
+                failure = "the data is empty";
+                return false;
+            }
             string refused = null;
             try
             {
