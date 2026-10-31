@@ -269,7 +269,11 @@ was chosen and why:
   history; the screen beneath it is shown, and its root is hidden, also when only the screen's component was disabled
   and its document still shows. Enabled again, it registers again, hidden. A screen whose root is not there
   yet when it binds (Gigawatt's shape: a subtree of a document on another GameObject that enables after it) gets its
-  state on the next frame. An override of `OnBind` calls `base.OnBind`, which registers it.
+  state on the first frame it is there. An override of `OnBind` calls `base.OnBind`, which registers it.
+- **A disabled document drops its root.** A `UIDocument` that is disabled takes its tree off the panel, and the
+  scheduled items of a detached element do not run, so a transition on it would never end; enabled again, the
+  document builds a new root. The screen hears its root leave the panel (`DetachFromPanelEvent`), completes the
+  running task at once, and gives the screen's state to the new root on the first frame it is there.
 - **Compile check (verification plan, item 2).** `UnityStubs.cs` gains no UIElements types: the four files under
   `Toolkit/` join the files the harness leaves out and are compiled by `tools/nexus-compile-check`. The core's
   `package.json` declares `com.unity.modules.uielements` 1.0.0, which it now uses.

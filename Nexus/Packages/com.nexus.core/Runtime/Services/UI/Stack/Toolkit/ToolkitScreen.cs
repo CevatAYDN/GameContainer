@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Threading.Tasks;
+using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace Nexus.Core.Services
@@ -12,6 +13,11 @@ namespace Nexus.Core.Services
     /// screen table; an override of <see cref="OnBind"/> calls <c>base.OnBind</c>. The stack shows and hides its
     /// <see cref="Root"/> with <c>display</c> and the class <see cref="ShownClass"/>, never by deactivating the
     /// GameObject: a deactivated screen unbinds, as every view does, and leaves its context's history.
+    /// <para>
+    /// A disabled <see cref="UIDocument"/> drops its tree, and enabled again it builds a new root. The screen follows
+    /// it: a transition on the dropped root completes its task at once, and the new root gets the screen's state on
+    /// the first frame it is there.
+    /// </para>
     /// </summary>
     public abstract class ToolkitScreen : View, IStackScreen
     {
@@ -29,6 +35,7 @@ namespace Nexus.Core.Services
         private TaskCompletionSource<bool> _transition;
         private int _generation;
         private bool _motionOverridden;
+        private Coroutine _waitingForRoot;
 
         /// <summary>The stack layer; inside one layer the screen opened last is on top.</summary>
         public virtual UILayer Layer => UILayer.Screen;
@@ -37,7 +44,7 @@ namespace Nexus.Core.Services
         public virtual bool BlocksBack => false;
 
         /// <summary>The element the stack shows and hides; null until <see cref="ResolveRoot"/> finds one.</summary>
-        public VisualElement Root => _root ??= ResolveRoot();
+        public VisualElement Root => _root ?? TrackRoot();
 
         /// <summary>The arguments of the route that showed it last.</summary>
         public object Args { get; private set; }
@@ -57,11 +64,10 @@ namespace Nexus.Core.Services
         protected override void OnBind(IContext context)
         {
             base.OnBind(context);
-            _root = null;
             // A root in a document that enables after this screen binds (on another GameObject) is not there yet;
-            // its state is applied on the next frame.
-            if (Root != null) ApplyState(Root);
-            else if (isActiveAndEnabled) StartCoroutine(ApplyStateWhenReady());
+            // its state is applied on the first frame it is.
+            if (Root != null) ApplyState(_root);
+            else WaitForRoot();
             _stack = context.TryResolve<IScreenStack>() as ScreenStack;
             if (_stack == null)
             {
@@ -81,6 +87,10 @@ namespace Nexus.Core.Services
             Finish();
             // Out of the history means hidden, also when only this component was disabled and its document still shows.
             if (_root != null) ApplyState(_root);
+            ForgetRoot();
+            // A disabled component keeps its coroutines running; only a deactivated GameObject stops them.
+            if (_waitingForRoot != null) StopCoroutine(_waitingForRoot);
+            _waitingForRoot = null;
             base.OnUnbind();
         }
 
@@ -148,11 +158,46 @@ namespace Nexus.Core.Services
             else root.RemoveFromClassList(ShownClass);
         }
 
+        private VisualElement TrackRoot()
+        {
+            var root = ResolveRoot();
+            if (root == null) return null;
+            _root = root;
+            _motionOverridden = false;
+            root.RegisterCallback<DetachFromPanelEvent>(OnRootDetached);
+            return root;
+        }
+
+        private void ForgetRoot()
+        {
+            _root?.UnregisterCallback<DetachFromPanelEvent>(OnRootDetached);
+            _root = null;
+        }
+
+        // The root left its panel: its document was disabled or the element removed. Its scheduled items never run
+        // again, so the transition ends now, and the state goes to the root that takes its place.
+        private void OnRootDetached(DetachFromPanelEvent evt)
+        {
+            if (evt.target != _root) return;
+            ForgetRoot();
+            _generation++;
+            Finish();
+            WaitForRoot();
+        }
+
+        private void WaitForRoot()
+        {
+            // isActiveAndEnabled stays true until this component's own OnDisable, also while its GameObject is being
+            // deactivated or destroyed, where a coroutine cannot start.
+            if (_waitingForRoot == null && enabled && gameObject.activeInHierarchy) _waitingForRoot = StartCoroutine(ApplyStateWhenReady());
+        }
+
         private IEnumerator ApplyStateWhenReady()
         {
-            yield return null;
-            _root = null;
-            if (Root != null) ApplyState(Root);
+            do yield return null;
+            while (Root == null);
+            _waitingForRoot = null;
+            ApplyState(_root);
         }
 
         private void SetReducedMotion(VisualElement root, bool reduced)

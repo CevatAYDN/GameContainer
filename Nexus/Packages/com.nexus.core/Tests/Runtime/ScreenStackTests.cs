@@ -71,6 +71,7 @@ namespace Nexus.Tests
         [TearDown]
         public void TearDown()
         {
+            Time.timeScale = 1f;
             Cleanup();
             UnityEngine.Object.DestroyImmediate(_panel);
         }
@@ -236,6 +237,53 @@ namespace Nexus.Tests
                 Is.EqualTo((false, DisplayStyle.Flex, false)), "the hide animates before display: none");
             yield return WaitUntil(() => back.IsCompleted, "the back did not finish in 5 s");
             Assert.That((back.Result, Hidden(faded)), Is.EqualTo((BackResult.Popped, true)));
+        }
+
+        [UnityTest]
+        public IEnumerator ATransition_EndsOnUnscaledTime_WhileTheTimeScaleIsZero()
+        {
+            var app = CreateRoot("App", null, BindStack);
+            yield return WaitUntil(() => app.IsInitialized, "the context did not start");
+            AddScreen<MenuScreen>(app, _panel);
+            var faded = AddScreen<SettingsScreen>(app, _panel);
+            SetTransition(faded, 300);
+            yield return null;
+            yield return null;
+            var stack = app.Context.Container.Resolve<IScreenStack>();
+            stack.ReplaceRoot<MenuScreen>();
+
+            Time.timeScale = 0f; // a paused game opening its pause menu
+            var push = stack.PushAsync<SettingsScreen>().AsTask();
+            Assert.That(push.IsCompleted, Is.False);
+            yield return WaitUntil(() => push.IsCompleted, "the push did not finish in 5 s of real time");
+            Assert.That(Displayed(faded), Is.True);
+        }
+
+        [UnityTest]
+        public IEnumerator ADisabledDocument_EndsItsTransitionAtOnce_AndItsNewRootGetsTheScreensState()
+        {
+            var app = CreateRoot("App", null, BindStack);
+            yield return WaitUntil(() => app.IsInitialized, "the context did not start");
+            var menu = AddScreen<MenuScreen>(app, _panel);
+            var faded = AddScreen<SettingsScreen>(app, _panel);
+            SetTransition(faded, 300);
+            yield return null;
+            yield return null;
+            var stack = app.Context.Container.Resolve<IScreenStack>();
+            stack.ReplaceRoot<MenuScreen>();
+            var push = stack.PushAsync<SettingsScreen>().AsTask();
+            var fadedDocument = faded.GetComponent<UIDocument>();
+            var menuDocument = menu.GetComponent<UIDocument>();
+            var oldRoot = faded.Root;
+
+            fadedDocument.enabled = false; // the root leaves its panel; a new one comes with the next enable
+            menuDocument.enabled = false;
+            Assert.That(push.IsCompleted, Is.True, "a transition on a dropped root never ends");
+
+            fadedDocument.enabled = true;
+            menuDocument.enabled = true;
+            yield return WaitUntil(() => Displayed(faded) && Hidden(menu), "the new roots do not show the history");
+            Assert.That(faded.Root, Is.Not.SameAs(oldRoot));
         }
 
         [UnityTest]
