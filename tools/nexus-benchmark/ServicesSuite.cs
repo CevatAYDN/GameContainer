@@ -60,6 +60,7 @@ namespace NexusBench
     public sealed class SvcScreenProvider : IUIAssetProvider
     {
         public int InstantiateCount;
+        public int ReleaseCount;
         public TaskCompletionSource<GameObject> Gate;
         private string _name;
         private Transform _parent;
@@ -92,8 +93,7 @@ namespace NexusBench
 
         public void ReleaseWindow(GameObject windowInstance)
         {
-            // UIManager pools closed screens instead of releasing them; kept for
-            // interface parity (never exercised by the U1–U7 proof).
+            ReleaseCount++;
             if (windowInstance != null) UnityEngine.Object.Destroy(windowInstance);
         }
     }
@@ -868,12 +868,15 @@ namespace NexusBench
                     $"sameInstance={ReferenceEquals(first, reopened)} instantiated={provider.InstantiateCount} (before={beforeReopen}; pooled => no fresh instantiation)");
                 ui.CloseAllAsync().GetAwaiter().GetResult();
 
-                // U7: dispose destroys screens; queries and snapshot are safe afterwards.
+                // U7: dispose hands every provider instance back and destroys the canvas it created (issue #185);
+                // queries and snapshot are safe afterwards.
                 ui.Dispose();
                 bool disposed = !ui.IsScreenOpen<SvcScreenView>() && ui.OpenScreenCount == 0
                     && ui.GetOpenScreensSnapshot().Count == 0 && ui.PendingScreenCount == 0;
-                Check("U7. Dispose_Cleans_Screens_And_Canvas", disposed,
-                    $"IsScreenOpen={ui.IsScreenOpen<SvcScreenView>()} openCount={ui.OpenScreenCount}");
+                bool released = provider.ReleaseCount == provider.InstantiateCount;
+                bool canvasGone = GameObject.Find("[Nexus_UICanvas]") == null;
+                Check("U7. Dispose_Cleans_Screens_And_Canvas", disposed && released && canvasGone,
+                    $"IsScreenOpen={ui.IsScreenOpen<SvcScreenView>()} openCount={ui.OpenScreenCount} released={provider.ReleaseCount}/{provider.InstantiateCount} canvasGone={canvasGone}");
             }
             finally
             {

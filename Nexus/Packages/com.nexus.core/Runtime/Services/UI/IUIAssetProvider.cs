@@ -4,18 +4,19 @@ using UnityEngine;
 namespace Nexus.Core.Services
 {
     /// <summary>
-    /// UI Penceresi Prefab'lerinin yüklenmesini ve serbest bırakılmasını soyutlayan arayüz.
-    /// Farklı oyunlarda Addressables, AssetBundles veya Resources sistemleri ile genişletilebilir.
+    /// Loads and releases the screens <see cref="UIManager"/> opens when no prefab is registered for them. The default is
+    /// <see cref="ResourcesUIAssetProvider"/>; a game can back it with Addressables or asset bundles.
     /// </summary>
     public interface IUIAssetProvider
     {
-        /// <summary>
-        /// Belirtilen pencereyi asenkron yükler ve belirtilen parent altına instantiate eder.
-        /// </summary>
+        /// <summary>Loads the window named <paramref name="windowName"/> and instantiates it under <paramref name="parent"/>.</summary>
         Task<GameObject> InstantiateWindowAsync(string windowName, Transform parent);
 
         /// <summary>
-        /// Instantiate edilmiş pencere örneğini serbest bırakır/yok eder.
+        /// Releases an instance <see cref="InstantiateWindowAsync"/> returned. UIManager hands each one back once, on the
+        /// main thread: when it destroys the screen (a full pool, a failed open, its Dispose, a load that finished after
+        /// its Dispose) and when it forgets a screen destroyed outside it. The instance can already be destroyed then:
+        /// release what it holds (an Addressables handle) and destroy it only if it is alive.
         /// </summary>
         void ReleaseWindow(GameObject windowInstance);
     }

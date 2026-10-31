@@ -48,7 +48,8 @@ namespace Nexus.Core
             SafeDestroy(component.gameObject);
         }
 
-        private static bool PostedToMainThread(SendOrPostCallback callback, object state)
+        /// <summary>Posts the callback to the main thread and returns true when called from another thread.</summary>
+        internal static bool PostedToMainThread(SendOrPostCallback callback, object state)
         {
             if (s_mainThreadId == -1 || Thread.CurrentThread.ManagedThreadId == s_mainThreadId) return false;
             // Unity objects, their == operator included, belong to the main thread.

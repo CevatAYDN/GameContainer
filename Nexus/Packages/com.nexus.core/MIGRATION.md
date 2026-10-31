@@ -36,6 +36,13 @@ an assembly that referenced `com.nexus.core.dots` references `com.nexus.dots` in
 their last parameter (issue #184): it moved the pool's root, and the inactive instances died with that object. Remove
 the argument. To place the spawned objects, pass the parent to `Spawn`.
 
+#### A custom `IUIAssetProvider` gets its instances back
+
+`UIManager` now calls `ReleaseWindow` for each instance `InstantiateWindowAsync` returned (issue #185), once, on the main
+thread, and the instance can already be destroyed then. Release what the instance holds (an Addressables handle) and
+destroy it only if it is alive (`if (instance != null)`). `UICanvasSystem.UpdateLayerInteractivity` is replaced by
+`SetModalOpen(bool)` and `ReleaseWithoutDestroy` is gone; code that called them leaves the canvas to `UIManager`.
+
 ---
 
 ## Version 0.4.0 → 0.5.0

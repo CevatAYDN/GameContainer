@@ -93,6 +93,8 @@ namespace Nexus.Core.Services
         private readonly Dictionary<string, GameObject> _registeredPrefabs = new();
         private readonly Dictionary<string, Stack<ScreenView>> _pools = new();
         private readonly List<string> _history = new();
+        // The instances the asset provider made, by screen: they go back through ReleaseWindow, not Destroy (issue #185).
+        private readonly Dictionary<ScreenView, GameObject> _providerInstances = new();
 
         // Per-screen cap on pooled (closed-but-retained) instances. Prevents a
         // screen toggled open/closed thousands of times from retaining one deactivated
@@ -111,7 +113,16 @@ namespace Nexus.Core.Services
         /// <summary>Number of screens currently open.</summary>
         public int OpenScreenCount
         {
-            get { lock (_lock) return _activeScreens.Count; }
+            get
+            {
+                lock (_lock)
+                {
+                    int open = 0;
+                    foreach (var screen in _activeScreens.Values)
+                        if (screen != null) open++; // a screen destroyed outside the manager is not open
+                    return open;
+                }
+            }
         }
 
         private CancellationToken LifetimeToken => Context?.LifetimeToken ?? CancellationToken.None;
@@ -150,6 +161,7 @@ namespace Nexus.Core.Services
             where TScreen : ScreenView
         {
             if (_disposed) return null;
+            ForgetDestroyedScreens();
 
             string key = ScreenKey<TScreen>();
             Transform layerRoot = _canvas.GetLayerRoot(layer);
@@ -165,7 +177,6 @@ namespace Nexus.Core.Services
                     existing.transform.SetAsLastSibling();
                     _history.Remove(key);
                     _history.Add(key);
-                    _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
                     return (TScreen)existing;
                 }
 
@@ -196,6 +207,7 @@ namespace Nexus.Core.Services
 
                 if (screen == null)
                 {
+                    if (!ReferenceEquals(screen, null)) Release(screen); // destroyed while it waited in the pool
                     // 3. Instantiate a new instance under the target layer root.
                     screen = await InstantiateScreenAsync<TScreen>(key, layerRoot);
                     if (screen == null) return null;
@@ -210,54 +222,41 @@ namespace Nexus.Core.Services
                 // 4. Run the lifecycle. SetActive(true) is idempotent: for a freshly instantiated
                 //    active prefab OnEnable already ran (view registered + mediator bound); for a
                 //    pooled inactive instance this re-triggers OnEnable → re-register + rebind.
+                // A destroyed screen is Unity fake-null: touching .gameObject would throw MissingReferenceException.
                 try
                 {
                     await screen.OnOpeningAsync(args, LifetimeToken);
-                    // Dispose() may have destroyed the screen while the open lifecycle
-                    // was in flight (teardown during an open storm). A destroyed screen
-                    // is Unity fake-null; touching .gameObject would throw
-                    // MissingReferenceException.
-                    if (screen == null) return null;
-                    screen.gameObject.SetActive(true);
-                    await screen.OnOpenedAsync(LifetimeToken);
-                    if (screen == null) return null;
+                    if (screen != null) screen.gameObject.SetActive(true);
+                    if (screen != null) await screen.OnOpenedAsync(LifetimeToken);
                 }
                 catch (Exception ex)
                 {
                     NexusRuntime.Logger?.LogException(ex);
-                    if (screen == null) return null; // already destroyed — nothing to clean up
-                    if (instantiated)
-                    {
-                        SafeDestroyUtility.SafeDestroy(screen.gameObject);
-                    }
-                    else
-                    {
-                        ReturnToPool(key, screen);
-                    }
+                    if (instantiated || screen == null) Release(screen);
+                    else ReturnToPool(key, screen);
                     return null;
                 }
 
-                // 5. Register as active.
+                // 5. Register as active. The key reservation keeps any other instance from registering under it; a
+                //    manager disposed during the open, or a screen destroyed outside it, registers nothing (issue #185).
+                bool registered;
                 lock (_lock)
                 {
-                    if (!_activeScreens.ContainsKey(key))
+                    registered = !_disposed && screen != null;
+                    if (registered)
                     {
                         _activeScreens[key] = screen;
                         _history.Remove(key);
                         _history.Add(key);
-                        _activeGameObjectsDirty = true; // R2026-M3: invalidate cache
-                    }
-                    else if (instantiated)
-                    {
-                        // Defensive: reservation should prevent this, but if a pool was
-                        // reused while an instance is active, destroy the duplicate.
-                        NexusRuntime.Logger?.LogWarning($"[UIManager] Screen '{key}' already active; discarding duplicate instance.");
-                        SafeDestroyUtility.SafeDestroy(screen.gameObject);
-                        return _activeScreens[key] as TScreen;
                     }
                 }
+                if (!registered)
+                {
+                    Release(screen);
+                    return null;
+                }
 
-                _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
+                UpdateModalBlocking();
                 SignalBus?.Fire(new ScreenOpenedSignal(screen.ScreenName, args));
                 return (TScreen)screen;
             }
@@ -292,6 +291,7 @@ namespace Nexus.Core.Services
             try
             {
                 GameObject instance;
+                bool fromProvider = false;
                 if (prefab != null)
                 {
                     instance = UnityEngine.Object.Instantiate(prefab, holder.transform);
@@ -301,6 +301,13 @@ namespace Nexus.Core.Services
                     // Provider addresses stay compatible; internal identities include assembly
                     // and namespace so registered same-name screen types never share a pool.
                     instance = await AssetProvider.InstantiateWindowAsync(typeof(TScreen).Name, holder.transform);
+                    // Disposed during the load: the instance goes back, possibly destroyed with the canvas (issue #185).
+                    if (_disposed)
+                    {
+                        if (!ReferenceEquals(instance, null)) ReleaseWindow(instance);
+                        return null;
+                    }
+                    fromProvider = true;
                 }
                 else
                 {
@@ -318,9 +325,11 @@ namespace Nexus.Core.Services
                 if (screen == null)
                 {
                     NexusRuntime.Logger?.LogError($"[UIManager] Prefab for '{key}' has no {typeof(TScreen).Name} component.");
-                    SafeDestroyUtility.SafeDestroy(instance);
+                    if (fromProvider) ReleaseWindow(instance);
+                    else SafeDestroyUtility.SafeDestroy(instance);
                     return null;
                 }
+                if (fromProvider) lock (_lock) _providerInstances[screen] = instance;
                 if (Context != null) instance.AddComponent<ScreenOwner>().Context = Context;
                 instance.transform.SetParent(layerRoot, false);
                 return screen;
@@ -331,21 +340,97 @@ namespace Nexus.Core.Services
             }
         }
 
+        /// <summary>Deactivates a closed screen into its pool; a full pool or a disposed manager releases it instead.</summary>
         private void ReturnToPool(string key, ScreenView screen)
         {
-            screen.gameObject.SetActive(false);
+            bool pooled = false;
             lock (_lock)
             {
-                if (!_pools.TryGetValue(key, out var pool))
+                if (!_disposed)
                 {
-                    pool = new Stack<ScreenView>();
-                    _pools[key] = pool;
+                    if (!_pools.TryGetValue(key, out var pool))
+                    {
+                        pool = new Stack<ScreenView>();
+                        _pools[key] = pool;
+                    }
+                    if (pool.Count < MaxPooledPerScreenKey)
+                    {
+                        pool.Push(screen);
+                        pooled = true;
+                    }
                 }
-                if (pool.Count < MaxPooledPerScreenKey)
-                    pool.Push(screen);
-                else
-                    SafeDestroyUtility.SafeDestroy(screen.gameObject);
             }
+            if (pooled) screen.gameObject.SetActive(false);
+            else Release(screen);
+        }
+
+        /// <summary>Destroys a screen of this manager; an instance from the asset provider goes back through it.</summary>
+        private void Release(ScreenView screen)
+        {
+            GameObject instance;
+            lock (_lock)
+            {
+                if (!_providerInstances.Remove(screen, out instance)) instance = null;
+            }
+            if (ReferenceEquals(instance, null)) SafeDestroyUtility.SafeDestroyGameObject(screen);
+            else ReleaseWindow(instance);
+        }
+
+        /// <summary>Hands an instance back to the asset provider on the main thread; a provider that throws is logged.</summary>
+        private void ReleaseWindow(GameObject instance)
+        {
+            if (SafeDestroyUtility.PostedToMainThread(state => ReleaseWindow((GameObject)state), instance)) return;
+            try
+            {
+                AssetProvider.ReleaseWindow(instance);
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogException(ex);
+            }
+        }
+
+        /// <summary>
+        /// Forgets the open screens destroyed outside the manager (Destroy on their GameObject). They read as open and
+        /// broke every later open before (issue #185).
+        /// </summary>
+        private void ForgetDestroyedScreens()
+        {
+            List<ScreenView> destroyed = null;
+            lock (_lock)
+            {
+                List<string> keys = null;
+                foreach (var pair in _activeScreens)
+                    if (pair.Value == null) (keys ??= new List<string>()).Add(pair.Key);
+                if (keys == null) return;
+                destroyed = new List<ScreenView>(keys.Count);
+                foreach (var key in keys)
+                {
+                    destroyed.Add(_activeScreens[key]);
+                    _activeScreens.Remove(key);
+                    _history.Remove(key);
+                }
+            }
+            foreach (var screen in destroyed) Release(screen);
+            UpdateModalBlocking();
+        }
+
+        /// <summary>Tells the shared canvas whether this manager has a Modal-or-higher screen open.</summary>
+        private void UpdateModalBlocking()
+        {
+            bool modalOpen = false;
+            lock (_lock)
+            {
+                foreach (var screen in _activeScreens.Values)
+                {
+                    if (screen != null && _canvas.ResolveLayer(screen.gameObject) >= UILayer.Modal)
+                    {
+                        modalOpen = true;
+                        break;
+                    }
+                }
+            }
+            _canvas.SetModalOpen(modalOpen);
         }
 
         // ── Close ─────────────────────────────────────────────────────
@@ -363,6 +448,7 @@ namespace Nexus.Core.Services
 
         public async Task CloseTopScreenAsync()
         {
+            ForgetDestroyedScreens();
             string top = null;
             lock (_lock)
             {
@@ -391,6 +477,7 @@ namespace Nexus.Core.Services
         /// <summary>Closes the screen registered under <paramref name="key"/>, if any.</summary>
         private async Task CloseScreenCoreAsync(string key)
         {
+            ForgetDestroyedScreens();
             ScreenView screen;
             lock (_lock)
             {
@@ -411,51 +498,21 @@ namespace Nexus.Core.Services
                     NexusRuntime.Logger?.LogException(ex);
                 }
 
-                // Dispose() may have destroyed the screen while the close lifecycle awaited
-                // above (teardown during an open/close storm). A destroyed screen is Unity
-                // fake-null; touching .gameObject would throw MissingReferenceException.
-                if (screen == null) return;
-
                 lock (_lock)
                 {
                     if (_activeScreens.TryGetValue(key, out var current) && ReferenceEquals(current, screen))
                     {
                         _activeScreens.Remove(key);
                         _history.Remove(key);
-                        _activeGameObjectsDirty = true; // R2026-M3: invalidate cache
                     }
                 }
 
-                if (!_disposed)
-                {
-                    screen.gameObject.SetActive(false);
-                    bool pooled = false;
-                    lock (_lock)
-                    {
-                        if (!_pools.TryGetValue(key, out var pool))
-                        {
-                            pool = new Stack<ScreenView>();
-                            _pools[key] = pool;
-                        }
-                        // Bound pool growth — overflow instances are destroyed, not retained.
-                        if (pool.Count < MaxPooledPerScreenKey)
-                        {
-                            pool.Push(screen);
-                            pooled = true;
-                        }
-                    }
-                    if (!pooled)
-                    {
-                        SafeDestroyUtility.SafeDestroy(screen.gameObject);
-                    }
-                }
-                else
-                {
-                    SafeDestroyUtility.SafeDestroy(screen.gameObject);
-                }
-
-                _canvas.UpdateLayerInteractivity(GetActiveGameObjects());
-                SignalBus?.Fire(new ScreenClosedSignal(screen.ScreenName));
+                // A screen destroyed during its close lifecycle (Dispose, or outside the manager) is Unity fake-null.
+                bool alive = screen != null;
+                if (alive) ReturnToPool(key, screen);
+                else Release(screen);
+                UpdateModalBlocking();
+                if (alive) SignalBus?.Fire(new ScreenClosedSignal(screen.ScreenName));
             }
             finally
             {
@@ -465,19 +522,14 @@ namespace Nexus.Core.Services
 
         // ── Queries ───────────────────────────────────────────────────
 
-        public bool IsScreenOpen<TScreen>() where TScreen : ScreenView
-        {
-            lock (_lock)
-            {
-                return _activeScreens.ContainsKey(ScreenKey<TScreen>());
-            }
-        }
+        public bool IsScreenOpen<TScreen>() where TScreen : ScreenView => GetScreen<TScreen>() != null;
 
         public TScreen GetScreen<TScreen>() where TScreen : ScreenView
         {
             lock (_lock)
             {
-                return _activeScreens.TryGetValue(ScreenKey<TScreen>(), out var screen) ? screen as TScreen : null;
+                // A screen destroyed outside the manager is not open.
+                return _activeScreens.TryGetValue(ScreenKey<TScreen>(), out var screen) && screen != null ? (TScreen)screen : null;
             }
         }
 
@@ -540,28 +592,6 @@ namespace Nexus.Core.Services
 
         // ── Internals ─────────────────────────────────────────────────
 
-        // Dirty-flagged cache for the active-GameObjects view. Every
-        // OpenScreenAsync/CloseScreenCoreAsync previously allocated a fresh Dictionary —
-        // GC churn on UI-heavy flows. Invalidated by every _activeScreens mutation below.
-        private Dictionary<string, GameObject> _cachedActiveGameObjects;
-        private bool _activeGameObjectsDirty = true;
-
-        /// <summary>Builds the GameObject view of active screens for layer interactivity.</summary>
-        private Dictionary<string, GameObject> GetActiveGameObjects()
-        {
-            lock (_lock)
-            {
-                if (_activeGameObjectsDirty || _cachedActiveGameObjects == null)
-                {
-                    _cachedActiveGameObjects = new Dictionary<string, GameObject>(_activeScreens.Count);
-                    foreach (var kvp in _activeScreens)
-                        _cachedActiveGameObjects[kvp.Key] = kvp.Value.gameObject;
-                    _activeGameObjectsDirty = false;
-                }
-                return _cachedActiveGameObjects;
-            }
-        }
-
         private static string ScreenKey<TScreen>() where TScreen : ScreenView
         {
             return typeof(TScreen).AssemblyQualifiedName;
@@ -572,12 +602,12 @@ namespace Nexus.Core.Services
             if (_disposed) return;
             _disposed = true;
 
-            var toDestroy = new List<ScreenView>(_activeScreens.Count + 8);
+            var toRelease = new List<ScreenView>();
             lock (_lock)
             {
-                toDestroy.AddRange(_activeScreens.Values);
+                toRelease.AddRange(_activeScreens.Values);
                 foreach (var pool in _pools.Values)
-                    toDestroy.AddRange(pool);
+                    toRelease.AddRange(pool);
                 _activeScreens.Clear();
                 _history.Clear();
                 _pools.Clear();
@@ -586,14 +616,11 @@ namespace Nexus.Core.Services
                 _pendingCloses.Clear();
             }
 
-            // Dispose may run on a worker: the utility reads gameObject and destroys on the main thread.
-            foreach (var screen in toDestroy)
-                SafeDestroyUtility.SafeDestroyGameObject(screen);
-
-            // NOTE: do not destroy the shared [Nexus_UICanvas] here. It is a DontDestroyOnLoad
-            // singleton shared by every UI canvas owner across scene/context teardown;
-            // destroying it from any single owner would break the next owner. Scene/context
-            // teardown cleans it up.
+            // The screens first, through the provider where it made them, then the canvas, so the canvas takes no
+            // provider instance with it. Dispose may run on a worker: both post their Unity work to the main thread.
+            foreach (var screen in toRelease)
+                Release(screen);
+            _canvas.Dispose();
             base.Dispose();
         }
     }

@@ -14,6 +14,10 @@ namespace Nexus.Core.Services
     ///
     /// In-game UI is UGUI (see docs/adr); editor screens use UI Toolkit separately, so
     /// this module is the single place where the runtime canvas policy is decided.
+    ///
+    /// Every UIManager has one, and they share the scene's [Nexus_UICanvas] (issue #185): the layers below Modal stop
+    /// taking input while any of them has a Modal-or-higher window open, and the last one to dispose destroys the
+    /// canvas if a UICanvasSystem created it. A canvas the scene holds stays.
     /// </summary>
     [Preserve]
     public sealed class UICanvasSystem : IDisposable
@@ -21,6 +25,7 @@ namespace Nexus.Core.Services
         private readonly Dictionary<UILayer, Transform> _layerRoots = new();
         private Transform _canvasRoot;
         private GameObject _canvasObject;
+        private UICanvasUsers _users;
 
         public Transform CanvasRoot => _canvasRoot;
 
@@ -28,7 +33,8 @@ namespace Nexus.Core.Services
         public void EnsureInitialized()
         {
             _canvasObject = GameObject.Find("[Nexus_UICanvas]");
-            if (_canvasObject == null)
+            bool created = _canvasObject == null;
+            if (created)
             {
                 _canvasObject = new GameObject("[Nexus_UICanvas]");
                 UnityEngine.Object.DontDestroyOnLoad(_canvasObject);
@@ -45,6 +51,12 @@ namespace Nexus.Core.Services
                 _canvasObject.AddComponent<UnityEngine.UI.GraphicRaycaster>();
             }
 
+            if (!_canvasObject.TryGetComponent(out _users))
+            {
+                _users = _canvasObject.AddComponent<UICanvasUsers>();
+                _users.CreatedByNexus = created;
+            }
+            _users.Users.Add(this);
             _canvasRoot = _canvasObject.transform;
 
             foreach (UILayer layer in Enum.GetValues(typeof(UILayer)))
@@ -77,27 +89,20 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// Recomputes CanvasGroup blocking across layer roots based on the currently
-        /// active windows. Modal-or-higher windows block all lower layers.
+        /// Records whether this owner has a Modal-or-higher window open. The layers below Modal stop taking input while
+        /// any owner of the shared canvas has one.
         /// </summary>
-        public void UpdateLayerInteractivity(IReadOnlyDictionary<string, GameObject> activeWindows)
+        public void SetModalOpen(bool open)
         {
-            bool hasModalOrHigher = false;
+            if (_users == null) return;
+            if (open) _users.ModalOwners.Add(this);
+            else _users.ModalOwners.Remove(this);
+            ApplyInteractivity(_users);
+        }
 
-            foreach (var kvp in activeWindows)
-            {
-                if (kvp.Value != null)
-                {
-                    foreach (var layerRoot in _layerRoots)
-                    {
-                        if (kvp.Value.transform.parent == layerRoot.Value && layerRoot.Key >= UILayer.Modal)
-                        {
-                            hasModalOrHigher = true;
-                        }
-                    }
-                }
-            }
-
+        private void ApplyInteractivity(UICanvasUsers users)
+        {
+            bool modalOpen = users.ModalOwners.Count > 0;
             foreach (var layerRoot in _layerRoots)
             {
                 var canvasGroup = layerRoot.Value.GetComponent<CanvasGroup>();
@@ -106,16 +111,9 @@ namespace Nexus.Core.Services
                     canvasGroup = layerRoot.Value.gameObject.AddComponent<CanvasGroup>();
                 }
 
-                if (hasModalOrHigher && layerRoot.Key < UILayer.Modal)
-                {
-                    canvasGroup.interactable = false;
-                    canvasGroup.blocksRaycasts = false;
-                }
-                else
-                {
-                    canvasGroup.interactable = true;
-                    canvasGroup.blocksRaycasts = true;
-                }
+                bool interactive = !modalOpen || layerRoot.Key >= UILayer.Modal;
+                canvasGroup.interactable = interactive;
+                canvasGroup.blocksRaycasts = interactive;
             }
         }
 
@@ -131,25 +129,22 @@ namespace Nexus.Core.Services
             return UILayer.Screen;
         }
 
+        /// <summary>
+        /// Leaves the shared canvas: the lower layers take input again if this owner's modal held them, and the last
+        /// owner destroys a canvas a UICanvasSystem created. A call from another thread is posted to the main thread.
+        /// </summary>
         public void Dispose()
         {
-            if (_canvasObject != null)
+            if (SafeDestroyUtility.PostedToMainThread(_ => Dispose(), null)) return;
+            var users = _users;
+            _users = null;
+            if (users != null)
             {
-                SafeDestroyUtility.SafeDestroy(_canvasObject);
-                _canvasObject = null;
+                users.Users.Remove(this);
+                users.ModalOwners.Remove(this);
+                if (users.Users.Count == 0 && users.CreatedByNexus) SafeDestroyUtility.SafeDestroy(_canvasObject);
+                else ApplyInteractivity(users);
             }
-            _layerRoots.Clear();
-            _canvasRoot = null;
-        }
-
-        /// <summary>
-        /// Drops all references to the canvas WITHOUT destroying it. The [Nexus_UICanvas]
-        /// GameObject is a shared DontDestroyOnLoad singleton that may outlive a single
-        /// UIManager instance across scene/context teardown — this owner must not destroy it
-        /// (see UIManager.Dispose). Scene/context teardown cleans it up.
-        /// </summary>
-        public void ReleaseWithoutDestroy()
-        {
             _canvasObject = null;
             _layerRoots.Clear();
             _canvasRoot = null;

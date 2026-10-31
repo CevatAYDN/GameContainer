@@ -4,9 +4,7 @@ using UnityEngine;
 
 namespace Nexus.Core.Services
 {
-    /// <summary>
-    /// Varsayılan Resources.LoadAsync tabanlı IUIAssetProvider implementasyonu.
-    /// </summary>
+    /// <summary>The default <see cref="IUIAssetProvider"/>: loads "UI/Windows/{windowName}" with Resources.LoadAsync.</summary>
     public class ResourcesUIAssetProvider : IUIAssetProvider
     {
         public async Task<GameObject> InstantiateWindowAsync(string windowName, Transform parent)

@@ -26,6 +26,8 @@ namespace Nexus.Editor.Tests
         }
     }
 
+    public class OtherTestScreen : ScreenView { }
+
     public class ReentrantTestScreen : ScreenView
     {
         [System.NonSerialized] public UIManager Manager;
@@ -212,6 +214,69 @@ namespace Nexus.Editor.Tests
                 Assert.AreEqual(1, screen.CloseCalls);
             }
             finally { Object.DestroyImmediate(prefab); }
+        }
+
+        // Issue #185: a screen destroyed outside the manager stayed registered, so it read as open and every later open
+        // of another screen threw MissingReferenceException after registering it.
+        [Test]
+        public void AScreenDestroyedOutsideTheManager_IsForgotten_AndOtherScreensStillOpen()
+        {
+            var otherPrefab = new GameObject("other"); otherPrefab.AddComponent<OtherTestScreen>();
+            try
+            {
+                _uiManager.RegisterScreenPrefab<OtherTestScreen>(otherPrefab);
+                var screen = _uiManager.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+                Object.DestroyImmediate(screen.gameObject);
+
+                Assert.IsFalse(_uiManager.IsScreenOpen<TestScreenView>());
+                Assert.AreEqual(0, _uiManager.OpenScreenCount);
+                OtherTestScreen other = null;
+                Assert.DoesNotThrow(() => other = _uiManager.OpenScreenAsync<OtherTestScreen>().GetAwaiter().GetResult());
+                Assert.IsNotNull(other);
+                var again = _uiManager.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+                Assert.IsTrue(again != null && again.gameObject.activeInHierarchy);
+            }
+            finally { Object.DestroyImmediate(otherPrefab); }
+        }
+
+        // Issue #185: each manager recomputed the layer blocking from its own screens, so a second manager opening any
+        // screen on the shared canvas re-enabled input under the first one's modal.
+        [Test]
+        public void AModalOfOneManager_KeepsBlockingTheLowerLayers_WhenAnotherManagerOpensAScreen()
+        {
+            var modalPrefab = new GameObject("modal"); modalPrefab.AddComponent<OtherTestScreen>();
+            var second = new UIManager();
+            try
+            {
+                _uiManager.RegisterScreenPrefab<OtherTestScreen>(modalPrefab);
+                _uiManager.OpenScreenAsync<OtherTestScreen>(layer: UILayer.Modal).GetAwaiter().GetResult();
+
+                second.InitializeAsync(default).GetAwaiter().GetResult();
+                second.RegisterScreenPrefab<TestScreenView>(_prefab);
+                second.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+
+                var screenLayer = _manualCanvas.transform.Find("Screen").GetComponent<CanvasGroup>();
+                Assert.IsFalse(screenLayer.blocksRaycasts, "the first manager's modal is still open");
+
+                _uiManager.CloseScreenAsync<OtherTestScreen>().GetAwaiter().GetResult();
+                Assert.IsTrue(screenLayer.blocksRaycasts);
+            }
+            finally
+            {
+                second.Dispose();
+                Object.DestroyImmediate(modalPrefab);
+            }
+        }
+
+        // Issue #185: a scene unload destroys the canvas the scene holds before the context disposes its manager.
+        [Test]
+        public void Dispose_AfterTheSceneDestroyedItsCanvas_DoesNotThrow()
+        {
+            _uiManager.OpenScreenAsync<TestScreenView>(layer: UILayer.Modal).GetAwaiter().GetResult();
+            Object.DestroyImmediate(_manualCanvas);
+
+            Assert.DoesNotThrow(() => _uiManager.Dispose());
+            _uiManager = null;
         }
     }
 }
