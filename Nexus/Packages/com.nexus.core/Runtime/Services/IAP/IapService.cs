@@ -163,9 +163,9 @@ namespace Nexus.Core.Services
             }
 
             // No adapter: never throw and never simulate (#162). The caller gets store_unavailable, which its UI shows as
-            // "store unavailable", in the editor and in every player, and the warning names what is missing.
+            // "store unavailable", in the editor and in every player, and the warning names what is missing (in every build, #164).
             var logger = NexusRuntime.Logger;
-            logger?.LogWarning(
+            NexusLog.WarnAlways(
                 $"[IapService] PurchaseProduct('{productId}') called without a store adapter: answered store_unavailable. " +
                 "Set the store with SetStoreAdapter (com.nexus.iap.unity's UnityIapAdapter, which also runs Unity IAP's editor store) " +
                 "before any UI can start a purchase.");
@@ -191,7 +191,7 @@ namespace Nexus.Core.Services
 
             // The same answer for a restore: nothing restored, and the warning names the missing store (#162).
             var logger = NexusRuntime.Logger;
-            logger?.LogWarning("[IapService] RestorePurchases called without a store adapter: answered false. Set the store with SetStoreAdapter first.");
+            NexusLog.WarnAlways("[IapService] RestorePurchases called without a store adapter: answered false. Set the store with SetStoreAdapter first.");
             try
             {
                 onComplete?.Invoke(false);

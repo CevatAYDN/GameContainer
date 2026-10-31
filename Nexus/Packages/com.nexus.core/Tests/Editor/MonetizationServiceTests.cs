@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Nexus.Core;
 using Nexus.Core.Services;
 using UnityEngine;
 using UnityEngine.TestTools;
@@ -59,6 +60,38 @@ namespace Nexus.Editor.Tests
             Assert.That(restored, Is.False);
 
             Assert.IsFalse(iap.IsProductOwned("no_ads"), "ownership comes only from a store");
+        }
+
+        // Issue #164: the warnings above went through LogWarning, which a release player drops, so a store build without an adapter logged nothing
+        [Test]
+        public async Task AMissingOrUnknownAdapter_IsWarnedInAReleasePlayerToo()
+        {
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables; a logger another test left cached may be enabled
+            NexusBuild.OverrideForTests(false);
+            try
+            {
+                using var ads = new AdService();
+                await ads.InitializeAsync(default);
+                using var iap = new IapService();
+                await iap.InitializeAsync(default);
+                Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops LogWarning");
+
+                LogAssert.Expect(LogType.Warning, new Regex(@"No ad network adapter for interstitial 'default'"));
+                ads.ShowInterstitial("default");
+                LogAssert.Expect(LogType.Warning, new Regex(@"No ad network adapter for rewarded 'default'"));
+                ads.ShowRewarded("default", _ => { });
+                LogAssert.Expect(LogType.Warning, new Regex(@"PurchaseProduct\('no_ads'\) called without a store adapter"));
+                iap.PurchaseProduct("no_ads", (_, _) => { });
+                LogAssert.Expect(LogType.Warning, new Regex(@"RestorePurchases called without a store adapter"));
+                iap.RestorePurchases(_ => { });
+                LogAssert.Expect(LogType.Warning, new Regex(@"Unknown ad provider: 'levelplay'"));
+                Assert.IsNull(new AdAdapterFactory().CreateAdapter("levelplay"));
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+            }
         }
     }
 }

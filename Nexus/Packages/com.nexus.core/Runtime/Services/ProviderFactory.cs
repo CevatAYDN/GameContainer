@@ -37,7 +37,8 @@ namespace Nexus.Core.Services
                     return default;
                 }
             }
-            NexusRuntime.Logger?.LogWarning($"[{GetType().Name}] Unknown {_providerKind}: '{provider}'. Available: {string.Join(", ", _creators.Keys)}");
+            // a misspelt or unregistered name leaves the service without an adapter: every build's log names it (#164)
+            NexusLog.WarnAlways($"[{GetType().Name}] Unknown {_providerKind}: '{provider}'. Available: {string.Join(", ", _creators.Keys)}");
             return default;
         }
 

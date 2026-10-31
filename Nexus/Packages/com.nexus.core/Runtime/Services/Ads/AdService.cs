@@ -236,8 +236,8 @@ namespace Nexus.Core.Services
             }
             else
             {
-                // No adapter: nothing is shown, in every build (#162).
-                NexusRuntime.Logger?.LogWarning($"[AdService] No ad network adapter for interstitial '{placement}': nothing shown. Set one with SetNetworkAdapter.");
+                // No adapter: nothing is shown, in every build (#162), and the warning reaches every build's log (#164).
+                NexusLog.WarnAlways($"[AdService] No ad network adapter for interstitial '{placement}': nothing shown. Set one with SetNetworkAdapter.");
                 onComplete?.Invoke();
             }
         }
@@ -253,8 +253,8 @@ namespace Nexus.Core.Services
             }
             else
             {
-                // No adapter: no reward without an impression, in every build (#162).
-                NexusRuntime.Logger?.LogWarning($"[AdService] No ad network adapter for rewarded '{placement}': no reward. Set one with SetNetworkAdapter.");
+                // No adapter: no reward without an impression, in every build (#162), and the warning reaches every build's log (#164).
+                NexusLog.WarnAlways($"[AdService] No ad network adapter for rewarded '{placement}': no reward. Set one with SetNetworkAdapter.");
                 onComplete?.Invoke(false);
             }
         }

@@ -126,13 +126,13 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 
 | Service | Folder under `Runtime/Services` | Purpose |
 |---|---|---|
-| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (no provider included: without an adapter no ad and a warning; the ad family's `NexusAdsBridge.Connect` in `com.nexus.ads.bridge.nexus` sets its adapter); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged` (also when its own interstitial cooldown ends, with an `ITickService` bound), privacy options through optional adapter capabilities |
+| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (no provider included: without an adapter no ad and a warning in every build; the ad family's `NexusAdsBridge.Connect` in `com.nexus.ads.bridge.nexus` sets its adapter); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged` (also when its own interstitial cooldown ends, with an `ITickService` bound), privacy options through optional adapter capabilities |
 | `AnalyticsService` | `Analytics` | Stub `IAnalyticsService`: events (with an optional parameter dictionary) and user properties written to the log; replace it with a real backend such as `com.nexus.firebase` before release |
 | `AudioService` | `Audio` | BGM crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels, one mute for everything plus separate music and effects mutes (`IsMusicMuted`, `IsSfxMuted`); the root comes from an `IAudioRootProvider`, which gets it back through `ReleaseRoot` on dispose |
 | `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator; balances persist to `SettingsStores.Economy` when a game binds one |
 | `FeedbackService` | `Feedback` | Combined audio + haptic presets |
 | `HapticService` | `Haptics` | Six `HapticType` presets and a game's own one-shots and waveforms (`CreateEffect`, `CreateWaveform`, `Play`); on Android 8+ each effect is built once and played through cached JNI; iOS uses `Handheld.Vibrate()`; `IsEnabled` persists |
-| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (no provider included: without an adapter `store_unavailable` and a warning; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` / `PurchaseAsync` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
+| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (no provider included: without an adapter `store_unavailable` and a warning in every build; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` / `PurchaseAsync` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
 | `InputService` | `Input` | Input System movement/actions behind `IInputService`; a custom `IInputProvider` is authoritative |
 | `LocalizationService` | `Localization` | Language tables (a game's JSON tables through `JsonLocalizationTableProvider`), first-run device language, the language's culture and `Format`, RTL formatting, English fallback |
 | `LoggerService` | `Logging` | Default `ILoggerService` |
@@ -164,6 +164,15 @@ then also opens on another phone. Keep `Device` where a save must not move betwe
 `ISaveDataProvider` to a JSON slot file under the persistent data path and reads it back; it is a
 starting point, not a save system: a game keeps its own save format and decides when to save.
 `SaveThrottler` (used by `EconomyService` and `ProgressionService`) limits how often a service writes.
+
+Logging: `LoggerService`, and the fallback logger `NexusRuntime.Logger` returns while no `ILoggerService` is
+bound, drop `Log` and `LogWarning` in a release player (not the editor, not a development build); `LogError` and
+`LogException` always pass. The rule the framework follows (issue #164): a failure, or a configuration that changes
+what runs, reaches every build's log through `NexusLog.WarnAlways` or `LogError` (no ad or store adapter set, an
+unknown provider name, an adapter's SDK failure); a diagnostic stays in the editor and development builds (a
+signal nobody hears, an interstitial on cooldown or not loaded yet, a performance hint). A game follows the same
+rule: `NexusLog.WarnAlways` for what a store build's log must show. The framework sites that do not follow it yet
+are listed in issue #164.
 
 ## Performance scope
 
