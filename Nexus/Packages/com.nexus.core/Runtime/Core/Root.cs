@@ -363,6 +363,18 @@ namespace Nexus.Core
             return candidate;
         }
 
+        // Awake reads the lifecycle components once (InitializeContext); one added later is never configured or started (#152).
+        private void ReportLifecyclesAddedAfterAwake()
+        {
+            var components = GetComponents<IContextLifecycle>();
+            for (int i = 0; i < components.Length; i++)
+            {
+                if (Array.IndexOf(_lifecycles, components[i]) >= 0) continue;
+                NexusRuntime.Logger?.LogError($"[Nexus] Root '{gameObject.name}': the lifecycle component {components[i].GetType().Name} was added after Awake and never runs. " +
+                    "Add it before the GameObject is activated, or call RegisterLifecycle() before SetActive(true).");
+            }
+        }
+
         private async void Start()
         {
             try
@@ -388,6 +400,7 @@ namespace Nexus.Core
             {
                 InitializeContext();
             }
+            ReportLifecyclesAddedAfterAwake();
 
             try
             {

@@ -96,5 +96,19 @@ namespace Nexus.Core.Tests
             Assert.AreEqual((1, 1, 1), (component.Configured, component.Initialized, component.Started));
             Assert.AreEqual(0, DiscoveredStartupLifecycle.Configured, "a component lifecycle must keep discovery out");
         }
+
+        [UnityTest]
+        public IEnumerator ALifecycleComponentAddedAfterAwake_IsReportedAsAnError()
+        {
+            var root = CreateRoot(withComponentLifecycle: false);
+            _go.SetActive(true); // Awake reads the lifecycle components here
+            var late = _go.AddComponent<ComponentStartupLifecycle>();
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(
+                @"^\[Nexus\] Root 'Discovery root': the lifecycle component ComponentStartupLifecycle was added after Awake and never runs"));
+            yield return WaitInitialized(root);
+
+            Assert.IsTrue(root.IsInitialized);
+            Assert.AreEqual((0, 0, 0), (late.Configured, late.Initialized, late.Started), "the error reports the component; it does not run it");
+        }
     }
 }
