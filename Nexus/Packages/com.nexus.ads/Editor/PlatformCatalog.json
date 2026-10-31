@@ -32,11 +32,13 @@
         "resolver": "external",
         "nativeDependencyFile": "Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml",
         "nativeVersionsJson": "Editor/Json/LevelPlayVersions.json",
-        "nativeSource": "the package's own Editor/Json/LevelPlayVersions.json (ironSourceSdkVersion per package version, dependencyXmlURL): the file LevelPlay's Network Manager installs; read 2026-10-24",
+        "nativeVersionsProjectFile": "Assets/LevelPlay/Editor/LevelPlayVersions.json",
+        "nativeVersionsUrl": "https://s3.amazonaws.com/ssa.public/Unity/Package/V2/LevelPlayVersions.json",
+        "nativeSource": "LevelPlay's installer (SdkInstaller.PreInstallAsync, LevelPlayNetworkManager) copies the package's Editor/Json/LevelPlayVersions.json to Assets/LevelPlay/Editor/LevelPlayVersions.json, refreshes it from nativeVersionsUrl and installs the newest IronSourceSdk version inside the package's ironSourceSdkVersion range; Prepare Android does the same (package 9.6.0, read 2026-10-31, issue #144)",
         "resolvedMarker": "com.unity3d.ads-mediation:mediation-sdk",
-        "nativeAdapter": { "key": "UnityAds", "dependencyFile": "Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml", "resolvedMarker": "com.unity3d.ads-mediation:unityads-adapter", "note": "the newest adapters.UnityAds version in the package's LevelPlayVersions.json whose ironSourceSdkVersion range holds the native SDK; LevelPlay's Network Manager shows it as a non-removable part of the SDK. Without it every request ended in 509 Mediation No fill on a device (2026-10-24, issue #16)" },
+        "nativeAdapter": { "key": "UnityAds", "dependencyFile": "Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml", "resolvedMarker": "com.unity3d.ads-mediation:unityads-adapter", "note": "the newest adapters.UnityAds version in the versions file whose ironSourceSdkVersion range holds the native SDK; LevelPlay's Network Manager shows it as a non-removable part of the SDK. Without it every request ended in 509 Mediation No fill on a device (2026-10-24, issue #16)" },
         "gradleLines": [ "implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')" ],
-        "gradleNote": "mediation-sdk 9.5.0 brings kotlin-stdlib-jdk7/jdk8 1.6.0 next to Unity 6000.5's kotlin-stdlib 1.8.22; Gradle stops on duplicate classes until the BOM aligns them (device build, 2026-10-24)",
+        "gradleNote": "mediation-sdk 9.5.0 brought kotlin-stdlib-jdk7/jdk8 1.6.0 next to Unity 6000.5's kotlin-stdlib 1.8.22 and Gradle stopped on duplicate classes until the BOM aligned them (device build, 2026-10-24); with mediation-sdk 9.7.0 on 6000.6.7f1 every Kotlin library resolved to 2.1.21 (2026-10-31)",
         "gradlePropertiesNote": "with a custom main template the External Dependency Manager writes android.useAndroidX/android.enableJetifier into this file and reports Resolution Failed on every resolution and build when it is missing (PlayServicesResolver.cs in googlesamples/unity-jar-resolver; seen with EDM4U 1.2.190, issue #49)"
       },
       "testData": {

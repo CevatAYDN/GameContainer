@@ -164,13 +164,16 @@ it after its listeners ran, a game that saves asynchronously acknowledges it its
   Android setup as a list of steps marked Done, Pending or Manual for the Test or Release tab, and one
   button that performs the Pending ones: the SDK and the Nexus provider package (at the commit
   `com.nexus.ads` is pinned to), the dependency resolver, the native SDK declaration (LevelPlay: the
-  version the installed package names in its own `LevelPlayVersions.json`, downloaded from LevelPlay's
-  server as its Network Manager does), the network adapter the mediation needs to fill (LevelPlay: the
-  Unity Ads adapter, the newest version in that file whose native SDK range holds the installed one), the
+  version LevelPlay's own installer takes, the newest one its `LevelPlayVersions.json` allows for the
+  installed package, after the press has refreshed the project's copy of that file from LevelPlay's
+  server as the installer does, issue #144), the network adapter the mediation needs to fill (LevelPlay:
+  the Unity Ads adapter, the newest version in that file whose native SDK range holds the declared one), the
   custom main Gradle template with the catalog's Gradle lines, the custom Gradle properties template
   (LevelPlay: without it the External Dependency Manager reports Resolution Failed on every resolution
   and build),
-  the resolution, and the AdMob App ID in the plugin's settings asset. Adding packages reloads the
+  the resolution, and the AdMob App ID in the plugin's settings asset. A declaration of another
+  version than the plan's is Pending and replaced, and the resolution is Done only when the template
+  names the exact dependencies the declarations hold (issue #145). Adding packages reloads the
   editor, so that press stops there and the next press continues; every step is safe to repeat. MAX
   shows Manual rows until its provider exists. Command line:
   `Unity.exe -batchmode -nographics -projectPath <project> -buildTarget Android -executeMethod Nexus.Ads.Editor.AndroidSetup.PrepareCli -adsTab Test`
@@ -210,9 +213,9 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | `sdk.unitypackage` | warn: the SDK is a `.unitypackage` import; names the define to set |
 | `android.admob.appid` | fail (AdMob selected): the Google Mobile Ads settings asset carries no App ID or one that disagrees with the tab's; a missing settings asset fails on the Release tab and warns on the Test tab. Fail (another mediation selected, Google Mobile Ads in the project): no App ID in that asset (the Android SDK stops the app at launch without one), or Google's sample App ID on the Release tab |
 | `android.edm` | fail (release): External Dependency Manager missing |
-| `android.nativesdk` | fail: the selected mediation's native SDK declaration is missing or not resolved into the Gradle template (LevelPlay's Gradle build would stop at `IronSourceError`) |
-| `android.gradle` | fail: the custom main Gradle template or one of the catalog's Gradle lines is missing (LevelPlay on Unity 6000.5: duplicate Kotlin classes) |
-| `android.adapter` | fail: the network adapter the mediation needs to fill is not declared (LevelPlay without the Unity Ads adapter builds, but every request ends in `509 Mediation No fill`) |
+| `android.nativesdk` | fail: the selected mediation's native SDK declaration is missing, names another version than Prepare Android's plan, or is not resolved at that version into the Gradle template (LevelPlay's Gradle build would stop at `IronSourceError` without it) |
+| `android.gradle` | fail: the custom main Gradle template or one of the catalog's Gradle lines is missing (LevelPlay's native SDK 9.5.0 on Unity 6000.5: duplicate Kotlin classes) |
+| `android.adapter` | fail: the network adapter the mediation needs to fill is not declared, or names another version than Prepare Android's plan (LevelPlay without the Unity Ads adapter builds, but every request ends in `509 Mediation No fill`) |
 | `android.minsdk` | warn: minimum API below the provider's |
 | `child.mediation` | fail: child-directed with a mediation whose policies forbid children's apps (MAX) |
 | `child.networks` | warn: child-directed with an adapter of a network off Google's Families list (heuristic detection) |

@@ -48,12 +48,48 @@ namespace Nexus.Ads.Tests
             return this;
         }
 
-        /// <summary>What Prepare Android leaves behind for LevelPlay: the native SDK and Unity Ads adapter declarations and a resolved template with the Kotlin alignment.</summary>
-        public FakeProbe AndroidPrepared()
+        public const string LevelPlayPackage = "com.unity.services.levelplay";
+        public const string PackageVersionsFile = LevelPlayPackage + "/Editor/Json/LevelPlayVersions.json";
+        public const string ProjectVersionsFile = "Assets/LevelPlay/Editor/LevelPlayVersions.json";
+        public const string NativeFile = "Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml";
+        public const string AdapterFile = "Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml";
+
+        /// <summary>
+        /// LevelPlayVersions.json in the shape LevelPlay ships it. As in the real file of package 9.6.0, the Unity Ads adapter
+        /// 5.16.0.0 declares the Android adapter 5.15.0.
+        /// </summary>
+        public const string LevelPlayVersions = "{ \"unityPackage\": { \"versions\": { \"9.6.0\": { \"ironSourceSdkVersion\": \"[9.6.0, 10.0[\" }, \"9.5.1\": { \"ironSourceSdkVersion\": \"[9.5.0, 10.0[\" }, "
+            + "\"9.4.0\": { \"ironSourceSdkVersion\": \"[9.4.0, 9.5.0[\" }, \"9.3.0\": { \"ironSourceSdkVersion\": \"9.3.2\" }, \"9.2.0\": { \"ironSourceSdkVersion\": \"[9.2.0, 9.3.0[\" } } }, "
+            + "\"IronSourceSdk\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/IronSource/${VERSION}/IronSourceSDKDependencies.xml\", \"versions\": { "
+            + "\"9.7.0\": { \"androidSdkVersion\": \"9.7.0\" }, \"9.6.0\": { \"androidSdkVersion\": \"9.6.0\" }, \"9.5.0\": { \"androidSdkVersion\": \"9.5.0\", \"message\": \"a brace in text { is no object\" }, "
+            + "\"9.4.5\": { \"androidSdkVersion\": \"9.4.5\" }, \"9.4.0\": { \"androidSdkVersion\": \"9.4.0\" }, \"9.3.2\": { \"androidSdkVersion\": \"9.3.2\" }, \"9.3.1\": { \"androidSdkVersion\": \"9.3.1\" } } }, "
+            + "\"adapters\": { \"AdMob\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/AdMob/${VERSION}/ISAdMobAdapterDependencies.xml\", \"versions\": { \"9.9.9.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\" } } }, "
+            + "\"UnityAds\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/UnityAds/${VERSION}/ISUnityAdsAdapterDependencies.xml\", \"versions\": { "
+            + "\"5.16.0.0\": { \"ironSourceSdkVersion\": \"[9.6.0, 10.0[\", \"android\": { \"adapterVersion\": \"5.15.0\" } }, "
+            + "\"5.11.0.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\", \"android\": { \"adapterVersion\": \"5.11.0\" } }, "
+            + "\"5.9.0.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\" }, "
+            + "\"4.3.49.0\": { \"ironSourceSdkVersion\": \"[8.4.0, 9.0.0[\" } } } } }";
+
+        /// <summary>A dependency file as LevelPlay's servers publish it: its own version, and the Android spec it declares.</summary>
+        public static string DependencyXml(string unityVersion, string spec)
+            => "<dependencies>\n  <unityversion>" + unityVersion + "</unityversion>\n  <androidPackages>\n    <androidPackage spec=\"" + spec + "\">\n    </androidPackage>\n  </androidPackages>\n</dependencies>\n";
+
+        /// <summary>A main template the resolver wrote for these specs, with the Kotlin alignment.</summary>
+        public static string Template(params string[] specs)
+            => "dependencies {\n    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')\n" + string.Concat(specs.Select(s => "    implementation '" + s + "' // resolved\n")) + "}\n";
+
+        /// <summary>
+        /// What Prepare Android leaves behind for LevelPlay <paramref name="package"/> with <see cref="LevelPlayVersions"/>:
+        /// the newest native SDK its range allows (9.7.0), the Unity Ads adapter for it (5.16.0.0, Android 5.15.0), and a
+        /// template resolved to both.
+        /// </summary>
+        public FakeProbe AndroidPrepared(string package = "9.5.1")
         {
-            Files[AndroidSetup.MainTemplatePath] = "dependencies {\n    implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')\n    implementation 'com.unity3d.ads-mediation:mediation-sdk:9.5.0'\n    implementation 'com.unity3d.ads-mediation:unityads-adapter:5.11.0'\n}\n";
-            Files["Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml"] = "<dependencies/>";
-            Files["Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml"] = "<dependencies/>";
+            Packages[LevelPlayPackage] = package;
+            PackageFiles[PackageVersionsFile] = LevelPlayVersions;
+            Files[NativeFile] = DependencyXml("9.7.0", "com.unity3d.ads-mediation:mediation-sdk:9.7.0");
+            Files[AdapterFile] = DependencyXml("5.16.0.0", "com.unity3d.ads-mediation:unityads-adapter:5.15.0");
+            Files[AndroidSetup.MainTemplatePath] = Template("com.unity3d.ads-mediation:mediation-sdk:9.7.0", "com.unity3d.ads-mediation:unityads-adapter:5.15.0");
             Files["Assets/Plugins/Android/gradleTemplate.properties"] = "org.gradle.parallel=true\n**ADDITIONAL_PROPERTIES**\n";
             return this;
         }

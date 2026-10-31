@@ -25,26 +25,41 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
    again). The second press does the rest of the Android setup; the validator (`android.nativesdk`,
    `android.gradle`, `android.adapter`) stops an Android build that misses any of it except the Gradle
    properties template:
-   - the native SDK declaration `Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml`
-     (`com.unity3d.ads-mediation:mediation-sdk` 9.5.0 for package 9.5.1), the file LevelPlay's Network
-     Manager installs, for the version the installed package names in its `LevelPlayVersions.json`;
-     without it Gradle fails with `cannot find symbol IronSourceError`;
-   - the Unity Ads adapter declaration `Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml`
-     (`unityads-adapter` 5.11.0 for native SDK 9.5.0; in the run recorded in `docs/RELEASE_GATES.md`
-     the resolver brought `unity-ads` 4.19.0 with it), the newest
-     `adapters.UnityAds` version in the same file whose `ironSourceSdkVersion` range holds the native SDK;
-     LevelPlay's Network Manager shows it as a non-removable part of the SDK. Without it the build
-     succeeds and every request ends in `509 Mediation No fill` (device run 2026-10-24, issue #16);
+   - the versions file first: the press writes LevelPlay's current `LevelPlayVersions.json` from its
+     server over the project's copy `Assets/LevelPlay/Editor/LevelPlayVersions.json`, as LevelPlay's own
+     installer does before it installs (issue #144). When the server cannot be read the log says so and
+     the plan uses the files it has: the project's copy when it lists the installed package, the
+     package's own `Editor/Json/LevelPlayVersions.json` otherwise;
+   - the native SDK declaration `Assets/LevelPlay/Editor/IronSourceSDKDependencies.xml`, the file
+     LevelPlay's Network Manager installs, at the version LevelPlay's installer takes: the newest
+     `IronSourceSdk` version in that file whose range holds the installed package. With the file read
+     on 2026-10-31 that is `com.unity3d.ads-mediation:mediation-sdk` 9.7.0 for packages 9.5.1 and 9.6.0;
+     package 9.5.1's own file stops at 9.5.0, and Prepare Android declared 9.5.0 there and 9.6.0 (the
+     range's lower bound) for package 9.6.0 before issue #144. A declaration of another version is
+     Pending and replaced, and the validator fails until it is: after an upgrade from package 9.5.1 to
+     9.6.0 the 9.5.0 declaration stayed and every step read Done (issue #145). Without the declaration
+     Gradle fails with `cannot find symbol IronSourceError`;
+   - the Unity Ads adapter declaration `Assets/LevelPlay/Editor/ISUnityAdsAdapterDependencies.xml`,
+     the newest `adapters.UnityAds` version in the same file whose `ironSourceSdkVersion` range holds the
+     native SDK (5.16.0.0, Android `unityads-adapter` 5.15.0, for native SDK 9.7.0; the resolver brings
+     `com.unity3d.ads:unity-ads` 4.21.0 with it), replaced like the native SDK when it names another
+     version; LevelPlay's Network Manager shows it as a non-removable part of the SDK. Without it the
+     build succeeds and every request ends in `509 Mediation No fill` (device run 2026-10-24, issue #16);
    - the custom main Gradle template with `implementation platform('org.jetbrains.kotlin:kotlin-bom:1.8.22')`:
-     on Unity 6000.5 mediation-sdk 9.5.0 brings `kotlin-stdlib-jdk7` / `-jdk8` 1.6.0 next to Unity's
-     `kotlin-stdlib` 1.8.22 and Gradle stops on duplicate classes;
+     on Unity 6000.5 mediation-sdk 9.5.0 brought `kotlin-stdlib-jdk7` / `-jdk8` 1.6.0 next to Unity's
+     `kotlin-stdlib` 1.8.22 and Gradle stopped on duplicate classes. mediation-sdk 9.7.0 declares
+     `kotlin-stdlib` 2.1.21, and in its build on 6000.6.7f1 every Kotlin library resolved to 2.1.21, the
+     platform's 1.8.22 constraints included (`ads-device-20261031`); the line stays for a project still
+     on 9.5.0;
    - the custom Gradle properties template `Assets/Plugins/Android/gradleTemplate.properties`, copied
      from Unity's: with a custom main template the External Dependency Manager writes
      `android.useAndroidX` / `android.enableJetifier` into it and, when it is missing, reports
      `Resolution Failed` on every resolution and build (issue #49); no validator check covers it, that
      message is the only sign;
-   - the resolution into that template (Done when the template names `mediation-sdk` and `unityads-adapter`; a resolver set to
-     write `.aar` files into `Assets/Plugins/Android` instead is not recognised yet).
+   - the resolution into that template (Done when the template names the exact dependencies the two
+     declarations hold, `com.unity3d.ads-mediation:mediation-sdk:9.7.0` and
+     `com.unity3d.ads-mediation:unityads-adapter:5.15.0` above; a resolver set to write `.aar` files into
+     `Assets/Plugins/Android` instead is not recognised yet).
 
    Other network adapters come from **Ads Mediation > Network Manager**. Proven from a clean project on
    2026-10-24: two presses, an Android build, the SDK reaching LevelPlay's server on a phone; with the
@@ -58,7 +73,7 @@ The assembly compiles only while the LevelPlay package is installed (`versionDef
 
 The Ads Mediation package adds the scripting define `LEVELPLAY_DEPENDENCIES_INSTALLED` to the Player
 Settings of the selected build target whenever the editor opens outside batch mode without it
-(`ServicesCoreDependencyInstaller` in 9.5.1, after it checks for `com.unity.services.core`). The define
+(`ServicesCoreDependencyInstaller` in 9.5.1 and 9.6.0, after it checks for `com.unity.services.core`). The define
 compiles only LevelPlay's editor code, the **Ads Mediation** menu with its Network Manager included; no
 runtime file and none of its build processors read it, so the player is the same with or without it.
 Commit it in `ProjectSettings/ProjectSettings.asset` for every build target the editor is opened on:

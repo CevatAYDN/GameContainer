@@ -14,13 +14,7 @@ namespace Nexus.Ads.Tests
     public sealed class AndroidSetupTests
     {
         private const string GitManifest = "{\n  \"dependencies\": {\n    \"com.nexus.ads\": \"https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.ads#eee5c2f5ddffb90c6100871a1971cccfd310c1bc\"\n  }\n}\n";
-        private const string VersionsJson = "{ \"unityPackage\": { \"versions\": { \"9.5.1\": { \"ironSourceSdkVersion\": \"[9.5.0, 10.0[\" }, \"9.4.0\": { \"ironSourceSdkVersion\": \"[9.4.0, 10.0[\" } } }, \"IronSourceSdk\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/IronSource/${VERSION}/IronSourceSDKDependencies.xml\" }, "
-            + "\"adapters\": { \"AdMob\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/AdMob/${VERSION}/ISAdMobAdapterDependencies.xml\", \"versions\": { \"9.9.9.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\" } } }, "
-            + "\"UnityAds\": { \"dependencyXmlURL\": \"https://s3.amazonaws.com/ssa.public/Dependencies-xmls/UnityAds/${VERSION}/ISUnityAdsAdapterDependencies.xml\", \"versions\": { "
-            + "\"5.12.0.0\": { \"ironSourceSdkVersion\": \"[9.6.0, 10.0[\", \"android\": { \"adapterVersion\": \"5.12.0\" } }, "
-            + "\"5.11.0.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\", \"android\": { \"adapterVersion\": \"5.11.0\" } }, "
-            + "\"5.9.0.0\": { \"ironSourceSdkVersion\": \"[9.0.0, 10.0[\" }, "
-            + "\"4.3.49.0\": { \"ironSourceSdkVersion\": \"[8.4.0, 9.0.0[\" } } } } }";
+        private const string VersionsJson = FakeProbe.LevelPlayVersions;
 
         private AdsSettings _settings;
         private PlatformCatalog _catalog;
@@ -57,7 +51,7 @@ namespace Nexus.Ads.Tests
             // issue #49: without gradle.properties EDM4U reports Resolution Failed on every resolution and build
             foreach (var id in new[] { "resolver", "native.sdk", "native.adapter", "gradle.template", "gradle.properties", "gradle.lines", "resolve" })
                 Assert.AreEqual(SetupStatus.Pending, Status(plan, id), id);
-            StringAssert.Contains("IronSource/9.5.0/IronSourceSDKDependencies.xml", plan.First(s => s.id == "native.sdk").how, "the native SDK the installed package pairs with");
+            StringAssert.Contains("IronSource/9.7.0/IronSourceSDKDependencies.xml", plan.First(s => s.id == "native.sdk").how, "the newest native SDK the installed package allows");
             var report = AdsValidator.Validate(_settings, AdsValidator.Tab.Test, AdPlatform.Android, probe, _catalog);
             Assert.AreEqual(CheckResult.Fail, report.checks.First(c => c.id == "android.nativesdk").Result);
             Assert.AreEqual(CheckResult.Fail, report.checks.First(c => c.id == "android.gradle").Result);
@@ -134,20 +128,90 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
-        public void NativeSdk_IsTheLowerBoundOfTheInstalledPackagesRange()
+        public void NativeSdk_IsTheNewestVersionTheInstalledPackageAllows_AsLevelPlaysOwnInstallerTakesIt()
         {
-            Assert.IsTrue(AndroidSetup.TryNativeSdk(VersionsJson, "9.4.0", out var version, out var url));
-            Assert.AreEqual("9.4.0", version);
-            Assert.AreEqual("https://s3.amazonaws.com/ssa.public/Dependencies-xmls/IronSource/9.4.0/IronSourceSDKDependencies.xml", url);
+            // issue #144: Prepare Android took the lower bound (9.6.0 for package 9.6.0) where LevelPlay's installer takes 9.7.0
+            Assert.IsTrue(AndroidSetup.TryNativeSdk(VersionsJson, "9.6.0", out var version, out var url));
+            Assert.AreEqual("9.7.0", version);
+            Assert.AreEqual("https://s3.amazonaws.com/ssa.public/Dependencies-xmls/IronSource/9.7.0/IronSourceSDKDependencies.xml", url);
+            Assert.IsTrue(AndroidSetup.TryNativeSdk(VersionsJson, "9.4.0", out version, out _));
+            Assert.AreEqual("9.4.5", version, "the range's upper bound is excluded");
+            Assert.IsTrue(AndroidSetup.TryNativeSdk(VersionsJson, "9.3.0", out version, out _));
+            Assert.AreEqual("9.3.2", version, "a version without brackets is that version only");
+            Assert.IsFalse(AndroidSetup.TryNativeSdk(VersionsJson, "9.2.0", out _, out _), "a range the file lists no SDK in is not guessed");
             Assert.IsFalse(AndroidSetup.TryNativeSdk(VersionsJson, "8.0.0", out _, out _), "a package version the file does not list is not guessed");
+        }
+
+        [Test]
+        public void AnUpgradedPackage_LeavesTheOldNativeDeclarationOpen_AndTheValidatorFails_UntilTheDeclarationAndTheTemplateNameTheNewVersion()
+        {
+            // issue #145: package 9.5.1 to 9.6.0 kept mediation-sdk 9.5.0 and every step read Done (ads-device-20261031)
+            _settings.SelectedMediation = AdProviderKind.LevelPlay;
+            var probe = new FakeProbe().Installed(AdProviderKind.LevelPlay).AndroidPrepared("9.6.0");
+            probe.Files[FakeProbe.NativeFile] = FakeProbe.DependencyXml("9.5.0", "com.unity3d.ads-mediation:mediation-sdk:9.5.0");
+            probe.Files[FakeProbe.AdapterFile] = FakeProbe.DependencyXml("5.11.0.0", "com.unity3d.ads-mediation:unityads-adapter:5.11.0");
+            probe.Files[AndroidSetup.MainTemplatePath] = FakeProbe.Template("com.unity3d.ads-mediation:mediation-sdk:9.5.0", "com.unity3d.ads-mediation:unityads-adapter:5.11.0");
+
+            var plan = AndroidSetup.Plan(_settings, AdsValidator.Tab.Release, probe, _catalog);
+            Assert.AreEqual(SetupStatus.Pending, Status(plan, "native.sdk"));
+            StringAssert.Contains("replaces native SDK 9.5.0 with https://s3.amazonaws.com/ssa.public/Dependencies-xmls/IronSource/9.7.0/IronSourceSDKDependencies.xml", plan.First(s => s.id == "native.sdk").how);
+            Assert.AreEqual(SetupStatus.Pending, Status(plan, "native.adapter"));
+            StringAssert.Contains("replaces UnityAds adapter 5.11.0.0 with", plan.First(s => s.id == "native.adapter").how);
+            Assert.AreEqual(SetupStatus.Pending, Status(plan, "resolve"));
+            var report = AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Android, probe, _catalog);
+            Assert.AreEqual(CheckResult.Fail, report.checks.First(c => c.id == "android.nativesdk").Result);
+            Assert.AreEqual(CheckResult.Fail, report.checks.First(c => c.id == "android.adapter").Result);
+
+            // the declarations replaced, the template still resolved to the old versions
+            probe.Files[FakeProbe.NativeFile] = FakeProbe.DependencyXml("9.7.0", "com.unity3d.ads-mediation:mediation-sdk:9.7.0");
+            probe.Files[FakeProbe.AdapterFile] = FakeProbe.DependencyXml("5.16.0.0", "com.unity3d.ads-mediation:unityads-adapter:5.15.0");
+            plan = AndroidSetup.Plan(_settings, AdsValidator.Tab.Release, probe, _catalog);
+            Assert.AreEqual(SetupStatus.Done, Status(plan, "native.sdk"));
+            Assert.AreEqual(SetupStatus.Done, Status(plan, "native.adapter"));
+            Assert.AreEqual(SetupStatus.Pending, Status(plan, "resolve"), "the template names mediation-sdk 9.5.0");
+            StringAssert.Contains("com.unity3d.ads-mediation:mediation-sdk:9.7.0", plan.First(s => s.id == "resolve").how);
+            Assert.AreEqual(CheckResult.Fail, AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Android, probe, _catalog).checks.First(c => c.id == "android.nativesdk").Result);
+
+            probe.Files[AndroidSetup.MainTemplatePath] = FakeProbe.Template("com.unity3d.ads-mediation:mediation-sdk:9.7.0", "com.unity3d.ads-mediation:unityads-adapter:5.15.0");
+            Assert.IsTrue(AndroidSetup.Plan(_settings, AdsValidator.Tab.Release, probe, _catalog).All(s => s.status == SetupStatus.Done));
+            Assert.AreEqual(CheckResult.Pass, AdsValidator.Validate(_settings, AdsValidator.Tab.Release, AdPlatform.Android, probe, _catalog).checks.First(c => c.id == "android.nativesdk").Result);
+        }
+
+        [Test]
+        public void LevelPlaysProjectVersionsFile_Decides_WhenItListsTheInstalledPackage_AndThePackagesOwnFileOtherwise()
+        {
+            // issue #144: Gigawatt's refreshed project copy lists 9.7.0 for package 9.5.1, whose own file stops at 9.5.0
+            _settings.SelectedMediation = AdProviderKind.LevelPlay;
+            var sdk = _catalog.Provider(AdProviderKind.LevelPlay).sdk;
+            var probe = new FakeProbe().Installed(AdProviderKind.LevelPlay);
+            probe.Packages[FakeProbe.LevelPlayPackage] = "9.5.1";
+            string packageOnly = VersionsJson.Replace("\"9.7.0\": { \"androidSdkVersion\": \"9.7.0\" }, \"9.6.0\": { \"androidSdkVersion\": \"9.6.0\" }, ", "");
+            Assert.AreNotEqual(VersionsJson, packageOnly, "the fixture lost 9.7.0 and 9.6.0");
+            probe.PackageFiles[FakeProbe.PackageVersionsFile] = packageOnly;
+            Assert.IsTrue(AndroidSetup.TryNativeSdk(packageOnly, "9.5.1", out var native, out _));
+            Assert.AreEqual("9.5.0", native, "the package's own file alone");
+
+            probe.Files[FakeProbe.ProjectVersionsFile] = VersionsJson;
+            Assert.AreEqual(VersionsJson, AndroidSetup.VersionsJsonFor(probe, sdk, out string source));
+            Assert.AreEqual(FakeProbe.ProjectVersionsFile, source);
+            StringAssert.Contains("IronSource/9.7.0/", AndroidSetup.Plan(_settings, AdsValidator.Tab.Test, probe, _catalog).First(s => s.id == "native.sdk").how);
+
+            // a copy from before the package upgrade, which does not list the installed package
+            probe.Packages[FakeProbe.LevelPlayPackage] = "9.6.0";
+            string stale = VersionsJson.Replace("\"9.6.0\": { \"ironSourceSdkVersion\"", "\"9.0.0\": { \"ironSourceSdkVersion\"");
+            Assert.AreNotEqual(VersionsJson, stale, "the stale copy still lists package 9.6.0");
+            probe.Files[FakeProbe.ProjectVersionsFile] = stale;
+            probe.PackageFiles[FakeProbe.PackageVersionsFile] = VersionsJson;
+            Assert.AreEqual(VersionsJson, AndroidSetup.VersionsJsonFor(probe, sdk, out source));
+            Assert.AreEqual(FakeProbe.LevelPlayPackage + "/Editor/Json/LevelPlayVersions.json", source);
         }
 
         [Test]
         public void LevelPlay_UnityAdsAdapter_IsPlanned_AtTheNewestVersionTheNativeSdkFits_AndTheValidatorFailsWithoutIt()
         {
             // issue #16: a build with the native SDK and no Unity Ads adapter answered every request with 509 No fill
-            Assert.IsTrue(AndroidSetup.TryAdapter(VersionsJson, "9.5.1", "UnityAds", out var version, out var url));
-            Assert.AreEqual("5.11.0.0", version, "5.12.0.0 needs native 9.6.0; 4.3.49.0 is for 8.x");
+            Assert.IsTrue(AndroidSetup.TryAdapter(VersionsJson, "9.4.0", "UnityAds", out var version, out var url));
+            Assert.AreEqual("5.11.0.0", version, "package 9.4.0 allows native 9.4.5; 5.16.0.0 needs native 9.6.0 and 4.3.49.0 is for 8.x");
             Assert.AreEqual("https://s3.amazonaws.com/ssa.public/Dependencies-xmls/UnityAds/5.11.0.0/ISUnityAdsAdapterDependencies.xml", url, "the adapter's own URL, not the SDK's or another adapter's");
             Assert.IsFalse(AndroidSetup.TryAdapter(VersionsJson, "8.0.0", "UnityAds", out _, out _), "a package version the file does not list is not guessed");
 

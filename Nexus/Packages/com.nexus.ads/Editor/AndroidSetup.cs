@@ -74,27 +74,35 @@ namespace Nexus.Ads.Editor
                     : probe.DisabledEdmStub ? "adds " + UnityEdmPackage + " from the Unity registry (this project's " + GoogleEdmPackage + " is a disabled stub, which would shadow the OpenUPM package)"
                     : "adds " + GoogleEdmPackage + " from OpenUPM"));
 
+            // A declaration is done only at the version the installed package selects (issues #144, #145): one the package was
+            // upgraded past, or one older than what LevelPlay's own installer takes, is replaced, never accepted for being there.
+            string package = probe.PackageVersion(sdk.upm?.package);
+            string versions = VersionsJsonFor(probe, sdk, out string source);
+            bool nativeDone = true;
             if (!string.IsNullOrEmpty(sdk.nativeDependencyFile))
             {
-                bool present = probe.ProjectFileText(sdk.nativeDependencyFile) != null;
-                string how = sdk.nativeDependencyFile;
-                if (!present)
-                    how = TryNativeSdk(probe.PackageFileText(sdk.upm?.package, sdk.nativeVersionsJson), probe.PackageVersion(sdk.upm?.package), out var version, out var url)
-                        ? "downloads " + url + " (native SDK " + version + ") to " + sdk.nativeDependencyFile
-                        : "needs the SDK package first (its " + sdk.nativeVersionsJson + " names the native SDK)";
-                steps.Add(new SetupStep("native.sdk", present ? SetupStatus.Done : SetupStatus.Pending, "native SDK declaration", how));
+                bool known = TryNativeSdk(versions, package, out var version, out var url);
+                string declared = DeclaredVersion(probe.ProjectFileText(sdk.nativeDependencyFile));
+                nativeDone = known && SameVersion(declared, version);
+                steps.Add(new SetupStep("native.sdk", nativeDone ? SetupStatus.Done : known || package == null ? SetupStatus.Pending : SetupStatus.Manual, "native SDK declaration",
+                    nativeDone ? sdk.nativeDependencyFile + " (" + version + ")"
+                    : known ? (declared == null ? "downloads " : "replaces native SDK " + declared + " with ") + url + " (native SDK " + version + ", the newest " + source + " allows for " + sdk.upm?.package + " " + package + ") to " + sdk.nativeDependencyFile
+                    : package == null ? "needs the SDK package first (its " + sdk.nativeVersionsJson + " names the native SDK)"
+                    : source + " names no native SDK for " + sdk.upm?.package + " " + package + "; declare it in " + sdk.nativeDependencyFile + " by hand"));
             }
 
             var adapter = sdk.nativeAdapter;
             if (!string.IsNullOrEmpty(adapter?.dependencyFile))
             {
-                bool present = probe.ProjectFileText(adapter.dependencyFile) != null;
-                string how = adapter.dependencyFile;
-                if (!present)
-                    how = TryAdapter(probe.PackageFileText(sdk.upm?.package, sdk.nativeVersionsJson), probe.PackageVersion(sdk.upm?.package), adapter.key, out var version, out var url)
-                        ? "downloads " + url + " (" + adapter.key + " adapter " + version + ") to " + adapter.dependencyFile
-                        : "needs the SDK package first (its " + sdk.nativeVersionsJson + " names the adapter)";
-                steps.Add(new SetupStep("native.adapter", present ? SetupStatus.Done : SetupStatus.Pending, adapter.key + " adapter declaration", how));
+                bool known = TryAdapter(versions, package, adapter.key, out var version, out var url);
+                string declared = DeclaredVersion(probe.ProjectFileText(adapter.dependencyFile));
+                bool done = known && SameVersion(declared, version);
+                nativeDone &= done;
+                steps.Add(new SetupStep("native.adapter", done ? SetupStatus.Done : known || package == null ? SetupStatus.Pending : SetupStatus.Manual, adapter.key + " adapter declaration",
+                    done ? adapter.dependencyFile + " (" + version + ")"
+                    : known ? (declared == null ? "downloads " : "replaces " + adapter.key + " adapter " + declared + " with ") + url + " (" + adapter.key + " adapter " + version + ") to " + adapter.dependencyFile
+                    : package == null ? "needs the SDK package first (its " + sdk.nativeVersionsJson + " names the adapter)"
+                    : source + " names no " + adapter.key + " adapter for " + sdk.upm?.package + " " + package + "; declare it in " + adapter.dependencyFile + " by hand"));
             }
 
             bool lines = sdk.gradleLines != null && sdk.gradleLines.Length > 0;
@@ -115,14 +123,15 @@ namespace Nexus.Ads.Editor
                     steps.Add(new SetupStep("gradle.lines", missing.Count == 0 ? SetupStatus.Done : SetupStatus.Pending, "Gradle lines",
                         missing.Count == 0 ? string.Join("; ", sdk.gradleLines) : "adds " + string.Join("; ", missing) + " (" + sdk.gradleNote + ")"));
                 }
-                // shortcut: resolution is judged by the marker in the main template; a project whose resolver writes .aar files into
+                // shortcut: resolution is judged by the main template; a project whose resolver writes .aar files into
                 // Assets/Plugins/Android instead (template patching off) builds fine but reads as Pending; accept those files when one shows up.
                 if (!string.IsNullOrEmpty(sdk.resolvedMarker))
                 {
-                    var markers = ResolvedMarkers(sdk);
-                    bool resolved = template != null && markers.All(m => template.IndexOf(m, StringComparison.Ordinal) >= 0);
+                    // the version each declaration names, not only the artifact: a template resolved before an upgrade names the old one (#145)
+                    var unresolved = UnresolvedSpecs(template, sdk, probe.ProjectFileText);
+                    bool resolved = nativeDone && unresolved.Count == 0;
                     steps.Add(new SetupStep("resolve", resolved ? SetupStatus.Done : SetupStatus.Pending, "native dependencies resolved into the Gradle template",
-                        resolved ? string.Join(", ", markers) : "runs the resolver's Android resolution"));
+                        resolved ? string.Join(", ", DeclaredSpecs(sdk, probe.ProjectFileText)) : "runs the resolver's Android resolution" + (unresolved.Count > 0 ? " (the template does not name " + string.Join(", ", unresolved) + ")" : "")));
                 }
             }
 
@@ -143,20 +152,126 @@ namespace Nexus.Ads.Editor
         // ----- pure text functions (EditMode tests lock them)
 
         /// <summary>
-        /// The native SDK a LevelPlay package version pairs with, from the package's own LevelPlayVersions.json
-        /// (<c>unityPackage.versions[v].ironSourceSdkVersion</c>, the lower bound of its range) and the dependency file URL.
+        /// The native SDK LevelPlay's own installer takes for a package version: the newest <c>IronSourceSdk.versions</c> entry
+        /// inside the package's <c>unityPackage.versions[v].ironSourceSdkVersion</c> (a range, or one exact version), and its
+        /// dependency file URL. False when the file lists the package without a version in its range (issue #144).
         /// </summary>
         public static bool TryNativeSdk(string versionsJson, string packageVersion, out string sdkVersion, out string url)
         {
             sdkVersion = url = null;
             if (string.IsNullOrEmpty(versionsJson) || string.IsNullOrEmpty(packageVersion)) return false;
-            var range = Regex.Match(versionsJson, "\"" + Regex.Escape(packageVersion) + "\"\\s*:\\s*\\{\\s*\"ironSourceSdkVersion\"\\s*:\\s*\"\\[\\s*([0-9][0-9.]*)");
-            var template = Regex.Match(versionsJson, "\"dependencyXmlURL\"\\s*:\\s*\"([^\"]+)\"");
-            if (!range.Success || !template.Success) return false;
-            sdkVersion = range.Groups[1].Value;
+            string packages = Block(versionsJson, "unityPackage", 1);
+            string sdk = Block(versionsJson, "IronSourceSdk", 1);
+            if (packages == null || sdk == null) return false;
+            var range = Regex.Match(packages, "\"" + Regex.Escape(packageVersion) + "\"\\s*:\\s*\\{\\s*\"ironSourceSdkVersion\"\\s*:\\s*\"([^\"]*)\"");
+            var template = Regex.Match(sdk, "\"dependencyXmlURL\"\\s*:\\s*\"([^\"]+)\"");
+            string list = Block(sdk, "versions", 1);
+            if (!range.Success || !template.Success || list == null) return false;
+            Version best = null;
+            foreach (Match m in Regex.Matches(list, "\"([0-9]+(?:\\.[0-9]+)*)\"\\s*:\\s*\\{"))
+                if (TryVersion(m.Groups[1].Value, out var candidate) && Allows(range.Groups[1].Value, candidate) && (best == null || candidate > best)) { best = candidate; sdkVersion = m.Groups[1].Value; }
+            if (best == null) return false;
             url = template.Groups[1].Value.Replace("${VERSION}", sdkVersion);
             return true;
         }
+
+        /// <summary>
+        /// The versions file the plan reads: LevelPlay's own copy in the project when it lists the installed package (its
+        /// installer works from that copy and refreshes it), otherwise the package's file (issue #144).
+        /// </summary>
+        public static string VersionsJsonFor(IProjectProbe probe, CatalogSdk sdk, out string source)
+        {
+            string package = probe.PackageVersion(sdk.upm?.package);
+            string project = string.IsNullOrEmpty(sdk.nativeVersionsProjectFile) ? null : probe.ProjectFileText(sdk.nativeVersionsProjectFile);
+            string listed = Block(project, "unityPackage", 1);
+            if (package != null && listed != null && Regex.IsMatch(listed, "\"" + Regex.Escape(package) + "\"\\s*:\\s*\\{"))
+            {
+                source = sdk.nativeVersionsProjectFile;
+                return project;
+            }
+            source = sdk.upm?.package + "/" + sdk.nativeVersionsJson;
+            return package == null ? null : probe.PackageFileText(sdk.upm?.package, sdk.nativeVersionsJson);
+        }
+
+        /// <summary>The version a LevelPlay dependency file declares itself as (<c>&lt;unityversion&gt;</c>, what LevelPlay's installer reads back); null without one.</summary>
+        public static string DeclaredVersion(string dependencyXml)
+        {
+            var m = Regex.Match(dependencyXml ?? "", "<unityversion>\\s*([^<\\s]+)\\s*</unityversion>");
+            return m.Success ? m.Groups[1].Value : null;
+        }
+
+        /// <summary>The Android spec (<c>group:artifact:version</c>) a dependency file declares for an artifact; null when it declares none.</summary>
+        public static string DeclaredSpec(string dependencyXml, string artifact)
+        {
+            if (dependencyXml == null || string.IsNullOrEmpty(artifact)) return null;
+            var m = Regex.Match(dependencyXml, "spec\\s*=\\s*\"(" + Regex.Escape(artifact) + ":[^\"]+)\"");
+            return m.Success ? m.Groups[1].Value : null;
+        }
+
+        /// <summary>The specs the declarations name for the artifacts the resolver must write into the template, in catalog order.</summary>
+        public static List<string> DeclaredSpecs(CatalogSdk sdk, Func<string, string> readProjectFile)
+        {
+            var specs = new List<string>();
+            foreach (var (artifact, file) in Declarations(sdk))
+            {
+                string spec = DeclaredSpec(readProjectFile(file), artifact);
+                if (spec != null) specs.Add(spec);
+            }
+            return specs;
+        }
+
+        /// <summary>
+        /// What the main template does not name yet: each declared spec with its version (a template resolved before an
+        /// upgrade names the old one), or the artifact itself when no declaration names it (issue #145).
+        /// </summary>
+        public static List<string> UnresolvedSpecs(string template, CatalogSdk sdk, Func<string, string> readProjectFile)
+        {
+            var missing = new List<string>();
+            foreach (var (artifact, file) in Declarations(sdk))
+            {
+                string spec = DeclaredSpec(readProjectFile(file), artifact);
+                if (spec == null) missing.Add(artifact);
+                else if (template == null || !Regex.IsMatch(template, "['\"]" + Regex.Escape(spec) + "['\"]")) missing.Add(spec);
+            }
+            return missing;
+        }
+
+        private static IEnumerable<(string artifact, string file)> Declarations(CatalogSdk sdk)
+        {
+            if (!string.IsNullOrEmpty(sdk.resolvedMarker)) yield return (sdk.resolvedMarker, sdk.nativeDependencyFile);
+            if (!string.IsNullOrEmpty(sdk.nativeAdapter?.resolvedMarker)) yield return (sdk.nativeAdapter.resolvedMarker, sdk.nativeAdapter.dependencyFile);
+        }
+
+        private static bool SameVersion(string a, string b) => TryVersion(a, out var x) && TryVersion(b, out var y) && x == y;
+
+        /// <summary>The key and object of <paramref name="key"/> where <paramref name="openBraces"/> objects are open (1: a member of the outermost object); null when absent.</summary>
+        private static string Block(string json, string key, int openBraces)
+        {
+            if (string.IsNullOrEmpty(json)) return null;
+            foreach (Match m in new Regex("\"" + Regex.Escape(key) + "\"\\s*:\\s*\\{").Matches(json))
+                if (Depth(json, m.Index) == openBraces) return json.Substring(m.Index, ObjectEnd(json, m.Index + m.Length - 1) - m.Index);
+            return null;
+        }
+
+        /// <summary>How many objects are open at <paramref name="index"/>; braces inside strings do not count.</summary>
+        private static int Depth(string json, int index)
+        {
+            int depth = 0;
+            bool inString = false;
+            for (int i = 0; i < index; i++)
+            {
+                char c = json[i];
+                if (inString) { if (c == '\\') i++; else if (c == '"') inString = false; continue; }
+                if (c == '"') inString = true;
+                else if (c == '{') depth++;
+                else if (c == '}') depth--;
+            }
+            return depth;
+        }
+
+        /// <summary>A LevelPlay compatibility value: a range (<see cref="InRange"/>) or one exact version, as LevelPlay's own regexes read it.</summary>
+        private static bool Allows(string rangeOrVersion, Version v)
+            => Regex.IsMatch(rangeOrVersion ?? "", @"^\s*[\[(\]]") ? InRange(rangeOrVersion, v) : TryVersion(rangeOrVersion?.Trim(), out var exact) && exact == v;
 
         /// <summary>
         /// The newest adapter version in LevelPlayVersions.json (<c>adapters[key].versions</c>) whose <c>ironSourceSdkVersion</c>
@@ -175,14 +290,11 @@ namespace Nexus.Ads.Editor
             if (!template.Success) return false;
             Version best = null;
             foreach (Match m in Regex.Matches(block, "\"([0-9]+(?:\\.[0-9]+)*)\"\\s*:\\s*\\{\\s*\"ironSourceSdkVersion\"\\s*:\\s*\"([^\"]*)\""))
-                if (TryVersion(m.Groups[1].Value, out var candidate) && InRange(m.Groups[2].Value, sdk) && (best == null || candidate > best)) { best = candidate; adapterVersion = m.Groups[1].Value; }
+                if (TryVersion(m.Groups[1].Value, out var candidate) && Allows(m.Groups[2].Value, sdk) && (best == null || candidate > best)) { best = candidate; adapterVersion = m.Groups[1].Value; }
             if (best == null) return false;
             url = template.Groups[1].Value.Replace("${VERSION}", adapterVersion);
             return true;
         }
-
-        private static IEnumerable<string> ResolvedMarkers(CatalogSdk sdk)
-            => string.IsNullOrEmpty(sdk.nativeAdapter?.resolvedMarker) ? new[] { sdk.resolvedMarker } : new[] { sdk.resolvedMarker, sdk.nativeAdapter.resolvedMarker };
 
         /// <summary>The index after the object that opens at <paramref name="open"/>; braces inside strings (<c>${VERSION}</c>) do not count.</summary>
         private static int ObjectEnd(string json, int open)
@@ -287,10 +399,12 @@ namespace Nexus.Ads.Editor
         {
             var result = new ApplyResult();
             var probe = new UnityProjectProbe();
-            var plan = Plan(settings, tab, probe, catalog);
             var sdk = catalog.Provider(settings.SelectedMediation)?.sdk;
-            bool Pending(string id) => plan.Any(s => s.id == id && s.status == SetupStatus.Pending);
             if (sdk == null) { result.Log.Add("no mediation selected; nothing to prepare"); return result; }
+            // LevelPlay's installer refreshes its versions file before it chooses the native SDK; the plan chooses from the same file (#144)
+            if (!string.IsNullOrEmpty(sdk.nativeVersionsUrl) && probe.PackageVersion(sdk.upm?.package) != null) result.Log.Add(RefreshVersionsFile(sdk));
+            var plan = Plan(settings, tab, probe, catalog);
+            bool Pending(string id) => plan.Any(s => s.id == id && s.status == SetupStatus.Pending);
 
             var add = new List<string>();
             var scopes = new List<string>();
@@ -312,22 +426,22 @@ namespace Nexus.Ads.Editor
 
             if (Pending("native.sdk"))
             {
-                if (TryNativeSdk(probe.PackageFileText(sdk.upm.package, sdk.nativeVersionsJson), probe.PackageVersion(sdk.upm.package), out var version, out var url))
+                if (TryNativeSdk(VersionsJsonFor(probe, sdk, out string source), probe.PackageVersion(sdk.upm.package), out var version, out var url))
                 {
                     DownloadDependencyFile(url, sdk.nativeDependencyFile);
                     result.Log.Add("native SDK " + version + ": " + url + " → " + sdk.nativeDependencyFile);
                 }
-                else result.Log.Add("native SDK: the SDK package's " + sdk.nativeVersionsJson + " names no version for " + probe.PackageVersion(sdk.upm.package));
+                else result.Log.Add("native SDK: " + source + " names no version for " + sdk.upm.package + " " + probe.PackageVersion(sdk.upm.package));
             }
             if (Pending("native.adapter"))
             {
                 var adapter = sdk.nativeAdapter;
-                if (TryAdapter(probe.PackageFileText(sdk.upm.package, sdk.nativeVersionsJson), probe.PackageVersion(sdk.upm.package), adapter.key, out var version, out var url))
+                if (TryAdapter(VersionsJsonFor(probe, sdk, out string source), probe.PackageVersion(sdk.upm.package), adapter.key, out var version, out var url))
                 {
                     DownloadDependencyFile(url, adapter.dependencyFile);
                     result.Log.Add(adapter.key + " adapter " + version + ": " + url + " → " + adapter.dependencyFile);
                 }
-                else result.Log.Add(adapter.key + " adapter: the SDK package's " + sdk.nativeVersionsJson + " names no version for " + probe.PackageVersion(sdk.upm.package));
+                else result.Log.Add(adapter.key + " adapter: " + source + " names no version for " + sdk.upm.package + " " + probe.PackageVersion(sdk.upm.package));
             }
             if (Pending("gradle.template"))
             {
@@ -351,7 +465,8 @@ namespace Nexus.Ads.Editor
                 string updated = WithGradleLines(template, sdk.gradleLines, sdk.gradleNote);
                 if (updated != template) { File.WriteAllText(MainTemplatePath, updated); result.Log.Add("Gradle lines: " + string.Join("; ", sdk.gradleLines)); }
             }
-            if (!string.IsNullOrEmpty(sdk.resolvedMarker) && File.Exists(MainTemplatePath) && ResolvedMarkers(sdk).Any(m => File.ReadAllText(MainTemplatePath).IndexOf(m, StringComparison.Ordinal) < 0))
+            // after the downloads: a declaration replaced above leaves its old version in the template (#145)
+            if (!string.IsNullOrEmpty(sdk.resolvedMarker) && File.Exists(MainTemplatePath) && UnresolvedSpecs(File.ReadAllText(MainTemplatePath), sdk, probe.ProjectFileText).Count > 0)
             {
                 var resolver = AppDomain.CurrentDomain.GetAssemblies().Select(a => a.GetType("GooglePlayServices.PlayServicesResolver")).FirstOrDefault(t => t != null);
                 var resolveSync = resolver?.GetMethods().FirstOrDefault(m => m.Name == "ResolveSync" && m.GetParameters().Length == 1);
@@ -360,9 +475,9 @@ namespace Nexus.Ads.Editor
                 {
                     object answer = resolveSync.Invoke(null, new object[] { true });
                     // the resolver has answered false while writing the template (runs of 2026-10-24 and -25); the template is what Gradle reads, so report it
-                    var missing = ResolvedMarkers(sdk).Where(m => File.ReadAllText(MainTemplatePath).IndexOf(m, StringComparison.Ordinal) < 0).ToList();
+                    var missing = UnresolvedSpecs(File.ReadAllText(MainTemplatePath), sdk, probe.ProjectFileText);
                     result.Log.Add(missing.Count == 0
-                        ? "resolve: the Gradle template now names " + string.Join(", ", ResolvedMarkers(sdk))
+                        ? "resolve: the Gradle template now names " + string.Join(", ", DeclaredSpecs(sdk, probe.ProjectFileText))
                         : "resolve: the Gradle template still misses " + string.Join(", ", missing) + " (the resolver answered " + answer + "); run Assets > External Dependency Manager > Android Resolver > Force Resolve and read its log");
                 }
             }
@@ -383,6 +498,28 @@ namespace Nexus.Ads.Editor
             }
             AssetDatabase.Refresh();
             return result;
+        }
+
+        /// <summary>Writes LevelPlay's remote versions file over the project's copy, as LevelPlay's installer does; when it cannot be read the plan keeps the files it has, and the log says so.</summary>
+        private static string RefreshVersionsFile(CatalogSdk sdk)
+        {
+            string json;
+            try
+            {
+                using (var client = new System.Net.WebClient()) json = client.DownloadString(sdk.nativeVersionsUrl);
+            }
+            catch (System.Net.WebException e)
+            {
+                return "versions file: " + sdk.nativeVersionsUrl + " could not be read (" + e.Message + "); the plan reads the versions files already in the project and the package";
+            }
+            if (Block(json, "unityPackage", 1) == null || Block(json, "IronSourceSdk", 1) == null)
+                return "versions file: " + sdk.nativeVersionsUrl + " returned no LevelPlay versions; the plan reads the versions files already in the project and the package";
+            string path = sdk.nativeVersionsProjectFile;
+            if (File.Exists(path) && File.ReadAllText(path) == json) return "versions file: " + path + " is current with " + sdk.nativeVersionsUrl;
+            Directory.CreateDirectory(Path.GetDirectoryName(path));
+            File.WriteAllText(path, json);
+            AssetDatabase.ImportAsset(path);
+            return "versions file: " + sdk.nativeVersionsUrl + " → " + path;
         }
 
         private static void DownloadDependencyFile(string url, string path)
