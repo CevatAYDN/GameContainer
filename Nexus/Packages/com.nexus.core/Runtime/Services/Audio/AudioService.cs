@@ -67,13 +67,14 @@ namespace Nexus.Core.Services
         /// Starts a BGM track. A <paramref name="fadeDuration"/> above zero crossfades from the
         /// current track over that many seconds; the default of zero switches instantly.
         /// Fading needs a live audio root running coroutines — where that is unavailable the
-        /// switch falls back to instant rather than silently doing nothing.
+        /// switch falls back to instant rather than silently doing nothing. The track that
+        /// <see cref="StopBgm"/> is fading out keeps playing at full volume when it is played again.
         /// </summary>
         void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0f);
         /// <summary>
-        /// Stops the BGM. A <paramref name="fadeDuration"/> above zero fades out over that many
-        /// seconds (the source keeps playing until the fade completes); the default of zero
-        /// stops immediately.
+        /// Stops the BGM, both tracks of a crossfade. A <paramref name="fadeDuration"/> above zero
+        /// fades out over that many seconds (the sources keep playing until the fade completes);
+        /// the default of zero stops immediately.
         /// </summary>
         void StopBgm(float fadeDuration = 0f);
         void PlaySfx(AudioClip clip, float volume = 1f, float pitchMin = 1f, float pitchMax = 1f);
@@ -109,6 +110,8 @@ namespace Nexus.Core.Services
         // the previous one.
         private AudioFadeRunner _fadeRunner;
         private Coroutine _fadeCoroutine;
+        private bool _fadingOut; // the running fade is StopBgm's, so PlayBgm of its track brings it back (#186)
+        private bool _warnedNoRoot;
 
         // Hard cap on the SFX source pool. The old GetAvailableSfxSource grew the pool
         // unboundedly (a new GameObject + interpolated name string per allocation) on
@@ -264,7 +267,16 @@ namespace Nexus.Core.Services
         public void PlayBgm(AudioClip clip, bool loop = true, float fadeDuration = 0f)
         {
             if (clip == null || _bgmSourceActive == null) return;
-            if (_bgmSourceActive.clip == clip && _bgmSourceActive.isPlaying) return;
+            if (_bgmSourceActive.clip == clip && _bgmSourceActive.isPlaying)
+            {
+                if (!_fadingOut) return; // already playing, or crossfading to it
+                // StopBgm is fading this track out (a level restart replays it): the fade would end in silence (#186)
+                StopFadeCoroutine();
+                Silence(_bgmSourceFade);
+                _bgmSourceActive.loop = loop;
+                _bgmSourceActive.volume = EffectiveBgmVolume;
+                return;
+            }
 
             // Same effective formula (master × user pref × state mult).
             float targetVolume = EffectiveBgmVolume;
@@ -290,29 +302,47 @@ namespace Nexus.Core.Services
             StopFadeCoroutine();
             var incoming = _bgmSourceFade;
             var outgoing = _bgmSourceActive;
+            float outgoingShare = Share(outgoing, targetVolume);
             incoming.clip = clip;
             incoming.loop = loop;
             incoming.volume = 0f;
             incoming.Play();
             _bgmSourceActive = incoming;
             _bgmSourceFade = outgoing;
-            _fadeCoroutine = runner.StartCoroutine(CrossfadeCoroutine(incoming, outgoing, fadeDuration));
+            _fadeCoroutine = runner.StartCoroutine(CrossfadeCoroutine(incoming, outgoing, outgoingShare, fadeDuration));
         }
 
         public void StopBgm(float fadeDuration = 0f)
         {
             if (_bgmSourceActive == null) return;
 
-            if (fadeDuration <= 0f || !_bgmSourceActive.isPlaying || !TryGetFadeRunner(out var runner))
+            // Both sources: during a crossfade the outgoing track still plays, and it loops (#186)
+            bool playing = _bgmSourceActive.isPlaying || (_bgmSourceFade != null && _bgmSourceFade.isPlaying);
+            if (fadeDuration <= 0f || !playing || !TryGetFadeRunner(out var runner))
             {
                 StopFadeCoroutine();
-                _bgmSourceActive.Stop();
-                _bgmSourceActive.clip = null;
+                Silence(_bgmSourceActive);
+                Silence(_bgmSourceFade);
                 return;
             }
 
             StopFadeCoroutine();
-            _fadeCoroutine = runner.StartCoroutine(FadeOutCoroutine(_bgmSourceActive, fadeDuration));
+            float target = EffectiveBgmVolume;
+            _fadeCoroutine = runner.StartCoroutine(FadeOutCoroutine(_bgmSourceActive, Share(_bgmSourceActive, target),
+                _bgmSourceFade, Share(_bgmSourceFade, target), fadeDuration));
+            _fadingOut = true;
+        }
+
+        /// <summary>The part of the full music volume a playing source is at: a source caught mid-fade continues from there.</summary>
+        private static float Share(AudioSource source, float fullVolume)
+            => source == null || !source.isPlaying ? 0f : fullVolume > 0f ? Mathf.Clamp01(source.volume / fullVolume) : 1f;
+
+        private void Silence(AudioSource source)
+        {
+            if (source == null) return;
+            source.Stop();
+            source.clip = null;
+            source.volume = EffectiveBgmVolume; // ready for the next PlayBgm
         }
 
         private bool TryGetFadeRunner(out AudioFadeRunner runner)
@@ -330,9 +360,10 @@ namespace Nexus.Core.Services
             if (_fadeCoroutine != null && _fadeRunner != null)
                 _fadeRunner.StopCoroutine(_fadeCoroutine);
             _fadeCoroutine = null;
+            _fadingOut = false;
         }
 
-        private IEnumerator CrossfadeCoroutine(AudioSource incoming, AudioSource outgoing, float duration)
+        private IEnumerator CrossfadeCoroutine(AudioSource incoming, AudioSource outgoing, float outgoingShare, float duration)
         {
             float elapsed = 0f;
             while (elapsed < duration)
@@ -342,38 +373,31 @@ namespace Nexus.Core.Services
                 // Recompute the target each frame so volume/mute changes mid-fade apply.
                 float target = EffectiveBgmVolume;
                 if (incoming != null) incoming.volume = target * t;
-                if (outgoing != null) outgoing.volume = target * (1f - t);
+                if (outgoing != null) outgoing.volume = target * outgoingShare * (1f - t);
                 yield return null;
             }
-            if (outgoing != null)
-            {
-                outgoing.Stop();
-                outgoing.clip = null;
-            }
+            Silence(outgoing);
             if (incoming != null)
                 incoming.volume = EffectiveBgmVolume;
             _fadeCoroutine = null;
         }
 
-        private IEnumerator FadeOutCoroutine(AudioSource source, float duration)
+        private IEnumerator FadeOutCoroutine(AudioSource first, float firstShare, AudioSource second, float secondShare, float duration)
         {
-            float startVolume = source.volume;
             float elapsed = 0f;
             while (elapsed < duration)
             {
                 elapsed += Time.unscaledDeltaTime;
-                if (source == null) yield break;
-                source.volume = startVolume * (1f - Mathf.Clamp01(elapsed / duration));
+                // Recompute the target each frame so volume/mute changes mid-fade apply.
+                float level = EffectiveBgmVolume * (1f - Mathf.Clamp01(elapsed / duration));
+                if (first != null) first.volume = level * firstShare;
+                if (second != null) second.volume = level * secondShare;
                 yield return null;
             }
-            if (source != null)
-            {
-                source.Stop();
-                source.clip = null;
-                // Restore the source volume for the next PlayBgm.
-                source.volume = EffectiveBgmVolume;
-            }
+            Silence(first);
+            Silence(second);
             _fadeCoroutine = null;
+            _fadingOut = false;
         }
 
         public void PlaySfxWithRandomPitch(AudioClip clip, float minPitch = 0.9f, float maxPitch = 1.1f, float volume = 1f) => PlaySfx(clip, volume, minPitch, maxPitch);
@@ -387,6 +411,7 @@ namespace Nexus.Core.Services
             if (pitchMin > pitchMax) (pitchMin, pitchMax) = (pitchMax, pitchMin);
 
             var source = GetAvailableSfxSource();
+            if (source == null) return;
             source.spatialBlend = 0f; // 2D sound
             source.volume = Mathf.Clamp01(volume) * _masterVolume * _sfxVolume;
             source.pitch = UnityEngine.Random.Range(pitchMin, pitchMax);
@@ -398,6 +423,7 @@ namespace Nexus.Core.Services
             if (clip == null || SfxMuted) return;
 
             var source = GetAvailableSfxSource();
+            if (source == null) return;
             source.transform.position = position;
             source.spatialBlend = 1f; // 3D spatial sound
             source.volume = Mathf.Clamp01(volume) * _masterVolume * _sfxVolume;
@@ -441,12 +467,15 @@ namespace Nexus.Core.Services
 
             if (_audioRoot == null)
             {
-                _audioRoot = AudioRootProvider?.GetOrCreateRoot();
-                if (_audioRoot == null)
+                // Not started, or disposed. A root created here was not marked as the service's own, so Dispose left it
+                // behind, and a later InitializeAsync found a root and created no music sources (DeepSeek B6, #186).
+                if (!_warnedNoRoot)
                 {
-                    _audioRoot = new GameObject("[Nexus_AudioService]");
-                    UnityEngine.Object.DontDestroyOnLoad(_audioRoot);
+                    _warnedNoRoot = true;
+                    NexusLog.WarnAlways("[AudioService] An effect was played before InitializeAsync or after Dispose: no effect plays " +
+                        "until the service is started (this is logged once).");
                 }
+                return null;
             }
 
             var newSourceGo = new GameObject($"SFXSource_{_sfxPool.Count}");
