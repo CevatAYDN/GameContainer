@@ -171,6 +171,49 @@ namespace Nexus.Editor.Tests
             finally { ForgetStore(salt); }
         }
 
+        private static void RaiseAppEvent(string forwarder, params object[] args) =>
+            typeof(EncryptedStorageService).GetMethod(forwarder, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static).Invoke(null, args);
+
+        // Issue #166: the focus-loss and quit saves went to the store constructed last only, so of two live stores (an
+        // App-bound and a Device-bound one, as the README shows) the first kept its unsaved keys in memory and lost them
+        [Test]
+        public void EveryLiveStore_SavesOnFocusLossAndQuit_NotOnlyTheLastOneConstructed()
+        {
+            const string saltA = "Test_Salt_LiveA166", saltB = "Test_Salt_LiveB166";
+            ForgetStore(saltA);
+            ForgetStore(saltB);
+            var first = new EncryptedStorageService(saltA, StorageKeyBinding.App, "phone-A");
+            var second = new EncryptedStorageService(saltB, StorageKeyBinding.Device, "phone-A");
+            try
+            {
+                first.SetString("quit", "a");
+                second.SetString("quit", "b");
+                RaiseAppEvent("StaticOnQuitting");
+                Assert.IsTrue(File.Exists(Private<string>(first, "GetFilePath", "quit")), "the first store saved on quit");
+                Assert.IsTrue(File.Exists(Private<string>(second, "GetFilePath", "quit")), "the second store saved on quit");
+
+                first.SetString("focus", "a");
+                second.SetString("focus", "b");
+                RaiseAppEvent("StaticOnFocusChanged", false); // each store saves on a worker thread
+                string firstFocus = Private<string>(first, "GetFilePath", "focus"), secondFocus = Private<string>(second, "GetFilePath", "focus");
+                var waited = System.Diagnostics.Stopwatch.StartNew();
+                while (!(File.Exists(firstFocus) && File.Exists(secondFocus)) && waited.ElapsedMilliseconds < 5000) Thread.Sleep(10);
+                Assert.IsTrue(File.Exists(firstFocus), "the first store saved on focus loss");
+                Assert.IsTrue(File.Exists(secondFocus), "the second store saved on focus loss");
+
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"Another live store already uses '.*SecureData_Test_Salt_LiveA166': two caches over the same files"));
+                new EncryptedStorageService(saltA, StorageKeyBinding.App, "phone-A").Dispose();
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                first.Dispose();
+                second.Dispose();
+                ForgetStore(saltA);
+                ForgetStore(saltB);
+            }
+        }
+
         [Test]
         public void AppBinding_ReadsDataRestoredOnAnotherPhone_DeviceBindingDoesNot()
         {

@@ -278,25 +278,28 @@ namespace Nexus.Core.Services
         // Instance method-group handlers on the STATIC Application.focusChanged /
         // Application.quitting events rooted every undisposed instance (cache, encryption keys,
         // file-path cache) for the whole process lifetime — with domain reload disabled, each
-        // context lifetime leaked one dead service. The application events are now hooked
-        // exactly ONCE with static forwarders that route to the currently-active instance;
-        // Dispose only detaches the instance reference, so the static events never retain a
-        // disposed service no matter how many ctor/dispose cycles run.
+        // context lifetime leaked one dead service. The application events are hooked exactly
+        // ONCE with static forwarders. They used to route to the last instance constructed only,
+        // so of two live stores (an App-bound and a Device-bound one, as the README shows) the
+        // first never saved on focus loss or quit (issue #166). They now route to every live
+        // instance, held by weak references so the static list still roots none; Dispose removes it.
         private static readonly object s_appEventsLock = new();
-        private static EncryptedStorageService s_activeInstance;
+        private static readonly List<WeakReference<EncryptedStorageService>> s_liveInstances = new();
         private static bool s_appEventsHooked;
 
         private void HookAppEvents()
         {
             lock (s_appEventsLock)
             {
-                if (s_activeInstance != null && !ReferenceEquals(s_activeInstance, this) && !s_activeInstance._disposed)
+                s_liveInstances.RemoveAll(r => !r.TryGetTarget(out var s) || s._disposed);
+                foreach (var reference in s_liveInstances)
                 {
-                    NexusLog.WarnAlways(
-                        "[EncryptedStorageService] A second instance was constructed while another is still active. " +
-                        "Application focus/quit save events now route to the NEW instance; dispose the old one to avoid split-brain saves.");
+                    if (reference.TryGetTarget(out var other) && string.Equals(other._storageFolderPath, _storageFolderPath, StringComparison.Ordinal))
+                        NexusLog.WarnAlways(
+                            $"[EncryptedStorageService] Another live store already uses '{_storageFolderPath}': two caches over the same files " +
+                            "overwrite each other's saves. Dispose the first one, or give the second its own salt.");
                 }
-                s_activeInstance = this;
+                s_liveInstances.Add(new WeakReference<EncryptedStorageService>(this));
                 if (!s_appEventsHooked)
                 {
                     Application.focusChanged += StaticOnFocusChanged;
@@ -306,18 +309,30 @@ namespace Nexus.Core.Services
             }
         }
 
+        private static List<EncryptedStorageService> LiveInstances()
+        {
+            var live = new List<EncryptedStorageService>();
+            lock (s_appEventsLock)
+            {
+                foreach (var reference in s_liveInstances)
+                    if (reference.TryGetTarget(out var instance) && !instance._disposed) live.Add(instance);
+            }
+            return live;
+        }
+
         private static void StaticOnFocusChanged(bool hasFocus)
         {
-            var instance = s_activeInstance;
-            if (instance != null && !instance._disposed)
-                instance.OnFocusChanged(hasFocus);
+            foreach (var instance in LiveInstances()) instance.OnFocusChanged(hasFocus);
         }
 
         private static void StaticOnQuitting()
         {
-            var instance = s_activeInstance;
-            if (instance != null && !instance._disposed)
-                instance.OnQuitting();
+            foreach (var instance in LiveInstances())
+            {
+                // One store that throws must not cost the others their quit save.
+                try { instance.OnQuitting(); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogError($"[EncryptedStorageService] Save on quit failed for '{instance._storageFolderPath}': {ex.Message}"); }
+            }
         }
 
         private void OnFocusChanged(bool hasFocus)
@@ -389,8 +404,7 @@ namespace Nexus.Core.Services
             // subscribe/unsubscribe on the static events was the leak.
             lock (s_appEventsLock)
             {
-                if (ReferenceEquals(s_activeInstance, this))
-                    s_activeInstance = null;
+                s_liveInstances.RemoveAll(r => !r.TryGetTarget(out var s) || ReferenceEquals(s, this));
             }
         }
 
