@@ -95,7 +95,9 @@ namespace Nexus.Core.Services
             // would deadlock any other caller.
             toInitialize?.Initialize(productList, (success) =>
             {
-                NexusRuntime.Logger?.Log($"[IapService] Store adapter initialized: {success}");
+                // a store that did not start is a failure: every build's log names it (#164)
+                if (success) NexusRuntime.Logger?.Log("[IapService] Store adapter initialized: True");
+                else NexusLog.WarnAlways("[IapService] Store adapter initialized: False");
             });
         }
 

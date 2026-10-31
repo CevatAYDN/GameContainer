@@ -93,5 +93,35 @@ namespace Nexus.Editor.Tests
                 NexusBuild.OverrideForTests(null);
             }
         }
+
+        private sealed class StoreThatDoesNotStart : IIapStoreAdapter
+        {
+            public void Initialize(System.Collections.Generic.List<ProductDefinition> products, System.Action<bool> onInitialized) => onInitialized?.Invoke(false);
+            public void Purchase(string productId, System.Action<bool, string> onComplete) => onComplete?.Invoke(false, "not started");
+            public void Restore(System.Action<bool> onComplete) => onComplete?.Invoke(false);
+            public bool IsOwned(string productId) => false;
+        }
+
+        // Issue #164: the store's start went to an info line, which a release player drops, so a store that did not start left no trace
+        [Test]
+        public async Task AStoreThatDoesNotStart_IsWarnedInAReleasePlayerToo()
+        {
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables; a logger another test left cached may be enabled
+            NexusBuild.OverrideForTests(false);
+            try
+            {
+                using var iap = new IapService();
+                await iap.InitializeAsync(default);
+                Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops Log and LogWarning");
+
+                LogAssert.Expect(LogType.Warning, new Regex(@"\[IapService\] Store adapter initialized: False"));
+                iap.SetStoreAdapter(new StoreThatDoesNotStart());
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+            }
+        }
     }
 }
