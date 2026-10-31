@@ -113,7 +113,7 @@ namespace Nexus.Core.Services
 
         /// First call of a back press while this screen is on top; true = handled here, nothing is popped.
         /// Wickling's Pause (leave the quit question first), Result (back = continue), ReminderAsk (back = not now).
-        protected internal virtual bool OnBack() => false;
+        protected virtual bool OnBack() => false;
 
         protected virtual void OnShown(object args) { }
         protected virtual void OnHidden() { }
@@ -139,7 +139,8 @@ namespace Nexus.Core.Services
         int Depth { get; }
 
         /// Gigawatt overlay:true, Wickling Navigate(menu), ChipCrisis opening a sheet or a modal.
-        /// Pushing the route already on top does nothing. The screen below on the same layer is hidden; screens on
+        /// Pushing the route already on top does nothing; the same screen on top with other arguments takes them.
+        /// The screen below on the same layer is hidden; screens on
         /// lower layers stay shown. Push does not look at BlocksBack: a game that refuses routes while a blocking
         /// screen is shown checks IsShown<T>() in its own command, as Gigawatt's NavigateUiCommand does.
         void Push<TScreen>(object args = null) where TScreen : ToolkitScreen;
@@ -204,12 +205,12 @@ A press goes through these steps and stops at the first one that handles it:
 3. `AfterScreens` steps, the most recently added first.
 4. The `AtRoot` behaviour.
 
-`IBackRouter` reads `IInputService.GetButtonDown("Cancel")` once per tick. A frame without a press allocates nothing.
+`IBackRouter` reads `IInputService.GetButtonDown("Cancel")` once per frame. A frame without a press allocates nothing.
 
 **Showing and hiding.** To show a screen, the stack sets `display: flex`, then adds the class `nexus-screen--shown` on the
-next panel update. To hide it, the stack removes the class and sets `display: none` when the root's transitions end. It
-waits for `TransitionEndEvent`, or for the longest transition duration if the event does not come. A screen whose USS
-has no transition shows and hides at once, as Wickling's and ChipCrisis's closes do today.
+next panel update. To hide it, the stack removes the class and sets `display: none` when the root's transitions end. A
+screen whose USS has no transition shows and hides at once, as Wickling's and ChipCrisis's closes do today. How the end
+is found is in "As built" below.
 
 ### Answers to the open questions (2026-10-28)
 
@@ -233,6 +234,45 @@ into the sketch above.
   for it. Both are additions; no existing call changes. A setter outside the stack becomes a compile error instead of
   a history that disagrees with `Current`, and the mediators keep watching `Current` as they do today. An event alone
   was the fallback, in case the helper could not take the interface.
+
+## As built (2026-10-31)
+
+The stack was built in three commits: the read-only observable, the engine-free history and back chain, and the engine
+side (`Runtime/Services/UI/Stack/Toolkit/`). Where the sketch left a choice or the build found something, this is what
+was chosen and why:
+
+- **One service, both interfaces.** `ScreenStack` implements `IScreenStack` and `IBackRouter` and is bound with
+  `builder.BindServiceInterfacesAndSelfTo<ScreenStack>()`, so a context never has a stack without its router or a
+  router without its stack.
+- **Contexts and the key.** A press must have one handler across contexts too. A `ScreenStack` whose parent context
+  resolves an `IBackRouter` joins that router's chain as a `BeforeScreens` step: its own steps and screens, without its
+  `AtRoot` behaviour. A child context's screens therefore hear back before the parent's, and only the router at the
+  top reads the key and has a root behaviour. A second stack in an unrelated context (no common parent) logs an error
+  and does not read the key; the fix is to bind the stack in a common parent context.
+- **The key is read by the router's own driver, not by `ITickService`.** `TickService` stops ticking while
+  `IsPaused`, and ChipCrisis pauses it while a sheet is open; back must still close that sheet. The router keeps a
+  `[Nexus_BackKey]` object whose `Update` polls once per frame, and destroys it when its context is disposed. Without
+  a bound `IInputService` it logs a warning, and `IBackRouter.Press()` still runs the chain.
+- **The end of a transition is timed, not an event.** `TransitionEndEvent` comes only for a transition that ran: none
+  when a transition is removed before it completes (Unity's API documentation of the event), and none when no
+  transition was created (`TransitionRunEvent`) because no value changed, as for a root whose opacity already has its
+  shown value. Waiting for the event could wait forever.
+  The stack waits for the longest duration plus delay in the root's resolved style, on the panel's scheduler (unscaled
+  time). A root that has not been styled yet, the frame its document appears, has no transition and shows at once.
+  A show or hide that supersedes a running one completes the earlier task at once. The screen on top, shown again
+  with other arguments, animates nothing and completes at once. A call made from a screen's handler during another
+  call gets a completed task, because its screens are told after it returns, by the call that is running; that
+  call's task covers them (harness SS10).
+- **Reduced motion** sets the root's inline `transition-duration` to 0 and clears it when turned off, so a duration a
+  game set inline on the root is cleared then.
+- **Hiding never deactivates.** A screen that is deactivated unbinds, as every `View` does, and leaves its context's
+  history; the screen beneath it is shown, and its root is hidden, also when only the screen's component was disabled
+  and its document still shows. Enabled again, it registers again, hidden. A screen whose root is not there
+  yet when it binds (Gigawatt's shape: a subtree of a document on another GameObject that enables after it) gets its
+  state on the next frame. An override of `OnBind` calls `base.OnBind`, which registers it.
+- **Compile check (verification plan, item 2).** `UnityStubs.cs` gains no UIElements types: the four files under
+  `Toolkit/` join the files the harness leaves out and are compiled by `tools/nexus-compile-check`. The core's
+  `package.json` declares `com.unity.modules.uielements` 1.0.0, which it now uses.
 
 ## Verification plan for the stack cycle
 
@@ -258,7 +298,10 @@ into the sketch above.
    - open, close and back;
    - a context with two Roots, where each screen reaches its own context's stack (#76's done-when);
    - a transition completes the `ValueTask`;
-   - a screen without a transition completes at once.
+   - a screen without a transition completes at once;
+   - one press reaches one handler across a parent and a child context;
+   - a deactivated screen leaves the history;
+   - the back key closes a screen while `TickService` is paused.
 4. **Device** (2311DRK48G):
    - `KEYCODE_BACK` through the chain in a development player: sheet, then modal, then root;
    - the input-path capture from decision 7.

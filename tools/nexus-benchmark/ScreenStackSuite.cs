@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Nexus.Core.Services;
 using UnityEngine;
 
@@ -29,13 +30,22 @@ namespace NexusBench
             public bool BlocksBack { get; set; }
             public Func<bool> BackHandler = () => false;
             public Action Shown;
+            public TaskCompletionSource<bool> ShowTransition, HideTransition;
             public bool IsShown;
             public object Args;
             public int Shows, Hides, Backs;
 
             public bool OnBack() { Backs++; return BackHandler(); }
-            public void Show(object args) { IsShown = true; Args = args; Shows++; Shown?.Invoke(); }
-            public void Hide() { IsShown = false; Hides++; }
+            public ValueTask Show(object args)
+            {
+                IsShown = true; Args = args; Shows++; Shown?.Invoke();
+                return ShowTransition == null ? default : new ValueTask(ShowTransition.Task);
+            }
+            public ValueTask Hide()
+            {
+                IsShown = false; Hides++;
+                return HideTransition == null ? default : new ValueTask(HideTransition.Task);
+            }
         }
 
         internal sealed class FakeInput : IInputService
@@ -66,6 +76,8 @@ namespace NexusBench
             failures += AssertPass("SS6. AScreen_IsShownWhileItHoldsTheLastEntryOfItsLayer", Visibility);
             failures += AssertPass("SS7. AStepRemovedDuringAPress_SkipsNothingAndRepeatsNothing", StepsRemovedDuringAPress);
             failures += AssertPass("SS8. AScreenThatChangesTheHistoryWhenShown_LeavesItConsistent", ReentrantShow);
+            failures += AssertPass("SS9. AChildContextsChain_RunsFirstInItsParents_WithoutItsOwnRootBehaviour", ChildChain);
+            failures += AssertPass("SS10. ACallFromAShowHandler_KeepsTheTransitionsOfTheCallThatIsRunning", NestedCallTransitions);
 
             if (failures == 0)
                 Console.WriteLine("\n[ScreenStack] ALL SCREEN STACK TESTS PASSED ✓");
@@ -264,6 +276,26 @@ namespace NexusBench
             return ok & Check(string.Join(",", ran) == "b", "after removal steps ran as " + string.Join(",", ran));
         }
 
+        // Two Roots, the child's chain a BeforeScreens step of the parent's (the router pairs them so): a press reaches one
+        // handler, the child's screens before the parent's, and only the parent's root behaviour runs.
+        private static bool ChildChain()
+        {
+            var (app, a) = NewHistory(typeof(World), typeof(Settings));
+            var (shop, s) = NewHistory(typeof(Camp), typeof(Dialog));
+            int appRoot = 0, shopRoot = 0;
+            var parent = new BackChain(app.Back, () => 0, () => appRoot++, null) { AtRoot = RootBack.MoveTaskToBack };
+            var child = new BackChain(shop.Back, () => 0, () => shopRoot++, null) { AtRoot = RootBack.MoveTaskToBack };
+            parent.AddStep(child.PressBelowRoot, Nexus.Core.Services.BackOrder.BeforeScreens);
+            app.ReplaceRoot(typeof(World), null);
+            app.Push(typeof(Settings), null);
+            shop.ReplaceRoot(typeof(Camp), null);
+            shop.Push(typeof(Dialog), null);
+            bool ok = Check(parent.Press() && shop.Depth == 1 && app.Depth == 2, "the first press did not pop only the child's dialog");
+            ok &= Check(parent.Press() && shop.Depth == 1 && app.Depth == 1 && s[typeof(Camp)].Backs == 1, "with the child at its root, the press did not reach the parent's screen");
+            ok &= Check(parent.Press() && appRoot == 1, "nothing handled the press and the parent's root behaviour did not run");
+            return ok & Check(shopRoot == 0 && a[typeof(World)].Backs == 1, "the child's root behaviour ran");
+        }
+
         private static bool ReentrantShow()
         {
             var (h, s) = NewHistory(typeof(World), typeof(Settings), typeof(Privacy));
@@ -283,6 +315,40 @@ namespace NexusBench
                 & Check(h.Depth == 3 && h.Current.Value.Screen == typeof(Privacy), "the push from the show handler was lost")
                 & Check(s[typeof(Privacy)].IsShown && !s[typeof(Settings)].IsShown && !s[typeof(World)].IsShown, "the screens shown do not match the history")
                 & Check(h.Back() == BackResult.Popped && s[typeof(Settings)].IsShown && !s[typeof(Privacy)].IsShown, "Back after the re-entrant push did not show Settings again");
+        }
+
+        // ScreenStack's calls: a sync one changes the history then drops the transitions; an async one drops, changes and
+        // takes them. World's hide starts before Settings' show handler pushes Privacy; the outer push waits for it.
+        private static bool NestedCallTransitions()
+        {
+            bool ok = true;
+            foreach (bool nestedAsync in new[] { false, true })
+            {
+                var (h, s) = NewHistory(typeof(World), typeof(Settings), typeof(Privacy));
+                h.ReplaceRoot(typeof(World), null);
+                var worldHidden = s[typeof(World)].HideTransition = new TaskCompletionSource<bool>();
+                var privacyShown = s[typeof(Privacy)].ShowTransition = new TaskCompletionSource<bool>();
+                bool nestedComplete = false;
+                s[typeof(Settings)].Shown = () =>
+                {
+                    if (s[typeof(Settings)].Shows > 1) return;
+                    h.DropTransitions();
+                    h.Push(typeof(Privacy), null);
+                    var nested = h.TakeTransitions();
+                    if (!nestedAsync) h.DropTransitions();
+                    nestedComplete = nested.IsCompleted;
+                };
+                h.DropTransitions();
+                h.Push(typeof(Settings), null);
+                var outer = h.TakeTransitions();
+                string call = nestedAsync ? "an async" : "a sync";
+                ok &= Check(nestedComplete, call + " call from the handler did not get a completed task");
+                privacyShown.SetResult(true);
+                ok &= Check(!outer.IsCompleted, "with " + call + " call from the handler, the outer task did not wait for World's hide");
+                worldHidden.SetResult(true);
+                ok &= Check(outer.IsCompleted, "with " + call + " call from the handler, the outer task did not complete with both transitions");
+            }
+            return ok;
         }
     }
 }

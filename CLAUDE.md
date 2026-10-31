@@ -11,7 +11,7 @@ must be current, consistent and verifiable. Read this file before changing code 
 | `Nexus/Packages/com.nexus.core/` | The product. `Runtime/` (player code), `Editor/` (tools, codegen, validation), `Tests/Editor` + `Tests/Runtime` (Unity NUnit), `Samples~/` (3 importable samples), `SourceGenerator~/` (Roslyn binder generator), `SourceGenerators~/` (its built analyzer DLL), `docs/` (user documentation), `CHANGELOG.md` (the changelog of the core and its adapter packages) |
 | `Nexus/` | Unity 6000.5.6f1 development project hosting the package. `Assets/Scripts/Game/Samples` holds the wizard's canonical generated files; `Assets/Scripts/Nexus/` holds the git-ignored generated binder |
 | `tools/nexus-benchmark/` | .NET host harness; compiles the runtime against stubs (`UnityStubs.cs`, `GeneratorStubs.cs`) and runs every proof suite. Runs as the git pre-commit hook |
-| `tools/nexus-compile-check/` | Compiles every runtime file, the five the harness leaves out included, against the installed editor's engine modules |
+| `tools/nexus-compile-check/` | Compiles every runtime file, the files the harness leaves out included, against the installed editor's engine modules |
 | `tools/nexus-comparison/` | Pinned VContainer/Zenject/Reflex DI comparison (host, Unity Mono player and Android IL2CPP device) |
 | `tools/nexus-consumer/` | Clean UPM consumer gate: packs the tarball, fresh project, sample import, tests, player |
 | `tools/unity-verify/` | Player builds of the development project (`NexusVerify.NexusVerifyBuild.*`) |

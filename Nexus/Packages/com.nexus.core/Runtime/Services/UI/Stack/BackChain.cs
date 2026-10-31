@@ -59,9 +59,11 @@ namespace Nexus.Core.Services
 
         public bool Press()
         {
-            if (RunSteps(_before)) return Handled();
-            if (_screens != null && _screens() != BackResult.AtRoot) return Handled();
-            if (RunSteps(_after)) return Handled();
+            if (PressBelowRoot())
+            {
+                _quitUntil = double.NegativeInfinity; // a press handled before the root ends a pending "press again"
+                return true;
+            }
             switch (AtRoot)
             {
                 case RootBack.MoveTaskToBack:
@@ -83,12 +85,13 @@ namespace Nexus.Core.Services
             }
         }
 
-        // A press handled before the root ends a pending "press again".
-        private bool Handled()
-        {
-            _quitUntil = double.NegativeInfinity;
-            return true;
-        }
+        /// <summary>
+        /// The press without the root behaviour: the steps and the screens. A child context's chain runs as a
+        /// <see cref="BackOrder.BeforeScreens"/> step of its parent's chain through this, so only the chain that polls
+        /// has a root behaviour.
+        /// </summary>
+        public bool PressBelowRoot() =>
+            RunSteps(_before) || (_screens != null && _screens() != BackResult.AtRoot) || RunSteps(_after);
 
         // Runs a copy, most recently added first, so a step that removes itself or another one skips nothing and
         // repeats nothing; a step removed during the press is not run. The copy is made only on a press.

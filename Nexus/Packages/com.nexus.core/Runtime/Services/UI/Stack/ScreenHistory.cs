@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 
 namespace Nexus.Core.Services
 {
@@ -10,9 +11,10 @@ namespace Nexus.Core.Services
         bool BlocksBack { get; }
         /// <summary>First call of a back press while the screen is on top; true = handled, nothing is popped.</summary>
         bool OnBack();
-        /// <summary>The screen becomes shown, or is shown again with other arguments.</summary>
-        void Show(object args);
-        void Hide();
+        /// <summary>The screen becomes shown, or is shown again with other arguments; completes when its transition ends.</summary>
+        ValueTask Show(object args);
+        /// <summary>Completes when the screen's transition ends; already complete without one.</summary>
+        ValueTask Hide();
     }
 
     /// <summary>
@@ -26,6 +28,7 @@ namespace Nexus.Core.Services
         private readonly Dictionary<Type, IStackScreen> _screens = new Dictionary<Type, IStackScreen>();
         private readonly List<ScreenRoute> _entries = new List<ScreenRoute>();
         private readonly List<ScreenRoute> _shown = new List<ScreenRoute>();
+        private readonly List<ValueTask> _transitions = new List<ValueTask>();
         private bool _applying;
 
         public ObservableProperty<ScreenRoute> Current { get; } = new ObservableProperty<ScreenRoute>();
@@ -90,6 +93,36 @@ namespace Nexus.Core.Services
             return BackResult.Popped;
         }
 
+        /// <summary>
+        /// Forgets the transitions started so far, before an operation whose own transitions are awaited. A call made
+        /// from a screen's handler while a change is being applied forgets nothing: the running change collects the
+        /// transitions of both.
+        /// </summary>
+        public void DropTransitions()
+        {
+            if (!_applying) _transitions.Clear();
+        }
+
+        /// <summary>
+        /// The transitions started since <see cref="DropTransitions"/>, as one task; already complete without any. A call
+        /// made from a screen's handler gets a completed task: its screens are told after it returns, by the running
+        /// change, whose task covers them.
+        /// </summary>
+        public ValueTask TakeTransitions()
+        {
+            if (_applying || _transitions.Count == 0) return default;
+            if (_transitions.Count == 1)
+            {
+                var only = _transitions[0];
+                _transitions.Clear();
+                return only;
+            }
+            var all = new Task[_transitions.Count];
+            for (int i = 0; i < all.Length; i++) all[i] = _transitions[i].AsTask();
+            _transitions.Clear();
+            return new ValueTask(Task.WhenAll(all));
+        }
+
         public bool IsShown(Type type)
         {
             for (int i = 0; i < _shown.Count; i++)
@@ -136,7 +169,7 @@ namespace Nexus.Core.Services
                 if (TargetFor(_screens[_shown[i].Screen].Layer) == _shown[i].Screen) continue;
                 var hidden = _shown[i];
                 _shown.RemoveAt(i);
-                _screens[hidden.Screen].Hide();
+                Track(_screens[hidden.Screen].Hide());
                 return true;
             }
             for (int i = _entries.Count - 1; i >= 0; i--)
@@ -146,10 +179,15 @@ namespace Nexus.Core.Services
                 int at = IndexOfShown(route.Screen);
                 if (at >= 0 && _shown[at] == route) continue;
                 if (at >= 0) _shown[at] = route; else _shown.Add(route);
-                _screens[route.Screen].Show(route.Args);
+                Track(_screens[route.Screen].Show(route.Args));
                 return true;
             }
             return false;
+        }
+
+        private void Track(ValueTask transition)
+        {
+            if (!transition.IsCompletedSuccessfully) _transitions.Add(transition);
         }
 
         private Type TargetFor(UILayer layer)
