@@ -17,7 +17,7 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ## After 0.5.0 (not released yet)
 
-The [changelog](CHANGELOG.md)'s Unreleased section lists every change since 0.5.0. This one needs a
+The [changelog](CHANGELOG.md)'s Unreleased section lists every change since 0.5.0. These need a
 step in the game:
 
 #### The FSM and the DOTS bridge are packages of their own
@@ -29,6 +29,12 @@ package at the same commit as `com.nexus.core`, for example
 `"com.nexus.fsm": "https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.fsm#<commit>"`,
 and adds `com.nexus.fsm` (or `com.nexus.dots`) to the references of each assembly definition that names them;
 an assembly that referenced `com.nexus.core.dots` references `com.nexus.dots` instead.
+
+#### `Prewarm` and `PrewarmAsync` take no parent
+
+`IObjectPoolService.Prewarm(prefab, count, parent)` and `PrewarmAsync(prefab, count, instancesPerFrame, parent)` lost
+their last parameter (issue #184): it moved the pool's root, and the inactive instances died with that object. Remove
+the argument. To place the spawned objects, pass the parent to `Spawn`.
 
 ---
 

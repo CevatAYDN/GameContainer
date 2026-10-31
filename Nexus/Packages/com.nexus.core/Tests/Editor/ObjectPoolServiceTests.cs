@@ -1,6 +1,8 @@
+using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
-using System.Threading.Tasks;
 using UnityEngine;
+using UnityEngine.TestTools;
 using Nexus.Core.Services;
 
 namespace Nexus.Editor.Tests
@@ -119,6 +121,86 @@ namespace Nexus.Editor.Tests
                 "Re-spawn must advance the generation so stale DespawnAfter timers are ignored.");
 
             _poolService.Despawn(respawned);
+        }
+        private T Field<T>(string name) => (T)typeof(ObjectPoolService)
+            .GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            .GetValue(_poolService);
+
+        // Issue #184: the first Spawn's parent became the pool root, so the despawned instances died with the level
+        // and the next Spawn popped a destroyed object (MissingReferenceException).
+        [Test]
+        public void ThePoolKeepsItsInstances_WhenTheFirstSpawnsParentIsDestroyed()
+        {
+            var level = new GameObject("Level");
+            var first = _poolService.Spawn(_prefab, default, default, level.transform);
+            Assert.AreSame(level.transform, first.transform.parent, "the spawn parent applies to the active instance");
+            _poolService.Despawn(first);
+            Object.DestroyImmediate(level);
+
+            GameObject second = null;
+            Assert.DoesNotThrow(() => second = _poolService.Spawn(_prefab));
+            Assert.AreSame(first, second, "the despawned instance waited under the service's root, not under the level");
+            _poolService.Despawn(second);
+        }
+
+        // Issue #184 (and the 2026-10-31 review's B2): an instance destroyed while it waited in the pool poisoned it,
+        // because every Spawn popped it again.
+        [Test]
+        public void Spawn_SkipsAnInstanceDestroyedWhileItWaitedInThePool()
+        {
+            var first = _poolService.Spawn(_prefab);
+            _poolService.Despawn(first);
+            Object.DestroyImmediate(first);
+
+            GameObject second = null;
+            Assert.DoesNotThrow(() => second = _poolService.Spawn(_prefab));
+            Assert.IsTrue(second != null && second.activeSelf);
+            _poolService.Despawn(second);
+        }
+
+        // Issue #184: active instances destroyed with their parent stayed in the pool's maps for good.
+        [Test]
+        public void ActiveInstancesDestroyedWithTheirParent_AreUnregistered_WhenThePoolGrows()
+        {
+            var level = new GameObject("Level");
+            for (int i = 0; i < 3; i++) _poolService.Spawn(_prefab, default, default, level.transform);
+            Object.DestroyImmediate(level);
+
+            var fresh = _poolService.Spawn(_prefab);
+
+            Assert.AreEqual(1, Field<Dictionary<Object, long>>("_spawnGenerations").Count);
+            Assert.AreEqual(1, Field<System.Collections.IDictionary>("_poolsByInstanceId").Count);
+            _poolService.Despawn(fresh);
+        }
+
+        // Issue #184: Prewarm beyond the per-pool cap instantiated every instance and destroyed the surplus, silently.
+        [Test]
+        public void Prewarm_BeyondThePoolCap_KeepsTheCapAndWarns()
+        {
+            LogAssert.Expect(LogType.Warning, new Regex(@"Prewarm.*'TestPrefab'.*130.*128"));
+            _poolService.Prewarm(_prefab, 130);
+
+            var poolRoot = _manualRoot.transform.Find("Pool_TestPrefab");
+            Assert.AreEqual(128, poolRoot.childCount);
+        }
+
+        // Issue #184 (and the review's B4): DespawnAfter before InitializeAsync or after Dispose did nothing, silently,
+        // so the object stayed in the scene.
+        [Test]
+        public void DespawnAfter_WithoutAnInitializedService_DespawnsNowAndWarns()
+        {
+            var uninitialized = new ObjectPoolService();
+            var instance = uninitialized.Spawn(_prefab);
+            try
+            {
+                LogAssert.Expect(LogType.Warning, new Regex(@"DespawnAfter.*'TestPrefab'.*despawned now"));
+                uninitialized.DespawnAfter(instance, 5f);
+                Assert.IsFalse(instance.activeSelf);
+            }
+            finally
+            {
+                uninitialized.ClearAllPools();
+            }
         }
     }
 }

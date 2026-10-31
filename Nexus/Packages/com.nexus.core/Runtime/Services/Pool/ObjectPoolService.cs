@@ -20,17 +20,32 @@ namespace Nexus.Core.Services
 
     public interface IObjectPoolService
     {
-        void Prewarm(GameObject prefab, int count, Transform parent = null);
+        /// <summary>
+        /// Creates up to <paramref name="count"/> inactive instances. A pool keeps at most 128; a larger count is
+        /// cut to what the pool can keep, with a warning.
+        /// </summary>
+        void Prewarm(GameObject prefab, int count);
         /// <summary>
         /// Frame-budgeted prewarm. Spreads instantiation across multiple frames
         /// (at most <paramref name="instancesPerFrame"/> per frame) so a large pool no longer
         /// stalls the main thread in a single frame on level load. The returned task completes
-        /// when all <paramref name="count"/> instances are pooled (or the context is disposed).
+        /// when the instances are pooled, is cancelled when the service is disposed, and fails when an
+        /// instance cannot be created. The count is cut to what the pool can keep, as in <see cref="Prewarm"/>.
         /// </summary>
-        System.Threading.Tasks.Task PrewarmAsync(GameObject prefab, int count, int instancesPerFrame = 8, Transform parent = null);
+        System.Threading.Tasks.Task PrewarmAsync(GameObject prefab, int count, int instancesPerFrame = 8);
+        /// <summary>
+        /// Takes an instance from the prefab's pool, or creates one. <paramref name="parent"/> is the active
+        /// instance's parent; despawned instances wait under the service's own root, so a destroyed parent
+        /// does not take the pool with it.
+        /// </summary>
         GameObject Spawn(GameObject prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null);
         T Spawn<T>(T prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null) where T : Component;
         void Despawn(GameObject instance);
+        /// <summary>
+        /// Despawns a live instance after <paramref name="seconds"/>, unless it was despawned (and maybe spawned
+        /// again) meanwhile. An instance already back in its pool is refused with a warning. Without the
+        /// initialized service there is no timer, so the instance is despawned at once, with a warning.
+        /// </summary>
         void DespawnAfter(GameObject instance, float seconds);
         void ClearPool(GameObject prefab);
         void ClearAllPools();
@@ -51,11 +66,11 @@ namespace Nexus.Core.Services
             public HashSet<GameObject> Active { get; } = new();
             public Transform RootTransform { get; }
 
-            public PoolData(GameObject prefab, Transform parent)
+            public PoolData(GameObject prefab, Transform serviceRoot)
             {
                 Prefab = prefab;
                 var poolRoot = new GameObject($"Pool_{prefab.name}");
-                poolRoot.transform.SetParent(parent);
+                poolRoot.transform.SetParent(serviceRoot);
                 RootTransform = poolRoot.transform;
             }
         }
@@ -79,8 +94,10 @@ namespace Nexus.Core.Services
         {
             internal static readonly ObjectReferenceComparer Instance = new();
             public bool Equals(UnityEngine.Object x, UnityEngine.Object y) => ReferenceEquals(x, y);
+            // ReferenceEquals, not ==: Unity's == calls a destroyed object null, which hashed it as 0 and lost its
+            // entry (issue #184).
             public int GetHashCode(UnityEngine.Object obj) =>
-                obj == null ? 0 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
+                ReferenceEquals(obj, null) ? 0 : System.Runtime.CompilerServices.RuntimeHelpers.GetHashCode(obj);
         }
         private Transform _masterPoolRoot;
         private GameObject _masterRootObject;
@@ -103,10 +120,24 @@ namespace Nexus.Core.Services
             return default;
         }
 
-        public void Prewarm(GameObject prefab, int count, Transform parent = null)
+        public void Prewarm(GameObject prefab, int count)
         {
             if (prefab == null || count <= 0) return;
-            var pool = GetOrCreatePool(prefab, parent);
+            var pool = GetOrCreatePool(prefab);
+            AddInactive(pool, KeptCount(pool, count));
+        }
+
+        // The cap used to apply per instance: Prewarm(prefab, 500) created 500 and destroyed 372, silently (issue #184).
+        private static int KeptCount(PoolData pool, int count)
+        {
+            int room = Math.Max(0, MaxInactivePerPool - pool.Inactive.Count);
+            if (count > room)
+                NexusLog.WarnAlways($"[Nexus] ObjectPoolService.Prewarm of '{pool.Prefab.name}' asked for {count} instances; a pool keeps {MaxInactivePerPool}, so {room} are created.");
+            return Math.Min(count, room);
+        }
+
+        private void AddInactive(PoolData pool, int count)
+        {
             for (int i = 0; i < count; i++)
             {
                 var instance = CreateInstance(pool);
@@ -117,7 +148,7 @@ namespace Nexus.Core.Services
                 }
                 else
                 {
-                    SafeDestroyUtility.SafeDestroy(instance);
+                    SafeDestroyUtility.SafeDestroy(instance); // despawns filled the pool while an async prewarm ran
                 }
             }
         }
@@ -126,7 +157,7 @@ namespace Nexus.Core.Services
         // frame — an 800-object warm-up is a 50-200 ms main-thread spike exactly at level
         // transition, the worst possible moment. PrewarmAsync spreads the work across
         // frames via the same PoolTimerRunner coroutine host DespawnAfter already uses.
-        public System.Threading.Tasks.Task PrewarmAsync(GameObject prefab, int count, int instancesPerFrame = 8, Transform parent = null)
+        public System.Threading.Tasks.Task PrewarmAsync(GameObject prefab, int count, int instancesPerFrame = 8)
         {
             if (prefab == null || count <= 0) return System.Threading.Tasks.Task.CompletedTask;
             if (instancesPerFrame <= 0) instancesPerFrame = 1;
@@ -135,11 +166,13 @@ namespace Nexus.Core.Services
             // synchronous path so the pool is still warmed rather than silently skipped.
             if (_masterRootObject == null || !_masterRootObject.activeInHierarchy)
             {
-                Prewarm(prefab, count, parent);
+                Prewarm(prefab, count);
                 return System.Threading.Tasks.Task.CompletedTask;
             }
 
-            var pool = GetOrCreatePool(prefab, parent);
+            var pool = GetOrCreatePool(prefab);
+            count = KeptCount(pool, count);
+            if (count == 0) return System.Threading.Tasks.Task.CompletedTask;
             var tcs = new System.Threading.Tasks.TaskCompletionSource<bool>(System.Threading.Tasks.TaskCreationOptions.RunContinuationsAsynchronously);
             _pendingPrewarms.Add(tcs);
             var runner = _masterRootObject.GetComponent<PoolTimerRunner>() ?? _masterRootObject.AddComponent<PoolTimerRunner>();
@@ -156,43 +189,49 @@ namespace Nexus.Core.Services
                 int created = 0;
                 while (created < count)
                 {
-                    int budget = instancesPerFrame;
-                    while (budget-- > 0 && created < count)
-                    {
-                        var instance = CreateInstance(pool);
-                        instance.SetActive(false);
-                        if (pool.Inactive.Count < MaxInactivePerPool)
-                        {
-                            pool.Inactive.Push(instance);
-                        }
-                        else
-                        {
-                            SafeDestroyUtility.SafeDestroy(instance);
-                        }
-                        created++;
-                    }
+                    int batch = Math.Min(instancesPerFrame, count - created);
+                    if (!TryAddInactive(pool, batch, tcs)) yield break;
+                    created += batch;
                     yield return null; // next frame
                 }
             }
             finally
             {
-                tcs.TrySetResult(true);
+                tcs.TrySetResult(true); // a no-op once TryAddInactive failed the task
                 _pendingPrewarms.Remove(tcs);
+            }
+        }
+
+        // An iterator cannot catch around its yields. PrewarmAsync used to complete successfully after an instance
+        // could not be created (issue #184).
+        private bool TryAddInactive(PoolData pool, int count, System.Threading.Tasks.TaskCompletionSource<bool> tcs)
+        {
+            try
+            {
+                AddInactive(pool, count);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogException(ex);
+                tcs.TrySetException(ex);
+                return false;
             }
         }
 
         public GameObject Spawn(GameObject prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null)
         {
             if (prefab == null) return null;
-            var pool = GetOrCreatePool(prefab, parent);
-            GameObject instance;
+            var pool = GetOrCreatePool(prefab);
+            GameObject instance = null;
 
-            if (pool.Inactive.Count > 0)
-            {
+            // An instance destroyed while it waited (by the game, or with a scene) is dropped, not handed out (issue #184).
+            while (instance == null && pool.Inactive.Count > 0)
                 instance = pool.Inactive.Pop();
-            }
-            else
+
+            if (instance == null)
             {
+                ForgetDestroyedActive(pool);
                 instance = CreateInstance(pool);
             }
 
@@ -241,7 +280,11 @@ namespace Nexus.Core.Services
 
         public void Despawn(GameObject instance)
         {
-            if (instance == null) return;
+            if (instance == null)
+            {
+                if (!ReferenceEquals(instance, null)) Forget(instance); // destroyed while it was active
+                return;
+            }
             var instanceKey = GetKey(instance);
 
             if (!_poolsByInstanceId.TryGetValue(instanceKey, out var pool))
@@ -313,14 +356,25 @@ namespace Nexus.Core.Services
             var instanceKey = GetKey(instance);
             if (!_spawnGenerations.TryGetValue(instanceKey, out long generation))
             {
+                // Taken for an unpooled object, the timer later despawned whatever live object reused it (issue #184).
+                if (IsPooledInactive(instance))
+                {
+                    NexusRuntime.Logger?.LogWarning(
+                        $"[Nexus] ObjectPoolService.DespawnAfter was called for '{instance.name}', which is already back in its pool; no timer was started.");
+                    return;
+                }
                 generation = -1L; // Unpooled GameObject fallback
             }
 
-            if (_masterRootObject != null && _masterRootObject.activeInHierarchy)
+            if (_masterRootObject == null || !_masterRootObject.activeInHierarchy)
             {
-                var runner = _masterRootObject.GetComponent<PoolTimerRunner>() ?? _masterRootObject.AddComponent<PoolTimerRunner>();
-                runner.StartCoroutine(DespawnCoroutine(instance, instanceKey, generation, seconds));
+                NexusLog.WarnAlways($"[Nexus] ObjectPoolService.DespawnAfter for '{instance.name}' has no timer before InitializeAsync or after Dispose, so it is despawned now.");
+                Despawn(instance);
+                return;
             }
+
+            var runner = _masterRootObject.GetComponent<PoolTimerRunner>() ?? _masterRootObject.AddComponent<PoolTimerRunner>();
+            runner.StartCoroutine(DespawnCoroutine(instance, instanceKey, generation, seconds));
         }
 
         // Cache WaitForSeconds instances per unique delay value to avoid per-call heap allocation.
@@ -359,15 +413,35 @@ namespace Nexus.Core.Services
             }
         }
 
-        private PoolData GetOrCreatePool(GameObject prefab, Transform parent = null)
+        // The pool root is the service's own. It followed the first Spawn's parent, so its instances died with that
+        // parent (issue #184).
+        private PoolData GetOrCreatePool(GameObject prefab)
         {
             var prefabKey = GetKey(prefab);
             if (!_poolsByPrefabId.TryGetValue(prefabKey, out var pool))
             {
-                pool = new PoolData(prefab, parent ?? _masterPoolRoot);
+                pool = new PoolData(prefab, _masterPoolRoot);
                 _poolsByPrefabId[prefabKey] = pool;
             }
             return pool;
+        }
+
+        // Active instances destroyed with their parent stayed registered for good (issue #184). Swept when the pool
+        // has to grow, so a spawn from the pool pays nothing.
+        private void ForgetDestroyedActive(PoolData pool)
+        {
+            List<GameObject> destroyed = null;
+            foreach (var active in pool.Active)
+                if (active == null) (destroyed ??= new List<GameObject>()).Add(active);
+            if (destroyed == null) return;
+            foreach (var instance in destroyed) Forget(instance);
+        }
+
+        private void Forget(GameObject destroyed)
+        {
+            if (_poolsByInstanceId.TryGetValue(destroyed, out var pool)) pool.Active.Remove(destroyed);
+            _poolsByInstanceId.Remove(destroyed);
+            _spawnGenerations.Remove(destroyed);
         }
 
         /// <summary>
