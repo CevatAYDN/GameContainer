@@ -26,7 +26,7 @@ puts the family's controller behind the same service.
      `com.nexus.ads.admob`: the bootstrap then runs Google UMP before LevelPlay, and the game's AdMob App
      ID stays in Assets > Google Mobile Ads > Settings (issue #63);
    - AdMob: `com.nexus.ads.admob` (its `Nexus.Ads.AdMob` assembly is the family provider) plus
-     `com.google.ads.mobile` 11.3.0 or newer from OpenUPM (11.6.0 brings Unity's External Dependency
+     `com.google.ads.mobile` 11.6.0 or newer from OpenUPM (it brings Unity's External Dependency
      Manager as its own dependency).
 
    UPM does not install a git package's dependencies, so each one is listed by hand.

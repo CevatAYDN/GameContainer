@@ -26,7 +26,7 @@
     "versionDefines": [
         {
             "name": "com.unity.services.levelplay",
-            "expression": "9.0.0",
+            "expression": "9.5.1",
             "define": "NEXUS_LEVELPLAY"
         }
     ],

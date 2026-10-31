@@ -28,7 +28,7 @@
     "versionDefines": [
         {
             "name": "com.google.ads.mobile",
-            "expression": "11.3.0",
+            "expression": "11.6.0",
             "define": "NEXUS_ADMOB"
         },
         {

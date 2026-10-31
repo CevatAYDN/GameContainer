@@ -12,7 +12,7 @@ using UnityEngine;
 namespace Nexus.Ads.AdMob
 {
     /// <summary>
-    /// Google AdMob (Google Mobile Ads Unity plugin 11.3.0+, written against 11.6.0) as the core's
+    /// Google AdMob (Google Mobile Ads Unity plugin 11.6.0+) as the core's
     /// <see cref="IAdProvider"/>, with Google's User Messaging Platform (<see cref="UmpConsentFlow"/>) as its
     /// <see cref="IConsentFlow"/>; the package also registers that flow for the other mediations. The age treatment (child-directed or under the age of
     /// consent: <c>AgeRestrictedTreatment.Child</c>, which replaced the deprecated TFCD and TFUA tags in 11.3.0)

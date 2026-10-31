@@ -7,7 +7,7 @@
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.ads/docs/POLICY_COMPLIANCE.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {
-    "com.unity.ugui": "2.0.0"
+    "com.unity.ugui": "2.6.0"
   },
   "samples": [
     {

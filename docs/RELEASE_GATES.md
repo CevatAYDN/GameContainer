@@ -47,17 +47,17 @@ One row per dependency (#138; the rule is in `CLAUDE.md`, Dependencies). Minimum
 | Dependency | Declared minimum | Proven | Newest stable | Decision |
 |---|---|---|---|---|
 | `unity` (the editor) | 6000.6 (`package.json` `unity`) | 6000.6.7f1 (`editor-6000.6.7f1/`: the first open, EditMode, PlayMode and the compile check; 6000.5.6f1 ran every gate on `17d31d0`) | 6000.6.7f1, the newest patch of Unity's Supported stream (2026-10-21; the 6000.5 stream ended at 6000.5.11f1 on 2026-09-02) | The other gates run on 6000.6.7f1 in the cycle on the next target, and the four gate-11 games move to it with their re-pin, one issue each (the owner, 2026-10-31, #139) |
-| `com.google.ads.mobile` | 11.3.0 (asmdef) | 11.6.0 (`admob-20261024`, `admob-20261028`) | 11.6.0 (2026-10-13) | No run ever used 11.3.0, so the minimum becomes 11.6.0 |
-| `com.unity.services.levelplay` | 9.0.0 (asmdef) | 9.5.1 (`levelplay-20261024`) | 9.6.0 (2026-10-28) | Proven again on 9.6.0 in the cycle on the next target, #125's test included; no run ever used 9.0.0, so the minimum becomes the proven version |
-| `com.google.firebase` (app, analytics, crashlytics, remote config) | 14.0.0 (asmdef) | 14.0.0 (`firebase-20261027`) | 14.1.0 (2026-10-23) | Proven again on 14.1.0 in the cycle on the next target |
+| `com.google.ads.mobile` | 11.6.0 (asmdef) | 11.6.0 (`admob-20261024`, `admob-20261028`; on 6000.6.7f1 `minimums-20261031`: EditMode 71 / 71 / 0 / 0, PlayMode 16 / 16 / 0 / 0) | 11.6.0 (2026-10-13) | |
+| `com.unity.services.levelplay` | 9.5.1 (asmdef) | 9.6.0 (`levelplay-20261031`; with the 9.5.1 expression `minimums-20261031`: EditMode 78 / 78 / 0 / 0, PlayMode 16 / 16 / 0 / 0; the phone runs of `ads-device-20261031`); 9.5.1 (`levelplay-20261024`, the phone runs to 2026-10-30) | 9.6.0 (2026-10-28) | The minimum is the oldest version a run used, which the games run. For both, LevelPlay's installer takes the native SDK 9.7.0, which filled no ad on the phone where 9.6.0 did (#146) |
+| `com.google.firebase` (app, analytics, crashlytics, remote config) | 14.0.0 (asmdef) | 14.1.0 (`firebase-20261031`: `com.nexus.firebase` EditMode 122 / 122 / 0 / 0, 0 `warning CS`); 14.0.0 (`firebase-20261027`, `firebase-122`) | 14.1.0 (2026-10-23) | |
 | `com.unity.purchasing` | 5.4.4 (`com.nexus.iap.unity` `package.json` and its two asmdefs) | 5.4.4 (`iap-20261028`) | 5.4.4 (2026-10-03) | |
 | `com.unity.inputsystem` | 1.20.0 (core `package.json` and asmdef) | 1.20.1 (development project; 6000.6.7f1 took it at the first open; 1.20.0 ran every gate on `17d31d0`) | 1.20.1 (2026-10-05) | |
-| `com.unity.collections` | 1.0.0 (`com.nexus.dots` asmdef) | 6.6.0, the editor's built-in package (6.5.0 on 6000.5.6f1) | set by the editor | The asmdef expression, which no run used, becomes the proven version |
-| `com.unity.ugui` | 2.0.0 (core and `com.nexus.ads` `package.json`) | 2.6.0, the editor's built-in package (2.5.0 on 6000.5.6f1) | set by the editor | No run ever used 2.0.0, so the dependency becomes the proven version |
+| `com.unity.collections` | 6.6.0 (`com.nexus.dots` asmdef) | 6.6.0, the editor's built-in package (6.5.0 on 6000.5.6f1); with the 6.6.0 expression `minimums-20261031` (`com.nexus.dots.tests` PlayMode 3 / 3) | set by the editor | |
+| `com.unity.ugui` | 2.6.0 (core and `com.nexus.ads` `package.json`) | 2.6.0, the editor's built-in package (2.5.0 on 6000.5.6f1) | set by the editor | |
 | `com.unity.profiling.core` | 1.0.3 (core `package.json`) | 1.0.3 (development project) | 1.0.3 (2025-10-02) | |
 | `Microsoft.CodeAnalysis.CSharp` | 4.10.0 (`SourceGenerator~`) | 4.10.0, the compiler of 6000.6.7f1 (the same as 6000.5.6f1's) | set by the editor's compiler: a generator that references a newer version does not load | |
-| `com.google.external-dependency-manager` | none | 1.2.190 (`firebase-20261027`) | 1.2.190 (2026-09-29) | |
-| `com.unity.external-dependency-manager` | none | 2.1.0 (`admob-20261028`, a dependency of Google Mobile Ads 11.6.0) | 2.1.1 (2026-10-07) | Prepare Android adds it without a version, so a game takes the newest; proven again with the provider projects in the cycle on the next target |
+| `com.google.external-dependency-manager` | none | 1.2.190 (`firebase-20261027`, `firebase-20261031`, `minimums-20261031`) | 1.2.190 (2026-09-29) | |
+| `com.unity.external-dependency-manager` | none | 2.1.1 (`minimums-20261031`, beside Google Mobile Ads 11.6.0, which asks for 2.1.0); 2.1.0 (`admob-20261028`) | 2.1.1 (2026-10-07) | Prepare Android adds it without a version, so a game takes the newest |
 | `dotnet` (the SDK of the host tools) | net10.0 | 10.0.301 (the gate machine) | 10.0.403 (2026-10-25) | 10.0.403 on the gate machine before the cycle on the next target |
 | `VContainer` (gate 10) | none | 1.19.0 (pinned commit) | 1.19.0 (2026-07-01) | |
 | `Reflex` (gate 10) | none | 14.4.0 (pinned commit) | 14.4.0 (2026-10-10) | |

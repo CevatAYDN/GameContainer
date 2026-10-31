@@ -12,9 +12,9 @@ before it re-pins.
 
 ## AdMob provider for the ad family
 
-`Nexus.Ads.AdMob` compiles only while both `com.google.ads.mobile` 11.3.0 or newer and `com.nexus.ads`
+`Nexus.Ads.AdMob` compiles only while both `com.google.ads.mobile` 11.6.0 or newer and `com.nexus.ads`
 are installed (assembly definition `versionDefines` `NEXUS_ADMOB` and `NEXUS_ADS`, both in its
-`defineConstraints`), so the package is inert without them. With the plugin installed below 11.3.0 the
+`defineConstraints`), so the package is inert without them. With the plugin installed below 11.6.0 the
 assembly is left out as well, and the validator fails `provider.compiled` with both versions (issue #143).
 Install the plugin from OpenUPM (Prepare Android, below, adds the scoped registry
 `https://package.openupm.com` with the scope `com.google`; 11.6.0 brings Unity's External Dependency
@@ -72,7 +72,7 @@ interstitial ads, mediation setup inside AdMob.
 `UmpAnalyticsConsent` is the `IAnalyticsConsent` the Firebase services read, over Google's consent form
 (issue #87). Bind it with `FirebaseBindings.Bind<UmpAnalyticsConsent>(builder)`; it needs an `IAdService`
 in the context (the bridge's). The assembly `Nexus.Ads.AdMob.Firebase` compiles only while
-`com.google.ads.mobile` 11.3.0+ and `com.nexus.firebase` are installed (`NEXUS_ADMOB`,
+`com.google.ads.mobile` 11.6.0+ and `com.nexus.firebase` are installed (`NEXUS_ADMOB`,
 `NEXUS_ADMOB_FIREBASE`); it needs no Firebase SDK.
 
 - **State** is the User Messaging Platform's consent status. UMP has none in a first session (or after
