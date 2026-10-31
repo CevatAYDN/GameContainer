@@ -41,6 +41,7 @@ namespace Nexus.Iap.Unity
         private readonly HashSet<string> _owned = new();
         private readonly HashSet<string> _deferred = new();
         private Action<PurchaseOutcome> _pending;
+        private string _pendingProductId;   // the product _pending waits for: an order for another product does not answer it (issue #182)
         private Action<bool> _restorePending;
         private Action<bool> _initializePending;
         // Orders granted to the player and sent for confirmation, by transaction id, until the store confirms them (issue #172)
@@ -151,7 +152,7 @@ namespace Nexus.Iap.Unity
 
         private void OnStoreConnected() { _connected = true; Changed?.Invoke(); }
         private void OnStoreDisconnected(StoreConnectionFailureDescription failure) { _connected = false; Warn("Disconnected: " + failure?.Message); Changed?.Invoke(); }
-        private void OnDeferred(DeferredOrder order) { Defer(order, true); Complete(PurchaseOutcome.Pending); }
+        private void OnDeferred(DeferredOrder order) { Defer(order, true); if (Answers(order)) Complete(PurchaseOutcome.Pending); }
         private void OnPurchasesFetchFailed(PurchasesFetchFailureDescription failure) { Warn(Describe(failure)); FinishRestore(false); }
         private void OnProductsFetched(List<Product> products) { _productsFetched = true; _store.FetchPurchases(); FinishInitialize(true); Changed?.Invoke(); }
         private void OnProductsFetchFailed(ProductFetchFailed failure) { _productsFetched = false; Warn(Describe(failure)); FinishInitialize(false); Changed?.Invoke(); }
@@ -170,6 +171,7 @@ namespace Nexus.Iap.Unity
             if (IsOwned(productId)) { onOutcome?.Invoke(PurchaseOutcome.Purchased); return; }
             if (_pending != null) { onOutcome?.Invoke(PurchaseOutcome.Pending); return; }
             _pending = onOutcome;
+            _pendingProductId = productId;
             _store.PurchaseProduct(productId);
         }
 
@@ -178,10 +180,11 @@ namespace Nexus.Iap.Unity
             if (!_connected) { onComplete?.Invoke(false); return; }
             if (_restorePending != null) { onComplete?.Invoke(false); return; }
             _restorePending = onComplete;
+            // A successful restore fetches the purchases itself (Unity IAP's PurchaseService.RestoreTransactions, since 5.0.2), and
+            // that fetch answers the restore; a second fetch here confirmed every pending order twice (issue #182).
             _store.RestoreTransactions((ok, message) =>
             {
-                if (!ok) { Warn("Restore: " + message); FinishRestore(false); return; }
-                _store.FetchPurchases();
+                if (!ok) { Warn("Restore: " + message); FinishRestore(false); }
             });
         }
 
@@ -189,8 +192,9 @@ namespace Nexus.Iap.Unity
         {
             Own(order);
             Track(order);   // before Complete: the game told Purchased sees the purchase as not yet confirmed
-            // The game records ownership before the order is acknowledged with the store.
-            Complete(PurchaseOutcome.Purchased);
+            // The game records ownership before the order is acknowledged with the store. An order for another product (a
+            // deferred payment approved, a promo code) is not the waiting request's answer: it is owned, Changed tells the game.
+            if (Answers(order)) Complete(PurchaseOutcome.Purchased);
             Changed?.Invoke();
             Confirm(order);
         }
@@ -287,6 +291,7 @@ namespace Nexus.Iap.Unity
         private void OnFailed(FailedOrder failed)
         {
             Warn($"Purchase failed: {failed.FailureReason} {failed.Details}");
+            if (!Answers(failed)) return;   // another product's payment failed (a deferred one, for example): the waiting request goes on
             Complete(failed.FailureReason == PurchaseFailureReason.UserCancelled ? PurchaseOutcome.Cancelled
                 : failed.FailureReason == PurchaseFailureReason.ProductUnavailable || failed.FailureReason == PurchaseFailureReason.PurchasingUnavailable || failed.FailureReason == PurchaseFailureReason.StoreNotConnected ? PurchaseOutcome.Unavailable
                 : PurchaseOutcome.Failed);
@@ -317,7 +322,25 @@ namespace Nexus.Iap.Unity
             if (deferred) _deferred.Add(productId); else _deferred.Remove(productId);
         }
 
-        private void Complete(PurchaseOutcome outcome) { var done = _pending; _pending = null; done?.Invoke(outcome); }
+        /// <summary>True when the order answers the waiting request: it names the requested product, or it names none (a failure
+        /// Unity IAP could not tie to a product), which would otherwise leave the game's callback unanswered.</summary>
+        private bool Answers(Order order)
+        {
+            if (_pending == null) return false;
+            bool named = false;
+            var cart = order?.CartOrdered;
+            if (cart != null)
+                foreach (var item in cart.Items())
+                {
+                    string id = item.Product?.definition?.id;
+                    if (string.IsNullOrEmpty(id)) continue;
+                    if (id == _pendingProductId) return true;
+                    named = true;
+                }
+            return !named;
+        }
+
+        private void Complete(PurchaseOutcome outcome) { var done = _pending; _pending = null; _pendingProductId = null; done?.Invoke(outcome); }
         private void FinishRestore(bool ok) { var done = _restorePending; _restorePending = null; done?.Invoke(ok); }
         private void FinishInitialize(bool ok) { var done = _initializePending; _initializePending = null; done?.Invoke(ok); }
 

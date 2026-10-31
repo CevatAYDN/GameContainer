@@ -42,7 +42,10 @@ acknowledgement. A confirm the store refuses is warned in every build and sent a
 `IsConfirmationPending(productId)` is true until the store confirms the purchase (Google Play
 refunds a purchase not acknowledged within three days), and `Changed` is raised when it turns
 false. Consumables are never reported as owned; non-consumables and subscriptions are
-owned once their order is confirmed or fetched. `Restore` fetches purchases again. A purchase
+owned once their order is confirmed or fetched. `Restore` asks the store to restore, and Unity IAP
+fetches the purchases once after it. A purchase is answered only by an order for its own product:
+an order for another product (a deferred payment approved, a promo code) is owned and raises
+`Changed`, and the waiting purchase still gets its own answer. A purchase
 whose payment the store holds (deferred) reports `Pending`, and buying that product again answers
 `Pending` without a second store call until the order completes or a fetch no longer lists it.
 

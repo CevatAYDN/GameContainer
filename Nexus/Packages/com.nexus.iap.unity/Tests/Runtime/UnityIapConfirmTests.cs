@@ -44,7 +44,17 @@ namespace Nexus.Iap.Unity.Tests
             public bool HoldPurchases;   // answers the purchase fetch only when the test calls AnswerPurchases
             public override void FetchPurchases() { if (!HoldPurchases) AnswerPurchases(); }
             public void AnswerPurchases() => PurchaseFetchCallback?.OnAllPurchasesRetrieved(new List<Order>());
-            public override void Purchase(ICart cart) => PurchaseCallback?.OnPurchaseSucceeded(new PendingOrder(cart, new TestOrderInfo("tx-" + Name)));
+            public string DeferProduct;   // a purchase of this product is deferred (Ask to Buy, a cash payment)
+            public bool HoldOrders;       // a purchase waits until the test answers it
+            public readonly List<ICart> Deferred = new(), Held = new();
+            public override void Purchase(ICart cart)
+            {
+                if (cart.Items()[0].Product.definition.id == DeferProduct) { Deferred.Add(cart); PurchaseCallback?.OnPurchaseDeferred(new DeferredOrder(cart, new TestOrderInfo("tx-deferred-" + Name))); return; }
+                if (HoldOrders) { Held.Add(cart); return; }
+                PurchaseCallback?.OnPurchaseSucceeded(new PendingOrder(cart, new TestOrderInfo("tx-" + Name)));
+            }
+            public void Approve(ICart cart, string transactionId) => PurchaseCallback?.OnPurchaseSucceeded(new PendingOrder(cart, new TestOrderInfo(transactionId)));
+            public void Cancel(ICart cart) => PurchaseCallback?.OnPurchaseFailed(new FailedOrder(cart, PurchaseFailureReason.UserCancelled, "cancelled"));
             public override void FinishTransaction(PendingOrder order)
             {
                 if (++Confirms <= FailConfirms) ConfirmCallback?.OnConfirmOrderFailed(new FailedOrder(order, PurchaseFailureReason.Unknown, "billing service unavailable"));
@@ -264,6 +274,47 @@ namespace Nexus.Iap.Unity.Tests
                 yield return Until(() => ready != null, "the restart answered");
                 Assert.AreEqual(false, ready);
                 Assert.IsFalse(adapter.IsAvailable, "the products of this start were not fetched");
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
+
+        // Issue #182: the waiting purchase took any product's order as its answer: a parent approving rewards_pass told the game it
+        // had bought skin_pack, and skin_pack's real answer (cancelled) found no request and was dropped
+        [UnityTest]
+        public IEnumerator AnOrderForAnotherProduct_DoesNotAnswerTheWaitingPurchase()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusOtherProductsOrder", failConfirms: 0);
+            store.DeferProduct = "rewards_pass";
+            try
+            {
+                var adapter = new UnityIapAdapter();
+                bool? ready = null;
+                adapter.Initialize(new List<NexusProduct>
+                {
+                    new NexusProduct { Id = "rewards_pass", Type = NexusProductType.NonConsumable },
+                    new NexusProduct { Id = "skin_pack", Type = NexusProductType.NonConsumable },
+                }, ok => ready = ok);
+                yield return Until(() => ready != null, "the store initialized");
+                PurchaseOutcome? pass = null;
+                adapter.PurchaseWithOutcome("rewards_pass", o => pass = o);
+                yield return Until(() => pass != null, "the deferred purchase answered");
+                Assert.AreEqual(PurchaseOutcome.Pending, pass);
+
+                store.HoldOrders = true;
+                PurchaseOutcome? skin = null;
+                adapter.PurchaseWithOutcome("skin_pack", o => skin = o);
+                yield return Until(() => store.Held.Count == 1, "the store holds the skin_pack purchase");
+                store.Approve(store.Deferred[0], "tx-approved");
+                yield return Until(() => adapter.IsOwned("rewards_pass"), "the approved rewards_pass is owned");
+                Assert.IsNull(skin, "the approval of rewards_pass is not skin_pack's answer");
+
+                LogAssert.Expect(LogType.Warning, new Regex(@"^\[UnityIAP\] Purchase failed: UserCancelled"));
+                store.Cancel(store.Held[0]);
+                yield return Until(() => skin != null, "skin_pack answered");
+                Assert.AreEqual(PurchaseOutcome.Cancelled, skin);
+                Assert.IsFalse(adapter.IsOwned("skin_pack"));
                 LogAssert.NoUnexpectedReceived();
             }
             finally { UnityIAPServices.SetStoreAsDefault(previous); }
