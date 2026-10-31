@@ -30,6 +30,7 @@ namespace Nexus.Editor.Tests
 
             // v3 authenticates the key name: restore the original key, rather than
             // expecting a payload copied to another key to bypass its HMAC binding.
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Import of key 'User_Cloud_Imported' refused: the data fails its integrity check")); // issue #166
             Assert.IsFalse(storage.ImportEncryptedSaveData("User_Cloud_Imported", exportedBase64));
             Assert.IsFalse(storage.HasKey("User_Cloud_Imported"));
             storage.DeleteKey("User_Cloud_Data");
@@ -54,6 +55,7 @@ namespace Nexus.Editor.Tests
             byte[] tampered = System.Convert.FromBase64String(exportedBase64);
             tampered[tampered.Length - 1] ^= 0xFF;
 
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Import of key 'User_Cloud_Data' refused: the data fails its integrity check")); // issue #166
             Assert.IsFalse(storage.ImportEncryptedSaveData("User_Cloud_Data", System.Convert.ToBase64String(tampered)));
             Assert.AreEqual("valid-local-save", storage.GetString("User_Cloud_Data", null));
 

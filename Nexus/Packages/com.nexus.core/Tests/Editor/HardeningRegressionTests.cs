@@ -546,7 +546,9 @@ namespace Nexus.Editor.Tests
                 storage.SetString(key, "old"); storage.SetString(key, "new"); string path = PathFor(storage, key);
                 Assert.IsTrue(File.Exists(path + ".bak")); Cache(storage).Clear(); Assert.AreEqual("new", storage.GetString(key));
                 // Controlled process-interruption state: backup committed, final path absent.
-                File.Delete(path); Cache(storage).Clear(); Assert.IsTrue(storage.HasKey(key)); Assert.AreEqual("old", storage.GetString(key));
+                File.Delete(path); Cache(storage).Clear(); Assert.IsTrue(storage.HasKey(key));
+                UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'backup' is missing and its backup is not \(an interrupted save\): read the version before the last write")); // issue #166
+                Assert.AreEqual("old", storage.GetString(key));
                 storage.DeleteKey(key); Cache(storage).Clear(); Assert.IsFalse(storage.HasKey(key));
             }
             finally { storage.DeleteKey(key); }

@@ -449,14 +449,15 @@ namespace Nexus.Editor.Tests
             corruptedBytes[corruptedBytes.Length - 1] ^= 0xFF; // Flip bits
             File.WriteAllBytes(fileToTamper, corruptedBytes);
 
-            // Create a new instance to read it back from the tampered disk file, bypassing the cache
+            // Create a new instance to read it back from the tampered disk file, bypassing the cache; the first one is
+            // disposed so two live stores do not share the folder
+            storage.Dispose();
             var newStorage = new EncryptedStorageService("Test_Salt_Tamper");
             int result = newStorage.GetInt("SecretScore", 0);
             Assert.AreEqual(0, result);
 
             newStorage.DeleteKey("SecretScore");
             newStorage.Dispose();
-            storage.Dispose();
         }
 
         [Test]
