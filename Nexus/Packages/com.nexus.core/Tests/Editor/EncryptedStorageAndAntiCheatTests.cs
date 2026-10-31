@@ -33,6 +33,76 @@ namespace Nexus.Editor.Tests
             finally { store.Dispose(); }
         }
 
+        private static T Private<T>(EncryptedStorageService store, string name, params object[] args)
+        {
+            const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance;
+            var field = typeof(EncryptedStorageService).GetField(name, flags);
+            if (field != null) return (T)field.GetValue(store);
+            return (T)typeof(EncryptedStorageService).GetMethod(name, flags).Invoke(store, args);
+        }
+
+        // What the builds of 2026-07-10 to 2026-07-31 wrote (58aea9e, fcc9fed): no version byte, IV, the first 16 bytes of
+        // HMAC-SHA256(IV || ciphertext), AES-CBC ciphertext; under the MD5 file name.
+        private static void WriteUnversioned(EncryptedStorageService store, string key, string value, byte[] aesKey, byte[] hmacKey, byte firstIvByte)
+        {
+            using var aes = System.Security.Cryptography.Aes.Create();
+            aes.Key = aesKey;
+            aes.GenerateIV();
+            byte[] iv = aes.IV;
+            iv[0] = firstIvByte;
+            aes.IV = iv;
+            byte[] plain = System.Text.Encoding.UTF8.GetBytes(value);
+            byte[] cipher;
+            using (var encryptor = aes.CreateEncryptor()) cipher = encryptor.TransformFinalBlock(plain, 0, plain.Length);
+            byte[] hmac;
+            using (var h = new System.Security.Cryptography.HMACSHA256(hmacKey))
+            {
+                h.TransformBlock(iv, 0, 16, null, 0);
+                h.TransformFinalBlock(cipher, 0, cipher.Length);
+                hmac = h.Hash;
+            }
+            var file = new byte[32 + cipher.Length];
+            System.Buffer.BlockCopy(iv, 0, file, 0, 16);
+            System.Buffer.BlockCopy(hmac, 0, file, 16, 16);
+            System.Buffer.BlockCopy(cipher, 0, file, 32, cipher.Length);
+            File.WriteAllBytes(Private<string>(store, "GetLegacyFilePath", key), file);
+        }
+
+        // Issue #166: since 54a9393 the reader compared the stored 16 HMAC bytes with all 32, so every save written before the
+        // versioned format read as tampered; and an unversioned file whose first IV byte is 2 or 3 was taken for a versioned one
+        [Test]
+        public void ASaveWrittenBeforeTheVersionedFormat_IsReadAndMigrated_AlsoWhenItsFirstByteLooksLikeAVersion()
+        {
+            const string salt = "Test_Salt_Unversioned166";
+            ForgetStore(salt);
+            try
+            {
+                const string value = "level=12;coins=91011;gems=4"; // 27 bytes: a 64-byte file, past the 49-byte versioned header
+                var writer = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A");
+                WriteUnversioned(writer, "aes128", value, Private<byte[]>(writer, "_legacyEncryptionKey"), Private<byte[]>(writer, "_legacyHmacKey"), 0x41);
+                WriteUnversioned(writer, "aes256", value, Private<byte[]>(writer, "_encryptionKey"), Private<byte[]>(writer, "_hmacKey"), 0x41);
+                WriteUnversioned(writer, "aes128_first_byte_3", value, Private<byte[]>(writer, "_legacyEncryptionKey"), Private<byte[]>(writer, "_legacyHmacKey"), 3);
+                WriteUnversioned(writer, "aes256_first_byte_2", value, Private<byte[]>(writer, "_encryptionKey"), Private<byte[]>(writer, "_hmacKey"), 2);
+                writer.Dispose();
+
+                var keys = new[] { "aes128", "aes256", "aes128_first_byte_3", "aes256_first_byte_2" };
+                var reader = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A");
+                foreach (var key in keys)
+                {
+                    Assert.AreEqual(value, reader.GetString(key, null), key);
+                    Assert.IsFalse(File.Exists(Private<string>(reader, "GetLegacyFilePath", key)), key + ": the old file is removed once migrated");
+                    Assert.AreEqual(3, File.ReadAllBytes(Private<string>(reader, "GetFilePath", key))[0], key + ": rewritten in the current format");
+                }
+                reader.Dispose();
+
+                var again = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A");
+                foreach (var key in keys) Assert.AreEqual(value, again.GetString(key, null), key + " after the migration");
+                again.Dispose();
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally { ForgetStore(salt); }
+        }
+
         [Test]
         public void AppBinding_ReadsDataRestoredOnAnotherPhone_DeviceBindingDoesNot()
         {

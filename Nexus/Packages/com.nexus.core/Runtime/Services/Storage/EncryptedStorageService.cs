@@ -42,8 +42,8 @@ namespace Nexus.Core.Services
     /// Version 2 (read-only migration): same layout, but the HMAC covered only
     /// (IV || ciphertext) — files are re-encrypted to v3 on first read.
     ///
-    /// Legacy format (version 1, read-only migration):
-    ///   [IV:16 bytes] [HMAC-SHA256-truncated:16 bytes] [AES-128 ciphertext:N bytes]
+    /// Legacy format (version 1, no version byte, read-only migration; builds before 2026-07-31):
+    ///   [IV:16 bytes] [HMAC-SHA256-truncated:16 bytes] [AES-256 or, before 2026-07-18, AES-128 ciphertext:N bytes]
     ///
     /// HMAC-SHA256 uses an independent key derived from the device-bound seed. On read,
     /// HMAC is verified first — tampered payloads are detected before decryption is even
@@ -447,19 +447,26 @@ namespace Nexus.Core.Services
                 string val;
                 if (isCurrentFormat)
                 {
-                    if (!TryReadCurrentFormat(rawData, key, out val))
+                    if (TryReadCurrentFormat(rawData, key, out val))
+                    {
+                        // A v2 file (pre key-name-binding) decoded successfully: re-encrypt it
+                        // under the current v3 format so the on-disk payload becomes key-bound.
+                        // Same B1 discipline as the v1 migration below — SaveKeyToDisk performs
+                        // blocking file I/O and must NOT run under the shared _lock.
+                        if (rawData[0] == LegacyV2FormatVersion)
+                            MigrateKeyIfCurrent(key, val, readVersion, false);
+                    }
+                    else if (TryReadLegacy(rawData, out val))
+                    {
+                        // An unversioned file whose first IV byte happens to be 2 or 3 (issue #166).
+                        MigrateKeyIfCurrent(key, val, readVersion, true);
+                    }
+                    else
                     {
                         LogTamperWarning(key);
                         CacheNegativeResult(key);
                         return defaultValue;
                     }
-
-                    // A v2 file (pre key-name-binding) decoded successfully: re-encrypt it
-                    // under the current v3 format so the on-disk payload becomes key-bound.
-                    // Same B1 discipline as the v1 migration below — SaveKeyToDisk performs
-                    // blocking file I/O and must NOT run under the shared _lock.
-                    if (rawData[0] == LegacyV2FormatVersion)
-                        MigrateKeyIfCurrent(key, val, readVersion, false);
                 }
                 else
                 {
@@ -594,10 +601,17 @@ namespace Nexus.Core.Services
         }
 
         /// <summary>
-        /// Decodes a legacy (v1) payload: IV(16) + truncated-HMAC(16) + cipherText.
-        /// Pure: performs no cache or file writes (the caller owns migration).
+        /// Decodes an unversioned (v1) payload: IV(16) + the first 16 bytes of HMAC-SHA256(IV || cipherText) + cipherText.
+        /// Builds from 2026-07-18 to 2026-07-31 wrote AES-256 with the current keys, builds from 2026-07-10 the AES-128
+        /// split of the same seed; both are tried. Since 54a9393 the stored 16 bytes were compared with the whole 32-byte
+        /// HMAC, which never matches, so every such file read as tampered (issue #166). Files from before the storage seed
+        /// (2026-07-05 to 2026-07-10) used other keys and are not read. Pure: performs no cache or file writes.
         /// </summary>
         private bool TryReadLegacy(byte[] rawData, out string value)
+            => TryReadUnversioned(rawData, _encryptionKey, _hmacKey, out value)
+               || TryReadUnversioned(rawData, _legacyEncryptionKey, _legacyHmacKey, out value);
+
+        private static bool TryReadUnversioned(byte[] rawData, byte[] encryptionKey, byte[] hmacKey, out string value)
         {
             value = null;
             try
@@ -610,11 +624,10 @@ namespace Nexus.Core.Services
                 Buffer.BlockCopy(rawData, 16, hmac, 0, 16);
                 Buffer.BlockCopy(rawData, 32, cipherText, 0, cipherText.Length);
 
-                byte[] legacyHmac = ComputeHmacWithKey(cipherText, iv, _legacyHmacKey);
-                if (!CompareHashes(hmac, legacyHmac)) return false;
+                if (!CompareHashes(hmac, ComputeHmacWithKey(cipherText, iv, hmacKey), 16)) return false;
 
                 using var aes = Aes.Create();
-                aes.Key = _legacyEncryptionKey;
+                aes.Key = encryptionKey;
                 aes.IV = iv;
                 using var decryptor = aes.CreateDecryptor();
                 byte[] plainBytes = decryptor.TransformFinalBlock(cipherText, 0, cipherText.Length);
@@ -1141,10 +1154,14 @@ namespace Nexus.Core.Services
         /// Constant-time hash comparison to prevent timing attacks.
         /// </summary>
         private static bool CompareHashes(byte[] a, byte[] b)
+            => a.Length == b.Length && CompareHashes(a, b, a.Length);
+
+        /// <summary>Constant-time comparison of the first <paramref name="length"/> bytes (a truncated HMAC).</summary>
+        private static bool CompareHashes(byte[] a, byte[] b, int length)
         {
-            if (a.Length != b.Length) return false;
+            if (a.Length < length || b.Length < length) return false;
             int diff = 0;
-            for (int i = 0; i < a.Length; i++) diff |= a[i] ^ b[i];
+            for (int i = 0; i < length; i++) diff |= a[i] ^ b[i];
             return diff == 0;
         }
     }
