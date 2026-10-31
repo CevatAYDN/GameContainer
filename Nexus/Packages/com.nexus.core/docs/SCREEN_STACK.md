@@ -145,6 +145,6 @@ uGUI's bridge retries each panel's event objects on every frame; the component t
 Measured on 2311DRK48G (Android 16) with Unity 6000.6.7f1 and uGUI 2.6.0, in a development IL2CPP player with one
 panel, over 60 s with a 30 s drag (ADR-0003, "As built"): with `ToolkitPanelInput` the `EventSystem` allocates nothing
 per frame, touched or not; without it, 32 B for each panel on every frame. UI Toolkit's own input (InputForUI, without
-an `EventSystem`) allocates nothing on a frame without a touch and 171 B on a touched frame, and the screen heard twice
+an `EventSystem`) allocates nothing on a frame without a touch and about 170 B on a touched frame (171 B and 172 B in two runs), and the screen heard twice
 as many `PointerDownEvent`s under it (56 against 28). The stack works under all three, and the back button goes
 through none of them (see [The back button](#the-back-button)).
