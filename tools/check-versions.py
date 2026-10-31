@@ -91,14 +91,14 @@ def offline(rows, problems):
         entry = lock.get(name, {})
         if name.startswith(("com.unity.modules.", "com.nexus.")) or entry.get("source") in ("embedded", "local"):
             continue
+        if wanted != entry.get("version"):  # a git entry's version is its URL, so a re-pin the lock has not taken shows here
+            problems.append(f"{name}: the development project's manifest asks for {wanted}, packages-lock.json resolves "
+                            f"{entry.get('version')} ({entry.get('source')})")
         if entry.get("source") == "git":
             if not re.search(r"#[0-9a-f]{40}$", wanted):
                 problems.append(f"{name}: the development project takes {wanted}, not a 40-character commit")
             resolved[name] = (entry.get("hash") or "")[:7]
             continue
-        if wanted != entry.get("version"):
-            problems.append(f"{name}: the development project's manifest asks for {wanted}, packages-lock.json resolves "
-                            f"{entry.get('version')} ({entry.get('source')})")
         if entry.get("source") == "registry":
             resolved[name] = entry["version"]
             if name not in rows:

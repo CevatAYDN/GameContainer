@@ -15,7 +15,7 @@
     "versionDefines": [
         {
             "name": "com.unity.purchasing",
-            "expression": "5.0.0",
+            "expression": "5.4.4",
             "define": "NEXUS_UNITY_IAP"
         }
     ],
