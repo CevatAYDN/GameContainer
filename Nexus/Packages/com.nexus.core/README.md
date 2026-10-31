@@ -171,8 +171,9 @@ bound, drop `Log` and `LogWarning` in a release player (not the editor, not a de
 what runs, reaches every build's log through `NexusLog.WarnAlways` or `LogError` (no ad or store adapter set, an
 unknown provider name, an adapter's SDK failure); a diagnostic stays in the editor and development builds (a
 signal nobody hears, an interstitial on cooldown or not loaded yet, a performance hint). A game follows the same
-rule: `NexusLog.WarnAlways` for what a store build's log must show. The framework sites that do not follow it yet
-are listed in issue #164.
+rule: `NexusLog.WarnAlways` for what a store build's log must show. Every site in the core and its adapter packages
+follows it; the ad family's own controller events (a load that failed, a policy block, consent refused) do not reach
+a release log yet (issue #164).
 
 ## Performance scope
 

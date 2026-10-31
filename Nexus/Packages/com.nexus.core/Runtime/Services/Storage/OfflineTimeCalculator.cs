@@ -72,7 +72,7 @@ namespace Nexus.Core.Services
             // Anti-cheat: device time set backwards
             if (diff < 0)
             {
-                NexusRuntime.Logger?.LogWarning("[OfflineTimeCalculator] Time manipulation detected! Offline progress set to 0.");
+                NexusLog.WarnAlways("[OfflineTimeCalculator] Time manipulation detected! Offline progress set to 0.");
                 return 0L;
             }
 

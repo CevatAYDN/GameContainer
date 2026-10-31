@@ -158,7 +158,7 @@ namespace Nexus.Core.Services
             catch (Exception ex)
             {
                 _vibrateMethod = IntPtr.Zero;
-                NexusRuntime.Logger?.LogWarning($"[HapticService] Failed to initialize Android Vibrator: {ex.Message}");
+                NexusLog.WarnAlways($"[HapticService] Failed to initialize Android Vibrator: {ex.Message}");
             }
         }
 
@@ -223,7 +223,7 @@ namespace Nexus.Core.Services
         {
             if (_nativeFailureReported) return;
             _nativeFailureReported = true;
-            NexusRuntime.Logger?.LogWarning($"[HapticService] Android vibrator call failed ({message}); falling back to Handheld.Vibrate().");
+            NexusLog.WarnAlways($"[HapticService] Android vibrator call failed ({message}); falling back to Handheld.Vibrate().");
         }
 #endif
 

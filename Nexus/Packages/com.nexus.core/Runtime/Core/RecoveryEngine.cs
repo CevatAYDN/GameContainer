@@ -163,7 +163,7 @@ namespace Nexus.Core
                     {
                         if (retryCount >= decision.MaxRetries)
                         {
-                            NexusRuntime.Logger?.LogWarning($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
+                            Services.NexusLog.WarnAlways($"[Nexus] Retry limit of {decision.MaxRetries} reached. Forcing Abort.");
                             // Typed abort exception (see Abort path above) so the
                             // strategy-failure filter below does not swallow it as a strategy
                             // error via InnerException identity.

@@ -158,7 +158,7 @@ namespace Nexus.Core.Services
         {
             if (s_inputSystemFailureReported) return;
             s_inputSystemFailureReported = true;
-            NexusRuntime.Logger?.LogWarning($"[InputService] Input System read failed ({ex.GetType().Name}: {ex.Message}); input reads as none. Check the Input System setup or supply IInputProvider.");
+            NexusLog.WarnAlways($"[InputService] Input System read failed ({ex.GetType().Name}: {ex.Message}); input reads as none. Check the Input System setup or supply IInputProvider.");
         }
 
         // Actions, not a key's wasPressedThisFrame: an action records every event, so a press and release in one update (Android's
@@ -255,7 +255,7 @@ namespace Nexus.Core.Services
             {
                 _unavailableLegacyButtons ??= new System.Collections.Generic.HashSet<string>(StringComparer.Ordinal);
                 _unavailableLegacyButtons.Add(actionName);
-                NexusRuntime.Logger?.LogWarning($"[InputService] Legacy button '{actionName}' unavailable ({ex.GetType().Name}); configure the action or supply IInputProvider.");
+                NexusLog.WarnAlways($"[InputService] Legacy button '{actionName}' unavailable ({ex.GetType().Name}); configure the action or supply IInputProvider.");
             }
 #endif
             return false;
@@ -282,7 +282,7 @@ namespace Nexus.Core.Services
                 // Thrown when the project disabled the legacy input backend. Report once and
                 // stop probing instead of throwing every frame.
                 _legacyAxesUnavailable = true;
-                NexusRuntime.Logger?.LogWarning(
+                NexusLog.WarnAlways(
                     $"[InputService] Legacy input axes are unavailable ({ex.GetType().Name}); keyboard fallback disabled. " +
                     "Feed input through SetVirtualJoystickInput, SetInputProvider, or New Input System.");
                 return Vector2.zero;

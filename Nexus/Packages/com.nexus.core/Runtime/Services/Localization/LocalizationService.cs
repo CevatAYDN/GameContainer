@@ -54,6 +54,7 @@ namespace Nexus.Core.Services
 
         private readonly Dictionary<string, Dictionary<string, string>> _localizedTable = new Dictionary<string, Dictionary<string, string>>();
         private readonly object _tableLock = new();
+        private HashSet<string> _badFormatKeys;
         // Languages the game supplied (provider, RegisterLanguageTable, RegisterKey), not the built-in en/tr seeds.
         private readonly HashSet<string> _suppliedLanguages = new HashSet<string>();
 
@@ -90,7 +91,7 @@ namespace Nexus.Core.Services
             if (!options.UseDeviceLanguage) return fallback;
             string device = null;
             try { device = DeviceLanguageSource?.Invoke(); }
-            catch (Exception ex) { NexusRuntime.Logger?.LogWarning($"[LocalizationService] Reading the device language failed: {ex.Message}"); }
+            catch (Exception ex) { NexusLog.WarnAlways($"[LocalizationService] Reading the device language failed: {ex.Message}"); }
             if (string.IsNullOrEmpty(device)) return fallback;
             device = device.ToLowerInvariant();
             int dash = device.IndexOf('-');
@@ -192,7 +193,10 @@ namespace Nexus.Core.Services
             try { formatted = string.Format(Culture, pattern, args ?? Array.Empty<object>()); }
             catch (FormatException ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[LocalizationService] '{key}' is not a valid format for {(args == null ? 0 : args.Length)} argument(s): {ex.Message}");
+                // once per key, in every build: Format can run every frame, and the text shows its raw pattern (#164)
+                bool first;
+                lock (_tableLock) first = (_badFormatKeys ??= new HashSet<string>(StringComparer.Ordinal)).Add(key);
+                if (first) NexusLog.WarnAlways($"[LocalizationService] '{key}' is not a valid format for {(args == null ? 0 : args.Length)} argument(s): {ex.Message}");
                 formatted = pattern;
             }
             // Formatted before the RTL reversal, which would otherwise turn "{0}" into "}0{".
@@ -305,7 +309,7 @@ namespace Nexus.Core.Services
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogWarning($"[LocalizationService] GetAvailableLanguages threw: {ex.Message}. Falling back to en/tr.");
+                NexusLog.WarnAlways($"[LocalizationService] GetAvailableLanguages threw: {ex.Message}. Falling back to en/tr.");
             }
             languages ??= new[] { "en", "tr" };
 

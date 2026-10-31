@@ -160,7 +160,7 @@ namespace Nexus.Core
 
             if (riskyFields.Length == 0) return;
 
-            NexusRuntime.Logger?.LogWarning(
+            Services.NexusLog.WarnAlways(
                 $"[Nexus] Command '{type.Name}' has mutable field(s) [{riskyFields}] but does not implement IResettable. " +
                 "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
         }

@@ -148,6 +148,38 @@ namespace Nexus.Editor.Tests
             }
         }
 
+        // Issue #164: a save skipped for want of a model, a clock set back and a broken format string were warned through LogWarning only
+        [Test]
+        public async System.Threading.Tasks.Task ASkippedSaveAClockSetBackAndABrokenFormat_AreWarnedInAReleasePlayerToo()
+        {
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables; a logger another test left cached may be enabled
+            NexusBuild.OverrideForTests(false);
+            try
+            {
+                Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops LogWarning");
+                using (var saves = new Nexus.Core.Extensions.GameSaveManager())
+                {
+                    LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"No save model registered\. Skipping save"));
+                    await saves.SaveAsync("slot1");
+                }
+
+                var prefs = new InMemoryPlayerPrefsService();
+                prefs.SetLong("quit", DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 3600);
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"Time manipulation detected"));
+                Assert.AreEqual(0L, OfflineTimeCalculator.CalculateOfflineSeconds(prefs, key: "quit"));
+
+                var localization = new LocalizationService();
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"'\{0\} \{1\}' is not a valid format for 1 argument"));
+                Assert.AreEqual("{0} {1}", localization.Format("{0} {1}", 1), "the raw pattern is shown");
+                localization.Format("{0} {1}", 1); // once per key: Format can run every frame
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally
+            {
+                NexusBuild.OverrideForTests(null);
+            }
+        }
+
         [Test]
         public void WarnAlways_UsesTheRegisteredLogger_WhileItIsEnabled()
         {

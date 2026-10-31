@@ -1347,7 +1347,7 @@ namespace Nexus.Core
                 }
                 else if (string.IsNullOrEmpty(scopeTag))
                 {
-                    NexusRuntime.Logger?.LogWarning($"[Nexus] Cross-context broadcast failed: target context '{targetCtx.GetType().Name}' does not use a SignalBus-backed ISignalBus. Broadcast skipped.");
+                    Services.NexusLog.WarnAlways($"[Nexus] Cross-context broadcast failed: target context '{targetCtx.GetType().Name}' does not use a SignalBus-backed ISignalBus. Broadcast skipped.");
                 }
             }
         }

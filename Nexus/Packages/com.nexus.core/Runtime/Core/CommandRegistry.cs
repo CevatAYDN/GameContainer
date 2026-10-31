@@ -667,7 +667,7 @@ namespace Nexus.Core
                 // No payload member found: the command runs without the signal. Warned once
                 // per (command, signal) pair via the setter cache, because a misspelled
                 // payload field ("_sig" instead of "_signal") is otherwise silently ignored.
-                NexusRuntime.Logger?.LogWarning(
+                Services.NexusLog.WarnAlways(
                     $"[Nexus] Command '{cmdType.FullName}' has no member able to receive signal payload '{sigType.Name}'. " +
                     "Declare a field named '_signal'/'signal' (or a writable property) of the signal type, or implement ICommand<TSignal>. The command will execute without the payload.");
                 newSetter = (target, val) => { };

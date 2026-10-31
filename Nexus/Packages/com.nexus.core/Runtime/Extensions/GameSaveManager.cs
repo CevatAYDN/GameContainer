@@ -125,7 +125,7 @@ namespace Nexus.Core.Extensions
             var previous = _model;
             if (previous != null && !ReferenceEquals(previous, model))
             {
-                NexusRuntime.Logger?.LogWarning(
+                Services.NexusLog.WarnAlways(
                     "[GameSaveManager] RegisterModel replaced a previously registered model — only ONE model is held at a time; the earlier model no longer participates in save/load.");
             }
             _model = model;
@@ -137,7 +137,7 @@ namespace Nexus.Core.Extensions
             var model = _model;
             if (model == null)
             {
-                NexusRuntime.Logger?.LogWarning("[Nexus] No save model registered. Skipping save.");
+                Services.NexusLog.WarnAlways("[Nexus] No save model registered. Skipping save.");
                 return;
             }
 
@@ -242,7 +242,7 @@ namespace Nexus.Core.Extensions
                                 try { if (File.Exists(tempPath)) File.Delete(tempPath); }
                                 catch (Exception cleanupEx)
                                 {
-                                    NexusRuntime.Logger?.LogWarning($"[GameSaveManager] Failed to clean up temp file '{tempPath}': {cleanupEx.Message}");
+                                    Services.NexusLog.WarnAlways($"[GameSaveManager] Failed to clean up temp file '{tempPath}': {cleanupEx.Message}");
                                 }
                                 // Give up and surface the error to the caller via exception
                                 throw;
@@ -263,7 +263,7 @@ namespace Nexus.Core.Extensions
             var model = _model;
             if (model == null)
             {
-                NexusRuntime.Logger?.LogWarning("[Nexus] No save model registered. Skipping load.");
+                Services.NexusLog.WarnAlways("[Nexus] No save model registered. Skipping load.");
                 return Task.FromResult(false);
             }
 

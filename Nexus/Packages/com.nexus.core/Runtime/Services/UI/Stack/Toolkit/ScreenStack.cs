@@ -83,7 +83,7 @@ namespace Nexus.Core.Services
                 return default;
             }
             if (Input == null)
-                NexusRuntime.Logger?.LogWarning("[Nexus] ScreenStack: no IInputService is bound, so the back key is not read; IBackRouter.Press() still runs the chain.");
+                NexusLog.WarnAlways("[Nexus] ScreenStack: no IInputService is bound, so the back key is not read; IBackRouter.Press() still runs the chain.");
             _driver = new GameObject("[Nexus_BackKey]");
             if (Application.isPlaying) UnityEngine.Object.DontDestroyOnLoad(_driver);
             _driver.AddComponent<BackKeyDriver>().Owner = this;
