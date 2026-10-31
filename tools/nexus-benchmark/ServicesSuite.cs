@@ -882,7 +882,7 @@ namespace NexusBench
         }
 
         // ---------------------------------------------------------------------------
-        // Ads — adapter-gated surface: mock fallbacks, cooldown, delegation, events
+        // Ads — adapter-gated surface: no-adapter answers, cooldown, delegation, events
         // ---------------------------------------------------------------------------
 
         private static void RunAds()
@@ -896,8 +896,7 @@ namespace NexusBench
                 var ads = ctx.Context.Resolve<AdService>();
 
                 // D1: cooldown enforced against the clock through a bound adapter.
-                // (The harness IS a release build — with no adapter, mock ads are denied,
-                // so cooldown can only be observed via an adapter; see D2.)
+                // (With no adapter no ad is available in any build, so cooldown is observed via an adapter; see D2.)
                 var cooldownAdapter = new SvcRecordingAdAdapter();
                 ads.SetNetworkAdapter(cooldownAdapter);
                 Time.realtimeSinceStartup = 100f;
@@ -911,13 +910,15 @@ namespace NexusBench
                 Check("D1. Interstitial_Cooldown_Enforced", availableBefore && closed && blockedOnCooldown && availableAfterElapse,
                     $"available={availableBefore} closed={closed} blocked={blockedOnCooldown} after31s={availableAfterElapse}");
 
-                // D2: release build without an adapter must DENY the mock reward —
-                // granting free currency without an impression would be a revenue cheat.
+                // D2: without an adapter no reward is granted (no currency without an impression) and the
+                // warning names the missing adapter; since #162 the editor and development players answer the same.
                 ads.SetNetworkAdapter(null);
                 bool rewarded = true;
+                int warningsBefore = logger.Messages.Count;
                 ads.ShowRewarded("reward1", ok => rewarded = ok);
-                Check("D2. Mock_Reward_Denied_In_Release_Harness", !rewarded,
-                    $"rewarded={rewarded}");
+                bool warned = logger.Messages.Count == warningsBefore + 1 && logger.Messages[warningsBefore].Contains("No ad network adapter");
+                Check("D2. No_Adapter_Reward_Denied_And_Logged", !rewarded && warned && !ads.IsRewardedAvailable("reward1"),
+                    $"rewarded={rewarded} warned={warned} available={ads.IsRewardedAvailable("reward1")}");
 
                 // D3: with an adapter bound, every call delegates to it.
                 var adapter = new SvcRecordingAdAdapter();
@@ -1015,8 +1016,9 @@ namespace NexusBench
                 bool restoreFailed = !restoreOk;
                 bool logged = logger.Messages.Count == 2;
                 bool ownedWithoutAdapter = iap.IsProductOwned("gems_100");
-                Check("D6. No_Adapter_Graceful_Failure", purchaseFailed && restoreFailed && logged && !ownedWithoutAdapter,
-                    $"ok={ok} msg={msg} restoreOk={restoreOk} logged={logger.Messages.Count} owned={ownedWithoutAdapter}");
+                bool availableWithoutAdapter = iap.IsStoreAvailable;
+                Check("D6. No_Adapter_Graceful_Failure", purchaseFailed && restoreFailed && logged && !ownedWithoutAdapter && !availableWithoutAdapter,
+                    $"ok={ok} msg={msg} restoreOk={restoreOk} logged={logger.Messages.Count} owned={ownedWithoutAdapter} available={availableWithoutAdapter}");
 
                 // D7: with an adapter bound, purchase/restore/ownership delegate.
                 var adapter = new SvcRecordingIapAdapter();
@@ -1033,17 +1035,6 @@ namespace NexusBench
                 Check("D7. Adapter_Delegation_EndToEnd", initProducts && purchaseOk && purchaseMsg == "gems_100"
                         && adapter.Calls.Contains("purchase:gems_100") && restoreDelegated && ownedViaAdapter,
                     $"initProducts={initProducts} purchaseOk={purchaseOk} calls=[{string.Join(",", adapter.Calls)}] owned={ownedViaAdapter}");
-
-                // D8: release path (the harness does NOT define UNITY_EDITOR, so the
-                // #else branch is what ships) must never grant ownership from the
-                // in-process mock set — even after a "successful" purchase callback.
-                var bare = new IapService();
-                bool simOk = false; string simMsg = null;
-                bare.RegisterProducts(new ProductDefinition { Id = "sword", Type = ProductType.NonConsumable });
-                bare.PurchaseProduct("sword", (o, m) => { simOk = o; simMsg = m; });
-                bool stillNotOwned = !bare.IsProductOwned("sword");
-                Check("D8. Release_Path_Never_Trusts_Mock_Ownership", !simOk && simMsg == "store_unavailable" && stillNotOwned,
-                    $"purchaseOk={simOk} msg={simMsg} owned={bare.IsProductOwned("sword")}");
             }
             finally
             {

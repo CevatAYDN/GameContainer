@@ -2,15 +2,17 @@
 
 # Ad and store adapters
 
-`AdService` and `IapService` carry no SDK dependency. Each talks to one adapter interface; the
-package ships a mock adapter for both and a factory that creates adapters by provider name. A game
-registers its real adapter with the factory and hands the created adapter to the service. Every
-type below is in `Nexus.Core.Services`.
+`AdService` and `IapService` carry no SDK dependency. Each talks to one adapter interface, and a
+factory creates adapters by provider name. The package ships no adapter: a game registers its real
+adapter with the factory and hands the created adapter to the service. The testing kit
+(`com.nexus.core.testing`, compiled only for the editor and test builds) holds a test double of each
+for tests; nothing in a player simulates a store or an ad (the owner's decision, #162). Every type
+below is in `Nexus.Core.Services`.
 
-| Service | Adapter contract | Factory | Built-in provider |
+| Service | Adapter contract | Factory | Test double (testing kit) |
 |---|---|---|---|
-| `AdService` (`IAdService`) | `IAdNetworkAdapter`: `Initialize(Action)`, `IsInterstitialReady`, `ShowInterstitial`, `IsRewardedReady`, `ShowRewarded`, `ShowBanner`, `HideBanner`; optional `IAdOutcomeAdapter`, `IAdReadinessAdapter`, `IAdConsentAdapter` | `AdAdapterFactory` (`IAdAdapterFactory`): `RegisterProvider(name, Func<IAdNetworkAdapter>)`, `CreateAdapter(name)` | `"mock"` → `MockAdNetworkAdapter` (implements every capability) |
-| `IapService` (`IIapService`) | `IIapStoreAdapter`: `Initialize(List<ProductDefinition>, Action<bool>)`, `Purchase`, `Restore`, `IsOwned`; optional `IIapOutcomeAdapter`, `IIapStoreInfoAdapter` | `IapAdapterFactory` (`IIapAdapterFactory`) | `"mock"` → `MockIapStoreAdapter` (implements every capability) |
+| `AdService` (`IAdService`) | `IAdNetworkAdapter`: `Initialize(Action)`, `IsInterstitialReady`, `ShowInterstitial`, `IsRewardedReady`, `ShowRewarded`, `ShowBanner`, `HideBanner`; optional `IAdOutcomeAdapter`, `IAdReadinessAdapter`, `IAdConsentAdapter` | `AdAdapterFactory` (`IAdAdapterFactory`): `RegisterProvider(name, Func<IAdNetworkAdapter>)`, `CreateAdapter(name)` | `MockAdNetworkAdapter` (implements every capability); a test passes it to `SetNetworkAdapter` |
+| `IapService` (`IIapService`) | `IIapStoreAdapter`: `Initialize(List<ProductDefinition>, Action<bool>)`, `Purchase`, `Restore`, `IsOwned`; optional `IIapOutcomeAdapter`, `IIapStoreInfoAdapter` | `IapAdapterFactory` (`IIapAdapterFactory`) | `MockIapStoreAdapter` (implements every capability); a test passes it to `SetStoreAdapter` |
 
 Provider names are case-insensitive. `CreateAdapter` returns `null` and logs a warning for an
 unknown name, and `null` with an error when the creator throws.
@@ -64,17 +66,18 @@ public sealed class MonetizationLifecycle : MonoBehaviour, IContextLifecycle
 
     public void OnDispose() { }
 
-    // "mock" in the editor and in test builds, the real provider in release builds.
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-    private const string AdProviderName = "mock", StoreProviderName = "mock";
-#else
+    // The same providers in every build: the editor and development players go through the real adapters too.
     private const string AdProviderName = "mynetwork", StoreProviderName = "unityiap";
-#endif
 }
 ```
 
-`MockIapStoreAdapter.Purchase` succeeds only in the editor and development builds; in a release
-build it reports `store_unavailable`, so a release build with the mock cannot grant products.
+Without an adapter `IapService` answers `store_unavailable` (`Purchase`: `Unavailable`), restores
+nothing, owns nothing and reports `IsStoreAvailable` false, and `AdService` reports no ad available,
+closes an interstitial at once and grants no reward. Each such call logs a warning that names the
+missing adapter. The editor and development players answer the same as a release player (#162): to
+try a purchase in the editor, set the real adapter (`com.nexus.iap.unity`), whose Unity IAP uses its
+own editor store there (`FakeAppStore`, the default store of the editor platform in Unity IAP 5.4.4);
+on a device, use the store's test accounts (Google Play license testers, App Store sandbox).
 
 ## Capabilities a game relies on
 
@@ -88,10 +91,10 @@ and degrade predictably when an adapter lacks the capability:
 | `IAdService.PrivacyOptionsRequired`, `ShowPrivacyOptions(onClosed)` | `IAdConsentAdapter` (the adapter owns the consent flow, for example Google UMP) | `false`; `onClosed` runs immediately |
 | `IIapService.Purchase(productId, Action<PurchaseOutcome>)` | `IIapOutcomeAdapter.PurchaseWithOutcome` reports `Purchased`, `Cancelled`, `Pending`, `Failed` or `Unavailable` | bool result maps to `Purchased`; `store_unavailable` / `not_initialized` to `Unavailable`; anything else to `Failed` |
 | `IIapService.GetLocalizedPrice(productId)` | `IIapStoreInfoAdapter.GetLocalizedPrice` (the store's string) | the catalog's `ProductDefinition.PriceString`, or null |
-| `IIapService.IsStoreAvailable`, `StoreChanged` | `IIapStoreInfoAdapter.IsAvailable` / `Changed` | available whenever an adapter is set (without one, only in the editor and development builds); no change events |
+| `IIapService.IsStoreAvailable`, `StoreChanged` | `IIapStoreInfoAdapter.IsAvailable` / `Changed` | available whenever an adapter is set (without one, never); no change events |
 
-`MonetizationContractTests` (EditMode) lock every row of this table against the mock adapters
-and bool-only adapters; the event at the end of the cooldown is harness check D4b.
+`MonetizationContractTests` (EditMode) lock every row of this table against the testing kit's
+doubles and bool-only adapters; the event at the end of the cooldown is harness check D4b.
 
 `RequestRewardAsync(placement, ct)` and `PurchaseAsync(productId, ct)` (`MonetizationAsyncExtensions`) are the
 same two calls as tasks an `IAsyncCommand` awaits; a callback would arrive after a pooled command has
@@ -110,8 +113,7 @@ gets the simulator), a release build runs the **Release** tab. The provider is n
 [ads package README](../../com.nexus.ads/README.md) and the
 [bridge README](../../com.nexus.ads.bridge.nexus/README.md); the lifecycle above becomes
 `NexusAdsBridge.Connect(ads, adFactory, iap, "remove_ads")` in `OnStartAsync` and loses its
-`AdProviderName` switch. The `"mock"` adapter and the `#if UNITY_EDITOR || DEVELOPMENT_BUILD` switch
-stay the pattern for the store. AdMob is the family's `Nexus.Ads.AdMob` provider in
+`AdProviderName`. The store keeps its real adapter in every build, as above. AdMob is the family's `Nexus.Ads.AdMob` provider in
 `com.nexus.ads.admob`; the legacy `AdMobAdapter` behind `AdService` was removed (issue #14), and a game
 still on it moves with the family's [MIGRATION.md](../../com.nexus.ads/MIGRATION.md).
 
@@ -168,8 +170,9 @@ the game code and tests depend only on `IAdService` / `IIapService`. Three rules
   executor must exist before the consent request. The family's `AdMobProvider` and `UmpConsentFlow`
   leave that switch off and post each callback to the main thread themselves.
 
-`MonetizationServiceTests` (EditMode) show the services driven through the mock adapters:
-interstitial cooldown and availability, product registration and a mock purchase.
+`MonetizationServiceTests` (EditMode) lock the answers without an adapter in the editor (no ad, no
+reward, `store_unavailable`, nothing owned, one warning per call); before #162 the editor simulated
+them.
 
 ## Where the capabilities come from
 

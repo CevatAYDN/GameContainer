@@ -129,7 +129,7 @@ namespace Nexus.Core.Services
             lock (_lock) { adapter = _adapter; }
             if (adapter == null)
             {
-                // Same rule as the bool overload: the built-in stand-in rewards only where a mock is acceptable.
+                // Same answer as the bool overload: no adapter, no reward (Failed), and its warning (#162).
                 ShowRewarded(placement, success => onOutcome?.Invoke(success ? AdOutcome.Rewarded : AdOutcome.Failed));
                 return;
             }
@@ -184,13 +184,8 @@ namespace Nexus.Core.Services
 
             // Adapter query OUTSIDE the lock: an SDK's readiness call must never hold the
             // service lock (SetNetworkAdapter / ShowBanner from another thread would stall).
-            if (adapter != null) return adapter.IsInterstitialReady(placement);
-
-            // Mock mode: if no adapter is set, consider interstitial available only in
-            // editor/dev builds. A release build with no adapter must never report an
-            // available interstitial, or the player would be shown a fake "reward ad"
-            // flow with nothing behind it.
-            return UnityEngine.Application.isEditor || UnityEngine.Debug.isDebugBuild;
+            // No adapter, no ad: the editor and development players get none either (#162).
+            return adapter != null && adapter.IsInterstitialReady(placement);
         }
 
         public bool IsRewardedAvailable(string placement)
@@ -198,12 +193,8 @@ namespace Nexus.Core.Services
             IAdNetworkAdapter adapter;
             lock (_lock) { adapter = _adapter; }
             // Readiness query outside the lock (see IsInterstitialAvailable).
-            if (adapter != null) return adapter.IsRewardedReady(placement);
-
-            // Mock mode: consistent with ShowRewarded — editor/dev builds grant a mock
-            // reward without an adapter, so availability must report true there too.
-            // A release build without an adapter never reports an available rewarded ad.
-            return UnityEngine.Application.isEditor || UnityEngine.Debug.isDebugBuild;
+            // No adapter, no ad (#162).
+            return adapter != null && adapter.IsRewardedReady(placement);
         }
 
         public void ShowInterstitial(string placement, Action onComplete = null)
@@ -245,14 +236,8 @@ namespace Nexus.Core.Services
             }
             else
             {
-                // Mock mode is dev-only (see IsInterstitialAvailable).
-                if (!(UnityEngine.Application.isEditor || UnityEngine.Debug.isDebugBuild))
-                {
-                    NexusRuntime.Logger?.LogWarning($"[AdService] No adapter configured for '{placement}' in a release build.");
-                    onComplete?.Invoke();
-                    return;
-                }
-                NexusRuntime.Logger?.Log($"[AdService Mock] Showing Interstitial for: {placement}");
+                // No adapter: nothing is shown, in every build (#162).
+                NexusRuntime.Logger?.LogWarning($"[AdService] No ad network adapter for interstitial '{placement}': nothing shown. Set one with SetNetworkAdapter.");
                 onComplete?.Invoke();
             }
         }
@@ -268,19 +253,9 @@ namespace Nexus.Core.Services
             }
             else
             {
-                // A mock reward in a release build is a revenue- and trust-cheat: the player
-                // gets free currency without an impression. Only grant mock rewards in
-                // editor/dev builds; a release build without an adapter denies the reward.
-                if (UnityEngine.Application.isEditor || UnityEngine.Debug.isDebugBuild)
-                {
-                    NexusRuntime.Logger?.Log($"[AdService Mock] Showing Rewarded for: {placement}");
-                    onComplete?.Invoke(true);
-                }
-                else
-                {
-                    NexusRuntime.Logger?.LogWarning($"[AdService] No rewarded adapter configured for '{placement}' in a release build. Reward denied.");
-                    onComplete?.Invoke(false);
-                }
+                // No adapter: no reward without an impression, in every build (#162).
+                NexusRuntime.Logger?.LogWarning($"[AdService] No ad network adapter for rewarded '{placement}': no reward. Set one with SetNetworkAdapter.");
+                onComplete?.Invoke(false);
             }
         }
 

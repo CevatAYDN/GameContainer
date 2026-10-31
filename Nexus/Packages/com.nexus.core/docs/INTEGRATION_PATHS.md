@@ -92,8 +92,8 @@ startup eager-cycle analysis does not follow lazy accesses or cycles inside fact
 - IL2CPP/AOT never emits dynamic IL. Use the AOT binder/source generator and test a real player.
 - Measure startup, memory, and frame p95/p99 on target devices.
 
-Register production provider adapters for ads, IAP and analytics. Mock providers
-do not prove a working payment or advertising integration. Network signals and
+The core ships no ad or store provider: register the production adapters for ads, IAP and
+analytics. The testing kit's doubles prove no working payment or advertising integration. Network signals and
 rollback alone do not establish a multiplayer backend.
 
 See [game patterns](GAME_PATTERNS.md), [architecture](ARCHITECTURE.md) and

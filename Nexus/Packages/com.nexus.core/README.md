@@ -107,7 +107,8 @@ hot-reload hooks. Editor text is localized in English and Turkish.
 **Testing**: the `com.nexus.core.testing` assembly holds `NexusTestHarness`, `NexusTestContext`,
 `MockContext`, `RecordingSignalBus` (a bus without a context that records what was fired),
 `InMemoryPlayerPrefsService` and `GcAllocationProbe` (calibrated against a positive control) for
-EditMode and PlayMode tests; `MockAdNetworkAdapter.RewardOutcome` picks what a rewarded ad ends with.
+EditMode and PlayMode tests, and the test doubles `MockAdNetworkAdapter` (its `RewardOutcome` picks what
+a rewarded ad ends with) and `MockIapStoreAdapter`, which a test passes to `AdService` / `IapService`.
 A game's test assembly lists `com.nexus.core.testing` in its references and needs no `testables`;
 the assembly compiles in the editor and for test players (`UNITY_INCLUDE_TESTS`), not into a game's
 build. To run the package's own tests in a game, add `"testables": ["com.nexus.core"]` to
@@ -115,7 +116,7 @@ build. To run the package's own tests in a game, add `"testables": ["com.nexus.c
 runs seven of its suites that way.
 
 **Not in the package** (so that no one looks for it): UniTask or Awaitable integration (the API is
-`ValueTask`); real advertising, store or analytics SDKs (adapters and mocks only, see
+`ValueTask`); real advertising, store or analytics SDKs (adapter contracts only, and no simulated store or ad in a player, see
 [ADAPTERS.md](docs/ADAPTERS.md)); server authority for the economy and storage services.
 
 ## Services
@@ -125,13 +126,13 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 
 | Service | Folder under `Runtime/Services` | Purpose |
 |---|---|---|
-| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (mock included; the ad family's `NexusAdsBridge.Connect` in `com.nexus.ads.bridge.nexus` sets its adapter); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged` (also when its own interstitial cooldown ends, with an `ITickService` bound), privacy options through optional adapter capabilities |
+| `AdService` | `Ads` | Interstitial / rewarded / banner flow over an `IAdNetworkAdapter` from `AdAdapterFactory` (no provider included: without an adapter no ad and a warning; the ad family's `NexusAdsBridge.Connect` in `com.nexus.ads.bridge.nexus` sets its adapter); `RequestReward` / `RequestRewardAsync` with `AdOutcome`, `ReadyChanged` (also when its own interstitial cooldown ends, with an `ITickService` bound), privacy options through optional adapter capabilities |
 | `AnalyticsService` | `Analytics` | Stub `IAnalyticsService`: events (with an optional parameter dictionary) and user properties written to the log; replace it with a real backend such as `com.nexus.firebase` before release |
 | `AudioService` | `Audio` | BGM crossfade, pooled 2D/3D SFX sources, pitch variation, volume channels, one mute for everything plus separate music and effects mutes (`IsMusicMuted`, `IsSfxMuted`); the root comes from an `IAudioRootProvider`, which gets it back through `ReleaseRoot` on dispose |
 | `EconomyService` | `Economy` | Multi-currency ledger with `long` and `BigDouble` balances, `CanAfford`, reactive balances, optional backend validator; balances persist to `SettingsStores.Economy` when a game binds one |
 | `FeedbackService` | `Feedback` | Combined audio + haptic presets |
 | `HapticService` | `Haptics` | Six `HapticType` presets and a game's own one-shots and waveforms (`CreateEffect`, `CreateWaveform`, `Play`); on Android 8+ each effect is built once and played through cached JNI; iOS uses `Handheld.Vibrate()`; `IsEnabled` persists |
-| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (mock included; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` / `PurchaseAsync` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
+| `IapService` | `IAP` | Store catalog, purchase and restore over `IapAdapterFactory` (no provider included: without an adapter `store_unavailable` and a warning; Unity IAP in the `com.nexus.iap.unity` package); `Purchase` / `PurchaseAsync` with `PurchaseOutcome`, localized prices, `IsStoreAvailable` and `StoreChanged` through optional adapter capabilities |
 | `InputService` | `Input` | Input System movement/actions behind `IInputService`; a custom `IInputProvider` is authoritative |
 | `LocalizationService` | `Localization` | Language tables (a game's JSON tables through `JsonLocalizationTableProvider`), first-run device language, the language's culture and `Format`, RTL formatting, English fallback |
 | `LoggerService` | `Logging` | Default `ILoggerService` |

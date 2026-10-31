@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
@@ -13,7 +12,7 @@ namespace Nexus.Core.Services
     public interface IIapAdapterFactory
     {
         /// <summary>Creates a store adapter for the specified provider.</summary>
-        /// <param name="provider">Provider identifier: "unityiap", "revenuecat", "googleplay", "apple", "mock"</param>
+        /// <param name="provider">The name a provider was registered under with <see cref="RegisterProvider"/>.</param>
         /// <returns>Configured adapter instance, or null if provider is unknown.</returns>
         IIapStoreAdapter CreateAdapter(string provider);
         
@@ -22,104 +21,13 @@ namespace Nexus.Core.Services
     }
 
     /// <summary>
-    /// Default implementation of <see cref="IIapAdapterFactory"/>.
-    /// Comes with built-in mock provider; real providers are registered by the consumer project.
+    /// Default implementation of <see cref="IIapAdapterFactory"/>. It ships no provider: the game registers the real ones
+    /// (<c>UnityIapAdapter.Register</c> in com.nexus.iap.unity). The test double <c>MockIapStoreAdapter</c> lives in the
+    /// testing kit (#162).
     /// </summary>
     [Preserve]
     public sealed class IapAdapterFactory : ProviderFactory<IIapStoreAdapter>, IIapAdapterFactory
     {
-        public IapAdapterFactory() : base("IAP provider")
-        {
-            RegisterBuiltIn("mock", () => new MockIapStoreAdapter());
-        }
-    }
-
-    /// <summary>
-    /// Mock IAP store adapter for development and testing.
-    /// Simulates purchase flow, restore, and product ownership without real store SDK.
-    /// </summary>
-    [Preserve]
-    public sealed class MockIapStoreAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter
-    {
-        public event Action Changed;
-        public bool IsAvailable => _initialized;
-
-        /// <summary>The catalog's price string stands in for the store's localized price.</summary>
-        public string GetLocalizedPrice(string productId) => _catalog.Find(p => p.Id == productId)?.PriceString;
-
-        public void PurchaseWithOutcome(string productId, Action<PurchaseOutcome> onOutcome)
-        {
-            Purchase(productId, (success, info) => onOutcome?.Invoke(success ? PurchaseOutcome.Purchased
-                : info == "store_unavailable" || info == "not_initialized" ? PurchaseOutcome.Unavailable
-                : PurchaseOutcome.Failed));
-        }
-
-        private readonly HashSet<string> _ownedProducts = new();
-        private bool _initialized;
-        private List<ProductDefinition> _catalog = new();
-
-        public void Initialize(List<ProductDefinition> products, Action<bool> onInitialized)
-        {
-            _catalog = products ?? new List<ProductDefinition>();
-            _initialized = true;
-            onInitialized?.Invoke(true);
-            Changed?.Invoke();
-        }
-
-        public void Purchase(string productId, Action<bool, string> onComplete)
-        {
-            if (!_initialized)
-            {
-                onComplete?.Invoke(false, "not_initialized");
-                return;
-            }
-
-            var product = _catalog.Find(p => p.Id == productId);
-            if (product == null)
-            {
-                onComplete?.Invoke(false, "product_not_found");
-                return;
-            }
-
-            // Mock: always succeed in editor/dev, configurable in release
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            _ownedProducts.Add(productId);
-            onComplete?.Invoke(true, productId);
-#else
-            // Release mock behavior: graceful failure
-            onComplete?.Invoke(false, "store_unavailable");
-#endif
-        }
-
-        public void Restore(Action<bool> onComplete)
-        {
-            if (!_initialized)
-            {
-                onComplete?.Invoke(false);
-                return;
-            }
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            onComplete?.Invoke(true);
-#else
-            onComplete?.Invoke(false);
-#endif
-        }
-
-        public bool IsOwned(string productId)
-        {
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            return _ownedProducts.Contains(productId);
-#else
-            return false;
-#endif
-        }
-
-        /// <summary>Manually set product ownership for testing scenarios.</summary>
-        public void SetOwned(string productId, bool owned)
-        {
-            if (owned) _ownedProducts.Add(productId);
-            else _ownedProducts.Remove(productId);
-            Changed?.Invoke();
-        }
+        public IapAdapterFactory() : base("IAP provider") { }
     }
 }

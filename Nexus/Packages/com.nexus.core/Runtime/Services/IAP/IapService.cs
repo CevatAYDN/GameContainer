@@ -43,7 +43,7 @@ namespace Nexus.Core.Services
         void Purchase(string productId, Action<PurchaseOutcome> onOutcome);
         /// <summary>The store's localized price when the adapter reports one, else the catalog's <see cref="ProductDefinition.PriceString"/>, else null.</summary>
         string GetLocalizedPrice(string productId);
-        /// <summary>True when purchases can be attempted now (adapter reports availability; without an adapter only where the mock is acceptable).</summary>
+        /// <summary>True when purchases can be attempted now: the adapter reports availability; without an adapter, false in every build.</summary>
         bool IsStoreAvailable { get; }
         /// <summary>Raised when the adapter reports a store change (connected, products or purchases fetched, restore).</summary>
         event Action StoreChanged;
@@ -61,44 +61,9 @@ namespace Nexus.Core.Services
         public event Action StoreChanged;
         private readonly Action _forwardStoreChanged;
         private readonly Dictionary<string, ProductDefinition> _catalog = new();
-        private readonly HashSet<string> _mockOwnedProducts = new();
-        // Integrity checksum over _mockOwnedProducts (editor/dev mock ONLY). This is
-        // deterrence, not a security boundary: the checksum lives in the same process RAM a
-        // determined memory editor could patch, and the hash algorithm is discoverable in the
-        // binary. The real ownership gate is the release #else path, which never trusts this
-        // set.
-        //
-        // Hardening over the plain hash: the checksum is salted per instance and XOR-masked
-        // with a mask that ROTATES on every successful verify. Consequences:
-        //  - value-scans fail across instances (salt differs per IapService),
-        //  - a snapshot-replay of an observed (checksum, mask) pair is detected on the next
-        //    read because both the set content hash and the mask have moved,
-        //  - fabricating a valid checksum requires computing the salted hash of the tampered
-        //    set under the CURRENT mask — i.e. reverse-engineering the binary, which is the
-        //    deterrence ceiling for an in-process mock.
-        // Within its scope it still works as before: a naive RAM scan can append a fake
-        // product ID to the HashSet but cannot produce a matching checksum — every read AND
-        // every purchase verifies, detects the mismatch, wipes the tampered set and denies
-        // the forged ownership (fail-closed; note the whole set — including legitimately-
-        // owned products — is revoked on a tamper, by design). Guarded by lock (_catalog),
-        // the same lock that guards the catalog dictionary.
-        private int _mockOwnedSalt;
-        private int _mockOwnedMask;
-        private int _mockOwnedChecksum;
 
         public IapService()
         {
-            unchecked
-            {
-                // Per-instance salt: the stored checksum value differs for every service
-                // instance, so an observed value cannot be replayed from another instance
-                // or another run. GetHashCode() is identity-based (unique per object).
-                _mockOwnedSalt = (int)((long)System.DateTime.UtcNow.Ticks ^ GetHashCode() ^ 0x5A17C0DE);
-                _mockOwnedMask = _mockOwnedSalt * 31 + 17;
-            }
-            // Seed the checksum to the salted empty-set hash under the initial mask so the
-            // first read does not false-positive on a 0 vs. empty-set mismatch.
-            RecomputeMockOwnedChecksum();
             _forwardStoreChanged = () => StoreChanged?.Invoke();
         }
 
@@ -147,60 +112,6 @@ namespace Nexus.Core.Services
             }
         }
 
-        // Deterministic in-session hash over the salt + mock-owned set. Iterates chars
-        // directly (not string.GetHashCode, which is randomized per process on some runtimes)
-        // so the checksum is stable across reads within the session and cheap to recompute.
-        private int ComputeMockOwnedHash()
-        {
-            unchecked
-            {
-                int hash = 17;
-                hash = hash * 31 + _mockOwnedSalt;
-                hash = hash * 31 + _mockOwnedProducts.Count;
-                foreach (var id in _mockOwnedProducts)
-                {
-                    int h = 23;
-                    for (int i = 0; i < id.Length; i++)
-                        h = h * 31 + id[i];
-                    hash = hash * 31 + h;
-                }
-                return hash;
-            }
-        }
-
-        private void RecomputeMockOwnedChecksum()
-        {
-            _mockOwnedChecksum = ComputeMockOwnedHash() ^ _mockOwnedMask;
-        }
-
-        // Pure comparison — does NOT mutate on mismatch. On success the mask is rotated and
-        // the checksum re-seeded under the new mask, so the stored value moves on every read:
-        // a memory editor that replayed an observed consistent (checksum, mask) snapshot
-        // fails on the very next verify. On tamper the stored fields are left untouched and
-        // the caller (WipeIfTampered) wipes the set and re-seeds.
-        private bool VerifyMockOwnedChecksum()
-        {
-            if (_mockOwnedChecksum != (ComputeMockOwnedHash() ^ _mockOwnedMask)) return false;
-            unchecked { _mockOwnedMask = _mockOwnedMask * 31 + 17; }
-            RecomputeMockOwnedChecksum();
-            return true;
-        }
-
-        // Verifies the checksum and, on tamper, wipes the set and re-seeds the checksum.
-        // Returns true when tampering was detected (the caller should deny the read or
-        // re-run its mutation on a clean set). Shared by every mock-ownership entry point
-        // so the wipe path is defined exactly once.
-        private bool WipeIfTampered(string context)
-        {
-            if (VerifyMockOwnedChecksum()) return false;
-            NexusRuntime.Logger?.LogWarning(
-                $"[IapService] Mock ownership integrity check failed ({context}) — memory tampering detected. " +
-                "Clearing mock ownership and denying the forged product.");
-            _mockOwnedProducts.Clear();
-            RecomputeMockOwnedChecksum();
-            return true;
-        }
-
         public void Purchase(string productId, Action<PurchaseOutcome> onOutcome)
         {
             IIapStoreAdapter adapter;
@@ -210,7 +121,7 @@ namespace Nexus.Core.Services
                 outcomes.PurchaseWithOutcome(productId, onOutcome);
                 return;
             }
-            // Bool-only adapters and the built-in stand-in: a failure code names the store state, everything else failed.
+            // Bool-only adapters and no adapter: a failure code names the store state, everything else failed.
             PurchaseProduct(productId, (success, info) => onOutcome?.Invoke(success ? PurchaseOutcome.Purchased
                 : info == "store_unavailable" || info == "not_initialized" ? PurchaseOutcome.Unavailable
                 : PurchaseOutcome.Failed));
@@ -235,12 +146,8 @@ namespace Nexus.Core.Services
                 IIapStoreAdapter adapter;
                 lock (_adapterLock) { adapter = _adapter; }
                 if (adapter is IIapStoreInfoAdapter info) return info.IsAvailable;
-                if (adapter != null) return true;
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-                return true;
-#else
-                return false;
-#endif
+                // No store, no purchase: the editor too goes through a real adapter (Unity IAP's editor store), #162.
+                return adapter != null;
             }
         }
 
@@ -254,37 +161,13 @@ namespace Nexus.Core.Services
                 return;
             }
 
-            // No adapter bound — fall back gracefully instead of throwing.
-            // Previously this threw InvalidOperationException in release builds,
-            // crashing the app when the player tapped "Remove Ads" before the platform
-            // adapter had finished initialising (cold start, missing network entitlement, etc.).
+            // No adapter: never throw and never simulate (#162). The caller gets store_unavailable, which its UI shows as
+            // "store unavailable", in the editor and in every player, and the warning names what is missing.
             var logger = NexusRuntime.Logger;
-            if (logger != null)
-            {
-                logger.LogWarning(
-                    $"[IapService] PurchaseProduct('{productId}') called without an IStoreAdapter bound. " +
-                    "The Real Store Adapter is owned by the platform bootstrapper; if this is a release build, " +
-                    "verify that GameplayLifecycle registers the adapter before any UI can trigger a purchase.");
-            }
-
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            // Developer/Editor: simulate a successful purchase so QA flows remain testable.
-            lock (_catalog)
-            {
-                // Integrity gate BEFORE mutating: recomputing the checksum over a tampered
-                // set would silently bless the forged product. Detect + wipe first so a
-                // legitimate purchase can never legitimize a RAM-injected ownership.
-                WipeIfTampered("before purchase");
-                if (_mockOwnedProducts.Add(productId))
-                {
-                    RecomputeMockOwnedChecksum();
-                }
-            }
-            onComplete?.Invoke(true, productId);
-#else
-            // (release) Never throw. Surface a localised, actionable failure
-            // through the existing callback contract so the caller can display a
-            // "Store temporarily unavailable" toast and queue the purchase intent for retry.
+            logger?.LogWarning(
+                $"[IapService] PurchaseProduct('{productId}') called without a store adapter: answered store_unavailable. " +
+                "Set the store with SetStoreAdapter (com.nexus.iap.unity's UnityIapAdapter, which also runs Unity IAP's editor store) " +
+                "before any UI can start a purchase.");
             try
             {
                 onComplete?.Invoke(false, "store_unavailable");
@@ -293,7 +176,6 @@ namespace Nexus.Core.Services
             {
                 logger?.LogException(ex);
             }
-#endif
         }
 
         public void RestorePurchases(Action<bool> onComplete)
@@ -306,16 +188,9 @@ namespace Nexus.Core.Services
                 return;
             }
 
-            // (mirror) Same graceful failure for restore flow.
+            // The same answer for a restore: nothing restored, and the warning names the missing store (#162).
             var logger = NexusRuntime.Logger;
-            if (logger != null)
-            {
-                logger.LogWarning("[IapService] RestorePurchases called without an IStoreAdapter bound.");
-            }
-
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            onComplete?.Invoke(true);
-#else
+            logger?.LogWarning("[IapService] RestorePurchases called without a store adapter: answered false. Set the store with SetStoreAdapter first.");
             try
             {
                 onComplete?.Invoke(false);
@@ -324,26 +199,14 @@ namespace Nexus.Core.Services
             {
                 logger?.LogException(ex);
             }
-#endif
         }
 
         public bool IsProductOwned(string productId)
         {
             IIapStoreAdapter adapter;
             lock (_adapterLock) { adapter = _adapter; }
-            if (adapter != null) return adapter.IsOwned(productId);
-#if UNITY_EDITOR || DEVELOPMENT_BUILD
-            lock (_catalog)
-            {
-                // Integrity check before trusting the mock set: a memory tamper that added
-                // a fake product ID breaks the checksum. Wipe and deny rather than honour
-                // the forged ownership.
-                if (WipeIfTampered("read")) return false;
-                return _mockOwnedProducts.Contains(productId);
-            }
-#else
-            return false;
-#endif
+            // Ownership comes only from a store; without one nothing is owned (#162).
+            return adapter != null && adapter.IsOwned(productId);
         }
 
         public ProductDefinition GetProduct(string productId)

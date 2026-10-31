@@ -109,8 +109,9 @@ Sahne sahipliği, parent/child context'ler, auto-discovery, mediator'lar ve edit
 bir Root + ContextData asset'i ve bir IContextLifecycle kullanın. [English quickstart](10_MIN_QUICKSTART.md)
 veya [Türkçe hızlı başlangıç](10_MIN_QUICKSTART_TR.md) rehberini izleyin. Yapılandırmayı ilgisiz
 MonoBehaviour update'lerinde binding yapmak yerine lifecycle'da tutun. `AnalyticsService` yalnızca log'a
-yazar; `AdService` ve `IapService` oyun gerçek bir adaptör bağlayana kadar mock adaptörle çalışır
-(`com.nexus.firebase`, `com.nexus.ads.bridge.nexus`, `com.nexus.iap.unity`).
+yazar; oyun gerçek bir adaptör bağlayana kadar `AdService` reklam göstermez ve `IapService` "mağaza
+kullanılamıyor" der, her biri bir uyarıyla ve editörde de (`com.nexus.firebase`,
+`com.nexus.ads.bridge.nexus`, `com.nexus.iap.unity`).
 
 ## Performansa duyarlı composite'ler
 

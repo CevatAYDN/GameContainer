@@ -24,12 +24,6 @@ namespace Nexus.Core.Services
             _providerKind = providerKind;
         }
 
-        /// <summary>Registers the built-in provider(s) shipped for this factory.</summary>
-        protected void RegisterBuiltIn(string provider, Func<TAdapter> creator)
-        {
-            RegisterProvider(provider, creator);
-        }
-
         /// <summary>Creates an adapter for the specified provider, or null if unknown.</summary>
         public virtual TAdapter CreateAdapter(string provider)
         {

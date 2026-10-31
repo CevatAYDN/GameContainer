@@ -1,51 +1,64 @@
 using NUnit.Framework;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Nexus.Core.Services;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Nexus.Editor.Tests
 {
+    /// <summary>
+    /// Issue #162 (the owner's decision: no mock or fake in what a game plays). Without an adapter the editor used to
+    /// show mock ads, grant a mock reward and simulate a purchase; it now answers as a release player does.
+    /// </summary>
     [TestFixture]
     public class MonetizationServiceTests
     {
         [Test]
-        public async Task AdService_CooldownAndAvailabilityLogic()
+        public async Task AdService_WithoutAnAdapter_ShowsNoAdAndGrantsNoReward_InTheEditorToo()
         {
-            var adService = new AdService();
-            await adService.InitializeAsync(default);
+            using var ads = new AdService();
+            await ads.InitializeAsync(default);
 
-            adService.SetInterstitialCooldown(0.1f);
-            Assert.IsTrue(adService.IsInterstitialAvailable("default"));
+            Assert.IsFalse(ads.IsInterstitialAvailable("default"), "no adapter, no interstitial");
+            Assert.IsFalse(ads.IsRewardedAvailable("default"), "no adapter, no rewarded ad");
 
-            bool adClosed = false;
-            adService.ShowInterstitial("default", () => adClosed = true);
-            Assert.IsTrue(adClosed);
+            LogAssert.Expect(LogType.Warning, new Regex(@"No ad network adapter for interstitial 'default'"));
+            bool closed = false;
+            ads.ShowInterstitial("default", () => closed = true);
+            Assert.IsTrue(closed, "the caller is answered at once");
 
-            bool rewardedCompleted = false;
-            adService.ShowRewarded("default", (success) => rewardedCompleted = success);
-            Assert.IsTrue(rewardedCompleted);
+            LogAssert.Expect(LogType.Warning, new Regex(@"No ad network adapter for rewarded 'default'"));
+            bool? rewarded = null;
+            ads.ShowRewarded("default", success => rewarded = success);
+            Assert.That(rewarded, Is.False, "no reward without an impression");
         }
 
         [Test]
-        public async Task IapService_ProductRegistrationAndPurchaseMock()
+        public async Task IapService_WithoutAStore_AnswersUnavailableAndOwnsNothing_InTheEditorToo()
         {
-            var iapService = new IapService();
-            await iapService.InitializeAsync(default);
+            using var iap = new IapService();
+            await iap.InitializeAsync(default);
+            iap.RegisterProducts(new ProductDefinition { Id = "no_ads", Type = ProductType.NonConsumable, PriceString = "$1.99" });
 
-            iapService.RegisterProducts(
-                new ProductDefinition { Id = "no_ads", Type = ProductType.NonConsumable, PriceString = "$1.99" },
-                new ProductDefinition { Id = "coins_100", Type = ProductType.Consumable, PriceString = "$0.99" }
-            );
+            Assert.IsFalse(iap.IsStoreAvailable, "no store adapter, no store");
 
-            var noAdsProd = iapService.GetProduct("no_ads");
-            Assert.IsNotNull(noAdsProd);
-            Assert.AreEqual("$1.99", noAdsProd.PriceString);
+            LogAssert.Expect(LogType.Warning, new Regex(@"PurchaseProduct\('no_ads'\) called without a store adapter"));
+            bool? purchased = null; string info = null;
+            iap.PurchaseProduct("no_ads", (success, detail) => { purchased = success; info = detail; });
+            Assert.That((purchased, info), Is.EqualTo(((bool?)false, "store_unavailable")));
 
-            Assert.IsFalse(iapService.IsProductOwned("no_ads"));
+            LogAssert.Expect(LogType.Warning, new Regex(@"PurchaseProduct\('no_ads'\) called without a store adapter"));
+            PurchaseOutcome? outcome = null;
+            iap.Purchase("no_ads", o => outcome = o);
+            Assert.That(outcome, Is.EqualTo(PurchaseOutcome.Unavailable));
 
-            bool purchased = false;
-            iapService.PurchaseProduct("no_ads", (success, id) => purchased = success);
-            Assert.IsTrue(purchased);
-            Assert.IsTrue(iapService.IsProductOwned("no_ads"));
+            LogAssert.Expect(LogType.Warning, new Regex(@"RestorePurchases called without a store adapter"));
+            bool? restored = null;
+            iap.RestorePurchases(ok => restored = ok);
+            Assert.That(restored, Is.False);
+
+            Assert.IsFalse(iap.IsProductOwned("no_ads"), "ownership comes only from a store");
         }
     }
 }

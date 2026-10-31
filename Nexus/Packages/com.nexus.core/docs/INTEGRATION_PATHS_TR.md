@@ -93,8 +93,8 @@ başlatmadaki eager-cycle analizi lazy erişimleri veya factory içindeki döng�
 - IL2CPP/AOT hiçbir zaman dinamik IL üretmez. AOT binder/source generator kullanın ve gerçek bir player'ı test edin.
 - Başlatma süresini, belleği ve frame p95/p99 değerlerini hedef cihazlarda ölçün.
 
-Reklam, IAP ve analytics için üretim provider adaptörlerini kaydedin. Mock provider'lar
-çalışan bir ödeme veya reklam entegrasyonunu kanıtlamaz. Network sinyalleri ve rollback
+Çekirdek hiçbir reklam ya da mağaza sağlayıcısı içermez: reklam, IAP ve analytics için üretim
+adaptörlerini kaydedin. Test kitinin test dublörleri çalışan bir ödeme veya reklam entegrasyonunu kanıtlamaz. Network sinyalleri ve rollback
 tek başına bir multiplayer backend oluşturmaz.
 
 Bkz. [oyun kalıpları](GAME_PATTERNS.md), [mimari](ARCHITECTURE.md) ve
