@@ -354,7 +354,3 @@ through `IScreenStack`; scene-anchored views that are not screens stay plain `Vi
 6. **Composite Triggers** (fan-in check)
 
 This guarantees mediators/views always read post-command state.
-
----
-
-**Code version:** 0.5.0

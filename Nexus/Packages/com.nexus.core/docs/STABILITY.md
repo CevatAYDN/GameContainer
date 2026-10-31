@@ -57,7 +57,3 @@
 2. Performance benchmarks stabilize
 3. Breaking changes rate drops to zero for 3 consecutive releases
 4. Community adoption demonstrates API surface correctness
-
----
-
-**Code version:** 0.5.0

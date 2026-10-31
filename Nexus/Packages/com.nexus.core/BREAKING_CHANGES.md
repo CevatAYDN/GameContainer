@@ -456,8 +456,3 @@ If you have questions about this policy:
 2. **Check MIGRATION.md** for specific version changes
 3. **Open a GitHub Discussion** for clarification
 4. **Review GitHub Issues** for similar questions
-
----
-
-**Nexus Core Version:** 0.5.0
-**Policy Version:** 1.0

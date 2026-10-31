@@ -179,6 +179,4 @@ public override void OnDisable()
 
 ---
 
-**Code version:** 0.5.0  
-**Maintainers:** Nexus Core Team  
 **Re-review trigger:** Any change to `Runtime/Core/Context.cs` or `Runtime/Core/SignalBus.cs`.

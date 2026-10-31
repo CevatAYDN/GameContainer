@@ -288,8 +288,3 @@ namespace MyGame.Contexts
 - 📖 [README.md](../README.md) — Main framework index and decision flows
 - 🏛️ [ARCHITECTURE.md](ARCHITECTURE.md) — Core runtime architecture & sequence diagrams
 - 🎮 [GAME_PATTERNS.md](GAME_PATTERNS.md) — Architecture patterns for 6 game genres
-
----
-
-**Code version:** 0.5.0  
-**Target AI Models:** Claude 3.5 Sonnet, GPT-4o, Gemini 1.5/3.6 Flash  

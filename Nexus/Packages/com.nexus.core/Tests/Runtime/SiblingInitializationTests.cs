@@ -44,7 +44,6 @@ namespace Nexus.Tests
         [SetUp]
         public void Setup()
         {
-            UnityEngine.Debug.Log($"[DIAG] START {NUnit.Framework.TestContext.CurrentContext.Test.FullName}");
             _initOrder = new List<string>();
             Root.ClearRegistry();
         }

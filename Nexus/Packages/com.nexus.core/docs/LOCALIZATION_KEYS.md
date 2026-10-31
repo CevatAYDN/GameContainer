@@ -85,6 +85,4 @@ The complete lists are `NexusLang.AddDefaults()` (English) and `Editor/Locales/t
 
 ---
 
-**Code version:** 0.5.0
-**Maintainers:** Nexus Core Team
 **Re-review trigger:** Adding or modifying any localization key.

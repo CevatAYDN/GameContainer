@@ -283,7 +283,3 @@ Automatic dependency injection, zero memory leaks, and instant SignalBus access 
 | **"Type not registered"** | Add `builder.Bind<MyType>()` in `OnConfigure`, or check that the type is in a non-system assembly |
 | **Signal not dispatched** | Verify the command implements `ICommand<YourSignal>` and is registered via `builder.BindCommand<YourSignal, YourCommand>()` |
 | **Test won't run** | Open EditMode Test Runner, select `InfrastructureValidationTests` and `PluginRefactorValidationTests` |
-
----
-
-> **Nexus version:** 0.5.0

@@ -283,7 +283,3 @@ Otomatik bağımlılık enjeksiyonu, sıfır bellek sızıntısı ve anında Sig
 | **"Type not registered"** | `OnConfigure`'a `builder.Bind<MyType>()` ekleyin veya türün sistem dışı bir assembly'de olduğunu kontrol edin |
 | **Signal gönderilmiyor** | Command'in `ICommand<YourSignal>` implemente ettiğini ve `builder.BindCommand<YourSignal, YourCommand>()` ile kayıtlı olduğunu doğrulayın |
 | **Test çalışmıyor** | EditMode Test Runner'ı açın, `InfrastructureValidationTests` ve `PluginRefactorValidationTests`'i seçin |
-
----
-
-> **Nexus sürümü:** 0.5.0
