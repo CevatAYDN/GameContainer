@@ -79,7 +79,8 @@ So a development build handed to a teammate never requests a live ad.
 The device's advertising id, for the Test tab's list and the mediation dashboard: before the first
 build, Google's ads settings page on the phone shows it as "Your advertising ID"; the command
 `adb shell am start -a com.google.android.gms.settings.ADS_PRIVACY` opens that page. A development
-build's debug panel shows the same id with a copy button.
+build's debug panel shows the same id with a copy button where the gate reads it, with a mediation
+selected and test mode on; elsewhere nothing reads the id (issue #133).
 
 `ProviderGate.Host(build, gate, mediationSelected, providerRegistered)` then decides what the bootstrap
 runs. The simulator (a full-screen overlay labelled "Simulated Rewarded ad" or "Simulated Interstitial ad") runs only where the gate chose it,

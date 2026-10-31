@@ -170,6 +170,19 @@ namespace Nexus.Ads.Tests
             StringAssert.Contains("validator stops this build", release.Text);
         }
 
+        // issue #133: the bootstrap read the advertising id before every start; only the test-device comparison uses it
+        [Test]
+        public void TheAdvertisingId_IsReadOnlyWhereTheGateComparesIt_AndNoMediationNamesNoDeviceRule()
+        {
+            bool Reads(BuildKind build) => BuildOutlook.ReadsAdvertisingId(_settings, build, _settings.ToProviderConfig(build, AdPlatform.Android, _settings.SelectedMediation));
+            var levelPlay = (Reads(BuildKind.Development), Reads(BuildKind.Editor), Reads(BuildKind.Release));
+            _settings.SelectedMediation = AdProviderKind.None;
+            var none = BuildOutlook.Decide(_settings, BuildKind.Development, _settings.ToProviderConfig(BuildKind.Development, AdPlatform.Android, AdProviderKind.None), null, false);
+
+            Assert.That((levelPlay, Reads(BuildKind.Development), none.Mode, none.Gate.Rule),
+                Is.EqualTo(((true, false, false), false, HostMode.Simulator, (string)null)));
+        }
+
         [Test]
         public void NoMediationSelected_InDevelopmentIsTheSimulator_InReleaseNothing()
         {

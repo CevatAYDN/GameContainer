@@ -739,6 +739,22 @@ namespace NexusBench
                 zero.Decision == GateDecision.Simulator && zero.Rule == PolicyRules.UnregisteredDevice && zero.Reason.Contains("unavailable")
                 && missing.Decision == GateDecision.Simulator && missing.Reason.Contains("unavailable") && !missing.Reason.Contains("add it on the Test tab"),
                 $"listed all-zero id: {zero.Decision} ({zero.Reason}); no id: {missing.Decision} ({missing.Reason}) (pre-fix: the listed zero id got the SDK)");
+
+            // issue #133: the bootstrap read the advertising id before every start, also where the decision never uses it.
+            // Where NeedsAdvertisingId is false, a listed id, an unlisted one and none at all give the same decision.
+            int checkedCases = 0, wrong = 0;
+            foreach (BuildKind build in new[] { BuildKind.Editor, BuildKind.Development, BuildKind.Release })
+                foreach (var config in new[] { live, test, sample, AdsRig.Provider_(testMode: true, devices: new[] { "abc-123" }, published: true) })
+                {
+                    var listed = ProviderGate.Evaluate(build, config, "abc-123");
+                    var unlisted = ProviderGate.Evaluate(build, config, "other");
+                    var none = ProviderGate.Evaluate(build, config, null);
+                    bool idMatters = listed.Decision != unlisted.Decision || listed.Decision != none.Decision || listed.Reason != unlisted.Reason || listed.Reason != none.Reason;
+                    checkedCases++;
+                    if (idMatters != ProviderGate.NeedsAdvertisingId(build, config)) wrong++;
+                }
+            Check("GT15. AdvertisingId_NeededExactlyWhereTheDecisionUsesIt", wrong == 0 && ProviderGate.NeedsAdvertisingId(BuildKind.Development, test),
+                $"{checkedCases} build and configuration cases, {wrong} where NeedsAdvertisingId disagrees with Evaluate");
         }
 
         // ----- Simulator scenarios through the real controller

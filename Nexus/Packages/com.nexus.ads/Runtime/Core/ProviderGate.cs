@@ -39,6 +39,14 @@ namespace Nexus.Ads
     /// </summary>
     public static class ProviderGate
     {
+        /// <summary>
+        /// Whether <see cref="Evaluate"/> compares the device's advertising id for this build and configuration: only a
+        /// development build in test mode without the provider's sample units checks the Test tab's device list. Everywhere
+        /// else the id cannot change the decision, so the bootstrap does not read it (issue #133).
+        /// </summary>
+        public static bool NeedsAdvertisingId(BuildKind build, ProviderConfig config)
+            => build == BuildKind.Development && !config.UsesPublishedTestData && config.TestMode;
+
         public static GateResult Evaluate(BuildKind build, ProviderConfig config, string deviceAdvertisingId)
         {
             switch (build)

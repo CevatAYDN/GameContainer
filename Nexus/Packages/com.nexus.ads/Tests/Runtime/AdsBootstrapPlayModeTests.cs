@@ -72,6 +72,19 @@ namespace Nexus.Ads.Tests.Runtime
             unsubscribe();
         }
 
+        // issue #133: StartAds read the advertising id before every start; in the editor the gate never compares it
+        [UnityTest]
+        public IEnumerator Start_InTheEditor_ReadsNoAdvertisingId()
+        {
+            int reads = 0;
+            var reader = AdsBootstrap.AdvertisingIdReader;
+            AdsBootstrap.AdvertisingIdReader = done => { reads++; done("fake-id"); };
+            try { yield return Boot(SimulatorScenario.Normal); }
+            finally { AdsBootstrap.AdvertisingIdReader = reader; }
+
+            Assert.That((reads, _bootstrap.DeviceAdvertisingId), Is.EqualTo((0, (string)null)));
+        }
+
         private static AdResult ShowNow()
         {
             AdResult result = AdResult.Failed;

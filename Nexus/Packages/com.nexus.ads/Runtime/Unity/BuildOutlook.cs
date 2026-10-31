@@ -45,9 +45,19 @@ namespace Nexus.Ads.Unity
         {
             var gate = settings.AdFreeRelease && build == BuildKind.Release
                 ? new GateResult(GateDecision.Blocked, null, "ad-free release")
-                : ProviderGate.Evaluate(build, provider, advertisingId);
+                : settings.SelectedMediation == AdProviderKind.None
+                    ? new GateResult(GateDecision.Simulator, null, "no mediation is selected") // no SDK to gate, and no device rule to name
+                    : ProviderGate.Evaluate(build, provider, advertisingId);
             return new HostDecision(gate, ProviderGate.Host(build, gate, settings.SelectedMediation != AdProviderKind.None, providerRegistered));
         }
+
+        /// <summary>
+        /// Whether the bootstrap reads the device's advertising id before it starts: only where <see cref="Decide"/> compares
+        /// it with the Test tab's list, a development build in test mode with a mediation selected and no sample units. With no
+        /// mediation, in the editor and in a release build nothing reads it (issue #133).
+        /// </summary>
+        public static bool ReadsAdvertisingId(AdsSettings settings, BuildKind build, ProviderConfig provider)
+            => settings.SelectedMediation != AdProviderKind.None && ProviderGate.NeedsAdvertisingId(build, provider);
 
         /// <summary>Why an idle host runs nothing (not the ad-free release, which is on purpose).</summary>
         public static string IdleReason(AdsSettings settings, GateResult gate)

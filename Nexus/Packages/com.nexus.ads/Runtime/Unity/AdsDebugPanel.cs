@@ -99,9 +99,14 @@ namespace Nexus.Ads.Unity
             var provider = _bootstrap.Settings != null ? _bootstrap.Settings.ToProviderConfig(_bootstrap.Build, _bootstrap.Platform, _bootstrap.Settings.SelectedMediation) : null;
             if (provider != null) GUILayout.Label("test mode: " + provider.TestMode + "   published test data: " + provider.UsesPublishedTestData + "   test devices: " + provider.TestDeviceIds.Count);
             GUILayout.Label("state: " + (controller != null ? controller.State.ToString() : "no controller") + "   kill switch: " + (controller != null && controller.KillSwitch) + "   privacy options required: " + (controller != null && controller.PrivacyOptionsRequired));
-            GUILayout.Label("advertising id (add it to the Test tab and the mediation dashboard):");
-            GUILayout.TextField(_bootstrap.DeviceAdvertisingId ?? "");
-            if (GUILayout.Button("Copy advertising id")) GUIUtility.systemCopyBuffer = _bootstrap.DeviceAdvertisingId ?? "";
+            if (_bootstrap.DeviceAdvertisingId == null)
+                GUILayout.Label("advertising id: not read; the gate compares it only in a development build with a mediation selected and test mode on");
+            else
+            {
+                GUILayout.Label("advertising id (add it to the Test tab and the mediation dashboard):");
+                GUILayout.TextField(_bootstrap.DeviceAdvertisingId);
+                if (GUILayout.Button("Copy advertising id")) GUIUtility.systemCopyBuffer = _bootstrap.DeviceAdvertisingId;
+            }
             if (controller != null && _bootstrap.Settings != null)
             {
                 GUILayout.Label("placements:");

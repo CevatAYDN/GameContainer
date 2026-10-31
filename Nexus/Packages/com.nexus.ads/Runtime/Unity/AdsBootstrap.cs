@@ -5,6 +5,7 @@ using System.Threading;
 using UnityEngine;
 
 [assembly: InternalsVisibleTo("com.nexus.ads.editor.tests")]
+[assembly: InternalsVisibleTo("com.nexus.ads.tests")]
 
 namespace Nexus.Ads.Unity
 {
@@ -51,8 +52,9 @@ namespace Nexus.Ads.Unity
         public SimulatorProvider Simulator => Mode == HostMode.Simulator ? Provider as SimulatorProvider : null;
         public AdController Controller { get; private set; }
         public UnityAdTelemetry Telemetry => _telemetry;
+        /// <summary>The device's advertising id, read only where the gate compares it with the Test tab's list; null elsewhere.</summary>
         public string DeviceAdvertisingId { get; private set; }
-        /// <summary>Raised once the controller exists (the advertising id is fetched off the main thread first).</summary>
+        /// <summary>Raised once the controller exists (where the gate needs the advertising id, it is fetched off the main thread first).</summary>
         public event Action Started;
 
         /// <summary>Sets the settings and simulator scenario before the component is enabled (tests, code-made bootstraps).</summary>
@@ -65,9 +67,12 @@ namespace Nexus.Ads.Unity
             _startOnAwake = startOnAwake;
         }
 
+        /// <summary>Tests: stands in for <see cref="DeviceIdentity.FetchAdvertisingId"/>.</summary>
+        internal static Action<Action<string>> AdvertisingIdReader = DeviceIdentity.FetchAdvertisingId;
+
         /// <summary>
-        /// Starts the ad stack once: reads the advertising id, then builds the provider or the simulator and the controller,
-        /// which runs the consent flow before the SDK. Awake calls it unless startOnAwake is off; a game that starts ads
+        /// Starts the ad stack once: reads the advertising id where the gate needs it (<see cref="BuildOutlook.ReadsAdvertisingId"/>),
+        /// then builds the provider or the simulator and the controller, which runs the consent flow before the SDK. Awake calls it unless startOnAwake is off; a game that starts ads
         /// later (after its own explanation, never for a player who owns the ad-free product) calls it itself, after Awake.
         /// Later calls do nothing.
         /// </summary>
@@ -76,7 +81,10 @@ namespace Nexus.Ads.Unity
             if (_startRequested || Instance != this || _settings == null) return;
             _startRequested = true;
             var mainThread = new UnityMainThread();
-            DeviceIdentity.FetchAdvertisingId(id => mainThread.Post(() => StartWith(id, mainThread)));
+            if (BuildOutlook.ReadsAdvertisingId(_settings, Build, _settings.ToProviderConfig(Build, Platform, _settings.SelectedMediation)))
+                AdvertisingIdReader(id => mainThread.Post(() => StartWith(id, mainThread)));
+            else
+                mainThread.Post(() => StartWith(null, mainThread));
         }
 
         /// <summary>
