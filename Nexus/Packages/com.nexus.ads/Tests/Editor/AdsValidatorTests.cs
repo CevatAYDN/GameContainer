@@ -282,12 +282,28 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
-        public void DetectedNetwork_WithoutAnAppAdsLine_Warns()
+        public void DetectedNetwork_IsCoveredByItsAdSystemDomainLine_NotByItsNameInAComment()
         {
-            _probe.Networks.Add("meta");
-            Assert.AreEqual(CheckResult.Warn, Check(Run(AdsValidator.Tab.Release), "appads.lines").Result);
-            _settings.AppAdsTxtLines.Add("facebook.com, 123, DIRECT, c3e20eee3f780d68 # meta");
-            Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "appads.lines").Result);
+            // One line per network in the form its own app-ads.txt page gives (issue #124); Unity's is Wickling's hosted line.
+            var lines = new[]
+            {
+                ("unityads", "unity.com, 18717623, DIRECT, 96cabb5fbdde37a7"), ("unityads", "unity3d.com, 123, DIRECT, 96cabb5fbdde37a7"),
+                ("admob", "google.com, pub-0000000000000000, DIRECT, f08c47fec0942fa0"), ("mintegral", "mintegral.com, 123, DIRECT, 0aeed750c80d6423"),
+                ("pangle", "pangleglobal.com, 1234, DIRECT"), ("chartboost", "chartboost.com,123,DIRECT"),
+                ("meta", "facebook.com, 123, RESELLER, c3e20eee3f780d68"), ("inmobi", "inmobi.com,74dcd2c4fa2d401cb74bbb9c124a268c,DIRECT,83e75a7ae333ca9d"),
+                ("liftoff", "vungle.com, 123, DIRECT, c107d686becd2d77"), ("dtexchange", "FYBER.COM,123,DIRECT,1ad675c9de6b5176"),
+            };
+            foreach (var (network, line) in lines)
+            {
+                _probe.Networks.Clear();
+                _probe.Networks.Add(network);
+                _settings.AppAdsTxtLines.Clear();
+                Assert.AreEqual(CheckResult.Warn, Check(Run(AdsValidator.Tab.Release), "appads.lines").Result, network + " without a line");
+                _settings.AppAdsTxtLines.Add("ironsrc.com, 1234, DIRECT # " + network);
+                Assert.AreEqual(CheckResult.Warn, Check(Run(AdsValidator.Tab.Release), "appads.lines").Result, network + " named only in a comment");
+                _settings.AppAdsTxtLines.Add(line);
+                Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "appads.lines").Result, line);
+            }
         }
 
         [Test]

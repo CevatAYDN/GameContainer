@@ -221,7 +221,7 @@ bad arguments). The JSON report lists every check with `id`, `result` (`pass` / 
 | `privacy.url` | warn: no privacy policy URL |
 | `android.adid` | warn: custom manifest without the AD_ID permission on target 33+ |
 | `android.linkxml` | warn (release): no link.xml preserves `Nexus.Ads.Core` |
-| `appads.lines` | warn: a detected network has no app-ads.txt line |
+| `appads.lines` | warn: a detected network has no app-ads.txt line that starts with its ad system domain (`google.com` for AdMob, `unity.com` or `unity3d.com` for Unity Ads, ...) |
 | `manifest.pins` | fail: the family's git-URL entries point at different commits |
 
 ## Using it with Nexus

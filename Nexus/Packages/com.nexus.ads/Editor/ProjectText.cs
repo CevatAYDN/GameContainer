@@ -70,6 +70,16 @@ namespace Nexus.Ads.Editor
             }
             return sb.ToString();
         }
+
+        /// <summary>The first field of an app-ads.txt record (the ad system domain), trimmed; empty for a comment, a variable or a blank line.</summary>
+        public static string AdSystemDomain(string line)
+        {
+            string record = line ?? "";
+            int comment = record.IndexOf('#');
+            if (comment >= 0) record = record.Substring(0, comment);
+            int comma = record.IndexOf(',');
+            return comma < 0 ? "" : record.Substring(0, comma).Trim();
+        }
     }
 
     /// <summary>

@@ -58,10 +58,16 @@ namespace Nexus.Ads.Editor
         {
             { AdProviderKind.LevelPlay, "Nexus.Ads.LevelPlay" }, { AdProviderKind.Max, "Nexus.Ads.Max" }, { AdProviderKind.AdMob, "Nexus.Ads.AdMob" },
         };
-        private static readonly (string id, string[] keywords)[] NetworkKeywords =
+        // The ad system domain each network's app-ads.txt line starts with, from the network's own app-ads.txt page (read
+        // 2026-10-31, issue #124). Unity Ads: unity.com is what its dashboard gives (Wickling's hosted file), unity3d.com the
+        // older documentation's line.
+        private static readonly (string id, string[] keywords, string[] appAdsDomains)[] KnownNetworks =
         {
-            ("mintegral", new[] { "mintegral" }), ("pangle", new[] { "pangle" }), ("chartboost", new[] { "chartboost" }), ("meta", new[] { "facebook", "audiencenetwork", "audience-network" }),
-            ("inmobi", new[] { "inmobi" }), ("liftoff", new[] { "vungle", "liftoff" }), ("dtexchange", new[] { "fyber", "dtexchange" }), ("unityads", new[] { "unityads", "unity-ads" }), ("admob", new[] { "admob", "googleads" }),
+            ("mintegral", new[] { "mintegral" }, new[] { "mintegral.com" }), ("pangle", new[] { "pangle" }, new[] { "pangleglobal.com" }),
+            ("chartboost", new[] { "chartboost" }, new[] { "chartboost.com" }), ("meta", new[] { "facebook", "audiencenetwork", "audience-network" }, new[] { "facebook.com" }),
+            ("inmobi", new[] { "inmobi" }, new[] { "inmobi.com" }), ("liftoff", new[] { "vungle", "liftoff" }, new[] { "vungle.com" }),
+            ("dtexchange", new[] { "fyber", "dtexchange" }, new[] { "fyber.com" }), ("unityads", new[] { "unityads", "unity-ads" }, new[] { "unity.com", "unity3d.com" }),
+            ("admob", new[] { "admob", "googleads" }, new[] { "google.com" }),
         };
 
         private readonly HashSet<string> _manifestPackages = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -77,7 +83,7 @@ namespace Nexus.Ads.Editor
                 _manifestPackages.Add(m.Groups[1].Value);
             foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages()) { _manifestPackages.Add(package.name); _packages[package.name] = package; }
             foreach (var asm in AppDomain.CurrentDomain.GetAssemblies()) _assemblies.Add(asm.GetName().Name);
-            foreach (var pair in NetworkKeywords) if (Mentions(pair.keywords)) _networks.Add(pair.id);
+            foreach (var network in KnownNetworks) if (Mentions(network.keywords)) _networks.Add(network.id);
             if (Directory.Exists("Assets"))
                 foreach (var file in Directory.GetFiles("Assets", "link.xml", SearchOption.AllDirectories)) _linkXml.Add(File.ReadAllText(file));
             CustomAndroidManifest = File.Exists("Assets/Plugins/Android/AndroidManifest.xml") ? File.ReadAllText("Assets/Plugins/Android/AndroidManifest.xml") : null;
@@ -89,6 +95,12 @@ namespace Nexus.Ads.Editor
         public bool SdkViaUpm(AdProviderKind kind) => UpmPackage.TryGetValue(kind, out var name) && _manifestPackages.Contains(name);
         public bool ProviderPackageInstalled(AdProviderKind kind) => ProviderAssembly.TryGetValue(kind, out var name) && _assemblies.Contains(name);
         public IReadOnlyList<string> DetectedNetworks => _networks;
+        /// <summary>The ad system domains a detected network's app-ads.txt line starts with; empty for an id the probe does not detect.</summary>
+        public static IReadOnlyList<string> AppAdsDomains(string networkId)
+        {
+            foreach (var network in KnownNetworks) if (string.Equals(network.id, networkId, StringComparison.OrdinalIgnoreCase)) return network.appAdsDomains;
+            return Array.Empty<string>();
+        }
         public bool ExternalDependencyManagerInstalled => (_manifestPackages.Contains(AndroidSetup.GoogleEdmPackage) && !DisabledEdmStub) || _manifestPackages.Contains(AndroidSetup.UnityEdmPackage) || _assemblies.Contains("Google.JarResolver") || Directory.Exists("Assets/ExternalDependencyManager");
         public bool DisabledEdmStub => _packages.TryGetValue(AndroidSetup.GoogleEdmPackage, out var info) && IsDisabledEdmStub(info.resolvedPath);
         /// <summary>The marker of a disabled External Dependency Manager package (Gigawatt, Wickling and ChipCrisis embed one beside Firebase; issue #61).</summary>

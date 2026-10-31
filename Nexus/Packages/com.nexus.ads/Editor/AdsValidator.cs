@@ -327,16 +327,21 @@ namespace Nexus.Ads.Editor
                 ? new AdsCheck("android.linkxml", CheckResult.Pass, "a link.xml preserves Nexus.Ads.Core")
                 : new AdsCheck("android.linkxml", release ? CheckResult.Warn : CheckResult.Pass, release ? "no link.xml preserves Nexus.Ads.Core; IL2CPP stripping may drop callback types." : "no link.xml yet (checked for release builds)", "press Write link.xml in Tools > Nexus Ads > Setup."));
 
-            // app-ads.txt
+            // app-ads.txt: a line names its network by the ad system domain in its first field (issue #124)
             var withoutLine = new List<string>();
             foreach (var id in probe.DetectedNetworks)
             {
+                var domains = UnityProjectProbe.AppAdsDomains(id);
                 bool covered = false;
-                foreach (var line in settings.AppAdsTxtLines) if (line != null && line.IndexOf(id, StringComparison.OrdinalIgnoreCase) >= 0) { covered = true; break; }
-                if (!covered) withoutLine.Add(id);
+                foreach (var line in settings.AppAdsTxtLines)
+                {
+                    string domain = AppAdsTxt.AdSystemDomain(line);
+                    foreach (var known in domains) covered |= string.Equals(known, domain, StringComparison.OrdinalIgnoreCase);
+                }
+                if (!covered) withoutLine.Add(domains.Count == 0 ? id : id + " (" + string.Join(" or ", domains) + ")");
             }
             report.Add(withoutLine.Count > 0
-                ? new AdsCheck("appads.lines", CheckResult.Warn, "no app-ads.txt line mentions: " + string.Join(", ", withoutLine) + " (matched by network id in the line text).", "paste each network's app-ads.txt line from its dashboard into Project Settings > Nexus Ads > app-ads.txt lines, then generate the file.")
+                ? new AdsCheck("appads.lines", CheckResult.Warn, "no app-ads.txt line starts with the ad system domain of: " + string.Join(", ", withoutLine) + ".", "paste each network's app-ads.txt line from its dashboard into Project Settings > Nexus Ads > app-ads.txt lines, then generate the file.")
                 : new AdsCheck("appads.lines", CheckResult.Pass, probe.DetectedNetworks.Count == 0 ? "no network adapters detected" : "every detected network has an app-ads.txt line"));
 
             // pins
