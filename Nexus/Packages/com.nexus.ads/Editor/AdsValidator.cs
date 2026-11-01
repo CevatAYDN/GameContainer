@@ -110,6 +110,8 @@ namespace Nexus.Ads.Editor
             if (catalog == null) throw new ArgumentNullException(nameof(catalog));
             var kind = settings.SelectedMediation;
             bool release = tab == Tab.Release;
+            // an ad-free release starts no SDK: the checks of a running mediation pass, those of what ships in the build still apply (issue #179)
+            bool adFree = release && settings.AdFreeRelease;
             var report = new AdsValidationReport { tab = tab.ToString(), platform = platform.ToString(), mediation = kind.ToString(), adFreeRelease = settings.AdFreeRelease };
 
             // one mediation per build
@@ -131,13 +133,15 @@ namespace Nexus.Ads.Editor
 
             // LevelPlay ships no consent form (issue #63); the settings name the flow that runs before it (issue #154)
             if (kind == AdProviderKind.LevelPlay)
-                report.Add(ConsentCheck(settings.Consent, googleConsent, release));
+                report.Add(adFree ? new AdsCheck("consent.form", CheckResult.Pass, "ad-free release: LevelPlay never starts, so no consent flow runs before it")
+                    : ConsentCheck(settings.Consent, googleConsent, release));
 
             // a package below the provider asmdef's versionDefines expression compiles the provider out, and nothing else says so (issue #143)
             string compiledOut = kind == AdProviderKind.None ? null : probe.ProviderCompiledOut(kind);
             const string compiledOutFix = "move the package to a version the expression holds, or pin the Nexus ad packages at a commit whose expression the installed version meets.";
             if (kind != AdProviderKind.None)
-                report.Add(compiledOut != null
+                report.Add(adFree ? new AdsCheck("provider.compiled", CheckResult.Pass, "ad-free release: the " + kind + " provider never starts")
+                    : compiledOut != null
                     ? new AdsCheck("provider.compiled", CheckResult.Fail, compiledOut + "; no build runs " + kind + " ads.", compiledOutFix)
                     : new AdsCheck("provider.compiled", CheckResult.Pass, probe.ProviderPackageInstalled(kind) ? "the " + kind + " provider is compiled" : "the " + kind + " provider is not in the project or its SDK is not; mediation.status says what runs"));
 
@@ -154,7 +158,7 @@ namespace Nexus.Ads.Editor
             }
             else if (release)
             {
-                if (settings.AdFreeRelease)
+                if (adFree)
                     report.Add(new AdsCheck("mediation.status", CheckResult.Pass, "ad-free release on purpose; " + kind + " is " + status + " and is not embedded"));
                 else if (status.Status == ProviderStatus.Active)
                     report.Add(new AdsCheck("mediation.status", CheckResult.Pass, kind + " is Active on " + platform));
@@ -180,6 +184,11 @@ namespace Nexus.Ads.Editor
 
         private static void CheckKeys(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool release, PlatformCatalog catalog, AdsValidationReport report)
         {
+            if (release && settings.AdFreeRelease)
+            {
+                report.Add(new AdsCheck("keys.release.missing", CheckResult.Pass, "ad-free release: no SDK starts, so the Release tab's keys are not needed"));
+                return;
+            }
             var tab = release ? settings.Release : settings.Test;
             var missing = settings.MissingFields(kind, platform, tab);
             string tabName = release ? "Release" : "Test";
@@ -273,13 +282,15 @@ namespace Nexus.Ads.Editor
                     report.Add(new AdsCheck("android.admob.appid", CheckResult.Pass, AdMobSampleIds.IsSample(appId) ? "Google Mobile Ads settings asset carries Google's sample App ID (development builds only)" : "Google Mobile Ads settings asset carries an App ID"));
             }
 
-            if (release && !probe.ExternalDependencyManagerInstalled)
+            bool adFree = release && settings.AdFreeRelease;
+            if (release && !adFree && !probe.ExternalDependencyManagerInstalled)
                 report.Add(new AdsCheck("android.edm", CheckResult.Fail, "the External Dependency Manager is not in the project; the SDK's Android and iOS dependencies are not resolved without it.", "press Prepare Android in Tools > Nexus Ads > Setup (it adds the resolver the selected mediation needs and resolves)."));
             else
-                report.Add(new AdsCheck("android.edm", CheckResult.Pass, probe.ExternalDependencyManagerInstalled ? "External Dependency Manager present" : "External Dependency Manager not checked for the Test tab"));
+                report.Add(new AdsCheck("android.edm", CheckResult.Pass, probe.ExternalDependencyManagerInstalled ? "External Dependency Manager present"
+                    : adFree ? "ad-free release: no SDK dependency needs resolving" : "External Dependency Manager not checked for the Test tab"));
 
             // the Android setup the build needs, from the same plan Prepare Android performs
-            if (platform == AdPlatform.Android && probe.SdkInstalled(kind) && !(release && settings.AdFreeRelease))
+            if (platform == AdPlatform.Android && probe.SdkInstalled(kind) && !adFree)
             {
                 var plan = AndroidSetup.Plan(settings, release ? Tab.Release : Tab.Test, probe, catalog);
                 AddPlanCheck(report, plan, "android.nativesdk", new[] { "native.sdk", "resolve" }, "the Gradle build fails without the native SDK (LevelPlay: cannot find symbol IronSourceError)");

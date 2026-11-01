@@ -233,8 +233,12 @@ as the `PendingReward` for the game's next start.
 `AdsValidator.Validate(settings, tab, platform, probe, catalog)` is a pure function; the settings
 page, the wizard, the CLI and the pre-build hook call it and own no rule of their own. The pre-build
 hook (`AdsBuildGuard`) runs on Android and iOS builds only, validates the Test tab for a development
-build and the Release tab otherwise, and stops the build on a fail; an ad-free release passes and is
-reported. The development project's own asset is an ad-free release for that reason. Batch mode:
+build and the Release tab otherwise, and stops the build on a fail. An ad-free release (the Release
+tab with Ad-free release on) starts no SDK, so the checks of a running mediation pass and say so
+(`consent.form`, `provider.compiled`, `mediation.status`, `keys.release.missing`, `android.edm`, and
+the Android plan checks `android.nativesdk`, `android.gradle`, `android.adapter`), while the checks
+of what ships in the build still apply (#179). The development project's own asset is an ad-free
+release for that reason. Batch mode:
 
 ```powershell
 Unity.exe -batchmode -nographics -quit -projectPath <project> -executeMethod Nexus.Ads.Editor.AdsValidator.RunCli -adsTab Release -adsPlatform Android -adsReport artifacts/ads-validation.json

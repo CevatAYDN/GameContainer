@@ -177,14 +177,31 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
-        public void SelectedMediation_NotActive_FailsTheReleaseTab_UnlessAdFreeRelease()
+        public void SelectedMediation_NotActive_FailsTheReleaseTab()
         {
             _settings.Release.LevelPlay.Android.RewardedUnitId = "";
             var report = Run(AdsValidator.Tab.Release);
             Assert.AreEqual(CheckResult.Fail, Check(report, "mediation.status").Result);
             StringAssert.Contains("rewarded unit id", Check(report, "mediation.status").fix);
+        }
+
+        // Issue #179: the keys, the consent flow and the resolver were checked although an ad-free release starts no SDK, so the
+        // pre-build hook stopped the ad-free release of a game that kept its mediation selected
+        [Test]
+        public void AnAdFreeRelease_WithLevelPlaySelected_PassesWithoutKeysConsentOrResolver_WhileADevelopmentBuildStillNeedsThem()
+        {
             _settings.AdFreeRelease = true;
-            Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "mediation.status").Result);
+            _settings.Release.LevelPlay.Android.AppKey = "";
+            _settings.Release.LevelPlay.Android.RewardedUnitId = "";
+            _settings.Consent = ConsentSource.None;
+            _probe.Edm = false;
+
+            var release = Run(AdsValidator.Tab.Release);
+            Assert.IsTrue(release.Passed, release.Summary());
+            Assert.AreEqual(CheckResult.Pass, Check(release, "mediation.status").Result);
+
+            var development = Run(AdsValidator.Tab.Test);
+            Assert.AreEqual(CheckResult.Warn, Check(development, "consent.form").Result, "a development build runs ads: the missing consent flow is still reported");
         }
 
         [Test]
