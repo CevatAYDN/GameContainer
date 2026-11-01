@@ -53,8 +53,31 @@ Any `result="Failed"` in the XML is a failure.
   -logFile "tools/unity-verify/artifacts/playmode.log" -quit
 ```
 
-Boots `NexusStarter` and runs the PlayMode suite (context lifecycle, signal
-dispatch, pooling, storage) against the real Unity runtime.
+Runs the PlayMode suite (context lifecycle, signal dispatch, pooling, storage)
+against the real Unity runtime. No test loads `NexusStarter`; the player builds
+below boot it.
+
+### 2b. PlayMode twice with domain reload off
+
+Unity's "Path to CoreCLR" guide (2026-03-26) makes Fast Enter Play Mode the default
+for new projects in 6.6 and the only mode in 6.8, where statics are not reset
+between play sessions. One `-runTests`
+run enters play mode once, so it cannot show a static that a session leaves
+behind. `NexusVerify.PlayModeTwice` (`Nexus/Assets/Editor/PlayModeTwice.cs`) runs
+the suite twice in one editor; the second run starts with what the first left
+(issue #194). It refuses to run (exit 2) while domain reload is on, so set Enter
+Play Mode Options to not reload the domain first, and restore the setting after:
+
+```bash
+sed -i 's/^  m_EnterPlayModeOptions: 0$/  m_EnterPlayModeOptions: 1/' Nexus/ProjectSettings/EditorSettings.asset
+"/c/Program Files/Unity/Hub/Editor/6000.6.7f1/Editor/Unity.exe" -batchmode   -projectPath "Nexus"   -executeMethod NexusVerify.PlayModeTwice.Run   -twiceResults "artifacts/playmode-twice"   -logFile "Nexus/artifacts/playmode-twice.log"
+git checkout -- Nexus/ProjectSettings/EditorSettings.asset
+```
+
+Without `-quit`: the method exits when the second run's job has ended, with 0 when
+neither run failed and 1 when one did. Each run writes NUnit XML
+(`artifacts/playmode-twice-run1.xml`, `-run2.xml`, relative to the project); the log
+shows "Entering Playmode with Reload Domain disabled." once per run.
 
 ### 3. Mono player build — full player compile (Mono backend)
 
