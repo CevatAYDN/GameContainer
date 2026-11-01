@@ -14,7 +14,7 @@ namespace Nexus.Editor
     /// - inter-context links for <c>[CrossContext]</c> signals (broadcast source → target).
     ///
     /// Rendering reads a throttled, cached model built by <see cref="NexusSceneOverlayData"/>
-    /// so the per-repaint cost stays at a few draw calls. Toggle: Tools → Nexus → Scene Overlay.
+    /// so the per-repaint cost stays at a few draw calls. Toggle: Nexus → Scene Overlay.
     /// </summary>
     [InitializeOnLoad]
     public static class NexusSceneOverlay
@@ -56,7 +56,7 @@ namespace Nexus.Editor
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
         }
 
-        /// <summary>Master switch. Toggled from Tools → Nexus → Scene Overlay (default ON).</summary>
+        /// <summary>Master switch. Toggled from Nexus → Scene Overlay (default ON).</summary>
         public static bool Enabled
         {
             get => SessionState.GetBool(k_EnabledPref, true);

@@ -11,7 +11,7 @@ The keys here are the editor's. A game's own text goes through `LocalizationServ
 
 This document lists the localization key namespaces used by the editor window (`NexusWindow`) and the 9 Nexus Editor Plugins in `com.nexus.core` (the `NexusEditorPlugin` subclasses under `Editor/Plugins/`; the State Machine tab moved to `com.nexus.fsm` in #112) to prevent key collisions and ensure translation parity between **English (`en`)** and **Turkish (`tr`)**.
 
-**Parity:** every one of the 424 keys in `NexusLang.AddDefaults()` has an entry in `Editor/Locales/tr.json`, and `tr.json` has no key the code does not define. A new key goes into both files in the same change, and a changed English text gets its Turkish text in the same change.
+**Parity:** every one of the 399 keys in `NexusLang.AddDefaults()` has an entry in `Editor/Locales/tr.json`, and `tr.json` has no key the code does not define. A new key goes into both files in the same change, and a changed English text gets its Turkish text in the same change.
 
 A few `tr.json` entries deliberately keep the English text:
 

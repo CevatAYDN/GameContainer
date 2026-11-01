@@ -248,7 +248,7 @@ namespace Nexus.Core
         {
             // QueueDrainer and MetricsSampler are documented as living on the Root's
             // GameObject, but nothing ever added them for programmatically created Roots
-            // (Dashboard "Create Root", AddComponent<Root>(), wizard scenes without the
+            // (the hierarchy menu and the Context Wizard, AddComponent<Root>(), wizard scenes without the
             // hand-added components) — only the starter scene had them. Without
             // QueueDrainer the HybridQueue never drains, so queued signals
             // (FireThreadSafe/FireNextFrame) silently never run; without MetricsSampler

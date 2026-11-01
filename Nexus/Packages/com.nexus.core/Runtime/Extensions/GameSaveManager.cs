@@ -38,7 +38,7 @@ namespace Nexus.Core.Extensions
     ///
     /// Usage (bind in lifecycle):
     /// <code>
-    /// builder.BindService&lt;IGameSaveManager, GameSaveManager&gt;();
+    /// builder.Bind&lt;IGameSaveManager, GameSaveManager&gt;();
     /// </code>
     ///
     /// Or inject and call manually:

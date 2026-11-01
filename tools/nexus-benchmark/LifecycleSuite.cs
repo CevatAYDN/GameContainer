@@ -203,7 +203,7 @@ namespace NexusBench
 
         private static void Test_Root_AutoAdds_SupportComponents()
         {
-            // L4: a Root created programmatically (Dashboard "Create Root",
+            // L4: a Root created programmatically (the hierarchy menu and the Context Wizard,
             // AddComponent<Root>(), wizard scenes) must auto-add QueueDrainer +
             // MetricsSampler on Awake. Without QueueDrainer the HybridQueue never drains
             // (queued signals silently never run); without MetricsSampler the game never

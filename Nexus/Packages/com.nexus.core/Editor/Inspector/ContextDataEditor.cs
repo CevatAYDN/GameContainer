@@ -59,10 +59,10 @@ namespace Nexus.Editor.Inspector
                 NexusInspectorGUI.DrawMessage("Scope Tag is empty. Giving this context a clear name (e.g., 'Game', 'Battle', 'Lobby') enables convention-based lifecycle discovery and scoped resolution.", StatusType.Warning);
             }
 
-            EditorGUILayout.PropertyField(_enableAutoDiscoveryProp, new GUIContent("Enable Auto-Discovery", "Automatically scans assemblies for {ScopeTag}Lifecycle and [RegisterCommand] attributes."));
+            EditorGUILayout.PropertyField(_enableAutoDiscoveryProp, new GUIContent("Enable Auto-Discovery", "With no lifecycle on the Root or bound in code, use the class named {ScopeTag}Lifecycle or {ScopeTag}ContextLifecycle. Signal handlers and [RegisterCommand] commands are scanned either way (Assembly Scanning)."));
             if (data.EnableAutoDiscovery)
             {
-                NexusInspectorGUI.DrawMessage($"Auto-Discovery ON: Scans for '{tag}Lifecycle' classes and commands registered to this scope automatically.", StatusType.Info);
+                NexusInspectorGUI.DrawMessage($"Auto-Discovery ON: with no lifecycle on the Root or bound in code, the context uses the class named '{tag}Lifecycle' or '{tag}ContextLifecycle'.", StatusType.Info);
             }
             NexusInspectorGUI.EndCard();
 

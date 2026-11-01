@@ -100,9 +100,11 @@ namespace Nexus.Core
         internal static bool EnabledExplicitlySet => s_enabledExplicitlySet;
 
         /// <summary>
-        /// Whether Unity console messages (Error/Assert/Exception) are captured into the
-        /// collection via <c>Application.logMessageReceivedThreaded</c>. Default true; set
-        /// false to opt out of the per-log-message processing entirely.
+        /// Whether Unity console messages are captured into the collection via
+        /// <c>Application.logMessageReceivedThreaded</c>: every type, <c>Log</c> as Info, <c>Warning</c> as Warning,
+        /// <c>Error</c> and <c>Assert</c> as Error, <c>Exception</c> as Critical. Default true, in a release player too,
+        /// where each captured line still costs an entry and its grouping key. Set false to opt out of the
+        /// per-log-message processing entirely.
         /// </summary>
         public static bool CaptureUnityLogs
         {

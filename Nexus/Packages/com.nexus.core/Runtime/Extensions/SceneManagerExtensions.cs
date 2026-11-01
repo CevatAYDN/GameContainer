@@ -48,7 +48,7 @@ namespace Nexus.Core.Extensions
     /// <summary>
     /// Default Nexus scene loader. Fires Nexus signals on scene events.
     /// Bind in lifecycle:
-    /// <code>builder.BindService&lt;ISceneLoader, SceneLoader&gt;();</code>
+    /// <code>builder.Bind&lt;ISceneLoader, SceneLoader&gt;();</code>
     /// </summary>
     [Preserve]
     public sealed class SceneLoader : ISceneLoader

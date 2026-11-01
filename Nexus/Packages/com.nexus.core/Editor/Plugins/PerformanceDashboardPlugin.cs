@@ -20,7 +20,7 @@ namespace Nexus.Editor
         public override string Category => "cat_live";
 
         // ── Metric ring buffers ───────────────────────────────────
-        private const int BufferSize = 120; // 60 s @ 0.5 s interval
+        private const int BufferSize = 100; // 60 s @ 0.6 s interval
         private readonly RingBuffer<float> _fpsBuffer    = new(BufferSize);
         private readonly RingBuffer<float> _memBuffer    = new(BufferSize);
         private readonly RingBuffer<float> _gcGen0Buffer = new(BufferSize);
@@ -64,7 +64,9 @@ namespace Nexus.Editor
         private Label _fpsAlarmLabel, _memAlarmLabel;
         private VisualElement _statsContainer;
         private bool _recording;
-        private double _sampleInterval = 0.5;
+        // A sample every third tick of the window's 200 ms update (NexusWindow): a 0.5 s interval was waited out to the
+        // third tick as well, so the labels said 0.5 s and 60 s for 0.6 s and 72 s (#262).
+        private double _sampleInterval = 0.6;
         private double _lastSampleTime;
 
         // ─────────────────────────────────────────────────────────
@@ -307,7 +309,7 @@ namespace Nexus.Editor
             return card;
         }
 
-        // ── Sample tick (every 500 ms) ────────────────────────────
+        // ── Sample tick (every 600 ms) ────────────────────────────
 
         private void OnSampleTick()
         {

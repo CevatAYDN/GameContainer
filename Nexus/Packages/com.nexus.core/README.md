@@ -236,8 +236,8 @@ run in the repository's host harness (`tools/nexus-benchmark`, on .NET with Unit
 commit): GCA checks and `SteadyState_HasZeroGCAllocations` fail on any byte, the others above 128 B (F1: 512 B)
 over the whole measured loop of 1000 to 40000 iterations, and every one of them measured 0 B on the run that
 `docs/RELEASE_GATES.md` records. The named Unity tests run in the package's EditMode and PlayMode suites
-and fail on any `GC.Alloc` sample. A host result is not an IL2CPP measurement; the haptics row is the one
-measured on a device. The pinned core DI comparison
+and fail on any `GC.Alloc` sample. A host result is not an IL2CPP measurement; the rows that name a device (`ToolkitPanelInput`, haptics,
+`EncryptedStorageService`) were measured on one. The pinned core DI comparison
 with VContainer, Zenject and Reflex, on host, in a Unity Mono player and on an Android IL2CPP device, is in
 [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md); it measures a three-object constructor graph, not
 frame budget or full `Context` startup, and no universal winner is claimed.
@@ -257,9 +257,9 @@ frame budget or full `Context` startup, and no universal winner is claimed.
 | `Runtime/Queue`, `Runtime/Recovery`, `Runtime/Plugins`, `Runtime/Tracing`, `Runtime/Debug`, `Runtime/Data`, `Runtime/Extensions` | Hybrid queue, recovery strategies, runtime plugin system, causal tracing, debug HUD, `BigDouble`, save manager and scene helpers |
 | `Runtime/Testing` | Test harness assembly (`com.nexus.core.testing`) |
 | `Editor/Core` | `NexusWindow` host, plugin base class, styles, localization, hierarchy menus |
-| `Editor/Plugins` | The 13 plugins, one window tab each |
+| `Editor/Plugins` | The 9 plugins, one window tab each (`com.nexus.fsm` adds the State Machine tab) |
 | `Editor/CodeGen` | Binder generator, build guard, self-heal, editor settings asset |
-| `Editor/Validation`, `Editor/Analyzer`, `Editor/Inspector`, `Editor/Overlay`, `Editor/Profiling`, `Editor/LiveReload` | Build validation rules, architecture analyzer, custom inspectors, scene overlay, profiler module, hot reload |
+| `Editor/Validation`, `Editor/Analyzer`, `Editor/Inspector`, `Editor/Overlay`, `Editor/Profiling`, `Editor/LiveReload` | Build validation rules, the code health rules the Status tab lists, custom inspectors, scene overlay, profiler module, hot reload |
 | `SourceGenerator~` | Roslyn source generator project; built DLL ships in `SourceGenerators~` |
 | `Tests/Editor`, `Tests/Runtime` | EditMode and PlayMode tests |
 

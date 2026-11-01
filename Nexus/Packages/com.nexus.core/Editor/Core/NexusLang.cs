@@ -389,7 +389,7 @@ namespace Nexus.Editor
             s_strings["pd_stop"] = "⏹ Stop";
             s_strings["pd_clear"] = "🗑 Clear";
             s_strings["pd_export_csv"] = "💾 Export CSV";
-            s_strings["pd_sample"] = "Sample: 0.5 s";
+            s_strings["pd_sample"] = "Sample: 0.6 s";
             s_strings["pd_alarms"] = "Alarms";
             s_strings["pd_sec_frame"] = "📊 Frame Metrics";
             s_strings["pd_fps"] = "FPS";
@@ -450,7 +450,7 @@ namespace Nexus.Editor
             s_strings["status_packages"] = "Packages";
             s_strings["status_unity"] = "Unity {0}";
             s_strings["status_tip_contexts"] = "Open the running contexts";
-            s_strings["status_tip_handlers"] = "Open signal handlers in Explorer";
+            s_strings["status_tip_handlers"] = "Open the signal handlers in the Architecture tab";
             s_strings["status_source_failed"] = "The check could not run ({0}: {1}), so it checked nothing.";
             s_strings["status_src_validation"] = "Validation";
             s_strings["status_src_code_health"] = "Code health";

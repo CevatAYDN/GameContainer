@@ -119,7 +119,7 @@ namespace Nexus.Editor.Plugins
                 uiSection.Add(providerLabel);
             }
 
-            // Live open-screen stack (G-3): refreshed on a 500 ms schedule.
+            // Live open-screen stack (G-3): refreshed every 0.6 s (a 0.5 s throttle on the window's 200 ms tick).
             var winStackTitle = new Label(NexusLang.Get("cs_open_stack"));
             winStackTitle.style.fontSize = 11;
             winStackTitle.style.unityFontStyleAndWeight = FontStyle.Bold;

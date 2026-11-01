@@ -14,7 +14,7 @@ namespace Nexus.Core
         public override int CurrentVersion => 1;
 
         [Header("Orchestration")]
-        [Tooltip("Assemblies to scan for SignalHandlers. If empty, auto-scan is disabled unless enabled in code.")]
+        [Tooltip("Assemblies to scan for signal handlers and [RegisterCommand] commands. If empty, every assembly that references Nexus, and Assembly-CSharp.")]
         public string[] AssemblyScopes;
 
         [Tooltip("Enable convention-based auto-discovery when no lifecycle is explicitly provided.")]

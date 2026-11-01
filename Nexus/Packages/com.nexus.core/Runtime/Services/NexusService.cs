@@ -12,7 +12,7 @@ namespace Nexus.Core
     ///
     /// Usage:
     /// <code>
-    /// public interface IPlayerPersistenceService : INexusService { ... }
+    /// public interface IPlayerPersistenceService { ... } // a plain contract: the base class supplies INexusService
     /// public class PlayerPersistenceService : NexusService&lt;IPlayerPersistenceService&gt;, IPlayerPersistenceService
     /// {
     ///     public override async ValueTask InitializeAsync(CancellationToken ct)

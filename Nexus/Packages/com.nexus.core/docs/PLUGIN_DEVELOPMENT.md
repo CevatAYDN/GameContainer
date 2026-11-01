@@ -45,7 +45,7 @@ Before submitting a new plugin or refactor, verify:
 - [ ] `DisplayName` uses `NexusLang.Get("key")` for localization.
 - [ ] `Order` is specified (e.g. 0 for Status, 1 for Wizard, 2 for ContextInspector).
 - [ ] `CreateView()` returns a non-null `VisualElement` tree.
-- [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** a repeating `schedule.Execute(...).Every(...)` or `EditorApplication.update`. A slower cadence is throttled inside `OnUpdate()` with `EditorApplication.timeSinceStartup` (`CasualServicesPlugin` 0.5 s, `com.nexus.fsm`'s `FSMPlugin` 0.3 s).
+- [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** a repeating `schedule.Execute(...).Every(...)` or `EditorApplication.update`. A slower cadence is throttled inside `OnUpdate()` with `EditorApplication.timeSinceStartup`; `OnUpdate()` runs on the window's 200 ms tick, so a throttle ends on the first tick past it (`CasualServicesPlugin`'s 0.5 s refreshes every 0.6 s, `com.nexus.fsm`'s `FSMPlugin`'s 0.3 s every 0.4 s, the Performance tab samples every 0.6 s).
 - [ ] `OnDisable()` resets: instance fields, flags, counters, queues.
 - [ ] All user-facing text uses `NexusLang.Get("key")` — zero hardcoded English strings.
 - [ ] Stat displays use shared `NexusEditorStyles` stat helpers — no bespoke stat components.
