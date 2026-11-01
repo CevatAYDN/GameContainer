@@ -56,7 +56,7 @@ namespace Nexus.Ads.Bridge.Tests.Runtime
             bootstrap.Simulator.CompleteShow(AdResult.Rewarded);
             Assert.AreEqual(AdOutcome.Rewarded, outcome);
             Assert.AreEqual(1f, Time.timeScale);
-            Assert.IsTrue(bootstrap.Controller.PendingReward.HasValue, "the receipt waits for the game's acknowledge");
+            Assert.IsFalse(bootstrap.Controller.PendingReward.HasValue, "the bridge acknowledged the receipt once the game's callback returned (#178)");
         }
 
         // Issue #165: a host that runs no ads kept a simulator, and the bridge's Initialize started it, so a release game paid every reward
