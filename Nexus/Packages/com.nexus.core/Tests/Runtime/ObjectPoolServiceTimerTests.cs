@@ -3,11 +3,13 @@ using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Nexus.Core.Services;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.TestTools;
 
 namespace Nexus.Tests.Runtime
 {
-    /// <summary>The pool paths that need frames: DespawnAfter timers and PrewarmAsync (issue #184).</summary>
+    /// <summary>The pool paths that need play mode: DespawnAfter timers and PrewarmAsync (issue #184), and the scene of a
+    /// spawn without a parent (issue #227).</summary>
     [TestFixture]
     public class ObjectPoolServiceTimerTests
     {
@@ -44,6 +46,16 @@ namespace Nexus.Tests.Runtime
 
             yield return new WaitForSeconds(0.2f);
             Assert.IsTrue(reused.activeSelf);
+        }
+
+        // A spawn without a parent stayed under the pool root, which lives in DontDestroyOnLoad, so it outlived its level.
+        [Test]
+        public void Spawn_WithoutAParent_PutsTheInstanceAtTheActiveScenesRoot()
+        {
+            var enemy = _pool.Spawn(_prefab);
+
+            Assert.IsNull(enemy.transform.parent);
+            Assert.AreEqual(SceneManager.GetActiveScene(), enemy.scene);
         }
 
         // PrewarmAsync completed successfully after an instance could not be created.

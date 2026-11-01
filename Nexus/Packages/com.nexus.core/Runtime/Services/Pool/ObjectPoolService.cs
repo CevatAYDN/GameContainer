@@ -35,8 +35,9 @@ namespace Nexus.Core.Services
         System.Threading.Tasks.Task PrewarmAsync(GameObject prefab, int count, int instancesPerFrame = 8);
         /// <summary>
         /// Takes an instance from the prefab's pool, or creates one. <paramref name="parent"/> is the active
-        /// instance's parent; despawned instances wait under the service's own root, so a destroyed parent
-        /// does not take the pool with it.
+        /// instance's parent; without one the instance is a root of the active scene, as with Instantiate, and a scene
+        /// load unloads it. Despawned instances wait under the service's own root, so a destroyed parent does not take
+        /// the pool with it.
         /// </summary>
         GameObject Spawn(GameObject prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null);
         T Spawn<T>(T prefab, Vector3 position = default, Quaternion rotation = default, Transform parent = null) where T : Component;
@@ -238,6 +239,15 @@ namespace Nexus.Core.Services
             var t = instance.transform;
             if (parent != null)
                 t.SetParent(parent, false);
+            else
+            {
+                // As Instantiate without a parent: a root of the active scene, not a child of the pool root, which lives in
+                // DontDestroyOnLoad and kept the instance through scene loads (issue #227).
+                t.SetParent(null, false);
+                var activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+                if (activeScene.IsValid() && instance.scene != activeScene)
+                    UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(instance, activeScene);
+            }
 
             // Quaternion.operator== is dot-product based, so `rotation == default` never
             // matches the all-zero default; compare components explicitly instead.

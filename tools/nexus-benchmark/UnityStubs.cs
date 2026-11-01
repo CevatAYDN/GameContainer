@@ -530,6 +530,9 @@ namespace UnityEngine
         public GameObject() { }
         public GameObject(string name) { this.name = name; }
 
+        /// <summary>The scene the object belongs to; set by SceneManager.MoveGameObjectToScene.</summary>
+        public SceneManagement.Scene scene { get; internal set; }
+
         public Transform transform
         {
             get
@@ -983,6 +986,10 @@ namespace UnityEngine.SceneManagement
         public string name;
         public bool isLoaded;
         public bool IsValid() => !string.IsNullOrEmpty(name);
+        public static bool operator ==(Scene a, Scene b) => a.name == b.name;
+        public static bool operator !=(Scene a, Scene b) => a.name != b.name;
+        public override bool Equals(object obj) => obj is Scene other && other.name == name;
+        public override int GetHashCode() => name?.GetHashCode() ?? 0;
     }
 
     /// <summary>
@@ -1053,6 +1060,10 @@ namespace UnityEngine.SceneManagement
         {
             if (scene.IsValid()) s_active = scene.name;
         }
+
+        public static Scene GetActiveScene() => new Scene { name = s_active, isLoaded = s_active != null };
+
+        public static void MoveGameObjectToScene(UnityEngine.GameObject go, Scene scene) => go.scene = scene;
     }
 }
 
