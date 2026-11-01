@@ -2,16 +2,19 @@ using System.Collections.Generic;
 
 namespace Nexus.Ads.Unity
 {
-    /// <summary>What the host does in one build: the gate's verdict and what runs because of it.</summary>
+    /// <summary>What the host does in one build: the gate's verdict, what runs because of it and, when nothing runs that should, why.</summary>
     public readonly struct HostDecision
     {
         public readonly GateResult Gate;
         public readonly HostMode Mode;
+        /// <summary>Why an idle host runs nothing; null when ads run and for the ad-free release, which runs nothing on purpose.</summary>
+        public readonly string IdleReason;
 
-        public HostDecision(GateResult gate, HostMode mode)
+        public HostDecision(GateResult gate, HostMode mode, string idleReason = null)
         {
             Gate = gate;
             Mode = mode;
+            IdleReason = idleReason;
         }
     }
 
@@ -41,14 +44,40 @@ namespace Nexus.Ads.Unity
     {
         private const string UnlistedId = "unlisted-device";
 
-        public static HostDecision Decide(AdsSettings settings, BuildKind build, ProviderConfig provider, string advertisingId, bool providerRegistered)
+        /// <param name="googleConsentRegistered">Google's form is registered (com.nexus.ads.admob); the editor reads it from the project's packages.</param>
+        /// <param name="gameConsentRegistered">The game registered its own flow; the editor cannot see that before a run and passes true.</param>
+        public static HostDecision Decide(AdsSettings settings, BuildKind build, ProviderConfig provider, string advertisingId, bool providerRegistered, bool googleConsentRegistered, bool gameConsentRegistered)
         {
-            var gate = settings.AdFreeRelease && build == BuildKind.Release
+            bool adFree = settings.AdFreeRelease && build == BuildKind.Release;
+            var gate = adFree
                 ? new GateResult(GateDecision.Blocked, null, "ad-free release")
                 : settings.SelectedMediation == AdProviderKind.None
                     ? new GateResult(GateDecision.Simulator, null, "no mediation is selected") // no SDK to gate, and no device rule to name
                     : ProviderGate.Evaluate(build, provider, advertisingId);
-            return new HostDecision(gate, ProviderGate.Host(build, gate, settings.SelectedMediation != AdProviderKind.None, providerRegistered));
+            var mode = ProviderGate.Host(build, gate, settings.SelectedMediation != AdProviderKind.None, providerRegistered);
+            // the consent flow the settings name runs before the SDK, or nothing starts (issues #154, #181)
+            string consentMissing = mode == HostMode.Provider ? MissingConsent(settings, googleConsentRegistered, gameConsentRegistered) : null;
+            if (consentMissing != null) return new HostDecision(gate, HostMode.Idle, consentMissing);
+            return new HostDecision(gate, mode, mode == HostMode.Idle && !adFree ? IdleReason(settings, gate) : null);
+        }
+
+        /// <summary>
+        /// Why the provider must not start for want of the consent flow the settings name, or null (issues #154, #181). LevelPlay
+        /// ships no form, so with <see cref="ConsentSource.GoogleUmp"/> Google's form (registered by com.nexus.ads.admob) and with
+        /// <see cref="ConsentSource.GameFlow"/> the game's own flow must be registered with <c>AdsBootstrap.RegisterSharedConsentFlow</c>;
+        /// a flow registered for the other source does not count.
+        /// </summary>
+        public static string MissingConsent(AdsSettings settings, bool googleRegistered, bool gameRegistered)
+        {
+            if (settings == null || !settings.ConsentNeedsRegisteredFlow) return null;
+            var kind = settings.SelectedMediation;
+            if (settings.Consent == ConsentSource.GoogleUmp)
+                return googleRegistered ? null
+                    : "the settings name Google's consent form (UMP) before " + kind + ", and none is registered: install com.google.ads.mobile and com.nexus.ads.admob, which register it (with both installed, Nexus.Ads.AdMob was left out of the player)"
+                        + (gameRegistered ? "; the game's registered flow runs only with Consent: GameFlow" : "");
+            return gameRegistered ? null
+                : "the settings name the game's own consent flow before " + kind + ", and none is registered: call AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, ...) before StartAds()"
+                    + (googleRegistered ? "; Google's form from com.nexus.ads.admob runs only with Consent: GoogleUmp" : "");
         }
 
         /// <summary>
@@ -59,8 +88,7 @@ namespace Nexus.Ads.Unity
         public static bool ReadsAdvertisingId(AdsSettings settings, BuildKind build, ProviderConfig provider)
             => settings.SelectedMediation != AdProviderKind.None && ProviderGate.NeedsAdvertisingId(build, provider);
 
-        /// <summary>Why an idle host runs nothing (not the ad-free release, which is on purpose).</summary>
-        public static string IdleReason(AdsSettings settings, GateResult gate)
+        private static string IdleReason(AdsSettings settings, GateResult gate)
             => gate.Rule != null ? gate.Rule + ": " + gate.Reason
             : settings.SelectedMediation == AdProviderKind.None ? "no mediation is selected"
             : settings.SelectedMediation + " is selected but its provider is not registered (the provider package is not installed, or its assembly was stripped from the player)";
@@ -68,18 +96,20 @@ namespace Nexus.Ads.Unity
         /// <summary>The builds a developer cares about, for one platform, as the runtime would decide them; a development build splits in two when its device list changes the outcome.</summary>
         /// <param name="providerInstalled">The mediation's SDK and its Nexus provider package are both in the project.</param>
         /// <param name="releaseStatus">The selected mediation's status for this platform (the Release tab's words).</param>
-        public static IReadOnlyList<OutlookRow> Rows(AdsSettings settings, AdPlatform platform, bool providerInstalled, ProviderStatusReport releaseStatus)
+        /// <param name="googleConsentInstalled">com.google.ads.mobile and com.nexus.ads.admob are both in the project, so Google's form is
+        /// registered at run time; the game's own flow counts as registered, since it is registered at run time only.</param>
+        public static IReadOnlyList<OutlookRow> Rows(AdsSettings settings, AdPlatform platform, bool providerInstalled, ProviderStatusReport releaseStatus, bool googleConsentInstalled)
         {
             var rows = new List<OutlookRow>
             {
-                Row("Editor (Play mode)", settings, BuildKind.Editor, platform, "editor", providerInstalled, releaseStatus),
+                Row("Editor (Play mode)", settings, BuildKind.Editor, platform, "editor", providerInstalled, releaseStatus, googleConsentInstalled),
             };
-            var unlisted = Row("Development build", settings, BuildKind.Development, platform, UnlistedId, providerInstalled, releaseStatus);
+            var unlisted = Row("Development build", settings, BuildKind.Development, platform, UnlistedId, providerInstalled, releaseStatus, googleConsentInstalled);
             string listedId = FirstListed(settings);
             if (listedId == null) rows.Add(unlisted);
             else
             {
-                var listed = Row("Development build, listed device", settings, BuildKind.Development, platform, listedId, providerInstalled, releaseStatus);
+                var listed = Row("Development build, listed device", settings, BuildKind.Development, platform, listedId, providerInstalled, releaseStatus, googleConsentInstalled);
                 if (listed.Text == unlisted.Text) rows.Add(new OutlookRow("Development build, any device", listed.Mode, listed.Text, listed.Problem));
                 else
                 {
@@ -87,14 +117,14 @@ namespace Nexus.Ads.Unity
                     rows.Add(new OutlookRow("Development build, other devices", unlisted.Mode, unlisted.Text, unlisted.Problem));
                 }
             }
-            rows.Add(Row("Release build", settings, BuildKind.Release, platform, "release", providerInstalled, releaseStatus));
+            rows.Add(Row("Release build", settings, BuildKind.Release, platform, "release", providerInstalled, releaseStatus, googleConsentInstalled));
             return rows;
         }
 
-        private static OutlookRow Row(string where, AdsSettings settings, BuildKind build, AdPlatform platform, string advertisingId, bool providerInstalled, ProviderStatusReport releaseStatus)
+        private static OutlookRow Row(string where, AdsSettings settings, BuildKind build, AdPlatform platform, string advertisingId, bool providerInstalled, ProviderStatusReport releaseStatus, bool googleConsentInstalled)
         {
             var provider = settings.ToProviderConfig(build, platform, settings.SelectedMediation);
-            var decision = Decide(settings, build, provider, advertisingId, providerInstalled);
+            var decision = Decide(settings, build, provider, advertisingId, providerInstalled, googleConsentInstalled, gameConsentRegistered: true);
             bool problem;
             string text = Say(settings, build, platform, decision, releaseStatus, out problem);
             return new OutlookRow(where, decision.Mode, text, problem);
@@ -139,9 +169,9 @@ namespace Nexus.Ads.Unity
                         : kind + " starts with the account keys on this listed device; test ads only if the device is also in the " + kind + " dashboard's test device list.";
 
                 default:
-                    problem = !(settings.AdFreeRelease && release);
+                    problem = decision.IdleReason != null;
                     if (!problem) return "no ads, on purpose: Ad-free release is on.";
-                    return "no ads run: " + IdleReason(settings, decision.Gate) + (release ? "; the validator stops this build." : ".");
+                    return "no ads run: " + decision.IdleReason + (release ? "; the validator stops this build." : ".");
             }
         }
     }

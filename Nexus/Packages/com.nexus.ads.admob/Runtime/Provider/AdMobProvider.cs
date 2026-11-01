@@ -258,7 +258,7 @@ namespace Nexus.Ads.AdMob
         private static void Register()
         {
             AdsBootstrap.RegisterProvider(AdProviderKind.AdMob, (scheduler, config) => new AdMobProvider(config));
-            AdsBootstrap.RegisterSharedConsentFlow(config => new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: UmpConsentFlow.DebugAllowedFor(config)), AdProviderKind.AdMob);
+            AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GoogleUmp, config => new UmpConsentFlow(config.UnderAgeOfConsent, debugAllowed: UmpConsentFlow.DebugAllowedFor(config)));
         }
     }
 }

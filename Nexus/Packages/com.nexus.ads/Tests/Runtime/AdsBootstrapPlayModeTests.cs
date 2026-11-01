@@ -206,25 +206,25 @@ namespace Nexus.Ads.Tests.Runtime
         {
             var previous = AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, (scheduler, _) => new SimulatorProvider(scheduler));
             AdsBootstrap.BuildForTests = BuildKind.Release;
-            var previousConsent = AdsBootstrap.SwapSharedConsentForTests(null, AdProviderKind.None);
+            var previousConsent = AdsBootstrap.SwapConsentFlowsForTests(_ => new SimulatorProvider(new NeverScheduler()), null); // Google's form only (issue #181)
             try
             {
-                LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] no ads run: the settings name the game's own consent flow before LevelPlay, and none is registered"));
+                LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] no ads run: the settings name the game's own consent flow before LevelPlay, and none is registered: .*; Google's form from com.nexus.ads.admob runs only with Consent: GoogleUmp$"));
                 LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] started mode=Idle mediation=LevelPlay gate=Provider rule=- testMode=off consent=none$"));
                 yield return BootRelease();
-                Assert.AreEqual(HostMode.Idle, _bootstrap.Mode, "no flow registered: nothing starts");
+                Assert.AreEqual(HostMode.Idle, _bootstrap.Mode, "the game's flow is not registered: Google's form does not stand in for it");
                 Assert.AreEqual(AdResult.NotReady, ShowNow());
                 TearDown();
                 yield return null; // the first bootstrap is gone before the second wakes
 
-                AdsBootstrap.RegisterSharedConsentFlow(_ => new SimulatorProvider(new NeverScheduler()), AdProviderKind.None);
+                AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, _ => new SimulatorProvider(new NeverScheduler()));
                 LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] started mode=Provider mediation=LevelPlay gate=Provider rule=- testMode=off consent=SimulatorProvider\(registered\)$"));
                 yield return BootRelease();
                 Assert.AreEqual(HostMode.Provider, _bootstrap.Mode, "the game's flow is registered: the SDK starts after it");
             }
             finally
             {
-                AdsBootstrap.SwapSharedConsentForTests(previousConsent.Factory, previousConsent.RunBy); // a later test reads Google's form, registered before the first scene
+                AdsBootstrap.SwapConsentFlowsForTests(previousConsent.Google, previousConsent.Game); // a later test reads Google's form, registered before the first scene
                 AdsBootstrap.BuildForTests = null;
                 AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, previous);
             }
@@ -238,7 +238,7 @@ namespace Nexus.Ads.Tests.Runtime
             SimulatorProvider provider = null;
             var previous = AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, (scheduler, _) => provider = new SimulatorProvider(scheduler, SimulatorScenario.NoFill));
             AdsBootstrap.BuildForTests = BuildKind.Release;
-            var previousConsent = AdsBootstrap.SwapSharedConsentForTests(_ => new SimulatorProvider(new NeverScheduler()), AdProviderKind.None);
+            var previousConsent = AdsBootstrap.SwapConsentFlowsForTests(null, _ => new SimulatorProvider(new NeverScheduler()));
             var warnings = new List<string>();
             Application.LogCallback capture = (message, _, type) => { if (type == LogType.Warning && message.StartsWith("[Nexus Ads] ")) warnings.Add(message); };
             Application.logMessageReceived += capture;
@@ -266,7 +266,7 @@ namespace Nexus.Ads.Tests.Runtime
                 yield return null; // the first bootstrap is gone before the second wakes
 
                 warnings.Clear();
-                AdsBootstrap.RegisterSharedConsentFlow(_ => new SimulatorProvider(new NeverScheduler(), SimulatorScenario.ConsentRefused), AdProviderKind.None);
+                AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, _ => new SimulatorProvider(new NeverScheduler(), SimulatorScenario.ConsentRefused));
                 yield return BootRelease();
                 Assert.AreEqual(AdController.Phase.ConsentRefused, _bootstrap.Controller.State);
                 CollectionAssert.AreEqual(new[] { "[Nexus Ads] ConsentRefused: the consent flow allows no ad request; no ads until the player changes it in the privacy options (first this session; repeats are not logged)" }, warnings);
@@ -274,7 +274,7 @@ namespace Nexus.Ads.Tests.Runtime
             finally
             {
                 Application.logMessageReceived -= capture;
-                AdsBootstrap.SwapSharedConsentForTests(previousConsent.Factory, previousConsent.RunBy);
+                AdsBootstrap.SwapConsentFlowsForTests(previousConsent.Google, previousConsent.Game);
                 AdsBootstrap.BuildForTests = null;
                 AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, previous);
             }

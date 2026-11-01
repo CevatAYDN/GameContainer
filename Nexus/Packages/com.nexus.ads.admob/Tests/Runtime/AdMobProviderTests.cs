@@ -67,9 +67,13 @@ namespace Nexus.Ads.AdMob.Tests
         {
             // issue #63: with LevelPlay selected the bootstrap runs UMP before the provider; LevelPlay's own flow is a pass-through
             var other = new SimulatorProvider(new UnityAdSchedulerStub());
-            var flow = AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, other, Config(sampleUnits: false));
-            Assert.IsInstanceOf<UmpConsentFlow>(flow, "registered beside the provider before the first scene");
-            Assert.IsInstanceOf<AdMobProvider>(AdsBootstrap.ConsentFlowFor(AdProviderKind.AdMob, new AdMobProvider(Config()), Config()), "AdMob keeps its own flow");
+            var settings = ScriptableObject.CreateInstance<AdsSettings>();
+            settings.SelectedMediation = AdProviderKind.LevelPlay; // Consent: GoogleUmp, the default
+            var flow = AdsBootstrap.ConsentFlowFor(settings, other, Config(sampleUnits: false));
+            Assert.IsInstanceOf<UmpConsentFlow>(flow, "registered for GoogleUmp beside the provider before the first scene");
+            settings.SelectedMediation = AdProviderKind.AdMob;
+            Assert.IsInstanceOf<AdMobProvider>(AdsBootstrap.ConsentFlowFor(settings, new AdMobProvider(Config()), Config()), "AdMob keeps its own flow");
+            UnityEngine.Object.DestroyImmediate(settings);
             bool answered = false;
             flow.Request(() => answered = true);
             yield return Until(() => answered, "the UMP answer");

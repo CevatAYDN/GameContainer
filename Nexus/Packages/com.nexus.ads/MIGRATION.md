@@ -21,10 +21,13 @@ puts the family's controller behind the same service.
    mediation (the validator's `manifest.pins` check fails when the `com.nexus.ads*` entries differ, and
    **Nexus > Ads > Pin family packages to one commit** rewrites those; neither covers
    `com.nexus.core`, which is re-pinned to the same commit by hand):
-   - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x; to keep Google's consent
-     form (the form the legacy `AdMobAdapter` showed), also keep `com.google.ads.mobile` and add
-     `com.nexus.ads.admob`: the bootstrap then runs Google UMP before LevelPlay, and the game's AdMob App
-     ID stays in Assets > Google Mobile Ads > Settings (issue #63);
+   - LevelPlay: `com.nexus.ads.levelplay` plus `com.unity.services.levelplay` 9.x. LevelPlay ships no consent
+     form, and the ad settings' **Consent before LevelPlay** names the flow that runs before it (issues #154,
+     #181): `GoogleUmp`, the default, needs `com.google.ads.mobile` and `com.nexus.ads.admob` (Google's form, the
+     one the legacy `AdMobAdapter` showed; the game's AdMob App ID stays in Assets > Google Mobile Ads > Settings);
+     `GameFlow` needs the game's own `IConsentFlow` registered with
+     `AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, factory)` before `StartAds()`; `None` runs no
+     flow and fails a release build. Without the flow the setting names the bootstrap starts no ads;
    - AdMob: `com.nexus.ads.admob` (its `Nexus.Ads.AdMob` assembly is the family provider) plus
      `com.google.ads.mobile` 11.6.0 or newer from OpenUPM (it brings Unity's External Dependency
      Manager as its own dependency).

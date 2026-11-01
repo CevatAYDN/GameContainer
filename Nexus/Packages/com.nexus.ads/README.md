@@ -111,16 +111,19 @@ stays hidden and the reason is logged as an error. A release build never runs th
    started, without ids: `[Nexus Ads] started mode=<Provider|Simulator|Idle> mediation=<kind>
    gate=<Provider|Simulator|Blocked> rule=<rule or -> testMode=<on|off> consent=<flow>(<from>)` (one line;
    `tools/device-acceptance/run.ps1 -ExpectAds` reads it). `consent` names the flow that runs before the
-   mediation and where it came from (#154): `registered` (Google's UMP from `com.nexus.ads.admob`, or a
-   flow the game passed to `AdsBootstrap.RegisterSharedConsentFlow`), `provider` (the provider's own:
+   mediation and where it came from (#154): `registered` (the flow the settings name: Google's UMP from
+   `com.nexus.ads.admob`, or a flow the game passed to `AdsBootstrap.RegisterSharedConsentFlow`), `provider` (the provider's own:
    AdMob runs UMP; LevelPlay's is a pass-through that shows no form, which runs only with `Consent: None`),
    `simulator`, or `none` when no ads start. LevelPlay ships no consent form, so with LevelPlay selected
    the settings' **Consent before LevelPlay** (`AdsSettings.Consent`) names the flow that runs before it:
    `GoogleUmp` (the default; Google's form, which `com.nexus.ads.admob` registers), `GameFlow` (the game's
-   own `IConsentFlow`, registered with `AdsBootstrap.RegisterSharedConsentFlow(factory, AdProviderKind.None)`
-   before `StartAds()`, which forwards the answer with `LevelPlayProvider.SetGdprConsent`) or `None`. When the
-   flow it names is not registered at the start, no ads start and the bootstrap logs `[Nexus Ads] no ads
-   run:` with what is missing (`AdsBootstrap.MissingConsent`, #154). A game that starts ads later (after its own
+   own `IConsentFlow`, registered with `AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, factory)`
+   before `StartAds()`, which forwards the answer with `LevelPlayProvider.SetGdprConsent`) or `None` (no flow
+   runs, Google's form included). Each source has its own registration and only the one the setting names
+   runs, whatever the order the registrations came in (#181). When the flow it names is not registered at the
+   start, no ads start and the bootstrap logs `[Nexus Ads] no ads run:` with what is missing; Project Settings,
+   the setup wizard and the debug panel show the same decision (`BuildOutlook.Decide`, `BuildOutlook.MissingConsent`;
+   #154, #181). A game that starts ads later (after its own
    explanation, or never for a player who owns its ad-free product) turns the bootstrap's
    `startOnAwake` off (or passes `startOnAwake: false` to `Configure` on a bootstrap made in code) and
    calls `AdsBootstrap.Instance.StartAds()` when it is ready; until then nothing reads the advertising id

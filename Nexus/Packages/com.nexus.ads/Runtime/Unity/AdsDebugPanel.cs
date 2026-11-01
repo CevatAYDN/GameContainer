@@ -95,7 +95,7 @@ namespace Nexus.Ads.Unity
             var controller = _bootstrap.Controller;
             GUILayout.Label("Nexus Ads debug — " + _bootstrap.Build + " build, " + _bootstrap.Platform);
             GUILayout.Label("provider: " + (_bootstrap.Mode == HostMode.Provider ? _bootstrap.Provider.Name : _bootstrap.Mode == HostMode.Simulator ? "simulator" : "none (no ads run)") + "   gate: " + _bootstrap.Gate.Decision + (_bootstrap.Gate.Rule != null ? " (" + _bootstrap.Gate.Rule + ": " + _bootstrap.Gate.Reason + ")" : ""));
-            if (_bootstrap.Settings != null) GUILayout.Label("this build: " + BuildOutlook.Say(_bootstrap.Settings, _bootstrap.Build, _bootstrap.Platform, new HostDecision(_bootstrap.Gate, _bootstrap.Mode), null));
+            if (_bootstrap.Settings != null) GUILayout.Label("this build: " + BuildOutlook.Say(_bootstrap.Settings, _bootstrap.Build, _bootstrap.Platform, _bootstrap.Decision, null));
             var provider = _bootstrap.Settings != null ? _bootstrap.Settings.ToProviderConfig(_bootstrap.Build, _bootstrap.Platform, _bootstrap.Settings.SelectedMediation) : null;
             if (provider != null) GUILayout.Label("test mode: " + provider.TestMode + "   published test data: " + provider.UsesPublishedTestData + "   test devices: " + provider.TestDeviceIds.Count);
             GUILayout.Label("state: " + (controller != null ? controller.State.ToString() : "no controller") + "   kill switch: " + (controller != null && controller.KillSwitch) + "   privacy options required: " + (controller != null && controller.PrivacyOptionsRequired));

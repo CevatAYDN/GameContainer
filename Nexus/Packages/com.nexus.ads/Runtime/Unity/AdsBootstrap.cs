@@ -21,8 +21,8 @@ namespace Nexus.Ads.Unity
     public sealed class AdsBootstrap : MonoBehaviour
     {
         private static readonly Dictionary<AdProviderKind, Func<IAdScheduler, ProviderConfig, IAdProvider>> Factories = new Dictionary<AdProviderKind, Func<IAdScheduler, ProviderConfig, IAdProvider>>();
-        private static Func<ProviderConfig, IConsentFlow> _sharedConsent;
-        private static AdProviderKind _sharedConsentRunBy;
+        // one slot per source the settings can name, so the order of registrations does not matter (issue #181)
+        private static Func<ProviderConfig, IConsentFlow> _googleConsent, _gameConsent;
 
         [Tooltip("Left empty, Resources/NexusAdsSettings is loaded")]
         [SerializeField] private AdsSettings _settings;
@@ -48,9 +48,11 @@ namespace Nexus.Ads.Unity
         public AdsSettings Settings => _settings;
         public BuildKind Build { get; private set; }
         public AdPlatform Platform { get; private set; }
-        public GateResult Gate { get; private set; }
-        /// <summary>What runs: the SDK, the labelled simulator, or nothing (<see cref="ProviderGate.Host"/>).</summary>
-        public HostMode Mode { get; private set; }
+        /// <summary>What <see cref="BuildOutlook.Decide"/> decided at the start: the gate, what runs and, for a host that runs nothing, why.</summary>
+        public HostDecision Decision { get; private set; }
+        public GateResult Gate => Decision.Gate;
+        /// <summary>What runs: the SDK, the labelled simulator, or nothing (<see cref="BuildOutlook.Decide"/>).</summary>
+        public HostMode Mode => Decision.Mode;
         public IAdProvider Provider { get; private set; }
         public SimulatorProvider Simulator => Mode == HostMode.Simulator ? Provider as SimulatorProvider : null;
         public AdController Controller { get; private set; }
@@ -84,12 +86,13 @@ namespace Nexus.Ads.Unity
             return previous;
         }
 
-        /// <summary>Tests: puts <paramref name="factory"/> in as the shared consent flow (null clears it) and returns the
-        /// registration it replaced, which a test puts back: com.nexus.ads.admob registers Google's form before the first scene.</summary>
-        internal static (Func<ProviderConfig, IConsentFlow> Factory, AdProviderKind RunBy) SwapSharedConsentForTests(Func<ProviderConfig, IConsentFlow> factory, AdProviderKind runByProvider)
+        /// <summary>Tests: puts <paramref name="google"/> and <paramref name="game"/> in as the registered consent flows (null clears
+        /// one) and returns the two it replaced, which a test puts back: com.nexus.ads.admob registers Google's form before the first scene.</summary>
+        internal static (Func<ProviderConfig, IConsentFlow> Google, Func<ProviderConfig, IConsentFlow> Game) SwapConsentFlowsForTests(Func<ProviderConfig, IConsentFlow> google, Func<ProviderConfig, IConsentFlow> game)
         {
-            var previous = (_sharedConsent, _sharedConsentRunBy);
-            RegisterSharedConsentFlow(factory, runByProvider);
+            var previous = (_googleConsent, _gameConsent);
+            _googleConsent = google;
+            _gameConsent = game;
             return previous;
         }
 
@@ -123,49 +126,41 @@ namespace Nexus.Ads.Unity
         public static bool IsProviderRegistered(AdProviderKind kind) => Factories.ContainsKey(kind);
 
         /// <summary>
-        /// A consent platform for the mediations that ship no form: com.nexus.ads.admob registers Google's User Messaging
-        /// Platform here (issue #63). The provider of <paramref name="runByProvider"/> runs that platform itself and keeps its
-        /// own flow. A null factory clears the registration.
+        /// Registers the consent flow that runs before a mediation that ships no form (LevelPlay) for the source the settings'
+        /// <see cref="AdsSettings.Consent"/> names: com.nexus.ads.admob registers Google's User Messaging Platform as
+        /// <see cref="ConsentSource.GoogleUmp"/> before the first scene (issue #63); a game registers its own flow as
+        /// <see cref="ConsentSource.GameFlow"/> before <see cref="StartAds"/>. Each source has its own slot, so the order of the
+        /// registrations does not matter, and only the flow the settings name runs (issue #181). A null factory clears that source.
         /// </summary>
-        public static void RegisterSharedConsentFlow(Func<ProviderConfig, IConsentFlow> factory, AdProviderKind runByProvider)
+        public static void RegisterSharedConsentFlow(ConsentSource source, Func<ProviderConfig, IConsentFlow> factory)
         {
-            _sharedConsent = factory;
-            _sharedConsentRunBy = factory == null ? AdProviderKind.None : runByProvider;
+            if (source == ConsentSource.GoogleUmp) _googleConsent = factory;
+            else if (source == ConsentSource.GameFlow) _gameConsent = factory;
+            else throw new ArgumentException("Consent: None names no flow to register; register GoogleUmp or GameFlow.", nameof(source));
         }
 
         /// <summary>
-        /// The consent flow that runs before <paramref name="provider"/> initializes: the shared platform when one is
-        /// registered and the selected mediation does not run it itself, otherwise the provider's own flow (LevelPlay's is a
-        /// pass-through, since LevelPlay ships no form).
+        /// The consent flow that runs before <paramref name="provider"/> initializes: for LevelPlay with a flow named in the
+        /// settings, the one registered for that source (without it the bootstrap starts no provider, <see cref="BuildOutlook.MissingConsent"/>);
+        /// otherwise the provider's own flow (AdMob runs UMP itself; LevelPlay's is a pass-through that shows no form, run with Consent: None).
         /// </summary>
-        public static IConsentFlow ConsentFlowFor(AdProviderKind selected, IAdProvider provider, ProviderConfig config)
-            => SharedConsentApplies(selected) ? _sharedConsent(config) : provider as IConsentFlow;
-
-        private static bool SharedConsentApplies(AdProviderKind selected) => _sharedConsent != null && selected != _sharedConsentRunBy;
-
-        /// <summary>
-        /// Why the provider must not start for want of the consent flow the settings name (issue #154), or null: LevelPlay ships
-        /// no form, so with <see cref="ConsentSource.GoogleUmp"/> or <see cref="ConsentSource.GameFlow"/> a flow must be registered
-        /// with <see cref="RegisterSharedConsentFlow"/> before the start. The bootstrap then logs this as an error and starts no ads.
-        /// </summary>
-        public static string MissingConsent(AdsSettings settings)
+        public static IConsentFlow ConsentFlowFor(AdsSettings settings, IAdProvider provider, ProviderConfig config)
         {
-            if (settings == null || !settings.ConsentNeedsRegisteredFlow || SharedConsentApplies(settings.SelectedMediation)) return null;
-            return settings.Consent == ConsentSource.GoogleUmp
-                ? "the settings name Google's consent form (UMP) before " + settings.SelectedMediation + ", and none is registered: install com.google.ads.mobile and com.nexus.ads.admob, which register it (with both installed, Nexus.Ads.AdMob was left out of the player)"
-                : "the settings name the game's own consent flow before " + settings.SelectedMediation + ", and none is registered: call AdsBootstrap.RegisterSharedConsentFlow before StartAds()";
+            var registered = settings.ConsentNeedsRegisteredFlow ? (settings.Consent == ConsentSource.GoogleUmp ? _googleConsent : _gameConsent) : null;
+            return registered != null ? registered(config) : provider as IConsentFlow;
         }
 
         /// <summary>
         /// How the start line names the consent flow that runs before the mediation (issue #154): its type and where it came
-        /// from. "registered" is <see cref="RegisterSharedConsentFlow"/> (Google's UMP from com.nexus.ads.admob, or the game's
-        /// own); "provider" is the provider's own flow (LevelPlay's is a pass-through that shows no form and forwards what the
-        /// game passed with <c>LevelPlayProvider.SetGdprConsent</c>); "simulator" is the simulator's; "none" when no ads start.
+        /// from. "registered" is the flow the settings name, registered with <see cref="RegisterSharedConsentFlow"/> (Google's UMP
+        /// from com.nexus.ads.admob, or the game's own); "provider" is the provider's own flow (LevelPlay's is a pass-through that
+        /// shows no form and forwards what the game passed with <c>LevelPlayProvider.SetGdprConsent</c>); "simulator" is the
+        /// simulator's; "none" when no ads start.
         /// </summary>
-        public static string DescribeConsent(AdProviderKind selected, HostMode mode, IConsentFlow consent)
+        public static string DescribeConsent(AdsSettings settings, HostMode mode, IConsentFlow consent)
         {
             if (mode == HostMode.Idle || consent == null) return "none";
-            string from = mode == HostMode.Simulator ? "simulator" : SharedConsentApplies(selected) ? "registered" : "provider";
+            string from = mode == HostMode.Simulator ? "simulator" : settings.ConsentNeedsRegisteredFlow ? "registered" : "provider";
             return consent.GetType().Name + "(" + from + ")";
         }
 
@@ -195,26 +190,18 @@ namespace Nexus.Ads.Unity
             _telemetry = new UnityAdTelemetry(_logEvents && Build != BuildKind.Release, violations: Build == BuildKind.Release);
 
             Factories.TryGetValue(_settings.SelectedMediation, out var factory);
-            var decision = BuildOutlook.Decide(_settings, Build, config.Provider, advertisingId, factory != null);
-            Gate = decision.Gate;
-            Mode = decision.Mode;
-            // the consent flow the settings name must run before the SDK, or no ads start (issue #154)
-            string consentMissing = Mode == HostMode.Provider ? MissingConsent(_settings) : null;
-            if (consentMissing != null)
-            {
-                Debug.LogError("[Nexus Ads] no ads run: " + consentMissing);
-                Mode = HostMode.Idle;
-            }
+            // the consent flow the settings name must be registered, or no ads start (issues #154, #181)
+            Decision = BuildOutlook.Decide(_settings, Build, config.Provider, advertisingId, factory != null, _googleConsent != null, _gameConsent != null);
             IConsentFlow consent;
             if (Mode == HostMode.Provider)
             {
                 Provider = factory(scheduler, config.Provider);
-                consent = ConsentFlowFor(_settings.SelectedMediation, Provider, config.Provider);
+                consent = ConsentFlowFor(_settings, Provider, config.Provider);
             }
             else
             {
-                if (consentMissing == null && Mode == HostMode.Idle && !(Gate.Decision == GateDecision.Blocked && Gate.Rule == null)) // the rule-less block is the ad-free release
-                    Debug.LogError("[Nexus Ads] no ads run: " + BuildOutlook.IdleReason(_settings, Gate));
+                if (Decision.IdleReason != null) // null for the ad-free release, which runs nothing on purpose
+                    Debug.LogError("[Nexus Ads] no ads run: " + Decision.IdleReason);
                 else if (Gate.Rule != null)
                     Debug.LogWarning("[Nexus Ads] " + Gate.Rule + ": " + Gate.Reason + "; the simulator runs (labelled, not a real ad)");
                 if (Mode == HostMode.Simulator)
@@ -244,7 +231,7 @@ namespace Nexus.Ads.Unity
             // one line per start in every build, no ids: tools/device-acceptance -ExpectAds reads it (issue #52)
             Debug.Log("[Nexus Ads] started mode=" + Mode + " mediation=" + _settings.SelectedMediation + " gate=" + Gate.Decision
                 + " rule=" + (Gate.Rule ?? "-") + " testMode=" + (config.Provider.TestMode ? "on" : "off")
-                + " consent=" + DescribeConsent(_settings.SelectedMediation, Mode, consent));
+                + " consent=" + DescribeConsent(_settings, Mode, consent));
             Started?.Invoke();
         }
 

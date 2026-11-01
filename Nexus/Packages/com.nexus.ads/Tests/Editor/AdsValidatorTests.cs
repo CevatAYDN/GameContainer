@@ -262,8 +262,8 @@ namespace Nexus.Ads.Tests
 
             WithGoogleConsent("ca-app-pub-1111111111111111~2222222222");
             var both = Check(Run(AdsValidator.Tab.Release), "consent.form");
-            Assert.AreEqual(CheckResult.Warn, both.Result, "UMP runs although the settings say None");
-            StringAssert.Contains("GoogleUmp", both.fix);
+            Assert.AreEqual(CheckResult.Fail, both.Result, "None runs no flow, Google's form included (issue #181)");
+            StringAssert.Contains("set Consent to GoogleUmp", both.fix);
         }
 
         [Test]

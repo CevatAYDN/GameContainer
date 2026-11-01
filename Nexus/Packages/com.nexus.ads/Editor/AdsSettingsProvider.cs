@@ -229,7 +229,8 @@ namespace Nexus.Ads.Editor
             bool sdk = probe.SdkInstalled(settings.SelectedMediation) && probe.ProviderPackageInstalled(settings.SelectedMediation);
             var status = ProviderStatusResolver.Resolve(settings, settings.SelectedMediation, platform, sdk, probe.SdkInstalled(AdProviderKind.LevelPlay) && probe.SdkInstalled(AdProviderKind.Max));
             EditorGUILayout.LabelField("What each build does (" + platform + ")", EditorStyles.boldLabel);
-            foreach (var row in BuildOutlook.Rows(settings, platform, sdk, status))
+            bool googleConsent = probe.SdkInstalled(AdProviderKind.AdMob) && probe.ProviderPackageInstalled(AdProviderKind.AdMob);
+            foreach (var row in BuildOutlook.Rows(settings, platform, sdk, status, googleConsent))
                 EditorGUILayout.HelpBox(row.Where + ": " + row.Text, row.Problem ? MessageType.Warning : MessageType.Info);
             EditorGUILayout.LabelField("Each line is what the build decides to run. Whether the mediation's server accepts the keys and fills an ad is known only from a run on a device.", EditorStyles.wordWrappedMiniLabel);
         }

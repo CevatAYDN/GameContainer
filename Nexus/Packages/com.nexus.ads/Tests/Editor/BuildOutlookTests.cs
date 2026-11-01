@@ -29,28 +29,35 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
-        public void ASharedConsentPlatform_RunsBeforeAMediationWithoutAForm_AndTheProviderThatRunsItKeepsItsOwn()
+        public void TheRegisteredFlowTheSettingsName_RunsBeforeLevelPlay_AndAdMobKeepsItsOwn()
         {
-            // issue #63: com.nexus.ads.admob registers Google UMP; LevelPlay's own flow is a pass-through
+            // issue #63: com.nexus.ads.admob registers Google UMP; LevelPlay's own flow is a pass-through. Issue #181: each source has
+            // its own slot, and only the flow the settings name runs
             var config = _settings.ToConfig(BuildKind.Development, AdPlatform.Android).Provider;
             var levelPlay = new SimulatorProvider(NoScheduler.Instance);
-            var previous = AdsBootstrap.SwapSharedConsentForTests(null, AdProviderKind.None);
+            var google = new SimulatorProvider(NoScheduler.Instance);
+            var game = new SimulatorProvider(NoScheduler.Instance);
+            ProviderConfig seen = null;
+            var previous = AdsBootstrap.SwapConsentFlowsForTests(c => { seen = c; return google; }, c => game);
             try
             {
-                Assert.AreSame(levelPlay, AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, levelPlay, config), "nothing registered: the provider's own flow");
-
-                var shared = new SimulatorProvider(NoScheduler.Instance);
-                ProviderConfig seen = null;
-                AdsBootstrap.RegisterSharedConsentFlow(c => { seen = c; return shared; }, AdProviderKind.AdMob);
-                Assert.AreSame(shared, AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, levelPlay, config));
+                _settings.Consent = ConsentSource.GoogleUmp;
+                Assert.AreSame(google, AdsBootstrap.ConsentFlowFor(_settings, levelPlay, config));
                 Assert.AreSame(config, seen, "the flow gets the provider configuration (age treatment, test mode)");
-                var admob = new SimulatorProvider(NoScheduler.Instance);
-                Assert.AreSame(admob, AdsBootstrap.ConsentFlowFor(AdProviderKind.AdMob, admob, config), "the AdMob provider runs UMP itself");
+                _settings.Consent = ConsentSource.GameFlow;
+                Assert.AreSame(game, AdsBootstrap.ConsentFlowFor(_settings, levelPlay, config), "the game's flow, although Google's form is registered too");
+                _settings.Consent = ConsentSource.None;
+                Assert.AreSame(levelPlay, AdsBootstrap.ConsentFlowFor(_settings, levelPlay, config), "None: LevelPlay's pass-through; Google's form does not run");
 
-                AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
-                Assert.AreSame(levelPlay, AdsBootstrap.ConsentFlowFor(AdProviderKind.LevelPlay, levelPlay, config), "a null factory clears the registration");
+                AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GoogleUmp, null);
+                _settings.Consent = ConsentSource.GameFlow;
+                Assert.AreSame(game, AdsBootstrap.ConsentFlowFor(_settings, levelPlay, config), "clearing Google's form leaves the game's flow registered");
+
+                _settings.SelectedMediation = AdProviderKind.AdMob;
+                var admob = new SimulatorProvider(NoScheduler.Instance);
+                Assert.AreSame(admob, AdsBootstrap.ConsentFlowFor(_settings, admob, config), "the AdMob provider runs UMP itself");
             }
-            finally { AdsBootstrap.SwapSharedConsentForTests(previous.Factory, previous.RunBy); }
+            finally { AdsBootstrap.SwapConsentFlowsForTests(previous.Google, previous.Game); }
         }
 
         [Test]
@@ -58,44 +65,51 @@ namespace Nexus.Ads.Tests
         {
             // issue #154: a release build that started LevelPlay with only its pass-through left no trace of it
             var flow = new SimulatorProvider(NoScheduler.Instance);
-            Assert.AreEqual("SimulatorProvider(provider)", AdsBootstrap.DescribeConsent(AdProviderKind.LevelPlay, HostMode.Provider, flow), "nothing registered: the provider's own flow");
-            Assert.AreEqual("SimulatorProvider(simulator)", AdsBootstrap.DescribeConsent(AdProviderKind.LevelPlay, HostMode.Simulator, flow));
-            Assert.AreEqual("none", AdsBootstrap.DescribeConsent(AdProviderKind.LevelPlay, HostMode.Idle, flow), "an idle host runs no flow");
-            var previous = AdsBootstrap.SwapSharedConsentForTests(c => flow, AdProviderKind.AdMob);
-            try
-            {
-                Assert.AreEqual("SimulatorProvider(registered)", AdsBootstrap.DescribeConsent(AdProviderKind.LevelPlay, HostMode.Provider, flow));
-                Assert.AreEqual("SimulatorProvider(provider)", AdsBootstrap.DescribeConsent(AdProviderKind.AdMob, HostMode.Provider, flow), "the AdMob provider runs UMP itself");
-            }
-            finally { AdsBootstrap.SwapSharedConsentForTests(previous.Factory, previous.RunBy); }
+            _settings.Consent = ConsentSource.None;
+            Assert.AreEqual("SimulatorProvider(provider)", AdsBootstrap.DescribeConsent(_settings, HostMode.Provider, flow), "Consent: None: the provider's own flow");
+            Assert.AreEqual("SimulatorProvider(simulator)", AdsBootstrap.DescribeConsent(_settings, HostMode.Simulator, flow));
+            Assert.AreEqual("none", AdsBootstrap.DescribeConsent(_settings, HostMode.Idle, flow), "an idle host runs no flow");
+            _settings.Consent = ConsentSource.GameFlow;
+            Assert.AreEqual("SimulatorProvider(registered)", AdsBootstrap.DescribeConsent(_settings, HostMode.Provider, flow));
+            _settings.SelectedMediation = AdProviderKind.AdMob;
+            Assert.AreEqual("SimulatorProvider(provider)", AdsBootstrap.DescribeConsent(_settings, HostMode.Provider, flow), "the AdMob provider runs UMP itself");
         }
 
         [Test]
-        public void LevelPlay_StartsNoAds_WithoutTheConsentFlowTheSettingsName()
+        public void LevelPlay_StartsNoAds_WithoutTheRegisteredFlowTheSettingsName()
         {
-            // issue #154: LevelPlay ships no consent form, and a provider host started it with only its pass-through
-            var previous = AdsBootstrap.SwapSharedConsentForTests(null, AdProviderKind.None);
-            try
-            {
-                _settings.SelectedMediation = AdProviderKind.LevelPlay;
-                _settings.Consent = ConsentSource.GoogleUmp;
-                StringAssert.Contains("com.nexus.ads.admob", AdsBootstrap.MissingConsent(_settings));
-                _settings.Consent = ConsentSource.GameFlow;
-                StringAssert.Contains("RegisterSharedConsentFlow", AdsBootstrap.MissingConsent(_settings));
-                _settings.Consent = ConsentSource.None;
-                Assert.IsNull(AdsBootstrap.MissingConsent(_settings), "None names no flow to wait for; the validator fails it in a release build");
+            // issue #154: LevelPlay ships no consent form, and a provider host started it with only its pass-through. Issue #181: any
+            // registered flow satisfied the setting, so Google's form, which com.nexus.ads.admob registers, ran for a game that named
+            // its own flow and never registered it
+            _settings.Consent = ConsentSource.GoogleUmp;
+            StringAssert.Contains("com.nexus.ads.admob", BuildOutlook.MissingConsent(_settings, false, false));
+            StringAssert.Contains("runs only with Consent: GameFlow", BuildOutlook.MissingConsent(_settings, false, true), "the game's flow is not Google's form");
+            Assert.IsNull(BuildOutlook.MissingConsent(_settings, true, false));
 
-                _settings.Consent = ConsentSource.GameFlow;
-                AdsBootstrap.RegisterSharedConsentFlow(c => new SimulatorProvider(NoScheduler.Instance), AdProviderKind.None);
-                Assert.IsNull(AdsBootstrap.MissingConsent(_settings), "the game's flow is registered");
-                AdsBootstrap.RegisterSharedConsentFlow(c => new SimulatorProvider(NoScheduler.Instance), AdProviderKind.LevelPlay);
-                Assert.IsNotNull(AdsBootstrap.MissingConsent(_settings), "a flow the selected provider runs itself is not one that runs before it");
+            _settings.Consent = ConsentSource.GameFlow;
+            StringAssert.Contains("RegisterSharedConsentFlow", BuildOutlook.MissingConsent(_settings, false, false));
+            StringAssert.Contains("runs only with Consent: GoogleUmp", BuildOutlook.MissingConsent(_settings, true, false), "Google's form is not the game's flow");
+            Assert.IsNull(BuildOutlook.MissingConsent(_settings, false, true));
 
-                AdsBootstrap.RegisterSharedConsentFlow(null, AdProviderKind.None);
-                _settings.SelectedMediation = AdProviderKind.AdMob;
-                Assert.IsNull(AdsBootstrap.MissingConsent(_settings), "the AdMob provider runs Google's form itself");
-            }
-            finally { AdsBootstrap.SwapSharedConsentForTests(previous.Factory, previous.RunBy); }
+            _settings.Consent = ConsentSource.None;
+            Assert.IsNull(BuildOutlook.MissingConsent(_settings, false, false), "None names no flow to wait for; the validator fails it in a release build");
+            _settings.SelectedMediation = AdProviderKind.AdMob;
+            _settings.Consent = ConsentSource.GameFlow;
+            Assert.IsNull(BuildOutlook.MissingConsent(_settings, false, false), "the AdMob provider runs Google's form itself");
+        }
+
+        // Issue #181: Project Settings and the debug panel said "LevelPlay live ads" while the runtime logged "no ads run:", because the
+        // bootstrap decided the missing consent flow after BuildOutlook
+        [Test]
+        public void TheReleaseRow_SaysNoAdsRun_WhenTheSettingsNameGooglesFormWithoutItsPackages()
+        {
+            FillLevelPlay();
+            _settings.Consent = ConsentSource.GoogleUmp;
+            var release = Find(Rows(googleConsent: false), "Release build");
+            Assert.AreEqual(HostMode.Idle, release.Mode);
+            Assert.IsTrue(release.Problem);
+            StringAssert.StartsWith("no ads run: the settings name Google's consent form (UMP) before LevelPlay", release.Text);
+            StringAssert.Contains("validator stops this build", release.Text);
         }
 
         private void FillLevelPlay()
@@ -107,10 +121,10 @@ namespace Nexus.Ads.Tests
             }
         }
 
-        private IReadOnlyList<OutlookRow> Rows(bool installed = true)
+        private IReadOnlyList<OutlookRow> Rows(bool installed = true, bool googleConsent = true)
         {
             var status = ProviderStatusResolver.Resolve(_settings, _settings.SelectedMediation, AdPlatform.Android, installed);
-            return BuildOutlook.Rows(_settings, AdPlatform.Android, installed, status);
+            return BuildOutlook.Rows(_settings, AdPlatform.Android, installed, status, googleConsent);
         }
 
         private static OutlookRow Find(IReadOnlyList<OutlookRow> rows, string where)
@@ -225,7 +239,7 @@ namespace Nexus.Ads.Tests
             bool Reads(BuildKind build) => BuildOutlook.ReadsAdvertisingId(_settings, build, _settings.ToProviderConfig(build, AdPlatform.Android, _settings.SelectedMediation));
             var levelPlay = (Reads(BuildKind.Development), Reads(BuildKind.Editor), Reads(BuildKind.Release));
             _settings.SelectedMediation = AdProviderKind.None;
-            var none = BuildOutlook.Decide(_settings, BuildKind.Development, _settings.ToProviderConfig(BuildKind.Development, AdPlatform.Android, AdProviderKind.None), null, false);
+            var none = BuildOutlook.Decide(_settings, BuildKind.Development, _settings.ToProviderConfig(BuildKind.Development, AdPlatform.Android, AdProviderKind.None), null, false, false, false);
 
             Assert.That((levelPlay, Reads(BuildKind.Development), none.Mode, none.Gate.Rule),
                 Is.EqualTo(((true, false, false), false, HostMode.Simulator, (string)null)));

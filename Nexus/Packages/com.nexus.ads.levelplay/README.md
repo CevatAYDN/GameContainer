@@ -100,10 +100,11 @@ published for the Google Mobile Ads App ID (Assets > Google Mobile Ads > Setting
 messaging; the Android SDK stops the app at launch without that App ID, so the validator fails a build
 without one (`android.admob.appid`). The ad settings' **Consent before LevelPlay** names the flow
 (`GoogleUmp`, the default; `GameFlow`; `None`): the validator fails a release build whose setting names no
-flow that runs (`consent.form`), and the bootstrap starts no ads when the flow it names is not registered
-(issue #154). A game with another CMP or its own question sets `GameFlow`, wraps it in an `IConsentFlow`
-whose answer goes to `LevelPlayProvider.SetGdprConsent(bool)` (a CCPA opt-out with `SetDoNotSell(true)`),
-registers it with `AdsBootstrap.RegisterSharedConsentFlow(factory, AdProviderKind.None)` and then calls
+flow that runs (`consent.form`), and the bootstrap starts no ads when the flow it names is not registered;
+a flow registered for the other source does not stand in for it (issues #154, #181). A game with another CMP
+or its own question sets `GameFlow`, wraps it in an `IConsentFlow` whose answer goes to
+`LevelPlayProvider.SetGdprConsent(bool)` (a CCPA opt-out with `SetDoNotSell(true)`), registers it with
+`AdsBootstrap.RegisterSharedConsentFlow(ConsentSource.GameFlow, factory)` and then calls
 `AdsBootstrap.StartAds()`; the provider's own `IConsentFlow` is a pass-through, which runs only with `None`.
 
 Test ads: LevelPlay publishes no test keys. The Test tab mirrors the Release keys; a development
