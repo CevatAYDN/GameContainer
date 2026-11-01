@@ -12,10 +12,11 @@ namespace NexusVerify
     ///
     /// Why both backends: Mono catches C# compile + editor/player Mono errors fast;
     /// IL2CPP additionally exercises code stripping (Runtime/link.xml preservation
-    /// rules), generic dispatch preservation, and AOT limitations (no JIT: the runtime's
-    /// Expression.Compile in CommandRegistry and DynamicMethod in CompiledAccessorEmitter,
-    /// which NexusDI uses, sit behind ENABLE_IL2CPP / UNITY_AOT guards). A green IL2CPP build is the strongest single signal that the runtime
-    /// survives a real device pipeline.
+    /// rules), generic dispatch preservation, and AOT limitations (no JIT: CommandRegistry's two generic
+    /// dispatchers and CompiledAccessorEmitter's DynamicMethod, which NexusDI uses, take reflection
+    /// under ENABLE_IL2CPP / UNITY_AOT; its signal setter compiles an expression on every backend,
+    /// which IL2CPP's class library interprets, with a reflection fallback logged in every build).
+    /// A green IL2CPP build is the strongest single signal that the runtime survives a real device pipeline.
     /// </summary>
     public static class NexusVerifyBuild
     {

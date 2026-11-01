@@ -117,9 +117,12 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 - a public type that exists only in the Editor and in players whose Managed Code Variant is Checked or Debug
   (`Nexus/Assets/Scripts/Verify/DevOnlyProbe.cs`) is named in the generated binder only under its own
   `#if` (issue #85; the release Mono build checks the same),
-- nothing relies on runtime JIT (`Expression.Compile` in `CommandRegistry.cs` and the
-  `DynamicMethod` emitter in `CompiledAccessorEmitter.cs`, which `NexusDI` uses, sit behind
-  `ENABLE_IL2CPP` / `UNITY_AOT` guards).
+- nothing relies on runtime JIT: `CommandRegistry.cs`'s two generic dispatchers and the
+  `DynamicMethod` emitter in `CompiledAccessorEmitter.cs`, which `NexusDI` uses, take reflection
+  under `ENABLE_IL2CPP` / `UNITY_AOT`; its signal setter calls `Expression.Compile` on every
+  backend, which IL2CPP's class library runs in its expression interpreter (the `unityaot`
+  `System.Core` ships the interpreter and not the code-emitting compiler), and falls back to
+  reflection with a warning logged in every build (#200).
 
 ### Optional: Android IL2CPP (needs SDK/NDK)
 

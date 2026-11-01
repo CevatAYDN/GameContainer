@@ -463,7 +463,7 @@ namespace Nexus.Core
         /// Returns a cached dispatcher that invokes <see cref="ICommand{TSignal}"/>.Execute on a
         /// generic-only command, or null if the command type does not implement that interface.
         /// Uses Expression-compiled delegates to avoid per-call object[] allocation on the hot path.
-        /// Falls back to reflection on IL2CPP/AOT platforms where Expression.Compile() is unavailable.
+        /// Uses reflection on IL2CPP/AOT platforms, which have no JIT to compile the expression to code.
         /// </summary>
         public Action<object, object> GetGenericSyncDispatcher(Type commandType, Type signalType)
         {
@@ -477,9 +477,9 @@ namespace Nexus.Core
             if (method == null) return null;
 
 #if ENABLE_IL2CPP || UNITY_AOT || UNITY_IOS || UNITY_WEBGL
-            // IL2CPP/AOT: Expression.Compile() uses System.Reflection.Emit.DynamicMethod which is
-            // unavailable on these platforms (throws NotSupportedException). Fall back to reflection.
-            // This allocates an object[] per call but avoids the crash.
+            // IL2CPP/AOT: no JIT. Unity's IL2CPP class library (MonoBleedingEdge unityaot System.Core) ships the expression
+            // interpreter and not the compiler that emits code, so Compile() would build an interpreted delegate; this path
+            // calls the method by reflection instead, which allocates an object[] per call (#200).
             Action<object, object> dispatcher = (cmd, sig) => method.Invoke(cmd, new object[] { sig });
 #else
             // Compile an Expression-tree delegate: (object cmd, object sig) => ((ICommand<T>)cmd).Execute((T)sig)
@@ -501,7 +501,7 @@ namespace Nexus.Core
         /// Returns a cached dispatcher that invokes <see cref="IAsyncCommand{TSignal}"/>.ExecuteAsync on
         /// a generic-only async command, or null if the command type does not implement that interface.
         /// Uses Expression-compiled delegates to avoid per-call object[] allocation on the hot path.
-        /// Falls back to reflection on IL2CPP/AOT platforms where Expression.Compile() is unavailable.
+        /// Uses reflection on IL2CPP/AOT platforms, which have no JIT to compile the expression to code.
         /// </summary>
         public Func<object, object, CancellationToken, ValueTask> GetGenericAsyncDispatcher(Type commandType, Type signalType)
         {
@@ -656,8 +656,9 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    // Fallback to reflection if Expression compilation is restricted on certain AOT platforms
-                    NexusRuntime.Logger?.LogWarning($"[Nexus] Signal setter compilation failed for '{cmdType.FullName}' ({sigType.Name}); falling back to reflection: {ex.Message}");
+                    // Compile runs on every backend: on IL2CPP the class library interprets the expression (see GetGenericSyncDispatcher).
+                    // A failure changes how the payload is set, so it is logged in every build (#200).
+                    Services.NexusLog.WarnAlways($"[Nexus] Signal setter compilation failed for '{cmdType.FullName}' ({sigType.Name}); falling back to reflection: {ex.Message}");
                     if (foundMember is FieldInfo f) newSetter = (target, val) => f.SetValue(target, val);
                     else if (foundMember is PropertyInfo p) newSetter = (target, val) => p.SetValue(target, val);
                 }
