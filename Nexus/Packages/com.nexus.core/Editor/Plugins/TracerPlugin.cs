@@ -35,6 +35,7 @@ namespace Nexus.Editor
         private int _selectedEventId = -1;
 
         // Thread-safe buffer for incoming trace events
+        private const int MaxEvents = 5000;
         private readonly ConcurrentQueue<TraceEvent> _incomingEvents = new();
         private readonly List<TraceEvent> _allEvents = new();
         private readonly List<TraceEvent> _filteredSnapshot = new();
@@ -110,15 +111,7 @@ namespace Nexus.Editor
             filterBar.Add(clearBtn);
 
             _pauseToggle = new Toggle(NexusLang.Get("tr_pause")) { value = _isPaused, style = { marginLeft = 10, color = Color.white } };
-            _pauseToggle.RegisterValueChangedCallback(evt =>
-            {
-                _isPaused = evt.newValue;
-                if (!_isPaused)
-                {
-                    ProcessIncomingQueue();
-                }
-                RefreshTracerLogs();
-            });
+            _pauseToggle.RegisterValueChangedCallback(evt => SetPaused(evt.newValue));
             filterBar.Add(_pauseToggle);
 
             filterBar.Add(new Label(NexusLang.Get("tracer_type_filter")) { style = { fontSize = 10, color = Color.gray, marginLeft = 10 } });
@@ -201,14 +194,33 @@ namespace Nexus.Editor
         public override System.Collections.Generic.IReadOnlyList<(string Label, System.Action Action, UnityEngine.Color Color)> GetContextActions()
             => new System.Collections.Generic.List<(string, System.Action, UnityEngine.Color)>
             {
-                (NexusLang.Get("tr_ctx_clear_buffer"), () => { _allEvents.Clear(); RefreshTracerLogs(); }, NexusEditorStyles.AccentRed),
-                (NexusLang.Get("tr_ctx_pause"),         () => _isPaused = !_isPaused,                     NexusEditorStyles.BtnGray),
+                // Clear Buffer is the filter bar's Clear: emptying the list alone let the next CreateView read the events back
+                // from the trace buffer. Pause goes through the toggle, which showed nothing and took two clicks to undo (#256).
+                (NexusLang.Get("tr_ctx_clear_buffer"), ClearTraces,                                       NexusEditorStyles.AccentRed),
+                (NexusLang.Get("tr_ctx_pause"),         TogglePause,                                       NexusEditorStyles.BtnGray),
                 (NexusLang.Get("tr_ctx_inspector"),    () => Window?.SwitchToPlugin("ContextInspector"),  NexusEditorStyles.BtnPurple),
             };
+
+        private void TogglePause()
+        {
+            bool paused = !_isPaused;
+            _pauseToggle?.SetValueWithoutNotify(paused); // SetPaused below does what its callback does
+            SetPaused(paused);
+        }
+
+        private void SetPaused(bool paused)
+        {
+            _isPaused = paused;
+            if (!paused) ProcessIncomingQueue();
+            RefreshTracerLogs();
+        }
 
         public void Write(in TraceEvent traceEvent)
         {
             _incomingEvents.Enqueue(traceEvent);
+            // Nothing drains the queue while paused: keep the newest MaxEvents, as the list does, so a long pause in a busy
+            // game does not grow editor memory without bound (#256).
+            while (_incomingEvents.Count > MaxEvents && _incomingEvents.TryDequeue(out _)) { }
         }
 
         private void OnMainThreadUpdate()
@@ -225,9 +237,9 @@ namespace Nexus.Editor
                 addedAny = true;
             }
 
-            if (_allEvents.Count > 5000)
+            if (_allEvents.Count > MaxEvents)
             {
-                _allEvents.RemoveRange(0, _allEvents.Count - 5000);
+                _allEvents.RemoveRange(0, _allEvents.Count - MaxEvents);
             }
 
             if (addedAny)

@@ -104,5 +104,62 @@ namespace Nexus.Editor.Tests
                 Object.DestroyImmediate(go);
             }
         }
+
+#if NEXUS_DEBUG
+        private static System.Action TracerAction(TracerPlugin tracer, string key)
+            => tracer.GetContextActions().First(action => action.Label == NexusLang.Get(key)).Action;
+
+        [Test]
+        public void TracerClearBuffer_StaysClearedWhenTheTabIsBuiltAgain()
+        {
+            // Clear Buffer emptied the tab's list only; the next CreateView read the trace buffer and the events came back (#256)
+            var tracer = new TracerPlugin();
+            try
+            {
+                NexusTrace.EndEvent(NexusTrace.BeginEvent(TraceEventType.Signal, "TracerAudit256"));
+                tracer.CreateView();
+                TracerAction(tracer, "tr_ctx_clear_buffer")();
+                tracer.OnDisable();
+
+                tracer.CreateView();
+
+                Assert.AreEqual(0, Field<System.Collections.Generic.List<TraceEvent>>(tracer, "_allEvents").Count);
+            }
+            finally { tracer.OnDisable(); }
+        }
+
+        [Test]
+        public void TracerPauseAction_ShowsOnThePauseToggle()
+        {
+            // the action bar's Pause set the flag and left the toggle off: the tab looked live, and unpausing took two clicks (#256)
+            var tracer = new TracerPlugin();
+            try
+            {
+                tracer.CreateView();
+                TracerAction(tracer, "tr_ctx_pause")();
+
+                Assert.IsTrue(Field<bool>(tracer, "_isPaused"));
+                Assert.IsTrue(Field<Toggle>(tracer, "_pauseToggle").value, "the toggle shows the pause");
+            }
+            finally { tracer.OnDisable(); }
+        }
+
+        [Test]
+        public void TracerWhilePaused_KeepsOnlyTheNewest5000Events()
+        {
+            // while paused every event was queued and nothing was dropped: editor memory grew with the game's traffic (#256)
+            var tracer = new TracerPlugin();
+            try
+            {
+                tracer.CreateView();
+                TracerAction(tracer, "tr_ctx_pause")();
+                var traceEvent = default(TraceEvent);
+                for (int i = 0; i < 20000; i++) tracer.Write(in traceEvent);
+
+                Assert.LessOrEqual(Field<ConcurrentQueue<TraceEvent>>(tracer, "_incomingEvents").Count, 5000);
+            }
+            finally { tracer.OnDisable(); }
+        }
+#endif
     }
 }
