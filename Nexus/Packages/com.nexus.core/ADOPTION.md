@@ -16,7 +16,7 @@
 
 1. Fork `GameContainer` into your studio org (e.g. `your-org/GameContainer`). The package lives in
    that repository at `Nexus/Packages/com.nexus.core`.
-2. Pin a version tag such as `v0.5.0`, or a full 40-character commit hash (see `docs/STABILITY.md`
+2. Pin a version tag such as `v0.6.0`, or a full 40-character commit hash (see `docs/STABILITY.md`
    for what stays stable before 1.0).
 3. Each game consumes the fork via a UPM git dependency:
 

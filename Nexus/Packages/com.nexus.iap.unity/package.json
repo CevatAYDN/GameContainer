@@ -7,7 +7,7 @@
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.iap.unity/README.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {
-    "com.nexus.core": "0.5.0",
+    "com.nexus.core": "0.6.0",
     "com.unity.purchasing": "5.4.4"
   },
   "keywords": [ "nexus", "iap", "purchasing", "store", "monetization" ],

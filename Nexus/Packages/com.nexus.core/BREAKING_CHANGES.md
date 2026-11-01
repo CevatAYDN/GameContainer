@@ -355,7 +355,7 @@ Features marked as beta:
 
 1. **Changelog** - All changes documented (`CHANGELOG.md`)
 2. **Migration guide** - The steps per version (`MIGRATION.md`)
-3. **Git tag** - One per release (`v0.5.0`); games pin a commit on `main`
+3. **Git tag** - One per release (`v0.6.0`); games pin a commit on `main`
 4. **GitHub Issues** - Questions and reports (the repository has no Releases page and no Discussions)
 
 ### Timeline Communication
@@ -415,6 +415,23 @@ Features marked as beta:
 ## Version History
 
 ### Recent Breaking Changes
+
+#### Version 0.6.0 (2026-11-02)
+
+**Breaking Changes:**
+- The FSM and the DOTS bridge are packages of their own, `com.nexus.fsm` and `com.nexus.dots`, with their namespaces kept (#112): a game that names their types adds the package.
+- `IObjectPoolService.Prewarm` and `PrewarmAsync` have no `parent` parameter (#184).
+- `IEconomyService.GetObservableBalance` and `GetObservableBigBalance`, and `IProgressionService.CurrentLevel` and `MaxUnlockedLevel`, return `IReadOnlyObservableProperty<T>` (#231).
+- `IIapService.GetOwnership(productId)` with `IIapStoreInfoAdapter.OwnershipKnown` (#183), and `IIapService.UnrequestedPurchase` (#204).
+- `AdAdapterFactory` and `IapAdapterFactory` have no `"mock"` provider; the test doubles are in `com.nexus.core.testing`, with `MockContext` and `NexusTestHarness`, which a test assembly references (#74, #162).
+- `UICanvasSystem.UpdateLayerInteractivity` is replaced by `SetModalOpen(bool)`, `ReleaseWithoutDestroy` is removed, and `UIManager` calls `IUIAssetProvider.ReleaseWindow` for each instance (#185).
+- The `unity` field is 6000.6 (#139), and `com.nexus.core` depends on `com.unity.ugui` 2.6.0 (#138).
+- A binder generated before 0.6.0 does not compile (CS7036, #191): regenerate it.
+- New members on `IAudioService`, `IHapticService`, `ILocalizationService`, `IContextBuilder`, `ITickService`, `IIapService`, `IEconomyService` and `IResolver`: a class of the game that implements one adds them (`MIGRATION.md`, "Interfaces with new members").
+- The same API behaves differently: `EconomyService` and `BigDouble` throw for input outside their range (#196), a command that times out goes through recovery (#168), a signal fired with `FireThreadSafe` during a drain runs at the next drain (#169), a player build regenerates the binder (#193), and `BuildValidation` runs the project's `IBuildValidationRule` classes (#193).
+- The editor has one **Nexus** menu, and the Dashboard, the Code Health Analyzer and the System Diagnostic are the Status tab (#193); the removed types are listed in `MIGRATION.md`, "Removed".
+
+**Migration:** See [MIGRATION.md](MIGRATION.md#version-050--060).
 
 #### Version 0.5.0 (2026-10-15)
 

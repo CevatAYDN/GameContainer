@@ -4,7 +4,7 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ## Table of Contents
 
-- [After 0.5.0 (not released yet)](#after-050-not-released-yet)
+- [Version 0.5.0 → 0.6.0](#version-050--060)
 - [Version 0.4.0 → 0.5.0](#version-040--050)
   - [Scene integration and large currency update](#scene-integration-and-large-currency-update)
 - [Version 0.3.2 → 0.4.0](#version-032--040)
@@ -15,9 +15,9 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ---
 
-## After 0.5.0 (not released yet)
+## Version 0.5.0 → 0.6.0
 
-The [changelog](CHANGELOG.md)'s Unreleased section lists every change since 0.5.0. These need a
+Released 2026-11-02. The [changelog](CHANGELOG.md)'s 0.6.0 section lists every change since 0.5.0. These need a
 step in the game:
 
 #### The FSM and the DOTS bridge are packages of their own

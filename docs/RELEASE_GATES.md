@@ -6,7 +6,7 @@ the release commit is red. Numbers here are replaced, never accumulated: earlier
 `docs/archive/RELEASE_GATES-2026-10-28.md` holds the per-commit history from v0.5.0 until the cycle on `3271239`.
 
 Latest full run: **2026-10-29**, every gate on commit `17d31d0` (#111, #112, #116, #117), Unity **6000.5.6f1**, Windows 11. It is the games' re-pin target. From it `main` takes fixes for bugs, each with its regression test, the UI Toolkit screen stack (#76) and the dependency moves of the Dependencies table (#138), the editor's to 6000.6.7f1 among them (#139); see Open work for the rule and its history.
-Not a tagged version: `package.json` stays 0.5.0 (tag **v0.5.0** = `8f19c20`) and everything since is Unreleased.
+Release candidate: `package.json` 0.6.0 and `[0.6.0]` in the core changelog (#265); the tag **v0.6.0** goes on that commit once every gate below has a fresh result on it. The previous tag is **v0.5.0** = `8f19c20`.
 Result files are local and git-ignored, under `Nexus/artifacts/`.
 
 | # | Gate | How to run | Latest result |

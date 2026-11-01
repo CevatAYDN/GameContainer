@@ -38,7 +38,7 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {
-        "com.nexus.core": "0.5.0",
+        "com.nexus.core": "0.6.0",
         "com.nexus.ads": "0.1.0"
       }
     },
@@ -67,7 +67,7 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {
-        "com.nexus.core": "0.5.0"
+        "com.nexus.core": "0.6.0"
       }
     },
     "com.nexus.firebase": {
@@ -75,7 +75,7 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {
-        "com.nexus.core": "0.5.0"
+        "com.nexus.core": "0.6.0"
       }
     },
     "com.nexus.fsm": {
@@ -83,7 +83,7 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {
-        "com.nexus.core": "0.5.0"
+        "com.nexus.core": "0.6.0"
       }
     },
     "com.nexus.iap.unity": {
@@ -91,7 +91,7 @@
       "depth": 0,
       "source": "embedded",
       "dependencies": {
-        "com.nexus.core": "0.5.0",
+        "com.nexus.core": "0.6.0",
         "com.unity.purchasing": "5.4.4"
       }
     },

@@ -1,6 +1,6 @@
 # Stability Policy
 
-> **Status:** Pre-1.0 (v0.5.0)  
+> **Status:** Pre-1.0 (v0.6.0)  
 > Nexus is under active development. While the core architecture is stable, API surfaces may change between minor versions until 1.0.
 
 ---
@@ -21,8 +21,8 @@
 
 | Version Bump | What changes |
 |:------------:|-------------|
-| **Patch** (0.5.0 → 0.5.1) | Bug fixes, performance, docs — no public API changes |
-| **Minor** (0.5.0 → 0.6.0) | New features, API additions, minor breaking changes |
+| **Patch** (0.6.0 → 0.6.1) | Bug fixes, performance, docs — no public API changes |
+| **Minor** (0.6.0 → 0.7.0) | New features, API additions, minor breaking changes |
 | **Major** (0.x → 1.0) | Stabilization — API freeze begins |
 
 ---

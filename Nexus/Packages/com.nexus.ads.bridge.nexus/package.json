@@ -7,7 +7,7 @@
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.ads.bridge.nexus/README.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {
-    "com.nexus.core": "0.5.0",
+    "com.nexus.core": "0.6.0",
     "com.nexus.ads": "0.1.0"
   },
   "keywords": [ "nexus", "ads", "bridge", "mediation" ],
