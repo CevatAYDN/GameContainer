@@ -393,6 +393,8 @@ namespace Nexus.Ads.Editor
         // ----- entry points
 
         public const string DefaultReportPath = "artifacts/ads-validation.json";
+        /// <summary>The pre-build hook's report: under Library, which every Unity project keeps out of version control (issue #195).</summary>
+        public const string BuildReportPath = "Library/NexusAds/ads-validation.json";
 
         /// <summary>
         /// Batch-mode entry: <c>-executeMethod Nexus.Ads.Editor.AdsValidator.RunCli -adsTab Test|Release [-adsPlatform Android|Ios] [-adsReport path]</c>.
@@ -404,7 +406,7 @@ namespace Nexus.Ads.Editor
             {
                 string[] args = Environment.GetCommandLineArgs();
                 string tabArg = Arg(args, "-adsTab"), platformArg = Arg(args, "-adsPlatform") ?? "Android", reportPath = Arg(args, "-adsReport") ?? DefaultReportPath;
-                if (!Enum.TryParse(tabArg, true, out Tab tab)) { Debug.LogError("[Nexus Ads] -adsTab Test|Release is required"); EditorApplication.Exit(2); return; }
+                if (!TryParseTab(tabArg, out Tab tab)) { Debug.LogError("[Nexus Ads] -adsTab Test|Release is required"); EditorApplication.Exit(2); return; }
                 if (!Enum.TryParse(platformArg, true, out AdPlatform platform)) { Debug.LogError("[Nexus Ads] -adsPlatform Android|Ios"); EditorApplication.Exit(2); return; }
                 var settings = AdsSettings.Load();
                 if (settings == null) { Debug.LogError("[Nexus Ads] no Resources/" + AdsSettings.ResourceName + " asset"); EditorApplication.Exit(2); return; }
@@ -427,7 +429,16 @@ namespace Nexus.Ads.Editor
             File.WriteAllText(path, JsonUtility.ToJson(report, true));
         }
 
-        private static string Arg(string[] args, string name)
+        /// <summary>The <c>-adsTab</c> value of <see cref="RunCli"/> and <c>AndroidSetup.PrepareCli</c>: Test or Release, in any case.</summary>
+        public static bool TryParseTab(string value, out Tab tab)
+        {
+            foreach (Tab candidate in Enum.GetValues(typeof(Tab)))
+                if (string.Equals(value?.Trim(), candidate.ToString(), StringComparison.OrdinalIgnoreCase)) { tab = candidate; return true; }
+            tab = Tab.Test;
+            return false;
+        }
+
+        internal static string Arg(string[] args, string name)
         {
             for (int i = 0; i < args.Length - 1; i++) if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase)) return args[i + 1];
             return null;
@@ -450,7 +461,7 @@ namespace Nexus.Ads.Editor
             bool development = (report.summary.options & BuildOptions.Development) != 0;
             var platform = report.summary.platform == BuildTarget.iOS ? AdPlatform.Ios : AdPlatform.Android;
             var result = AdsValidator.Validate(settings, development ? AdsValidator.Tab.Test : AdsValidator.Tab.Release, platform, new UnityProjectProbe(), PlatformCatalog.Load());
-            AdsValidator.WriteReport(result, AdsValidator.DefaultReportPath);
+            AdsValidator.WriteReport(result, AdsValidator.BuildReportPath);
             if (result.Passed) { Debug.Log(result.Summary()); return; }
             throw new BuildFailedException(result.Summary());
         }

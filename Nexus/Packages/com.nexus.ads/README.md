@@ -246,7 +246,8 @@ as the `PendingReward` for the game's next start.
 `AdsValidator.Validate(settings, tab, platform, probe, catalog)` is a pure function; the settings
 page, the wizard, the CLI and the pre-build hook call it and own no rule of their own. The pre-build
 hook (`AdsBuildGuard`) runs on Android and iOS builds only, validates the Test tab for a development
-build and the Release tab otherwise, and stops the build on a fail. An ad-free release (the Release
+build and the Release tab otherwise, writes its report to `Library/NexusAds/ads-validation.json`, and
+stops the build on a fail. An ad-free release (the Release
 tab with Ad-free release on) starts no SDK, so the checks of a running mediation pass and say so
 (`consent.form`, `provider.compiled`, `mediation.status`, `keys.release.missing`, `android.edm`, and
 the Android plan checks `android.nativesdk`, `android.gradle`, `android.adapter`), while the checks
@@ -258,7 +259,7 @@ Unity.exe -batchmode -nographics -quit -projectPath <project> -executeMethod Nex
 ```
 
 Exit code 0 = no fail (warnings allowed), 1 = at least one fail, 2 = could not run (no settings asset,
-bad arguments). The JSON report lists every check with `id`, `result` (`pass` / `warn` / `fail`),
+bad arguments). `-adsTab` reads `Test` or `Release` in any case, here and in `AndroidSetup.PrepareCli`. The JSON report lists every check with `id`, `result` (`pass` / `warn` / `fail`),
 `message` and `fix`, plus the counts and the provider status.
 
 | Check id | Fails or warns when |

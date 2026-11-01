@@ -152,11 +152,13 @@ namespace Nexus.Ads.Editor
 
             EditorGUILayout.Space();
             EditorGUILayout.LabelField(_turkish ? "6. Kodla zorlanamayan kurallar (onaylayın)" : "6. Rules the package cannot enforce (confirm each)", EditorStyles.boldLabel);
-            foreach (var line in _turkish ? ChecklistTr : ChecklistEn)
+            var checklist = _turkish ? ChecklistTr : ChecklistEn;
+            for (int i = 0; i < checklist.Length; i++)
             {
-                string key = PrefRegistered + Application.productName + ".check." + line.GetHashCode();
+                // keyed by the English text: the same in both languages and in every editor run, which string.GetHashCode is not (issue #195)
+                string key = PrefRegistered + Application.productName + ".check." + ChecklistEn[i];
                 bool done = EditorPrefs.GetBool(key, false);
-                bool now = EditorGUILayout.ToggleLeft(line, done, EditorStyles.wordWrappedLabel);
+                bool now = EditorGUILayout.ToggleLeft(checklist[i], done, EditorStyles.wordWrappedLabel);
                 if (now != done) EditorPrefs.SetBool(key, now);
             }
 

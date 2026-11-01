@@ -176,6 +176,18 @@ namespace Nexus.Ads.Tests
             StringAssert.Contains("NEXUS_ADS needs com.nexus.ads 0.1.0 or newer, the project has 0.1.0", reason);
         }
 
+        // Issue #195: PrepareCli read "release" as the Test tab and wrote the Test tab's sample App ID, where RunCli refused it
+        [Test]
+        public void AdsTabArgument_ReadsTestOrReleaseInAnyCase_AndRefusesAnythingElse()
+        {
+            Assert.IsTrue(AdsValidator.TryParseTab("release", out var tab));
+            Assert.AreEqual(AdsValidator.Tab.Release, tab);
+            Assert.IsTrue(AdsValidator.TryParseTab("TEST", out tab));
+            Assert.AreEqual(AdsValidator.Tab.Test, tab);
+            Assert.IsFalse(AdsValidator.TryParseTab("prod", out _), "an unknown tab is a bad argument, not the Test tab");
+            Assert.IsFalse(AdsValidator.TryParseTab("1", out _), "an enum number is not a tab name");
+        }
+
         [Test]
         public void SelectedMediation_NotActive_FailsTheReleaseTab()
         {
