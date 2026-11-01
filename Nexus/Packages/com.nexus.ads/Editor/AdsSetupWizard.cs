@@ -7,7 +7,7 @@ using UnityEngine;
 namespace Nexus.Ads.Editor
 {
     /// <summary>
-    /// Tools > Nexus Ads > Setup: from nothing to a live ad, one window. Rows come from the catalog,
+    /// Nexus > Ads > Setup: from nothing to a live ad, one window. Rows come from the catalog,
     /// badges from <see cref="ProviderStatusResolver"/>, the next step from the validator's first
     /// failing check. Links open the official pages; "Install SDK" adds the UPM package where the
     /// catalog names a registry Unity can reach; "Prepare Android" performs the selected mediation's

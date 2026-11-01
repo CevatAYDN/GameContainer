@@ -166,12 +166,12 @@ namespace Nexus.Ads.Editor
                 else if (status.Status == ProviderStatus.Active)
                     report.Add(new AdsCheck("mediation.status", CheckResult.Pass, kind + " is Active on " + platform));
                 else
-                    report.Add(new AdsCheck("mediation.status", CheckResult.Fail, kind + " is " + (compiledOut != null ? status.Status + " (its provider is compiled out, see provider.compiled)" : status.ToString()) + "; a release build would ship without ads.", status.Status == ProviderStatus.NotInstalled ? (compiledOut != null ? "provider.compiled: " + compiledOutFix : "install the SDK and the provider package (Tools > Nexus Ads > Setup).") : "fill the Release tab: " + string.Join(", ", status.Missing) + "."));
+                    report.Add(new AdsCheck("mediation.status", CheckResult.Fail, kind + " is " + (compiledOut != null ? status.Status + " (its provider is compiled out, see provider.compiled)" : status.ToString()) + "; a release build would ship without ads.", status.Status == ProviderStatus.NotInstalled ? (compiledOut != null ? "provider.compiled: " + compiledOutFix : "install the SDK and the provider package (Nexus > Ads > Setup).") : "fill the Release tab: " + string.Join(", ", status.Missing) + "."));
             }
             else
             {
                 report.Add(status.Status == ProviderStatus.NotInstalled
-                    ? new AdsCheck("mediation.status", CheckResult.Warn, kind + " is NotInstalled; the editor runs the simulator, a development build runs the simulator on a device that is not listed and no ads on a listed one.", compiledOut != null ? "provider.compiled: " + compiledOutFix : "install the SDK and the provider package (Tools > Nexus Ads > Setup).")
+                    ? new AdsCheck("mediation.status", CheckResult.Warn, kind + " is NotInstalled; the editor runs the simulator, a development build runs the simulator on a device that is not listed and no ads on a listed one.", compiledOut != null ? "provider.compiled: " + compiledOutFix : "install the SDK and the provider package (Nexus > Ads > Setup).")
                     : new AdsCheck("mediation.status", CheckResult.Pass, kind + " is " + status.Status + " on " + platform));
             }
 
@@ -290,14 +290,14 @@ namespace Nexus.Ads.Editor
             var open = steps.FindAll(s => s.status != SetupStatus.Done);
             report.Add(open.Count == 0
                 ? new AdsCheck(id, CheckResult.Pass, string.Join("; ", steps.ConvertAll(s => s.what + ": " + s.how)))
-                : new AdsCheck(id, CheckResult.Fail, "Android: " + string.Join("; ", open.ConvertAll(s => s.what)) + " missing; " + consequence + ".", "press Prepare Android in Tools > Nexus Ads > Setup, or run AndroidSetup.PrepareCli."));
+                : new AdsCheck(id, CheckResult.Fail, "Android: " + string.Join("; ", open.ConvertAll(s => s.what)) + " missing; " + consequence + ".", "press Prepare Android in Nexus > Ads > Setup, or run AndroidSetup.PrepareCli."));
         }
 
         private static void CheckSdk(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool release, IProjectProbe probe, PlatformCatalog catalog, AdsValidationReport report)
         {
             if (probe.SdkInstalled(kind) && !probe.SdkViaUpm(kind))
                 report.Add(new AdsCheck("sdk.unitypackage", CheckResult.Warn, kind + "'s SDK is a .unitypackage import (found by assembly name): versionDefines cannot see it, so the provider package compiles only with the scripting define " + (catalog.Provider(kind)?.sdk?.define ?? "") + " set by hand.",
-                    "install the SDK as a UPM package (Tools > Nexus Ads > Setup > Install SDK) or add the define in Player Settings."));
+                    "install the SDK as a UPM package (Nexus > Ads > Setup > Install SDK) or add the define in Player Settings."));
             else if (probe.SdkInstalled(kind))
                 report.Add(new AdsCheck("sdk.unitypackage", CheckResult.Pass, kind + "'s SDK is a UPM package"));
 
@@ -307,9 +307,9 @@ namespace Nexus.Ads.Editor
                 var tab = release ? settings.Release : settings.Test;
                 string expected = tab.AdMob.For(platform).AppKey?.Trim();
                 if (appId == null)
-                    report.Add(new AdsCheck("android.admob.appid", release ? CheckResult.Fail : CheckResult.Warn, "the Google Mobile Ads settings asset (Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset) is missing; the plugin writes the App ID to the manifest from it.", "press Prepare Android in Tools > Nexus Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
+                    report.Add(new AdsCheck("android.admob.appid", release ? CheckResult.Fail : CheckResult.Warn, "the Google Mobile Ads settings asset (Assets/GoogleMobileAds/Resources/GoogleMobileAdsSettings.asset) is missing; the plugin writes the App ID to the manifest from it.", "press Prepare Android in Nexus > Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
                 else if (string.IsNullOrWhiteSpace(appId) || (!string.IsNullOrEmpty(expected) && appId.Trim() != expected))
-                    report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "the Google Mobile Ads settings asset carries '" + appId + "' but the " + (release ? "Release" : "Test") + " tab says '" + expected + "'; the manifest would start the SDK with the wrong app.", "press Prepare Android in Tools > Nexus Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
+                    report.Add(new AdsCheck("android.admob.appid", CheckResult.Fail, "the Google Mobile Ads settings asset carries '" + appId + "' but the " + (release ? "Release" : "Test") + " tab says '" + expected + "'; the manifest would start the SDK with the wrong app.", "press Prepare Android in Nexus > Ads > Setup (it writes the tab's App ID), or enter it in Assets > Google Mobile Ads > Settings."));
                 else
                     report.Add(new AdsCheck("android.admob.appid", CheckResult.Pass, "Google Mobile Ads settings asset carries the tab's App ID"));
             }
@@ -329,7 +329,7 @@ namespace Nexus.Ads.Editor
 
             bool adFree = release && settings.AdFreeRelease;
             if (release && !adFree && !probe.ExternalDependencyManagerInstalled)
-                report.Add(new AdsCheck("android.edm", CheckResult.Fail, "the External Dependency Manager is not in the project; the SDK's Android and iOS dependencies are not resolved without it.", "press Prepare Android in Tools > Nexus Ads > Setup (it adds the resolver the selected mediation needs and resolves)."));
+                report.Add(new AdsCheck("android.edm", CheckResult.Fail, "the External Dependency Manager is not in the project; the SDK's Android and iOS dependencies are not resolved without it.", "press Prepare Android in Nexus > Ads > Setup (it adds the resolver the selected mediation needs and resolves)."));
             else
                 report.Add(new AdsCheck("android.edm", CheckResult.Pass, probe.ExternalDependencyManagerInstalled ? "External Dependency Manager present"
                     : adFree ? "ad-free release: no SDK dependency needs resolving" : "External Dependency Manager not checked for the Test tab"));
@@ -403,7 +403,7 @@ namespace Nexus.Ads.Editor
             foreach (var text in probe.LinkXmlTexts) if (text.IndexOf("Nexus.Ads.Core", StringComparison.Ordinal) >= 0) { preserved = true; break; }
             report.Add(preserved
                 ? new AdsCheck("android.linkxml", CheckResult.Pass, "a link.xml preserves Nexus.Ads.Core")
-                : new AdsCheck("android.linkxml", release ? CheckResult.Warn : CheckResult.Pass, release ? "no link.xml preserves Nexus.Ads.Core; IL2CPP stripping may drop callback types." : "no link.xml yet (checked for release builds)", "press Write link.xml in Tools > Nexus Ads > Setup."));
+                : new AdsCheck("android.linkxml", release ? CheckResult.Warn : CheckResult.Pass, release ? "no link.xml preserves Nexus.Ads.Core; IL2CPP stripping may drop callback types." : "no link.xml yet (checked for release builds)", "press Write link.xml in Nexus > Ads > Setup."));
 
             // app-ads.txt: a line names its network by the ad system domain in its first field (issue #124)
             var withoutLine = new List<string>();
@@ -426,7 +426,7 @@ namespace Nexus.Ads.Editor
             string pinFault = ManifestPinning.Fault(probe.ConsumerManifestJson);
             report.Add(pinFault == null
                 ? new AdsCheck("manifest.pins", CheckResult.Pass, "the family packages point at one commit (or are embedded)")
-                : new AdsCheck("manifest.pins", CheckResult.Fail, pinFault, "press Pin family packages in Tools > Nexus Ads > Setup, or edit Packages/manifest.json so every com.nexus.ads* entry carries the same commit."));
+                : new AdsCheck("manifest.pins", CheckResult.Fail, pinFault, "press Pin family packages in Nexus > Ads > Setup, or edit Packages/manifest.json so every com.nexus.ads* entry carries the same commit."));
         }
 
         // ----- entry points
