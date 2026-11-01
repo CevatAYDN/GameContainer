@@ -136,7 +136,9 @@ stays hidden and the reason is logged as an error. A release build never runs th
    `startOnAwake` off (or passes `startOnAwake: false` to `Configure` on a bootstrap made in code) and
    calls `AdsBootstrap.Instance.StartAds()` when it is ready; until then nothing reads the advertising id
    or touches the consent flow and the SDK, a show answers `NotReady`, and `NexusAdsBridge.Connect` and
-   `Ads.OnReadyChanged` complete when it starts (issue #62).
+   `Ads.OnReadyChanged` complete when it starts (issue #62). An `Ads.OnReadyChanged` subscription
+   hears the bootstrap running when it was made and any that starts later, so one made before a
+   bootstrap exists works too (#195).
 3. Generate the `AdPlacements` constants (**Nexus > Ads > Generate Placements**, path on the
    settings) and show ads through the facade:
 

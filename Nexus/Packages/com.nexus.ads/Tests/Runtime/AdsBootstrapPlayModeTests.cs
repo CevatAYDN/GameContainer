@@ -378,6 +378,34 @@ namespace Nexus.Ads.Tests.Runtime
             finally { if (host != null) Object.Destroy(host); }
         }
 
+        // Issue #195: a subscription made while no bootstrap existed was never attached, and nothing said so
+        [UnityTest]
+        public IEnumerator OnReadyChanged_SubscribedBeforeAnyBootstrapExists_HearsTheOneThatStartsLater_UntilUnsubscribed()
+        {
+            yield return null; // the previous test's bootstrap is destroyed at the end of its frame
+            Assert.IsNull(AdsBootstrap.Instance, "no bootstrap exists yet");
+            int changes = 0;
+            var unsubscribe = Nexus.Ads.Unity.Ads.OnReadyChanged(() => changes++);
+            try
+            {
+                yield return Boot(SimulatorScenario.Normal);
+                yield return null;
+                Assert.IsTrue(Nexus.Ads.Unity.Ads.IsReady("shop_refill"), "the simulator filled");
+                Assert.Greater(changes, 0, "the fill of the bootstrap that started later reached the handler");
+
+                unsubscribe();
+                unsubscribe = null;
+                int before = changes, heard = 0;
+                var other = Nexus.Ads.Unity.Ads.OnReadyChanged(() => heard++);
+                _bootstrap.Simulator.Load(AdFormat.Interstitial);
+                yield return null;
+                other();
+                Assert.Greater(heard, 0, "the load raised ReadyChanged");
+                Assert.AreEqual(before, changes, "an unsubscribed handler hears nothing");
+            }
+            finally { unsubscribe?.Invoke(); }
+        }
+
         [UnityTest]
         public IEnumerator RewardedButton_IsHiddenWhileNothingIsLoaded_AndPaysOnceOnReward()
         {

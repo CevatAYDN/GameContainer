@@ -227,6 +227,7 @@ namespace Nexus.Ads.Unity
             }
 
             Controller = new AdController(config, Provider, new UnityAdClock(), visibility, mainThread, scheduler, new PlayerPrefsPacingStore(), _telemetry, consent);
+            Controller.ReadyChanged += Ads.RaiseReadyChanged; // before Start, so the first fill reaches subscriptions made before this bootstrap existed (issue #195)
             Controller.AdOpened += OnAdOpened;
             Controller.AdClosed += OnAdClosed;
             // tools/device-acceptance counts "[Nexus Ads] PolicyViolation" lines; keep the token. A release build writes
@@ -353,25 +354,18 @@ namespace Nexus.Ads.Unity
             controller.ShowPrivacyOptions(onClosed);
         }
 
-        /// <summary>Subscribes now and again whenever the bootstrap (re)starts; returns an unsubscribe action.</summary>
+        // every bootstrap's controller forwards its ReadyChanged here, so a subscription does not depend on when the bootstrap exists (issue #195)
+        private static event Action ReadyChanged;
+
+        internal static void RaiseReadyChanged() => ReadyChanged?.Invoke();
+
+        /// <summary>Calls the handler whenever readiness may have changed, on the bootstrap running now or on one that
+        /// starts later, a subscription made before any bootstrap exists included; returns an unsubscribe action.</summary>
         public static Action OnReadyChanged(Action handler)
         {
             if (handler == null) throw new ArgumentNullException(nameof(handler));
-            var controller = Controller;
-            if (controller != null) controller.ReadyChanged += handler;
-            Action late = null;
-            if (controller == null && AdsBootstrap.Instance != null)
-            {
-                // the start may already have filled an ad (the simulator fills at once), so the late subscriber reads readiness once
-                late = () => { if (AdsBootstrap.Instance != null && AdsBootstrap.Instance.Controller != null) { AdsBootstrap.Instance.Controller.ReadyChanged += handler; handler(); } };
-                AdsBootstrap.Instance.Started += late;
-            }
-            return () =>
-            {
-                var c = Controller;
-                if (c != null) c.ReadyChanged -= handler;
-                if (late != null && AdsBootstrap.Instance != null) AdsBootstrap.Instance.Started -= late;
-            };
+            ReadyChanged += handler;
+            return () => ReadyChanged -= handler;
         }
     }
 }
