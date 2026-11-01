@@ -111,6 +111,18 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void AScreenOpenedUnpooled_IsDestroyedOnClose_AndNotReused()
+        {
+            // issue #226: the close pooled every screen, and the next pooled open reused the unpooled one with its state
+            var unpooled = _uiManager.OpenScreenAsync<TestScreenView>(pooled: false).GetAwaiter().GetResult();
+            _uiManager.CloseScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+            var next = _uiManager.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+
+            Assert.AreNotSame(unpooled, next);
+            Assert.IsTrue(unpooled == null, "the unpooled screen is destroyed on close");
+        }
+
+        [Test]
         public void CloseScreen_PoolsAndRemovesFromActive()
         {
             var screen = _uiManager.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();

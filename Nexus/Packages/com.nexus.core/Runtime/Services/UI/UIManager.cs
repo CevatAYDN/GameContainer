@@ -40,7 +40,8 @@ namespace Nexus.Core.Services
         /// <summary>
         /// Opens a screen of type <typeparamref name="TScreen"/>. The screen prefab is resolved
         /// from the registered prefab map or through the <see cref="IUIAssetProvider"/> by the
-        /// screen name. Returns the opened screen (or null if it could not be opened).
+        /// screen name. Returns the opened screen (or null if it could not be opened). A pooled open reuses an instance a
+        /// close kept; with <paramref name="pooled"/> false the screen is a new instance and its close destroys it.
         /// </summary>
         Task<TScreen> OpenScreenAsync<TScreen>(object args = null, UILayer layer = UILayer.Screen, bool pooled = true)
             where TScreen : ScreenView;
@@ -95,6 +96,8 @@ namespace Nexus.Core.Services
         private readonly List<string> _history = new();
         // The instances the asset provider made, by screen: they go back through ReleaseWindow, not Destroy (issue #185).
         private readonly Dictionary<ScreenView, GameObject> _providerInstances = new();
+        // The open screens opened with pooled: false: their close destroys them instead of pooling them (issue #226).
+        private readonly HashSet<ScreenView> _unpooled = new();
 
         // Per-screen cap on pooled (closed-but-retained) instances. Prevents a
         // screen toggled open/closed thousands of times from retaining one deactivated
@@ -246,6 +249,7 @@ namespace Nexus.Core.Services
                     if (registered)
                     {
                         _activeScreens[key] = screen;
+                        if (!pooled) _unpooled.Add(screen);
                         _history.Remove(key);
                         _history.Add(key);
                     }
@@ -370,6 +374,7 @@ namespace Nexus.Core.Services
             GameObject instance;
             lock (_lock)
             {
+                _unpooled.Remove(screen);
                 if (!_providerInstances.Remove(screen, out instance)) instance = null;
             }
             if (ReferenceEquals(instance, null)) SafeDestroyUtility.SafeDestroyGameObject(screen);
@@ -509,7 +514,9 @@ namespace Nexus.Core.Services
 
                 // A screen destroyed during its close lifecycle (Dispose, or outside the manager) is Unity fake-null.
                 bool alive = screen != null;
-                if (alive) ReturnToPool(key, screen);
+                bool unpooled;
+                lock (_lock) unpooled = _unpooled.Contains(screen);
+                if (alive && !unpooled) ReturnToPool(key, screen);
                 else Release(screen);
                 UpdateModalBlocking();
                 if (alive) SignalBus?.Fire(new ScreenClosedSignal(screen.ScreenName));
@@ -614,6 +621,7 @@ namespace Nexus.Core.Services
                 _registeredPrefabs.Clear();
                 _pendingOpens.Clear();
                 _pendingCloses.Clear();
+                _unpooled.Clear();
             }
 
             // The screens first, through the provider where it made them, then the canvas, so the canvas takes no
