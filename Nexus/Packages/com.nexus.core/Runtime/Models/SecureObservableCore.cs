@@ -134,6 +134,7 @@ namespace Nexus.Core
                 _isNotifying = true;
             }
 
+            Exception failure = null; // the first observer failure, rethrown once every observer was told (#225, as #189)
             bool completedNormally = false;
             try
             {
@@ -143,7 +144,16 @@ namespace Nexus.Core
                     if (snapshot != null)
                     {
                         for (int i = 0; i < snapshot.Length; i++)
-                            snapshot[i]?.Invoke(oldValue, newValue);
+                        {
+                            // An observer that throws does not keep the others, or a change queued during the
+                            // notification, from being delivered (#225), as in ObservableProperty (#189).
+                            try { snapshot[i]?.Invoke(oldValue, newValue); }
+                            catch (Exception ex)
+                            {
+                                SignalBus.ReportIsolatedFailure(ex, $"An observer of SecureObservable<{typeof(T).Name}>");
+                                failure ??= ex;
+                            }
+                        }
                     }
 
                     // Exit decision + guard clear are ONE critical section: a writer that
@@ -189,6 +199,7 @@ namespace Nexus.Core
                     }
                 }
             }
+            if (failure != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
         }
     }
 
@@ -365,6 +376,16 @@ namespace Nexus.Core
             // property or calls out to the server, so it must never run under the lock.
             RaiseTamper(_context, repaired ? RepairedResolution : ResetResolution);
             return value;
+        }
+
+        /// <summary>
+        /// <see cref="WriteValue"/> for the service that owns the value: the notification wrote an observer's failure (#189),
+        /// so the change stands, the service saves it and its caller gets its result (#225). A failure nobody wrote propagates.
+        /// </summary>
+        public void WriteByService(T value)
+        {
+            try { WriteValue(value); }
+            catch (Exception ex) when (RecoveryEngine.WasLogged(ex)) { }
         }
 
         public void WriteValue(T value)

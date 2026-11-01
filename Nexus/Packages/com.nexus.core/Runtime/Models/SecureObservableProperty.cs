@@ -71,6 +71,9 @@ namespace Nexus.Core
             set => _core.WriteValue(value);
         }
 
+        /// <summary>Sets the value for the service that owns it: an observer's failure does not reach the service (#225).</summary>
+        internal void SetByService(int value) => _core.WriteByService(value);
+
         /// <summary>
         /// Set the underlying value without firing OnChanged. By default this method
         /// preserves the integrity canary. Callers may pass validateCanary=false only
@@ -130,6 +133,9 @@ namespace Nexus.Core
             get => _core.ReadValue();
             set => _core.WriteValue(value);
         }
+
+        /// <summary>Sets the value for the service that owns it: an observer's failure does not reach the service (#225).</summary>
+        internal void SetByService(long value) => _core.WriteByService(value);
 
         /// <summary>
         /// Set the underlying value without firing OnChanged. By default this method
@@ -323,6 +329,9 @@ namespace Nexus.Core
             get => _core.ReadValue();
             set => _core.WriteValue(value);
         }
+
+        /// <summary>Sets the value for the service that owns it: an observer's failure does not reach the service (#225).</summary>
+        internal void SetByService(BigDouble value) => _core.WriteByService(value);
 
         /// <summary>
         /// Set the composite BigDouble value without firing notifications. By default the

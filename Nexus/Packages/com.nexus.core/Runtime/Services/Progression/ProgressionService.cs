@@ -66,8 +66,8 @@ namespace Nexus.Core.Services
             var store = Store;
             if (store != null)
             {
-                CurrentLevel.Value = Math.Max(1, store.GetInt(KeyCurrentLevel, 1));
-                MaxUnlockedLevel.Value = Math.Max(CurrentLevel.Value, store.GetInt(KeyMaxLevel, 1));
+                CurrentLevel.SetByService(Math.Max(1, store.GetInt(KeyCurrentLevel, 1)));
+                MaxUnlockedLevel.SetByService(Math.Max(CurrentLevel.Value, store.GetInt(KeyMaxLevel, 1)));
             }
 
             CurrentLevel.OnChanged(OnLevelChanged);
@@ -127,8 +127,9 @@ namespace Nexus.Core.Services
             try
             {
                 // Publish the unlocked bound first so observers never see current > max.
-                if (level > MaxUnlockedLevel.Value) MaxUnlockedLevel.Value = level;
-                CurrentLevel.Value = level;
+                // an observer's failure does not stop the second write or the save (#225)
+                if (level > MaxUnlockedLevel.Value) MaxUnlockedLevel.SetByService(level);
+                CurrentLevel.SetByService(level);
             }
             finally
             {

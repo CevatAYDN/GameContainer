@@ -174,7 +174,7 @@ namespace Nexus.Core.Services
                         refusal = EconomyRefusal.InsufficientBalance;
                         return false;
                     }
-                    big.Value -= cost;
+                    big.SetByService(big.Value - cost);
                 }
                 else
                 {
@@ -183,7 +183,7 @@ namespace Nexus.Core.Services
                         refusal = EconomyRefusal.InsufficientBalance;
                         return false;
                     }
-                    prop.Value -= amount;
+                    prop.SetByService(prop.Value - amount);
                 }
             }
 
@@ -224,8 +224,8 @@ namespace Nexus.Core.Services
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 var prop = LazyLoadBalance(currencyId);
-                if (_bigBalances.TryGetValue(currencyId, out var big)) big.Value = new BigDouble(amount);
-                else prop.Value = amount;
+                if (_bigBalances.TryGetValue(currencyId, out var big)) big.SetByService(new BigDouble(amount));
+                else prop.SetByService(amount);
             }
             SchedulePersist();
         }
@@ -375,7 +375,7 @@ namespace Nexus.Core.Services
                     refusal = EconomyRefusal.InsufficientBalance;
                     return false;
                 }
-                prop.Value -= amount;
+                prop.SetByService(prop.Value - amount);
             }
 
             SchedulePersist();
@@ -394,7 +394,7 @@ namespace Nexus.Core.Services
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
                 var prop = LazyLoadBigBalance(currencyId);
-                prop.Value = Normalize(prop.Value + amount);
+                prop.SetByService(Normalize(prop.Value + amount));
             }
 
             SchedulePersist();
@@ -410,7 +410,7 @@ namespace Nexus.Core.Services
             lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
-                LazyLoadBigBalance(currencyId).Value = amount;
+                LazyLoadBigBalance(currencyId).SetByService(amount);
             }
             SchedulePersist();
         }
@@ -506,10 +506,10 @@ namespace Nexus.Core.Services
         private void AddBalanceLocked(string currencyId, long amount)
         {
             var prop = LazyLoadBalance(currencyId);
-            if (_bigBalances.TryGetValue(currencyId, out var big)) big.Value = Normalize(big.Value + new BigDouble(amount));
+            if (_bigBalances.TryGetValue(currencyId, out var big)) big.SetByService(Normalize(big.Value + new BigDouble(amount)));
             else
             {
-                prop.Value = amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount;
+                prop.SetByService(amount > long.MaxValue - prop.Value ? long.MaxValue : prop.Value + amount);
             }
         }
         /// <summary>
@@ -610,7 +610,7 @@ namespace Nexus.Core.Services
                 {
                     if (_disposed || _disposing) return;
                     var prop = LazyLoadBigBalance(currencyId);
-                    prop.Value = Normalize(prop.Value + amount);
+                    prop.SetByService(Normalize(prop.Value + amount));
                 }
                 if (_disposed || _disposing) return;
                 if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
