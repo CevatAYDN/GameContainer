@@ -165,6 +165,8 @@ the first run takes over the device-bound seed so existing data stays readable, 
 then also opens on another phone. Keep `Device` where a save must not move between phones. The seed is kept in
 PlayerPrefs and the saves in files: `PlayerPrefs.DeleteAll`, or a switch from `App` back to `Device`, leaves files no
 seed can read, and the next start logs an error in every build that names the cause and the file count (issue #166).
+Every live store saves its unsaved keys when the app pauses, on the main thread before `OnApplicationPause` returns, with
+or without a `Root` (issue #203); it also saves on quit, and on focus loss on a worker thread.
 `SettingsStores` names, per service (audio, haptics, economy, progression), the
 `IPlayerPrefsService` that keeps its state, for a game that keeps it in its own save; a slot left null uses the bound
 `IPlayerPrefsService`, and the key names stay the same. `GameSaveManager` (`Nexus.Core.Extensions`) writes one registered

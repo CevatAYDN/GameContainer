@@ -126,5 +126,39 @@ namespace Nexus.Tests.Runtime
 
             Assert.That(seen, Is.EqualTo(new[] { "low memory", "quit" }));
         }
+
+        // Issue #203: a store saved on focus loss on a worker thread, and on quit, only. Android may freeze the process as soon as
+        // OnApplicationPause returns and rarely sends a quit, so a key written just before Home could be lost without a line
+        [Test]
+        public void APause_SavesEveryLiveStoreBeforeThePauseCallReturns_WithoutARoot()
+        {
+            const string salt = "Test_Salt_Pause203";
+            ForgetStore(salt);
+            var store = new Nexus.Core.Services.EncryptedStorageService(salt, Nexus.Core.Services.StorageKeyBinding.App, "phone-A");
+            try
+            {
+                store.SetInt("level", 12);
+                var saver = GameObject.Find("[Nexus_StoragePauseSaver]");
+                Assert.IsNotNull(saver, "the stores' own pause hook exists without a Root");
+                saver.SendMessage("OnApplicationPause", true);
+                string path = (string)typeof(Nexus.Core.Services.EncryptedStorageService)
+                    .GetMethod("GetFilePath", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                    .Invoke(store, new object[] { "level" });
+                Assert.IsTrue(System.IO.File.Exists(path), "the key was on disk when the pause call returned");
+            }
+            finally
+            {
+                store.Dispose();
+                ForgetStore(salt);
+            }
+        }
+
+        private static void ForgetStore(string salt)
+        {
+            PlayerPrefs.DeleteKey($"NT_StorageSeed_{salt}");
+            PlayerPrefs.DeleteKey($"NT_StorageSeed_{salt}_App");
+            var folder = System.IO.Path.Combine(Application.persistentDataPath, $"SecureData_{salt}");
+            if (System.IO.Directory.Exists(folder)) System.IO.Directory.Delete(folder, true);
+        }
     }
 }

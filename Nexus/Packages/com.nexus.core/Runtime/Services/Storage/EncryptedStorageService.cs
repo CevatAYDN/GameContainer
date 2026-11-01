@@ -336,19 +336,28 @@ namespace Nexus.Core.Services
             }
         }
 
+        // Android may freeze the process as soon as OnApplicationPause returns and rarely sends a quit, so a pause saves every
+        // live store on the main thread before that call returns, whether or not the game has a Root (issue #203). Unity has no
+        // static pause event: StoragePauseSaver, created before the first scene loads, calls this.
+        internal static void StaticOnPause()
+        {
+            foreach (var instance in LiveInstances())
+            {
+                // One store that throws must not cost the others their pause save.
+                try { instance.Save(); }
+                catch (Exception ex) { NexusRuntime.Logger?.LogError($"[EncryptedStorageService] Save on pause failed for '{instance._storageFolderPath}': {ex.Message}"); }
+            }
+        }
+
         private void OnFocusChanged(bool hasFocus)
         {
             if (!hasFocus)
             {
                 if (_disposed) return;
-                // Audit note 4.3 (documented limitation): the focus-loss save is intentionally
-                // fire-and-forget (Task.Run) so the main thread never blocks on disk I/O during
-                // backgrounding. Trade-off: if the OS tears down the process before the task
-                // runs, the last-second save is lost. Data integrity for that final moment is
-                // covered by Application.quitting (synchronous OnQuitting → Save) on platforms
-                // that raise it; on hard-kill platforms (mobile swipe-away) the last
-                // milliseconds of dirty keys can be lost — set AutoSave = true for
-                // save-critical keys if that window is unacceptable.
+                // The focus-loss save (a desktop window losing focus, a system dialog) runs on a worker thread so the main
+                // thread never waits for the disk; a phone going to the background also pauses, and the pause saves on the main
+                // thread before it returns (StaticOnPause, issue #203). A failed background save is warned below; one the OS cut
+                // short leaves the previous file in .bak, which the next read falls back to and reports (issue #166).
                 // Capture logger on main thread before switching to background.
                 var logger = NexusRuntime.Logger;
                 // Use Task.Run for true background I/O so the Unity main thread is never
@@ -1314,6 +1323,33 @@ namespace Nexus.Core.Services
             int diff = 0;
             for (int i = 0; i < length; i++) diff |= a[i] ^ b[i];
             return diff == 0;
+        }
+    }
+
+    /// <summary>
+    /// Saves every live <see cref="EncryptedStorageService"/> when the app pauses, on the main thread before
+    /// <c>OnApplicationPause</c> returns: Unity has no static pause event, and a store must not depend on a Root for its
+    /// pause save (issue #203). Created before the first scene loads in a player and in play mode, as
+    /// <see cref="Nexus.Core.ContextQueueDrainer"/> is.
+    /// </summary>
+    [AddComponentMenu("")]
+    [Preserve]
+    internal sealed class StoragePauseSaver : MonoBehaviour
+    {
+        private static StoragePauseSaver s_instance;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
+        private static void Create()
+        {
+            if (s_instance != null) return;   // Unity's null: a saver destroyed with the last play session is made again
+            var saverObject = new GameObject("[Nexus_StoragePauseSaver]");
+            DontDestroyOnLoad(saverObject);
+            s_instance = saverObject.AddComponent<StoragePauseSaver>();
+        }
+
+        private void OnApplicationPause(bool paused)
+        {
+            if (paused) EncryptedStorageService.StaticOnPause();
         }
     }
 }
