@@ -15,7 +15,8 @@ namespace Nexus.Editor.Tests
     /// <summary>
     /// The signal and command defects the audit #206 found: a cancelled or aborted Concurrent dispatch wrote each
     /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214), a sync fallback
-    /// made later async fallbacks share one depth (#215) and a failed async composite never ran its FallbackAsync (#216).
+    /// made later async fallbacks share one depth (#215), a failed async composite never ran its FallbackAsync (#216) and
+    /// a retried composite under FireAsync kept its state (#217).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -52,6 +53,21 @@ namespace Nexus.Editor.Tests
         public struct PartB { }
         public sealed class FailingAsyncComposite : IAsyncCompositeCommand { public ValueTask ExecuteAsync(CompositeContext s, CancellationToken ct) => throw new InvalidOperationException("composite failure"); }
         public sealed class AsyncFallback : IAsyncCommand { public static int Runs; public ValueTask ExecuteAsync(CancellationToken ct) { Runs++; return default; } }
+
+        public struct RetryA { }
+        public struct RetryB { }
+        public sealed class RetriedComposite : ICompositeCommand, IResettableCommand
+        {
+            public static readonly List<int> Seen = new();
+            public static int Attempts;
+            private int _calls;
+            public void ResetState() => _calls = 0;
+            public void Execute(CompositeContext s)
+            {
+                Seen.Add(++_calls);
+                if (++Attempts == 1) throw new InvalidOperationException("first attempt");
+            }
+        }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -185,6 +201,21 @@ namespace Nexus.Editor.Tests
             await bus.FireAsync(new PartB());
 
             Assert.AreEqual(1, AsyncFallback.Runs, errors.ToString());
+        }
+
+        [Test]
+        public async Task ARetriedCompositeUnderFireAsync_StartsEachAttemptFromAResetInstance()
+        {
+            using var errors = new ErrorLines();
+            RetriedComposite.Seen.Clear();
+            RetriedComposite.Attempts = 0;
+            var bus = NewBus(new Strategy { Decide = _ => RecoveryDecision.Retry(3) }, typeof(RetriedComposite));
+            bus.RegisterCompositeCommand(new[] { typeof(RetryA), typeof(RetryB) }, typeof(RetriedComposite), false, 0, false);
+
+            await bus.FireAsync(new RetryA());
+            await bus.FireAsync(new RetryB());
+
+            CollectionAssert.AreEqual(new[] { 1, 1 }, RetriedComposite.Seen, errors.ToString());
         }
     }
 }

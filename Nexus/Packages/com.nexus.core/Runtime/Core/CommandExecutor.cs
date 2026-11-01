@@ -716,6 +716,8 @@ namespace Nexus.Core
                     // and run through the decorator pipeline like normal commands.
                     if (retryCount > 0)
                     {
+                        // the sync path takes a reset instance from the pool for each attempt (#217)
+                        if (command is IResettableCommand resettable) resettable.ResetState();
                         _container.Inject(command);
                     }
 
