@@ -28,6 +28,7 @@ namespace Nexus.Editor.Tests
             // Deliberately IGNORES cancellation: the machine must still drop a superseded
             // transition via its sequence check even when the state never cooperates.
             private int _exits;
+            public int Exits => Volatile.Read(ref _exits);
             public readonly TaskCompletionSource<bool> FirstExit = new(TaskCreationOptions.RunContinuationsAsynchronously);
             public readonly TaskCompletionSource<bool> SecondExit = new(TaskCreationOptions.RunContinuationsAsynchronously);
             public ValueTask OnExitAsync(CancellationToken ct)
@@ -114,13 +115,14 @@ namespace Nexus.Editor.Tests
             var t1 = fsm.ChangeStateAsync<MockStateA>();
             Assert.IsFalse(t1.IsCompleted, "The first transition must remain pending until superseded.");
             var t2 = fsm.ChangeStateAsync<MockStateB>();
-            // History records completion order. Release A first so this ordering is
-            // deterministic instead of depending on two near-identical timer deadlines.
+            // B waits for A, which finishes the exit it started (issue #192): the slow state is exited once, so B
+            // completes without a second exit ever being released.
             slow.FirstExit.SetResult(true);
             await t1;
-            slow.SecondExit.SetResult(true);
+            Assert.AreSame(t2, await Task.WhenAny(t2, Task.Delay(5000)), "B must not wait for a second exit of the slow state");
             await t2;
 
+            Assert.AreEqual(1, slow.Exits, "The superseded transition and its successor exit the slow state once between them.");
             Assert.AreSame(stateB, fsm.CurrentState);
             // THREE records, not two: the initial null→SlowExit transition is recorded too
             // (proven by FSM_RecordsTransitionsAndFiresOnStateChanged, where the first
@@ -145,9 +147,9 @@ namespace Nexus.Editor.Tests
         public async Task FSM_FailedTransitionFallsBackToErrorStateAndIsRecorded()
         {
             using var fsm = new GameStateMachine();
-            fsm.SetErrorState<MockStateB>();
             fsm.RegisterState(new ThrowingState());
             fsm.RegisterState(new MockStateB());
+            fsm.SetErrorState<MockStateB>();
             // The state machine logs the failed enter before falling back to the error state.
             UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Exception, new System.Text.RegularExpressions.Regex("InvalidOperationException: boom"));
 

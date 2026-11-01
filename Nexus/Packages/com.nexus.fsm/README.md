@@ -29,6 +29,11 @@ fsm.SetErrorState<ErrorState>();                          // receives the except
 await fsm.ChangeStateAsync<MenuState>();
 ```
 
+A newer transition cancels the one in progress and waits for it to finish; a superseded transition
+exits the state it entered, so every entered state is exited exactly once. Between a state's exit and
+the next state's enter `CurrentState` is null and `Tick` ticks nothing. `SetErrorState` throws for a
+state that is not registered yet, so register the error state first.
+
 `GameStateMachine` is an `ITickable`: after `tickService.RegisterTickable(fsm)` the current state's
 `OnTick` runs every frame. The package's `link.xml` preserves the whole assembly at every stripping level.
 

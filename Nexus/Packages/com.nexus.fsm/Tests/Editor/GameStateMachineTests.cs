@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core.FSM;
@@ -68,6 +69,123 @@ namespace Nexus.Editor.Tests
             }
 
             public void OnTick(float deltaTime) { }
+        }
+
+        // Issue #192: a transition superseded while entering returned without exiting the state it entered, and its
+        // successor exited the earlier state a second time.
+        public abstract class Counted : IGameState
+        {
+            public int Enters, Exits;
+            public virtual ValueTask OnEnterAsync(object args, CancellationToken ct) { Enters++; return default; }
+            public ValueTask OnExitAsync(CancellationToken ct) { Exits++; return default; }
+            public void OnTick(float deltaTime) { }
+        }
+
+        public sealed class FirstState : Counted { }
+        public sealed class LastState : Counted { }
+
+        public sealed class CancellableEnterState : Counted
+        {
+            public override async ValueTask OnEnterAsync(object args, CancellationToken ct)
+            {
+                Enters++;
+                await Task.Delay(Timeout.Infinite, ct);
+            }
+        }
+
+        public sealed class StubbornEnterState : Counted
+        {
+            public readonly TaskCompletionSource<bool> Release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            public override async ValueTask OnEnterAsync(object args, CancellationToken ct)
+            {
+                Enters++;
+                await Release.Task; // ignores cancellation
+            }
+        }
+
+        private static async Task Within(Task task, string what)
+        {
+            Assert.AreSame(task, await Task.WhenAny(task, Task.Delay(5000)), what + " did not finish");
+            await task;
+        }
+
+        [Test]
+        public async Task ATransitionSupersededWhileEntering_ExitsTheStateItEntered_AndEachStateIsExitedOnce()
+        {
+            using var fsm = new GameStateMachine();
+            var first = new FirstState();
+            var entering = new CancellableEnterState();
+            var last = new LastState();
+            fsm.RegisterState(first);
+            fsm.RegisterState(entering);
+            fsm.RegisterState(last);
+            await fsm.ChangeStateAsync<FirstState>();
+
+            var superseded = fsm.ChangeStateAsync<CancellableEnterState>();
+            var newest = fsm.ChangeStateAsync<LastState>();
+            await Within(superseded, "the superseded transition");
+            await Within(newest, "the newest transition");
+
+            Assert.AreEqual(1, first.Exits, "the first state is exited once");
+            Assert.AreEqual(1, entering.Enters);
+            Assert.AreEqual(1, entering.Exits, "the state the superseded transition entered is exited");
+            Assert.AreEqual(1, last.Enters);
+            Assert.AreSame(last, fsm.CurrentState);
+        }
+
+        [Test]
+        public async Task AnEnterThatIgnoresCancellation_IsExitedWhenItReturns_BeforeTheNewerStateEnters()
+        {
+            using var fsm = new GameStateMachine();
+            var first = new FirstState();
+            var stubborn = new StubbornEnterState();
+            var last = new LastState();
+            fsm.RegisterState(first);
+            fsm.RegisterState(stubborn);
+            fsm.RegisterState(last);
+            await fsm.ChangeStateAsync<FirstState>();
+
+            var superseded = fsm.ChangeStateAsync<StubbornEnterState>();
+            var newest = fsm.ChangeStateAsync<LastState>();
+            Assert.AreEqual(0, last.Enters, "the newer state waits for the transition it supersedes");
+            stubborn.Release.SetResult(true);
+            await Within(superseded, "the superseded transition");
+            await Within(newest, "the newest transition");
+
+            Assert.AreEqual(1, first.Exits, "the first state is exited once");
+            Assert.AreEqual(1, stubborn.Exits, "the late-returning state is exited");
+            Assert.AreEqual(1, last.Enters);
+            Assert.AreSame(last, fsm.CurrentState);
+        }
+
+        [Test]
+        public async Task DisposingDuringAnEnter_ExitsTheStateBeingEntered()
+        {
+            var fsm = new GameStateMachine();
+            var first = new FirstState();
+            var entering = new CancellableEnterState();
+            fsm.RegisterState(first);
+            fsm.RegisterState(entering);
+            await fsm.ChangeStateAsync<FirstState>();
+
+            var transition = fsm.ChangeStateAsync<CancellableEnterState>();
+            fsm.Dispose();
+            await Within(transition, "the transition cancelled by Dispose");
+
+            Assert.AreEqual(1, first.Exits);
+            Assert.AreEqual(1, entering.Exits, "the state being entered is exited");
+            Assert.IsNull(fsm.CurrentState);
+        }
+
+        [Test]
+        public void SetErrorState_RejectsAStateThatIsNotRegistered()
+        {
+            using var fsm = new GameStateMachine();
+
+            var error = Assert.Throws<InvalidOperationException>(() => fsm.SetErrorState<LastState>());
+
+            StringAssert.Contains("LastState is not registered", error.Message);
+            Assert.IsNull(fsm.ErrorStateType);
         }
 
         [Test]

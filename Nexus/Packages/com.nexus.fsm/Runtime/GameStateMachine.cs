@@ -92,7 +92,11 @@ namespace Nexus.Core.FSM
         // EKSİK-5 fix: volatile ensures Tick() (Unity main thread) always observes the
         // latest state written by an async transition continuation — prevents torn reads
         // on platforms without strong memory ordering guarantees.
-        private volatile IGameState _currentState;
+        // Read and written through Volatile/Interlocked: a transition claims the state it exits with one exchange, so
+        // Dispose and a later transition never exit it again (issue #192).
+        private IGameState _currentState;
+        // The latest transition; the next one waits for it, so the one it supersedes exits what it entered first (issue #192).
+        private Task _tail;
         private Type _errorStateType;
         private int _configurationVersion;
         /// <summary>Changes only when state registration or the error-state configuration changes.</summary>
@@ -111,7 +115,8 @@ namespace Nexus.Core.FSM
         private int _transitionHead;   // next write slot
         private int _transitionCount;  // records written so far (capped at capacity)
 
-        public IGameState CurrentState => _currentState;
+        /// <summary>The committed state; null between a state's exit and the next state's enter.</summary>
+        public IGameState CurrentState => Volatile.Read(ref _currentState);
 
         /// <summary>Fires once per transition attempt with a full <see cref="StateTransitionRecord"/> snapshot.</summary>
         public event Action<StateTransitionRecord> OnStateChanged;
@@ -155,6 +160,12 @@ namespace Nexus.Core.FSM
 
         public void SetErrorState<TState>() where TState : class, IGameState
         {
+            bool registered;
+            lock (_statesLock) registered = _states.ContainsKey(typeof(TState));
+            // An unregistered error state left the machine without a state after a failed enter, with only that failure
+            // logged (issue #192).
+            if (!registered)
+                throw new InvalidOperationException($"[GameStateMachine] The error state {typeof(TState).Name} is not registered: call RegisterState before SetErrorState.");
             _errorStateType = typeof(TState);
             Interlocked.Increment(ref _configurationVersion);
         }
@@ -182,9 +193,9 @@ namespace Nexus.Core.FSM
                 return;
             }
 
-            if (_currentState == nextState && _stateCts == null) return;
+            if (CurrentState == nextState && _stateCts == null) return;
 
-            string fromName = _currentState?.GetType().Name;
+            string fromName = CurrentState?.GetType().Name;
             string argsSummary = args?.GetType().Name; // type name only — no ToString() surprises
             double startTime = UnityEngine.Time.realtimeSinceStartupAsDouble;
 
@@ -221,23 +232,35 @@ namespace Nexus.Core.FSM
                 return;
             }
 
+            // Transitions run one after another: the one this supersedes finishes first, exiting the state it entered,
+            // so no state is entered and exited at once and each entered state is exited once (issue #192).
+            var done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var previous = Interlocked.Exchange(ref _tail, done.Task);
+
             var status = StateTransitionStatus.Success;
             string toName = nextState.GetType().Name;
 
             try
             {
-                if (_currentState != null)
+                if (previous != null) await previous;
+
+                if (mySequence != Volatile.Read(ref _transitionSequence) || token.IsCancellationRequested)
+                {
+                    RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
+                    return;
+                }
+
+                // Claimed with one exchange: nothing else exits this state again (issue #192).
+                var exiting = Interlocked.Exchange(ref _currentState, null);
+                if (exiting != null)
                 {
                     try
                     {
-                        await _currentState.OnExitAsync(token);
+                        await exiting.OnExitAsync(token);
                     }
                     catch (OperationCanceledException)
                     {
-                        // Superseded or externally cancelled — abort without touching state.
-                        status = StateTransitionStatus.Superseded;
-                        RecordTransition(fromName, toName, argsSummary, status, startTime);
-                        return;
+                        // Asked to stop: the state has left all the same, and nothing calls its exit again.
                     }
                     catch (Exception ex)
                     {
@@ -245,18 +268,10 @@ namespace Nexus.Core.FSM
                     }
                 }
 
-                // A newer transition may have superseded us while we awaited OnExitAsync.
-                // Volatile.Read: _transitionSequence is a long written via Interlocked on
-                // other threads — a plain read could be torn on 32-bit platforms or stale.
-                if (mySequence != Volatile.Read(ref _transitionSequence))
-                {
-                    RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
-                    return;
-                }
-
-                // Check for cancellation before starting OnEnterAsync — a state that ignores
-                // the token could run for an arbitrarily long time after being superseded.
-                if (token.IsCancellationRequested)
+                // A newer transition may have superseded us while we awaited OnExitAsync, and a state that ignores
+                // the token could run for an arbitrarily long time after being superseded: do not start the enter.
+                // Volatile.Read: _transitionSequence is a long written via Interlocked on other threads.
+                if (mySequence != Volatile.Read(ref _transitionSequence) || token.IsCancellationRequested)
                 {
                     RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
                     return;
@@ -268,15 +283,15 @@ namespace Nexus.Core.FSM
                 }
                 catch (OperationCanceledException)
                 {
-                    // Superseded or externally cancelled mid-enter.
+                    // Superseded or cancelled mid-enter: this transition exits the state it entered (issue #192).
+                    await ExitSupersededAsync(nextState);
                     RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
                     return;
                 }
                 catch (Exception ex)
                 {
-                    // If a newer transition superseded us while we were inside OnEnterAsync,
-                    // it owns the machine now — a stale error-state fallback here would
-                    // clobber its committed _currentState. Abort silently.
+                    // If a newer transition superseded us while we were inside OnEnterAsync, it owns the machine
+                    // now: a stale error-state fallback here would run in its place.
                     if (mySequence != Volatile.Read(ref _transitionSequence))
                     {
                         RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
@@ -298,42 +313,38 @@ namespace Nexus.Core.FSM
                         {
                             await errorState.OnEnterAsync(ex, token);
                             if (mySequence == Volatile.Read(ref _transitionSequence))
-                            {
-                                _currentState = errorState;
-                            }
+                                Volatile.Write(ref _currentState, errorState);
+                            else
+                                await ExitSupersededAsync(errorState);
                         }
                         catch (OperationCanceledException)
                         {
-                            // Or1-fix: on cancelled recovery, reach the same terminal (null)
-                            // state as the innerEx path, so no stale failed-from state leaks.
-                            if (mySequence == Volatile.Read(ref _transitionSequence)) _currentState = null;
+                            // The machine stays without a state; the error state is exited like any superseded enter.
+                            await ExitSupersededAsync(errorState);
                         }
                         catch (Exception innerEx)
                         {
                             NexusRuntime.Logger?.LogException(innerEx);
-                            if (mySequence == Volatile.Read(ref _transitionSequence)) _currentState = null;
                         }
                     }
                     else
                     {
-                        if (mySequence == Volatile.Read(ref _transitionSequence)) _currentState = null;
                         toName = null;
                     }
                 }
 
-                // A state that ignores cancellation may return from OnEnterAsync normally
-                // after a newer transition already superseded us mid-enter. The machine
-                // state is correct (the newer transition owns _currentState), but our
-                // history record and trace event must not claim a Success.
+                // A state that ignores cancellation may return from OnEnterAsync normally after a newer transition
+                // superseded us: it is exited here, and the history does not claim a Success (issue #192).
                 if (mySequence != Volatile.Read(ref _transitionSequence))
                 {
+                    if (status == StateTransitionStatus.Success) await ExitSupersededAsync(nextState);
                     RecordTransition(fromName, toName, argsSummary, StateTransitionStatus.Superseded, startTime);
                     return;
                 }
 
                 if (status == StateTransitionStatus.Success)
                 {
-                    _currentState = nextState;
+                    Volatile.Write(ref _currentState, nextState);
                 }
 
                 // Committed — record the success (or failed-with-error-state) transition.
@@ -347,6 +358,23 @@ namespace Nexus.Core.FSM
                 Interlocked.CompareExchange(ref _stateCts, null, myCts);
                 myCts.Cancel();
                 myCts.Dispose();
+                done.TrySetResult(true);
+            }
+        }
+
+        // The transition token is cancelled by now, so the exit gets its own short timeout, as on Dispose (issue #192).
+        private static async ValueTask ExitSupersededAsync(IGameState state)
+        {
+            try
+            {
+                await ExitWithTimeoutAsync(state);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogException(ex);
             }
         }
 
@@ -399,7 +427,7 @@ namespace Nexus.Core.FSM
 
         public void Tick(float deltaTime)
         {
-            var current = _currentState;
+            var current = CurrentState;
             current?.OnTick(deltaTime);
         }
 
@@ -409,25 +437,41 @@ namespace Nexus.Core.FSM
             var cts = Interlocked.Exchange(ref _stateCts, null);
             // R2 defense-in-depth: a superseded flow may have disposed its own source in
             // its finally before Dispose() drained the slot — Cancel() on it throws.
+            // The transition that owns the source disposes it in its finally; disposing it here made that
+            // finally's Cancel throw (issue #192).
             try { cts?.Cancel(); }
             catch (ObjectDisposedException) { /* superseded flow already disposed its source */ }
-            cts?.Dispose();
 
             // Best-effort exit hook: give the current state a chance to clean up
             // (fire-and-forget with error capture and a short timeout, mirroring the
-            // ContextLifecycleOrchestrator sync-dispose pattern).
-            var exiting = _currentState;
-            _currentState = null;
-            if (exiting != null)
+            // ContextLifecycleOrchestrator sync-dispose pattern). A transition in flight finishes first and exits the
+            // state it entered itself (issue #192); with none in flight this runs at once.
+            var tail = Volatile.Read(ref _tail);
+            if (tail == null || tail.IsCompleted)
             {
-                SafeAsyncRunner.Run(() => ExitStateOnDispose(exiting),
-                    $"[GameStateMachine] OnExitAsync during Dispose failed for state '{exiting.GetType().Name}'");
+                var exiting = Interlocked.Exchange(ref _currentState, null);
+                if (exiting != null)
+                {
+                    SafeAsyncRunner.Run(() => ExitWithTimeoutAsync(exiting),
+                        $"[GameStateMachine] OnExitAsync during Dispose failed for state '{exiting.GetType().Name}'");
+                }
+            }
+            else
+            {
+                SafeAsyncRunner.Run(() => ExitAfterAsync(tail), "[GameStateMachine] OnExitAsync during Dispose failed");
             }
 
             lock (_statesLock) { _states.Clear(); }
         }
 
-        private static async ValueTask ExitStateOnDispose(IGameState state)
+        private async ValueTask ExitAfterAsync(Task transition)
+        {
+            await transition;
+            var exiting = Interlocked.Exchange(ref _currentState, null);
+            if (exiting != null) await ExitWithTimeoutAsync(exiting);
+        }
+
+        private static async ValueTask ExitWithTimeoutAsync(IGameState state)
         {
             // Short timeout so fire-and-forget cleanup can't hang indefinitely.
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));

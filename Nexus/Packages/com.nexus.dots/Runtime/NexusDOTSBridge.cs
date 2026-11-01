@@ -99,8 +99,18 @@ namespace Nexus.DOTS
     {
         private NativeSignalQueue<T> _signalQueue;
         private ISignalBus _signalBus;
+        private Allocator _allocator;
         private bool _isInitialized;
+        // Unity calls OnDestroy only on an object whose Awake ran, so the native queue exists only from then on: a bridge
+        // on an object that is never active owns no native memory (issue #192).
+        private bool _awake;
         private JobHandle _producers;
+
+        private void Awake()
+        {
+            _awake = true;
+            if (_isInitialized && !_signalQueue.IsCreated) _signalQueue = new NativeSignalQueue<T>(_allocator);
+        }
 
         public void Initialize(ISignalBus signalBus, Allocator allocator)
         {
@@ -109,11 +119,14 @@ namespace Nexus.DOTS
             _producers.Complete();
             _signalQueue.Dispose();
             _signalBus = signalBus;
-            _signalQueue = new NativeSignalQueue<T>(allocator);
+            _allocator = allocator;
             _isInitialized = true;
+            // On an object that has not been active yet the queue is created by Awake (see _awake).
+            if (_awake) _signalQueue = new NativeSignalQueue<T>(allocator);
         }
 
-        /// <summary>Returns true if the bridge has been initialized and its native queue is allocated.</summary>
+        /// <summary>Returns true if the bridge has been initialized and its native queue is allocated (an object that has
+        /// not been active yet has no queue).</summary>
         public bool IsInitialized => _isInitialized && _signalQueue.IsCreated;
 
         /// <summary>
@@ -124,7 +137,7 @@ namespace Nexus.DOTS
         {
             EnsureMainThread();
             if (!_isInitialized || !_signalQueue.IsCreated)
-                throw new InvalidOperationException($"[Nexus DOTS] DOTSSignalBridge<{typeof(T).Name}> is not initialized.");
+                throw NotReady();
             _producers.Complete();
             _producers = default;
             _signalQueue.Enqueue(signal);
@@ -138,9 +151,13 @@ namespace Nexus.DOTS
         {
             EnsureMainThread();
             if (!_isInitialized || !_signalQueue.IsCreated)
-                throw new InvalidOperationException($"[Nexus DOTS] DOTSSignalBridge<{typeof(T).Name}> is not initialized.");
+                throw NotReady();
             return _signalQueue.AsParallelWriter();
         }
+
+        private InvalidOperationException NotReady() => new InvalidOperationException(_isInitialized
+            ? $"[Nexus DOTS] DOTSSignalBridge<{typeof(T).Name}> has no queue yet: it is created when its GameObject first becomes active."
+            : $"[Nexus DOTS] DOTSSignalBridge<{typeof(T).Name}> is not initialized.");
 
         /// <summary>Registers producer ownership so Update, reinitialization and destruction complete jobs before accessing native storage.</summary>
         public void AddProducerDependency(JobHandle producer)

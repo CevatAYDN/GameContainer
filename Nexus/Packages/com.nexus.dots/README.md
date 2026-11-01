@@ -5,7 +5,9 @@
 
 `NativeSignalQueue<T>` holds unmanaged signals; jobs write through its parallel writer, and
 `DOTSSignalBridge<T>` (a `MonoBehaviour`) drains them into the `SignalBus` on the main thread in
-`Update`. The assembly compiles only while `com.unity.collections` 6.6.0 or newer is installed (the version Unity 6000.6 brings); without it the
+`Update`. The bridge creates its native queue when its GameObject first becomes active (at once on an
+active object), so a bridge initialized on an object that is never active owns no native memory; until
+then `IsInitialized` is false and `Enqueue`/`AsParallelWriter` throw. The assembly compiles only while `com.unity.collections` 6.6.0 or newer is installed (the version Unity 6000.6 brings); without it the
 package adds nothing to the project.
 
 The bridge was part of `com.nexus.core` (assembly `com.nexus.core.dots`) until issue #112 moved it
