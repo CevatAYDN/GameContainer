@@ -380,34 +380,27 @@ namespace Nexus.Editor
 
         private static void ValidateConcurrentCommandInjection(Type commandType, ref int errorCount)
         {
-            // Concurrent commands cannot inject writeable models (only read-only interfaces or types starting with IReadOnly)
-            var fields = commandType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var field in fields)
+            // Concurrent commands cannot inject writeable models (only read-only interfaces or types starting with IReadOnly).
+            // Every way the container hands the command a dependency counts, as the runtime walks them: [Inject] and
+            // [OptionalInject] members of the type and its bases, [Inject] method parameters and the constructor it builds the
+            // command with. Only the [Inject] fields and properties of the type were checked (#247).
+            int found = 0;
+            void Check(Type dependency, string where)
             {
-                if (field.IsDefined(typeof(InjectAttribute), false))
-                {
-                    var fieldType = field.FieldType;
-                    if (IsWriteableModelType(fieldType))
-                    {
-                        Debug.LogError($"[Nexus Error] Concurrent Command Model Write Violation: Concurrent Command {commandType.FullName} injects writeable model type {fieldType.Name} in field {field.Name}. Concurrent commands can only inject read-only model interfaces (e.g., interfaces starting with IReadOnly).");
-                        errorCount++;
-                    }
-                }
+                if (!IsWriteableModelType(dependency)) return;
+                Debug.LogError($"[Nexus Error] Concurrent Command Model Write Violation: Concurrent Command {commandType.FullName} injects writeable model type {dependency.Name} in {where}. Concurrent commands can only inject read-only model interfaces (e.g., interfaces starting with IReadOnly).");
+                found++;
             }
 
-            var properties = commandType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            foreach (var prop in properties)
-            {
-                if (prop.IsDefined(typeof(InjectAttribute), false))
-                {
-                    var propType = prop.PropertyType;
-                    if (IsWriteableModelType(propType))
-                    {
-                        Debug.LogError($"[Nexus Error] Concurrent Command Model Write Violation: Concurrent Command {commandType.FullName} injects writeable model type {propType.Name} in property {prop.Name}. Concurrent commands can only inject read-only model interfaces.");
-                        errorCount++;
-                    }
-                }
-            }
+            var members = InjectScanner.ScanMembers(commandType);
+            foreach (var field in members.Fields) Check(field.FieldType, "field " + field.Name);
+            foreach (var prop in members.Properties) Check(prop.PropertyType, "property " + prop.Name);
+            foreach (var method in members.Methods)
+                foreach (var parameter in method.GetParameters()) Check(parameter.ParameterType, $"parameter {parameter.Name} of method {method.Name}");
+            var constructor = InjectScanner.FindInjectionConstructor(commandType, out _);
+            if (constructor != null)
+                foreach (var parameter in constructor.GetParameters()) Check(parameter.ParameterType, $"constructor parameter {parameter.Name}");
+            errorCount += found;
         }
 
         private static bool IsWriteableModelType(Type type)

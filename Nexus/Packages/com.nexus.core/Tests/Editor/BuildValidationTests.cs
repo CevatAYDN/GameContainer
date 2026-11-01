@@ -74,6 +74,33 @@ namespace Nexus.Editor.Tests
             public void Execute(ConcurrentWriteSignal signal) {}
         }
  
+        // --- A writable model reached through the constructor, [OptionalInject], an [Inject] method or a base field (#247) ---
+        public struct ConcurrentWaysSignal { }
+        public class ConcurrentCtorCommand : ICommand<ConcurrentWaysSignal>
+        {
+            public ConcurrentCtorCommand(ISomeModel model) { }
+            public void Execute(ConcurrentWaysSignal signal) {}
+        }
+        public class ConcurrentOptionalCommand : ICommand<ConcurrentWaysSignal>
+        {
+            [OptionalInject] public ISomeModel Model;
+            public void Execute(ConcurrentWaysSignal signal) {}
+        }
+        public class ConcurrentMethodCommand : ICommand<ConcurrentWaysSignal>
+        {
+            [Inject] public void Construct(ISomeModel model) { }
+            public void Execute(ConcurrentWaysSignal signal) {}
+        }
+        public class ConcurrentCommandBase
+        {
+            [Inject] private ISomeModel _model;
+            protected ISomeModel Model => _model;
+        }
+        public class ConcurrentInheritedCommand : ConcurrentCommandBase, ICommand<ConcurrentWaysSignal>
+        {
+            public void Execute(ConcurrentWaysSignal signal) {}
+        }
+
         // --- Dummy types for Command State Leak validation ---
         public class StateLeakCommand : ICommand<MixedSignal>
         {
@@ -134,6 +161,23 @@ namespace Nexus.Editor.Tests
 
             // Expecting warning for StateLeakCommand because it has private string _mutableState but does not implement IResettable
             Assert.GreaterOrEqual(warningCount, 1, $"Expected at least 1 warning for command state leak, got {warningCount}.");
+        }
+
+        [Test]
+        public void ConcurrentModelWriteRule_SeesTheConstructor_OptionalInject_AnInjectMethod_AndABaseField()
+        {
+            var errors = new List<string>();
+            BuildValidation.ErrorLogger = errors.Add;
+            var rule = GetPrivateStatic("ValidateConcurrentCommandInjection");
+
+            foreach (var command in new[] { typeof(ConcurrentCtorCommand), typeof(ConcurrentOptionalCommand), typeof(ConcurrentMethodCommand), typeof(ConcurrentInheritedCommand) })
+            {
+                errors.Clear();
+                var args = new object[] { command, 0 };
+                rule.Invoke(null, args);
+                Assert.AreEqual(1, (int)args[1], command.Name + ": " + string.Join("\n", errors));
+                StringAssert.Contains(command.FullName + " injects writeable model type ISomeModel", errors[0]);
+            }
         }
 
         // --- Dummy type for the stub-service check (issue #104) ---
