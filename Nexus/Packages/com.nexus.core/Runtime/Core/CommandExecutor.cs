@@ -812,7 +812,8 @@ namespace Nexus.Core
                     RecoveryAction action;
                     try
                     {
-                        action = _recovery.HandleErrorWithDecision(ex, trigger.CommandType, null, ref retryCount);
+                        // the async decision, as for an async command: the sync one refused a FallbackAsync (#216)
+                        action = await _recovery.HandleErrorWithDecisionAsync(ex, trigger.CommandType, null, retryCount, cancellationToken);
                     }
                     catch
                     {

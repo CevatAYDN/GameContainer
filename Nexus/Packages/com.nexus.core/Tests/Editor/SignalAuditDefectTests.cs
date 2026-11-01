@@ -14,8 +14,8 @@ namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// The signal and command defects the audit #206 found: a cancelled or aborted Concurrent dispatch wrote each
-    /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214) and a sync
-    /// fallback made later async fallbacks share one depth (#215).
+    /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214), a sync fallback
+    /// made later async fallbacks share one depth (#215) and a failed async composite never ran its FallbackAsync (#216).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -47,6 +47,11 @@ namespace Nexus.Editor.Tests
             public static TaskCompletionSource<bool> Gate;
             public async ValueTask ExecuteAsync(CancellationToken ct) { Interlocked.Increment(ref Started); await Gate.Task; }
         }
+
+        public struct PartA { }
+        public struct PartB { }
+        public sealed class FailingAsyncComposite : IAsyncCompositeCommand { public ValueTask ExecuteAsync(CompositeContext s, CancellationToken ct) => throw new InvalidOperationException("composite failure"); }
+        public sealed class AsyncFallback : IAsyncCommand { public static int Runs; public ValueTask ExecuteAsync(CancellationToken ct) { Runs++; return default; } }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -166,6 +171,20 @@ namespace Nexus.Editor.Tests
             await Task.WhenAll(pending);
 
             Assert.AreEqual(4, started, errors.ToString());
+        }
+
+        [Test]
+        public async Task AFailedAsyncComposite_RunsItsFallbackAsync()
+        {
+            using var errors = new ErrorLines();
+            AsyncFallback.Runs = 0;
+            var bus = NewBus(new Strategy { Decide = _ => RecoveryDecision.FallbackAsync<AsyncFallback>() }, typeof(FailingAsyncComposite), typeof(AsyncFallback));
+            bus.RegisterCompositeCommand(new[] { typeof(PartA), typeof(PartB) }, typeof(FailingAsyncComposite), false, 0, true);
+
+            await bus.FireAsync(new PartA());
+            await bus.FireAsync(new PartB());
+
+            Assert.AreEqual(1, AsyncFallback.Runs, errors.ToString());
         }
     }
 }
