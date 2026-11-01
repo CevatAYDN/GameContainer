@@ -125,7 +125,7 @@ dependencies alive).
 
 ### Nexus
 - `IContextLifecycle`: `OnConfigure(builder)` → `OnInitializeAsync(ct)` → `OnStartAsync(ct)` → on dispose,
-  reverse registration order (services).
+  the singletons in reverse creation order (a consumer before the services it uses).
 - `Context.Configure()` auto-discovery (finding lifecycles by convention) + manual
   registration; `NexusRuntime.CreatePureContextAsync` — a code-only context that needs no
   scene (tests/dedicated server).

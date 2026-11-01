@@ -298,7 +298,6 @@ namespace UnityEngine
     }
 
     /// <summary>Unity FindObjectsInactive filter — no-op outside Unity.</summary>
-    public enum FindObjectsSortMode { None, InstanceID }
     public enum FindObjectsInactive
     {
         Exclude = 0,
@@ -467,8 +466,6 @@ namespace UnityEngine
         }
 
         /// <summary>Finds live objects of the given type (mirrors UnityEngine.Object.FindObjectsByType).</summary>
-        public static T[] FindObjectsByType<T>(FindObjectsInactive inactive, FindObjectsSortMode sortMode) where T : Object
-            => FindObjectsByType<T>(inactive);
         public static T[] FindObjectsByType<T>(FindObjectsInactive findObjectsInactive) where T : Object
         {
             lock (s_lock)

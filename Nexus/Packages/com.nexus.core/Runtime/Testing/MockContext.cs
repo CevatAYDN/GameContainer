@@ -32,8 +32,8 @@ namespace Nexus.Core
                 $"MockContext has no Container assigned — cannot resolve '{typeof(T).Name}'. " +
                 "Assign a Container with the needed registrations, or use TryResolve for an optional lookup.");
         }
-        public T TryResolve<T>() where T : class => null;
-        public T TryResolve<T>(string name) where T : class => null;
+        public T TryResolve<T>() where T : class => Container?.TryResolve<T>();
+        public T TryResolve<T>(string name) where T : class => Container?.TryResolve<T>(name);
         public T ResolveCrossBoundary<T>() where T : class => null;
         public void RegisterPlugin(INexusPlugin plugin) { }
         public void RemovePlugin(INexusPlugin plugin) { }

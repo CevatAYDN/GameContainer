@@ -23,7 +23,7 @@ namespace Nexus.Editor
         private static readonly ConcurrentDictionary<Type, MemberInfo[]> s_modelDataMembersCache = new();
         private static readonly ConcurrentDictionary<Type, bool> s_classLiveReloadCache = new();
         private static readonly ConcurrentDictionary<Type, MethodInfo> s_reloadMethodCache = new();
-        private static readonly HashSet<int> s_liveReloadInFlight = new();
+        private static readonly HashSet<EntityId> s_liveReloadInFlight = new();
         private static readonly object s_liveReloadLock = new();
 
         private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
@@ -51,7 +51,7 @@ namespace Nexus.Editor
         {
             if (modelData == null) return;
 
-            var modelId = modelData.GetEntityId().GetHashCode();
+            var modelId = modelData.GetEntityId(); // an EntityId's hash is not an identifier (#197)
             lock (s_liveReloadLock)
             {
                 if (!s_liveReloadInFlight.Add(modelId))

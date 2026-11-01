@@ -1405,8 +1405,9 @@ namespace Nexus.Core
                         catch (Exception ex) when (!IsDispatchControlFlow(ex)) { failure ??= ex; }
                     }
                 }
-                else if (string.IsNullOrEmpty(scopeTag))
+                else
                 {
+                    // a scoped broadcast reaches here only for a target whose scope tag matched, and is skipped all the same (#197)
                     Services.NexusLog.WarnAlways($"[Nexus] Cross-context broadcast failed: target context '{targetCtx.GetType().Name}' does not use a SignalBus-backed ISignalBus. Broadcast skipped.");
                 }
             }

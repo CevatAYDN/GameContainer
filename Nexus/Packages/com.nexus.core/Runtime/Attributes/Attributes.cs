@@ -135,8 +135,9 @@ namespace Nexus.Core
 
     /// <summary>
     /// Marks a parameterless method to run once, immediately after all injections for the
-    /// instance have been applied (Strange-style <c>[PostConstruct]</c>). Dependencies are
-    /// guaranteed non-null here. Methods run in ascending <see cref="Order"/>.
+    /// instance have been applied (Strange-style <c>[PostConstruct]</c>). A strict container throws
+    /// before it for a dependency that is not registered; a non-strict one logs it and leaves that
+    /// member null until the instance is injected again. Methods run in ascending <see cref="Order"/>.
     /// </summary>
     [AttributeUsage(AttributeTargets.Method, AllowMultiple = false, Inherited = true)]
     [Preserve]

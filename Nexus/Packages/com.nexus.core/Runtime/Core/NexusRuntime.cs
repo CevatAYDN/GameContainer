@@ -476,6 +476,7 @@ namespace Nexus.Core
             Metrics.ResetTraceBuffer();
             NexusLog.Reset();
             NexusStaticState.ClearAll();
+            s_monitoringInitialized = 0; // the next context applies the monitors' defaults again (#197)
 
             // Clear static tamper events on domain reset so handlers do not
             // persist across disable-domain-reload sessions or editor play-mode cycles.

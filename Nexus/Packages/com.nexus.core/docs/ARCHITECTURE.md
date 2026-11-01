@@ -118,10 +118,11 @@ Type-safe reactive property wrapper providing change notifications to UI views a
 Editor tools implement `INexusEditorPlugin`. The host window drives tab updates via `OnUpdate()` cadence (~200ms interval) without custom background timers.
 
 ### 5. Service Disposal Contract
-Service lifecycle (`INexusService`) is **owned by the Context**, not by the DI container:
-- `Context.Dispose()` calls `OnDispose()` on every resolved `INexusService` singleton — eager services (from `ServiceTypes`) and lazy services (first resolved outside that list, e.g. during `OnStartAsync`) — exactly once each (guarded by a `disposedServices` set).
-- `NexusDI.Dispose()` / `DisposeAsync()` **skip** `INexusService` instances; a bare container without a Context never disposes services. This prevents the double-dispose that occurred when `NexusService<T>.OnDispose() => Dispose()` was followed by the container disposing the same instance via `IDisposable`.
-- Plain `IDisposable`/`IAsyncDisposable` singletons that are *not* services are still disposed by the container as before.
+A context's `INexusService` singletons end together with its other singletons, newest first, so a consumer is disposed before the services it uses (#197):
+- `Context.Dispose()` and `DisposeAsync()` run the stoppables, each lifecycle's `OnDispose` and the views' mediators, then every singleton the game's bindings created, in reverse creation order while the container still resolves (an instance the game built and bound counts as created when it is injected), then the plugins, the signal bus, the queue and the pools. The container's own modules end last.
+- An `INexusService` gets its `[Deconstruct]` hooks and `OnDispose()`, never `Dispose()` from the container: `NexusService<T>.OnDispose()` calls `Dispose()` itself, so each service ends once.
+- A bare `NexusDI` and a child scope (`CreateChildScope`) end the services they hold the same way; until #197 they skipped them.
+- Any other singleton gets its `[Deconstruct]` hooks and `Dispose()`. One that is only `IAsyncDisposable` is awaited by `DisposeAsync()`, and `Dispose()` disposes it on one ordered background chain.
 
 ### 6. Recovery Fallback Dispatch
 Both recovery paths dispatch fallback commands through object-based `ExecuteCommand`/`ExecuteCommandAsync`, which now support **generic-only** commands (`ICommand<TSignal>` / `IAsyncCommand<TSignal>` that do not implement the non-generic interface) via cached reflection dispatchers. The sync error handler additionally rejects async-only fallback types (it cannot await them) to avoid re-entering the same strategy decision endlessly — those are logged and treated as `Skip`.

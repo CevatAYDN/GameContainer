@@ -85,6 +85,10 @@ namespace Nexus.Core
         // Double-dispose guard for the owned-data destroy (see DisposeShared).
         private bool _contextDataDestroyed;
         private readonly CancellationTokenSource _cts = new();
+        // The thread that builds the context, and its synchronization context: a lazy service that a worker thread
+        // resolves first still initializes here, as every lifecycle step does (#197).
+        private readonly SynchronizationContext _ownerSyncContext = SynchronizationContext.Current;
+        private readonly int _ownerThreadId = Thread.CurrentThread.ManagedThreadId;
         private readonly ViewBinder _viewBinder;
         private readonly List<(INexusPlugin plugin, PluginContext context)> _plugins = new();
         private volatile List<(INexusPlugin plugin, PluginContext context)> _pluginsReadOnlyCopy = new();
@@ -215,6 +219,7 @@ namespace Nexus.Core
             Container.BindInstance(_viewBinder);
 
             Container.BindInstance<IContext>(this);
+            Container.KeepTrackedSingletonsForDispose(); // the modules above end with the container, after the game's singletons
             if (contextData?.EnableStrictInjection == true)
                 Container.StrictInjection = true;
 
@@ -554,7 +559,14 @@ namespace Nexus.Core
 
         private void OnLazyServiceResolved(INexusService service)
         {
-            if (Volatile.Read(ref _lifecycleState) == 2 && Volatile.Read(ref _disposeState) == 0)
+            if (Volatile.Read(ref _lifecycleState) != 2 || Volatile.Read(ref _disposeState) != 0) return;
+            if (_ownerSyncContext != null && Thread.CurrentThread.ManagedThreadId != _ownerThreadId)
+                _ownerSyncContext.Post(static state =>
+                {
+                    var context = (Context)state;
+                    if (Volatile.Read(ref context._disposeState) == 0) context.ScheduleLazyServiceDrain();
+                }, this);
+            else
                 ScheduleLazyServiceDrain();
         }
 
@@ -852,7 +864,13 @@ namespace Nexus.Core
                 try { _cts.Cancel(); }
                 finally
                 {
-                    try { DisposeShared(executeStoppables: true); }
+                    try
+                    {
+                        DisposeShared(executeStoppables: true);
+                        // services and the other singletons together, a consumer before what it uses (#197)
+                        Container.DisposeSingletonsInReverseOrder();
+                        DisposeModules();
+                    }
                     finally { Container.Dispose(); }
                 }
             }
@@ -887,7 +905,12 @@ namespace Nexus.Core
                     }
                     finally
                     {
-                        try { DisposeShared(executeStoppables: false); }
+                        try
+                        {
+                            DisposeShared(executeStoppables: false);
+                            await Container.DisposeSingletonsInReverseOrderAsync();
+                            DisposeModules();
+                        }
                         finally { await Container.DisposeAsync(); }
                     }
                 }
@@ -902,7 +925,7 @@ namespace Nexus.Core
             // redundant second unregister that could double-fire the unregister event path.
         }
 
-        /// <summary>Shared teardown for <see cref="Dispose"/> and <see cref="DisposeAsync"/>.</summary>
+        /// <summary>Teardown before the singletons, shared by <see cref="Dispose"/> and <see cref="DisposeAsync"/>: stoppables, lifecycles, views.</summary>
         private void DisposeShared(bool executeStoppables)
         {
             // Execute IStoppable domain lifecycles before container teardown
@@ -914,7 +937,7 @@ namespace Nexus.Core
                 }
                 catch (Exception ex)
                 {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Exception during ExecuteStoppableLifecyclesSync: {ex.Message}");
+                    NexusRuntime.Logger?.LogError($"[Nexus] Exception during ExecuteStoppableLifecyclesSync: {ex}");
                 }
             }
 
@@ -932,51 +955,12 @@ namespace Nexus.Core
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
             }
 
-            // INexusService lifecycle is owned by the Context (NexusDI.Dispose skips them), so
-            // dispose every resolved INexusService singleton even when no builder was configured
-            // (e.g. bare test contexts that bound services directly through the container).
-            var disposedServices = new HashSet<object>(NexusDI.ReferenceComparer<object>.Instance);
-            if (_builder != null)
-            {
-                var serviceTypes = _builder.ServiceTypes;
-                for (int i = serviceTypes.Count - 1; i >= 0; i--)
-                {
-                    try
-                    {
-                        // own bindings only: a child disposed before it resolved a service must not reach its parent's (#190)
-                        if (Container.TryGetOwnInstance(serviceTypes[i], out var existing) && existing is INexusService service
-                            && disposedServices.Add(existing))
-                        {
-                            // NexusDI.Dispose skips INexusService instances BEFORE running
-                            // their [Deconstruct] hooks (the Context owns their lifecycle),
-                            // so the Context must run those hooks itself — otherwise a
-                            // service's [Deconstruct] cleanup would never fire at all.
-                            Container.RunDeconstructs(service);
-                            service.OnDispose();
-                        }
-                    }
-                    catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
-                }
-            }
-
-            // Dispose any remaining resolved INexusService singletons (e.g. lazy services
-            // first resolved outside the eager ServiceTypes list) so nothing leaks.
-            foreach (var instance in Container.GetActiveSingletons())
-            {
-                if (instance is INexusService service && disposedServices.Add(instance))
-                {
-                    try
-                    {
-                        // Same [Deconstruct] gap as the ServiceTypes loop above.
-                        Container.RunDeconstructs(service);
-                        service.OnDispose();
-                    }
-                    catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
-                }
-            }
-
             _viewBinder.Dispose();
+        }
 
+        /// <summary>Teardown after the singletons: the plugins, then the signal bus, queue and pools.</summary>
+        private void DisposeModules()
+        {
             List<(INexusPlugin plugin, PluginContext context)> pluginSnapshot;
             lock (_pluginsLock)
             {

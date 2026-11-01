@@ -67,23 +67,22 @@ namespace Nexus.Core
                     issues.Add(new DiValidationIssue(binding.Concrete, binding.Concrete,
                         DiValidationIssueType.MissingConstructorDependency,
                         $"[ConstructorExplosion] '{Label(binding)}' has {parameters.Length} constructor parameters (> {maxParameters})."));
-                ulong usedOverrides = 0;
+                // the same matching as construction: exact type, then assignable, each value used once (#197)
+                var overrideFor = NexusDI.MatchParameterOverrides(parameters, binding.Overrides, out int unusedOverride);
+                if (unusedOverride >= 0)
+                    issues.Add(new DiValidationIssue(binding.Concrete, binding.Overrides[unusedOverride].Type, DiValidationIssueType.InvalidBinding,
+                        $"'{Label(binding)}' has no constructor parameter that takes the explicit {binding.Overrides[unusedOverride].Type.FullName} value."));
                 for (int i = 0; i < parameters.Length; i++)
                 {
-                    bool overridden = false;
-                    if (binding.Overrides != null)
-                        for (int o = 0; o < binding.Overrides.Length; o++)
-                            if (binding.Overrides[o].Type == parameters[i] && (o >= 64 || (usedOverrides & (1UL << o)) == 0))
-                            {
-                                overridden = true;
-                                if (o < 64) usedOverrides |= 1UL << o;
-                                var value = binding.Overrides[o].Value;
-                                if ((value == null && parameters[i].IsValueType && Nullable.GetUnderlyingType(parameters[i]) == null)
-                                    || (value != null && !parameters[i].IsInstanceOfType(value)))
-                                    issues.Add(new DiValidationIssue(binding.Concrete, parameters[i], DiValidationIssueType.InvalidBinding,
-                                        $"'{Label(binding)}' constructor parameter {i} has an incompatible explicit value."));
-                                break; // Each override fills one parameter in order, matching CreateInstanceCore.
-                            }
+                    bool overridden = overrideFor != null && overrideFor[i] >= 0;
+                    if (overridden)
+                    {
+                        var value = binding.Overrides[overrideFor[i]].Value;
+                        if ((value == null && parameters[i].IsValueType && Nullable.GetUnderlyingType(parameters[i]) == null)
+                            || (value != null && !parameters[i].IsInstanceOfType(value)))
+                            issues.Add(new DiValidationIssue(binding.Concrete, parameters[i], DiValidationIssueType.InvalidBinding,
+                                $"'{Label(binding)}' constructor parameter {i} has an incompatible explicit value."));
+                    }
                     if (!overridden)
                         Check(parameters[i], meta.ConstructorParameterNames?[i],
                             meta.ConstructorParameterHasDefault?[i] == true, false,

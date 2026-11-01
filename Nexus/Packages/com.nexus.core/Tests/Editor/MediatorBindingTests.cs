@@ -89,20 +89,19 @@ namespace Nexus.Editor.Tests
             Assert.IsTrue(view.WasBound, "View.OnBind must have been called");
         }
 
-        // ─── MA3: Missing abstraction binding throws ───
+        // ─── MA3: Missing abstraction binding is logged, and the view stays unbound ───
 
+        // Issue #197: the exception escaped RegisterView, and the Root's pending-view flush abandoned the views after it.
         [Test]
-        public void MediatorBinding_AbstractionWithoutBinding_Throws()
+        public void MediatorBinding_AbstractionWithoutBinding_IsLoggedWithTheAbstraction_InsteadOfThrowing()
         {
             using var testContext = NexusTestHarness.CreateContext();
             var view = new AbstractionBindingView();
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(
+                @"^\[Nexus\] RegisterView failed for 'AbstractionBindingView'.*ITestMediator", System.Text.RegularExpressions.RegexOptions.Singleline));
 
-            var ex = Assert.Throws<InvalidOperationException>(() =>
-                testContext.Context.RegisterView(view),
-                "RegisterView must throw when abstraction type has no DI binding");
-
-            Assert.That(ex.Message, Does.Contain("ITestMediator"),
-                "Exception message must reference the unresolved abstraction type");
+            Assert.DoesNotThrow(() => testContext.Context.RegisterView(view));
+            Assert.IsNull(view.Context, "a view without its mediator was bound");
         }
 
         // ─── MA4: Pooling keys off concrete type, not abstraction ───

@@ -31,7 +31,9 @@ namespace Nexus.Core
     /// <item><description><see cref="Lifetime.Singleton"/>: one instance for the whole application.
     /// The binding is registered on the ROOT container regardless of where the Bind call happens,
     /// so every container in the hierarchy shares the same instance and it is disposed with the
-    /// root (reverse creation order).</description></item>
+    /// root (reverse creation order). A child that binds the same implementation again (a reloaded
+    /// scene) keeps that instance. Its dependencies resolve on the root: one that only the child binds
+    /// is missing, and <see cref="NexusDI.ValidateBindings"/> reports it.</description></item>
     /// </list>
     /// The legacy <c>bool isSingleton</c> bind overloads map <c>true</c> → <see cref="Lifetime.Scoped"/>
     /// and <c>false</c> → <see cref="Lifetime.Transient"/>; they remain for backward compatibility.
@@ -175,6 +177,8 @@ namespace Nexus.Core
         // so [Deconstruct]/Dispose can still touch it). The HashSet above stays for O(1)
         // membership/count/editor snapshots; this list carries the order guarantee.
         private List<object> _resolvedSingletonOrder;
+        private int _keptSingletonCount; // guarded by _singletonLock
+        private List<IAsyncDisposable> _asyncDisposeBacklog; // guarded by _singletonLock
         private int _disposeState;
         private readonly object _disposeLock = new();
         private ConcurrentDictionary<Type, bool> _lazyServiceTypes;
@@ -350,7 +354,8 @@ namespace Nexus.Core
         /// <summary>
         /// An explicit value for one constructor parameter of a binding's implementation,
         /// supplied via the fluent <see cref="FluentTypeBinder{T}.WithParameter(Type, object)"/>.
-        /// Matched by exact parameter type; the first matching override wins over resolution.
+        /// It fills the first free parameter of its exact type, else the first its type is assignable to;
+        /// a value no parameter takes fails the construction (<see cref="MatchParameterOverrides"/>).
         /// </summary>
         internal sealed class ParameterOverride
         {
@@ -361,6 +366,40 @@ namespace Nexus.Core
                 Type = type;
                 Value = value;
             }
+        }
+
+        /// <summary>
+        /// Which override fills each constructor parameter (-1: none). Exact type matches are taken first, then a
+        /// parameter the override's type is assignable to (an <c>Enemy</c> for an <c>IEnemy</c>); each override fills
+        /// one parameter, in order. <paramref name="unusedOverride"/> is the first override no parameter takes, or -1:
+        /// a value the caller passed is never dropped silently (#197).
+        /// </summary>
+        internal static int[] MatchParameterOverrides(Type[] parameterTypes, IReadOnlyList<ParameterOverride> overrides, out int unusedOverride)
+        {
+            unusedOverride = -1;
+            if (overrides == null || overrides.Count == 0) return null;
+            var map = new int[parameterTypes.Length];
+            for (int i = 0; i < map.Length; i++) map[i] = -1;
+            var used = new bool[overrides.Count];
+            for (int pass = 0; pass < 2; pass++)
+                for (int i = 0; i < parameterTypes.Length; i++)
+                {
+                    if (map[i] >= 0) continue;
+                    for (int o = 0; o < overrides.Count; o++)
+                    {
+                        if (used[o]) continue;
+                        var type = overrides[o].Type;
+                        if (pass == 0 ? type == parameterTypes[i] : parameterTypes[i].IsAssignableFrom(type))
+                        {
+                            map[i] = o;
+                            used[o] = true;
+                            break;
+                        }
+                    }
+                }
+            for (int o = 0; o < used.Length; o++)
+                if (!used[o]) { unusedOverride = o; break; }
+            return map;
         }
 
         /// <summary>
@@ -417,7 +456,7 @@ namespace Nexus.Core
             /// <summary>Alias of <see cref="AsImplementedInterfaces"/> (Zenject <c>AndSelf</c> naming).</summary>
             public FluentTypeBinder<T> AndSelf() { _bindInterfaces = true; Apply(); return this; }
 
-            /// <summary>Supplies an explicit value for the constructor parameter whose type is <typeparamref name="TParam"/>.</summary>
+            /// <summary>Supplies an explicit value for the constructor parameter of type <typeparamref name="TParam"/>, else the first one it is assignable to.</summary>
             public FluentTypeBinder<T> WithParameter<TParam>(TParam value) => WithParameter(typeof(TParam), value);
 
             /// <summary>Supplies an explicit value for the constructor parameter of the given type (reflection form).</summary>
@@ -921,33 +960,22 @@ namespace Nexus.Core
                 if (meta.Constructor == null)
                 {
                     if (meta.ConstructorError != null) throw new InvalidOperationException(meta.ConstructorError);
+                    if (overrides != null && overrides.Count > 0) throw UnusedOverride(type, overrides[0]);
                     return Activator.CreateInstance(type, true);
                 }
 
                 var paramTypes = meta.ConstructorParameterTypes;
                 var paramNames = meta.ConstructorParameterNames;
                 var args = new object[paramTypes.Length];
-                // Each override fills one parameter, in order: Create("x", "y") on (string a, string b) gave "x" to both.
-                // shortcut: overrides past the 64th cannot be marked used and match first-wins; nothing passes that many.
-                ulong usedOverrides = 0;
+                var overrideFor = MatchParameterOverrides(paramTypes, overrides, out int unusedOverride);
+                if (unusedOverride >= 0) throw UnusedOverride(type, overrides[unusedOverride]);
                 for (int i = 0; i < paramTypes.Length; i++)
                 {
-                    bool overridden = false;
-                    if (overrides != null)
+                    if (overrideFor != null && overrideFor[i] >= 0)
                     {
-                        for (int o = 0; o < overrides.Count; o++)
-                        {
-                            if (overrides[o].Type == paramTypes[i] && (o >= 64 || (usedOverrides & (1UL << o)) == 0))
-                            {
-                                args[i] = overrides[o].Value;
-                                if (o < 64) usedOverrides |= 1UL << o;
-                                overridden = true;
-                                break;
-                            }
-                        }
-                    }
-                    if (overridden)
+                        args[i] = overrides[overrideFor[i]].Value;
                         continue;
+                    }
 
                     args[i] = string.IsNullOrEmpty(paramNames?[i])
                         ? _di.TryResolve(paramTypes[i])
@@ -989,6 +1017,11 @@ namespace Nexus.Core
                     throw;
                 }
             }
+
+            private static InvalidOperationException UnusedOverride(Type type, ParameterOverride unused)
+                => new InvalidOperationException(
+                    $"No constructor parameter of '{type.FullName}' takes the explicit {unused.Type.FullName} value " +
+                    "(WithParameter, or a typed factory's argument): a parameter takes a value of its own type or one assignable to it.");
 
             public void Inject(object instance)
             {
@@ -1069,7 +1102,7 @@ namespace Nexus.Core
 
             /// <summary>
             /// Invokes every [PostConstruct]-tagged method in ascending Order after all
-            /// injections are applied. Dependencies are guaranteed non-null here.
+            /// injections are applied. A dependency a non-strict container could not find is still null here.
             /// </summary>
             private void RunPostConstructs(object instance, InjectableMetadata meta)
             {
@@ -1087,7 +1120,7 @@ namespace Nexus.Core
 
             /// <summary>
             /// Invokes every [Deconstruct]-tagged method in ascending Order BEFORE the instance
-            /// is disposed by the container. Dependencies are still non-null here.
+            /// is disposed by the container, while its injected members are still assigned.
             /// </summary>
             internal void RunDeconstructs(object instance, InjectableMetadata meta)
             {
@@ -1097,11 +1130,11 @@ namespace Nexus.Core
                     try { meta.DeconstructMethods[i].Method.Invoke(instance, null); }
                     catch (TargetInvocationException ex)
                     {
-                        NexusRuntime.Logger?.LogError($"[Nexus] [Deconstruct] method {instance.GetType().FullName}.{meta.DeconstructMethods[i].Method.Name} threw: {ex.InnerException?.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] [Deconstruct] method {instance.GetType().FullName}.{meta.DeconstructMethods[i].Method.Name} threw: {ex.InnerException ?? ex}");
                     }
                     catch (Exception ex)
                     {
-                        NexusRuntime.Logger?.LogError($"[Nexus] [Deconstruct] method {instance.GetType().FullName}.{meta.DeconstructMethods[i].Method.Name} threw: {ex.Message}");
+                        NexusRuntime.Logger?.LogError($"[Nexus] [Deconstruct] method {instance.GetType().FullName}.{meta.DeconstructMethods[i].Method.Name} threw: {ex}");
                     }
                 }
             }
@@ -1368,6 +1401,13 @@ namespace Nexus.Core
         {
             if (_bindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
             {
+                // A scene that binds its Lifetime.Singleton again on every load keeps the instance the root already built,
+                // instead of building a second one and keeping the first alive (#197).
+                if (existing.Instance != null && !existing.BoundInstance && existing.Lifetime == Lifetime.Singleton
+                    && binding.Lifetime == Lifetime.Singleton && existing.ConcreteType == binding.ConcreteType
+                    && existing.Factory == null && binding.Factory == null && binding.Instance == null
+                    && existing.ParameterOverrides == null && binding.ParameterOverrides == null)
+                    return;
                 // Re-registering the exact same shape with no live instance is a benign
                 // idempotent pattern (e.g. a command type bound once per handled signal);
                 // only a materially different rebind — or one that discards an already
@@ -1692,7 +1732,8 @@ namespace Nexus.Core
 
         /// <summary>
         /// Binds <see cref="IFactory{TParam, TValue}"/>: the argument of <c>Create(param)</c> is passed to
-        /// the constructor parameter of type <typeparamref name="TParam"/>; everything else is resolved.
+        /// the constructor parameter of type <typeparamref name="TParam"/>, else the first one it is assignable to;
+        /// everything else is resolved. A type with no such parameter fails <c>Create</c>.
         /// </summary>
         public void BindTypedFactory<TParam, TValue>() where TValue : class
             => BindInstance<IFactory<TParam, TValue>>(new ContainerFactory<TParam, TValue>(this), disposeWithContainer: false);
@@ -2049,16 +2090,8 @@ namespace Nexus.Core
                         if (orphaned)
                         {
                             // Disposed while it was being built: nothing tracks it (nor does the Context), so release it here, outside the lock.
-                            try
-                            {
-                                RunDeconstructs(singletonInstance);
-                                if (singletonInstance is IDisposable disposable) disposable.Dispose();
-                                else if (singletonInstance is IAsyncDisposable asyncDisposable) _ = DisposeAllAsyncInBackground(new[] { asyncDisposable });
-                            }
-                            catch (Exception ex)
-                            {
-                                NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {singletonInstance.GetType().FullName} built during container disposal: {ex.Message}");
-                            }
+                            var asyncOnly = EndSingleton(singletonInstance, awaitable: false);
+                            if (asyncOnly != null) _ = DisposeAllAsyncInBackground(new[] { asyncOnly });
                             throw new ObjectDisposedException(nameof(NexusDI), $"Cannot publish singleton '{type.FullName}': the container has been disposed.");
                         }
                     }
@@ -2107,8 +2140,7 @@ namespace Nexus.Core
 
         /// <summary>
         /// Runs every <c>[Deconstruct]</c>-tagged cleanup method on the instance (ascending
-        /// Order). Invoked automatically for container-owned singletons during Dispose;
-        /// exposed publicly so the Context can run cleanup for services it disposes.
+        /// Order). Invoked automatically for container-owned singletons, services included, during Dispose.
         /// </summary>
         public void RunDeconstructs(object instance)
         {
@@ -2431,15 +2463,6 @@ namespace Nexus.Core
             return result;
         }
 
-        /// <summary>The instance this container's own binding of <paramref name="type"/> holds; never a parent's (#190).</summary>
-        internal bool TryGetOwnInstance(Type type, out object instance)
-        {
-            instance = null;
-            if (type == null || !_bindings.TryGetValue(type, out var binding) || binding.Instance == null) return false;
-            instance = binding.Instance;
-            return true;
-        }
-
         /// <summary>
         /// Forwarding method for external callers (ContextBuilder, BuildValidation).
         /// Delegates to the internal MetadataCache.
@@ -2636,66 +2659,119 @@ namespace Nexus.Core
             return true;
         }
 
-        public void Dispose()
+        /// <summary>
+        /// Leaves the singletons tracked so far (a context's own modules) to <see cref="Dispose()"/>: the pass over the
+        /// game's singletons stops before them.
+        /// </summary>
+        internal void KeepTrackedSingletonsForDispose()
         {
-            if (!TryBeginDispose(out var singletonsCopy)) return;
-            if (singletonsCopy == null || singletonsCopy.Count == 0) return; // nothing owned: no teardown bookkeeping to allocate
+            lock (_singletonLock) _keptSingletonCount = _resolvedSingletonOrder?.Count ?? 0;
+        }
 
-            
-            List<IAsyncDisposable> asyncDisposables = null; // only pure IAsyncDisposable singletons need it
-            // Reverse creation order: dependencies created first are disposed last, so
-            // [Deconstruct]/Dispose on a consumer can still touch its dependencies.
-            for (int i = singletonsCopy.Count - 1; i >= 0; i--)
+        private List<object> TakeSingletonsToDispose()
+        {
+            lock (_singletonLock)
             {
-                var instance = singletonsCopy[i];
-                try
-                {
-                    // INexusService lifecycle (InitializeAsync/OnDispose) is owned by the owning
-                    // Context, which disposes services in reverse registration order. Skipping
-                    // them here prevents double-dispose (NexusService<T>.OnDispose → Dispose()).
-                    if (instance is INexusService) continue;
+                var order = _resolvedSingletonOrder;
+                int kept = _keptSingletonCount;
+                if (order == null || order.Count <= kept) return null;
+                if (kept == 0) { _resolvedSingletonOrder = null; return order; } // hand over, no copy
+                var taken = order.GetRange(kept, order.Count - kept);
+                order.RemoveRange(kept, taken.Count);
+                return taken;
+            }
+        }
 
-                    // Strange-style [Deconstruct] cleanup hooks run before IDisposable.Dispose.
-                    RunDeconstructs(instance);
+        /// <summary>
+        /// Ends one owned singleton: its [Deconstruct] hooks, then <c>OnDispose</c> for an <see cref="INexusService"/>
+        /// (<c>NexusService.OnDispose</c> calls <c>Dispose</c> itself) or <c>Dispose</c> for anything else. Returns the
+        /// instance when it is to be awaited instead: always for an <see cref="IAsyncDisposable"/> when
+        /// <paramref name="awaitable"/>, otherwise only for one that is not also <see cref="IDisposable"/>.
+        /// </summary>
+        private IAsyncDisposable EndSingleton(object instance, bool awaitable)
+        {
+            try
+            {
+                RunDeconstructs(instance);
+                if (instance is INexusService service) service.OnDispose();
+                else if (instance is IAsyncDisposable asyncDisposable && (awaitable || instance is not IDisposable)) return asyncDisposable;
+                else if (instance is IDisposable disposable) disposable.Dispose();
+            }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex}");
+            }
+            return null;
+        }
 
-                    if (instance is IAsyncDisposable asyncDisposable)
-                    {
-                        // An IAsyncDisposable that ALSO implements IDisposable is
-                        // disposed synchronously here so the sync Dispose() path (used by
-                        // Root.OnDestroy / Context.Dispose) tears it down deterministically
-                        // instead of leaking it to a fire-and-forget background task that may
-                        // never complete before the process exits. Only pure-IAsyncDisposable
-                        // singletons (no IDisposable) fall through to the ordered background
-                        // chain — those genuinely cannot be torn down without awaiting.
-                        if (instance is IDisposable disposable)
-                        {
-                            disposable.Dispose();
-                        }
-                        else
-                        {
-                            // Never block the calling thread on async
-                            // teardown, but dispose async singletons in ONE ordered background
-                            // chain instead of one fire-and-forget task per instance. The old
-                            // per-instance `_ =` fired them in parallel with no ordering, so
-                            // registration-dependency order was lost. Collecting them and
-                            // awaiting sequentially on the thread pool with ConfigureAwait(false)
-                            // preserves order AND prevents continuations from re-capturing the
-                            // Unity SynchronizationContext of the (disposing) caller.
-                            (asyncDisposables ??= new List<IAsyncDisposable>()).Add(asyncDisposable);
-                        }
-                    }
-                    else if (instance is IDisposable disposable)
-                    {
-                        disposable.Dispose();
-                    }
-                }
+        private void EndInReverseOrder(List<object> singletons)
+        {
+            if (singletons == null) return;
+            for (int i = singletons.Count - 1; i >= 0; i--)
+            {
+                var asyncOnly = EndSingleton(singletons[i], awaitable: false);
+                if (asyncOnly != null)
+                    lock (_singletonLock) (_asyncDisposeBacklog ??= new List<IAsyncDisposable>()).Add(asyncOnly);
+            }
+        }
+
+        private async ValueTask EndInReverseOrderAsync(List<object> singletons)
+        {
+            if (singletons == null) return;
+            for (int i = singletons.Count - 1; i >= 0; i--)
+            {
+                var asyncDisposable = EndSingleton(singletons[i], awaitable: true);
+                if (asyncDisposable == null) continue;
+                try { await asyncDisposable.DisposeAsync(); }
                 catch (Exception ex)
                 {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
+                    NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {asyncDisposable.GetType().FullName}: {ex}");
                 }
             }
-            if (asyncDisposables != null)
-                _backgroundDisposeTask = DisposeAllAsyncInBackground(asyncDisposables);
+        }
+
+        /// <summary>
+        /// Disposes the singletons the game's bindings created, services included, newest first, while the container
+        /// still resolves: a consumer ends before the services it uses (#197).
+        /// </summary>
+        internal void DisposeSingletonsInReverseOrder() => EndInReverseOrder(TakeSingletonsToDispose());
+
+        /// <summary>
+        /// Injects an instance the game built and bound, then counts it as created now, after the dependencies its
+        /// injection resolved, so the reverse-creation teardown ends it before them (#197).
+        /// </summary>
+        internal void InjectBoundInstance(object instance)
+        {
+            _injector.Inject(instance);
+            lock (_singletonLock)
+            {
+                var order = _resolvedSingletonOrder;
+                if (order == null) return;
+                for (int i = order.Count - 1; i >= _keptSingletonCount; i--)
+                {
+                    if (!ReferenceEquals(order[i], instance)) continue;
+                    order.RemoveAt(i);
+                    order.Add(instance);
+                    return;
+                }
+            }
+        }
+
+        /// <summary>Awaited form of <see cref="DisposeSingletonsInReverseOrder"/>.</summary>
+        internal ValueTask DisposeSingletonsInReverseOrderAsync() => EndInReverseOrderAsync(TakeSingletonsToDispose());
+
+        public void Dispose()
+        {
+            if (IsDisposed) return;
+            DisposeSingletonsInReverseOrder();
+            if (!TryBeginDispose(out var remaining)) return;
+            EndInReverseOrder(remaining);
+            List<IAsyncDisposable> backlog;
+            lock (_singletonLock) { backlog = _asyncDisposeBacklog; _asyncDisposeBacklog = null; }
+            // Never block the calling thread on async teardown: the pure IAsyncDisposable singletons are disposed in ONE
+            // ordered chain on the thread pool, not in one fire-and-forget task each.
+            if (backlog != null)
+                _backgroundDisposeTask = DisposeAllAsyncInBackground(backlog);
         }
 
         /// <summary>
@@ -2713,7 +2789,7 @@ namespace Nexus.Core
                 catch (OperationCanceledException) { /* Expected on context teardown */ }
                 catch (Exception ex)
                 {
-                    NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {asyncDisposables[i].GetType().FullName}: {ex.Message}");
+                    NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {asyncDisposables[i].GetType().FullName}: {ex}");
                 }
             }
         }
@@ -2734,46 +2810,22 @@ namespace Nexus.Core
             }
             catch (AggregateException ex)
             {
-                NexusRuntime.Logger?.LogError($"[Nexus] Waiting for background dispose failed: {ex.Flatten().InnerException?.Message}");
+                NexusRuntime.Logger?.LogError($"[Nexus] Waiting for background dispose failed: {ex.Flatten().InnerException ?? ex}");
                 return false;
             }
             catch (Exception ex)
             {
-                NexusRuntime.Logger?.LogError($"[Nexus] Waiting for background dispose failed: {ex.Message}");
+                NexusRuntime.Logger?.LogError($"[Nexus] Waiting for background dispose failed: {ex}");
                 return false;
             }
         }
 
         public async ValueTask DisposeAsync()
         {
-            if (!TryBeginDispose(out var singletonsCopy)) return;
-            if (singletonsCopy == null || singletonsCopy.Count == 0) return; // nothing owned: no teardown bookkeeping to allocate
-
-
-            // Reverse creation order (see Dispose).
-            for (int i = singletonsCopy.Count - 1; i >= 0; i--)
-            {
-                var instance = singletonsCopy[i];
-                // unique by construction (TrackResolvedSingleton)
-                {
-                    try
-                    {
-                        // Same contract as Dispose(): INexusService lifecycle is owned by the
-                        // owning Context, so skip here to avoid double-dispose.
-                        if (instance is INexusService) continue;
-
-                        // Strange-style [Deconstruct] cleanup hooks run before disposal.
-                        RunDeconstructs(instance);
-
-                        if (instance is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
-                        else if (instance is IDisposable disposable) disposable.Dispose();
-                    }
-                    catch (Exception ex)
-                    {
-                        NexusRuntime.Logger?.LogError($"[Nexus] Error disposing singleton {instance.GetType().FullName}: {ex.Message}");
-                    }
-                }
-            }
+            if (IsDisposed) return;
+            await DisposeSingletonsInReverseOrderAsync();
+            if (!TryBeginDispose(out var remaining)) return;
+            await EndInReverseOrderAsync(remaining);
         }
 
         /// <summary>

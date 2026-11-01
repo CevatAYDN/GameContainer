@@ -74,8 +74,8 @@ namespace Nexus.Core
     /// <summary>
     /// Default <see cref="IBinder{TKey,TValue}"/> implementation. Reads are dictionary
     /// lookups keyed by a struct — steady-state Get/TryGet allocate nothing.
-    /// Thread-safe: all mutations take a reader-writer lock so concurrent reads are
-    /// lock-free while writes are exclusive.
+    /// Thread-safe: a reader-writer lock lets reads run concurrently (each takes the read
+    /// lock) while a write is exclusive.
     /// </summary>
     [Preserve]
     public sealed class NexusBinder<TKey, TValue> : IBinder<TKey, TValue>

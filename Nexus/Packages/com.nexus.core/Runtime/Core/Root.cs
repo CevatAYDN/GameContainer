@@ -264,7 +264,8 @@ namespace Nexus.Core
 
         internal void InitializeContext()
         {
-            if (Context != null) return;
+            // a root that failed to configure is not configured again by its children or its own Start (#197)
+            if (Context != null || _startupFailed) return;
 
             if (isGlobalContext)
             {
@@ -284,6 +285,12 @@ namespace Nexus.Core
             if (parentRoot != null && parentRoot != this)
             {
                 parentRoot.InitializeContext();
+                if (parentRoot._startupFailed)
+                {
+                    NexusRuntime.Logger?.LogError($"[Nexus] Root '{name}' cannot start: its parent root '{parentRoot.name}' failed to start.");
+                    MarkStartupFailed();
+                    return;
+                }
             }
 
             Context parentContext = parentRoot != null ? parentRoot.Context : null;
@@ -309,13 +316,14 @@ namespace Nexus.Core
                 Context.Container.BindInstance(_lifecycles[0], disposeWithContainer: false);
 
             try { Context.Configure(_lifecycles); }
-            catch
+            catch (Exception ex)
             {
+                // logged once: Awake, Start and every child see _startupFailed and stop without configuring again (#197)
+                NexusRuntime.Logger?.LogError($"[Nexus] Root '{name}' failed to configure its context: {ex}");
                 MarkStartupFailed();
                 Context.Dispose();
                 Context = null;
-                if (isGlobalContext) NexusRuntime.UnregisterGlobalRoot(this);
-                throw;
+                return;
             }
             if (Context == null || Context.IsDisposed)
             {
@@ -351,11 +359,7 @@ namespace Nexus.Core
             // Serialized flags must be discovered before the first scene Root's Awake.
             // This is a cold startup scan; contexts and frames use the registry thereafter.
             Root candidate = null;
-#if UNITY_6000_5_OR_NEWER
             var roots = UnityEngine.Object.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
-#else
-            var roots = UnityEngine.Object.FindObjectsByType<Root>(FindObjectsInactive.Exclude, FindObjectsSortMode.None);
-#endif
             foreach (var root in roots)
             {
                 if (!root.enabled || root._startupFailed || !root.isGlobalContext) continue;
@@ -403,7 +407,10 @@ namespace Nexus.Core
             {
                 InitializeContext();
             }
+            if (_startupFailed || Context == null) return;
             ReportLifecyclesAddedAfterAwake();
+            // read once: a root destroyed during a wait below has no Context, and this token is the one its disposal cancels (#197)
+            var lifetime = Context.LifetimeToken;
 
             try
             {
@@ -419,7 +426,7 @@ namespace Nexus.Core
                     while (!parentRoot.IsInitialized && !parentRoot._startupFailed && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
                     {
                         await Task.Yield();
-                        Context.LifetimeToken.ThrowIfCancellationRequested();
+                        lifetime.ThrowIfCancellationRequested();
                     }
 
                     // a parent that failed to start stops this root at once, not after the timeout (#190)
@@ -468,7 +475,7 @@ namespace Nexus.Core
                     while (sibling != null && !sibling.IsInitialized && !sibling._startupFailed && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
                     {
                         await Task.Yield();
-                        Context.LifetimeToken.ThrowIfCancellationRequested();
+                        lifetime.ThrowIfCancellationRequested();
                     }
 
                     // a sibling that failed to start stops this root at once, as its timeout would have (#190)
@@ -484,7 +491,7 @@ namespace Nexus.Core
 
                 // The configured set, not _lifecycles: Configure adds the convention-discovered lifecycle only to its own
                 // list, and with the component list that lifecycle never got OnInitializeAsync/OnStartAsync.
-                await Context.InitializeLifecycleAsync(Context.ConfiguredLifecycles, Context.LifetimeToken);
+                await Context.InitializeLifecycleAsync(Context.ConfiguredLifecycles, lifetime);
 
                 // Guard: user lifecycle code may have escaped the Unity main thread
                 // (ConfigureAwait(false) / Task.Run) in environments without a

@@ -22,14 +22,14 @@ namespace Nexus.Core
         public static NexusTestContext CreateContext(string scopeTag)
         {
             var contextData = CreateContextData(scopeTag);
-            var context = new Context(parent: null, contextData: contextData);
+            var context = new Context(parent: null, contextData: contextData).OwnsContextData(); // destroyed with the context (#197)
             return new NexusTestContext(context);
         }
 
         public static NexusTestContext CreateChildContext(NexusTestContext parent, string scopeTag = null)
         {
             var contextData = CreateContextData(scopeTag ?? "ChildContext");
-            var context = new Context(parent: parent.Context, contextData: contextData);
+            var context = new Context(parent: parent.Context, contextData: contextData).OwnsContextData();
             return new NexusTestContext(context);
         }
 

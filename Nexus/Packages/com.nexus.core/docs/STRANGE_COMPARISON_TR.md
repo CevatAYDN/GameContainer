@@ -125,7 +125,7 @@ dependency'ler canlı).
 
 ### Nexus
 - `IContextLifecycle`: `OnConfigure(builder)` → `OnInitializeAsync(ct)` → `OnStartAsync(ct)` → dispose
-  edilirken ters kayıt sırası (services).
+  edilirken singleton'lar ters oluşturma sırasıyla (bir tüketici, kullandığı servislerden önce).
 - `Context.Configure()` auto-discovery (convention ile lifecycle bulma) + elle
   kayıt; `NexusRuntime.CreatePureContextAsync` — sahne gerektirmeyen code-only
   bağlam (test/dedicated server).

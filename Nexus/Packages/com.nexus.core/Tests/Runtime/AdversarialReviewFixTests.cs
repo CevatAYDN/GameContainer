@@ -10,8 +10,8 @@ namespace Nexus.Tests.Runtime
     /// Regression tests for the adversarial-review fixes applied to the Runtime layer:
     ///  1. ContextBuilder.Validate now validates concrete implementations (not just binding keys)
     ///     and never flags LazyInjection&lt;T&gt; fields (which the injector constructs directly).
-    ///  2. Services are disposed exactly once: the owning Context calls OnDispose, and the
-    ///     container skips INexusService singletons (no double-dispose via IDisposable).
+    ///  2. Services are disposed exactly once: the container ends an INexusService singleton through
+    ///     OnDispose, never a second time through IDisposable (#197: a bare container skipped it).
     ///  3. A lazy service first resolved during OnStartAsync still receives InitializeAsync
     ///     (second drain after OnStartAsync).
     /// </summary>
@@ -92,7 +92,7 @@ namespace Nexus.Tests.Runtime
         }
 
         [Test]
-        public void NexusDI_Dispose_SkipsInNexusServiceSingletons()
+        public void NexusDI_Dispose_DisposesAServiceOnceThroughItsOnDispose()
         {
             using var container = new NexusDI();
             container.Bind<CountingService>(isSingleton: true);
@@ -103,9 +103,8 @@ namespace Nexus.Tests.Runtime
             var service = container.Resolve<CountingService>();
             container.Dispose();
 
-            // Service lifecycle is owned by the owning Context; a bare container must not
-            // dispose it a second time through IDisposable.
-            Assert.AreEqual(0, service.DisposeCount);
+            // NexusService<T>.OnDispose calls Dispose; the container never calls Dispose a second time (#197).
+            Assert.AreEqual(1, service.DisposeCount);
         }
 
         [Test]

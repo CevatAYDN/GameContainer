@@ -16,6 +16,10 @@ namespace Nexus.Core.Lifecycle
         // async form of a lifecycle contract (both hooks fire — see the call sites).
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<Type, byte> s_bothImplementedWarned = new();
 
+        // with domain reload off the set outlived the play session that warned (#197)
+        static ContextLifecycleOrchestrator() =>
+            NexusStaticState.Register("ContextLifecycleOrchestrator.BothImplementedWarned", s_bothImplementedWarned.Clear);
+
         private static void WarnBothImplemented(Type type, string syncName, string asyncName)
         {
             if (!s_bothImplementedWarned.TryAdd(type, 0)) return;

@@ -78,8 +78,9 @@ Anti-patterns to avoid:
 - `ContextData` is **caller-owned** (scene/asset) unless created at runtime by
   `NexusRuntime.CreatePureContextAsync`, which marks it owned (`Context.OwnsContextData()`) and
   destroys it on dispose. Never destroy caller-provided assets.
-- `INexusService` lifecycle (`InitializeAsync`/`OnDispose`) is owned by the owning `Context`;
-  `NexusDI.Dispose` skips `INexusService` instances to avoid a double dispose. Non-service
+- `INexusService` initialization (`InitializeAsync`) is run by the owning `Context`. The container
+  ends a service singleton through `OnDispose`, never `Dispose`, together with its other singletons
+  in reverse creation order (#197), so `NexusService<T>.OnDispose() => Dispose()` runs once. Non-service
   interfaces (e.g. `IPlayerPrefsService`) keep their own `IDisposable` contract; document which one
   a type uses.
 

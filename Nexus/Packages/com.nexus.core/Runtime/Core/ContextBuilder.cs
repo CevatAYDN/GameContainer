@@ -445,7 +445,7 @@ namespace Nexus.Core
         {
             // Models run first, so the game's instances get their [Inject] members here, before any OnBind.
             for (int i = 0; i < _instancesToInject.Count; i++)
-                _container.Inject(_instancesToInject[i]);
+                _container.InjectBoundInstance(_instancesToInject[i]);
             _instancesToInject.Clear();
 
             foreach (var modelType in _reactiveModelTypes)

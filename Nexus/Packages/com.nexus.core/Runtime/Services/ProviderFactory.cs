@@ -33,7 +33,7 @@ namespace Nexus.Core.Services
                 try { return creator(); }
                 catch (Exception ex)
                 {
-                    NexusRuntime.Logger?.LogError($"[{GetType().Name}] Failed to create {_providerKind} for '{provider}': {ex.Message}");
+                    NexusRuntime.Logger?.LogError($"[{GetType().Name}] Failed to create {_providerKind} for '{provider}': {ex}");
                     return default;
                 }
             }

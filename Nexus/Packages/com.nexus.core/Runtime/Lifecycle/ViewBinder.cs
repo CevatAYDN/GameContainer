@@ -201,14 +201,23 @@ namespace Nexus.Core
                 return;
             }
 
-            // Inject BEFORE Bind so that [Inject] properties (e.g. TickService)
-            // are available when OnBind() runs. TickableView.OnBind() needs TickService
-            // to register for tick callbacks — if injected after Bind, it's null.
-            _container.Inject(view);
-
             var mediatorType = mediatorAttr.MediatorType;
             var abstractionType = mediatorAttr.Abstraction;
-            var mediator = GetMediator(mediatorType, abstractionType);
+            IMediator mediator;
+            try
+            {
+                // Inject BEFORE Bind so that [Inject] properties (e.g. TickService)
+                // are available when OnBind() runs. TickableView.OnBind() needs TickService
+                // to register for tick callbacks — if injected after Bind, it's null.
+                _container.Inject(view);
+                mediator = GetMediator(mediatorType, abstractionType);
+            }
+            catch (Exception ex)
+            {
+                // one view that cannot be injected or given its mediator does not stop the views after it (#197)
+                NexusRuntime.Logger?.LogError($"[Nexus] RegisterView failed for '{view.GetType().Name}': its injection or its mediator '{mediatorType?.Name}' failed: {ex}");
+                return;
+            }
 
             if (mediator == null)
             {

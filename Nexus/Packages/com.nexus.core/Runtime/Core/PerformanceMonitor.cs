@@ -53,6 +53,8 @@ namespace Nexus.Core
             OnMetricRecorded = null;
             OnRecordingStarted = null;
             OnRecordingStopped = null;
+            s_enabled = DefaultEnabled; // the previous session's choice does not outlive it, as in NetworkMonitor (#197)
+            s_enabledExplicitlySet = false;
             s_recording = false;
             s_lastFrameMetricFrame = -1;
             lock (s_metricsLock)
