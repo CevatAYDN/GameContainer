@@ -1048,7 +1048,7 @@ namespace Nexus.Core
                         int taskCount = toRun.Count;
                         var tasks = System.Buffers.ArrayPool<ValueTask>.Shared.Rent(taskCount);
                         int started = 0;
-                        int lastCompletedIndex = -1;
+                        int awaiting = -1;
                         try
                         {
                             // Track how many tasks actually started. If ExecuteAsync throws
@@ -1064,18 +1064,21 @@ namespace Nexus.Core
 
                             for (int i = 0; i < started; i++)
                             {
+                                awaiting = i;
                                 await tasks[i];
-                                lastCompletedIndex = i;
                             }
                         }
                         catch (Exception ex)
                         {
-                            // Drain only the tasks that were started but not yet awaited before the failure
-                            // so none is abandoned; swallow their individual errors (the original exception
-                            // below is the one that propagates to recovery/error handling).
-                        for (int i = lastCompletedIndex + 1; i < started; i++)
+                            // Drain the tasks that were started but not yet awaited so none is abandoned: those after
+                            // the one that threw (awaiting it again wrote its error a second time), or all of them when
+                            // ExecuteAsync threw while starting. The original exception below is the one that propagates.
+                            // A cancellation (the bus disposed) and a failure the recovery engine already wrote are not
+                            // written again (#213).
+                        for (int i = awaiting + 1; i < started; i++)
                         {
                             try { await tasks[i]; }
+                            catch (Exception drainedEx) when (drainedEx is OperationCanceledException || RecoveryEngine.WasLogged(drainedEx)) { }
                             catch (Exception drainedEx)
                             {
                                 ErrorCollection.CollectException(drainedEx, ErrorCollection.ErrorCategory.Signal,
