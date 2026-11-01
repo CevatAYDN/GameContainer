@@ -99,8 +99,11 @@ and binding names are honoured), and both list at the top of the binder every ty
 path, with the reason. Both cover the game's own types, in the assemblies that reference Nexus: the Nexus packages' types
 take the reflection path and each package preserves them in its own `link.xml` (handed to UnityLinker by
 `NexusPackagesLinkXml`; Unity reads only the files under `Assets`), so a package update does not leave a
-binder naming a removed type (issue #110). `NexusBinderBuildGuard` regenerates the binder and `link.xml` first in every
-player build (with `NEXUS_DISABLE_AUTOGEN=1` it generates nothing and stops a build whose binder is out of date),
+binder naming a removed type (issue #110). The source generator writes a binder only into a game's runtime assembly,
+never into a Nexus package, editor or test assembly that a project-wide `Assets/csc.rsp` reaches (issue #264).
+`NexusBinderBuildGuard` regenerates the binder and `link.xml` first in every
+player build (with `NEXUS_DISABLE_AUTOGEN=1` it generates nothing and stops a build whose binder is out of date; with
+the source generator on it writes only `link.xml`, issue #242),
 `VersionDefineBuildGuard` stops one in which a Nexus package's optional code is compiled out because the package it
 needs is installed below its asmdef's `versionDefines` expression (issue #143; the editor logs it after each compile),
 `NexusBinderSelfHeal` recovers a binder that no longer compiles (it stops after three regenerated binders in a row fail to

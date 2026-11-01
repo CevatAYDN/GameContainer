@@ -7,7 +7,8 @@ namespace Nexus.Editor
     /// <summary>
     /// The first step of a player build: it regenerates the binder and link.xml, so a build from a fresh clone, from CI or
     /// after an [Inject] member was added ships injectors and stripping rules that match the code. The binder is git-ignored,
-    /// so a build is the one moment it must be current.
+    /// so a build is the one moment it must be current. With the Roslyn source generator on (Mode B), the compiler writes the
+    /// binder and only link.xml is generated; an editor binder file left beside it fails the build with a message (#242).
     /// With NEXUS_DISABLE_AUTOGEN=1 nothing is generated, and the build stops while an existing binder or link.xml is out of
     /// date (a project without a binder uses reflection injection and is not stopped); NEXUS_SKIP_BINDER_GUARD=1 builds anyway.
     /// </summary>

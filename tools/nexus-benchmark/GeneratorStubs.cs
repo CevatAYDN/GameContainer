@@ -32,6 +32,9 @@ namespace UnityEditor
     public static class AssetDatabase
     {
         public static void Refresh() { }
+        /// <summary>No asset database in the harness: no labelled analyzer, so only a csc.rsp switches the source generator on.</summary>
+        public static string[] FindAssets(string filter) => Array.Empty<string>();
+        public static string GUIDToAssetPath(string guid) => guid;
     }
 }
 
