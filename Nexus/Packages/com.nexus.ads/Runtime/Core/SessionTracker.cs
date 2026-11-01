@@ -112,7 +112,9 @@ namespace Nexus.Ads
             return _clock.Seconds - Math.Max(0, _clock.UtcSeconds - utc);
         }
 
-        // Day counters are stored as "<day>:<count>"; a row from another day counts as zero.
+        // Day counters are stored as "<day>:<count>"; a row from an earlier day counts as zero. A row from a later day than the clock's
+        // (the device clock was set back) keeps counting, or setting the clock back lifted every day cap (issue #195); a clock set
+        // forward cannot be told from a real day change without a server's time, which the package does not read.
         private int ReadDay(string key)
         {
             string raw = _store.Get(key);
@@ -120,7 +122,7 @@ namespace Nexus.Ads
             int colon = raw.IndexOf(':');
             if (colon <= 0) return 0;
             if (!long.TryParse(raw.Substring(0, colon), NumberStyles.Integer, CultureInfo.InvariantCulture, out long day)) return 0;
-            if (day != _clock.UtcDay) return 0;
+            if (day < _clock.UtcDay) return 0;
             return int.TryParse(raw.Substring(colon + 1), NumberStyles.Integer, CultureInfo.InvariantCulture, out int count) ? count : 0;
         }
 

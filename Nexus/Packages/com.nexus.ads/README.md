@@ -65,6 +65,9 @@ the show, across a resume and a restart: `SessionTracker` keeps each last show a
 time in `IPacingStore` (`PlayerPrefs` in the Unity layer), next to the per-day counters. A show
 stored ahead of the wall clock (the device clock was set back) counts as just shown. The
 first-seconds floors and the session caps start over with each session (`AdsCoreSuite` PG21–PG24).
+The per-day counters follow the device's UTC day: a counter stored on a later day than the clock's
+(the clock was set back) keeps counting; a clock set forward cannot be told from a real day change,
+since the package reads no server time, and starts the day caps over (#195, PG25).
 
 ## Which build talks to which SDK
 

@@ -373,6 +373,10 @@ namespace NexusBench
             Check("PG16. NewSession_ResetsSessionCap_DayCapHolds", !v.Allowed && v.Reason.Contains("day cap"), v.Reason);
             rig.Clock.UtcDay++;
             Check("PG17. NextDay_DayCapResets", guard.Check("level_end", AdFormat.Interstitial, open).Allowed, "allowed on the next UTC day");
+            // #195: a row from any other day read zero, so setting the device clock back a day lifted every day cap
+            rig.Clock.UtcDay -= 2;
+            v = guard.Check("level_end", AdFormat.Interstitial, open);
+            Check("PG25. ClockSetBack_DayCapHolds", !v.Allowed && v.Reason.Contains("day cap"), v.Reason);
 
             // per-placement cooldown and caps apply to rewarded too
             var cfg = AdsRig.Config(null, BuildKind.Development, new AdPlacement("boost", AdFormat.Rewarded, cooldownSeconds: 10, sessionCap: 2, dayCap: 3));
