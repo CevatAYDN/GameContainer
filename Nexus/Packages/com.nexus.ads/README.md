@@ -160,9 +160,14 @@ always in a release player, each ad failure is logged as a `[Nexus Ads]` warning
 (issue #164): a load that failed or found no fill (once per format and reason), a refused consent, a
 failed start (once until the SDK starts, then one `Initialized` line), a consent flow or an SDK start
 still unanswered after 30 s (`Unanswered`, once each; the wait goes on), every failed show (the AdMob
-and LevelPlay providers write the SDK's reason on the line before), and in a release build the
-policy block above. Successes are not logged. `InitFailed`, `ConsentRefused`, `Unanswered` and
-`Initialized` are telemetry events too. A paid reward is written to the store before the game hears of
+and LevelPlay providers write the SDK's reason on the line before), a subscriber or telemetry sink
+that threw while a show was answered or readiness changed (`HandlerFailed`, once per step and
+exception; issue #176), and in a release build the policy block above. Successes are not logged.
+`InitFailed`, `ConsentRefused`, `Unanswered`, `HandlerFailed` and `Initialized` are telemetry events
+too. A show's result reaches the game exactly once whatever a subscriber, a sink or the reload
+throws; an SDK load that throws is a failed load, retried with the back-off. A loaded ad the
+provider no longer has (AdMob drops one after an hour, or at a consent change) is seen at the next
+readiness check and reloads, with an `Expired` telemetry event (issue #175). A paid reward is written to the store before the game hears of
 it (`PendingReward`); `AdRewardedButton` acknowledges it after its listeners ran, a game that saves
 asynchronously acknowledges it itself.
 

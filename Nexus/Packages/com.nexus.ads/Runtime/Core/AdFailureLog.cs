@@ -12,7 +12,8 @@ namespace Nexus.Ads
     /// a refused consent once, a consent flow or an SDK start still unanswered after its wait once each (issue #180), a failed
     /// start once until the SDK starts and then one line saying it did, a policy block
     /// once per rule and placement (only with <c>violations</c>: outside a release build the bootstrap writes every
-    /// block as an error), and every failed show, which only the player's tap starts. Successes are not written.
+    /// block as an error), every failed show, which only the player's tap starts, and a subscriber or sink that threw once per
+    /// step and exception (issue #176). Successes are not written.
     /// </summary>
     internal sealed class AdFailureLog
     {
@@ -56,6 +57,9 @@ namespace Nexus.Ads
                     return;
                 case AdEventKind.Unanswered:
                     WriteOnce("Unanswered|" + e.Detail, Prefix + "Unanswered: " + e.Detail + Once);
+                    return;
+                case AdEventKind.HandlerFailed:
+                    WriteOnce("HandlerFailed|" + e.Detail, Prefix + e + Once);
                     return;
                 case AdEventKind.LoadFailed:
                 case AdEventKind.NoFill:

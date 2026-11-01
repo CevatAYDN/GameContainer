@@ -92,7 +92,13 @@ namespace NexusBench
     public sealed class AdsTelemetry : IAdTelemetry
     {
         public readonly List<AdEvent> Events = new();
-        public void Record(in AdEvent e) => Events.Add(e);
+        /// <summary>Record throws for this kind, as a game's analytics sink can.</summary>
+        public AdEventKind? ThrowOn;
+        public void Record(in AdEvent e)
+        {
+            if (e.Kind == ThrowOn) throw new InvalidOperationException("analytics sink failed");
+            Events.Add(e);
+        }
         public int Count(AdEventKind kind) { int n = 0; foreach (var e in Events) if (e.Kind == kind) n++; return n; }
     }
 
@@ -132,7 +138,13 @@ namespace NexusBench
         public event Action<AdRevenue> Revenue;
 
         public void Initialize(ProviderConfig config, Action<bool> onReady) { Config = config; InitCallback = onReady; }
-        public void Load(AdFormat format) => Loads.Add(format);
+        /// <summary>Thrown by the next <see cref="Load"/>, as an SDK's load call can throw; cleared when thrown.</summary>
+        public Exception LoadThrows;
+        public void Load(AdFormat format)
+        {
+            if (LoadThrows != null) { var ex = LoadThrows; LoadThrows = null; throw ex; }
+            Loads.Add(format);
+        }
         public int IsReadyCalls;
         public bool IsReady(AdFormat format) { IsReadyCalls++; return Ready.Contains(format); }
         /// <summary>Thrown by the next <see cref="Show"/>, as an SDK's show call can throw; cleared when thrown.</summary>
@@ -249,6 +261,7 @@ namespace NexusBench
                 RunController();
                 RunPacingWake();
                 RunWatchdog();
+                RunAnswerIsolation();
                 RunGate();
                 RunSimulator();
                 RunEngineFree();
@@ -622,10 +635,12 @@ namespace NexusBench
                 int afterWindow = rig.Provider.IsReadyCalls;
                 rig.Provider.Ready.Remove(AdFormat.Rewarded); // the loaded ad expires inside the next window
                 bool cachedAnswer = rig.Controller.IsReady("shop_refill");
+                int loads = rig.Provider.Loads.Count;
                 var r = rig.Show("shop_refill");
+                bool reloaded = rig.Provider.Loads.Count == loads + 1 && rig.Telemetry.Count(AdEventKind.Expired) == 1; // #175
                 Check("AC40. IsReady_PolledEveryFrame_AsksProviderOncePerWindow",
-                    allReady && polled <= 1 && afterWindow == polled + 1 && cachedAnswer && r == AdResult.NotReady && rig.Provider.ShowPlacement == null,
-                    $"100 polls -> {polled} provider call(s) (at most 1; pre-fix 100), one more after the window ({afterWindow}); an ad that expired inside the window: IsReady={cachedAnswer}, Show={r} without reaching the provider");
+                    allReady && polled <= 1 && afterWindow == polled + 1 && cachedAnswer && r == AdResult.NotReady && rig.Provider.ShowPlacement == null && reloaded,
+                    $"100 polls -> {polled} provider call(s) (at most 1; pre-fix 100), one more after the window ({afterWindow}); an ad that expired inside the window: IsReady={cachedAnswer}, Show={r} without reaching the provider, reload asked={reloaded} (#175; before, none until a restart)");
             }
 
             // a provider whose Show threw left the full-screen flag set and the slot Showing: every later full-screen show was
@@ -920,6 +935,85 @@ namespace NexusBench
                     && rows.Count == 2 && rows[1].Detail.Contains("SDK") && stateWhileStart == AdController.Phase.Initializing
                     && rig.Controller.State == AdController.Phase.Running && lines.Count == 2,
                     $"rows=[{string.Join(" | ", rows)}] states={stateWhileConsent}/{stateWhileStart}/{rig.Controller.State} log=[{string.Join(" | ", lines)}]");
+            }
+        }
+
+        // ----- a dropped ad reloads (#175); a throw while a show is answered does not cost the game its result (#176)
+
+        private static void RunAnswerIsolation()
+        {
+            // AdMob drops a loaded ad after an hour, or when consent is withdrawn, without a load failure: the slot stayed Ready, IsReady
+            // false, the rewarded button hidden and nothing loaded until a restart
+            using (var rig = new AdsRig().Running())
+            {
+                rig.Clock.Advance(1);
+                bool before = rig.Controller.IsReady("shop_refill");
+                int loads = rig.Provider.Loads.Count;
+                rig.Provider.Ready.Remove(AdFormat.Rewarded);
+                rig.Clock.Advance(1); // past the probe's reuse window
+                bool dropped = rig.Controller.IsReady("shop_refill");
+                bool asked = rig.Provider.Loads.Count == loads + 1 && rig.Provider.Loads[^1] == AdFormat.Rewarded;
+                int changes = rig.ReadyChanges;
+                rig.Provider.Fill(AdFormat.Rewarded);
+                Check("AC49. ADroppedAd_SeenByIsReady_Reloads",
+                    before && !dropped && asked && rig.Telemetry.Count(AdEventKind.Expired) == 1 && rig.Controller.IsReady("shop_refill") && rig.ReadyChanges > changes,
+                    $"ready before={before}, after the drop={dropped}, reload asked={asked}, Expired rows={rig.Telemetry.Count(AdEventKind.Expired)}, ready after the fill={rig.Controller.IsReady("shop_refill")}");
+            }
+
+            // A destroyed view's handler, a failing analytics sink or a throwing SDK load stopped the answer: the reward callback never
+            // ran although its receipt was written, RequestRewardAsync never completed and AdRewardedButton stayed hidden
+            static (int results, AdResult? last, string threw) Answer(AdsRig rig)
+            {
+                int results = 0;
+                AdResult? last = null;
+                string threw = null;
+                rig.Controller.Show("shop_refill", r => { results++; last = r; });
+                try { rig.Provider.ShowCallback(AdResult.Rewarded); }
+                catch (Exception ex) { threw = ex.GetType().Name + ": " + ex.Message; }
+                return (results, last, threw);
+            }
+
+            using (var rig = new AdsRig().Running())
+            {
+                rig.Controller.AdClosed += (format, result) => throw new InvalidOperationException("dead view");
+                var a = Answer(rig);
+                var row = rig.Telemetry.Events.Find(e => e.Kind == AdEventKind.HandlerFailed);
+                var lines = new List<string>();
+                new AdFailureLog(lines.Add, violations: false).Record(row);
+                Check("AC50. AThrowingAdClosedSubscriber_StillDeliversTheResultOnce_AndIsRecordedAndLogged",
+                    a.results == 1 && a.last == AdResult.Rewarded && a.threw == null && rig.Telemetry.Count(AdEventKind.HandlerFailed) == 1
+                    && row.Detail != null && row.Detail.Contains("dead view") && lines.Count == 1 && rig.Controller.PendingReward.HasValue && rig.Provider.Loads.Count == 3,
+                    $"results={a.results} last={a.last} threw={a.threw ?? "-"} row=[{row}] log=[{string.Join(" | ", lines)}] loads={rig.Provider.Loads.Count} (the reload ran)");
+            }
+            using (var rig = new AdsRig().Running())
+            {
+                rig.Controller.ReadyChanged += () => throw new InvalidOperationException("destroyed button");
+                var a = Answer(rig);
+                Check("AC51. AThrowingReadyChangedSubscriber_StillDeliversTheResultOnce",
+                    a.results == 1 && a.last == AdResult.Rewarded && a.threw == null && rig.Telemetry.Count(AdEventKind.HandlerFailed) == 1,
+                    $"results={a.results} last={a.last} threw={a.threw ?? "-"} HandlerFailed={rig.Telemetry.Count(AdEventKind.HandlerFailed)}");
+            }
+            using (var rig = new AdsRig().Running())
+            {
+                rig.Telemetry.ThrowOn = AdEventKind.Rewarded;
+                var a = Answer(rig);
+                Check("AC52. AThrowingTelemetrySink_StillDeliversTheResultOnce",
+                    a.results == 1 && a.last == AdResult.Rewarded && a.threw == null && rig.Telemetry.Count(AdEventKind.HandlerFailed) == 1 && rig.Provider.Loads.Count == 3,
+                    $"results={a.results} last={a.last} threw={a.threw ?? "-"} HandlerFailed={rig.Telemetry.Count(AdEventKind.HandlerFailed)} loads={rig.Provider.Loads.Count}");
+            }
+            using (var rig = new AdsRig().Running())
+            {
+                rig.Provider.LoadThrows = new InvalidOperationException("JNI load failed");
+                var a = Answer(rig);
+                var failed = rig.Telemetry.Events.Find(e => e.Kind == AdEventKind.LoadFailed);
+                int loads = rig.Provider.Loads.Count;
+                rig.Scheduler.Advance(RetryPolicy.DelaySeconds(1));
+                bool retried = rig.Provider.Loads.Count == loads + 1;
+                rig.Provider.Fill(AdFormat.Rewarded);
+                Check("AC53. AThrowingReload_StillDeliversTheResultOnce_AndRetriesAsAFailedLoad",
+                    a.results == 1 && a.last == AdResult.Rewarded && a.threw == null && failed.Detail != null && failed.Detail.Contains("JNI load failed")
+                    && retried && rig.Controller.IsReady("shop_refill"),
+                    $"results={a.results} last={a.last} threw={a.threw ?? "-"} LoadFailed=[{failed}] retried={retried} ready after the fill={rig.Controller.IsReady("shop_refill")}");
             }
         }
 

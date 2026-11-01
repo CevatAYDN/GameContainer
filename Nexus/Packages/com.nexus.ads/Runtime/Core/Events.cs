@@ -57,6 +57,12 @@ namespace Nexus.Ads
         /// <summary>The consent flow or the SDK start has not answered after <see cref="AdController.AnswerWaitSeconds"/>; the
         /// detail names which. The controller keeps waiting (a consent form may still be open, an SDK may wait for a network).</summary>
         Unanswered,
+        /// <summary>A loaded ad the provider no longer has (it expired, or the SDK dropped it when consent changed); the format
+        /// reloads (issue #175).</summary>
+        Expired,
+        /// <summary>A subscriber or a telemetry sink threw while the controller answered a show or raised ReadyChanged; the detail
+        /// names the step and the exception. The rest of the answer, the game's result included, still ran (issue #176).</summary>
+        HandlerFailed,
     }
 
     /// <summary>One telemetry row. The Unity layer forwards it to the game's analytics; every row carries the placement name.</summary>

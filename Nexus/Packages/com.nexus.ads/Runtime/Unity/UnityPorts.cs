@@ -119,7 +119,12 @@ namespace Nexus.Ads.Unity
         {
             if (!_verbose) _failures.Record(e);
             else if (e.Kind != AdEventKind.Violation) Debug.Log("[Nexus Ads] " + e);
-            for (int i = 0; i < _sinks.Count; i++) _sinks[i].Record(e);
+            // one sink that throws must not keep the event from the next, nor stop the controller's answer (issue #176)
+            for (int i = 0; i < _sinks.Count; i++)
+            {
+                try { _sinks[i].Record(e); }
+                catch (Exception ex) { Debug.LogException(ex); }
+            }
         }
     }
 }

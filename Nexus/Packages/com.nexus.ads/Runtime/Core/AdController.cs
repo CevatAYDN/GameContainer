@@ -155,6 +155,14 @@ namespace Nexus.Ads
             bool ready = _provider.IsReady(format);
             _providerReadyAt[(int)format] = _clock.Seconds;
             _providerReady[(int)format] = ready;
+            // A loaded ad the provider no longer has (it expired, or the SDK dropped it when consent changed) reloads: nothing else
+            // moves a Ready slot, so the format stayed dead until a restart (issue #175). The reload's OnLoaded raises ReadyChanged.
+            if (!ready && _slots.TryGetValue(format, out var slot) && slot.State == SlotState.Ready)
+            {
+                slot.State = SlotState.Idle;
+                _telemetry.Record(new AdEvent(AdEventKind.Expired, format, ""));
+                Preload(format);
+            }
             return ready;
         }
 
@@ -209,8 +217,9 @@ namespace Nexus.Ads
                     if (expired && result == AdResult.Rewarded)
                     {
                         expired = false;
-                        WriteReceipt(placement);
-                        _telemetry.Record(new AdEvent(AdEventKind.Rewarded, format, placement, "after the show was ended as failed: kept as the pending reward"));
+                        Isolated(() => WriteReceipt(placement), format, placement, "writing the reward receipt");
+                        Isolated(() => _telemetry.Record(new AdEvent(AdEventKind.Rewarded, format, placement, "after the show was ended as failed: kept as the pending reward")),
+                            format, placement, "the telemetry sink");
                     }
                     return;
                 }
@@ -220,10 +229,13 @@ namespace Nexus.Ads
                 _showDeadline = null;
                 _fullScreenOpen = false;
                 slot.State = SlotState.Idle;
-                if (result == AdResult.Rewarded) WriteReceipt(placement); // durable before the game hears of it: a kill in between keeps the reward
-                if (result == AdResult.Rewarded || result == AdResult.Closed) _session.RecordShown(declared);
-                _telemetry.Record(new AdEvent(result == AdResult.Failed ? AdEventKind.ShowFailed : result == AdResult.Rewarded ? AdEventKind.Rewarded : AdEventKind.Closed, format, placement, detail));
-                AdClosed?.Invoke(format, result);
+                // Each step is isolated, so the game's result arrives exactly once whatever a subscriber or sink throws (issue #176).
+                // The receipt is durable before the game hears of the reward: a kill in between keeps it.
+                if (result == AdResult.Rewarded) Isolated(() => WriteReceipt(placement), format, placement, "writing the reward receipt");
+                if (result == AdResult.Rewarded || result == AdResult.Closed) Isolated(() => _session.RecordShown(declared), format, placement, "recording the show");
+                Isolated(() => _telemetry.Record(new AdEvent(result == AdResult.Failed ? AdEventKind.ShowFailed : result == AdResult.Rewarded ? AdEventKind.Rewarded : AdEventKind.Closed, format, placement, detail)),
+                    format, placement, "the telemetry sink");
+                Isolated(() => AdClosed?.Invoke(format, result), format, placement, "an AdClosed subscriber");
                 Preload(format);
                 RaiseReadyChanged();
                 onResult?.Invoke(result);
@@ -239,6 +251,18 @@ namespace Nexus.Ads
                 Answer(AdResult.Failed, "provider threw " + ex.GetType().Name + ": " + ex.Message);
                 throw;
             }
+        }
+
+        private void Isolated(Action step, AdFormat format, string placement, string what)
+        {
+            try { step(); }
+            catch (Exception ex) { RecordHandlerFailure(format, placement, what, ex); }
+        }
+
+        private void RecordHandlerFailure(AdFormat format, string placement, string what, Exception ex)
+        {
+            try { _telemetry.Record(new AdEvent(AdEventKind.HandlerFailed, format, placement ?? "", what + " threw " + ex.GetType().Name + ": " + ex.Message)); }
+            catch (Exception) { } // the telemetry port threw too: nothing is left to report it through (the Unity port guards each sink)
         }
 
         // The window counts while the app is visible: from the request until the ad opens, and again from the app's return when
@@ -434,7 +458,9 @@ namespace Nexus.Ads
             slot.Retry = null;
             if (ProviderReadyLive(format)) { slot.State = SlotState.Ready; RaiseReadyChanged(); return; }
             slot.State = SlotState.Loading;
-            _provider.Load(format);
+            // a throwing SDK load left the slot Loading for good; it is a failed load, retried with the back-off (issue #176)
+            try { _provider.Load(format); }
+            catch (Exception ex) { OnLoadFailed(format, "provider threw " + ex.GetType().Name + ": " + ex.Message); }
         }
 
         private void OnLoaded(AdFormat format) => OnMain(() =>
@@ -537,6 +563,7 @@ namespace Nexus.Ads
         private void RaiseReadyChanged()
         {
             try { ReadyChanged?.Invoke(); }
+            catch (Exception ex) { RecordHandlerFailure(AdFormat.Interstitial, "", "a ReadyChanged subscriber", ex); }
             finally { ArmPacingWake(); }
         }
 
