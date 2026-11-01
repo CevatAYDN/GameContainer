@@ -8,7 +8,7 @@ mobile and PC games, and an editor tool suite in one package.
 | | |
 |---|---|
 | Package | `Nexus/Packages/com.nexus.core` (version in `package.json`: **0.5.0**; unreleased work is listed in its `CHANGELOG.md`) |
-| Unity | 6000.6 minimum (`package.json`); verified on **6000.6.7f1** |
+| Unity | 6000.6 minimum (`package.json`); the development project runs **6000.6.7f1**, where the EditMode and PlayMode suites, the host harness and the compile check pass; the player, comparison and device gates get their 6000.6.7f1 runs in the next gate cycle (#139) |
 | License | MIT |
 | Verification status | [docs/RELEASE_GATES.md](docs/RELEASE_GATES.md) |
 
@@ -57,6 +57,7 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 | `Nexus/Packages/com.nexus.core` | The package: `Runtime`, `Editor`, `Tests`, `Samples~`, `SourceGenerator~` (Roslyn binder generator source), `SourceGenerators~` (its built analyzer DLL), `docs`, `CHANGELOG.md` |
 | `Nexus/Packages/com.nexus.ads`, `com.nexus.ads.bridge.nexus`, `com.nexus.ads.levelplay` | The ad package family (engine-free core, Unity layer, editor; the bridge to `com.nexus.core`'s `AdService`; the LevelPlay provider), changelog in `com.nexus.ads/CHANGELOG.md` |
 | `Nexus/Packages/com.nexus.ads.admob`, `com.nexus.iap.unity`, `com.nexus.firebase` | Adapter packages: Google AdMob (the ad family's provider with Google's consent form), Unity IAP 5, Firebase |
+| `Nexus/Packages/com.nexus.fsm`, `com.nexus.dots` | Split from the core in #112 with their namespaces kept: `GameStateMachine` and the window's State Machine tab; `NativeSignalQueue<T>`/`DOTSSignalBridge<T>`, compiled only with `com.unity.collections` |
 | `Nexus/` | Unity 6000.6.7f1 development project that hosts the packages and their EditMode/PlayMode tests |
 | `tools/nexus-benchmark` | .NET host harness: compiles the runtime against Unity stubs and runs stress, fuzz, zero-allocation, lifecycle, codegen, ads-core and evidence suites; also the pre-commit hook |
 | `tools/nexus-compile-check` | Compiles every runtime file against the installed editor's engine modules (`dotnet build tools/nexus-compile-check`) four times: a release player, the editor with `NEXUS_DEBUG`, Android IL2CPP and iOS IL2CPP; a missing engine or package assembly is an error |
