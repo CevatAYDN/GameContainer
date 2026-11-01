@@ -120,7 +120,7 @@ Zenject'te `Dispose` senkron çağrılırdı; Nexus `OnDispose` üzerinden non-b
 - [ ] Durumu değiştiren tüm signal handler'lar `ICommand<T>` (veya adapter); her `Subscribe` aboneliği dispose ediliyor — abonelik sızıntısı yok
 - [ ] Tüm `OnChanged` abonelikleri `RemoveOnChanged` ile kaldırılıyor
 - [ ] `async void` yok; teardown'da sync-over-async yok
-- [ ] `Nexus > Code Health Analyzer` temiz (0 sorun); CI'da aynı analiz `-executeMethod Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless` ile koşar
+- [ ] Nexus penceresinin Durum sekmesi **Denetle**'den sonra hata listelemiyor; CI'da aynı denetimler `-executeMethod Nexus.Editor.NexusStatus.RunCli` ile koşar (hata yoksa çıkış 0)
 - [ ] `BuildValidation.RunSilent()` geçiyor
 - [ ] EditMode test suite'i geçiyor (Nexus'un kendi sayıları: repo'nun `docs/RELEASE_GATES.md` dosyası)
 
@@ -136,4 +136,4 @@ Zenject'te `Dispose` senkron çağrılırdı; Nexus `OnDispose` üzerinden non-b
 
 ## 5. Otomatik Geçiş Aracı (ileri adım)
 
-Mevcut durumda resmî bir otomatik dönüştürücü yok; ancak `NexusArchitectureAnalyzer`'ın headless modu geçiş sonrası mimari kapı olarak CI'a eklenebilir. Zenject → Nexus binding sözdizimi farkı yüksek oranda mekanik olduğundan (tablo 1), büyük projelerde regex-tabanlı bir dönüştürücü betiği (her `Container.Bind<X>().To<Y>().AsSingle()` → `BindFluent<X>().To<Y>().AsSingle()`) zaman kazandırır; adım adım taşıyıp her aşamada test koşmak daha güvenlidir.
+Mevcut durumda resmî bir otomatik dönüştürücü yok; ancak `NexusStatus.RunCli` (doğrulama, kod sağlığı, binder ve paket denetimleri) geçiş sonrası mimari kapı olarak CI'a eklenebilir. Zenject → Nexus binding sözdizimi farkı yüksek oranda mekanik olduğundan (tablo 1), büyük projelerde regex-tabanlı bir dönüştürücü betiği (her `Container.Bind<X>().To<Y>().AsSingle()` → `BindFluent<X>().To<Y>().AsSingle()`) zaman kazandırır; adım adım taşıyıp her aşamada test koşmak daha güvenlidir.

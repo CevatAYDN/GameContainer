@@ -120,7 +120,7 @@ In Zenject `Dispose` was called synchronously; Nexus does a non-blocking teardow
 - [ ] Every signal handler that changes state is an `ICommand<T>` (or adapter); every `Subscribe` subscription is disposed — no subscription leak
 - [ ] Every `OnChanged` subscription is removed with `RemoveOnChanged`
 - [ ] No `async void`; no sync-over-async in teardown
-- [ ] `Nexus > Code Health Analyzer` is clean (0 issues); in CI the same analysis runs with `-executeMethod Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless`
+- [ ] The Nexus window's Status tab lists no error after **Check**; in CI the same checks run with `-executeMethod Nexus.Editor.NexusStatus.RunCli` (exit 0 when none is an error)
 - [ ] `BuildValidation.RunSilent()` passes
 - [ ] The EditMode test suite passes (Nexus's own numbers: the repository's `docs/RELEASE_GATES.md`)
 
@@ -136,4 +136,4 @@ In Zenject `Dispose` was called synchronously; Nexus does a non-blocking teardow
 
 ## 5. Automatic Migration Tool (next step)
 
-There is currently no official automatic converter; however, the headless mode of `NexusArchitectureAnalyzer` can be added to CI as a post-migration architecture gate. Because the Zenject → Nexus binding syntax difference is largely mechanical (table 1), a regex-based converter script in large projects (every `Container.Bind<X>().To<Y>().AsSingle()` → `BindFluent<X>().To<Y>().AsSingle()`) saves time; moving step by step and running the tests at every stage is safer.
+There is currently no official automatic converter; however, `NexusStatus.RunCli` (validation, code health, binder and package checks) can be added to CI as a post-migration architecture gate. Because the Zenject → Nexus binding syntax difference is largely mechanical (table 1), a regex-based converter script in large projects (every `Container.Bind<X>().To<Y>().AsSingle()` → `BindFluent<X>().To<Y>().AsSingle()`) saves time; moving step by step and running the tests at every stage is safer.

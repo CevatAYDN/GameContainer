@@ -106,19 +106,18 @@ needs is installed below its asmdef's `versionDefines` expression (issue #143; t
 members than its type has now is dropped before its first run, with a warning, and the type falls back to reflection.
 
 **Editor window** (menu **Nexus**, **Open Window** `Ctrl+Shift+N`): one window, 9 plugins, one tab each, in
-four sidebar sections. **Status**: Dashboard. **Setup**: Setup Wizard (starter scene, sample import, documents),
+four sidebar sections. **Status**: one list of every problem the checks find, each with the action that fixes it (validation, code health, the binder, package versions, run-time errors and, in Play Mode, each context's bindings), the installed Nexus packages and the editor's state. **Setup**: Setup Wizard (starter scene, sample import, documents),
 Context Wizard (a ContextData and its Root; Service, View/Mediator and Signal/Command scripts, never written over an
 existing file). **Architecture**: the map of the game's signals, commands, services, models, views and mediators,
 with each signal's handlers, each type's injected members and the members that receive it, a signal graph and, in
 Play Mode, the handlers the running contexts bind and a fire form. **Live**: Context Inspector (the running contexts as a parent/child tree, and the selected one's overview, singletons with live, editable fields, bindings, services, signal handlers, extensions and a fire form), Tracer (records events only with `NEXUS_DEBUG`), ErrorDashboard (it collects nothing while tests run), PerformanceDashboard, CasualServices;
 `com.nexus.fsm` adds a State Machine tab. The Nexus menu opens each section, and holds the binder generator,
-validation, the Code Health Analyzer, the scene overlay toggle, the editor settings and, with `com.nexus.ads`, the Ads
-items; GameObject > Nexus creates Roots, scopes, bindings and the UI canvas. The Dashboard's build-readiness card shows the AOT binder state,
-`link.xml`, the active build target and its scripting defines, generated injectors that fell back
-to reflection, and DI validation issues of the active contexts, with one-click check and
-generate. Also custom inspectors, a scene-view overlay of context boundaries, a Unity
-Profiler module, build validation rules, an architecture analyzer with a headless gate, and
-hot-reload hooks. Editor text is localized in English and Turkish.
+validation, the scene overlay toggle, the editor settings and, with `com.nexus.ads`, the Ads
+items; GameObject > Nexus creates Roots, scopes, bindings and the UI canvas. A package or a game adds its own check to
+the Status tab by implementing `INexusStatusSource`, and CI runs every check with
+`-executeMethod Nexus.Editor.NexusStatus.RunCli` (exit 0 no error, 1 errors, 2 the checks could not run). Also custom
+inspectors, a scene-view overlay of context boundaries, a Unity Profiler module, build validation rules (a project's own
+implement `IBuildValidationRule`), and hot-reload hooks. Editor text is localized in English and Turkish.
 
 **Testing**: the `com.nexus.core.testing` assembly holds `NexusTestHarness`, `NexusTestContext`,
 `MockContext`, `RecordingSignalBus` (a bus without a context that records what was fired),

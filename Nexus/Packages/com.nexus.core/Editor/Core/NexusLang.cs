@@ -105,7 +105,6 @@ namespace Nexus.Editor
             s_strings["setup_doc_troubleshooting"] = "Troubleshooting";
             s_strings["setup_doc_changelog"] = "Changelog";
             s_strings["setup_version"] = "com.nexus.core {0} · Unity {1}";
-            s_strings["dashboard"] = "Dashboard";
             s_strings["system_active"] = "SYSTEM ACTIVE";
             s_strings["system_standby"] = "SYSTEM STANDBY";
             s_strings["tracer_status_ok"] = "OK";
@@ -116,29 +115,9 @@ namespace Nexus.Editor
             s_strings["roots"] = "Roots";
             s_strings["models"] = "Models";
             s_strings["services"] = "Services";
-            s_strings["commands"] = "Commands";
-            s_strings["views"] = "Views";
-            s_strings["build_validation"] = "BUILD VALIDATION";
-            s_strings["run_validation"] = "Run Build Validation";
-            s_strings["rerun_validation"] = "Re-run Validation";
-            s_strings["not_run_yet"] = "Not run yet. Click below to validate.";
-            s_strings["project_overview"] = "PROJECT OVERVIEW";
             s_strings["open"] = "Open";
-            s_strings["framework"] = "FRAMEWORK";
-            s_strings["framework_desc"] = "Nexus Observable Architecture v{0}\n" +
-                "Unity 6 • UI Toolkit • MIT License\n\n" +
-                "An observable MVCS framework with:\n" +
-                "• Causal Tracing — signal chains, with the NEXUS_DEBUG define (it may allocate)\n" +
-                "• 4 Execution Modes — Sequential, Concurrent, Exclusive, Composite\n" +
-                "• Build Validation — catches priority conflicts before compile\n" +
-                "• Auto-Discovery — Lifecycle, Commands, Views and Mediators\n" +
-                "• Command Pooling — no allocation in steady state on the paths the README's Performance scope lists\n\n" +
-                "Editor: 13 plugins (14 with com.nexus.fsm), Code Generator, Live Tracer, Graph Viewer, Type Analyzer";
             s_strings["pass"] = "PASS";
             s_strings["fail"] = "FAIL";
-            s_strings["errors"] = "Errors";
-            s_strings["warnings"] = "Warnings";
-            s_strings["more"] = "more...";
             s_strings["ready"] = "Ready. Enter Play Mode to activate the system.";
             s_strings["no_roots"] = "Create a Root via Context Wizard to get started.";
             s_strings["live_hint"] = "Live — {0} context(s) active.";
@@ -146,7 +125,7 @@ namespace Nexus.Editor
             s_strings["action_tracer_title"] = "Live Tracer";
             s_strings["action_casual_services_title"] = "Casual Debugger";
             s_strings["action_fsm_title"] = "State Machine";
-            s_strings["tab_dashboard"] = "Dashboard";
+            s_strings["tab_status"] = "Status";
             s_strings["tab_wizard"] = "Wizard";
             s_strings["tab_tracer"] = "Tracer";
             s_strings["tab_errordashboard"] = "Error Dashboard";
@@ -239,14 +218,6 @@ namespace Nexus.Editor
             s_strings["status_edit_mode"] = "EDIT MODE";
             s_strings["statusbar_play"] = "Nexus ● ACTIVE  |  {0} context(s) active  |  {1} static handler(s) registered";
             s_strings["statusbar_standby"] = "Nexus ○ STANDBY  |  {0} Root(s) in scene  |  Enter Play Mode to activate";
-
-            // Dashboard plugin
-            s_strings["dash_action_codegen"] = "⚡ CodeGen";
-            s_strings["dash_action_create_root"] = "➕ Create Root";
-            s_strings["dash_action_inspector"] = "🔍 Inspector";
-            s_strings["dash_quickfind_tooltip"] = "Search signals, commands, models, services, and views.";
-            s_strings["dash_qf_copy"] = "Copy";
-            s_strings["dash_qf_no_matches"] = "No matches for '{0}'";
 
             // Performance Dashboard plugin
             s_strings["pd_value_placeholder"] = "—";
@@ -443,19 +414,8 @@ namespace Nexus.Editor
             s_strings["pd_gc_delta"] = "GC Gen0 (delta)";
 
             // ── Cross-plugin navigation & stray labels ─────────
-            s_strings["clear"] = "Clear";
             s_strings["tr_pause"] = "Pause";
             s_strings["gm_no_active_contexts"] = "No active contexts.";
-            s_strings["db_quick_find"] = "Quick Find";
-            s_strings["db_nexus_health"] = "Nexus Health";
-            s_strings["db_health_note"] = "Use this panel to catch missing Roots, empty Contexts, and validation issues before handoff.";
-            s_strings["db_validation_note"] = "Validation checks context, binding, hierarchy, and command issues before runtime.";
-            s_strings["dash_tip_contexts"] = "Open the Contexts view";
-            s_strings["dash_tip_handlers"] = "Open signal handlers in Explorer";
-            s_strings["dash_tip_models"] = "Open the Models section";
-            s_strings["dash_tip_services"] = "Open the Services section";
-            s_strings["dash_tip_commands"] = "Open the Commands section";
-            s_strings["dash_tip_views"] = "Open the Views section";
 
             // Tracer detail panel
             s_strings["tr_ctx_clear_buffer"] = "🧹 Clear Buffer";
@@ -477,33 +437,36 @@ namespace Nexus.Editor
             s_strings["ci_null_label"] = "(null)";
             s_strings["hier_null_value"] = "null";
 
-            // TypeAnalyzer
-            s_strings["db_play_mode"] = "Play Mode";
-            s_strings["db_edit_mode"] = "Edit Mode";
-            s_strings["db_health_no_root"] = "No active Root in scene. Add a Nexus Root before entering Play Mode.";
-            s_strings["db_health_no_context"] = "No active Context detected during Play Mode. Check startup wiring and scene bindings.";
-            s_strings["db_health_counts"] = "{0} context(s), {1} handler(s), {2} root(s) visible.";
-            s_strings["db_health_line"] = "{0}: {1}";
-            s_strings["db_build_readiness"] = "Build readiness";
-            s_strings["db_rd_binder"] = "AOT binder";
-            s_strings["db_rd_binder_missing"] = "Not generated: injection runs by reflection and no link.xml protects it from IL2CPP stripping";
-            s_strings["db_rd_binder_current"] = "Current";
-            s_strings["db_rd_binder_stale"] = "Out of date: regenerate before building (the build guard stops a stale player build)";
-            s_strings["db_rd_binder_unknown"] = "Not checked yet";
-            s_strings["db_rd_linkxml"] = "link.xml";
-            s_strings["db_rd_present"] = "Present";
-            s_strings["db_rd_missing"] = "Missing";
-            s_strings["db_rd_target"] = "Active build target";
-            s_strings["db_rd_defines"] = "Scripting defines";
-            s_strings["db_rd_defines_none"] = "none";
-            s_strings["db_rd_stale_injectors"] = "Generated injectors replaced by reflection";
-            s_strings["db_rd_none"] = "None";
-            s_strings["db_rd_generated_live"] = "Generated registrations live (0 in Play Mode with a binder = the binder is not running)";
-            s_strings["db_rd_di_issues"] = "DI validation issues in active contexts";
-            s_strings["db_rd_play_only"] = "Available in Play Mode";
-            s_strings["db_rd_check"] = "Check now";
-            s_strings["db_rd_generate"] = "Generate binder";
-            s_strings["db_rd_note"] = "These rows mirror the release gates: a stale binder or link.xml stops a player build, and scripting defines belong to the active target.";
+            // Status tab (#193)
+            s_strings["status_problems"] = "Problems";
+            s_strings["status_check"] = "Check";
+            s_strings["status_check_tip"] = "Runs every check: validation, code health, the binder, package versions, run-time errors and, in Play Mode, the bindings of each running context.";
+            s_strings["status_copy"] = "Copy report";
+            s_strings["status_not_checked"] = "Not checked since the last compile. Press Check.";
+            s_strings["status_summary"] = "{0} error(s), {1} warning(s) · checked at {2:HH:mm:ss}";
+            s_strings["status_none"] = "No problems found.";
+            s_strings["status_packages"] = "Packages";
+            s_strings["status_unity"] = "Unity {0}";
+            s_strings["status_tip_contexts"] = "Open the running contexts";
+            s_strings["status_tip_handlers"] = "Open signal handlers in Explorer";
+            s_strings["status_source_failed"] = "The check could not run ({0}: {1}), so it checked nothing.";
+            s_strings["status_src_validation"] = "Validation";
+            s_strings["status_src_code_health"] = "Code health";
+            s_strings["status_src_binder"] = "Binder";
+            s_strings["status_src_package_versions"] = "Package versions";
+            s_strings["status_src_runtime"] = "Run time";
+            s_strings["status_src_di"] = "Bindings";
+            s_strings["status_fix"] = "Fix";
+            s_strings["status_fix_open"] = "Open";
+            s_strings["status_fix_generate"] = "Generate";
+            s_strings["status_fix_package_manager"] = "Package Manager";
+            s_strings["status_fix_errors"] = "Show errors";
+            s_strings["status_fix_inspect"] = "Inspect";
+            s_strings["status_binder_stale"] = "The generated binder or link.xml no longer matches the code. A player build regenerates both; Generate does it now.";
+            s_strings["status_binder_stale_build_stops"] = "The generated binder or link.xml no longer matches the code, and NEXUS_DISABLE_AUTOGEN=1 makes a player build stop on it. Generate regenerates both.";
+            s_strings["status_binder_dropped_injectors"] = "The container set aside generated injectors written for other members and injects these types by reflection: {0}. Generate the binder again.";
+            s_strings["status_runtime_errors"] = "{0} error(s) recorded at run time. The newest: {1}";
+            s_strings["status_runtime_warnings"] = "{0} warning(s) recorded at run time. The newest: {1}";
 
 
             s_strings["wizard_title"] = "CREATE A CONTEXT AND ITS SCRIPTS";

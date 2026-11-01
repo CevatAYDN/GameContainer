@@ -30,14 +30,14 @@ All editor plugin changes must follow the 4 cross-cutting patterns:
 - Verify that both `InfrastructureValidationTests` and `PluginRefactorValidationTests` pass cleanly in Unity Test Runner.
 
 ### 4. Synchronous-Blocking Exemptions (NEXUS003)
-The `NexusArchitectureAnalyzer` rule NEXUS003 flags synchronous blocking calls in runtime
+The code health rule NEXUS003 (`CodeHealthRules`, listed by the Status tab) flags synchronous blocking calls in runtime
 code: `Thread.Sleep` and sync-over-async `GetAwaiter().GetResult()` (which still blocks the
 thread). Prefer a real `await Task.Delay(...)`. A blocking site is acceptable only when
 awaiting is genuinely impossible — e.g. a synchronous `PlayerPrefs`-style API whose write
 path also runs on the sync quit handler. In that case keep the call, append a trailing
 `// NEXUS003-exempt: <reason>` comment to the SAME line stating why awaiting is impossible,
 and use the `CancellationToken`-aware overload where one is available. Anything not marked
-exempt is reported as an Error by the analyzer.
+exempt is listed as an error.
 
 ---
 

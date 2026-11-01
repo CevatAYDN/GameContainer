@@ -1273,6 +1273,20 @@ namespace Nexus.Editor
         private static readonly System.Text.RegularExpressions.Regex s_fireNewRegex = 
             new(@"\.Fire[A-Za-z]*\s*\(\s*new\s+([A-Za-z0-9_\.]+)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
 
+        /// <summary>The script of the longest type full name a validation message contains, or null (the Status tab's Open action).</summary>
+        internal static string FindScriptNamedIn(string message)
+        {
+            if (string.IsNullOrEmpty(message)) return null;
+            string script = null;
+            int length = 0;
+            foreach (var pair in BuildTypeScriptCache())
+            {
+                string name = pair.Key.FullName;
+                if (name != null && name.Length > length && message.Contains(name)) { script = pair.Value; length = name.Length; }
+            }
+            return script;
+        }
+
         private static Dictionary<Type, string> BuildTypeScriptCache()
         {
             // Built ONCE per script-reload: FindAssets("t:MonoScript") + GetClass() over every

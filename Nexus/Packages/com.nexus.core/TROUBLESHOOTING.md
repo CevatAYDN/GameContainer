@@ -1038,5 +1038,5 @@ When reporting issues, include:
 ### 6. Enable Debug Logging
 
 Add `NEXUS_DEBUG` to **Edit > Project Settings > Player > Other Settings > Scripting Define Symbols**
-for the active build target, or press **Enable Full Causal Tracing & Recompile** in the Dashboard's
-Tracer tab. A `#define NEXUS_DEBUG` in your own source file does not reach the package's assemblies.
+for the active build target, or press **Enable Full Causal Tracing & Recompile** in the Nexus
+window's Tracer tab. A `#define NEXUS_DEBUG` in your own source file does not reach the package's assemblies.

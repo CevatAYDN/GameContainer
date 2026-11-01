@@ -144,7 +144,8 @@ tracing disabled and a working positive-control allocation recorder.
   and PlayMode `com.nexus.core.tests` (a project that consumes the package lists
   `com.nexus.core` under `testables` in `Packages/manifest.json` to see them), and call
   `BuildValidation.RunSilent()`.
-- The Dashboard surfaces DI validation warnings, including
+- In Play Mode the Status tab lists the DI validation issues of each running context (the context logs them as
+  errors at startup too), including
   **`[CaptiveDependency]`** (a singleton capturing a transient) and
   **`[ConstructorExplosion]`** (>6 ctor parameters).
 

@@ -44,7 +44,7 @@ This document describes the high-level architecture, runtime pipeline, component
 ┌───────────────────────────────────────────────────────────┐
 │                  Editor Window (NexusWindow)              │
 │  ┌──────────┐ ┌──────────┐ ┌───────────┐ ┌───────────┐   │
-│  │Dashboard │ │ Tracer   │ │Performance│ │ Wizard    │   │
+│  │ Status   │ │ Tracer   │ │Performance│ │ Wizard    │   │
 │  └─────┬────┘ └─────┬────┘ └─────┬─────┘ └─────┬─────┘   │
 │        │            │            │             │         │
 │        └────────────┴────────────┴─────────────┘         │

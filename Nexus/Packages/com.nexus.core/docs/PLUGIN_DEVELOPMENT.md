@@ -41,9 +41,9 @@ public interface INexusEditorPlugin
 Before submitting a new plugin or refactor, verify:
 
 - [ ] Extends `NexusEditorPlugin` (not just bare `INexusEditorPlugin`).
-- [ ] `Id` is unique across all plugins (9 in the core, `FSMPlugin` in `com.nexus.fsm`) (e.g. `"Dashboard"`, `"Tracer"`, `"ContextInspector"`).
+- [ ] `Id` is unique across all plugins (9 in the core, `FSMPlugin` in `com.nexus.fsm`) (e.g. `"Status"`, `"Tracer"`, `"ContextInspector"`).
 - [ ] `DisplayName` uses `NexusLang.Get("key")` for localization.
-- [ ] `Order` is specified (e.g. 0 for Dashboard, 1 for Wizard, 2 for ContextInspector).
+- [ ] `Order` is specified (e.g. 0 for Status, 1 for Wizard, 2 for ContextInspector).
 - [ ] `CreateView()` returns a non-null `VisualElement` tree.
 - [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** a repeating `schedule.Execute(...).Every(...)` or `EditorApplication.update`. A slower cadence is throttled inside `OnUpdate()` with `EditorApplication.timeSinceStartup` (`CasualServicesPlugin` 0.5 s, `com.nexus.fsm`'s `FSMPlugin` 0.3 s).
 - [ ] `OnDisable()` resets: instance fields, flags, counters, queues.

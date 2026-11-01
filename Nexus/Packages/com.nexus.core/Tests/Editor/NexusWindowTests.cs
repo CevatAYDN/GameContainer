@@ -41,7 +41,7 @@ namespace Nexus.Editor.Tests
             CreateGUI();
 
             var first = TabButtons().First();
-            Assert.AreEqual("Tab_Dashboard", first.name);
+            Assert.AreEqual("Tab_Status", first.name);
             Assert.IsTrue(first.ClassListContains("active"), "the first tab is marked open");
             Assert.AreEqual(1, Field<VisualElement>("_contentArea").childCount, "the first tab's view is shown");
         }

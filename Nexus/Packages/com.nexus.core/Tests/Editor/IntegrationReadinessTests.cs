@@ -335,7 +335,7 @@ namespace Nexus.Editor.Tests
             {
                 Assert.IsNotNull(UnityEditor.AssetDatabase.LoadAssetAtPath<TextAsset>("Packages/com.nexus.core/Editor/Locales/tr.json"));
                 NexusLang.LoadLocale("tr");
-                Assert.AreEqual("Kontrol Paneli", NexusLang.Get("dashboard"));
+                Assert.AreEqual("Durum", NexusLang.Get("tab_status"));
                 Assert.AreEqual("Kurulum Sihirbazı", wizard.DisplayName);
                 var view = wizard.CreateView();
                 Assert.AreEqual("Entegrasyon yolunuzu seçin", view.Q<Button>("nexus-integration-guide").text);

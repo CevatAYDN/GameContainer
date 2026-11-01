@@ -132,6 +132,10 @@ to the `references` of each test assembly definition that uses them.
   and so a player build. A validation that crashes fails with every error counted, where it left `LastErrorCount` at 0 and
   `LastRunPassed` at the previous run's value. `LastResults` holds the findings after every run, not only after `RunSilent`, and
   no longer holds the "Validation FAILED" summary line.
+- The Dashboard tab is now the Status tab (#193): `NexusWindow.Open("Status")`. The **Nexus > Code Health Analyzer** and
+  **Nexus > Run System Diagnostic Audit** (`Ctrl+Alt+D`) items are gone; **Check** on the Status tab runs their checks. A CI step
+  that ran `Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless` runs `Nexus.Editor.NexusStatus.RunCli`, which also runs
+  validation and the binder and package checks, and exits 1 for an error only, not for a NEXUS001 warning.
 
 #### Removed
 
@@ -152,6 +156,9 @@ Code that names one of these stops compiling; the changelog's Removed section gi
 | `ProviderFactory.RegisterBuiltIn` and the `"mock"` providers (#162) | The real adapters; the test doubles in `com.nexus.core.testing` |
 | `DIBindingRule` (#193) | Nothing: it reported nothing. A rule of the project implements `IBuildValidationRule` |
 | `NexusCodeGenerator.HasInjectableTypes` (#193) | Nothing called it |
+| `DashboardPlugin` (#193) | `StatusPlugin`, `NexusWindow.Open("Status")` |
+| `NexusArchitectureAnalyzer` with `RunHeadless` (#193) | The Status tab; `NexusStatus.RunCli` in batch mode |
+| `NexusSystemDiagnostic` (#193) | The Status tab's **Check** |
 
 `ContextData.DisposeTimeoutSeconds` is obsolete (#59): nothing reads it, and the context never waits for async-disposable
 singletons. Remove its uses before it goes.

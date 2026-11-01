@@ -26,12 +26,12 @@ Code never compares a displayed text with an English literal: `ArchitecturePlugi
 
 | Prefix | Component / Plugin | Description |
 |:---|:---|:---|
-| `brand_`, `sidebar_`, `error_`, `actions_`, `status_`, `statusbar_` | NexusWindow | Window shell: brand, sidebar, plugin discovery errors, action bar, status bar |
+| `brand_`, `sidebar_`, `error_`, `actions_`, `status_edit_mode`, `status_play_mode_active`, `statusbar_` | NexusWindow | Window shell: brand, sidebar, plugin discovery errors, action bar, status bar |
 | `cat_` | NexusWindow sidebar | Section headers: `cat_status`, `cat_setup`, `cat_architecture` and `cat_live`, in that order (`NexusWindow.Sections`); `INexusEditorPlugin.Category` returns one of them, and any other key, such as the default `cat_other`, is a section after them |
-| `tab_` | NexusWindow sidebar | Sidebar button label per plugin, `tab_<plugin id in lower case>`; without the key the plugin's `DisplayName` is used. Also the `DisplayName` of the Dashboard, Context Inspector, Error and Performance plugins |
+| `tab_` | NexusWindow sidebar | Sidebar button label per plugin, `tab_<plugin id in lower case>`; without the key the plugin's `DisplayName` is used. Also the `DisplayName` of the Status, Context Inspector, Error and Performance plugins |
 | `action_` | Plugins | `action_<tool>_title`: the `DisplayName` of the Architecture, Casual Services, FSM, Tracer and Wizard plugins |
-| no namespace prefix (`dashboard`, `contexts`, `build_validation`, `run_validation`, `project_overview`, `live_hint`, `no_roots`, `clear`, ...), `system_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | System status, project overview, build validation, framework card |
-| `dash_`, `db_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | Quick actions, QuickFind, card tooltips, Nexus Health and Build readiness cards |
+| no namespace prefix (`contexts`, `handlers`, `roots`, `live_hint`, `no_roots`, `ready`, ...), `system_` | StatusPlugin, shared labels | The Status tab's state card and labels other tabs share |
+| `status_` (other than the window shell's `status_edit_mode` and `status_play_mode_active`) | StatusPlugin, `Validation/NexusStatus.cs`, `Validation/StatusSources.cs` | The problems list, its checks (`status_src_`), fix buttons (`status_fix_`), messages and the packages card |
 | `setup_` | NexusSetupWizard | The Setup section's start page: starter scene, package samples, the way into the Context Wizard, document buttons, version line |
 | `wizard_` | WizardPlugin (`Wizard/WizardTabs.cs`, `Wizard/ScriptGenerator.cs`) | Context creation and the service, view/mediator and signal/command generators: fields, validation, results and next steps |
 | `ci_`, `hierarchy_`, `hier_`, `gm_no_active_contexts` | ContextInspectorPlugin | The running contexts' tree; the selected context's overview, singletons with their fields, DI bindings, services, signal handlers, extensions, test fire |
@@ -51,7 +51,7 @@ The complete lists are `NexusLang.AddDefaults()` (English) and `Editor/Locales/t
 
 | Key | English (`en`) | Turkish (`tr`) |
 |:---|:---|:---|
-| `dashboard` | Dashboard | Kontrol Paneli |
+| `tab_status` | Status | Durum |
 | `system_active` | SYSTEM ACTIVE | SİSTEM AKTİF |
 | `system_standby` | SYSTEM STANDBY | SİSTEM BEKLEMEDE |
 | `tracer_sig` | SIG | SİNYAL |

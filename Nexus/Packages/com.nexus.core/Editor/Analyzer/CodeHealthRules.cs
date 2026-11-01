@@ -1,172 +1,47 @@
-using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Reflection;
 using UnityEditor;
-using UnityEngine;
-using Nexus.Core;
+using UnityEditor.PackageManager;
 
 namespace Nexus.Editor
 {
     /// <summary>
-    /// Static C# Anti-Pattern & Architecture Analyzer for Nexus Core.
-    /// Scans project scripts (Assets + com.nexus.core package) for hot-path allocations
-    /// (NEXUS001), async-void declarations (NEXUS002), synchronous blocking calls
-    /// (NEXUS003), and leftover debug trace logging (NEXUS004). Accessible via Editor
-    /// Menu: Window -> Nexus -> Code Health Analyzer
+    /// Text rules over the project's scripts, listed by the Status tab (#193): hot-path allocations (NEXUS001, a warning),
+    /// async-void declarations (NEXUS002), synchronous blocking calls (NEXUS003) and leftover debug trace logging (NEXUS004).
     /// </summary>
-    public class NexusArchitectureAnalyzer : EditorWindow
+    internal static class CodeHealthRules
     {
-        public enum IssueSeverity { Info, Warning, Error }
-
-        public struct AnalysisIssue
+        internal struct Issue
         {
             public string Code;
-            public IssueSeverity Severity;
+            public bool IsError;
             public string FilePath;
             public int LineNumber;
             public string Message;
             public string Recommendation;
         }
 
-        private List<AnalysisIssue> _issues = new();
-        private Vector2 _scrollPos;
-
-        [MenuItem("Nexus/Code Health Analyzer", false, 63)]
-        public static void ShowWindow()
-        {
-            var win = GetWindow<NexusArchitectureAnalyzer>("Nexus Code Health Analyzer");
-            win.minSize = new Vector2(650, 450);
-            win.RunAnalysis();
-        }
-
         /// <summary>
-        /// Batch-mode (CI) entry point: runs the full analysis, logs every issue to the
-        /// console, and exits with code 0 when clean / 1 when issues were found.
-        /// Invoke via: Unity -batchmode -projectPath &lt;path&gt; -executeMethod
-        /// Nexus.Editor.NexusArchitectureAnalyzer.RunHeadless
+        /// Scans the scripts a game can change: Assets and the Nexus packages it has embedded or on a local path. A package
+        /// consumed by git URL is read-only to the game, so its files are left out, as are generated files and Tests folders.
         /// </summary>
-        public static void RunHeadless()
+        internal static List<Issue> Scan()
         {
-            var analyzer = CreateInstance<NexusArchitectureAnalyzer>();
-            analyzer.RunAnalysis();
-
-            if (analyzer._issues.Count == 0)
-            {
-                Debug.Log($"[Nexus] Code Health Analyzer: clean — 0 issues across {s_scannedFilesCount} files.");
-                EditorApplication.Exit(0);
-                return;
-            }
-
-            Debug.LogError($"[Nexus] Code Health Analyzer: {analyzer._issues.Count} issue(s) across {s_scannedFilesCount} files:");
-            foreach (var issue in analyzer._issues)
-            {
-                Debug.LogError($"[{issue.Code}] {issue.Severity}: {issue.Message} — {issue.FilePath}:{issue.LineNumber} | {issue.Recommendation}");
-            }
-            EditorApplication.Exit(1);
-        }
-
-        private void OnGUI()
-        {
-            EditorGUILayout.Space(10);
-            EditorGUILayout.BeginHorizontal();
-            GUILayout.Label("Nexus Code Health & Anti-Pattern Analyzer", EditorStyles.boldLabel);
-            GUILayout.FlexibleSpace();
-            if (GUILayout.Button("Copy All Logs", GUILayout.Width(110), GUILayout.Height(24)))
-            {
-                CopyIssuesToClipboard();
-            }
-            if (GUILayout.Button("Run Analysis", GUILayout.Width(110), GUILayout.Height(24)))
-            {
-                RunAnalysis();
-            }
-            EditorGUILayout.EndHorizontal();
-
-            EditorGUILayout.Space(5);
-            EditorGUILayout.HelpBox($"Analyzed {s_scannedFilesCount} script(s). Found {_issues.Count} issue(s).", _issues.Count == 0 ? MessageType.Info : MessageType.Warning);
-
-            EditorGUILayout.Space(5);
-            _scrollPos = EditorGUILayout.BeginScrollView(_scrollPos);
-
-            foreach (var issue in _issues)
-            {
-                Color boxColor = issue.Severity switch
-                {
-                    IssueSeverity.Error => new Color(0.4f, 0.1f, 0.1f, 0.4f),
-                    IssueSeverity.Warning => new Color(0.4f, 0.3f, 0.1f, 0.4f),
-                    _ => new Color(0.2f, 0.2f, 0.3f, 0.4f)
-                };
-
-                EditorGUILayout.BeginVertical(EditorStyles.helpBox);
-                EditorGUILayout.BeginHorizontal();
-                
-                string tag = issue.Severity == IssueSeverity.Error ? "❌ ERROR" : (issue.Severity == IssueSeverity.Warning ? "⚠️ WARN" : "ℹ️ INFO");
-                GUILayout.Label($"[{issue.Code}] {tag}: {issue.Message}", EditorStyles.boldLabel);
-                GUILayout.FlexibleSpace();
-                
-                if (!string.IsNullOrEmpty(issue.FilePath) && GUILayout.Button("Open", GUILayout.Width(50)))
-                {
-                    var obj = AssetDatabase.LoadAssetAtPath<MonoScript>(issue.FilePath);
-                    if (obj != null) AssetDatabase.OpenAsset(obj, issue.LineNumber);
-                }
-                EditorGUILayout.EndHorizontal();
-
-                EditorGUILayout.LabelField("Location:", $"{issue.FilePath}:{issue.LineNumber}");
-                EditorGUILayout.LabelField("Recommendation:", issue.Recommendation);
-                EditorGUILayout.EndVertical();
-                EditorGUILayout.Space(4);
-            }
-
-            EditorGUILayout.EndScrollView();
-        }
-
-        private static int s_scannedFilesCount = 0;
-
-        public void RunAnalysis()
-        {
-            _issues.Clear();
-            s_scannedFilesCount = 0;
-
-            string[] scriptGuids = AssetDatabase.FindAssets("t:MonoScript", new[] { "Assets", "Packages/com.nexus.core" });
-            foreach (var guid in scriptGuids)
+            var folders = new List<string> { "Assets" };
+            foreach (var package in UnityEditor.PackageManager.PackageInfo.GetAllRegisteredPackages())
+                if (package.name.StartsWith("com.nexus.") && (package.source == PackageSource.Embedded || package.source == PackageSource.Local))
+                    folders.Add(package.assetPath);
+            var issues = new List<Issue>();
+            foreach (var guid in AssetDatabase.FindAssets("t:MonoScript", folders.ToArray()))
             {
                 string path = AssetDatabase.GUIDToAssetPath(guid);
                 if (string.IsNullOrEmpty(path) || path.EndsWith(".g.cs") || path.Contains("/Tests/")) continue;
-
-                s_scannedFilesCount++;
-                AnalyzeScriptFile(path);
+                AnalyzeScriptFile(path, issues);
             }
+            return issues;
         }
 
-        private void CopyIssuesToClipboard()
-        {
-            if (_issues.Count == 0)
-            {
-                EditorGUIUtility.systemCopyBuffer = "=== Nexus Code Health Analyzer Report: No issues found. ===";
-                ShowNotification(new GUIContent("No logs to copy!"));
-                return;
-            }
-
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine($"=== Nexus Code Health Analyzer Report ({_issues.Count} issue(s) found across {s_scannedFilesCount} files) ===");
-            sb.AppendLine($"Generated: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-            sb.AppendLine();
-
-            for (int i = 0; i < _issues.Count; i++)
-            {
-                var issue = _issues[i];
-                sb.AppendLine($"[{i + 1}] [{issue.Code}] {issue.Severity.ToString().ToUpper()}: {issue.Message}");
-                sb.AppendLine($"    Location: {issue.FilePath}:{issue.LineNumber}");
-                sb.AppendLine($"    Recommendation: {issue.Recommendation}");
-                sb.AppendLine();
-            }
-
-            EditorGUIUtility.systemCopyBuffer = sb.ToString();
-            ShowNotification(new GUIContent($"Copied {_issues.Count} log(s) to clipboard!"));
-        }
-
-        private void AnalyzeScriptFile(string path)
+        private static void AnalyzeScriptFile(string path, List<Issue> issues)
         {
             string fullPath = Path.GetFullPath(path);
             if (!File.Exists(fullPath)) return;
@@ -214,10 +89,10 @@ namespace Nexus.Editor
                 // Rule NEXUS001: Hot-Path Allocations
                 if (inHotPathMethod && IsNexus001Violation(line))
                 {
-                    _issues.Add(new AnalysisIssue
+                    issues.Add(new Issue
                     {
                         Code = "NEXUS001",
-                        Severity = IssueSeverity.Warning,
+                        IsError = false,
                         FilePath = path,
                         LineNumber = lineNum,
                         Message = "Allocation or LINQ detected inside Hot-Path method (Update/Tick/Execute).",
@@ -228,10 +103,10 @@ namespace Nexus.Editor
                 // Rule NEXUS002: Async Void
                 if (IsNexus002Violation(line))
                 {
-                    _issues.Add(new AnalysisIssue
+                    issues.Add(new Issue
                     {
                         Code = "NEXUS002",
-                        Severity = IssueSeverity.Error,
+                        IsError = true,
                         FilePath = path,
                         LineNumber = lineNum,
                         Message = "Uncaught 'async void' method declaration.",
@@ -246,10 +121,10 @@ namespace Nexus.Editor
                 // NexusTestHarness's rethrow-only GetResult) and opts it out.
                 if (IsNexus003Violation(line, path))
                 {
-                    _issues.Add(new AnalysisIssue
+                    issues.Add(new Issue
                     {
                         Code = "NEXUS003",
-                        Severity = IssueSeverity.Error,
+                        IsError = true,
                         FilePath = path,
                         LineNumber = lineNum,
                         Message = "Synchronous blocking or sync-over-async call detected in runtime code.",
@@ -266,10 +141,10 @@ namespace Nexus.Editor
                 // deliberate, documented trace site and opts it out.
                 if (IsNexus004Violation(line, path))
                 {
-                    _issues.Add(new AnalysisIssue
+                    issues.Add(new Issue
                     {
                         Code = "NEXUS004",
-                        Severity = IssueSeverity.Error,
+                        IsError = true,
                         FilePath = path,
                         LineNumber = lineNum,
                         Message = "Debug trace logging detected in runtime code ([SLOCK] / [*-TRACE] marker).",
@@ -383,7 +258,7 @@ namespace Nexus.Editor
         /// blocking call (Thread.Sleep or sync-over-async <c>GetAwaiter().GetResult()</c>,
         /// which still blocks the thread) that is not explicitly exempted via a trailing
         /// <c>// NEXUS003-exempt: &lt;reason&gt;</c> comment. Full-line comments are filtered
-        /// by the caller (<see cref="AnalyzeScriptFile"/>); string literals and trailing
+        /// by the caller (AnalyzeScriptFile); string literals and trailing
         /// comments are stripped here (like NEXUS001/NEXUS002) so doc text and logging
         /// cannot false-positive. Internal so the editor test assembly can lock the rule.
         /// </summary>

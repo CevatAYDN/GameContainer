@@ -58,22 +58,5 @@ namespace Nexus.Editor.Tests
             CollectionAssert.AreEqual(new (IContext, int)[] { (orphan, 0), (root, 0), (child, 1) },
                 tree.Select(e => (e.Context, e.Depth)).ToArray());
         }
-
-        [Test]
-        public void Dashboard_BuildReadiness_ReportsTheBinderStateTheGeneratorReports()
-        {
-            var plugin = new DashboardPlugin();
-            var view = plugin.CreateView();
-            var pill = view.Q<VisualElement>("readiness-binder");
-            Assert.IsNotNull(pill, "the build-readiness card must show the AOT binder row");
-            var text = (pill as Label)?.text;
-            Assert.IsNotNull(text, "the binder row's value is a label");
-            if (NexusCodeGenerator.BinderExists())
-                Assert.AreNotEqual(NexusLang.Get("db_rd_binder_missing"), text, "a generated binder exists, the row must not say it is missing");
-            else
-                Assert.AreEqual(NexusLang.Get("db_rd_binder_missing"), text);
-            Assert.IsNotNull(view.Q<VisualElement>("readiness-defines"), "scripting defines of the active target are shown");
-            plugin.OnDisable();
-        }
     }
 }
