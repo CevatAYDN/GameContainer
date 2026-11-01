@@ -158,10 +158,10 @@ namespace NexusBench
     /// metadata, where a private setter and a private field are visible only when it imports every member.</summary>
     public abstract class ParityExternalBase
     {
-#pragma warning disable 0649
+#pragma warning disable 0649, 0169 // the generated injector writes _hidden; no source reads it
         [Inject] public CodeGenDep Dep { get; private set; }
         [Inject] private CodeGenDep _hidden;
-#pragma warning restore 0649
+#pragma warning restore 0649, 0169
     }
 
     /// <summary>
