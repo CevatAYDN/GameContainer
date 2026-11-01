@@ -200,6 +200,7 @@ namespace NexusBench
             Test_Binders_Register_No_Package_Assembly_Type();
             Test_Shipped_SourceGenerator_Matches_Source();
             Test_Binder_Leaves_Unknown_Conditions_To_Reflection();
+            Test_SourceGenerator_Runs_Only_In_Game_Assemblies();
             // Last of all: with its fixture loaded every editor generation throws.
             Test_Unsettable_Inject_Members_Rejected();
 
@@ -1514,6 +1515,36 @@ namespace NexusBench.InvalidInject
 #pragma warning restore 0649
 }
 ";
+
+        /// <summary>
+        /// #264: Unity applies Assets/csc.rsp to every assembly that has no csc.rsp of its own, and the generator emitted a
+        /// binder into each one that references the runtime (the Nexus packages, a game's editor and test assemblies) and
+        /// failed a test assembly on a fixture with an invalid [Inject] member. Only a game's runtime assembly gets a binder.
+        /// </summary>
+        private static void Test_SourceGenerator_Runs_Only_In_Game_Assemblies()
+        {
+            const string name = "CG13. SourceGenerator_Runs_Only_In_Game_Assemblies";
+            const string injectable = "namespace NexusBench.Scope { public sealed class Dep { } public sealed class User { [Nexus.Core.Inject] public Dep D; } }";
+            var problems = new List<string>();
+            try
+            {
+                foreach (string assembly in new[] { "com.nexus.core", "com.nexus.fsm", "Nexus.Ads.Bridge.Nexus", "com.nexus.core.editor.tests", "MyGame.Tests", "Assembly-CSharp-Editor", "MyGame.Editor" })
+                {
+                    if (GenerateBinderSource(new Nexus.Generator.NexusBinderGenerator(), assembly, injectable).Length > 0) problems.Add(assembly + ": a binder");
+                    var diagnostics = GenerateBinderDiagnostics(new Nexus.Generator.NexusBinderGenerator(), assembly, InvalidInjectSource);
+                    if (diagnostics.Count > 0) problems.Add($"{assembly}: {string.Join(", ", diagnostics.Select(d => d.Id))}");
+                }
+                foreach (string assembly in new[] { "Assembly-CSharp", "MyGame" })
+                    if (GenerateBinderSource(new Nexus.Generator.NexusBinderGenerator(), assembly, injectable).Length == 0) problems.Add(assembly + ": no binder");
+            }
+            catch (Exception ex)
+            {
+                problems.Add($"EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            }
+            Report(name, problems.Count == 0, problems.Count == 0
+                ? "a Nexus package, editor or test compilation gets no binder and no diagnostic; Assembly-CSharp and a game asmdef get their binder"
+                : string.Join(" || ", problems));
+        }
 
         private static void Test_Unsettable_Inject_Members_Rejected()
         {

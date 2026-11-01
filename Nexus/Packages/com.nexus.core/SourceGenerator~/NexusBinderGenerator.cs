@@ -8,6 +8,9 @@
 // own assemblies excluded: each preserves its types itself, #110), and emits the same
 // NexusGeneratedBinder shape the editor generator produces (RegisterConstructorFactory
 // / RegisterInjector / RegisterClearer / RegisterGeneric*Dispatcher / PreserveMembers).
+// It runs only in a game's runtime assembly: Unity applies Assets/csc.rsp to every assembly
+// without a csc.rsp of its own, and a Nexus package, editor or test compilation gets no
+// binder and no diagnostic (#264).
 //
 // Semantics (#191): the generated path gives the reflection path's answers, proven by the harness
 // CG10 test, which runs every case through reflection, the editor binder and this generator:
@@ -382,6 +385,10 @@ namespace Nexus.Generator
 
         private void Emit(SourceProductionContext spc, Compilation compilation)
         {
+            // The rule the referenced assemblies are filtered by: the generator emitted a binder into each Nexus package and
+            // each editor and test assembly a project-wide Assets/csc.rsp reaches, and failed a test fixture's compile (#264).
+            if (!IsGameAssembly(compilation.AssemblyName) || IsNexusPackageAssembly(compilation.AssemblyName)) return;
+
             // Private members of a referenced base class are needed to inject a current-compilation type as the
             // reflection path does; a compilation hides them unless it imports every metadata member.
             if (compilation is CSharpCompilation csharp)
