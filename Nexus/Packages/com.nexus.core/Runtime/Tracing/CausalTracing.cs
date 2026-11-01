@@ -149,6 +149,19 @@ namespace Nexus.Core
         /// <summary>Resets the trace system, clearing all events and parent stacks. Called on domain reload.</summary>
         public static void Reset()
         {
+            ClearEvents();
+            lock (s_lock)
+            {
+                s_sinks.Clear();
+            }
+        }
+
+        /// <summary>
+        /// Clears the recorded events and parent stacks and keeps the sinks: the Tracer tab's Clear button, which detached
+        /// the game's sinks and the Architecture tab's with <see cref="Reset"/> (#221).
+        /// </summary>
+        internal static void ClearEvents()
+        {
             Array.Clear(s_ringBuffer, 0, s_ringBuffer.Length);
 #if NEXUS_DEBUG
             s_currentFrame.Value = null;
@@ -158,10 +171,6 @@ namespace Nexus.Core
             s_totalEventsWritten = 0;
             s_overflowWarningLogged = 0;
 #endif
-            lock (s_lock)
-            {
-                s_sinks.Clear();
-            }
         }
 
         /// <summary>Registers an external trace sink to receive all trace events.</summary>

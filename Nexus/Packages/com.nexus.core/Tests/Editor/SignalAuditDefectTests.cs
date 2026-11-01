@@ -17,8 +17,8 @@ namespace Nexus.Editor.Tests
     /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214), a sync fallback
     /// made later async fallbacks share one depth (#215), a failed async composite never ran its FallbackAsync (#216), a
     /// retried composite under FireAsync kept its state (#217), an unsubscribed handler stayed reachable during a
-    /// dispatch (#218), NexusRuntime.Reset removed the binder's dispatchers (#219) and HasHandlers missed a composite
-    /// (#220).
+    /// dispatch (#218), NexusRuntime.Reset removed the binder's dispatchers (#219), HasHandlers missed a composite (#220)
+    /// and the Tracer tab's Clear detached every sink (#221).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -79,6 +79,12 @@ namespace Nexus.Editor.Tests
         public struct WaitedP { }
         public struct WaitedQ { }
         public sealed class WaitingComposite : ICompositeCommand { public void Execute(CompositeContext s) { } }
+
+        public sealed class CountingSink : INexusTraceSink
+        {
+            public int Writes;
+            public void Write(in TraceEvent traceEvent) => Interlocked.Increment(ref Writes);
+        }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -273,5 +279,23 @@ namespace Nexus.Editor.Tests
 
             Assert.IsTrue(bus.HasHandlers(typeof(WaitedP)));
         }
+
+#if NEXUS_DEBUG
+        [Test]
+        public void TheTracerTabsClear_KeepsTheGamesTraceSinks()
+        {
+            var sink = new CountingSink();
+            NexusTrace.AddSink(sink);
+            try
+            {
+                typeof(TracerPlugin).GetMethod("ClearTraces", BindingFlags.NonPublic | BindingFlags.Instance).Invoke(new TracerPlugin(), null);
+
+                NexusTrace.EndEvent(NexusTrace.BeginEvent(TraceEventType.Signal, "TracerClearProbe"));
+
+                Assert.Greater(sink.Writes, 0);
+            }
+            finally { NexusTrace.RemoveSink(sink); }
+        }
+#endif
     }
 }

@@ -370,7 +370,7 @@ namespace Nexus.Editor
 
         private void ClearTraces()
         {
-            NexusTrace.Reset();
+            NexusTrace.ClearEvents(); // Reset would detach every sink, the game's included (#221)
             _allEvents.Clear();
             _childrenCache.Clear();
             _parentCache.Clear();
