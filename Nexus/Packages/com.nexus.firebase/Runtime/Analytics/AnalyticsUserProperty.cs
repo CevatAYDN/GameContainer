@@ -16,15 +16,31 @@ namespace Nexus.Firebase.Analytics
 
         public static bool IsValidName(string name)
         {
-            return AnalyticsEventName.HasValidShape(name, MaxNameLength)
-                && !AnalyticsEventName.HasReservedPrefix(name)
-                && Array.IndexOf(ReservedNames, name) < 0;
+            return NameRefusal(name) == null;
         }
 
         /// <summary>A null value is refused: Firebase treats a null as "remove this property", which the game does not do here.</summary>
         public static bool IsValidValue(string value)
         {
-            return value != null && value.Length <= MaxValueLength;
+            return ValueRefusal(value) == null;
+        }
+
+        /// <summary>Why Firebase refuses <paramref name="name"/> as a user property name, or null when it accepts it.</summary>
+        public static string NameRefusal(string name)
+        {
+            return AnalyticsEventName.ShapeRefusal(name, MaxNameLength) ?? AnalyticsEventName.PrefixRefusal(name)
+                ?? (Array.IndexOf(ReservedNames, name) >= 0 ? "the name is one Google reserves for user properties" : null);
+        }
+
+        /// <summary>Why a user property <paramref name="value"/> is refused, or null when it is accepted.</summary>
+        public static string ValueRefusal(string value)
+        {
+            if (value == null)
+            {
+                return "the value is null, which Firebase reads as removing the property";
+            }
+
+            return value.Length > MaxValueLength ? "the value is longer than " + MaxValueLength + " characters" : null;
         }
     }
 }

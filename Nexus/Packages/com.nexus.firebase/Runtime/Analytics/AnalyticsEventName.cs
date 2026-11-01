@@ -6,7 +6,7 @@ namespace Nexus.Firebase.Analytics
     /// The names Firebase Analytics accepts for events and parameters: letters, digits and underscores, starting with a letter, at most
     /// 40 characters, and no reserved prefix (firebase_, google_, ga_); an event name is also none of the names Google reserves for apps.
     /// Firebase compares names case-sensitively, so case is kept as given.
-    /// A name Firebase refuses is dropped without a word, so the name is checked before anything is sent.
+    /// Firebase drops a name it refuses, so the name is checked before anything is sent, and <see cref="AnalyticsRefusals"/> reports it.
     /// </summary>
     public static class AnalyticsEventName
     {
@@ -29,21 +29,44 @@ namespace Nexus.Firebase.Analytics
 
         public static bool IsValid(string name)
         {
-            return HasValidShape(name, MaxLength) && !HasReservedPrefix(name) && Array.IndexOf(ReservedNames, name) < 0;
+            return EventRefusal(name) == null;
+        }
+
+        /// <summary>Why Firebase refuses <paramref name="name"/> as an event name ("the name ..."), or null when it accepts it.</summary>
+        public static string EventRefusal(string name)
+        {
+            return ShapeRefusal(name, MaxLength) ?? PrefixRefusal(name)
+                ?? (Array.IndexOf(ReservedNames, name) >= 0 ? "the name is one Google reserves for events" : null);
+        }
+
+        /// <summary>Why Firebase refuses <paramref name="name"/> as a parameter name, or null when it accepts it.</summary>
+        public static string ParameterRefusal(string name)
+        {
+            return ShapeRefusal(name, MaxLength) ?? PrefixRefusal(name);
         }
 
         /// <summary>The shape and prefix rules without the reserved event names: Google reserves those for events, so a parameter may be called <c>error</c>.</summary>
         public static bool IsValidParameterName(string name)
         {
-            return HasValidShape(name, MaxLength) && !HasReservedPrefix(name);
+            return ParameterRefusal(name) == null;
         }
 
         /// <summary>A letter first, then letters, digits or underscores, within the length. Shared with user property names.</summary>
-        internal static bool HasValidShape(string name, int maxLength)
+        internal static string ShapeRefusal(string name, int maxLength)
         {
-            if (string.IsNullOrEmpty(name) || name.Length > maxLength || !IsLetter(name[0]))
+            if (string.IsNullOrEmpty(name))
             {
-                return false;
+                return "the name is empty";
+            }
+
+            if (name.Length > maxLength)
+            {
+                return "the name is longer than " + maxLength + " characters";
+            }
+
+            if (!IsLetter(name[0]))
+            {
+                return "the name does not start with a letter";
             }
 
             for (int i = 1; i < name.Length; i++)
@@ -51,24 +74,24 @@ namespace Nexus.Firebase.Analytics
                 char character = name[i];
                 if (!IsLetter(character) && !IsDigit(character) && character != '_')
                 {
-                    return false;
+                    return "the name holds '" + character + "'; only letters, digits and underscores are allowed";
                 }
             }
 
-            return true;
+            return null;
         }
 
-        internal static bool HasReservedPrefix(string name)
+        internal static string PrefixRefusal(string name)
         {
             foreach (string prefix in ReservedPrefixes)
             {
                 if (name.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
                 {
-                    return true;
+                    return "the name starts with the reserved prefix " + prefix;
                 }
             }
 
-            return false;
+            return null;
         }
 
         private static bool IsLetter(char character) => (character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z');

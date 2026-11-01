@@ -15,12 +15,13 @@ namespace Nexus.Firebase.Sdk
     /// <summary>
     /// Firebase Analytics behind <see cref="IAnalyticsService"/>. Collection stays off until the consent decision allows it; events logged
     /// before that wait in an <see cref="AnalyticsGate"/> and are sent in order, or dropped if analytics were refused. Names Firebase refuses,
-    /// and parameter values it has no type for, are never sent.
+    /// and parameter values it has no type for, are never sent, and each is reported once in every build (<see cref="AnalyticsRefusals"/>).
     /// </summary>
     public sealed class FirebaseAnalyticsService : NexusService<IAnalyticsService>, IAnalyticsService
     {
         private readonly AnalyticsGate _gate = new AnalyticsGate();
         private readonly Dictionary<string, string> _heldProperties = new Dictionary<string, string>();
+        private readonly AnalyticsRefusals _refusals = new AnalyticsRefusals();
         private bool _ready;
 
         [Inject] public IAnalyticsConsent Consent { get; set; }
@@ -51,7 +52,7 @@ namespace Nexus.Firebase.Sdk
 
         public void LogEvent(string eventName, Dictionary<string, object> parameters)
         {
-            if (AnalyticsEventName.IsValid(eventName))
+            if (_refusals.AcceptEvent(eventName))
             {
                 _gate.Log(State, Choice, eventName, parameters, Send);
             }
@@ -59,7 +60,7 @@ namespace Nexus.Firebase.Sdk
 
         public void SetUserProperty(string key, string value)
         {
-            if (!AnalyticsUserProperty.IsValidName(key) || !AnalyticsUserProperty.IsValidValue(value))
+            if (!_refusals.AcceptUserProperty(key, value))
             {
                 return;
             }
@@ -101,14 +102,14 @@ namespace Nexus.Firebase.Sdk
             }
         }
 
-        private static void Send(AnalyticsEvent analyticsEvent)
+        private void Send(AnalyticsEvent analyticsEvent)
         {
             var parameters = new List<FirebaseParameter>();
             if (analyticsEvent.Parameters != null)
             {
                 foreach (KeyValuePair<string, object> parameter in analyticsEvent.Parameters)
                 {
-                    if (AnalyticsEventName.IsValidParameterName(parameter.Key) && TryConvert(parameter.Key, parameter.Value, out FirebaseParameter converted))
+                    if (_refusals.AcceptParameter(analyticsEvent.Name, parameter.Key, parameter.Value) && TryConvert(parameter.Key, parameter.Value, out FirebaseParameter converted))
                     {
                         parameters.Add(converted);
                     }
