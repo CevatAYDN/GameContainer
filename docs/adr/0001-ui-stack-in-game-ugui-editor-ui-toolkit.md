@@ -87,6 +87,17 @@ abstraction) is unchanged — the consolidation happened on top of it.
   default view name and the `cs_default_window` localization key were cleaned up.
 - The prior addenda remain valid history of the UI consolidation.
 
+## Addendum (2026-11-02) — The starter scene is UI Toolkit
+
+The Setup Wizard's starter scene, `NexusStarter.unity` in the development project and the scene the wizard writes in a
+game, moved from a uGUI canvas to UI Toolkit ([#193](https://github.com/CevatAYDN/GameContainer/issues/193), phase 7; the
+owner's decision of 2026-10-31). The generated `GameView` builds its label and button in a `UIDocument`, input reaches
+the panel through an `EventSystem` with `ToolkitPanelInput` (ADR-0003, decision 7), and the wizard writes the panel
+settings and Unity's default runtime theme next to the scene. In-game UI follows [ADR-0003](0003-in-game-ui-toolkit-screen-stack.md):
+the uGUI `UIManager` stays by its decision 2, and so do the `Counter Example` and `Nexus Starter Package` samples, which a
+game imports and wires by hand. The third addendum stands: `Game/Samples` is the canonical example, and the scene that
+runs it is UI Toolkit.
+
 ## References
 
 - 2026-08-01 architecture review — candidate 4 (WindowManager).

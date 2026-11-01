@@ -297,11 +297,11 @@ namespace Nexus.Editor.Tests
 
         /// <summary>
         /// The reference assemblies the generated files compile against: the netstandard 2.1
-        /// reference assembly, <c>UnityEngine.CoreModule</c> (MonoBehaviour/SerializeField/UI
-        /// events), and the project's own compiled <c>UnityEngine.UI</c> (uGUI) and
-        /// <c>com.nexus.core</c> assemblies from <c>Library/ScriptAssemblies</c>. These exist
-        /// whenever the test itself compiled, i.e. on any machine where the editor has ever
-        /// built the project.
+        /// reference assembly, <c>UnityEngine.CoreModule</c> (MonoBehaviour/SerializeField),
+        /// <c>UnityEngine.UIElementsModule</c> (the GameView's UI Toolkit document and elements),
+        /// and the project's own compiled <c>com.nexus.core</c> assembly from
+        /// <c>Library/ScriptAssemblies</c>. It exists whenever the test itself compiled, i.e. on
+        /// any machine where the editor has ever built the project.
         /// </summary>
         private static string[] ResolveCompileReferences()
         {
@@ -312,7 +312,7 @@ namespace Nexus.Editor.Tests
             {
                 Path.Combine(contents, "NetStandard", "ref", "2.1.0", "netstandard.dll"),
                 Path.Combine(contents, "Managed", "UnityEngine", "UnityEngine.CoreModule.dll"),
-                Path.Combine(scriptAssemblies, "UnityEngine.UI.dll"),
+                Path.Combine(contents, "Managed", "UnityEngine", "UnityEngine.UIElementsModule.dll"),
                 Path.Combine(scriptAssemblies, "com.nexus.core.dll")
             };
 

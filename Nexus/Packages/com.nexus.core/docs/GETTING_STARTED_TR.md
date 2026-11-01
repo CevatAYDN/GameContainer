@@ -25,7 +25,8 @@ Bu paket Unity 6'yı hedefler; bu rehber eski Unity sürümleri için söz verme
 Package Manager'da Nexus'u seçin, **Samples** bölümünü açın ve **Counter Example**'ı içe aktarın.
 Örneğin README'sini izleyin. Örnek, MVCS turunun tamamını içerir; deponun `Assets` klasöründeki hiçbir
 dosya ön koşul değildir. Üretilmiş bir sahne için Setup Wizard'ı (Kurulum Sihirbazı, **Nexus > Setup**)
-açın. Mevcut başlangıç dosyalarını, ayarları ve sahneleri korur; yeni sahneyi mevcutların yanına ekleyerek oluşturur.
+açın. Mevcut başlangıç dosyalarını, ayarları ve sahneleri korur; yeni sahneyi açık sahnelerin yanına ekler (değişiklik
+yapılmamış adsız bir sahne önce kapatılır).
 
 ## Code-first: tek başlatma çağrısı
 

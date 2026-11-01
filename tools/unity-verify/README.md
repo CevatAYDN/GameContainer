@@ -54,8 +54,8 @@ Any `result="Failed"` in the XML is a failure.
 ```
 
 Runs the PlayMode suite (context lifecycle, signal dispatch, pooling, storage)
-against the real Unity runtime. No test loads `NexusStarter`; the player builds
-below boot it.
+against the real Unity runtime. `NexusStarterSceneTests` loads `NexusStarter` and clicks its
+UI Toolkit button; the player builds below boot it.
 
 ### 2b. PlayMode twice with domain reload off
 

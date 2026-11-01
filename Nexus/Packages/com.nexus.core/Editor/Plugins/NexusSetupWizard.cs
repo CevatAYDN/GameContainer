@@ -5,11 +5,11 @@ using UnityEditor;
 using UnityEditor.Callbacks;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.UI;
 using UnityEngine.EventSystems;
 using UnityEngine.UIElements;
 using UnityEngine.SceneManagement;
 using Nexus.Core;
+using Nexus.Core.Services;
 using Object = UnityEngine.Object;
 
 namespace Nexus.Editor
@@ -148,15 +148,42 @@ namespace Nexus.Editor
             return asset;
         }
 
-        // ─── Scene + Root + Canvas/UI ─────────────────────────
+        // ─── Starter scene: Root, camera, EventSystem, UI Toolkit panel ─────
+
+        internal const string StarterPanelSettingsPath = "Assets/Scenes/NexusStarterPanelSettings.asset";
+        internal const string StarterThemePath = "Assets/Scenes/NexusStarterTheme.tss";
 
         private static void CreateSceneWithRootAndUI()
         {
             if (File.Exists(StarterScenePath))
                 throw new IOException("Nexus starter scene already exists; existing content is preserved.");
-            // Add the starter scene without saving or closing the user's current scenes.
-            var newScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, NewSceneMode.Additive);
-            newScene.name = "NexusStarter";
+            CreateStarterScene(StarterScenePath);
+        }
+
+        /// <summary>
+        /// Builds the starter scene additively and saves it at <paramref name="scenePath"/>; over an existing file its
+        /// .meta, and so the scene's guid in the build settings, stays. The scene holds the GameRoot with the context data
+        /// and the generated lifecycle, a camera, an EventSystem with <see cref="ToolkitPanelInput"/> (ADR-0003, decision
+        /// 7), and the GamePanel: a <see cref="UIDocument"/> with the generated GameView, which builds its elements.
+        /// </summary>
+        internal static void CreateStarterScene(string scenePath)
+        {
+            // Add the starter scene without saving or closing the user's scenes. Unity adds a scene only beside saved ones:
+            // an untitled scene with no change is closed (replaced when it is the only kind open), one with changes stops here.
+            var mode = NewSceneMode.Additive;
+            bool onlyUntitled = true;
+            var untitled = new List<Scene>();
+            for (int i = 0; i < SceneManager.sceneCount; i++)
+            {
+                var open = SceneManager.GetSceneAt(i);
+                if (!string.IsNullOrEmpty(open.path)) { onlyUntitled = false; continue; }
+                if (open.isDirty) throw new InvalidOperationException("Save or close the untitled scene first: Unity adds the starter scene only beside saved scenes.");
+                untitled.Add(open);
+            }
+            if (untitled.Count > 0 && onlyUntitled) mode = NewSceneMode.Single;
+            else foreach (var open in untitled) EditorSceneManager.CloseScene(open, true);
+            var newScene = EditorSceneManager.NewScene(NewSceneSetup.EmptyScene, mode);
+            newScene.name = Path.GetFileNameWithoutExtension(scenePath);
             EditorSceneManager.SetActiveScene(newScene);
 
             // --- GameRoot with ContextData ---
@@ -183,19 +210,9 @@ namespace Nexus.Editor
 
             Undo.RegisterCreatedObjectUndo(rootGo, "Create GameRoot");
 
-            // --- UI Canvas ---
-            var canvasGo = new GameObject("Canvas", typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
-            canvasGo.transform.SetParent(null);
-            var canvas = canvasGo.GetComponent<Canvas>();
-            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 0;
-
-            var scaler = canvasGo.GetComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920, 1080);
-            scaler.matchWidthOrHeight = 0.5f;
-
-            Undo.RegisterCreatedObjectUndo(canvasGo, "Create Canvas");
+            // --- Camera: clears the screen behind the panel and holds the AudioListener ---
+            var cameraGo = new GameObject("Main Camera", typeof(Camera), typeof(AudioListener)) { tag = "MainCamera" };
+            Undo.RegisterCreatedObjectUndo(cameraGo, "Create Camera");
 
             // --- EventSystem (Input System compatible) ---
             var esGo = new GameObject("EventSystem", typeof(EventSystem));
@@ -211,92 +228,45 @@ namespace Nexus.Editor
                     "The UI will not process input events until a module (e.g. StandaloneInputModule or " +
                     "InputSystemUIInputModule) is added manually.");
             }
+            // UI Toolkit input through the EventSystem without uGUI's per-frame allocation (ADR-0003, decision 7)
+            esGo.AddComponent<ToolkitPanelInput>();
             Undo.RegisterCreatedObjectUndo(esGo, "Create EventSystem");
 
-            // --- Panel (View container) ---
-            var panelGo = new GameObject("GamePanel", typeof(RectTransform));
-            panelGo.transform.SetParent(canvasGo.transform, false);
-            var panelRt = panelGo.GetComponent<RectTransform>();
-            panelRt.anchorMin = Vector2.zero;
-            panelRt.anchorMax = Vector2.one;
-            panelRt.offsetMin = Vector2.zero;
-            panelRt.offsetMax = Vector2.zero;
-
-            // --- GameView component on Panel (resolved by type name) ---
-            UnityEngine.MonoBehaviour gameView = null;
+            // --- GamePanel: the UI Toolkit document and the GameView on it ---
+            var panelGo = new GameObject("GamePanel");
+            var document = panelGo.AddComponent<UIDocument>();
+            document.panelSettings = LoadOrCreatePanelSettings();
             var gameViewType = FindType("Game.GameView");
-            if (gameViewType != null && typeof(IView).IsAssignableFrom(gameViewType))
-            {
-                gameView = (UnityEngine.MonoBehaviour)panelGo.AddComponent(gameViewType);
-            }
-
-            // --- Text (counter display) ---
-            var textGo = new GameObject("CounterText", typeof(RectTransform));
-            textGo.transform.SetParent(panelGo.transform, false);
-            var textRt = textGo.GetComponent<RectTransform>();
-            textRt.anchorMin = new Vector2(0.5f, 0.5f);
-            textRt.anchorMax = new Vector2(0.5f, 0.5f);
-            textRt.sizeDelta = new Vector2(300, 60);
-            textRt.anchoredPosition = new Vector2(0, 30);
-            var text = textGo.AddComponent<Text>();
-            text.text = "Counter: 0";
-            text.fontSize = 32;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.white;
-
-            // --- Button ---
-            var btnGo = new GameObject("IncrementButton", typeof(RectTransform));
-            btnGo.transform.SetParent(panelGo.transform, false);
-            var btnRt = btnGo.GetComponent<RectTransform>();
-            btnRt.anchorMin = new Vector2(0.5f, 0.5f);
-            btnRt.anchorMax = new Vector2(0.5f, 0.5f);
-            btnRt.sizeDelta = new Vector2(200, 60);
-            btnRt.anchoredPosition = new Vector2(0, -40);
-            var button = btnGo.AddComponent<UnityEngine.UI.Button>();
-            var btnTextGo = new GameObject("Text", typeof(RectTransform));
-            btnTextGo.transform.SetParent(btnGo.transform, false);
-            var btnTextRt = btnTextGo.GetComponent<RectTransform>();
-            btnTextRt.anchorMin = Vector2.zero;
-            btnTextRt.anchorMax = Vector2.one;
-            btnTextRt.offsetMin = Vector2.zero;
-            btnTextRt.offsetMax = Vector2.zero;
-            var btnText = btnTextGo.AddComponent<Text>();
-            btnText.text = "Increment";
-            btnText.fontSize = 24;
-            btnText.alignment = TextAnchor.MiddleCenter;
-            btnText.color = Color.white;
-            var colors = button.colors;
-            colors.normalColor = new Color(0.2f, 0.4f, 0.8f);
-            colors.highlightedColor = new Color(0.3f, 0.5f, 0.9f);
-            colors.pressedColor = new Color(0.1f, 0.3f, 0.7f);
-            button.colors = colors;
-
-            // --- Wire up GameView references via SerializedObject ---
-            if (gameView != null)
-            {
-                var gvSo = new SerializedObject(gameView);
-                var buttonProp = gvSo.FindProperty("_button");
-                if (buttonProp != null)
-                {
-                    buttonProp.objectReferenceValue = button;
-                }
-                var textProp = gvSo.FindProperty("_counterText");
-                if (textProp != null)
-                {
-                    textProp.objectReferenceValue = text;
-                }
-                gvSo.ApplyModifiedProperties();
-
-                // Register view with Root for automatic binding
-                if (gameView is IView viewInterface)
-                    rootComp.RegisterPendingView(viewInterface);
-            }
+            if (gameViewType != null && typeof(IView).IsAssignableFrom(gameViewType) && panelGo.AddComponent(gameViewType) is IView view)
+                rootComp.RegisterPendingView(view); // Register view with Root for automatic binding
+            Undo.RegisterCreatedObjectUndo(panelGo, "Create GamePanel");
 
             Selection.activeObject = rootGo;
 
-            // Save scene
-            Directory.CreateDirectory("Assets/Scenes");
-            EditorSceneManager.SaveScene(newScene, StarterScenePath);
+            Directory.CreateDirectory(Path.GetDirectoryName(scenePath));
+            EditorSceneManager.SaveScene(newScene, scenePath);
+        }
+
+        /// <summary>The panel settings of the starter's document, with Unity's default runtime theme: created once, then kept.</summary>
+        private static PanelSettings LoadOrCreatePanelSettings()
+        {
+            var settings = AssetDatabase.LoadAssetAtPath<PanelSettings>(StarterPanelSettingsPath);
+            if (settings != null) return settings;
+            Directory.CreateDirectory(Path.GetDirectoryName(StarterPanelSettingsPath));
+            if (!File.Exists(StarterThemePath))
+            {
+                // what Unity's Create > UI Toolkit > Default Runtime Theme File writes; a panel without a theme warns on every Play
+                File.WriteAllText(StarterThemePath, "@import url(\"unity-theme://default\");\n");
+                AssetDatabase.ImportAsset(StarterThemePath);
+            }
+            settings = ScriptableObject.CreateInstance<PanelSettings>();
+            settings.themeStyleSheet = AssetDatabase.LoadAssetAtPath<ThemeStyleSheet>(StarterThemePath);
+            // the values of the uGUI canvas scaler the starter had
+            settings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
+            settings.referenceResolution = new Vector2Int(1920, 1080);
+            settings.match = 0.5f;
+            AssetDatabase.CreateAsset(settings, StarterPanelSettingsPath);
+            return settings;
         }
 
         // ─── Main Scaffold ────────────────────────────────────
@@ -421,7 +391,7 @@ namespace Nexus.Editor
 
         private static void ExecuteDelayedSceneCreation()
         {
-            Debug.Log("[Nexus] Creating scene with GameRoot + Canvas/UI...");
+            Debug.Log("[Nexus] Creating the starter scene: GameRoot and a UI Toolkit panel...");
             CreateSceneWithRootAndUI();
             Debug.Log("[Nexus] Setup complete! Open Nexus > Status to inspect.");
         }
@@ -590,34 +560,55 @@ namespace Game
 
         internal static string GameViewTemplate => @"using Nexus.Core;
 using UnityEngine;
-using UnityEngine.UI;
+using UnityEngine.UIElements;
 
 namespace Game
 {
     [Mediator(typeof(GameMediator))]
+    [RequireComponent(typeof(UIDocument))]
     public class GameView : View
     {
         public event System.Action OnIncrementClicked;
 
-        private UnityEngine.Events.UnityAction _clickHandler;
-
-        [SerializeField] private Button _button;
-        [SerializeField] private Text _counterText;
+        private VisualElement _panel;
+        private Label _counterText;
 
         protected override void OnBind(IContext context)
         {
-            if (_button == null)
-                return;
+            // UIDocument builds a new root each time it is enabled, before this view binds (its execution order is -100),
+            // so the elements are made at each bind and taken out at each unbind.
+            _panel = new VisualElement();
+            _panel.style.position = Position.Absolute;
+            _panel.style.left = 0;
+            _panel.style.top = 0;
+            _panel.style.right = 0;
+            _panel.style.bottom = 0;
+            _panel.style.alignItems = Align.Center;
+            _panel.style.justifyContent = Justify.Center;
 
-            _clickHandler ??= () => OnIncrementClicked?.Invoke();
-            _button.onClick.AddListener(_clickHandler);
+            _counterText = new Label(""Counter: 0"");
+            _counterText.style.fontSize = 32;
+            _counterText.style.color = Color.white;
+            _counterText.style.marginBottom = 20;
+            _panel.Add(_counterText);
+
+            var button = new Button(OnClicked) { text = ""Increment"" };
+            button.style.width = 200;
+            button.style.height = 60;
+            button.style.fontSize = 24;
+            _panel.Add(button);
+
+            GetComponent<UIDocument>().rootVisualElement.Add(_panel);
         }
 
         protected override void OnUnbind()
         {
-            if (_button != null && _clickHandler != null)
-                _button.onClick.RemoveListener(_clickHandler);
+            _panel?.RemoveFromHierarchy();
+            _panel = null;
+            _counterText = null;
         }
+
+        private void OnClicked() => OnIncrementClicked?.Invoke();
 
         public void UpdateDisplay(int value)
         {
