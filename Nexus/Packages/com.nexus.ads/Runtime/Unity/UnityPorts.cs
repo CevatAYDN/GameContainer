@@ -89,6 +89,7 @@ namespace Nexus.Ads.Unity
     public sealed class PlayerPrefsPacingStore : IPacingStore
     {
         public string Get(string key) => PlayerPrefs.HasKey(key) ? PlayerPrefs.GetString(key) : null;
+        // saved at once: a reward receipt must survive a kill right after the show (issue #178); pacing writes are a few per ad
         public void Set(string key, string value) { PlayerPrefs.SetString(key, value); PlayerPrefs.Save(); }
     }
 
