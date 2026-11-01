@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Nexus.Core.Services;
 
 namespace Nexus.Firebase.Analytics
 {
@@ -13,6 +14,8 @@ namespace Nexus.Firebase.Analytics
         public const int MaxHeld = 256;
 
         private readonly List<AnalyticsEvent> _held = new();
+        private bool _overflowReported;
+        private bool _closed;
 
         public int HeldCount => _held.Count;
 
@@ -21,6 +24,7 @@ namespace Nexus.Firebase.Analytics
 
         public void Log(ConsentState state, AnalyticsChoice choice, string name, Dictionary<string, object> parameters, Action<AnalyticsEvent> send)
         {
+            if (_closed) return;
             var analyticsEvent = new AnalyticsEvent(name, parameters);
             switch (AnalyticsCollectionPolicy.Decide(state, choice))
             {
@@ -44,8 +48,16 @@ namespace Nexus.Firebase.Analytics
                     break;
                 case AnalyticsDecision.Discard:
                     _held.Clear();
+                    _overflowReported = false;
                     break;
             }
+        }
+
+        /// <summary>Analytics will never send (the SDK did not start): drops what is held and holds nothing more (issue #171).</summary>
+        public void Close()
+        {
+            _held.Clear();
+            _closed = true;
         }
 
         private void Hold(AnalyticsEvent analyticsEvent)
@@ -53,6 +65,12 @@ namespace Nexus.Firebase.Analytics
             if (_held.Count >= MaxHeld)
             {
                 Overflowed++;
+                // once per filled wait, in every build: these events are lost (issue #171)
+                if (!_overflowReported)
+                {
+                    _overflowReported = true;
+                    NexusLog.WarnAlways("[Firebase] Analytics holds " + MaxHeld + " events until it may send them (the consent answer, or Firebase starting); later events are dropped until then.");
+                }
                 return;
             }
 
@@ -67,6 +85,7 @@ namespace Nexus.Firebase.Analytics
             }
 
             _held.Clear();
+            _overflowReported = false;
         }
     }
 }

@@ -1,6 +1,9 @@
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Nexus.Firebase.Analytics;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Nexus.Firebase.Tests
 {
@@ -39,10 +42,12 @@ namespace Nexus.Firebase.Tests
             Assert.AreEqual(0, gate.HeldCount);
         }
 
+        // Issue #171: the events beyond the wait were dropped with no line; only a test read Overflowed
         [Test]
         public void Gate_CountsEventsBeyondTheWaitInsteadOfKeepingThem()
         {
             var gate = new AnalyticsGate();
+            LogAssert.Expect(LogType.Warning, new Regex(@"^\[Firebase\] Analytics holds 256 events until it may send them \(the consent answer, or Firebase starting\); later events are dropped until then\.$"));
 
             for (int i = 0; i < AnalyticsGate.MaxHeld + 5; i++)
             {
@@ -51,6 +56,20 @@ namespace Nexus.Firebase.Tests
 
             Assert.AreEqual(AnalyticsGate.MaxHeld, gate.HeldCount);
             Assert.AreEqual(5, gate.Overflowed);
+            LogAssert.NoUnexpectedReceived(); // once for a filled wait, not once per dropped event
+        }
+
+        // Issue #171: when the SDK did not start, every event waited for an answer that never came
+        [Test]
+        public void AClosedGate_DropsWhatItHeld_AndHoldsNothingMore()
+        {
+            var gate = new AnalyticsGate();
+            gate.Log(ConsentState.Unknown, AnalyticsChoice.Unknown, "ftue_step", null, _ => { });
+
+            gate.Close();
+            gate.Log(ConsentState.Unknown, AnalyticsChoice.Unknown, "run_start", null, _ => { });
+
+            Assert.AreEqual(0, gate.HeldCount);
         }
 
         [Test]

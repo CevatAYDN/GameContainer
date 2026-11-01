@@ -2,6 +2,12 @@ using System;
 using System.Globalization;
 using System.Threading;
 using NUnit.Framework;
+#if NEXUS_FIREBASE_REMOTE_CONFIG
+using System.Text.RegularExpressions;
+using Nexus.Firebase.Sdk;
+using UnityEngine;
+using UnityEngine.TestTools;
+#endif
 using Nexus.Firebase.Mocks;
 using Nexus.Firebase.RemoteConfig;
 
@@ -102,5 +108,19 @@ namespace Nexus.Firebase.Tests
             Assert.AreEqual(2, raised, "the identical second set raised nothing");
             Assert.AreEqual(1.5, config.GetDouble("economy_wax_multiplier", 1.0), 1e-12);
         }
+
+#if NEXUS_FIREBASE_REMOTE_CONFIG
+        // Issue #171: a fetch before Firebase started returned false with no line, so the game ran on its fallbacks unseen
+        [Test]
+        public void AFetchBeforeFirebaseStarted_FailsAndSaysSoOnce()
+        {
+            var config = new FirebaseRemoteConfigService();
+            LogAssert.Expect(LogType.Warning, new Regex(@"^\[Firebase\] Remote Config cannot fetch: Firebase has not started, so the game's fallbacks stay\.$"));
+
+            Assert.IsFalse(config.FetchAsync(default).GetAwaiter().GetResult());
+            Assert.IsFalse(config.FetchAsync(default).GetAwaiter().GetResult());
+            LogAssert.NoUnexpectedReceived();
+        }
+#endif
     }
 }

@@ -22,6 +22,12 @@
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.google.firebase.remote-config",
+            "expression": "14.0.0",
+            "define": "NEXUS_FIREBASE_REMOTE_CONFIG"
+        }
+    ],
     "noEngineReferences": false
 }

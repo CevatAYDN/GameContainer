@@ -36,6 +36,8 @@ namespace Nexus.Firebase.Sdk
             if (status != FirebaseDependencyStatus.Available)
             {
                 NexusLog.WarnAlways("[Firebase] Analytics is off: the SDK's dependencies are " + status);
+                _gate.Close();
+                _heldProperties.Clear();
                 return;
             }
 

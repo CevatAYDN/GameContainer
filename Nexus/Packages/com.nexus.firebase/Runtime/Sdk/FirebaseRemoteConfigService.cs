@@ -26,6 +26,7 @@ namespace Nexus.Firebase.Sdk
 
         private readonly Dictionary<string, string> _snapshot = new Dictionary<string, string>();
         private bool _ready;
+        private bool _notReadyReported;
 
         public event Action<string> Changed;
 
@@ -46,6 +47,12 @@ namespace Nexus.Firebase.Sdk
         {
             if (!_ready || ct.IsCancellationRequested)
             {
+                // once, in every build: the game runs on its fallbacks (issue #171)
+                if (!_ready && !_notReadyReported)
+                {
+                    _notReadyReported = true;
+                    NexusLog.WarnAlways("[Firebase] Remote Config cannot fetch: Firebase has not started, so the game's fallbacks stay.");
+                }
                 return false;
             }
 

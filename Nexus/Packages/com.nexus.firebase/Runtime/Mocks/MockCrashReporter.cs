@@ -15,20 +15,14 @@ namespace Nexus.Firebase.Mocks
 
         public MockCrashReporter()
         {
-            _context.Open((key, value) => _keys[key] = value, _logged.Add);
+            _context.Open((key, value) => _keys[key] = value, _logged.Add, _recorded.Add);
         }
 
         public IReadOnlyList<Exception> Recorded => _recorded;
         public IReadOnlyDictionary<string, string> Keys => _keys;
         public IReadOnlyList<string> Logged => _logged;
 
-        public void RecordNonFatal(Exception exception)
-        {
-            if (exception != null)
-            {
-                _recorded.Add(exception);
-            }
-        }
+        public void RecordNonFatal(Exception exception) => _context.RecordNonFatal(exception);
 
         public void SetCustomKey(string key, string value) => _context.SetCustomKey(key, value);
 

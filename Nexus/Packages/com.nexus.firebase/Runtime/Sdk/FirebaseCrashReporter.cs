@@ -29,10 +29,18 @@ namespace Nexus.Firebase.Sdk
 
         public override async ValueTask InitializeAsync(CancellationToken ct)
         {
+            // Listening before the SDK starts: an error logged meanwhile is the likeliest configuration failure, and the context
+            // holds it until the SDK is ready (issue #171).
+            Application.logMessageReceivedThreaded += OnLog;
+            _commandFailures = SignalBus.Subscribe<CommandFailedSignal>(failed => RecordNonFatal(failed.Exception));
+
             FirebaseDependencyStatus status = await FirebaseAppSdk.CheckAndFixDependenciesAsync();
             if (status != FirebaseDependencyStatus.Available)
             {
                 NexusLog.WarnAlways("[Firebase] Crashlytics is off: the SDK's dependencies are " + status);
+                Application.logMessageReceivedThreaded -= OnLog;
+                _commandFailures.Dispose();
+                _commandFailures = null;
                 _context.Close();
                 return;
             }
@@ -40,14 +48,14 @@ namespace Nexus.Firebase.Sdk
             _ready = true;
             Consent.Changed += Apply;
             Apply();
-            _context.Open(FirebaseCrashlyticsSdk.SetCustomKey, FirebaseCrashlyticsSdk.Log);
-            _commandFailures = SignalBus.Subscribe<CommandFailedSignal>(failed => RecordNonFatal(failed.Exception));
-            Application.logMessageReceivedThreaded += OnLog;
+            _context.Open(FirebaseCrashlyticsSdk.SetCustomKey, FirebaseCrashlyticsSdk.Log, Report);
         }
 
-        public void RecordNonFatal(Exception exception)
+        public void RecordNonFatal(Exception exception) => _context.RecordNonFatal(exception);
+
+        private static void Report(Exception exception)
         {
-            if (!_ready || exception == null || _reporting)
+            if (_reporting)
             {
                 return;
             }

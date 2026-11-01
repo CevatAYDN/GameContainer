@@ -1,8 +1,10 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.CompilerServices;
 using System.Xml;
 using UnityEditor.Android;
+using UnityEditor.Build;
 using UnityEngine;
 
 [assembly: InternalsVisibleTo("com.nexus.firebase.tests")]
@@ -24,21 +26,54 @@ namespace Nexus.Firebase.Editor
 
         public int callbackOrder => 10000;
 
-        public void OnPostGenerateGradleAndroidProject(string unityLibraryPath)
-        {
-            var flags = new List<string>();
 #if NEXUS_FIREBASE_ANALYTICS
-            flags.Add(AnalyticsFlag);
+        private const bool AnalyticsPackage = true;
+#else
+        private const bool AnalyticsPackage = false;
 #endif
 #if NEXUS_FIREBASE_CRASHLYTICS
-            flags.Add(CrashlyticsFlag);
+        private const bool CrashlyticsPackage = true;
+#else
+        private const bool CrashlyticsPackage = false;
 #endif
+
+        public void OnPostGenerateGradleAndroidProject(string unityLibraryPath)
+        {
+            var flags = FlagsToWrite(AnalyticsPackage, CrashlyticsPackage, IsLoaded);
             if (flags.Count == 0)
             {
                 return;
             }
 
             Write(Path.GetFullPath(Path.Combine(unityLibraryPath, "../launcher/src/main/AndroidManifest.xml")), flags);
+        }
+
+        /// <summary>
+        /// The flag of each SDK the project has as a UPM package. An SDK it has otherwise (Google's .unitypackage in Assets/Firebase)
+        /// fails the build: without the package's define this package binds no Firebase service for it and writes no flag, so
+        /// Firebase would collect before consent (issue #171).
+        /// </summary>
+        internal static List<string> FlagsToWrite(bool analyticsPackage, bool crashlyticsPackage, Func<string, bool> assemblyLoaded)
+        {
+            var flags = new List<string>();
+            Add(flags, analyticsPackage, assemblyLoaded("Firebase.Analytics"), AnalyticsFlag, "com.google.firebase.analytics");
+            Add(flags, crashlyticsPackage, assemblyLoaded("Firebase.Crashlytics"), CrashlyticsFlag, "com.google.firebase.crashlytics");
+            return flags;
+        }
+
+        private static void Add(List<string> flags, bool package, bool loaded, string flag, string packageName)
+        {
+            if (package) flags.Add(flag);
+            else if (loaded) throw new BuildFailedException("[Nexus Firebase] Firebase is in the project but not as the UPM package " + packageName + ", so com.nexus.firebase binds no Firebase service for it and cannot turn its collection off before consent. Install Firebase as UPM packages (com.nexus.firebase README, Install the SDK).");
+        }
+
+        private static bool IsLoaded(string assemblyName)
+        {
+            foreach (var assembly in AppDomain.CurrentDomain.GetAssemblies())
+            {
+                if (assembly.GetName().Name == assemblyName) return true;
+            }
+            return false;
         }
 
         /// <summary>Adds each missing flag as <c>false</c> and returns the ones it added; a missing manifest fails the build.</summary>
