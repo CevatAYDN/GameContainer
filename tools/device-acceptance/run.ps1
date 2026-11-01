@@ -75,6 +75,35 @@ $result = [ordered]@{
 }
 function Fail([string]$why) { $result.failures += $why; Write-Host "FAIL: $why" }
 
+# 0. 16 KB pages: Play blocks updates without them from 2027-02-01 (developer.android.com/guide/practices/page-sizes,
+#    issue #194). The guide's two checks: zipalign -c -P 16 for the APK's uncompressed libraries, and every LOAD segment of
+#    each arm64 library aligned to 16 KB (0x4000) or more.
+$sdk = Split-Path (Split-Path (Split-Path $Aapt))  # .../AndroidPlayer/SDK/build-tools/<v>/aapt.exe -> .../AndroidPlayer/SDK
+$zipalign = Join-Path (Split-Path $Aapt) 'zipalign.exe'
+$readelf = Join-Path $sdk '../NDK/toolchains/llvm/prebuilt/windows-x86_64/bin/llvm-readelf.exe'
+if (-not (Test-Path -LiteralPath $zipalign) -or -not (Test-Path -LiteralPath $readelf)) { throw "zipalign or llvm-readelf not found beside $Aapt" }
+$zipCheck = & $zipalign -c -P 16 -v 4 $Apk 2>&1 | ForEach-Object { "$_" }
+$zipOk = ($LASTEXITCODE -eq 0) -and (($zipCheck -join "`n") -match 'Verification successful')
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+$libDir = Join-Path $evidence 'arm64-libs'
+New-Item -ItemType Directory -Path $libDir -Force | Out-Null
+$libs = [ordered]@{}
+$zip = [IO.Compression.ZipFile]::OpenRead($Apk)
+try {
+    foreach ($entry in $zip.Entries | Where-Object { $_.FullName -like 'lib/arm64-v8a/*.so' }) {
+        $path = Join-Path $libDir $entry.Name
+        [IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $path, $true)
+        $aligns = @(& $readelf -lW $path | ForEach-Object { if ("$_" -match '^\s*LOAD\s.*\s(0x[0-9a-fA-F]+)\s*$') { [Convert]::ToInt64($Matches[1], 16) } })
+        $libs[$entry.Name] = [ordered]@{ loadSegments = $aligns.Count; smallestAlign = if ($aligns.Count) { [long]($aligns | Measure-Object -Minimum).Minimum } else { 0 } }
+    }
+} finally { $zip.Dispose() }
+Remove-Item -LiteralPath $libDir -Recurse -Force
+$misaligned = @($libs.Keys | Where-Object { $libs[$_].smallestAlign -lt 0x4000 })
+$result.phases.pageAlignment = [ordered]@{ zipalign16k = $zipOk; arm64Libraries = $libs; misaligned = $misaligned }
+if (-not $zipOk) { Fail "zipalign -c -P 16 failed: $(($zipCheck | Select-Object -Last 3) -join ' ')" }
+if ($libs.Count -eq 0) { Fail 'the APK has no lib/arm64-v8a library to check' }
+if ($misaligned.Count -gt 0) { Fail "arm64 libraries with a LOAD segment aligned below 16 KB: $($misaligned -join ', ')" }
+
 $install = Invoke-Adb @('install', '-r', $Apk)
 if (($install -join "`n") -notmatch 'Success') { throw "adb install failed: $($install -join ' ')" }
 Invoke-AdbShell "am force-stop $package" | Out-Null

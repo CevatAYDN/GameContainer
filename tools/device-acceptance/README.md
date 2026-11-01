@@ -22,6 +22,7 @@ the same phases. `-AdbSerial` picks the phone when more than one device is conne
 
 | Phase | What is checked | Fails when |
 |---|---|---|
+| 16 KB pages, before install (issue #194) | the two checks of Android's [page-size guide](https://developer.android.com/guide/practices/page-sizes): `zipalign -c -P 16 -v 4` over the APK (the `zipalign` beside `aapt`), and every `LOAD` segment of each `lib/arm64-v8a/*.so` read with the NDK's `llvm-readelf -lW` (`SDK/../NDK` of the editor's Android player); recorded under `phases.pageAlignment` | zipalign does not verify, the APK has no arm64 library, or a library has a `LOAD` segment aligned below 16 KB (0x4000) |
 | Cold start | a process exists 15 s after launch | no process |
 | Soak (`-SoakSeconds`, default 300) | the process stays alive; `dumpsys meminfo` TOTAL PSS sampled every `-SampleSeconds` (default 30) | the process dies, or PSS grows more than `-MaxPssGrowthPercent` (default 50) between the first and last sample |
 | Background and resume | HOME, 10 s, relaunch; the process is back (same pid recorded, a new pid is reported, not failed: Android may recreate it) | no process after relaunch |
@@ -37,7 +38,7 @@ shows no ad. Whether the SDK then serves test ads is decided by the mediation's 
 LevelPlay adds no label of its own to a test ad (AdMob's "Test Ad" badge has no counterpart
 there) and logs no line naming one; only the creative itself may say "test".
 
-Exit codes: 0 passed, 1 failed (a phase above), 2 could not run: a missing APK or `aapt`, no device,
+Exit codes: 0 passed, 1 failed (a phase above), 2 could not run: a missing APK, `aapt`, `zipalign` or `llvm-readelf`, no device,
 or adb not reaching the phone. Every shell command the run reads ends with a marker the phone
 echoes back; a command whose marker does not come back is tried again, 6 times 3 s apart, because
 its exit code cannot tell a dropped adb connection from an answer (`pidof` exits 1 when the app is
