@@ -346,7 +346,8 @@ namespace Nexus.Core
             public Func<NexusDI, object> CachedConstructor;
             public Action<object, NexusDI> CachedInjector;
 
-            /// <summary>1 while a thread constructs this singleton (guarded by _singletonLock; concurrent readers wait on a handle).</summary>
+            /// <summary>The managed id of the thread that constructs this singleton, 0 when none (guarded by _singletonLock;
+            /// another thread waits on a handle, the same thread is in a cycle).</summary>
             public int Constructing;
         }
 
@@ -2076,11 +2077,18 @@ namespace Nexus.Core
                                 throw new ObjectDisposedException(nameof(NexusDI), $"Cannot resolve singleton '{type.FullName}': the container has been disposed.");
 
                             if (binding.Instance != null) return binding.Instance;
-                            if (Interlocked.CompareExchange(ref binding.Constructing, 1, 0) == 0)
+                            int thread = Environment.CurrentManagedThreadId;
+                            int constructing = Interlocked.CompareExchange(ref binding.Constructing, thread, 0);
+                            if (constructing == 0)
                             {
                                 addedToConstructing = true;
                                 break;
                             }
+
+                            // This thread is already building it under another key of the same binding (BindMultiple): the
+                            // chain check above sees two types, so the cycle is caught here instead of waiting on itself (#209).
+                            if (constructing == thread)
+                                throw new InvalidOperationException($"Circular dependency detected while resolving {type.FullName}{(string.IsNullOrEmpty(name) ? "" : $" (name '{name}')")}: the binding it shares with another key is already being built on this resolution chain.");
 
                             // Another thread is constructing this singleton.
                             // Get or create a wait handle for this binding.

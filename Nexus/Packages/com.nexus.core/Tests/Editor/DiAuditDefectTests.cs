@@ -14,11 +14,31 @@ using UnityEngine.TestTools;
 namespace Nexus.Editor.Tests
 {
     /// <summary>
-    /// The DI and lifecycle defects the audit #206 found: AsImplementedInterfaces dropped a game interface under
-    /// "Systems." (#210).
+    /// The DI and lifecycle defects the audit #206 found: a cycle through a binding shared by two keys froze Resolve for
+    /// 10 s (#209), and AsImplementedInterfaces dropped a game interface under "Systems." (#210).
     /// </summary>
     public sealed class DiAuditDefectTests
     {
+        public interface IFirst { }
+        public interface ISecond { }
+        public sealed class SharedCycle : IFirst, ISecond
+        {
+            public SharedCycle(ISecond self) { }
+        }
+
+        [Test]
+        public void ACycleThroughABindingSharedByTwoKeys_FailsAtOnceAsACycle()
+        {
+            using var container = new NexusDI();
+            container.BindMultiple<IFirst, ISecond, SharedCycle>(Lifetime.Scoped);
+            var clock = Stopwatch.StartNew();
+
+            var error = Assert.Throws<InvalidOperationException>(() => container.Resolve<IFirst>());
+
+            StringAssert.Contains("Circular dependency", error.Message);
+            Assert.Less(clock.Elapsed.TotalSeconds, 5, "it waited on its own construction");
+        }
+
         [Test]
         public void AsImplementedInterfaces_BindsAGameInterfaceUnderANamespaceThatStartsWithSystem()
         {
