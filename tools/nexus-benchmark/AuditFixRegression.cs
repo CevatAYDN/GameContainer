@@ -26,6 +26,7 @@
 //   I40 a deferred [Inject] method gets every argument when ReInject calls it
 //   I30 CommandPool.Return runs ResetState outside the pool lock; Clear during a reset drops the instance
 //   I33 EconomyService reads a currency's saved balance outside its balance lock
+//   I196 the CommandsExecuted counter counts without NEXUS_DEBUG; the composite counter counts only a signal type with composites
 // Each test FAILS if the pre-fix behavior returns.
 
 using System;
@@ -39,6 +40,13 @@ using UnityEngine;
 
 namespace NexusBench
 {
+    // ── I196 types ────────────────────────────────────────────────────────────
+    public struct I196Sig { }
+    public struct I196SigA { }
+    public struct I196SigB { }
+    public class I196Cmd : ICommand<I196Sig> { public void Execute(I196Sig signal) { } }
+    public class I196CompositeCmd : ICompositeCommand { public void Execute(CompositeContext context) { } }
+
     // ── C-1 types ─────────────────────────────────────────────────────────────
     public struct C1SigA { }
     public struct C1SigB { }
@@ -329,6 +337,7 @@ namespace NexusBench
             Test_I40_DeferredInjectMethod_GetsEveryArgument();
             Test_I30_CommandPoolReset_RunsOutsideThePoolLock();
             Test_I33_EconomyFirstTouchRead_RunsOutsideTheBalanceLock();
+            Test_I196_ProfilerCounters_CountWithoutNexusDebug();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -1290,6 +1299,38 @@ namespace NexusBench
 
             Check("I30. CommandPoolReset_RunsOutsideThePoolLock", I30ResettingCmd.InnerFinished && reused && once,
                 $"inner Get finished={I30ResettingCmd.InnerFinished} (pre-fix: blocked on the pool lock Return held, 2 s timeout), returned instance reused={reused}, double return pooled once={once}");
+        }
+
+        // The harness compiles without NEXUS_DEBUG: CommandsExecuted did not move here before #196, and the sync composite
+        // pass counted every signal once any composite existed, while the async pass counted only a type with composites.
+        private static void Test_I196_ProfilerCounters_CountWithoutNexusDebug()
+        {
+            var di = new NexusDI();
+            di.Bind<I196Cmd>(isSingleton: false);
+            di.Bind<I196CompositeCmd>(isSingleton: false);
+            var pool = new CommandPoolManager(di);
+            var bus = new SignalBus(di, pool, new MockContext());
+            try
+            {
+                bus.RegisterCommand(typeof(I196Sig), typeof(I196Cmd), ExecutionMode.Sequential, 0, isAsync: false);
+                bus.RegisterCompositeCommand(new[] { typeof(I196SigA), typeof(I196SigB) }, typeof(I196CompositeCmd), oneShot: false, priority: 0, isAsync: false);
+                int commands = NexusProfiler.CommandsExecuted.Value;
+                int composites = NexusProfiler.CompositeTriggersProcessed.Value;
+                bus.Fire(new I196Sig());
+                int commandCount = NexusProfiler.CommandsExecuted.Value - commands;
+                int compositeAfterUnrelated = NexusProfiler.CompositeTriggersProcessed.Value - composites;
+                bus.Fire(new I196SigA());
+                bus.Fire(new I196SigB());
+                int compositeAfterBoth = NexusProfiler.CompositeTriggersProcessed.Value - composites;
+                Check("I196. ProfilerCounters_CountWithoutNexusDebug", commandCount == 1 && compositeAfterUnrelated == 0 && compositeAfterBoth == 2,
+                    $"commands={commandCount} (expected 1, 0 pre-fix), composite passes after a signal without composites={compositeAfterUnrelated} (expected 0, 1 pre-fix), after A and B={compositeAfterBoth} (expected 2)");
+            }
+            finally
+            {
+                bus.Dispose();
+                pool.Clear();
+                di.Dispose();
+            }
         }
 
         private static void Test_I33_EconomyFirstTouchRead_RunsOutsideTheBalanceLock()

@@ -109,13 +109,15 @@ namespace Nexus.Core
 
             NexusRuntime.Metrics.RecordCommandExecuted();
             NexusRuntime.Metrics.RecordTrace(handler.TraceLabel);
+            // Ungated like SignalsDispatched, once per execution like the metric above: it counted only under NEXUS_DEBUG
+            // (#196). Its body compiles only where ENABLE_PROFILER is defined (#194).
+            NexusProfiler.CommandsExecuted.Value += 1;
 
             while (shouldRun)
             {
 #if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
                 s_CommandMarker.Begin();
-                NexusProfiler.CommandsExecuted.Value += 1;
 #endif
                 object command = null;
                 try
@@ -321,13 +323,15 @@ namespace Nexus.Core
 
             NexusRuntime.Metrics.RecordCommandExecuted();
             NexusRuntime.Metrics.RecordTrace(handler.TraceLabel);
+            // Ungated like SignalsDispatched, once per execution like the metric above: it counted only under NEXUS_DEBUG
+            // (#196). Its body compiles only where ENABLE_PROFILER is defined (#194).
+            NexusProfiler.CommandsExecuted.Value += 1;
 
             while (shouldRun)
             {
 #if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
                 s_CommandMarker.Begin();
-                NexusProfiler.CommandsExecuted.Value += 1;
 #endif
                 object command = null;
                 try
@@ -422,13 +426,15 @@ namespace Nexus.Core
 
             NexusRuntime.Metrics.RecordCommandExecuted();
             NexusRuntime.Metrics.RecordTrace(handler.TraceLabel);
+            // Ungated like SignalsDispatched, once per execution like the metric above: it counted only under NEXUS_DEBUG
+            // (#196). Its body compiles only where ENABLE_PROFILER is defined (#194).
+            NexusProfiler.CommandsExecuted.Value += 1;
 
             while (shouldRun)
             {
 #if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
                 s_CommandMarker.Begin();
-                NexusProfiler.CommandsExecuted.Value += 1;
 #endif
                 object command = null;
                 bool inFlightIncremented = false;
@@ -515,13 +521,15 @@ namespace Nexus.Core
 
             NexusRuntime.Metrics.RecordCommandExecuted();
             NexusRuntime.Metrics.RecordTrace(handler.TraceLabel);
+            // Ungated like SignalsDispatched, once per execution like the metric above: it counted only under NEXUS_DEBUG
+            // (#196). Its body compiles only where ENABLE_PROFILER is defined (#194).
+            NexusProfiler.CommandsExecuted.Value += 1;
 
             while (shouldRun)
             {
 #if NEXUS_DEBUG
                 int traceId = NexusTrace.BeginEvent(TraceEventType.Command, handler.CommandType.Name, handler.Mode);
                 s_CommandMarker.Begin();
-                NexusProfiler.CommandsExecuted.Value += 1;
 #endif
                 object command = null;
                 bool inFlightIncremented = false;

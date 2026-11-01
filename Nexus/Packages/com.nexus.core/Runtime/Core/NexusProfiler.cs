@@ -38,11 +38,11 @@ namespace Nexus.Core
         public static readonly ProfilerCounterValue<int> SignalsDispatched =
             new(Category, SignalsDispatchedName, ProfilerMarkerDataUnit.Count, ProfilerCounterOptions.FlushOnEndOfFrame);
 
-        /// <summary>Command executions entering CommandExecutor (all four execution paths).</summary>
+        /// <summary>Command executions entering CommandExecutor (all four execution paths), once per execution; a recovery retry is not counted again.</summary>
         public static readonly ProfilerCounterValue<int> CommandsExecuted =
             new(Category, CommandsExecutedName, ProfilerMarkerDataUnit.Count, ProfilerCounterOptions.FlushOnEndOfFrame);
 
-        /// <summary>Composite-trigger processing passes that actually collected at least one trigger.</summary>
+        /// <summary>Composite-trigger passes, sync and async, for a fired signal type that has at least one composite trigger registered.</summary>
         public static readonly ProfilerCounterValue<int> CompositeTriggersProcessed =
             new(Category, CompositeTriggersProcessedName, ProfilerMarkerDataUnit.Count, ProfilerCounterOptions.FlushOnEndOfFrame);
 

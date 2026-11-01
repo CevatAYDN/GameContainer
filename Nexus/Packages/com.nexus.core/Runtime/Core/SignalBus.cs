@@ -1246,8 +1246,6 @@ namespace Nexus.Core
             // common no-composite Fire() path adds a single volatile bool read.
             if (!_hasAnyCompositeTriggers) return;
 
-            NexusProfiler.CompositeTriggersProcessed.Value += 1;
-
             // Collect due triggers under the registry's composite lock (snapshot copy),
             // then execute them OUTSIDE any lock so user command code never runs while holding one.
             var signalType = typeof(T);
@@ -1293,6 +1291,8 @@ namespace Nexus.Core
                     s_nestedBufferFreeList = buffer;
                 return;
             }
+            // Counted where the async pass counts it: a signal type with composite triggers (#196).
+            NexusProfiler.CompositeTriggersProcessed.Value += 1;
 
             lock (_compositeLock)
             {
