@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using Nexus.Core;
@@ -221,6 +222,25 @@ namespace Nexus.Editor.Tests
 
             Assert.IsFalse(iap.IsStoreAvailable);
             Assert.AreEqual(Ownership.Unknown, iap.GetOwnership("no_ads"));
+        }
+
+        // Issue #230: the mock owned a bought consumable, which the Unity IAP adapter never does, so a game's test passed on
+        // the mock and failed on the real store.
+        [Test]
+        public void TheMockStore_OwnsABoughtNonConsumable_AndNeverABoughtConsumable()
+        {
+            var store = new MockIapStoreAdapter();
+            store.Initialize(new List<ProductDefinition>
+            {
+                new ProductDefinition { Id = "coins", Type = ProductType.Consumable },
+                new ProductDefinition { Id = "no_ads", Type = ProductType.NonConsumable },
+            }, null);
+
+            store.Purchase("coins", null);
+            store.Purchase("no_ads", null);
+
+            Assert.IsFalse(store.IsOwned("coins"));
+            Assert.IsTrue(store.IsOwned("no_ads"));
         }
 
         // Issue #183: a product registered after the store started never reached it, and nothing said so.

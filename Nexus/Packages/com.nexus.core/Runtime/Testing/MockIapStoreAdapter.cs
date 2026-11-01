@@ -4,8 +4,9 @@ using System.Collections.Generic;
 namespace Nexus.Core.Services
 {
     /// <summary>
-    /// Test double of a store: after Initialize every catalog product can be bought and is then owned, and a restore
-    /// succeeds. Testing kit only (editor and test builds); a player has no simulated store (#162).
+    /// Test double of a store: after Initialize every catalog product can be bought, a non-consumable or subscription is
+    /// then owned and a consumable never is, as with the Unity IAP adapter (#230), and a restore succeeds. Testing kit only
+    /// (editor and test builds); a player has no simulated store (#162).
     /// </summary>
     public sealed class MockIapStoreAdapter : IIapStoreAdapter, IIapOutcomeAdapter, IIapStoreInfoAdapter, IIapUnrequestedPurchaseAdapter
     {
@@ -71,7 +72,7 @@ namespace Nexus.Core.Services
                 return;
             }
 
-            _ownedProducts.Add(productId);
+            if (product.Type != ProductType.Consumable) _ownedProducts.Add(productId);
             onComplete?.Invoke(true, productId);
         }
 
