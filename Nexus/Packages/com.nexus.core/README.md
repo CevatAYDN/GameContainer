@@ -103,7 +103,8 @@ binder naming a removed type (issue #110). `NexusBinderBuildGuard` regenerates t
 player build (with `NEXUS_DISABLE_AUTOGEN=1` it generates nothing and stops a build whose binder is out of date),
 `VersionDefineBuildGuard` stops one in which a Nexus package's optional code is compiled out because the package it
 needs is installed below its asmdef's `versionDefines` expression (issue #143; the editor logs it after each compile),
-`NexusBinderSelfHeal` recovers a binder that no longer compiles, and a generated injector written for other `[Inject]`
+`NexusBinderSelfHeal` recovers a binder that no longer compiles (it stops after three regenerated binders in a row fail to
+compile; TROUBLESHOOTING "Stale Generated Binder"), and a generated injector written for other `[Inject]`
 members than its type has now is dropped before its first run, with a warning, and the type falls back to reflection.
 
 **Editor window** (menu **Nexus**, **Open Window** `Ctrl+Shift+N`): one window, 9 plugins, one tab each, in

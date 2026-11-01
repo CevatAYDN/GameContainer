@@ -19,27 +19,38 @@ namespace Nexus.Editor
     internal static class NexusBinderSelfHeal
     {
         private const string BinderFile = "NexusGeneratedBinder.g.cs";
-        private const string RegenerateKey = "Nexus.BinderSelfHeal.Regenerate";
-        private const string HealCountKey = "Nexus.BinderSelfHeal.Count";
-        /// <summary>Heals per editor session; a generator that keeps producing a broken binder must not loop forever.</summary>
+        internal const string RegenerateKey = "Nexus.BinderSelfHeal.Regenerate";
+        internal const string HealCountKey = "Nexus.BinderSelfHeal.Count";
+        /// <summary>Heals in a row whose regenerated binder failed again; a generator that keeps producing a broken binder must not
+        /// loop forever.</summary>
         private const int MaxHeals = 3;
 
         static NexusBinderSelfHeal()
         {
             CompilationPipeline.assemblyCompilationFinished -= OnAssemblyCompiled;
             CompilationPipeline.assemblyCompilationFinished += OnAssemblyCompiled;
-            if (SessionState.GetBool(RegenerateKey, false) && !EditorUtility.scriptCompilationFailed)
-            {
-                SessionState.SetBool(RegenerateKey, false);
-                EditorApplication.delayCall += () =>
-                {
-                    Debug.Log("[Nexus] Regenerating the AOT binder removed after a failed compilation.");
-                    NexusCodeGenerator.GenerateBinder();
-                };
-            }
+            OnDomainReloaded(EditorUtility.scriptCompilationFailed);
         }
 
-        private static void OnAssemblyCompiled(string assembly, CompilerMessage[] messages)
+        internal static void OnDomainReloaded(bool compilationFailed)
+        {
+            if (compilationFailed) return;
+            if (!SessionState.GetBool(RegenerateKey, false))
+            {
+                // The project, binder included, compiled: only heals in a row count. Every heal of the session counted, so the
+                // fourth renamed or removed type was refused with a message that blamed the generator (#244).
+                SessionState.EraseInt(HealCountKey);
+                return;
+            }
+            SessionState.SetBool(RegenerateKey, false);
+            EditorApplication.delayCall += () =>
+            {
+                Debug.Log("[Nexus] Regenerating the AOT binder removed after a failed compilation.");
+                NexusCodeGenerator.GenerateBinder();
+            };
+        }
+
+        internal static void OnAssemblyCompiled(string assembly, CompilerMessage[] messages)
         {
             string stale = null;
             foreach (var message in messages)
@@ -51,7 +62,7 @@ namespace Nexus.Editor
             int heals = SessionState.GetInt(HealCountKey, 0);
             if (heals >= MaxHeals)
             {
-                Debug.LogError($"[Nexus] The generated binder still fails to compile after {MaxHeals} regenerations; fix the generator output or delete {stale} by hand.");
+                Debug.LogError($"[Nexus] The generated binder failed to compile after each of {MaxHeals} regenerations in a row; fix the generator output or delete {stale} by hand.");
                 return;
             }
             SessionState.SetInt(HealCountKey, heals + 1);

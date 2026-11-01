@@ -727,7 +727,7 @@ Headless: -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
 ```
 With `NEXUS_DISABLE_AUTOGEN=1` the check applies only to a project that has a generated binder, so a project on reflection injection is not stopped; `NEXUS_SKIP_BINDER_GUARD=1` then builds with the stale binder deliberately.
 
-**Removed or renamed type:** the binder then fails to compile itself (`error CS0246` inside `NexusGeneratedBinder.g.cs`). In the Editor, Nexus empties the file and regenerates it after the next successful compilation. In batchmode Unity stops on the first failed compilation ("Scripts have compiler errors", exit 1) unless it is started with `-ignorecompilererrors`; with it, the same healing runs in one command and the binder is written from the current code:
+**Removed or renamed type:** the binder then fails to compile itself (`error CS0246` inside `NexusGeneratedBinder.g.cs`). In the Editor, Nexus empties the file and regenerates it after the next successful compilation. When a regenerated binder fails to compile again three times in a row, Nexus stops and logs `[Nexus] The generated binder failed to compile after each of 3 regenerations in a row`: the generator wrote a broken binder; report it, and delete the file to compile on reflection. A binder that compiles resets the count (issue #244). In batchmode Unity stops on the first failed compilation ("Scripts have compiler errors", exit 1) unless it is started with `-ignorecompilererrors`; with it, the same healing runs in one command and the binder is written from the current code:
 ```
 Unity.exe -batchmode -nographics -quit -ignorecompilererrors -projectPath <project> -executeMethod Nexus.Editor.NexusCodeGenerator.GenerateBinder
 ```
