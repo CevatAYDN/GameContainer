@@ -205,7 +205,7 @@ refused consent, a policy block) reach a release player's log once per cause (`c
 
 | Path | Allocation contract |
 |---|---|
-| Synchronous `Fire` of a struct signal to its commands and subscribers, no plugin `SignalInterceptor` registered | 0 B after warmup (GCA1, GCA6, `SteadyState_HasZeroGCAllocations` in the harness and in `PerformanceTests`); nested dispatch (stress 2), cross-context routing (stress 4) and a real context under fuzz (F1) 0 B; an interceptor boxes the signal once per fire |
+| Synchronous `Fire` of a struct signal to its commands and subscribers, no plugin registered on the context | 0 B after warmup (GCA1, GCA6, `SteadyState_HasZeroGCAllocations` in the harness and in `PerformanceTests`); nested dispatch (stress 2), cross-context routing (stress 4) and a real context under fuzz (F1) 0 B. With any plugin registered, each command execution allocates one closure for the decorator chain (no GC audit registers a plugin), and a plugin `SignalInterceptor` also boxes the signal once per fire (#196) |
 | Command pools | `CommandPoolManager` get/return 0 B after warmup (GCA4, stress 5, `CommandPoolManager_GetReturn_SteadyState_DoesNotAllocate` in the harness and in `PerformanceTests`) |
 | Warmed DI resolution | A cached resolve 0 B/op on host in the pinned comparison runs (`after-reset-android-006` and `generated-android-002`, `host-results.json`; [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md)), a measurement, not a check run on every commit; a resolved `LazyInjection<T>` read 0 B (stress 12) |
 | Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup (EditMode `TypedComposite_SteadyStateHasNoManagedAllocation`) |

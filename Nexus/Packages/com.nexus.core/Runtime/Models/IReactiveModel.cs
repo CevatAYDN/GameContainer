@@ -11,8 +11,9 @@ namespace Nexus.Core
     ///
     /// Unlike a plain DI singleton, an IReactiveModel:
     /// - Receives <see cref="OnBind"/> after all constructor injections are complete.
-    /// - Is eligible for live-inspection in the Nexus GameManager editor tooling.
-    /// - Can be automatically serialized/deserialized by the save system.
+    /// - Is listed in the Nexus window: the Game Manager tab names the type, and the Dashboard shows the live
+    ///   instance with its first properties.
+    /// Nexus does not save models: saving stays in the game (#75, #196).
     /// </summary>
     [Preserve]
     public interface IReactiveModel
