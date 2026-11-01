@@ -38,6 +38,8 @@ namespace Nexus.Ads.Unity
         private UnityAdTelemetry _telemetry;
         private float _timeScaleBeforeAd = 1f;
         private bool _audioWasPaused;
+        // what OnAdOpened changed for the show that is open: a show that never opened (a display failure) restores nothing (issue #174)
+        private bool _restoreAudio, _restoreTime;
         private SimulatorOverlay _overlay;
         private bool _startRequested;
 
@@ -248,14 +250,14 @@ namespace Nexus.Ads.Unity
 
         private void OnAdOpened(AdFormat format)
         {
-            if (_pauseAudioDuringAds) { _audioWasPaused = AudioListener.pause; AudioListener.pause = true; }
-            if (_pauseTimeDuringAds) { _timeScaleBeforeAd = Time.timeScale; Time.timeScale = 0f; }
+            if (_pauseAudioDuringAds && !_restoreAudio) { _audioWasPaused = AudioListener.pause; AudioListener.pause = true; _restoreAudio = true; }
+            if (_pauseTimeDuringAds && !_restoreTime) { _timeScaleBeforeAd = Time.timeScale; Time.timeScale = 0f; _restoreTime = true; }
         }
 
         private void OnAdClosed(AdFormat format, AdResult result)
         {
-            if (_pauseAudioDuringAds) AudioListener.pause = _audioWasPaused;
-            if (_pauseTimeDuringAds) Time.timeScale = _timeScaleBeforeAd;
+            if (_restoreAudio) { AudioListener.pause = _audioWasPaused; _restoreAudio = false; }
+            if (_restoreTime) { Time.timeScale = _timeScaleBeforeAd; _restoreTime = false; }
             if (_overlay != null) _overlay.enabled = false; // its OnGUI runs only while a show is open (issue #83)
         }
 

@@ -116,6 +116,22 @@ namespace Nexus.Ads.Tests.Runtime
             Assert.IsTrue(_bootstrap.Controller.IsReady("shop_refill"), "reloaded after the show");
         }
 
+        // Issue #174: every close restored the time scale and audio saved at the last open, also after a show that never opened, so
+        // a failed show from a paused game's menu resumed the game behind the menu, with sound
+        [UnityTest]
+        public IEnumerator AShowThatNeverOpened_LeavesTheGamesPausedTimeAndAudioAsTheyWere()
+        {
+            LogAssert.Expect(LogType.Log, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] started mode=Simulator "));
+            yield return Boot(SimulatorScenario.ShowFails);
+            Time.timeScale = 0f;
+            AudioListener.pause = true;
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] ShowFailed Rewarded 'shop_refill'"));
+            Assert.AreEqual(AdResult.Failed, ShowNow());
+            Assert.AreEqual(0f, Time.timeScale, "the game's pause holds");
+            Assert.IsTrue(AudioListener.pause, "the game's muted audio holds");
+            LogAssert.NoUnexpectedReceived();
+        }
+
         [UnityTest]
         public IEnumerator Interstitial_InTheFirstMinute_IsBlocked_WithAViolation()
         {
