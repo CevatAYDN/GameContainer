@@ -39,6 +39,41 @@ namespace Nexus.Editor.Tests
             public override void Execute(ArchCodeBoundSignal signal) { }
         }
 
+        public struct ArchCompositeFirst { }
+        public struct ArchCompositeSecond { }
+
+        [CompositeSignalHandler(typeof(ArchCompositeFirst), typeof(ArchCompositeSecond), Priority = 4)]
+        public sealed class ArchAttributedComposite : ICompositeCommand
+        {
+            public void Execute(CompositeContext signals) { }
+        }
+
+        public struct ArchTypedFirst { }
+        public struct ArchTypedSecond { }
+
+        // bound with BindCompositeCommand in code
+        public sealed class ArchTypedComposite : ICompositeCommand<ArchTypedFirst, ArchTypedSecond>
+        {
+            public void Execute(ArchTypedFirst first, ArchTypedSecond second) { }
+        }
+
+        public struct ArchRegisteredSignal { }
+
+        [RegisterCommand(typeof(ArchRegisteredSignal), Mode = ExecutionMode.Concurrent, Priority = 7, OneShot = true, IsAsync = true)]
+        public sealed class ArchRegisteredCommand : IAsyncCommand<ArchRegisteredSignal>
+        {
+            public ValueTask ExecuteAsync(ArchRegisteredSignal signal, CancellationToken ct) => default;
+        }
+
+        public struct ArchRegisteredFirst { }
+        public struct ArchRegisteredSecond { }
+
+        [RegisterCompositeCommand(typeof(ArchRegisteredFirst), typeof(ArchRegisteredSecond), Priority = 3)]
+        public sealed class ArchRegisteredComposite : ICompositeCommand
+        {
+            public void Execute(CompositeContext signals) { }
+        }
+
         private static ArchitectureMap BuildMap() => ArchitectureMap.Build(new[] { typeof(ArchitectureMapTests).Assembly });
 
         [Test]
@@ -52,6 +87,41 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(ArchitectureMap.Source.Implements, handler.Source);
             Assert.IsTrue(map.TryGet(typeof(ArchCodeBoundCommand), out var command));
             Assert.AreEqual(typeof(ArchCodeBoundSignal), command.Handlers.Single().Signal);
+        }
+
+        [Test]
+        public void CompositeCommands_AreListed_WithTheSignalsTheyWaitFor()
+        {
+            // a composite was classified as nothing, so it and the signals only it names had no node (#253)
+            var map = BuildMap();
+
+            Assert.IsTrue(map.TryGet(typeof(ArchAttributedComposite), out var attributed), "an ICompositeCommand with [CompositeSignalHandler] is listed");
+            Assert.AreEqual(ArchitectureMap.Kind.Command, attributed.Kind);
+            CollectionAssert.AreEquivalent(new[] { typeof(ArchCompositeFirst), typeof(ArchCompositeSecond) }, attributed.Handlers.Select(h => h.Signal).ToArray());
+            Assert.IsTrue(attributed.Handlers.All(h => h.Source == ArchitectureMap.Source.Composite && h.Priority == 4));
+
+            Assert.IsTrue(map.TryGet(typeof(ArchTypedComposite), out var typed), "an ICompositeCommand<TFirst, TSecond> bound in code is listed");
+            CollectionAssert.AreEquivalent(new[] { typeof(ArchTypedFirst), typeof(ArchTypedSecond) }, typed.Handlers.Select(h => h.Signal).ToArray());
+            Assert.IsTrue(typed.Handlers.All(h => h.Source == ArchitectureMap.Source.Implements && h.Mode == ExecutionMode.Composite));
+        }
+
+        [Test]
+        public void RegisterAttributes_GiveTheEdgeTheirModePriorityAndFlags()
+        {
+            // [RegisterCommand] and [RegisterCompositeCommand] were not read: no edge, or an Implements edge, Sequential, priority 0 (#253)
+            var map = BuildMap();
+
+            Assert.IsTrue(map.TryGet(typeof(ArchRegisteredSignal), out var signal), "the signal a [RegisterCommand] names is listed");
+            var handler = signal.Handlers.Single(h => h.Command == typeof(ArchRegisteredCommand));
+            Assert.AreEqual(ArchitectureMap.Source.Registered, handler.Source);
+            Assert.AreEqual(ExecutionMode.Concurrent, handler.Mode);
+            Assert.AreEqual(7, handler.Priority);
+            Assert.IsTrue(handler.OneShot, "one-shot");
+            Assert.IsTrue(handler.IsAsync, "async");
+
+            Assert.IsTrue(map.TryGet(typeof(ArchRegisteredComposite), out var composite), "a [RegisterCompositeCommand] composite is listed");
+            Assert.AreEqual(2, composite.Handlers.Count);
+            Assert.IsTrue(composite.Handlers.All(h => h.Source == ArchitectureMap.Source.RegisteredComposite && h.Mode == ExecutionMode.Composite && h.Priority == 3));
         }
 
         [Test]

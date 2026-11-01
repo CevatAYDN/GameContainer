@@ -10,8 +10,9 @@ namespace Nexus.Editor
     /// The Architecture tab's model (#193): the game's signals and the commands that handle them, and its services,
     /// models, views and mediators with what Nexus injects into them. Built once by reflection; holds no UI.
     /// A signal is the <c>TSignal</c> of an <see cref="ICommand{TSignal}"/> or <see cref="IAsyncCommand{TSignal}"/>
-    /// implementation or a type a <see cref="SignalHandlerAttribute"/> or <see cref="CompositeSignalHandlerAttribute"/>
-    /// names. A signal that only has <c>Subscribe</c> listeners, or a command bound in code to a signal it does not name,
+    /// implementation, a signal of an <see cref="ICompositeCommand{TFirst, TSecond}"/> implementation, or a type a
+    /// <see cref="SignalHandlerAttribute"/>, <see cref="CompositeSignalHandlerAttribute"/>, <see cref="RegisterCommandAttribute"/>
+    /// or <see cref="RegisterCompositeCommandAttribute"/> names; composites are commands as well (#253). A signal that only has <c>Subscribe</c> listeners, or a command bound in code to a signal it does not name,
     /// is not visible before a context runs; <see cref="Bound"/> reads what the running contexts registered.
     /// </summary>
     internal sealed class ArchitectureMap
@@ -21,12 +22,17 @@ namespace Nexus.Editor
         /// <summary>Where an edge between a signal and a command comes from.</summary>
         internal enum Source
         {
-            /// <summary>The command implements <c>ICommand&lt;TSignal&gt;</c>: it can handle the signal, and the game binds it in code.</summary>
+            /// <summary>The command implements <c>ICommand&lt;TSignal&gt;</c> or <c>ICompositeCommand&lt;TFirst, TSecond&gt;</c>
+            /// (mode <see cref="ExecutionMode.Composite"/>): it can handle the signal, and the game binds it in code.</summary>
             Implements,
             /// <summary>A <see cref="SignalHandlerAttribute"/> binds it, with its mode and priority.</summary>
             Attribute,
             /// <summary>A <see cref="CompositeSignalHandlerAttribute"/>: the command runs once every listed signal has arrived.</summary>
             Composite,
+            /// <summary>A <see cref="RegisterCommandAttribute"/> binds it, with its mode and priority.</summary>
+            Registered,
+            /// <summary>A <see cref="RegisterCompositeCommandAttribute"/>: the command runs once every listed signal has arrived.</summary>
+            RegisteredComposite,
         }
 
         internal readonly struct Handler
@@ -199,7 +205,9 @@ namespace Nexus.Editor
         // One kind per class; a command that is also a service shows as a command.
         private static Kind? Classify(Type type)
         {
-            if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type) || HandlesGenerically(type))
+            if (typeof(ICommand).IsAssignableFrom(type) || typeof(IAsyncCommand).IsAssignableFrom(type)
+                || typeof(ICompositeCommand).IsAssignableFrom(type) || typeof(IAsyncCompositeCommand).IsAssignableFrom(type)
+                || HandlesGenerically(type))
                 return Kind.Command;
             if (MediatedView(type) != null) return Kind.Mediator;
             if (typeof(View).IsAssignableFrom(type)) return Kind.View;
@@ -214,14 +222,14 @@ namespace Nexus.Editor
             {
                 if (!iface.IsGenericType) continue;
                 var definition = iface.GetGenericTypeDefinition();
-                if (definition == typeof(ICommand<>) || definition == typeof(IAsyncCommand<>)) return true;
+                if (definition == typeof(ICommand<>) || definition == typeof(IAsyncCommand<>) || definition == typeof(ICompositeCommand<,>)) return true;
             }
             return false;
         }
 
         private static bool IsAsyncCommand(Type type)
         {
-            if (typeof(IAsyncCommand).IsAssignableFrom(type)) return true;
+            if (typeof(IAsyncCommand).IsAssignableFrom(type) || typeof(IAsyncCompositeCommand).IsAssignableFrom(type)) return true;
             foreach (var iface in type.GetInterfaces())
                 if (iface.IsGenericType && iface.GetGenericTypeDefinition() == typeof(IAsyncCommand<>)) return true;
             return false;
@@ -257,8 +265,29 @@ namespace Nexus.Editor
                     attribute.OneShot, attribute.IsAsync ?? isAsync));
             }
 
+            // The runtime's scan reads [RegisterCommand] as a [SignalHandler] with its flags, and a [RegisterCompositeCommand]
+            // in place of a [CompositeSignalHandler] (Context.ScanAssembliesAndRegister).
+            foreach (var attribute in command.GetCustomAttributes<RegisterCommandAttribute>(false))
+            {
+                if (attribute.SignalType == null) continue;
+                declared.Add(attribute.SignalType);
+                AddHandler(new Handler(attribute.SignalType, command, Source.Registered, attribute.Mode, attribute.Priority,
+                    attribute.OneShot, attribute.IsAsync || isAsync));
+            }
+
+            var registeredComposite = command.GetCustomAttribute<RegisterCompositeCommandAttribute>(false);
             var composite = command.GetCustomAttribute<CompositeSignalHandlerAttribute>(false);
-            if (composite?.SignalTypes != null)
+            if (registeredComposite?.SignalTypes != null)
+            {
+                foreach (var signal in registeredComposite.SignalTypes)
+                {
+                    if (signal == null) continue;
+                    declared.Add(signal);
+                    AddHandler(new Handler(signal, command, Source.RegisteredComposite, ExecutionMode.Composite, registeredComposite.Priority,
+                        registeredComposite.OneShot, registeredComposite.IsAsync || isAsync));
+                }
+            }
+            else if (composite?.SignalTypes != null)
             {
                 foreach (var signal in composite.SignalTypes)
                 {
@@ -274,6 +303,13 @@ namespace Nexus.Editor
             {
                 if (!iface.IsGenericType) continue;
                 var definition = iface.GetGenericTypeDefinition();
+                if (definition == typeof(ICompositeCommand<,>))
+                {
+                    foreach (var part in iface.GetGenericArguments())
+                        if (declared.Add(part))
+                            AddHandler(new Handler(part, command, Source.Implements, ExecutionMode.Composite, 0, false, false));
+                    continue;
+                }
                 if (definition != typeof(ICommand<>) && definition != typeof(IAsyncCommand<>)) continue;
                 var signal = iface.GetGenericArguments()[0];
                 if (declared.Add(signal))

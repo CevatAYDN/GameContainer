@@ -332,6 +332,8 @@
     {"key": "arch_source_implements", "value": "{0} uygular"},
     {"key": "arch_source_attribute", "value": "[SignalHandler] {0}, öncelik {1}"},
     {"key": "arch_source_composite", "value": "[CompositeSignalHandler], öncelik {0}"},
+    {"key": "arch_source_register", "value": "[RegisterCommand] {0}, öncelik {1}"},
+    {"key": "arch_source_register_composite", "value": "[RegisterCompositeCommand], öncelik {0}"},
     {"key": "arch_tag_async", "value": "async"},
     {"key": "arch_tag_oneshot", "value": "tek seferlik"},
     {"key": "arch_bound", "value": "Çalışan context'lerde bağlı"},

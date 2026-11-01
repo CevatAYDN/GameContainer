@@ -169,6 +169,8 @@ namespace Nexus.Editor
             s_strings["arch_source_implements"] = "implements {0}";
             s_strings["arch_source_attribute"] = "[SignalHandler] {0}, priority {1}";
             s_strings["arch_source_composite"] = "[CompositeSignalHandler], priority {0}";
+            s_strings["arch_source_register"] = "[RegisterCommand] {0}, priority {1}";
+            s_strings["arch_source_register_composite"] = "[RegisterCompositeCommand], priority {0}";
             s_strings["arch_tag_async"] = "async";
             s_strings["arch_tag_oneshot"] = "one-shot";
             s_strings["arch_bound"] = "Bound in the running contexts";

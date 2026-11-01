@@ -345,9 +345,25 @@ namespace Nexus.Editor
                     return string.Format(NexusLang.Get("arch_source_attribute"), handler.Mode, handler.Priority);
                 case ArchitectureMap.Source.Composite:
                     return string.Format(NexusLang.Get("arch_source_composite"), handler.Priority);
+                case ArchitectureMap.Source.Registered:
+                    return string.Format(NexusLang.Get("arch_source_register"), handler.Mode, handler.Priority);
+                case ArchitectureMap.Source.RegisteredComposite:
+                    return string.Format(NexusLang.Get("arch_source_register_composite"), handler.Priority);
                 default:
-                    return string.Format(NexusLang.Get("arch_source_implements"), (handler.IsAsync ? "IAsyncCommand<" : "ICommand<") + handler.Signal.Name + ">");
+                    return string.Format(NexusLang.Get("arch_source_implements"), ImplementedInterface(handler));
             }
+        }
+
+        private static string ImplementedInterface(ArchitectureMap.Handler handler)
+        {
+            if (handler.Mode == ExecutionMode.Composite)
+                foreach (var iface in handler.Command.GetInterfaces())
+                    if (iface.IsGenericType && iface.GetGenericTypeDefinition() == typeof(ICompositeCommand<,>))
+                    {
+                        var parts = iface.GetGenericArguments();
+                        return $"ICompositeCommand<{parts[0].Name}, {parts[1].Name}>";
+                    }
+            return (handler.IsAsync ? "IAsyncCommand<" : "ICommand<") + handler.Signal.Name + ">";
         }
 
         private void RenderRelated(ArchitectureMap.Node node, string titleKey)
