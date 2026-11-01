@@ -34,9 +34,12 @@ namespace Nexus.Core.Extensions
     [Preserve]
     public interface ISceneLoader
     {
-        /// <summary>Loads a scene additively and fires SceneLoadedSignal on completion.</summary>
+        /// <summary>Loads a scene additively and fires SceneLoadedSignal on completion. A second call for a scene that is loading
+        /// waits for that load. Cancelling stops the wait, not the load: Unity cannot stop a scene load, so the scene finishes
+        /// loading and SceneLoadedSignal fires.</summary>
         Task LoadSceneAsync(string sceneName, LoadSceneMode mode = LoadSceneMode.Additive, CancellationToken ct = default);
-        /// <summary>Unloads a scene and fires SceneUnloadedSignal.</summary>
+        /// <summary>Unloads a scene and fires SceneUnloadedSignal. A second call for a scene that is unloading waits for that
+        /// unload; cancelling stops the wait, not the unload.</summary>
         Task UnloadSceneAsync(string sceneName, CancellationToken ct = default);
         /// <summary>Activates a loaded scene as the active scene.</summary>
         void SetActiveScene(string sceneName);
@@ -51,8 +54,9 @@ namespace Nexus.Core.Extensions
     public sealed class SceneLoader : ISceneLoader
     {
         private readonly ISignalBus _signalBus;
-        private readonly HashSet<string> _loadingScenes = new();
-        private readonly HashSet<string> _unloadingScenes = new();
+        // The load and the unload in flight per scene: a second call for the same scene waits for it (issue #188).
+        private readonly Dictionary<string, (Task task, LoadSceneMode mode)> _loads = new();
+        private readonly Dictionary<string, Task> _unloads = new();
         private readonly object _loadingLock = new();
 
         public SceneLoader(ISignalBus signalBus)
@@ -60,67 +64,90 @@ namespace Nexus.Core.Extensions
             _signalBus = signalBus ?? throw new ArgumentNullException(nameof(signalBus));
         }
 
-        public async Task LoadSceneAsync(string sceneName, LoadSceneMode mode = LoadSceneMode.Additive, CancellationToken ct = default)
+        public Task LoadSceneAsync(string sceneName, LoadSceneMode mode = LoadSceneMode.Additive, CancellationToken ct = default)
         {
+            TaskCompletionSource<bool> done = null;
+            Task load;
             lock (_loadingLock)
             {
-                if (!_loadingScenes.Add(sceneName))
+                if (_loads.TryGetValue(sceneName, out var running))
                 {
-                    NexusLog.WarnAlways($"[Nexus] Scene '{sceneName}' is already being loaded.");
-                    return;
+                    load = running.task;
+                    if (running.mode != mode)
+                        NexusLog.WarnAlways($"[Nexus] Scene '{sceneName}' is already loading with {running.mode}; this {mode} load waits for that one.");
+                }
+                else
+                {
+                    done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    load = done.Task;
+                    _loads[sceneName] = (load, mode);
                 }
             }
 
+            if (done != null) _ = RunLoadAsync(sceneName, mode, done);
+            return ct.CanBeCanceled ? WaitAsync(load, sceneName, "load", nameof(SceneLoadedSignal), ct) : load;
+        }
+
+        private async Task RunLoadAsync(string sceneName, LoadSceneMode mode, TaskCompletionSource<bool> done)
+        {
+            Exception failure = null;
+            bool loaded = false;
             try
             {
-                _signalBus.Fire(new SceneLoadingSignal(sceneName));
+                FireSafely(new SceneLoadingSignal(sceneName), sceneName);
 
                 var op = SceneManager.LoadSceneAsync(sceneName, mode);
                 if (op == null)
                 {
                     NexusRuntime.Logger?.LogError($"[Nexus] Scene '{sceneName}' not found in build settings.");
                     // Terminal signal: loading UI must never wait forever on a failed load.
-                    _signalBus.Fire(new SceneLoadFailedSignal(sceneName, "Scene not found in build settings."));
+                    FireSafely(new SceneLoadFailedSignal(sceneName, "Scene not found in build settings."), sceneName);
                     return;
                 }
 
                 op.allowSceneActivation = true;
-
-                while (!op.isDone)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    await Task.Yield();
-                }
-
-                _signalBus.Fire(new SceneLoadedSignal(sceneName));
+                // Not cancellable: Unity cannot stop a scene load (issue #188); the caller's token only ends its own wait.
+                while (!op.isDone) await Task.Yield();
+                loaded = true;
             }
             catch (Exception ex)
             {
-                // Terminal signal on exception/cancellation paths too (see above).
-                _signalBus.Fire(new SceneLoadFailedSignal(sceneName, ex.Message));
-                throw;
+                failure = ex;
+                NexusRuntime.Logger?.LogError($"[Nexus] Loading scene '{sceneName}' failed: {ex}");
+                // Terminal signal on the exception path too (see above).
+                FireSafely(new SceneLoadFailedSignal(sceneName, ex.Message), sceneName);
             }
             finally
             {
-                lock (_loadingLock)
-                {
-                    _loadingScenes.Remove(sceneName);
-                }
+                lock (_loadingLock) _loads.Remove(sceneName);
+                if (loaded) FireSafely(new SceneLoadedSignal(sceneName), sceneName);
+                if (failure != null) done.TrySetException(failure);
+                else done.TrySetResult(loaded);
             }
         }
 
-        public async Task UnloadSceneAsync(string sceneName, CancellationToken ct = default)
+        public Task UnloadSceneAsync(string sceneName, CancellationToken ct = default)
         {
-            // Duplicate-unload guard, matching LoadSceneAsync's duplicate-load guard.
+            TaskCompletionSource<bool> done = null;
+            Task unload;
             lock (_loadingLock)
             {
-                if (!_unloadingScenes.Add(sceneName))
+                if (!_unloads.TryGetValue(sceneName, out unload))
                 {
-                    NexusLog.WarnAlways($"[Nexus] Scene '{sceneName}' is already being unloaded.");
-                    return;
+                    done = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                    unload = done.Task;
+                    _unloads[sceneName] = unload;
                 }
             }
 
+            if (done != null) _ = RunUnloadAsync(sceneName, done);
+            return ct.CanBeCanceled ? WaitAsync(unload, sceneName, "unload", nameof(SceneUnloadedSignal), ct) : unload;
+        }
+
+        private async Task RunUnloadAsync(string sceneName, TaskCompletionSource<bool> done)
+        {
+            Exception failure = null;
+            bool unloaded = false;
             try
             {
                 var op = SceneManager.UnloadSceneAsync(sceneName);
@@ -130,21 +157,46 @@ namespace Nexus.Core.Extensions
                     return;
                 }
 
-                while (!op.isDone)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    await Task.Yield();
-                }
-
-                _signalBus.Fire(new SceneUnloadedSignal(sceneName));
+                while (!op.isDone) await Task.Yield();
+                unloaded = true;
+            }
+            catch (Exception ex)
+            {
+                failure = ex;
+                NexusRuntime.Logger?.LogError($"[Nexus] Unloading scene '{sceneName}' failed: {ex}");
             }
             finally
             {
-                lock (_loadingLock)
+                lock (_loadingLock) _unloads.Remove(sceneName);
+                if (unloaded) FireSafely(new SceneUnloadedSignal(sceneName), sceneName);
+                if (failure != null) done.TrySetException(failure);
+                else done.TrySetResult(unloaded);
+            }
+        }
+
+        // The caller's token ends its own wait; the operation, which Unity cannot stop, finishes and fires its signal (issue #188).
+        private static async Task WaitAsync(Task operation, string sceneName, string what, string signal, CancellationToken ct)
+        {
+            if (!operation.IsCompleted)
+            {
+                var cancelled = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+                using (ct.Register(() => cancelled.TrySetResult(true)))
                 {
-                    _unloadingScenes.Remove(sceneName);
+                    if (await Task.WhenAny(operation, cancelled.Task) != operation)
+                    {
+                        NexusLog.WarnAlways($"[Nexus] The {what} of scene '{sceneName}' was cancelled while it ran; Unity cannot stop it, so it finishes and {signal} fires.");
+                        ct.ThrowIfCancellationRequested();
+                    }
                 }
             }
+            await operation;
+        }
+
+        // A subscriber that throws must not change what the load or unload did (issue #188).
+        private void FireSafely<T>(T signal, string sceneName) where T : struct
+        {
+            try { _signalBus.Fire(signal); }
+            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus] A {typeof(T).Name} subscriber for scene '{sceneName}' threw: {ex}"); }
         }
 
         public void SetActiveScene(string sceneName)

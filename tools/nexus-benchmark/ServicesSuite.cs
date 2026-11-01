@@ -596,6 +596,7 @@ namespace NexusBench
                 ctx.Context.SignalBus.Subscribe<SceneLoadingSignal>(s => events.Add($"loading:{s.SceneName}"));
                 ctx.Context.SignalBus.Subscribe<SceneLoadedSignal>(s => events.Add($"loaded:{s.SceneName}"));
                 ctx.Context.SignalBus.Subscribe<SceneUnloadedSignal>(s => events.Add($"unloaded:{s.SceneName}"));
+                ctx.Context.SignalBus.Subscribe<SceneLoadFailedSignal>(s => events.Add($"failed:{s.SceneName}"));
 
                 SceneManager.SimulateReset();
                 SceneManager.SimulateAddScene("Level1", loaded: false);
@@ -610,58 +611,79 @@ namespace NexusBench
                 Check("S1. Load_Fires_Signals_In_Order", started && completed,
                     $"events=[{string.Join(",", events)}]");
 
-                // S2: a second load of the same scene must be rejected (single op).
+                // S2 (issue #188): a second load of a scene that is loading waits for the same operation; it returned at once,
+                // before the scene was there.
                 events.Clear();
                 var dup1 = loader.LoadSceneAsync("Level1");
                 var dup2 = loader.LoadSceneAsync("Level1");
-                bool guard = SceneManager.SimulatePendingCount == 1
-                    && dup2.IsCompleted
+                bool shared = SceneManager.SimulatePendingCount == 1 && !dup2.IsCompleted
                     && events.Count == 1 && events[0] == "loading:Level1";
                 SceneManager.SimulateCompleteAll();
                 dup1.GetAwaiter().GetResult();
-                Check("S2. Duplicate_Load_Rejected_By_Guard", guard,
+                dup2.GetAwaiter().GetResult();
+                bool bothLoaded = events.Count == 2 && events[1] == "loaded:Level1";
+                Check("S2. Duplicate_Load_Waits_For_The_Same_Operation", shared && bothLoaded,
                     $"pending={SceneManager.SimulatePendingCount} events=[{string.Join(",", events)}]");
 
-                // S3: unknown scene -> SceneManager returns null -> error path, no crash.
+                // S3: unknown scene -> SceneManager returns null -> SceneLoadFailedSignal, no crash.
                 events.Clear();
                 var missing = loader.LoadSceneAsync("NotInBuild");
                 missing.GetAwaiter().GetResult();
-                bool notFound = events.Count == 1 && events[0] == "loading:NotInBuild"
+                bool notFound = events.Count == 2 && events[0] == "loading:NotInBuild" && events[1] == "failed:NotInBuild"
                     && SceneManager.SimulatePendingCount == 0;
-                Check("S3. Missing_Scene_NotFound_NoCrash", notFound,
+                Check("S3. Missing_Scene_Fires_LoadFailed_NoCrash", notFound,
                     $"events=[{string.Join(",", events)}]");
 
-                // S4: cancellation mid-load aborts without leaking the guard.
-                // Cancel while the load is suspended (op NOT yet completed), so the
-                // loop's ThrowIfCancellationRequested fires — then complete the op.
+                // S4 (issue #188): cancelling stops the caller's wait; Unity cannot stop the load, so the scene finishes and is
+                // reported loaded. It fired SceneLoadFailedSignal and never SceneLoadedSignal for a scene that loaded.
                 events.Clear();
                 using (var cts = new CancellationTokenSource())
                 {
-                    var cancelTask = loader.LoadSceneAsync("Level1", LoadSceneMode.Additive, cts.Token);
+                    var cancelled = loader.LoadSceneAsync("Level1", LoadSceneMode.Additive, cts.Token);
+                    var running = loader.LoadSceneAsync("Level1"); // the same load, waited without a token
                     cts.Cancel();
                     bool aborted = false;
-                    try { cancelTask.GetAwaiter().GetResult(); }
+                    try { cancelled.GetAwaiter().GetResult(); }
                     catch (OperationCanceledException) { aborted = true; }
                     SceneManager.SimulateCompleteAll();
-                    bool guardReleased = events.Count == 1 && events[0] == "loading:Level1";
+                    running.GetAwaiter().GetResult();
+                    bool reportedLoaded = events.Count == 2 && events[0] == "loading:Level1" && events[1] == "loaded:Level1";
                     var afterCancel = loader.LoadSceneAsync("Level1");
                     bool reopened = SceneManager.SimulatePendingCount == 1;
                     SceneManager.SimulateCompleteAll();
                     afterCancel.GetAwaiter().GetResult();
-                    Check("S4. Cancellation_Aborts_And_Releases_Guard", aborted && guardReleased && reopened,
+                    Check("S4. Cancelling_Stops_The_Wait_And_The_Scene_Is_Reported_Loaded", aborted && reportedLoaded && reopened,
                         $"aborted={aborted} pending={SceneManager.SimulatePendingCount} events=[{string.Join(",", events)}]");
                 }
 
-                // S5: unload fires its signal; unknown scene unload is a safe no-op.
+                // S5: unload fires its signal, a second unload waits for the same operation (issue #188), and an unknown
+                // scene unload is a safe no-op.
                 events.Clear();
                 var unload = loader.UnloadSceneAsync("Level1");
+                var unloadAgain = loader.UnloadSceneAsync("Level1");
+                bool unloadShared = !unloadAgain.IsCompleted;
                 SceneManager.SimulateCompleteAll();
                 unload.GetAwaiter().GetResult();
+                unloadAgain.GetAwaiter().GetResult();
                 var noOp = loader.UnloadSceneAsync("NotLoaded");
                 noOp.GetAwaiter().GetResult();
                 bool unloaded = events.Count == 1 && events[0] == "unloaded:Level1";
-                Check("S5. Unload_Fires_Signal_Safe_On_Unknown", unloaded,
-                    $"events=[{string.Join(",", events)}]");
+                Check("S5. Unload_Fires_Signal_Duplicate_Waits_Safe_On_Unknown", unloaded && unloadShared,
+                    $"shared={unloadShared} events=[{string.Join(",", events)}]");
+
+                // S7 (issue #188): a SceneLoadedSignal subscriber that throws does not turn a finished load into a failed one.
+                events.Clear();
+                SceneManager.SimulateAddScene("Shop", loaded: false);
+                using (ctx.Context.SignalBus.Subscribe<SceneLoadedSignal>(s => { if (s.SceneName == "Shop") throw new InvalidOperationException("a subscriber's own bug"); }))
+                {
+                    var shop = loader.LoadSceneAsync("Shop");
+                    SceneManager.SimulateCompleteAll();
+                    bool succeeded = false;
+                    try { shop.GetAwaiter().GetResult(); succeeded = true; }
+                    catch (Exception) { }
+                    Check("S7. Throwing_Loaded_Subscriber_Leaves_The_Load_Succeeded", succeeded && !events.Contains("failed:Shop"),
+                        $"succeeded={succeeded} events=[{string.Join(",", events)}]");
+                }
 
                 // S6: SetActiveScene only accepts a valid loaded scene.
                 SceneManager.SimulateAddScene("Menu", loaded: false);
