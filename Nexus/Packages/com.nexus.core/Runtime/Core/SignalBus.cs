@@ -549,8 +549,10 @@ namespace Nexus.Core
             }
         }
 
+        // a composite registered with RegisterCompositeCommand or [CompositeSignalHandler] hears the signal too (#220)
         internal bool HasHandlers(Type signalType) =>
-            _subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(signalType) || _commandRegistry.TryGetHandlers(signalType, out _);
+            _subscriptionRegistry.HasActiveSubscriptions(signalType) || _commandRegistry.TryGetHandlers(signalType, out _)
+            || (_hasAnyCompositeTriggers && _commandRegistry.TryGetCompositeTriggers(signalType, out _));
 
         internal bool HasAsyncHandlers(Type signalType) =>
             _commandRegistry.HasAsyncCommandHandlers(signalType)

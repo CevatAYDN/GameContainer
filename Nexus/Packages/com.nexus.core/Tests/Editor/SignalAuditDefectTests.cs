@@ -17,7 +17,8 @@ namespace Nexus.Editor.Tests
     /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214), a sync fallback
     /// made later async fallbacks share one depth (#215), a failed async composite never ran its FallbackAsync (#216), a
     /// retried composite under FireAsync kept its state (#217), an unsubscribed handler stayed reachable during a
-    /// dispatch (#218) and NexusRuntime.Reset removed the binder's dispatchers (#219).
+    /// dispatch (#218), NexusRuntime.Reset removed the binder's dispatchers (#219) and HasHandlers missed a composite
+    /// (#220).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -74,6 +75,10 @@ namespace Nexus.Editor.Tests
 
         public sealed class GeneratedCommand { }
         public struct GeneratedSignal { }
+
+        public struct WaitedP { }
+        public struct WaitedQ { }
+        public sealed class WaitingComposite : ICompositeCommand { public void Execute(CompositeContext s) { } }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -258,6 +263,15 @@ namespace Nexus.Editor.Tests
             var registry = new CommandRegistry(di);
             Assert.AreSame(syncDispatcher, registry.GetGenericSyncDispatcher(typeof(GeneratedCommand), typeof(GeneratedSignal)));
             Assert.AreSame(asyncDispatcher, registry.GetGenericAsyncDispatcher(typeof(GeneratedCommand), typeof(GeneratedSignal)));
+        }
+
+        [Test]
+        public void HasHandlers_SeesACompositeRegisteredWithRegisterCompositeCommand()
+        {
+            var bus = NewBus(null, typeof(WaitingComposite));
+            bus.RegisterCompositeCommand(new[] { typeof(WaitedP), typeof(WaitedQ) }, typeof(WaitingComposite), false, 0, false);
+
+            Assert.IsTrue(bus.HasHandlers(typeof(WaitedP)));
         }
     }
 }
