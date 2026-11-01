@@ -353,5 +353,19 @@ namespace Nexus.Editor.Tests
             // Plain lookups still work.
             Assert.IsTrue(InvokeBool(method, typeof(DiScanPlainType), set), "Plain scanned type must resolve.");
         }
+
+        public sealed class OwnedScoreModel { }
+
+        // #243: only " Name ", "Name;", "Name:" and "Name," counted, so every generic binding failed the build with a
+        // false leak error, and "IOwnedScoreModel," counted for OwnedScoreModel.
+        [Test]
+        public void AModelBoundThroughAGenericCallIsNamedByItsLifecycleAndAnInterfaceNameIsNot()
+        {
+            Assert.IsTrue(BuildValidation.NamesType("builder.BindReactiveModel<OwnedScoreModel>();", typeof(OwnedScoreModel)));
+            Assert.IsTrue(BuildValidation.NamesType("builder.Bind<IScore, OwnedScoreModel>();", typeof(OwnedScoreModel)));
+            Assert.IsTrue(BuildValidation.NamesType("builder.BindInstance(new OwnedScoreModel());", typeof(OwnedScoreModel)));
+            Assert.IsFalse(BuildValidation.NamesType("builder.BindReactiveModel<IOwnedScoreModel, OtherModel>();", typeof(OwnedScoreModel)));
+            Assert.IsFalse(BuildValidation.NamesType("builder.Bind<OwnedScoreModelView>();", typeof(OwnedScoreModel)));
+        }
     }
 }

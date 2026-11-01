@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text.RegularExpressions;
 using UnityEditor;
 using UnityEngine;
 using Nexus.Core;
@@ -457,6 +458,19 @@ namespace Nexus.Editor
             return false;
         }
 
+        /// <summary>
+        /// Whether a lifecycle's source names the model type as a whole identifier: <c>BindReactiveModel&lt;ScoreModel&gt;()</c>
+        /// does, <c>IScoreModel</c> and <c>ScoreModelView</c> do not (#243: four fixed suffixes missed every generic call, and
+        /// "IScoreModel," passed for ScoreModel by accident).
+        /// </summary>
+        internal static bool NamesType(string content, Type type)
+        {
+            string name = type.Name;
+            int tick = name.IndexOf('`');
+            if (tick >= 0) name = name.Substring(0, tick);
+            return Regex.IsMatch(content, @"(?<!\w)" + Regex.Escape(name) + @"(?!\w)");
+        }
+
         private static void ValidateModelOwnership(ref int errorCount, ref int warningCount)
         {
             var disposableModels = new List<Type>();
@@ -491,9 +505,7 @@ namespace Nexus.Editor
                         warningCount++;
                         continue;
                     }
-                    // Match the full type name with word boundaries so "Player" does not
-                    // falsely match a "PlayerView" reference in an unrelated lifecycle class.
-                    if (content.Contains(" " + modelType.Name + " ") || content.Contains(modelType.Name + ";") || content.Contains(modelType.Name + ":") || content.Contains(modelType.Name + ","))
+                    if (NamesType(content, modelType))
                     {
                         isBound = true;
                         break;
