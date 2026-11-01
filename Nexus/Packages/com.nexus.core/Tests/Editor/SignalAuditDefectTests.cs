@@ -17,8 +17,8 @@ namespace Nexus.Editor.Tests
     /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214), a sync fallback
     /// made later async fallbacks share one depth (#215), a failed async composite never ran its FallbackAsync (#216), a
     /// retried composite under FireAsync kept its state (#217), an unsubscribed handler stayed reachable during a
-    /// dispatch (#218), NexusRuntime.Reset removed the binder's dispatchers (#219), HasHandlers missed a composite (#220)
-    /// and the Tracer tab's Clear detached every sink (#221).
+    /// dispatch (#218), NexusRuntime.Reset removed the binder's dispatchers (#219), HasHandlers missed a composite
+    /// (#220), the Tracer tab's Clear detached every sink (#221) and FireAsync was not counted (#223).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -85,6 +85,8 @@ namespace Nexus.Editor.Tests
             public int Writes;
             public void Write(in TraceEvent traceEvent) => Interlocked.Increment(ref Writes);
         }
+
+        public struct CountedSignal { }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -297,5 +299,23 @@ namespace Nexus.Editor.Tests
             finally { NexusTrace.RemoveSink(sink); }
         }
 #endif
+
+        [Test]
+        public async Task FireAsync_IsCountedInTotalSignalsDispatched()
+        {
+            bool enabled = NexusRuntime.Metrics.MetricsEnabled;
+            NexusRuntime.Metrics.MetricsEnabled = true;
+            try
+            {
+                var bus = NewBus();
+                bus.Subscribe<CountedSignal>(_ => { });
+                long before = NexusRuntime.Metrics.TotalSignalsDispatched;
+
+                await bus.FireAsync(new CountedSignal());
+
+                Assert.AreEqual(1, NexusRuntime.Metrics.TotalSignalsDispatched - before);
+            }
+            finally { NexusRuntime.Metrics.MetricsEnabled = enabled; }
+        }
     }
 }

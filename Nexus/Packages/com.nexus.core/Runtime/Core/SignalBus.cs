@@ -917,6 +917,13 @@ namespace Nexus.Core
                 throw new NexusReentrancyException($"Async stack overflow detected. Reentrancy limit of {MaxAsyncStackDepth} exceeded for signal {typeof(T).FullName}");
             }
 
+            // the sync path counts its dispatches, and this path did not (#223)
+            if (NexusRuntime.Metrics.MetricsEnabled)
+            {
+                NexusRuntime.Metrics.RecordSignalDispatched();
+                NexusRuntime.Metrics.RecordTrace(SignalTraceLabel<T>.Fire);
+            }
+
             // Capture the command-scoped token for use in the nested scopes below.
             // This allows FireAsyncWithTimeout to cancel command execution via a linked token.
             var commandCt = ct;
