@@ -6,7 +6,7 @@ an `AdsBootstrap` in the scene, and game code that talks to `IAdService` only.
 1. Install `com.nexus.core`, `com.nexus.ads` and `com.nexus.ads.bridge.nexus` at the same full commit
    (the bridge README has the three manifest lines; the Package Manager does not install a git
    package's dependencies, so `com.nexus.core` is listed too) and import this sample.
-2. Create the settings asset in **Project Settings > Nexus Ads** with a rewarded placement named
+2. Create the settings asset in **Nexus > Ads > Settings** with a rewarded placement named
    `shop_refill`.
 3. Put `AdsBootstrap` and `NexusAdsSample` on the scene's Root object and press Play. The lifecycle
    binds `AdService` and the factory, `NexusAdsBridge.Connect` hands the controller to the service on

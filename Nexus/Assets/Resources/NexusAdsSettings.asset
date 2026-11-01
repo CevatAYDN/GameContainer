@@ -93,6 +93,7 @@ MonoBehaviour:
     SessionResumeGapMinutes: 30
   GeneratedPlacementsPath: Assets/Scripts/Ads/AdPlacements.g.cs
   AppAdsTxtLines: []
+  Consent: 0
   ChildDirected: 0
   UnderAgeOfConsent: 0
   MaxAdContentRating: 0

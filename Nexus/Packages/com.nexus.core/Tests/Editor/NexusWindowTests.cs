@@ -54,10 +54,11 @@ namespace Nexus.Editor.Tests
             CreateGUI();
 
             var headers = Field<VisualElement>("_sidebar").Query<Label>(className: "nexus-category-header").ToList();
-            CollectionAssert.AreEqual(NexusWindow.Sections.Select(key => NexusLang.Get(key).ToUpper()).ToArray(),
+            var plugins = Field<List<INexusEditorPlugin>>("_plugins");
+            // a section shows when a tab is in it: the Ads section comes with com.nexus.ads
+            CollectionAssert.AreEqual(NexusWindow.Sections.Where(key => plugins.Any(p => p.Category == key)).Select(key => NexusLang.Get(key).ToUpper()).ToArray(),
                 headers.Select(h => h.text).ToArray(), "every tab sits in one of the sections, in their order");
             // Ctrl+1..9 index _plugins, so it lists the tabs as the sidebar does
-            var plugins = Field<List<INexusEditorPlugin>>("_plugins");
             CollectionAssert.AreEqual(plugins.Select(p => "Tab_" + p.Id).ToArray(), TabButtons().Select(b => b.name).ToArray());
         }
 

@@ -16,7 +16,7 @@ namespace Nexus.Editor
     {
         /// <summary>The sidebar sections in their order; a plugin's <see cref="INexusEditorPlugin.Category"/> names one,
         /// and a plugin with any other category is listed after them.</summary>
-        internal static readonly string[] Sections = { "cat_status", "cat_setup", "cat_architecture", "cat_live" };
+        internal static readonly string[] Sections = { "cat_status", "cat_setup", "cat_architecture", "cat_live", "cat_ads" };
 
         // Discovered plugin TYPES are cached across window open/close: the assembly-wide
         // scan is the expensive part of discovery (it was re-run on every OnEnable). Fresh

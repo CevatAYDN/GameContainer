@@ -29,7 +29,7 @@ namespace Nexus.Ads.Editor
             return Problems(AdsValidator.Validate(settings, tab, platform, new UnityProjectProbe(), PlatformCatalog.Load()));
         }
 
-        /// <summary>A failed check is an error and a warned one a warning, each with its fix and the setup window.</summary>
+        /// <summary>A failed check is an error and a warned one a warning, each with its fix and the Ads section's Setup tab.</summary>
         internal static List<NexusStatusProblem> Problems(AdsValidationReport report)
         {
             var problems = new List<NexusStatusProblem>();
@@ -41,7 +41,7 @@ namespace Nexus.Ads.Editor
                     IsError = check.Result == CheckResult.Fail,
                     Message = report.tab + " tab, " + check.id + ": " + check.message + (string.IsNullOrEmpty(check.fix) ? "" : " Fix: " + check.fix),
                     FixLabel = NexusLang.Get("status_fix_ads_setup"),
-                    Fix = AdsSetupWizard.Open,
+                    Fix = () => NexusWindow.Open("AdsSetup"),
                 });
             }
             return problems;

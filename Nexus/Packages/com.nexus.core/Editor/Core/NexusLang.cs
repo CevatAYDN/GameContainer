@@ -138,6 +138,7 @@ namespace Nexus.Editor
             s_strings["cat_setup"] = "Setup";
             s_strings["cat_architecture"] = "Architecture";
             s_strings["cat_live"] = "Live";
+            s_strings["cat_ads"] = "Ads";
 
             // Architecture tab and the signal fire form (#193 phase 3)
             s_strings["action_architecture_title"] = "Architecture";
@@ -471,6 +472,77 @@ namespace Nexus.Editor
             s_strings["status_binder_dropped_injectors"] = "The container set aside generated injectors written for other members and injects these types by reflection: {0}. Generate the binder again.";
             s_strings["status_runtime_errors"] = "{0} error(s) recorded at run time. The newest: {1}";
             s_strings["status_runtime_warnings"] = "{0} warning(s) recorded at run time. The newest: {1}";
+
+            // The Ads section (com.nexus.ads, Editor/Nexus): its tabs Setup, Settings and Placement Tester
+            s_strings["ads_tab_setup"] = "Setup";
+            s_strings["ads_tab_settings"] = "Settings";
+            s_strings["ads_tab_tester"] = "Placement Tester";
+            s_strings["ads_refresh"] = "Refresh";
+            s_strings["ads_catalog_read"] = "Catalog read {0}";
+            s_strings["ads_no_asset"] = "No ads settings asset yet. It lives at {0} so the game can load it at run time.";
+            s_strings["ads_create_asset"] = "Create the settings asset";
+            s_strings["ads_setup_settings"] = "1. Settings";
+            s_strings["ads_open_settings"] = "Open the Settings tab";
+            s_strings["ads_setup_providers"] = "2. Mediation providers";
+            s_strings["ads_selected"] = "selected";
+            s_strings["ads_next_install"] = "Next step: install the SDK and the provider package.";
+            s_strings["ads_next_release_keys"] = "Next step: enter on the Release tab: {0}";
+            s_strings["ads_registration"] = "Registration";
+            s_strings["ads_docs"] = "Docs";
+            s_strings["ads_policies"] = "Policies";
+            s_strings["ads_install_sdk"] = "Install SDK";
+            s_strings["ads_test_data"] = "Test data: {0}";
+            s_strings["ads_setup_networks"] = "3. Networks (managed in the mediation dashboard)";
+            s_strings["ads_registered_tip"] = "Registered with this network (kept for this project on this computer)";
+            s_strings["ads_not_child_directed"] = "(not for child-directed apps)";
+            s_strings["ads_register"] = "Register";
+            s_strings["ads_policy"] = "Policy";
+            s_strings["ads_setup_project"] = "4. Project";
+            s_strings["ads_generate_placements"] = "Generate AdPlacements";
+            s_strings["ads_pin_packages"] = "Pin family packages";
+            s_strings["ads_setup_android"] = "5. Android (selected mediation)";
+            s_strings["ads_tab_test_dev"] = "Test tab (development build)";
+            s_strings["ads_tab_release"] = "Release tab";
+            s_strings["ads_android_nothing"] = "No mediation selected; nothing to prepare.";
+            s_strings["ads_step_done"] = "Done";
+            s_strings["ads_step_pending"] = "Pending";
+            s_strings["ads_step_manual"] = "Manual";
+            s_strings["ads_prepare_android"] = "Prepare Android";
+            s_strings["ads_setup_checklist"] = "6. Rules the package cannot enforce (confirm each)";
+            s_strings["ads_setup_validate"] = "7. Validate";
+            s_strings["ads_validate_test"] = "Validate the Test tab";
+            s_strings["ads_validate_release"] = "Validate the Release tab";
+            s_strings["ads_outlook_title"] = "What each build does ({0})";
+            s_strings["ads_outlook_hint"] = "Each line is what the build decides to run. Whether the mediation's server accepts the keys and fills an ad is known only from a run on a device.";
+            s_strings["ads_mediation"] = "Mediation";
+            s_strings["ads_keys"] = "Keys";
+            s_strings["ads_keys_hint"] = "The editor and development builds read the Test tab; release builds read the Release tab. There is no switch.";
+            s_strings["ads_select_mediation"] = "Select a mediation to edit its keys.";
+            s_strings["ads_unit_unused"] = "No placement uses this format.";
+            s_strings["ads_admob_test_locked"] = "Google's published sample ids; locked, every device gets test ads with them.";
+            s_strings["ads_reset_test_data"] = "Reset to the official test data";
+            s_strings["ads_no_test_keys"] = "{0} publishes no test keys: the Test tab mirrors the Release tab; test mode and the device list make them test ads.";
+            s_strings["ads_copy_release"] = "Copy from Release";
+            s_strings["ads_test_devices"] = "Test device ids (GAID / IDFA)";
+            s_strings["ads_guide"] = "Where these values come from ({0})";
+            s_strings["ads_test_devices_where"] = "Test devices: {0}";
+            s_strings["ads_prepare_android_tab"] = "Prepare Android ({0} tab)";
+            s_strings["ads_placements"] = "Placements";
+            s_strings["ads_policy_floors"] = "Policy floors (values below the package floor are raised to it)";
+            s_strings["ads_privacy"] = "Privacy";
+            s_strings["ads_consent_levelplay"] = "Consent before LevelPlay";
+            s_strings["ads_generate_app_ads"] = "Generate app-ads.txt";
+            s_strings["ads_validation"] = "Validation";
+            s_strings["ads_tester_idle"] = "Enter Play Mode with an AdsBootstrap in the scene; the editor runs the simulator.";
+            s_strings["ads_tester_state"] = "Provider: {0}   state: {1}   gate: {2}   kill switch: {3}";
+            s_strings["ads_tester_scenario"] = "Simulator scenario";
+            s_strings["ads_tester_acknowledge"] = "Acknowledge pending reward {0} ({1})";
+            s_strings["ads_tester_natural_break"] = "natural break";
+            s_strings["ads_tester_show"] = "Show";
+            s_strings["ads_tester_ready"] = "ready";
+            s_strings["ads_tester_not_ready"] = "not ready";
+            s_strings["ads_tester_events"] = "Events";
+            s_strings["ads_tester_clear"] = "Clear log";
 
 
             s_strings["wizard_title"] = "CREATE A CONTEXT AND ITS SCRIPTS";

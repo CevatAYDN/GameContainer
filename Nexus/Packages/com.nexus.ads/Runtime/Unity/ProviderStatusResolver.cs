@@ -40,7 +40,7 @@ namespace Nexus.Ads.Unity
 
     /// <summary>
     /// The only place that computes a provider's status from the settings and the environment. Project
-    /// Settings, the wizard, the validator, the build and the debug panel show its result and never
+    /// the Ads tabs, the validator, the build and the debug panel show its result and never
     /// recompute it. Status is per platform.
     /// </summary>
     public static class ProviderStatusResolver

@@ -140,7 +140,7 @@ namespace Nexus.Ads.Unity
         public PolicyEntry Policy = new PolicyEntry();
 
         [Header("Project")]
-        [Tooltip("Where the AdPlacements constants are generated (Nexus Ads > Generate Placements)")]
+        [Tooltip("Where the AdPlacements constants are generated (Nexus > Ads > Generate Placements)")]
         public string GeneratedPlacementsPath = "Assets/Scripts/Ads/AdPlacements.g.cs";
         [Tooltip("One app-ads.txt line per network, as each dashboard gives it; the generator joins them")]
         public List<string> AppAdsTxtLines = new List<string>();

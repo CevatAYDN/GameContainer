@@ -41,7 +41,7 @@ public interface INexusEditorPlugin
 Before submitting a new plugin or refactor, verify:
 
 - [ ] Extends `NexusEditorPlugin` (not just bare `INexusEditorPlugin`).
-- [ ] `Id` is unique across all plugins (9 in the core, `FSMPlugin` in `com.nexus.fsm`) (e.g. `"Status"`, `"Tracer"`, `"ContextInspector"`).
+- [ ] `Id` is unique across all plugins (9 in the core, `FSMPlugin` in `com.nexus.fsm`, the Ads section's three in `com.nexus.ads`) (e.g. `"Status"`, `"Tracer"`, `"ContextInspector"`).
 - [ ] `DisplayName` uses `NexusLang.Get("key")` for localization.
 - [ ] `Order` is specified (e.g. 0 for Status, 1 for Wizard, 2 for ContextInspector).
 - [ ] `CreateView()` returns a non-null `VisualElement` tree.

@@ -180,7 +180,7 @@ namespace Nexus.Ads.Unity
             Instance = this;
             DontDestroyOnLoad(gameObject);
             if (_settings == null) _settings = AdsSettings.Load();
-            if (_settings == null) { Debug.LogError("[Nexus Ads] No AdsSettings: create one with Nexus > Ads Settings or assign it on the bootstrap."); return; }
+            if (_settings == null) { Debug.LogError("[Nexus Ads] No AdsSettings: create one with Assets > Create > Nexus > Ads Settings (with com.nexus.core, Nexus > Ads > Settings) or assign it on the bootstrap."); return; }
             Build = BuildForTests ?? CurrentBuild;
             Platform = CurrentPlatform;
             if (_startOnAwake) StartAds();

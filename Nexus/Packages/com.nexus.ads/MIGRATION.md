@@ -33,7 +33,7 @@ puts the family's controller behind the same service.
      Manager as its own dependency).
 
    UPM does not install a git package's dependencies, so each one is listed by hand.
-2. **Settings.** Open **Project Settings > Nexus Ads**: select the mediation, declare every placement
+2. **Settings.** Open **Nexus > Ads > Settings**: select the mediation, declare every placement
    name the game passes to `RequestReward` / `ShowInterstitial` (interstitial placements tick
    **Natural Break**; an undeclared name is blocked with `UnknownPlacement`), fill the Release tab with the
    live ids, and the Test tab (AdMob: Google's sample ids, filled by the page; LevelPlay: a copy of

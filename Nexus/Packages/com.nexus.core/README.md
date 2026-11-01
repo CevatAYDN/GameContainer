@@ -116,7 +116,7 @@ Context Wizard (a ContextData and its Root; Service, View/Mediator and Signal/Co
 existing file). **Architecture**: the map of the game's signals, commands, services, models, views and mediators,
 with each signal's handlers, each type's injected members and the members that receive it, a signal graph and, in
 Play Mode, the handlers the running contexts bind and a fire form. **Live**: Context Inspector (the running contexts as a parent/child tree, and the selected one's overview, singletons with live, editable fields, bindings, services, signal handlers, extensions and a fire form), Tracer (records events only with `NEXUS_DEBUG`), ErrorDashboard (it collects nothing while tests run), PerformanceDashboard, CasualServices;
-`com.nexus.fsm` adds a State Machine tab. The Nexus menu opens each section, and holds the binder generator,
+`com.nexus.fsm` adds a State Machine tab, and `com.nexus.ads` a fifth section, **Ads** (Setup, Settings, Placement Tester). The Nexus menu opens each section, and holds the binder generator,
 validation, the scene overlay toggle, the editor settings and, with `com.nexus.ads`, the Ads
 items; GameObject > Nexus creates Roots, scopes, bindings and the UI canvas. A package or a game adds its own check to
 the Status tab by implementing `INexusStatusSource`, and CI runs every check with

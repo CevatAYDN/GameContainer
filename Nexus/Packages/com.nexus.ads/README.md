@@ -1,6 +1,6 @@
 # Nexus Ads
 
-The ad package family's core: an engine-free ad core, a Unity layer, an editor setup wizard and
+The ad package family's core: an engine-free ad core, a Unity layer, editor setup tools and a
 validator, and a simulator provider. Mediation SDKs live in separate provider packages (`com.nexus.ads.levelplay`,
 `com.nexus.ads.admob`; a MAX provider is not planned while LevelPlay is the only mediation, issue #86); Nexus games connect through `com.nexus.ads.bridge.nexus`
 ([#12](https://github.com/CevatAYDN/GameContainer/issues/12)). The plan, decisions and phases are in
@@ -29,8 +29,8 @@ Next: the settings ([Using it without Nexus](#using-it-without-nexus)), then the
 |---|---|---|
 | `Runtime/Core` | `Nexus.Ads.Core` (`noEngineReferences: true`, no references) | Placements, `AdPolicy` floors, `PolicyGuard`, `AdController`, `RetryPolicy`, `ProviderGate`, `MediationLock`, `SimulatorProvider`, the ports in `Ports.cs`. Compiled and proven in the host harness (`dotnet run --project tools/nexus-benchmark`, suite `AdsCoreSuite`). |
 | `Runtime/Unity` | `Nexus.Ads.Unity` (references Core and `UnityEngine.UI`) | `AdsSettings` asset, `ProviderStatusResolver`, `AdsBootstrap`, the static `Ads` facade, `SimulatorOverlay`, `AdRewardedButton`, the port implementations. |
-| `Editor` | `Nexus.Ads.Editor` (references Core and Unity) | Project Settings page, setup wizard, Placement Tester, `AdsValidator` (+ `RunCli`, pre-build hook), `AdPlacements` generator, app-ads.txt, link.xml and manifest pinning helpers; `PlatformCatalog.json` (links, official test data with source, SDK distribution, setup steps EN + TR) read through `PlatformCatalog`. |
-| `Editor/Nexus` | `Nexus.Ads.Editor.Nexus` (references the Editor assembly and `com.nexus.core.editor`; compiled only with `com.nexus.core` installed, `NEXUS_CORE`) | `AdsStatusSource`: the validator in the Nexus window's Status list. |
+| `Editor` | `Nexus.Ads.Editor` (references Core and Unity) | `AdsValidator` (+ `RunCli`, pre-build hook), Prepare Android (`AndroidSetup`, `PrepareCli`), `AdsProjectActions` (the settings asset, the `AdPlacements` generator, app-ads.txt, link.xml, manifest pinning, the SDK install and the Test-tab keys); `PlatformCatalog.json` (links, official test data with source, SDK distribution, setup steps EN + TR) read through `PlatformCatalog`. |
+| `Editor/Nexus` | `Nexus.Ads.Editor.Nexus` (references the Editor assembly and `com.nexus.core.editor`; compiled only with `com.nexus.core` installed, `NEXUS_CORE`) | The Nexus window's Ads section: the Setup, Settings and Placement Tester tabs (UI Toolkit), and `AdsStatusSource`, the validator in the window's Status list. |
 | `docs` | | [POLICY_COMPLIANCE.md](docs/POLICY_COMPLIANCE.md) ([Türkçe](docs/POLICY_COMPLIANCE_TR.md)): every platform rule and where the package covers it. |
 | `Samples~/PlainUnity`, `Samples~/Nexus` | (imported by the Package Manager) | Ads without Nexus over the static facade; a Nexus game's lifecycle with `NexusAdsBridge.Connect`. |
 | `Tests/Editor`, `Tests/Runtime` | `com.nexus.ads.editor.tests`, `com.nexus.ads.tests` | EditMode tests of the settings, the resolver, the validator (through a fake project probe) and the text generators; PlayMode tests of the bootstrap, overlay, scheduler and button. |
@@ -131,8 +131,8 @@ stays hidden and the reason is logged as an error. A release build never runs th
    before `StartAds()`, which forwards the answer with `LevelPlayProvider.SetGdprConsent`) or `None` (no flow
    runs, Google's form included). Each source has its own registration and only the one the setting names
    runs, whatever the order the registrations came in (#181). When the flow it names is not registered at the
-   start, no ads start and the bootstrap logs `[Nexus Ads] no ads run:` with what is missing; Project Settings,
-   the setup wizard and the debug panel show the same decision (`BuildOutlook.Decide`, `BuildOutlook.MissingConsent`;
+   start, no ads start and the bootstrap logs `[Nexus Ads] no ads run:` with what is missing; the Ads
+   section's Settings and Setup tabs and the debug panel show the same decision (`BuildOutlook.Decide`, `BuildOutlook.MissingConsent`;
    #154, #181). A game that starts ads later (after its own
    explanation, or never for a player who owns its ad-free product) turns the bootstrap's
    `startOnAwake` off (or passes `startOnAwake: false` to `Configure` on a bootstrap made in code) and
@@ -205,19 +205,25 @@ as the `PendingReward` for the game's next start.
 
 ## Editor tools
 
-- **Project Settings > Nexus Ads**: the asset, the Test and Release tabs per platform (AdMob's Test tab
+The Setup, Settings and Placement Tester tabs are the Nexus window's **Ads** section, in English and
+Turkish with the window's language (`Editor/Nexus`, compiled only with `com.nexus.core`; #193). Without the
+core, the settings asset is edited in the Inspector (**Assets > Create > Nexus > Ads Settings**), and the
+menu items Generate Placements, Write link.xml and Pin family packages, `RunCli`, `PrepareCli` and the
+pre-build hook remain.
+
+- **Nexus > Ads > Settings**: the asset, the Test and Release tabs per platform (AdMob's Test tab
   is locked to Google's sample ids with a reset button; LevelPlay and MAX copy the Release keys), the
   device list, under the keys **Where these values come from** (the selected provider's setup steps and
-  test-device location from `PlatformCatalog.json`, nothing written by the page itself), **Prepare Android**
-  for the tab being edited (the same steps and button as the wizard), placements, floors, privacy,
+  test-device location from `PlatformCatalog.json`, nothing written by the tab itself), **Prepare Android**
+  for the tab being edited (the same steps and button as the Setup tab), placements, floors, privacy,
   app-ads.txt lines, and the validator buttons; a result shows the counts and each failing or warning
-  check in its own box with its fix and check id (the wizard shows results the same way). Status badges
+  check in its own box with its fix and check id (the Setup tab shows results the same way). Status badges
   come from `ProviderStatusResolver`. Above the keys, **What each build does** lists the editor, a
   development build (listed and other devices) and a release build in plain words, from `BuildOutlook`,
-  the decision `AdsBootstrap` runs; the setup wizard shows the same lines and the debug panel shows
+  the decision `AdsBootstrap` runs; the Setup tab shows the same lines and the debug panel shows
   `this build:`. A line is what the build decides to run; whether the mediation's server accepts the keys
   and fills an ad is known only from a run on a device.
-- **Nexus > Ads > Setup**: the wizard. Every provider and network row from the catalog with its
+- **Nexus > Ads > Setup**: from nothing to a live ad. Every provider and network row from the catalog with its
   status badge, next step, registration / docs / policy links, "Install SDK" (LevelPlay from the Unity
   registry, AdMob from OpenUPM with the scoped registry written for you, MAX through AppLovin's
   installer), the setup steps in English and Turkish, the project buttons (generate placements, write

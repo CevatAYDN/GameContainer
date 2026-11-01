@@ -11,7 +11,8 @@ mediation, and the simulator runs in the editor and on unlisted devices. Plan an
 ## Install
 
 1. `com.nexus.ads` by git URL at a full 40-character commit hash ([its Install section](../com.nexus.ads/README.md#install)).
-2. **Project Settings > Nexus Ads** (or **Nexus > Ads > Setup > Create the settings asset**): select
+2. **Nexus > Ads > Settings** (or **Nexus > Ads > Setup > Create the settings asset**; without `com.nexus.core`,
+   **Assets > Create > Nexus > Ads Settings** and the Inspector): select
    LevelPlay, enter the App Key and the ad unit ids on the Release tab, press **Copy from Release** on
    the Test tab, add your phone's advertising id to the device list
    ([where to read it](../com.nexus.ads/README.md#which-build-talks-to-which-sdk)). Prepare Android reads

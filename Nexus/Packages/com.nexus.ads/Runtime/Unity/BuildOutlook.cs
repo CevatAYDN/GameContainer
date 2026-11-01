@@ -37,7 +37,7 @@ namespace Nexus.Ads.Unity
 
     /// <summary>
     /// The only place that decides what a build runs and says it in words. <see cref="AdsBootstrap"/> runs
-    /// <see cref="Decide"/>; Project Settings, the setup wizard and the on-device debug panel show
+    /// <see cref="Decide"/>; the Ads Settings and Setup tabs and the on-device debug panel show
     /// <see cref="Say"/> of the same decision, so no surface can promise an ad the runtime will not run.
     /// </summary>
     public static class BuildOutlook

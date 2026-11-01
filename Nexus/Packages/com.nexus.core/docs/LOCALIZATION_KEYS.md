@@ -11,7 +11,7 @@ The keys here are the editor's. A game's own text goes through `LocalizationServ
 
 This document lists the localization key namespaces used by the editor window (`NexusWindow`) and the 9 Nexus Editor Plugins in `com.nexus.core` (the `NexusEditorPlugin` subclasses under `Editor/Plugins/`; the State Machine tab moved to `com.nexus.fsm` in #112) to prevent key collisions and ensure translation parity between **English (`en`)** and **Turkish (`tr`)**.
 
-**Parity:** every one of the 401 keys in `NexusLang.AddDefaults()` has an entry in `Editor/Locales/tr.json`, and `tr.json` has no key the code does not define. A new key goes into both files in the same change, and a changed English text gets its Turkish text in the same change.
+**Parity:** every one of the 471 keys in `NexusLang.AddDefaults()` has an entry in `Editor/Locales/tr.json`, and `tr.json` has no key the code does not define. A new key goes into both files in the same change, and a changed English text gets its Turkish text in the same change.
 
 A few `tr.json` entries deliberately keep the English text:
 
@@ -27,7 +27,7 @@ Code never compares a displayed text with an English literal: `ArchitecturePlugi
 | Prefix | Component / Plugin | Description |
 |:---|:---|:---|
 | `brand_`, `sidebar_`, `error_`, `actions_`, `status_edit_mode`, `status_play_mode_active`, `statusbar_` | NexusWindow | Window shell: brand, sidebar, plugin discovery errors, action bar, status bar |
-| `cat_` | NexusWindow sidebar | Section headers: `cat_status`, `cat_setup`, `cat_architecture` and `cat_live`, in that order (`NexusWindow.Sections`); `INexusEditorPlugin.Category` returns one of them, and any other key, such as the default `cat_other`, is a section after them |
+| `cat_` | NexusWindow sidebar | Section headers: `cat_status`, `cat_setup`, `cat_architecture`, `cat_live` and `cat_ads`, in that order (`NexusWindow.Sections`); a section without a tab is not shown; `INexusEditorPlugin.Category` returns one of them, and any other key, such as the default `cat_other`, is a section after them |
 | `tab_` | NexusWindow sidebar | Sidebar button label per plugin, `tab_<plugin id in lower case>`; without the key the plugin's `DisplayName` is used. Also the `DisplayName` of the Status, Context Inspector, Error and Performance plugins |
 | `action_` | Plugins | `action_<tool>_title`: the `DisplayName` of the Architecture, Casual Services, FSM, Tracer and Wizard plugins |
 | no namespace prefix (`contexts`, `handlers`, `roots`, `live_hint`, `no_roots`, `ready`, ...), `system_` | StatusPlugin, shared labels | The Status tab's state card and labels other tabs share |
@@ -37,6 +37,7 @@ Code never compares a displayed text with an English literal: `ArchitecturePlugi
 | `ci_`, `hierarchy_`, `hier_`, `gm_no_active_contexts` | ContextInspectorPlugin | The running contexts' tree; the selected context's overview, singletons with their fields, DI bindings, services, signal handlers, extensions, test fire |
 | `arch_` | ArchitecturePlugin (`Plugins/Architecture/`) | The map of the game's signals, commands, services, models, views and mediators: filters, details, handlers, dependencies, graph (`arch_kind_<kind>` is built from `ArchitectureMap.Kind`) |
 | `fire_` | SignalFireForm (`Plugins/Architecture/`) | The signal fire form the Architecture and Context Inspector tabs share: fields, context, result, presets |
+| `ads_` | `com.nexus.ads`'s Ads section (`Editor/Nexus`: `AdsSetupPlugin`, `AdsSettingsPlugin`, `PlacementTesterPlugin`, `AdsViews`) | The Setup, Settings and Placement Tester tabs. The Setup tab's checklist is not here: its English sentence is each item's EditorPrefs key (#195), so both languages stay in `AdsSetupPlugin` |
 | `tracer_`, `tr_` | TracerPlugin | Causal trace log, filters, event details (`tr_` is the tracer's prefix, not the Turkish locale) |
 | `fsm_` | FSMPlugin (`com.nexus.fsm`) | Finite state machine visualizer |
 | `ed_` | ErrorDashboardPlugin | Error log: severity and category filters, capture, copy and CSV export |

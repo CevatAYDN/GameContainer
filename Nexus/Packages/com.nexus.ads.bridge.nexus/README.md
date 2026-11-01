@@ -25,7 +25,7 @@ dependencies, so each is listed (without the `com.nexus.core` line a bare projec
 ## Wiring
 
 Bind the service and the factory as before, put an `AdsBootstrap` in the first scene (it loads
-`Resources/NexusAdsSettings`, created by **Project Settings > Nexus Ads**), and connect once:
+`Resources/NexusAdsSettings`, created by **Nexus > Ads > Settings**), and connect once:
 
 ```csharp
 using Nexus.Ads.Bridge;

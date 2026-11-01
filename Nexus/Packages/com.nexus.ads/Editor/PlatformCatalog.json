@@ -1,6 +1,6 @@
 {
   "readDate": "2026-10-24",
-  "note": "Links, official test data and registration steps for the Nexus ads setup wizard. Test values come only from the provider's official documentation; a provider without published test data has testData.published = false and the unregistered-device rule applies. Policy rules per platform are in docs/POLICY_COMPLIANCE.md.",
+  "note": "Links, official test data and registration steps for the Nexus ads setup tools. Test values come only from the provider's official documentation; a provider without published test data has testData.published = false and the unregistered-device rule applies. Policy rules per platform are in docs/POLICY_COMPLIANCE.md.",
   "providers": [
     {
       "id": "levelplay",

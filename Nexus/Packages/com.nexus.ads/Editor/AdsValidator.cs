@@ -74,7 +74,7 @@ namespace Nexus.Ads.Editor
 
     /// <summary>
     /// Every check the setup promises, as a pure function over the settings, a tab, a platform and a
-    /// <see cref="IProjectProbe"/>. The editor page, the wizard, <see cref="RunCli"/> and the pre-build hook
+    /// <see cref="IProjectProbe"/>. The Ads tabs, the Status list, <see cref="RunCli"/> and the pre-build hook
     /// all call <see cref="Validate"/>; none of them has a rule of its own. Check ids are stable and
     /// listed in the package README; the register's "Validator" cells name them.
     /// </summary>
@@ -156,7 +156,7 @@ namespace Nexus.Ads.Editor
             if (kind == AdProviderKind.None)
             {
                 report.Add(release && !settings.AdFreeRelease
-                    ? new AdsCheck("mediation.selected", CheckResult.Fail, "no mediation is selected and this is not an ad-free release.", "select a mediation in Project Settings > Nexus Ads, or tick Ad-free release on purpose.")
+                    ? new AdsCheck("mediation.selected", CheckResult.Fail, "no mediation is selected and this is not an ad-free release.", "select a mediation in the settings asset (Nexus > Ads > Settings), or tick Ad-free release on purpose.")
                     : new AdsCheck("mediation.selected", CheckResult.Pass, release ? "ad-free release, on purpose" : "no mediation selected; the simulator runs"));
             }
             else if (release)
@@ -381,7 +381,7 @@ namespace Nexus.Ads.Editor
             }
             if (bad.Count > 0) report.Add(new AdsCheck("placements.names", CheckResult.Fail, string.Join("; ", bad) + ".", "placement names are C# identifiers (shop_refill, not shop-refill) and unique; interstitial placements are marked NaturalBreak."));
             else report.Add(settings.Placements.Count == 0
-                ? new AdsCheck("placements.names", CheckResult.Warn, "no placement is declared; nothing can show.", "add placements in Project Settings > Nexus Ads.")
+                ? new AdsCheck("placements.names", CheckResult.Warn, "no placement is declared; nothing can show.", "add placements in the settings asset (Nexus > Ads > Settings).")
                 : new AdsCheck("placements.names", CheckResult.Pass, settings.Placements.Count + " placement(s)"));
 
             // floors
@@ -395,7 +395,7 @@ namespace Nexus.Ads.Editor
 
             // privacy policy
             report.Add(string.IsNullOrWhiteSpace(settings.PrivacyPolicyUrl)
-                ? new AdsCheck("privacy.url", CheckResult.Warn, "no privacy policy URL; the networks and Google Play require one that names the ad SDKs (KVKK notice for Türkiye).", "enter the URL in Project Settings > Nexus Ads > Privacy.")
+                ? new AdsCheck("privacy.url", CheckResult.Warn, "no privacy policy URL; the networks and Google Play require one that names the ad SDKs (KVKK notice for Türkiye).", "enter the URL in the settings asset (Nexus > Ads > Settings > Privacy).")
                 : new AdsCheck("privacy.url", CheckResult.Pass, "privacy policy URL set"));
 
             // link.xml
@@ -419,7 +419,7 @@ namespace Nexus.Ads.Editor
                 if (!covered) withoutLine.Add(domains.Count == 0 ? id : id + " (" + string.Join(" or ", domains) + ")");
             }
             report.Add(withoutLine.Count > 0
-                ? new AdsCheck("appads.lines", CheckResult.Warn, "no app-ads.txt line starts with the ad system domain of: " + string.Join(", ", withoutLine) + ".", "paste each network's app-ads.txt line from its dashboard into Project Settings > Nexus Ads > app-ads.txt lines, then generate the file.")
+                ? new AdsCheck("appads.lines", CheckResult.Warn, "no app-ads.txt line starts with the ad system domain of: " + string.Join(", ", withoutLine) + ".", "paste each network's app-ads.txt line from its dashboard into the settings asset's app-ads.txt lines (Nexus > Ads > Settings), then generate the file.")
                 : new AdsCheck("appads.lines", CheckResult.Pass, probe.DetectedNetworks.Count == 0 ? "no network adapters detected" : "every detected network has an app-ads.txt line"));
 
             // pins

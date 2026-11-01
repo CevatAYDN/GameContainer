@@ -16,7 +16,7 @@ Aşağıdaki her sayfanın okunma tarihi: **2026-10-24**. İngilizce aslı:
 |---|---|
 | **Kod** | `PolicyGuard` (`Nexus.Ads.Core` içinde) çağrıyı çalışma anında engeller. Engel kapatılamaz; yer ve uzaktan gelen değerler korumanın alt sınırlarına kırpılır. Her engel bir `PolicyViolation` olayı yayar. |
 | **Doğrulayıcı** | `AdsValidator` (editör, `RunCli`, pre-build kancası) projenin ayarlarından ve bir proje sondasından kontrol başına `pass`, `warn` ya da `fail` raporlar; parantezdeki kontrol kimlikleri paket README'sindekilerdir. |
-| **Geliştirici** | Kodla zorlanamaz; kurulum sihirbazının kontrol listesinde ve burada yer alır. |
+| **Geliştirici** | Kodla zorlanamaz; Reklamlar bölümünün Kurulum sekmesindeki kontrol listesinde ve burada yer alır. |
 | **SDK** | Reklamı mediation ya da ağ SDK'sı çizer ve davranışına (kapatma düğmesi, sayaçlar) sahiptir; paket reklam görünümüne hiç dokunmaz. |
 
 **Paket** sütunundaki kural adları, Aşama 2 kodunun ve testlerinin kullandığı `PolicyGuard` kural
@@ -73,7 +73,7 @@ Okunan sayfalar: [Reklam politikası](https://support.google.com/googleplay/andr
 | "Ad fraud is strictly prohibited." (Reklam sahtekârlığı kesinlikle yasaktır.) | **Geliştirici**; **Kod** `UnregisteredDevice`, `TestModeRequired`. |
 | Reklam kimliği yalnızca reklam ve analitik için; Android 13 hedefleyen uygulamalar manifest'te `com.google.android.gms.permission.AD_ID` iznini bildirmek zorunda. | **Doğrulayıcı** (`android.adid`, yalnızca özel manifest: Android 13+ hedefin manifest'i izni taşımıyorsa uyarı, çocuklara yönelik uygulamanınki izni kaldırmıyorsa hata); **Kod**: `AdsBootstrap` kimliği yalnızca kapının onu Test sekmesinin cihaz listesiyle karşılaştırdığı yerde okur (mediation seçili, test modu açık ve örnek birim kullanmayan bir development build). Bu karşılaştırma SDK'nın başlayıp başlamayacağına karar verdiği için okuma onay akışından önce yapılır; release build, editör ve mediation seçmemiş oyun kimliği hiç okumaz (#133). Kimlik hata ayıklama paneli için bellekte kalır, metin olarak yalnızca development build'in `UnregisteredDevice` uyarısında görünür; paket onu ne saklar ne gönderir. **Geliştirici**: Play Console reklam kimliği beyanı. |
 | Hedef API (2026-11-01'de okundu): yeni uygulamalar ve güncellemeler 2026-08-31'den itibaren "must target Android 16 (API level 36) or higher to be submitted to Google Play" (Google Play'e gönderilmek için Android 16, API 36 ya da üstünü hedeflemeli), istek üzerine 2026-11-01'e uzatma; mevcut uygulamalar yeni kullanıcılara açık kalmak için API 35 ya da üstünü hedeflemeli. | **Doğrulayıcı** `android.targetapi`: API 36'nın altı Release sekmesinde hata (pre-build kancası release build'i durdurur), Test sekmesinde uyarı; Otomatik, build'in kullandığı API düzeyi olarak okunur (#194). |
-| Uygulama içeriği: reklam içerip içermediği, hedef yaş grubu, gizlilik ve güvenlik uygulamaları (Data safety) beyan edilir. | **Geliştirici**: Play Console beyanları; sihirbazın kontrol listesi üçünü de adlandırır. |
+| Uygulama içeriği: reklam içerip içermediği, hedef yaş grubu, gizlilik ve güvenlik uygulamaları (Data safety) beyan edilir. | **Geliştirici**: Play Console beyanları; Kurulum sekmesinin kontrol listesi üçünü de adlandırır. |
 | Aileler: yalnızca çocuklara yönelik uygulamalar yalnızca öz-sertifikalı SDK sürümlerini kullanır; bu uygulamalar Android reklam kimliğini (AAID) göndermez ve API 33+ hedefte AD_ID iznini istemez (2026-11-01'de okundu); karma kitle "nötr yaş ekranı" ister; çocuklara kişiselleştirilmiş reklam yok; oyunu kesen ödüllü/opt-in reklam 5 saniyede kapatılabilmeli; açılışta geçiş reklamı yok; sayfada birden çok reklam yeri yok. | **Kod** `ChildSettingsForwarded` (LevelPlay: reklam kimliğinden çıkış ve yalnızca Aileler ağları, aşağıda), `InterstitialNaturalBreakOnly`, `NoStackedAds`; **Doğrulayıcı** `child.mediation`, `child.networks`, `android.adid` (çocuklara yönelik uygulama, özel manifest'i reklam SDK'larının birleştirmede eklediği AD_ID'yi kaldırmıyorsa hata alır); **Geliştirici** yaş ekranı ve içerik, karma kitlede kullanıcı başına bayraklar. |
 
 Okunma tarihinde Google'ın Aileler öz-sertifikalı reklam SDK listesi (LevelPlay ve Liftoff eski
@@ -179,7 +179,7 @@ sıkılaştırılabilir, asla gevşetilemez.
 
 ## Paketin zorlayamadığı kurallar
 
-Kurulum sihirbazı bunları kontrol listesi olarak gösterir; yayıncı her birini onaylar.
+Reklamlar bölümünün Kurulum sekmesi bunları kontrol listesi olarak gösterir; yayıncı her birini onaylar.
 
 - Canlı reklama asla dokunma, kimseden de isteme. Yalnızca sağlayıcının test modu ya da örnek birimleriyle test et.
 - Release build'i ya da canlı birimli herhangi bir build'i test edenlere, arkadaşlara ya da ekibe verme.

@@ -26,7 +26,7 @@ namespace NexusAdsSamples.PlainUnity
             var settings = AdsSettings.Load();
             if (settings == null)
             {
-                // no asset yet (Project Settings > Nexus Ads creates one): in-memory settings keep the demo running on the simulator
+                // no asset yet (Assets > Create > Nexus > Ads Settings creates one): in-memory settings keep the demo running on the simulator
                 settings = ScriptableObject.CreateInstance<AdsSettings>();
                 settings.SelectedMediation = AdProviderKind.LevelPlay;
                 settings.Placements.Add(new PlacementEntry { Name = RewardedPlacement, Format = AdFormat.Rewarded });

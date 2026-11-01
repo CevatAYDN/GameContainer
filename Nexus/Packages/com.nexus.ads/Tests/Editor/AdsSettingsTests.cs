@@ -94,5 +94,20 @@ namespace Nexus.Ads.Tests
             Assert.IsTrue(match.Success, "catalog has a publisherPrefix");
             Assert.AreEqual(match.Groups[1].Value, AdMobSampleIds.PublisherPrefix);
         }
+
+        [Test]
+        public void TheAdMobTestTabFills_OnlyOnAPlatformWithNoKey_SoNoKeyTheUserEnteredIsOverwritten()
+        {
+            // the fill runs each time the Settings tab is built (#193); a platform with any key is the user's
+            var catalog = Nexus.Ads.Editor.PlatformCatalog.Load();
+            _settings.SelectedMediation = AdProviderKind.AdMob;
+            _settings.Test.AdMob.Ios.BannerUnitId = "my-banner";
+
+            Assert.IsTrue(Nexus.Ads.Editor.AdsProjectActions.FillEmptyAdMobTestTab(_settings, catalog));
+            Assert.AreEqual(catalog.SampleAdMobKeys(AdPlatform.Android).RewardedUnitId, _settings.Test.AdMob.Android.RewardedUnitId);
+            Assert.AreEqual("my-banner", _settings.Test.AdMob.Ios.BannerUnitId);
+            Assert.IsTrue(string.IsNullOrEmpty(_settings.Test.AdMob.Ios.AppKey), "the platform the user started is left as it is");
+            Assert.IsFalse(Nexus.Ads.Editor.AdsProjectActions.FillEmptyAdMobTestTab(_settings, catalog), "a filled tab is not written again");
+        }
     }
 }

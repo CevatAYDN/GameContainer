@@ -17,7 +17,7 @@ Read date for every page below: **2026-10-24**. A Turkish translation is in
 |---|---|
 | **Code** | `PolicyGuard` (in `Nexus.Ads.Core`) blocks the call at runtime. The block cannot be turned off; placement and remote values are clamped to the guard's floors. Every block raises a `PolicyViolation` event. |
 | **Validator** | `AdsValidator` (editor, `RunCli`, pre-build hook) reports `pass`, `warn` or `fail` per check from the project's settings and a project probe; the check ids in parentheses are the ones in the package README. |
-| **Developer** | Cannot be enforced by code; listed in the setup wizard's checklist and here. |
+| **Developer** | Cannot be enforced by code; listed in the checklist of the Ads section's Setup tab and here. |
 | **SDK** | The mediation or network SDK renders the ad and owns the behaviour (close button, timers); the package never touches the ad view. |
 
 Rule names in the **Package** column are the `PolicyGuard` rule identifiers the Phase 2 code and tests
@@ -74,7 +74,7 @@ Pages read: [Ads policy](https://support.google.com/googleplay/android-developer
 | "Ad fraud is strictly prohibited." | **Developer**; **Code** `UnregisteredDevice`, `TestModeRequired`. |
 | Advertising ID: "must only be used for advertising and user analytics"; apps targeting Android 13 "will need to declare a Google Play services normal permission in the manifest file" (`com.google.android.gms.permission.AD_ID`). | **Validator** (`android.adid`, custom manifest only: a warning when an Android 13+ target's manifest lacks the permission, a fail when a child-directed app's does not remove it); **Code**: `AdsBootstrap` reads the id only where the gate compares it with the Test tab's device list (a development build with a mediation selected, its test mode on and no sample units). It reads it before the consent flow, because that comparison decides whether the SDK starts at all; a release build, the editor and a game without a mediation never read it (#133). The id stays in memory for the debug panel and appears in text only in a development build's `UnregisteredDevice` warning; the package neither stores nor sends it. **Developer**: the Play Console advertising-id declaration. |
 | Target API (read 2026-11-01): new apps and app updates "must target Android 16 (API level 36) or higher to be submitted to Google Play" from 2026-08-31, with an extension to 2026-11-01 on request; existing apps "must target Android 15 (API level 35) or higher to remain available to new users". | **Validator** `android.targetapi`: below API 36 a fail on the Release tab, which stops a release build in the pre-build hook, and a warning on the Test tab; Automatic is read as the API level it builds with (#194). |
-| App content: "You must declare whether or not your app contains ads"; "You must declare your app's target age group"; privacy and security practices (Data safety). | **Developer**: Play Console declarations; the wizard checklist names all three. |
+| App content: "You must declare whether or not your app contains ads"; "You must declare your app's target age group"; privacy and security practices (Data safety). | **Developer**: Play Console declarations; the Setup tab's checklist names all three. |
 | Families: "you must use only Families self-certified ads SDK versions" (child-only apps); "Apps that solely target children must not transmit Android advertising identifier (AAID)" and "should not request AD_ID permission when targeting Android API 33 or higher" (read 2026-11-01); mixed audiences need "a neutral age screen"; "Don't serve personalized ads to children"; rewarded or opt-in ads that interrupt play must be closable within 5 seconds; no "Interstitial monetization and advertising displayed immediately upon app launch"; no "Multiple ad placements on a page". | **Code** `ChildSettingsForwarded` (LevelPlay: the advertising-id opt-out and the Families networks only, below), `InterstitialNaturalBreakOnly`, `NoStackedAds`; **Validator** `child.mediation`, `child.networks`, `android.adid` (a child-directed app fails unless its custom manifest removes AD_ID, which the ad SDKs add on merge); **Developer** age screen and content, and the per-user flags of a mixed-audience app. |
 
 Families self-certified ads SDK list on the read date (Google's page; LevelPlay and Liftoff appear under
@@ -179,7 +179,7 @@ never loosened.
 
 ## Rules the package cannot enforce
 
-The setup wizard shows these as a checklist; the publisher confirms each one.
+The Ads section's Setup tab shows these as a checklist; the publisher confirms each one.
 
 - Never tap a live ad, and never ask anyone to. Test with the provider's test mode or sample units only.
 - Never give a release build, or any build with live ad units, to testers, friends or the team.
