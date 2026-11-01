@@ -125,6 +125,13 @@ to the `references` of each test assembly definition that uses them.
   fires `SpendRefundedSignal`; a game that grants something for a spend takes it back there.
 - `BigDouble` throws `ArgumentOutOfRangeException` for NaN and infinite input, the conversion from `double` included (#196).
   A value built from `Math.Pow` that overflows a double throws instead of becoming 0: build it with `BigDouble.Pow`.
+- A player build regenerates the binder and `link.xml` first (`NexusBinderBuildGuard`, #193), also when they exist and are out
+  of date, where the guard used to stop the build. With `NEXUS_DISABLE_AUTOGEN=1` nothing is generated and a stale binder stops
+  the build unless `NEXUS_SKIP_BINDER_GUARD=1`.
+- `BuildValidation.Validate()` runs the project's `IBuildValidationRule` classes (#193): an error from one fails the validation,
+  and so a player build. A validation that crashes fails with every error counted, where it left `LastErrorCount` at 0 and
+  `LastRunPassed` at the previous run's value. `LastResults` holds the findings after every run, not only after `RunSilent`, and
+  no longer holds the "Validation FAILED" summary line.
 
 #### Removed
 
@@ -143,6 +150,8 @@ Code that names one of these stops compiling; the changelog's Removed section gi
 | `ContextLifecycleOrchestrator.ExecuteLifecyclePhasesAsync` (#27) | Start the context through `Root`, `NexusLifetimeScope` or `Context.StartAsync` |
 | `IFloatingTextService`, `FloatingTextService` (#91) | A game's own floating text |
 | `ProviderFactory.RegisterBuiltIn` and the `"mock"` providers (#162) | The real adapters; the test doubles in `com.nexus.core.testing` |
+| `DIBindingRule` (#193) | Nothing: it reported nothing. A rule of the project implements `IBuildValidationRule` |
+| `NexusCodeGenerator.HasInjectableTypes` (#193) | Nothing called it |
 
 `ContextData.DisposeTimeoutSeconds` is obsolete (#59): nothing reads it, and the context never waits for async-disposable
 singletons. Remove its uses before it goes.

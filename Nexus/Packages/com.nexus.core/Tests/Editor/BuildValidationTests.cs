@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.CompilerServices;
 using Nexus.Core;
 using Nexus.Editor;
+using Nexus.Editor.Validation.Rules;
 
 namespace Nexus.Editor.Tests
 {
@@ -184,6 +185,68 @@ namespace Nexus.Editor.Tests
                 BuildValidation.ErrorLogger = previousError;
                 BuildValidation.IncludeTestAssemblies = false;
             }
+        }
+
+        // A project rule from this test assembly; it acts only while a test sets its mode (#193)
+        public sealed class ProbeRule : IBuildValidationRule
+        {
+            public enum Mode { Off, Report, Throw }
+            public static Mode Current;
+            public string Name => "Probe Rule";
+
+            public IEnumerable<ValidationIssue> Evaluate()
+            {
+                if (Current == Mode.Throw) throw new InvalidOperationException("probe rule crashed on purpose");
+                if (Current == Mode.Report)
+                {
+                    yield return new ValidationIssue { Message = "probe error", IsError = true };
+                    yield return new ValidationIssue { Message = "probe warning", IsError = false };
+                }
+            }
+        }
+
+        private static (int Errors, int Warnings) RunSilentWithProbe(ProbeRule.Mode mode)
+        {
+            ProbeRule.Current = mode;
+            try { BuildValidation.RunSilent(); }
+            finally { ProbeRule.Current = ProbeRule.Mode.Off; }
+            return (BuildValidation.LastErrorCount, BuildValidation.LastWarningCount);
+        }
+
+        [Test]
+        public void AProjectRule_RunsInValidation_AndItsIssuesCountAndAreListedUnderItsName()
+        {
+            BuildValidation.IncludeTestAssemblies = true;
+            try
+            {
+                var without = RunSilentWithProbe(ProbeRule.Mode.Off);
+                var with = RunSilentWithProbe(ProbeRule.Mode.Report);
+
+                Assert.AreEqual(without.Errors + 1, with.Errors, "the rule's error counts");
+                Assert.AreEqual(without.Warnings + 1, with.Warnings, "the rule's warning counts");
+                Assert.IsFalse(BuildValidation.LastRunPassed);
+                CollectionAssert.IsSubsetOf(new[] { ("Probe Rule", true, "[Nexus Error] Probe Rule: probe error"), ("Probe Rule", false, "[Nexus Warning] Probe Rule: probe warning") },
+                    System.Linq.Enumerable.ToList(System.Linq.Enumerable.Select(BuildValidation.LastResults, e => (e.Rule, e.IsError, e.Message))));
+            }
+            finally { BuildValidation.IncludeTestAssemblies = false; }
+        }
+
+        [Test]
+        public void AValidationThatCrashes_FailsWithEveryErrorCounted_AndTheCrashListed()
+        {
+            BuildValidation.IncludeTestAssemblies = true;
+            try
+            {
+                var complete = RunSilentWithProbe(ProbeRule.Mode.Off);
+                var crashed = RunSilentWithProbe(ProbeRule.Mode.Throw);
+
+                Assert.IsFalse(BuildValidation.LastRunPassed, "a run that crashed did not check everything");
+                Assert.AreEqual(complete.Errors + 1, crashed.Errors, "the errors found before the crash and the crash itself");
+                Assert.AreEqual(complete.Warnings, crashed.Warnings);
+                Assert.IsTrue(System.Linq.Enumerable.Any(BuildValidation.LastResults, e => e.IsError && e.Rule == "ValidationException" && e.Message.Contains("probe rule crashed on purpose")),
+                    "the crash is one of the results");
+            }
+            finally { BuildValidation.IncludeTestAssemblies = false; }
         }
 
         // --- Dummy types for the DI scan-filter predicates ---

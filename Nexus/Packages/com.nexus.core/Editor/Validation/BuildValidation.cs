@@ -6,6 +6,7 @@ using System.Runtime.CompilerServices;
 using UnityEditor;
 using UnityEngine;
 using Nexus.Core;
+using Nexus.Editor.Validation.Rules;
 
 namespace Nexus.Editor
 {
@@ -186,33 +187,23 @@ namespace Nexus.Editor
             ? $"{LastErrorCount} errors, {LastWarningCount} warnings"
             : "Not run yet";
 
+        /// <summary>Runs <see cref="Validate"/> without writing to the console; the findings are in <see cref="LastResults"/>.</summary>
         public static void RunSilent()
         {
-            s_lastResults.Clear();
-            LastErrorCount = 0;
-            LastWarningCount = 0;
             var prevInfo = InfoLogger;
             var prevWarn = WarningLogger;
             var prevErr = ErrorLogger;
-            InfoLogger = _ => { };
-            WarningLogger = msg => { s_lastResults.Add(new Entry { Message = msg, IsError = false }); LastWarningCount++; };
-            ErrorLogger = msg => { s_lastResults.Add(new Entry { Message = msg, IsError = true }); LastErrorCount++; };
-            try { LastRunPassed = Validate(); }
-            catch (Exception ex)
-            {
-                s_lastResults.Add(new Entry { Rule = "ValidationException", Message = ex.Message, IsError = true });
-                LastRunPassed = false;
-                LastErrorCount++;
-                throw;
-            }
-            finally { InfoLogger = prevInfo; WarningLogger = prevWarn; ErrorLogger = prevErr; HasRun = true; }
+            InfoLogger = WarningLogger = ErrorLogger = _ => { };
+            try { Validate(); }
+            finally { InfoLogger = prevInfo; WarningLogger = prevWarn; ErrorLogger = prevErr; }
         }
 
+        // Every finding a validation step reports becomes an entry of LastResults and goes to the loggers.
         private static class Debug
         {
             public static void Log(string msg) => InfoLogger(msg);
-            public static void LogWarning(string msg) => WarningLogger(msg);
-            public static void LogError(string msg) => ErrorLogger(msg);
+            public static void LogWarning(string msg, string rule = null) { s_lastResults.Add(new Entry { Rule = rule, Message = msg, IsError = false }); WarningLogger(msg); }
+            public static void LogError(string msg, string rule = null) { s_lastResults.Add(new Entry { Rule = rule, Message = msg, IsError = true }); ErrorLogger(msg); }
         }
 
         [MenuItem("Nexus/Validate Architecture", false, 62)]
@@ -260,10 +251,18 @@ namespace Nexus.Editor
 
                 // 8. Warn about stub services that should be replaced before release
                 ValidateNoStubServices(ref errorCount, ref warningCount);
+
+                // 9. The project's own rules
+                RunProjectRules(ref errorCount, ref warningCount);
             }
             catch (Exception ex)
             {
-                Debug.LogError($"[Nexus] Validation aborted due to critical error: {ex.Message}\n{ex.StackTrace}");
+                // a crashed run has not checked everything, so it fails (#193)
+                errorCount++;
+                Debug.LogError($"[Nexus] Validation aborted due to critical error: {ex.Message}\n{ex.StackTrace}", "ValidationException");
+                LastErrorCount = errorCount;
+                LastWarningCount = warningCount;
+                LastRunPassed = false;
                 return false;
             }
 
@@ -273,7 +272,8 @@ namespace Nexus.Editor
 
             if (errorCount > 0)
             {
-                Debug.LogError($"[Nexus] Validation FAILED with {errorCount} Errors and {warningCount} Warnings. Please fix the errors before building.");
+                // the summary is not a finding of its own, so it is not an entry of LastResults
+                ErrorLogger($"[Nexus] Validation FAILED with {errorCount} Errors and {warningCount} Warnings. Please fix the errors before building.");
                 return false;
             }
 
@@ -796,6 +796,26 @@ namespace Nexus.Editor
         /// <c>[Inject]</c> is placed on an auto-property — the attribute lives on the property,
         /// not on the compiler-generated backing field.
         /// </summary>
+        /// <summary>
+        /// Runs every <see cref="IBuildValidationRule"/> of the project (any editor assembly; test assemblies only with
+        /// <see cref="IncludeTestAssemblies"/>), in type-name order. A rule that throws aborts the run like any other step.
+        /// </summary>
+        private static void RunProjectRules(ref int errorCount, ref int warningCount)
+        {
+            foreach (var type in TypeCache.GetTypesDerivedFrom<IBuildValidationRule>().OrderBy(t => t.FullName, StringComparer.Ordinal))
+            {
+                if (type.IsAbstract || type.IsInterface || type.GetConstructor(Type.EmptyTypes) == null) continue;
+                if (!IncludeTestAssemblies && AssemblyCatalog.IsTestAssembly(AssemblyCatalog.GetSimpleName(type.Assembly))) continue;
+                var rule = (IBuildValidationRule)Activator.CreateInstance(type);
+                foreach (var issue in rule.Evaluate() ?? Enumerable.Empty<ValidationIssue>())
+                {
+                    string message = $"[Nexus {(issue.IsError ? "Error" : "Warning")}] {rule.Name}: {issue.Message}";
+                    if (issue.IsError) { errorCount++; Debug.LogError(message, rule.Name); }
+                    else { warningCount++; Debug.LogWarning(message, rule.Name); }
+                }
+            }
+        }
+
         private static bool IsAutoPropertyWithInject(FieldInfo field, Type declaringType)
         {
             if (!field.Name.EndsWith("k__BackingField")) return false;
@@ -1323,33 +1343,15 @@ namespace Nexus.Editor
         }
     }
 
-    // Build Pre-processor hook to automatically validate before build starts
+    // Validates the architecture before a player build, after NexusBinderBuildGuard (-1000) has regenerated the binder.
     public class NexusBuildPreProcessor : UnityEditor.Build.IPreprocessBuildWithReport
     {
         public int callbackOrder => 0;
 
         public void OnPreprocessBuild(UnityEditor.Build.Reporting.BuildReport report)
         {
-            string bypassEnv = System.Environment.GetEnvironmentVariable("NEXUS_DISABLE_VALIDATION");
-            bool disableValidation = !string.IsNullOrEmpty(bypassEnv) && (bypassEnv == "1" || bypassEnv.Equals("true", StringComparison.OrdinalIgnoreCase));
-            
-            string warnEnv = System.Environment.GetEnvironmentVariable("NEXUS_VALIDATION_WARN_ONLY");
-            bool warnOnly = !string.IsNullOrEmpty(warnEnv) && (warnEnv == "1" || warnEnv.Equals("true", StringComparison.OrdinalIgnoreCase));
-
-            // Regenerate the AOT binder so a stale injector never ships in the build.
-            string autogenEnv = System.Environment.GetEnvironmentVariable("NEXUS_DISABLE_AUTOGEN");
-            bool disableAutogen = !string.IsNullOrEmpty(autogenEnv) && (autogenEnv == "1" || autogenEnv.Equals("true", StringComparison.OrdinalIgnoreCase));
-            if (!disableAutogen)
-            {
-                try
-                {
-                    NexusCodeGenerator.GenerateBinder();
-                }
-                catch (Exception ex)
-                {
-                    throw new UnityEditor.Build.BuildFailedException($"[Nexus] AOT Binder generation failed during the pre-build step: {ex.Message}");
-                }
-            }
+            bool disableValidation = NexusBinderBuildGuard.IsSet("NEXUS_DISABLE_VALIDATION");
+            bool warnOnly = NexusBinderBuildGuard.IsSet("NEXUS_VALIDATION_WARN_ONLY");
 
             if (disableValidation)
             {
