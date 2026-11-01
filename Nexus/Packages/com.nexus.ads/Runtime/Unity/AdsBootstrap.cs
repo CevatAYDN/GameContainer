@@ -170,7 +170,13 @@ namespace Nexus.Ads.Unity
 
         private void Awake()
         {
-            if (Instance != null && Instance != this) { Destroy(gameObject); return; }
+            if (Instance != null && Instance != this)
+            {
+                // only this component goes: the game's other components on its GameObject stay (issue #195)
+                Debug.LogWarning("[Nexus Ads] a second AdsBootstrap on '" + name + "' was removed; the one on '" + Instance.name + "' keeps running the ads");
+                Destroy(this);
+                return;
+            }
             Instance = this;
             DontDestroyOnLoad(gameObject);
             if (_settings == null) _settings = AdsSettings.Load();

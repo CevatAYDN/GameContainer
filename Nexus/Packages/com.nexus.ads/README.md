@@ -109,7 +109,10 @@ stays hidden and the reason is logged as an error. A release build never runs th
    `Assets/Resources/NexusAdsSettings.asset`. Declare the placements (name, format, `NaturalBreak`,
    cooldown, caps), the privacy flags and, on the Release tab, the live keys. The Test tab holds the
    provider's test data and the device list (the wizard of #11 fills it).
-2. Put `AdsBootstrap` on a GameObject in the first scene (it survives scene loads). In the editor, in
+2. Put one `AdsBootstrap` on a GameObject in the first scene. The bootstrap marks that GameObject
+   `DontDestroyOnLoad`, so the GameObject and everything on it survive scene loads. A second bootstrap
+   (that scene loaded again, or one in another scene) removes only its own component, leaves its
+   GameObject and the rest on it, and logs a warning naming both GameObjects (#195). In the editor, in
    a development build on a device that is not listed (`UnregisteredDevice`) and in a development
    build while no mediation is selected, the simulator runs with a full-screen overlay; where the gate
    chose the SDK, a selected provider that is not installed runs nothing. In every build it logs what it

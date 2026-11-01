@@ -357,6 +357,27 @@ namespace Nexus.Ads.Tests.Runtime
             return null;
         }
 
+        // Issue #195: a second bootstrap destroyed its whole GameObject, the game's other components on it with it, and said nothing
+        [UnityTest]
+        public IEnumerator ASecondBootstrap_RemovesOnlyItsOwnComponent_AndWarnsNamingBothHosts()
+        {
+            yield return Boot(SimulatorScenario.Normal);
+            var host = new GameObject("GameRoot");
+            try
+            {
+                host.SetActive(false);
+                var gameComponent = host.AddComponent<BoxCollider>();
+                var duplicate = host.AddComponent<AdsBootstrap>();
+                LogAssert.Expect(LogType.Warning, "[Nexus Ads] a second AdsBootstrap on 'GameRoot' was removed; the one on 'AdsBootstrapTest' keeps running the ads");
+                host.SetActive(true);
+                yield return null;
+                Assert.IsTrue(host != null && gameComponent != null, "the GameObject and the game's component on it stay");
+                Assert.IsTrue(duplicate == null, "the second bootstrap is gone");
+                Assert.AreSame(_bootstrap, AdsBootstrap.Instance, "the first one keeps running");
+            }
+            finally { if (host != null) Object.Destroy(host); }
+        }
+
         [UnityTest]
         public IEnumerator RewardedButton_IsHiddenWhileNothingIsLoaded_AndPaysOnceOnReward()
         {
