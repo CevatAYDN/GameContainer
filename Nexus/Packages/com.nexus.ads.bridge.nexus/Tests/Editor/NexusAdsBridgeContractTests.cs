@@ -7,7 +7,7 @@ using Nexus.Core.Services;
 namespace Nexus.Ads.Bridge.Tests
 {
     // Hand-written ports: the contract is proven without Unity's clock, scenes or the bootstrap.
-    internal sealed class TestClock : IAdClock { public double Seconds { get; set; } public long UtcDay { get; set; } = 1; }
+    internal sealed class TestClock : IAdClock { public double Seconds { get; set; } public long UtcDay { get; set; } = 1; public double UtcSeconds { get; set; } = 86_400; }
     internal sealed class TestVisibility : IAppVisibility { public bool Visible => true; public event Action<bool> Changed { add { } remove { } } }
     internal sealed class TestMainThread : IMainThread { public bool IsCurrent => true; public void Post(Action action) => action(); }
     internal sealed class TestScheduler : IAdScheduler

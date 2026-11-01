@@ -5,33 +5,40 @@ using System.Globalization;
 namespace Nexus.Ads
 {
     /// <summary>
-    /// The pacing memory of one process: when the session started, what showed when, and the per-day
-    /// counters that survive a restart through <see cref="IPacingStore"/>. A session starts cold or
-    /// when the app returns after <see cref="AdPolicy.SessionResumeGapMinutes"/> in the background.
+    /// The pacing memory: when the session started and its counts, which start over with each session, and
+    /// what showed when and the per-day counters, which survive a restart through <see cref="IPacingStore"/>
+    /// (issue #153). A session starts cold or when the app returns after
+    /// <see cref="AdPolicy.SessionResumeGapMinutes"/> in the background.
     /// </summary>
     public sealed class SessionTracker
     {
         private const string DayKeyPrefix = "nexus.ads.day.";
         private const string DayTotalKey = "nexus.ads.day.interstitials";
+        private const string LastInterstitialKey = "nexus.ads.last.interstitial";
+        private const string LastRewardedKey = "nexus.ads.last.rewarded";
+        private const string LastPlacementPrefix = "nexus.ads.last.placement.";
 
         private readonly IAdClock _clock;
         private readonly IPacingStore _store;
         private readonly Dictionary<string, int> _sessionCounts = new Dictionary<string, int>(StringComparer.Ordinal);
+        // on this run's clock; an earlier run's show is negative, a placement never shown is -infinity; read from the store once
         private readonly Dictionary<string, double> _lastShownAt = new Dictionary<string, double>(StringComparer.Ordinal);
         private double _hiddenAt = double.NaN;
 
         public double SessionStartedAt { get; private set; }
         public int InterstitialsThisSession { get; private set; }
-        /// <summary>Seconds of the last interstitial close, or NaN.</summary>
-        public double LastInterstitialAt { get; private set; } = double.NaN;
-        /// <summary>Seconds of the last rewarded close, or NaN.</summary>
-        public double LastRewardedAt { get; private set; } = double.NaN;
+        /// <summary>The last interstitial close on <see cref="IAdClock.Seconds"/> (an earlier run's is negative), or NaN.</summary>
+        public double LastInterstitialAt { get; private set; }
+        /// <summary>The last rewarded close on <see cref="IAdClock.Seconds"/> (an earlier run's is negative), or NaN.</summary>
+        public double LastRewardedAt { get; private set; }
 
         public SessionTracker(IAdClock clock, IPacingStore store)
         {
             _clock = clock ?? throw new ArgumentNullException(nameof(clock));
             _store = store ?? throw new ArgumentNullException(nameof(store));
             StartSession();
+            LastInterstitialAt = ReadLastShown(LastInterstitialKey);
+            LastRewardedAt = ReadLastShown(LastRewardedKey);
         }
 
         public double SecondsSinceSessionStart => _clock.Seconds - SessionStartedAt;
@@ -39,7 +46,15 @@ namespace Nexus.Ads
         public int SessionCount(string placement) => _sessionCounts.TryGetValue(placement, out var n) ? n : 0;
 
         public double SecondsSinceShown(string placement)
-            => _lastShownAt.TryGetValue(placement, out var at) ? _clock.Seconds - at : double.PositiveInfinity;
+        {
+            if (!_lastShownAt.TryGetValue(placement, out var at))
+            {
+                at = ReadLastShown(LastPlacementPrefix + placement);
+                if (double.IsNaN(at)) at = double.NegativeInfinity;
+                _lastShownAt[placement] = at;
+            }
+            return _clock.Seconds - at;
+        }
 
         public int DayCount(string placement) => ReadDay(DayKeyPrefix + placement);
 
@@ -49,18 +64,22 @@ namespace Nexus.Ads
         public void RecordShown(AdPlacement placement)
         {
             double now = _clock.Seconds;
+            string utc = _clock.UtcSeconds.ToString("R", CultureInfo.InvariantCulture);
             _sessionCounts[placement.Name] = SessionCount(placement.Name) + 1;
             _lastShownAt[placement.Name] = now;
+            _store.Set(LastPlacementPrefix + placement.Name, utc);
             WriteDay(DayKeyPrefix + placement.Name, DayCount(placement.Name) + 1);
             if (placement.Format == AdFormat.Interstitial)
             {
                 InterstitialsThisSession++;
                 LastInterstitialAt = now;
+                _store.Set(LastInterstitialKey, utc);
                 WriteDay(DayTotalKey, InterstitialsToday + 1);
             }
             else if (placement.Format == AdFormat.Rewarded)
             {
                 LastRewardedAt = now;
+                _store.Set(LastRewardedKey, utc);
             }
         }
 
@@ -76,14 +95,21 @@ namespace Nexus.Ads
             _hiddenAt = double.NaN;
         }
 
+        // The gaps and cooldowns run from the show, not from the session: a resume keeps them as a restart does.
         private void StartSession()
         {
             SessionStartedAt = _clock.Seconds;
             InterstitialsThisSession = 0;
-            LastInterstitialAt = double.NaN;
-            LastRewardedAt = double.NaN;
             _sessionCounts.Clear();
-            _lastShownAt.Clear();
+        }
+
+        // A show of an earlier run is stored as UTC seconds and placed on this run's clock; one ahead of the wall clock (the
+        // device clock was set back) counts as just shown. NaN when the row is missing or unreadable.
+        private double ReadLastShown(string key)
+        {
+            string raw = _store.Get(key);
+            if (string.IsNullOrEmpty(raw) || !double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out double utc)) return double.NaN;
+            return _clock.Seconds - Math.Max(0, _clock.UtcSeconds - utc);
         }
 
         // Day counters are stored as "<day>:<count>"; a row from another day counts as zero.

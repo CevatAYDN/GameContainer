@@ -14,6 +14,7 @@ namespace Nexus.Ads.Unity
     {
         public double Seconds => Time.realtimeSinceStartupAsDouble;
         public long UtcDay => DateTime.UtcNow.Ticks / TimeSpan.TicksPerDay;
+        public double UtcSeconds => DateTime.UtcNow.Ticks / (double)TimeSpan.TicksPerSecond;
     }
 
     /// <summary>Foreground state from the application pause and focus callbacks.</summary>

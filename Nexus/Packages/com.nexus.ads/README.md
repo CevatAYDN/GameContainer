@@ -60,6 +60,12 @@ Defaults of `AdPolicy.Default`: 30 s between interstitials, none in the first 60
 none within 30 s after a rewarded ad, no session or day cap, a new session after 30 min in the
 background. Locked by `AdsCoreSuite` AP1–AP6.
 
+The gap between interstitials, the wait after a rewarded ad and a placement's cooldown run from
+the show, across a resume and a restart: `SessionTracker` keeps each last show as a UTC wall-clock
+time in `IPacingStore` (`PlayerPrefs` in the Unity layer), next to the per-day counters. A show
+stored ahead of the wall clock (the device clock was set back) counts as just shown. The
+first-seconds floors and the session caps start over with each session (`AdsCoreSuite` PG21–PG24).
+
 ## Which build talks to which SDK
 
 `ProviderGate.Evaluate(build, providerConfig, deviceAdvertisingId)`:

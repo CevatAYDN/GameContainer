@@ -5,13 +5,16 @@ namespace Nexus.Ads
     // The seams between the engine-free core and its host. The Unity layer implements every one of
     // them; the host harness implements them by hand. The core never reaches past them.
 
-    /// <summary>A monotonic clock plus the calendar day the per-day caps count against.</summary>
+    /// <summary>A monotonic clock plus the wall clock the pacing that survives a restart counts against.</summary>
     public interface IAdClock
     {
         /// <summary>Seconds since an arbitrary origin; never goes backwards.</summary>
         double Seconds { get; }
         /// <summary>Whole UTC days since an arbitrary origin; changes at midnight UTC.</summary>
         long UtcDay { get; }
+        /// <summary>UTC wall-clock seconds since an arbitrary fixed origin; goes on across restarts, and jumps when the
+        /// device clock is changed.</summary>
+        double UtcSeconds { get; }
     }
 
     /// <summary>Whether the app is in the foreground. Shows are blocked and retries pause while it is not.</summary>

@@ -22,7 +22,8 @@ namespace NexusBench
     {
         public double Seconds { get; set; }
         public long UtcDay { get; set; } = 20_000;
-        public void Advance(double seconds) => Seconds += seconds;
+        public double UtcSeconds { get; set; } = 20_000 * 86_400.0;
+        public void Advance(double seconds) { Seconds += seconds; UtcSeconds += seconds; }
     }
 
     public sealed class AdsVisibility : IAppVisibility
@@ -168,10 +169,10 @@ namespace NexusBench
     /// <summary>One wired controller with every port in reach of the test.</summary>
     public sealed class AdsRig : IDisposable
     {
-        public readonly AdsClock Clock = new();
+        public readonly AdsClock Clock;
         public readonly AdsScheduler Scheduler;
         public readonly AdsVisibility Visibility = new();
-        public readonly AdsStore Store = new();
+        public readonly AdsStore Store;
         public readonly AdsTelemetry Telemetry = new();
         public readonly AdsFakeProvider Provider = new();
         public readonly List<PolicyViolation> Violations = new();
@@ -182,14 +183,22 @@ namespace NexusBench
         public static readonly AdPlacement LevelEnd = new("level_end", AdFormat.Interstitial, naturalBreak: true);
         public static readonly AdPlacement MidGame = new("mid_game", AdFormat.Interstitial, naturalBreak: false);
 
-        public AdsRig(AdsConfig config = null, IConsentFlow consent = null, IAdFreeEntitlement adFree = null, IAdsRemoteConfig remote = null, IAdProvider provider = null)
+        public AdsRig(AdsConfig config = null, IConsentFlow consent = null, IAdFreeEntitlement adFree = null, IAdsRemoteConfig remote = null, IAdProvider provider = null,
+            AdsStore store = null, AdsClock clock = null)
         {
+            Clock = clock ?? new AdsClock();
+            Store = store ?? new AdsStore();
             Scheduler = new AdsScheduler(Clock);
             config ??= Config();
             Controller = new AdController(config, provider ?? Provider, Clock, Visibility, new AdsMainThread(), Scheduler, Store, Telemetry, consent, adFree, remote);
             Controller.Violation += v => Violations.Add(v);
             Controller.ReadyChanged += () => ReadyChanges++;
         }
+
+        /// <summary>The same device after the process restarted: the store is kept, the monotonic clock starts over, the wall
+        /// clock has moved on by <paramref name="secondsLater"/> (negative: the device clock was set back).</summary>
+        public AdsRig Restart(AdsConfig config, double secondsLater)
+            => new AdsRig(config, store: Store, clock: new AdsClock { UtcDay = Clock.UtcDay, UtcSeconds = Clock.UtcSeconds + secondsLater });
 
         public static ProviderConfig Provider_(bool testMode = true, string[] devices = null, bool published = false)
             => new ProviderConfig("key", new Dictionary<AdFormat, string> { { AdFormat.Rewarded, "r" }, { AdFormat.Interstitial, "i" } }, testMode, devices, published, false, false, "G");
@@ -365,6 +374,37 @@ namespace NexusBench
             v = rig2.Controller.Guard.Check("boost", AdFormat.Rewarded, open);
             Check("PG19. Placement_SessionCap_Blocks", !v.Allowed && v.Reason.Contains("session cap"), v.Reason);
             Check("PG20. DayCount_PersistedInStore", rig2.Store.Rows.ContainsKey("nexus.ads.day.boost") && rig2.Store.Get("nexus.ads.day.boost").EndsWith(":2"), rig2.Store.Get("nexus.ads.day.boost"));
+
+            // #153: the interstitial gap, the wait after a rewarded ad and a placement's cooldown are measured from the show
+            // across a restart; before, they started over and only the first-seconds floor held an interstitial back. Gigawatt's
+            // numbers (900 s gap and cooldown, 180 s after a rewarded ad) with no floor, so the floor cannot hide the rule.
+            var paced = AdsRig.Config(new AdPolicy(900, 0, 180, 0, 0, 30), BuildKind.Development,
+                AdsRig.LevelEnd, new AdPlacement("boost", AdFormat.Rewarded, cooldownSeconds: 900));
+            using (var before = new AdsRig(paced).Running())
+            {
+                before.Show("level_end"); before.Provider.ShowCallback(AdResult.Closed);
+                using (var after = before.Restart(paced, 100))
+                {
+                    v = after.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                    double left = after.Controller.Guard.SecondsUntilPacingEnds(AdsRig.LevelEnd);
+                    Check("PG21. InterstitialGap_SurvivesARestart", !v.Allowed && v.Reason.Contains("the last interstitial") && Math.Abs(left - 800) < 1e-6, $"{v.Reason}; left={left}");
+                }
+                using (var after = before.Restart(paced, -3600))
+                {
+                    v = after.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                    double left = after.Controller.Guard.SecondsUntilPacingEnds(AdsRig.LevelEnd);
+                    Check("PG22. AShowAheadOfTheWallClock_CountsAsJustShown", !v.Allowed && Math.Abs(left - 900) < 1e-6, $"{v.Reason}; left={left}");
+                }
+            }
+            using (var before = new AdsRig(paced).Running())
+            {
+                before.Show("boost"); before.Provider.ShowCallback(AdResult.Rewarded);
+                using var after = before.Restart(paced, 100);
+                v = after.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                Check("PG23. WaitAfterRewarded_SurvivesARestart", !v.Allowed && v.Reason.Contains("a rewarded ad closed"), v.Reason);
+                v = after.Controller.Guard.Check("boost", AdFormat.Rewarded, open);
+                Check("PG24. PlacementCooldown_SurvivesARestart", !v.Allowed && v.Reason.Contains("cooldown"), v.Reason);
+            }
         }
 
         // ----- AdController

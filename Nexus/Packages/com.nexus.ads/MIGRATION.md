@@ -62,7 +62,7 @@ puts the family's controller behind the same service.
    | `AdMobConfig` ad unit ids, test ids next to release ids | Test and Release tabs; a development build reads Test, a release build Release |
    | Mock in the editor, real adapter on devices | `AdsBootstrap`: the editor runs the simulator, a development build the SDK with test data (AdMob: Google's sample units on every device; LevelPlay and MAX: only on a device listed on the Test tab, the simulator elsewhere), a release build the SDK with live ids |
    | `AdMobConfig.DebugGeographyEea`, `TestDeviceHashedIds` | `AdMobProvider.SetTestDevices(googleIds, eeaConsentGeography)` (AdMob; applied with Google's sample units only) or `UmpConsentFlow.SetDebugDevices(hashedIds, eeaGeography)` (Google's form before LevelPlay; applied in test mode only), before the bootstrap starts |
-   | Interstitial cooldowns and per-day caps kept in `PlayerPrefs` | Policy floors and per-placement caps in the settings (`PolicyGuard`, per-day counters in `IPacingStore`) |
+   | Interstitial cooldowns and per-day caps kept in `PlayerPrefs` | Policy floors and per-placement caps in the settings (`PolicyGuard`; the per-day counters and the last show times, which hold the gaps and cooldowns across a restart, in `IPacingStore`) |
    | Muting audio or pausing time while an ad shows | `AdsBootstrap` pauses audio and time between open and close |
    | Load retries | `AdController`'s back-off, paused while the app is hidden |
    | A build script or code gate that refuses a release with test ids | `AdsValidator` pre-build hook on Android and iOS builds |
