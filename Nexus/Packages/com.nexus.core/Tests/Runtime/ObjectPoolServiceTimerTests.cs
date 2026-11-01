@@ -84,7 +84,7 @@ namespace Nexus.Tests.Runtime
         private int PooledInstances()
         {
             int count = 0;
-            foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+            foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include))
                 if (t.name == _prefab.name && t.gameObject != _prefab) count++;
             return count;
         }
