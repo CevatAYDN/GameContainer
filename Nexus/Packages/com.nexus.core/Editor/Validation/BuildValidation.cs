@@ -713,9 +713,8 @@ namespace Nexus.Editor
 
         /// <summary>
         /// Plan §6.1.1 — Command State Leak Validation:
-        /// Warns about commands with mutable, non-injected, non-IResettable state fields.
-        /// If a command has such fields and does not implement IResettable, it may leak state
-        /// across pooled reuses.
+        /// Warns about commands with mutable, non-injected state fields that implement neither IResettableCommand nor
+        /// IResettable: the pool calls both on return, so such a command may leak state across pooled reuses.
         /// </summary>
         private static void ValidateCommandStateLeak(ref int errorCount, ref int warningCount)
         {
@@ -729,7 +728,8 @@ namespace Nexus.Editor
                         || SignalBus.ImplementsGenericInterface(type, typeof(IAsyncCommand<>));
                 if (!isCommand) continue;
 
-                bool implementsResettable = typeof(IResettable).IsAssignableFrom(type);
+                // The pool calls both on return; checking only IResettable warned falsely (#196).
+                bool implementsResettable = typeof(IResettableCommand).IsAssignableFrom(type) || typeof(IResettable).IsAssignableFrom(type);
 
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var field in fields)
@@ -755,19 +755,19 @@ namespace Nexus.Editor
                         continue;
 
                     // A non-injected, non-readonly, non-primitive mutable field in a command
-                    // that does not implement IResettable is a potential state leak
+                    // that implements neither reset interface is a potential state leak
                     if (!implementsResettable)
                     {
                         string strictQA = System.Environment.GetEnvironmentVariable("NEXUS_STRICT_QA_LEAK");
                         bool errorOnLeak = !string.IsNullOrEmpty(strictQA) && (strictQA == "1" || strictQA.Equals("true", StringComparison.OrdinalIgnoreCase));
                         if (errorOnLeak)
                         {
-                            Debug.LogError($"[Nexus Error] Command State Leak Violation: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable.");
+                            Debug.LogError($"[Nexus Error] Command State Leak Violation: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but implements neither IResettableCommand nor IResettable.");
                             errorCount++;
                         }
                         else
                         {
-                            Debug.LogWarning($"[Nexus Warning] Command State Leak Risk: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but does not implement IResettable. This field may retain state across pooled reuses. Fix: Implement IResettable and clear state in Reset(), or mark the field as readonly.");
+                            Debug.LogWarning($"[Nexus Warning] Command State Leak Risk: Command {type.FullName} has non-injected mutable field '{field.Name}' ({field.FieldType.Name}) but implements neither IResettableCommand nor IResettable. This field may retain state across pooled reuses. Fix: clear it in IResettableCommand.ResetState(), or mark the field as readonly.");
                             warningCount++;
                         }
                     }

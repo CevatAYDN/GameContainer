@@ -109,6 +109,26 @@ namespace Nexus.Editor.Tests
             public void Execute() { }
         }
 
+        public class ResetStateCommand : ICommand, IResettableCommand
+        {
+            public MockDependency Leftover;
+            public void Execute() { }
+            public void ResetState() => Leftover = null;
+        }
+
+        // #196: the warning asked for IResettable although the pool calls IResettableCommand.ResetState on return.
+        [Test]
+        public void StateLeakWarning_AcceptsIResettableCommand_WhichThePoolCallsOnReturn()
+        {
+            CommandPool.ClearStateLeakWarningsStatic();
+            _pool = new CommandPool(typeof(ResetStateCommand), () => new ResetStateCommand());
+            var command = (ResetStateCommand)_pool.Get();
+            command.Leftover = new MockDependency();
+            _pool.Return(command);
+            Assert.IsNull(((ResetStateCommand)_pool.Get()).Leftover);
+            LogAssert.NoUnexpectedReceived();
+        }
+
         // #80: the warning listed "<Dependency>k__BackingField" because [Inject] sits on the property, not the field.
         [Test]
         public void StateLeakWarning_IgnoresInjectAutoProperties()

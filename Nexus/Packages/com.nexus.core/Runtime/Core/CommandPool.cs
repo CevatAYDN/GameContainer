@@ -40,8 +40,9 @@ namespace Nexus.Core
 
     /// <summary>
     /// Object pool for command instances. Reuses command objects to reduce GC pressure.
-    /// Calls <see cref="IResettable.Reset"/> on pooled commands that implement it before returning them to the pool.
-    /// Emits a warning if a pooled command type has mutable fields but does not implement <see cref="IResettable"/>.
+    /// On return, calls <see cref="IResettableCommand.ResetState"/> and <see cref="IResettable.Reset"/> on a command that
+    /// implements them, then clears its [Inject] members. Warns when a pooled command type has mutable fields and
+    /// implements neither interface.
     /// </summary>
     [Preserve]
     public class CommandPool
@@ -130,7 +131,8 @@ namespace Nexus.Core
 
         private static void WarnIfStateLeakRisk(Type type)
         {
-            if (typeof(IResettable).IsAssignableFrom(type)) return;
+            // Return() calls both (Cleanup and NexusDI.ClearInjectedReferences); only checking IResettable warned falsely (#196).
+            if (typeof(IResettableCommand).IsAssignableFrom(type) || typeof(IResettable).IsAssignableFrom(type)) return;
 
             // Claim the warning slot under the lock FIRST, then scan + emit OUTSIDE it:
             // the reflection scan is slow and must not serialize every pool construction
@@ -161,8 +163,8 @@ namespace Nexus.Core
             if (riskyFields.Length == 0) return;
 
             Services.NexusLog.WarnAlways(
-                $"[Nexus] Command '{type.Name}' has mutable field(s) [{riskyFields}] but does not implement IResettable. " +
-                "State may leak across pooled command reuses. Implement IResettable.Reset() to clear state.");
+                $"[Nexus] Command '{type.Name}' has mutable field(s) [{riskyFields}] but implements neither IResettableCommand nor IResettable. " +
+                "State may leak across pooled command reuses. Clear it in IResettableCommand.ResetState().");
         }
 
         // [Inject] on an auto-property sits on the property, not on its compiler-generated "<Name>k__BackingField".
