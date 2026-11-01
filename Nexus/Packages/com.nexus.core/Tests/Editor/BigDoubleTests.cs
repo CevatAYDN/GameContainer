@@ -148,6 +148,19 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(30, balance.Exponent);
         }
 
+        // Issue #232: CanAffordBig compared a price as given, SpendBig normalized it first, so a shop button enabled by
+        // CanAffordBig failed when pressed.
+        [Test]
+        public void CanAffordBig_AgreesWithSpendBig_ForAPriceBuiltFieldByField()
+        {
+            using var eco = new EconomyService();
+            eco.SetBigBalance("Gems", new BigDouble(500));
+            var price = new BigDouble { Mantissa = 1500, Exponent = 0 };
+
+            Assert.IsFalse(eco.CanAffordBig("Gems", price));
+            Assert.IsFalse(eco.SpendBig("Gems", price));
+        }
+
         [Test]
         public void EconomyService_GetObservableBigBalance_ReturnsSecureObservableBigDouble_AndFiresOnChanged()
         {

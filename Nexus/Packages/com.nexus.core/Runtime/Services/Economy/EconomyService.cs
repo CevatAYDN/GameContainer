@@ -353,7 +353,8 @@ namespace Nexus.Core.Services
         {
             RequireNonnegative(amount);
             if (amount.Mantissa == 0) return true;
-            return GetBigBalance(currencyId) >= amount;
+            // the amount SpendBig would take: a price built field by field is normalized and capped first (issue #232)
+            return GetBigBalance(currencyId) >= Normalize(amount);
         }
 
         public bool SpendBig(string currencyId, BigDouble amount, string reason = "") => SpendBig(currencyId, amount, out _, reason);
