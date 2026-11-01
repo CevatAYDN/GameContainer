@@ -149,6 +149,7 @@ namespace Nexus.Editor.Tests
             context.Container.BindInstance(new StartupModel { Bound = true });
             context.Container.Bind<StartupCommand>();
             var cached = context.Container.Resolve<StartupCommand>();
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Rebinding '.*\+StartupCommand'"));
             ((SignalBus)context.SignalBus).RegisterCommand(typeof(First), typeof(StartupCommand), ExecutionMode.Concurrent, 0, false);
             var first = context.Container.Resolve<StartupCommand>();
             var second = context.Container.Resolve<StartupCommand>();
@@ -206,6 +207,7 @@ namespace Nexus.Editor.Tests
             using var parent = new NexusDI(); using var child = new NexusDI(parent);
             var first = new Dependency(); var second = new Dependency();
             parent.BindInstance(first); Assert.AreSame(first, parent.Resolve<Dependency>()); Assert.AreSame(first, child.Resolve<Dependency>());
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Rebinding '.*\+Dependency'"));
             parent.BindInstance(second); Assert.AreSame(second, parent.Resolve<Dependency>()); Assert.AreSame(second, child.Resolve<Dependency>());
         }
 

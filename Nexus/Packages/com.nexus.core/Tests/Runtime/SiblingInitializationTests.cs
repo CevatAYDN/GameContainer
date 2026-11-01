@@ -88,6 +88,7 @@ namespace Nexus.Tests
             var parentGo = new GameObject("ParentRoot");
             parentGo.SetActive(false);
             var parentRoot = parentGo.AddComponent<Root>();
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the parent root has no lifecycle
 
             // Create Sibling A (Lower Priority, but we want it to wait)
             var childGoA = new GameObject("ChildA");
@@ -135,6 +136,7 @@ namespace Nexus.Tests
             var parentGo = new GameObject("ParentRoot");
             parentGo.SetActive(false);
             var parentRoot = parentGo.AddComponent<Root>();
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the parent root has no lifecycle
 
             // Create Sibling B (Name: SiblingB, priority = 0)
             var childGoB = new GameObject("SiblingB");
@@ -179,6 +181,7 @@ namespace Nexus.Tests
             var parentGo = new GameObject("ParentRoot");
             parentGo.SetActive(false);
             var parentRoot = parentGo.AddComponent<Root>();
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the parent root has no lifecycle
 
             var childGoA = new GameObject("ChildA");
             childGoA.transform.SetParent(parentGo.transform);
@@ -213,6 +216,7 @@ namespace Nexus.Tests
             var parentGo = new GameObject("ParentRoot");
             parentGo.SetActive(false);
             var parentRoot = parentGo.AddComponent<Root>();
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the parent root has no lifecycle
 
             var childGo = new GameObject("ChildA");
             childGo.transform.SetParent(parentGo.transform);

@@ -413,6 +413,7 @@ namespace Nexus.Tests
         [Test]
         public async Task CreatePureContextAsync_RegistersContextAndUsesScopeTag()
         {
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the pure context has no lifecycle
             var context = await NexusRuntime.CreatePureContextAsync("ReusableScope", new[] { "Assembly-CSharp" });
 
             try
@@ -452,6 +453,7 @@ namespace Nexus.Tests
         [Test]
         public async Task CreatePureContextAsync_DisposesCleanlyAndRefreshesRegistry()
         {
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the pure context has no lifecycle
             var context = await NexusRuntime.CreatePureContextAsync("RegistryRefreshScope", new[] { "Assembly-CSharp" });
 
             try

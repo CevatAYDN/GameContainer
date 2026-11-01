@@ -125,8 +125,6 @@ namespace Nexus.Editor.Tests
         [Test]
         public void ATargetContextWhoseSubscriberThrows_LeavesTheSourcesCommandAndTheOtherTargets()
         {
-            // The configured source context has no lifecycle; it only binds the command.
-            LogAssert.Expect(LogType.Warning, "[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
             using var source = NexusTestHarness.CreateContext(builder => builder.BindCommand<IsoBroadcast, IsoBroadcastCommand>());
             using var first = new Context();
             using var second = new Context();

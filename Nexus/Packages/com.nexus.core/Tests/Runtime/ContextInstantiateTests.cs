@@ -88,6 +88,7 @@ namespace Nexus.Tests.Runtime
         [Test]
         public async Task NexusBindingOnThePrefabDoesNotInjectASecondTime()
         {
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the pure context has no lifecycle
             var context = await NexusRuntime.CreatePureContextAsync("InstantiateScope", new[] { "Assembly-CSharp" });
             try
             {

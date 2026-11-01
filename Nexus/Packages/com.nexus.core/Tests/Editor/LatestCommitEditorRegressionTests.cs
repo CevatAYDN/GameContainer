@@ -223,12 +223,15 @@ namespace Nexus.Editor.Tests
             GameObject global = null;
             try
             {
+                // the menu-created scope and global root have no lifecycle
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered"));
                 NexusHierarchyMenus.CreateLifetimeScope(new MenuCommand(parentGo));
                 child = Selection.activeGameObject;
                 Assert.That(child.GetComponent<NexusLifetimeScope>().Context.Parent, Is.SameAs(parent.Context));
                 configured = NexusHierarchyMenus.CreateSceneRootWithAsset(data);
                 Assert.That(configured.ContextData, Is.SameAs(data));
                 Assert.That(configured.Context.ScopeTag, Is.EqualTo(data.ScopeTag));
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered"));
                 NexusHierarchyMenus.CreateGlobalProjectRoot(new MenuCommand(parentGo));
                 global = Selection.activeGameObject;
                 Assert.That(global.transform.parent, Is.Null);

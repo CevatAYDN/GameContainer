@@ -77,6 +77,7 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator AScreenOpenedByAContextsUIManagerBindsToThatContextWhileTheSceneHoldsTwoRoots()
         {
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // App has no lifecycle
             var app = CreateRoot("App", null);
             var shop = CreateRoot("Shop", new UiLifecycle());
             float deadline = Time.realtimeSinceStartup + 5f;

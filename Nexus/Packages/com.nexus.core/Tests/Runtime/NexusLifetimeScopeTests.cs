@@ -18,6 +18,9 @@ namespace Nexus.Core.Tests
                 parent.SetActive(false);
                 child.SetActive(false);
                 child.transform.SetParent(parent.transform);
+                // neither scope has a lifecycle
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered"));
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered"));
                 var parentScope = parent.AddComponent<NexusLifetimeScope>();
                 var childScope = child.AddComponent<NexusLifetimeScope>();
                 parent.SetActive(true);

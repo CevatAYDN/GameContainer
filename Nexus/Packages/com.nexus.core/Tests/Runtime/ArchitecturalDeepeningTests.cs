@@ -279,6 +279,7 @@ namespace Nexus.Tests.Runtime
                 owner.SetActive(false);
                 var root = owner.AddComponent<Root>();
                 root.SetUp(data);
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the root has no lifecycle
                 var view = owner.AddComponent<RegistrationProbeView>();
                 owner.SetActive(true);
                 yield return null;

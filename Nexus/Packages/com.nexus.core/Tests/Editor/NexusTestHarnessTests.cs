@@ -156,6 +156,15 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void CreateContext_WithBuilderAction_LogsNoMissingLifecycleHint()
+        {
+            // the builder action is the context's setup; the hint is for a Root or pure context that found none (#198)
+            using (var testContext = NexusTestHarness.CreateContext(builder => builder.BindModel<TestModel>()))
+                Assert.IsNotNull(testContext.GetModel<TestModel>());
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+        }
+
+        [Test]
         public void RegisterCommand_CustomHelper_Works()
         {
             using (var testContext = NexusTestHarness.CreateContext())

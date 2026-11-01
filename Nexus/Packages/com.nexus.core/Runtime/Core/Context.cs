@@ -343,8 +343,9 @@ namespace Nexus.Core
                         }
                     }
 
-                    // a hint, not a failure (a context may only bind), so it stays in development builds (#164)
-                    if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
+                    // a hint, not a failure (a context may only bind), so it stays in development builds (#164); a context
+                    // configured through a builder delegate (NexusTestHarness.CreateContext) has its setup there (#198)
+                    if (allLifecycles.Count == 0 && prebuiltBuilder == null && !Container.IsRegistered(typeof(IContextLifecycle)))
                         NexusRuntime.Logger?.LogWarning("[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
                 }
 
