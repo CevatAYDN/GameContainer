@@ -182,7 +182,49 @@ namespace Nexus.Ads.Editor
             }
             CheckChildren(settings, kind, probe, catalog, report);
             CheckProject(settings, kind, release, probe, report);
+            if (platform == AdPlatform.Android) CheckAndroidPlay(settings, release, probe, report);
             return report;
+        }
+
+        /// <summary>
+        /// Play's target API floor for new apps and updates: API 36 from 2026-08-31, extended to 2026-11-01
+        /// (https://developer.android.com/google/play/requirements/target-sdk, read 2026-10-31; issue #194).
+        /// </summary>
+        public const int PlayTargetApiFloor = 36;
+
+        // Play's own rules for an Android build: the target API floor, and the advertising-id permission (issue #194).
+        private static void CheckAndroidPlay(AdsSettings settings, bool release, IProjectProbe probe, AdsValidationReport report)
+        {
+            int target = probe.AndroidTargetSdk;
+            if (target >= PlayTargetApiFloor)
+                report.Add(new AdsCheck("android.targetapi", CheckResult.Pass, "target API " + target + " meets Play's floor of " + PlayTargetApiFloor));
+            else
+                report.Add(new AdsCheck("android.targetapi", release ? CheckResult.Fail : CheckResult.Warn,
+                    (target > 0 ? "target API " + target : "the target API is Automatic and the Android SDK the editor uses has no platform") + "; Google Play refuses new apps and updates below API " + PlayTargetApiFloor + ".",
+                    "set Player Settings > Other Settings > Target API Level to API " + PlayTargetApiFloor + " or higher; Automatic builds with the highest platform of the Android SDK in Preferences > External Tools, so install platform " + PlayTargetApiFloor + " there."));
+
+            // Play Families: an app for children must not request AD_ID, which the ad SDKs add on merge; only a custom manifest
+            // can remove it, and only that manifest can be read before a build
+            const string adId = "com.google.android.gms.permission.AD_ID";
+            string manifest = probe.CustomAndroidManifest;
+            if (settings.ChildDirected)
+                report.Add(RemovesPermission(manifest, adId)
+                    ? new AdsCheck("android.adid", CheckResult.Pass, "child-directed: the custom AndroidManifest.xml removes " + adId)
+                    : new AdsCheck("android.adid", CheckResult.Fail, "child-directed app without a custom AndroidManifest.xml that removes " + adId + "; the ad SDKs add the permission on merge, and Play's Families policy forbids it in an app for children.",
+                        "add <uses-permission android:name=\"" + adId + "\" tools:node=\"remove\"/> (with xmlns:tools=\"http://schemas.android.com/tools\" on <manifest>) to Assets/Plugins/Android/AndroidManifest.xml."));
+            else if (target >= 33 && manifest != null && manifest.IndexOf(adId, StringComparison.Ordinal) < 0)
+                report.Add(new AdsCheck("android.adid", CheckResult.Warn, "target API " + target + " with a custom AndroidManifest.xml that does not declare " + adId + "; the SDKs' own manifests usually add it on merge, which this check cannot see before a build.", "add <uses-permission android:name=\"" + adId + "\"/> to Assets/Plugins/Android/AndroidManifest.xml, and declare the advertising id in Play Console."));
+            else
+                report.Add(new AdsCheck("android.adid", CheckResult.Pass, target >= 33 ? "AD_ID: no custom manifest without the permission (the merged manifest is checked by the SDKs on build)" : "target API below 33"));
+        }
+
+        // A <uses-permission> element that names the permission and carries tools:node="remove", in either attribute order.
+        internal static bool RemovesPermission(string manifest, string permission)
+        {
+            if (manifest == null) return false;
+            foreach (Match element in Regex.Matches(manifest, "<uses-permission\\b[^>]*>", RegexOptions.IgnoreCase))
+                if (element.Value.Contains("android:name=\"" + permission + "\"") && Regex.IsMatch(element.Value, "tools:node\\s*=\\s*\"remove\"")) return true;
+            return false;
         }
 
         private static void CheckKeys(AdsSettings settings, AdProviderKind kind, AdPlatform platform, bool release, PlatformCatalog catalog, AdsValidationReport report)
@@ -355,12 +397,6 @@ namespace Nexus.Ads.Editor
             report.Add(string.IsNullOrWhiteSpace(settings.PrivacyPolicyUrl)
                 ? new AdsCheck("privacy.url", CheckResult.Warn, "no privacy policy URL; the networks and Google Play require one that names the ad SDKs (KVKK notice for Türkiye).", "enter the URL in Project Settings > Nexus Ads > Privacy.")
                 : new AdsCheck("privacy.url", CheckResult.Pass, "privacy policy URL set"));
-
-            // AD_ID: only a custom manifest can be read before a build; the merged manifest exists after it
-            if (probe.AndroidTargetSdk >= 33 && probe.CustomAndroidManifest != null && probe.CustomAndroidManifest.IndexOf("com.google.android.gms.permission.AD_ID", StringComparison.Ordinal) < 0)
-                report.Add(new AdsCheck("android.adid", CheckResult.Warn, "target SDK " + probe.AndroidTargetSdk + " with a custom AndroidManifest.xml that does not declare com.google.android.gms.permission.AD_ID; the SDKs' own manifests usually add it on merge, which this check cannot see before a build.", "add <uses-permission android:name=\"com.google.android.gms.permission.AD_ID\"/> to Assets/Plugins/Android/AndroidManifest.xml, and declare the advertising id in Play Console."));
-            else
-                report.Add(new AdsCheck("android.adid", CheckResult.Pass, probe.AndroidTargetSdk >= 33 ? "AD_ID: no custom manifest without the permission (the merged manifest is checked by the SDKs on build)" : "target SDK below 33"));
 
             // link.xml
             bool preserved = false;

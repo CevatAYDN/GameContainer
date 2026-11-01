@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
+using System.Reflection;
 using UnityEditor;
 using Nexus.Ads.Unity;
 using UnityEngine;
@@ -32,6 +34,7 @@ namespace Nexus.Ads.Editor
         bool DisabledEdmStub { get; }
         /// <summary>Text of Assets/Plugins/Android/AndroidManifest.xml, or null when the project has no custom manifest.</summary>
         string CustomAndroidManifest { get; }
+        /// <summary>The target API level the build gets: Automatic is read as the level it builds with (issue #194); 0 when that cannot be read.</summary>
         int AndroidTargetSdk { get; }
         int AndroidMinSdk { get; }
         /// <summary>Texts of every link.xml under Assets.</summary>
@@ -95,7 +98,10 @@ namespace Nexus.Ads.Editor
             if (Directory.Exists("Assets"))
                 foreach (var file in Directory.GetFiles("Assets", "link.xml", SearchOption.AllDirectories)) _linkXml.Add(File.ReadAllText(file));
             CustomAndroidManifest = File.Exists("Assets/Plugins/Android/AndroidManifest.xml") ? File.ReadAllText("Assets/Plugins/Android/AndroidManifest.xml") : null;
-            AndroidTargetSdk = (int)PlayerSettings.Android.targetSdkVersion;
+            // Automatic is stored as 0, which read as "below 33" and met no floor (issue #194)
+            AndroidTargetSdk = PlayerSettings.Android.targetSdkVersion == AndroidSdkVersions.AndroidApiLevelAuto
+                ? AutoTargetSdk(InstalledAndroidPlatforms())
+                : (int)PlayerSettings.Android.targetSdkVersion;
             AndroidMinSdk = (int)PlayerSettings.Android.minSdkVersion;
         }
 
@@ -149,6 +155,37 @@ namespace Nexus.Ads.Editor
             return File.Exists(path) ? File.ReadAllText(path) : null;
         }
         public string ProjectFileText(string path) => File.Exists(path) ? File.ReadAllText(path) : null;
+
+        /// <summary>
+        /// The API level Automatic builds with: the highest platforms/android-N folder of the Android SDK. A folder named with a minor
+        /// version is not counted: on Unity 6000.6.7f1 a project set to Automatic built target API 36 with android-34, android-36 and
+        /// android-37.0 installed (the comparison APK of 2026-11-01, aapt2 dump badging; issue #194).
+        /// </summary>
+        public static int AutoTargetSdk(IEnumerable<string> platformFolders)
+        {
+            int highest = 0;
+            foreach (var folder in platformFolders)
+            {
+                string name = Path.GetFileName(folder);
+                if (name.StartsWith("android-", StringComparison.Ordinal) && int.TryParse(name.Substring("android-".Length), NumberStyles.None, CultureInfo.InvariantCulture, out int level))
+                    highest = Math.Max(highest, level);
+            }
+            return highest;
+        }
+
+        private static IEnumerable<string> InstalledAndroidPlatforms()
+        {
+            string platforms = Path.Combine(AndroidSdkRoot(), "platforms");
+            return Directory.Exists(platforms) ? Directory.GetDirectories(platforms) : Array.Empty<string>();
+        }
+
+        // The SDK of Preferences > External Tools, read by reflection because its type ships only with Android support; else the one installed with the editor.
+        private static string AndroidSdkRoot()
+        {
+            var settings = Type.GetType("UnityEditor.Android.AndroidExternalToolsSettings, UnityEditor.Android.Extensions");
+            string root = settings?.GetProperty("sdkRootPath", BindingFlags.Public | BindingFlags.Static)?.GetValue(null) as string;
+            return !string.IsNullOrEmpty(root) ? root : Path.Combine(EditorApplication.applicationContentsPath, "PlaybackEngines", "AndroidPlayer", "SDK");
+        }
         public string CustomAndroidManifest { get; }
         public int AndroidTargetSdk { get; }
         public int AndroidMinSdk { get; }

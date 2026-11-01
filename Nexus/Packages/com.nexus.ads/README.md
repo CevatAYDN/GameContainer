@@ -287,7 +287,8 @@ bad arguments). `-adsTab` reads `Test` or `Release` in any case, here and in `An
 | `placements.names` | fail: a name that is not a C# identifier, a duplicate, or an interstitial without NaturalBreak; warn: no placements |
 | `policy.floors` | warn: a floor below the package default (raised at runtime) |
 | `privacy.url` | warn: no privacy policy URL |
-| `android.adid` | warn: custom manifest without the AD_ID permission on target 33+ |
+| `android.adid` | Android only. warn: custom manifest without the AD_ID permission on target 33+; fail: a child-directed app whose custom manifest does not remove the permission (`tools:node="remove"`), which the ad SDKs add on merge (Play Families, issue #194) |
+| `android.targetapi` | Android only. fail (Release) / warn (Test): target API below Play's floor of 36 (`AdsValidator.PlayTargetApiFloor`); Automatic is read as the API level it builds with, the highest whole-numbered platform of the Android SDK in External Tools (issue #194) |
 | `android.linkxml` | warn (release): no link.xml preserves `Nexus.Ads.Core` |
 | `appads.lines` | warn: a detected network has no app-ads.txt line that starts with its ad system domain (`google.com` for AdMob, `unity.com` or `unity3d.com` for Unity Ads, ...) |
 | `manifest.pins` | fail: the family's git-URL entries point at different commits |

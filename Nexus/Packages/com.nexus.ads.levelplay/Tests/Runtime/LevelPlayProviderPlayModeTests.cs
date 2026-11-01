@@ -47,9 +47,15 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
 
         private sealed class ManualScheduler : IAdScheduler
         {
-            private sealed class Handle : System.IDisposable { public void Dispose() { } }
+            private sealed class Handle : System.IDisposable
+            {
+                private readonly ManualScheduler _owner;
+                private readonly System.Action _action;
+                public Handle(ManualScheduler owner, System.Action action) { _owner = owner; _action = action; }
+                public void Dispose() { if (_owner.Pending == _action) _owner.Pending = null; }
+            }
             public System.Action Pending;
-            public System.IDisposable Schedule(double seconds, System.Action action) { Pending = action; return new Handle(); }
+            public System.IDisposable Schedule(double seconds, System.Action action) { Pending = action; return new Handle(this, action); }
             public void RunPending() { var action = Pending; Pending = null; action(); }
         }
 
@@ -72,6 +78,37 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
             Assert.IsNull(scheduler.Pending, "nothing left scheduled once Init ran");
             provider.Load(AdFormat.Rewarded);
             CollectionAssert.AreEqual(new[] { AdFormat.Rewarded }, loaded);
+        }
+
+        // Issue #194: the provider sent only SetCOPPA; Play Families asks a child-directed app to opt out of the advertising id, and
+        // LevelPlay to start only the Families self-certified networks, before Init
+        [Test]
+        public void AChildDirectedApp_OptsOutOfTheAdvertisingId_AndStartsOnlyFamiliesNetworks_BeforeInit()
+        {
+            var sent = new List<string>();
+            var provider = new LevelPlayProvider(new ManualScheduler(), () => false, (key, value) => sent.Add(key + "=" + value));
+            provider.Initialize(new ProviderConfig("key", null, false, null, false, true, false, "G"), _ => { });
+            CollectionAssert.AreEqual(new[] { "is_deviceid_optout=true", "Google_Family_Self_Certified_SDKS=true" }, sent, "offline, so nothing ran after the metadata");
+
+            sent.Clear();
+            new LevelPlayProvider(new ManualScheduler(), () => false, (key, value) => sent.Add(key + "=" + value))
+                .Initialize(new ProviderConfig("key", null, false, null, false, false, false, "G"), _ => { });
+            CollectionAssert.IsEmpty(sent, "an app that is not child-directed keeps the advertising id");
+        }
+
+        // Issue #194: a provider whose session ended while it waited for a network still started the SDK when the network came back,
+        // and LevelPlay's static init events then called it from the next session
+        [Test]
+        public void ADisposedProvider_StopsWaitingForTheNetwork()
+        {
+            var scheduler = new ManualScheduler();
+            var provider = new LevelPlayProvider(scheduler, () => false);
+            provider.Initialize(Config(), _ => { });
+            Assert.IsNotNull(scheduler.Pending, "offline the provider waits for a network");
+
+            provider.Dispose();
+
+            Assert.IsNull(scheduler.Pending, "the wait for a network outlived the provider, and would start the SDK for it");
         }
 
         [Test]

@@ -20,7 +20,7 @@ namespace Nexus.Ads.Tests
         public bool EdmStub;
         public string Manifest = "{ \"dependencies\": {} }";
         public string AdMobAppId;
-        public int TargetSdk = 34, MinSdk = 23;
+        public int TargetSdk = AdsValidator.PlayTargetApiFloor, MinSdk = 23;
         public string AndroidManifest;
         public readonly Dictionary<string, string> Packages = new Dictionary<string, string>();
         public readonly Dictionary<string, string> PackageFiles = new Dictionary<string, string>();
@@ -456,6 +456,41 @@ namespace Nexus.Ads.Tests
             _probe.AndroidManifest = "<manifest/>";
             Assert.AreEqual(CheckResult.Warn, Check(Run(AdsValidator.Tab.Release), "android.adid").Result);
             _probe.AndroidManifest = "<manifest><uses-permission android:name=\"com.google.android.gms.permission.AD_ID\"/></manifest>";
+            Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "android.adid").Result);
+        }
+
+        // Issue #194: Automatic was read as 0, "below 33", so nothing met Play's floor; a release build below it is refused by
+        // Play, a development build is only warned
+        [Test]
+        public void ATargetApiBelowPlaysFloor_FailsTheReleaseTab_AndWarnsTheTestTab()
+        {
+            _probe.TargetSdk = AdsValidator.PlayTargetApiFloor - 1;
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "android.targetapi").Result);
+            Assert.AreEqual(CheckResult.Warn, Check(Run(AdsValidator.Tab.Test), "android.targetapi").Result);
+            _probe.TargetSdk = 0;
+            StringAssert.StartsWith("the target API is Automatic", Check(Run(AdsValidator.Tab.Release), "android.targetapi").message);
+            _probe.TargetSdk = AdsValidator.PlayTargetApiFloor;
+            Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "android.targetapi").Result);
+        }
+
+        // Issue #194: measured on Unity 6000.6.7f1, a project set to Automatic built target API 36 with these platforms installed
+        [Test]
+        public void AutomaticTargetApi_IsTheHighestWholeNumberedPlatformOfTheSdk()
+        {
+            Assert.AreEqual(36, UnityProjectProbe.AutoTargetSdk(new[] { "SDK/platforms/android-34", "SDK/platforms/android-37.0", "SDK/platforms/android-36" }));
+            Assert.AreEqual(0, UnityProjectProbe.AutoTargetSdk(new string[0]), "no platform: unreadable, which the validator reports");
+        }
+
+        // Issue #194: the ad SDKs add AD_ID on merge, and Play's Families policy forbids it in an app for children; only a custom
+        // manifest that removes it passes, on both tabs
+        [Test]
+        public void AChildDirectedApp_FailsUnlessItsManifestRemovesTheAdvertisingIdPermission()
+        {
+            _settings.ChildDirected = true;
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Release), "android.adid").Result, "no custom manifest");
+            _probe.AndroidManifest = "<manifest><uses-permission android:name=\"com.google.android.gms.permission.AD_ID\"/></manifest>";
+            Assert.AreEqual(CheckResult.Fail, Check(Run(AdsValidator.Tab.Test), "android.adid").Result, "declared, not removed");
+            _probe.AndroidManifest = "<manifest xmlns:tools=\"http://schemas.android.com/tools\"><uses-permission tools:node=\"remove\" android:name=\"com.google.android.gms.permission.AD_ID\"/></manifest>";
             Assert.AreEqual(CheckResult.Pass, Check(Run(AdsValidator.Tab.Release), "android.adid").Result);
         }
 

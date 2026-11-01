@@ -259,6 +259,7 @@ namespace Nexus.Ads.Unity
         {
             if (Instance != this) return;
             Controller?.Dispose();
+            (Provider as IDisposable)?.Dispose(); // the bootstrap created it; LevelPlay's leaves its static init events (issue #194)
             Simulator?.Cancel();
             Instance = null;
         }

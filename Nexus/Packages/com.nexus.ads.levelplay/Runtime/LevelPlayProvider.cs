@@ -23,10 +23,11 @@ namespace Nexus.Ads.LevelPlay
     /// Consent: LevelPlay ships no form. GDPR consent collected by Google UMP or a compatible CMP is
     /// shared with the SDK automatically (SDK 7.7.0+); a game with another CMP calls
     /// <see cref="SetGdprConsent"/>. COPPA goes to <c>LevelPlayPrivacySettings.SetCOPPA</c> from the
-    /// settings' child-directed flag before Init. Init waits for a network: offline, the SDK answers
-    /// Init from its cached response and every load of the session ends in 509 (issue #125).
+    /// settings' child-directed flag before Init; a child-directed app also opts out of the advertising id
+    /// and starts only the Families self-certified networks (issue #194). Init waits for a network: offline,
+    /// the SDK answers Init from its cached response and every load of the session ends in 509 (issue #125).
     /// </summary>
-    public sealed class LevelPlayProvider : IAdProvider, IConsentFlow
+    public sealed class LevelPlayProvider : IAdProvider, IConsentFlow, IDisposable
     {
         public const string ProviderName = "levelplay";
         public const double RewardGraceSeconds = 1.5;
@@ -34,6 +35,7 @@ namespace Nexus.Ads.LevelPlay
 
         private readonly IAdScheduler _scheduler;
         private readonly Func<bool> _networkReachable;
+        private readonly Action<string, string> _setMetaData;
         private IDisposable _networkWait;
         private readonly Dictionary<AdFormat, string> _units = new Dictionary<AdFormat, string>();
         private LevelPlayRewardedAd _rewarded;
@@ -57,10 +59,12 @@ namespace Nexus.Ads.LevelPlay
         public LevelPlayProvider(IAdScheduler scheduler)
             : this(scheduler, () => Application.internetReachability != NetworkReachability.NotReachable) { }
 
-        internal LevelPlayProvider(IAdScheduler scheduler, Func<bool> networkReachable)
+        // setMetaData: the editor SDK drops metadata, so the tests read what the provider sends here
+        internal LevelPlayProvider(IAdScheduler scheduler, Func<bool> networkReachable, Action<string, string> setMetaData = null)
         {
             _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
             _networkReachable = networkReachable ?? throw new ArgumentNullException(nameof(networkReachable));
+            _setMetaData = setMetaData ?? ((key, value) => global::Unity.Services.LevelPlay.LevelPlay.SetMetaData(key, value));
         }
 
         // ----- IAdProvider
@@ -83,9 +87,16 @@ namespace Nexus.Ads.LevelPlay
 
             // privacy and test settings go in before Init, as the SDK's regulation page asks
             LevelPlayPrivacySettings.SetCOPPA(config.ChildDirected || config.UnderAgeOfConsent);
+            if (config.ChildDirected)
+            {
+                // Play Families as LevelPlay's regulation page gives it (read 2026-11-01): no advertising id, and only the networks on
+                // Google's Families self-certified list start (issue #194); the validator asks the manifest to remove AD_ID
+                _setMetaData("is_deviceid_optout", "true");
+                _setMetaData("Google_Family_Self_Certified_SDKS", "true");
+            }
             if (config.TestMode)
             {
-                global::Unity.Services.LevelPlay.LevelPlay.SetMetaData("is_test_suite", "enable");
+                _setMetaData("is_test_suite", "enable");
                 global::Unity.Services.LevelPlay.LevelPlay.SetAdaptersDebug(true);
             }
             _networkWait?.Dispose();
@@ -256,6 +267,19 @@ namespace Nexus.Ads.LevelPlay
         }
 
         private static string Describe(LevelPlayAdError error) => error == null ? "unknown" : error.ErrorCode + " " + error.ErrorMessage;
+
+        /// <summary>
+        /// Leaves LevelPlay's init events and stops the wait for a network. The events are static: with domain reload off, a provider
+        /// whose session ended before Init answered was still called by the next session's Init (issue #194).
+        /// </summary>
+        public void Dispose()
+        {
+            _networkWait?.Dispose();
+            _networkWait = null;
+            global::Unity.Services.LevelPlay.LevelPlay.OnInitSuccess -= OnInitSuccess;
+            global::Unity.Services.LevelPlay.LevelPlay.OnInitFailed -= OnInitFailed;
+            _onReady = null;
+        }
 
         // ----- IConsentFlow: LevelPlay ships no form; consent arrives from the game's CMP (Google UMP is shared automatically).
 
