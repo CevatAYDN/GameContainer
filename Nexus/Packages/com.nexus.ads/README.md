@@ -42,7 +42,8 @@ every block as an error; a release build logs the first block of each rule and p
 warning (`[Nexus Ads] PolicyViolation <rule> (<format> '<placement>'): <reason>`). The guard cannot
 be turned off; the floors in `AdPolicy` can only be tightened, by the settings, a game or remote
 configuration alike. The kill switch and the ad-free entitlement are not violations: they answer
-`NotReady` before the guard runs, and hide a banner on screen. The kill switch stops every format; the
+`NotReady` before the guard runs, and hide a banner on screen. The kill switch stops every format, and
+turning it off, or removing the remote configuration, loads them again; the
 ad-free entitlement removes interstitials and banners and keeps rewarded ads, which the player asks
 for (#195). The policies behind each rule, with the pages they were read from, are in the register.
 
@@ -181,7 +182,9 @@ failed start (once until the SDK starts, then one `Initialized` line), a consent
 still unanswered after 30 s (`Unanswered`, once each; the wait goes on), every failed show (the AdMob
 and LevelPlay providers write the SDK's reason on the line before), a subscriber or telemetry sink
 that threw while a show was answered or readiness changed (`HandlerFailed`, once per step and
-exception; issue #176), and in a release build the policy block above. Successes are not logged.
+exception; issue #176), every turn of the kill switch on or off (`KillSwitch on` / `off`, issue #234;
+a configuration that changes what runs), and in a release build the policy block above. Successes are
+not logged.
 `InitFailed`, `ConsentRefused`, `Unanswered`, `HandlerFailed` and `Initialized` are telemetry events
 too. A show's result reaches the game exactly once whatever a subscriber, a sink or the reload
 throws; an SDK load that throws is a failed load, retried with the back-off. A loaded ad the

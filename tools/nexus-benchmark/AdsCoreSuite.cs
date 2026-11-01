@@ -616,6 +616,22 @@ namespace NexusBench
                 rig.Controller.SetRemoteConfig(null);
                 Check("AC38. Remote_AttachedLate_AppliesAndDetaches", killed && !rig.Controller.KillSwitch, "kill switch applied on attach, cleared on detach");
             }
+            // Removing the remote configuration cleared the kill switch with no event and no load: the release log had no line
+            // and nothing loaded until a show was asked for (#234)
+            {
+                using var rig = new AdsRig();
+                rig.Controller.SetRemoteConfig(new AdsRemote { KillSwitch = true });
+                rig.Controller.Start();
+                rig.Provider.InitCallback(true);
+                int loadsWhileKilled = rig.Provider.Loads.Count;
+                rig.Controller.SetRemoteConfig(null);
+                bool loaded = rig.Provider.Loads.Contains(AdFormat.Rewarded) && rig.Provider.Loads.Contains(AdFormat.Interstitial);
+                rig.Provider.Fill(AdFormat.Rewarded);
+                var switches = rig.Telemetry.Events.FindAll(e => e.Kind == AdEventKind.KillSwitch);
+                Check("AC59. RemovingTheRemoteConfig_RecordsTheKillSwitchOff_AndLoadsAgain",
+                    loadsWhileKilled == 0 && loaded && rig.Controller.IsReady("shop_refill") && switches.Count == 2 && switches[1].Detail == "off",
+                    $"loads while killed={loadsWhileKilled} both loaded after={loaded} ready={rig.Controller.IsReady("shop_refill")} KillSwitch events=[{string.Join(" | ", switches)}] (pre-fix: no off event, no load)");
+            }
 
             // a provider's Opened and Revenue carry the format only (LevelPlay: no placement); the events still name the placement the game asked for
             {
@@ -776,8 +792,11 @@ namespace NexusBench
                 log.Record(new AdEvent(AdEventKind.ConsentRefused, AdFormat.Interstitial, "", "no consent"));
                 log.Record(new AdEvent(AdEventKind.Violation, AdFormat.Interstitial, "level_end", "InterstitialFrequency: 16.1 s since the last interstitial"));
                 log.Record(new AdEvent(AdEventKind.Violation, AdFormat.Interstitial, "level_end", "InterstitialFrequency: 30.4 s since the last interstitial"));
-                foreach (var kind in new[] { AdEventKind.Loaded, AdEventKind.Shown, AdEventKind.Rewarded, AdEventKind.Closed, AdEventKind.Revenue, AdEventKind.NotReady, AdEventKind.KillSwitch })
+                foreach (var kind in new[] { AdEventKind.Loaded, AdEventKind.Shown, AdEventKind.Rewarded, AdEventKind.Closed, AdEventKind.Revenue, AdEventKind.NotReady })
                     log.Record(new AdEvent(kind, AdFormat.Rewarded, "shop_refill", "x"));
+                // a configuration that changes what runs is written in every build, each turn (#234)
+                log.Record(new AdEvent(AdEventKind.KillSwitch, AdFormat.Interstitial, "", "on"));
+                log.Record(new AdEvent(AdEventKind.KillSwitch, AdFormat.Interstitial, "", "off"));
                 var expected = new[]
                 {
                     "[Nexus Ads] NoFill Rewarded '': 509 Mediation No fill (first this session; repeats are not logged)",
@@ -789,6 +808,8 @@ namespace NexusBench
                     "[Nexus Ads] Initialized: after 3 failed start(s)",
                     "[Nexus Ads] ConsentRefused: no consent (first this session; repeats are not logged)",
                     "[Nexus Ads] PolicyViolation InterstitialFrequency (Interstitial 'level_end'): 16.1 s since the last interstitial (first for this rule and placement this session; repeats are not logged)",
+                    "[Nexus Ads] KillSwitch on: the remote configuration turned every ad off",
+                    "[Nexus Ads] KillSwitch off: ads load and show again",
                 };
                 var development = new List<string>();
                 var devLog = new AdFailureLog(development.Add, violations: false);

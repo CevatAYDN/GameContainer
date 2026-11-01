@@ -312,7 +312,7 @@ namespace Nexus.Ads
             if (_remote != null) _remote.Changed -= OnRemoteChanged;
             _remote = remote;
             if (_remote != null) { _remote.Changed += OnRemoteChanged; OnRemoteChanged(); }
-            else if (_killSwitch) { _killSwitch = false; RaiseReadyChanged(); }
+            else if (_killSwitch) { SetKillSwitch(false); RaiseReadyChanged(); }
         }
 
         /// <summary>
@@ -534,14 +534,7 @@ namespace Nexus.Ads
         private void OnRemoteChanged() => OnMain(() =>
         {
             if (_disposed) return;
-            bool kill = _remote.KillSwitch;
-            if (kill != _killSwitch)
-            {
-                _killSwitch = kill;
-                _telemetry.Record(new AdEvent(AdEventKind.KillSwitch, AdFormat.Interstitial, "", kill ? "on" : "off"));
-                if (kill) _provider.HideBanner(); // a banner on screen goes with the rest (issue #195)
-                if (!kill && State == Phase.Running) foreach (var format in _slots.Keys) Preload(format);
-            }
+            SetKillSwitch(_remote.KillSwitch);
             for (int i = 0; i < AdPolicy.Keys.All.Length; i++)
                 if (_remote.TryGetDouble(AdPolicy.Keys.All[i], out double value)) Guard.Tighten(AdPolicy.Keys.All[i], value);
             RaiseReadyChanged();
@@ -578,6 +571,17 @@ namespace Nexus.Ads
         }
 
         // each subscriber on its own: one that throws (a destroyed view's) leaves the later ones told (#236)
+        // Every flip is recorded, which the failure log writes in every build (#234). Turning it off loads again what it stopped:
+        // removing the remote configuration (SetRemoteConfig(null)) cleared it without an event or a load (#234).
+        private void SetKillSwitch(bool kill)
+        {
+            if (kill == _killSwitch) return;
+            _killSwitch = kill;
+            _telemetry.Record(new AdEvent(AdEventKind.KillSwitch, AdFormat.Interstitial, "", kill ? "on" : "off"));
+            if (kill) _provider.HideBanner(); // a banner on screen goes with the rest (issue #195)
+            else if (State == Phase.Running) foreach (var format in _slots.Keys) Preload(format);
+        }
+
         private void RaiseReadyChanged()
         {
             var handlers = ReadyChanged;

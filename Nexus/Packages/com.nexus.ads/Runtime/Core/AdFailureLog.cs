@@ -13,7 +13,8 @@ namespace Nexus.Ads
     /// start once until the SDK starts and then one line saying it did, a policy block
     /// once per rule and placement (only with <c>violations</c>: outside a release build the bootstrap writes every
     /// block as an error), every failed show, which only the player's tap starts, every reward receipt written over an unacknowledged
-    /// one (issue #178), and a subscriber or sink that threw once per step and exception (issue #176). Successes are not written.
+    /// one (issue #178), a subscriber or sink that threw once per step and exception (issue #176), and every turn of the remote
+    /// kill switch on or off (issue #234), a configuration that changes what runs. Successes are not written.
     /// </summary>
     internal sealed class AdFailureLog
     {
@@ -60,6 +61,9 @@ namespace Nexus.Ads
                     return;
                 case AdEventKind.RewardReplaced:
                     _write(Prefix + e);
+                    return;
+                case AdEventKind.KillSwitch:
+                    _write(Prefix + (e.Detail == "on" ? "KillSwitch on: the remote configuration turned every ad off" : "KillSwitch off: ads load and show again"));
                     return;
                 case AdEventKind.HandlerFailed:
                     WriteOnce("HandlerFailed|" + e.Detail, Prefix + e + Once);
