@@ -45,7 +45,9 @@ namespace Nexus.Ads.Unity
     /// </summary>
     public static class ProviderStatusResolver
     {
-        private static readonly Regex AdMobId = new Regex(@"^ca-app-pub-\d{16}[~/]\d{10}$", RegexOptions.CultureInvariant);
+        // an app id has "~", an ad unit id "/": one pattern for both passed a swapped id (#235)
+        private static readonly Regex AdMobAppId = new Regex(@"^ca-app-pub-\d{16}~\d{10}$", RegexOptions.CultureInvariant);
+        private static readonly Regex AdMobUnitId = new Regex(@"^ca-app-pub-\d{16}/\d{10}$", RegexOptions.CultureInvariant);
 
         /// <param name="sdkInstalled">The provider's SDK and its Nexus provider package are both in the project.</param>
         /// <param name="conflictingSdk">A second mediation SDK is in the project (the validator's two-mediation finding).</param>
@@ -78,13 +80,13 @@ namespace Nexus.Ads.Unity
             if (kind == AdProviderKind.AdMob)
             {
                 if (AdMobSampleIds.IsSample(keys.AppKey)) return "App ID is Google's sample id";
-                if (!AdMobId.IsMatch(keys.AppKey.Trim())) return "App ID is not of the form ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX";
+                if (!AdMobAppId.IsMatch(keys.AppKey.Trim())) return "App ID is not of the form ca-app-pub-XXXXXXXXXXXXXXXX~XXXXXXXXXX";
                 foreach (AdFormat format in System.Enum.GetValues(typeof(AdFormat)))
                 {
                     string unit = keys.UnitId(format);
                     if (!settings.Uses(format) || string.IsNullOrWhiteSpace(unit)) continue;
                     if (AdMobSampleIds.IsSample(unit)) return format + " unit id is Google's sample id";
-                    if (!AdMobId.IsMatch(unit.Trim())) return format + " unit id is not of the form ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX";
+                    if (!AdMobUnitId.IsMatch(unit.Trim())) return format + " unit id is not of the form ca-app-pub-XXXXXXXXXXXXXXXX/XXXXXXXXXX";
                 }
             }
             return null;

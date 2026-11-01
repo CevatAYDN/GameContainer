@@ -81,5 +81,22 @@ namespace Nexus.Ads.Tests
             _settings.Release.AdMob.Android.RewardedUnitId = "ca-app-pub-1234567890123456/1234567890";
             Assert.AreEqual(ProviderStatus.Active, ProviderStatusResolver.Resolve(_settings, AdProviderKind.AdMob, AdPlatform.Android, true).Status);
         }
+
+        // Issue #235: one pattern served both fields, so a swapped id passed the settings page and the validator
+        [Test]
+        public void AnAdMobUnitIdAsTheAppId_OrAnAppIdAsAUnitId_IsInvalid()
+        {
+            _settings.Release.AdMob.Android.AppKey = "ca-app-pub-1234567890123456/1234567890";
+            _settings.Release.AdMob.Android.RewardedUnitId = "ca-app-pub-1234567890123456/1234567890";
+            var unitAsApp = ProviderStatusResolver.Resolve(_settings, AdProviderKind.AdMob, AdPlatform.Android, true);
+            Assert.AreEqual(ProviderStatus.Invalid, unitAsApp.Status);
+            StringAssert.Contains("App ID", unitAsApp.Reason);
+
+            _settings.Release.AdMob.Android.AppKey = "ca-app-pub-1234567890123456~1234567890";
+            _settings.Release.AdMob.Android.RewardedUnitId = "ca-app-pub-1234567890123456~1234567890";
+            var appAsUnit = ProviderStatusResolver.Resolve(_settings, AdProviderKind.AdMob, AdPlatform.Android, true);
+            Assert.AreEqual(ProviderStatus.Invalid, appAsUnit.Status);
+            StringAssert.Contains("unit id", appAsUnit.Reason);
+        }
     }
 }
