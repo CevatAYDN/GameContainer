@@ -77,9 +77,9 @@ namespace Nexus.Editor.Inspector
                         string attrLabel = isOptional ? "[OptionalInject]" : "[Inject]";
                         EditorGUILayout.LabelField($"{attrLabel} {name} : {type.Name}", EditorStyles.boldLabel);
 
-                        if (Application.isPlaying)
+                        if (Application.isPlaying && isResolved.HasValue)
                         {
-                            NexusInspectorGUI.DrawBadge(isResolved ? "Resolved" : "Unresolved", isResolved ? StatusType.Success : StatusType.Error);
+                            NexusInspectorGUI.DrawBadge(isResolved.Value ? "Resolved" : "Unresolved", isResolved.Value ? StatusType.Success : StatusType.Error);
                         }
                         EditorGUILayout.EndHorizontal();
                     }
@@ -108,41 +108,39 @@ namespace Nexus.Editor.Inspector
             serializedObject.ApplyModifiedProperties();
         }
 
-        private static List<(string Name, Type Type, bool IsOptional, bool IsResolved)> GetInjectedDependencies(NexusBehaviour nb)
+        /// <summary>The members the container injects, as InjectScanner finds them: base classes included, and each [Inject]
+        /// method's parameters, which keep no value to check, so their IsResolved is null (#254).</summary>
+        private static List<(string Name, Type Type, bool IsOptional, bool? IsResolved)> GetInjectedDependencies(NexusBehaviour nb)
         {
-            var list = new List<(string, Type, bool, bool)>();
+            var list = new List<(string, Type, bool, bool?)>();
             if (nb == null) return list;
-            var targetType = nb.GetType();
+            var scanned = InjectScanner.ScanMembers(nb.GetType());
 
-            foreach (var f in targetType.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            foreach (var f in scanned.Fields)
             {
-                bool isOpt = f.IsDefined(typeof(OptionalInjectAttribute), true);
-                bool isReq = f.IsDefined(typeof(InjectAttribute), true);
-                if (isReq || isOpt)
+                object val = null;
+                if (Application.isPlaying)
                 {
-                    object val = null;
-                    if (Application.isPlaying)
-                    {
-                        try { val = f.GetValue(nb); } catch { }
-                    }
-                    list.Add((f.Name, f.FieldType, isOpt, val != null));
+                    try { val = f.GetValue(nb); } catch { }
                 }
+                list.Add((f.Name, f.FieldType, f.IsDefined(typeof(OptionalInjectAttribute), false), val != null));
             }
 
-            foreach (var p in targetType.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
+            var properties = new HashSet<string>();
+            foreach (var p in scanned.Properties)
             {
-                bool isOpt = p.IsDefined(typeof(OptionalInjectAttribute), true);
-                bool isReq = p.IsDefined(typeof(InjectAttribute), true);
-                if (isReq || isOpt)
+                if (!properties.Add(p.Name)) continue;
+                object val = null;
+                if (Application.isPlaying)
                 {
-                    object val = null;
-                    if (Application.isPlaying)
-                    {
-                        try { val = p.GetValue(nb); } catch { }
-                    }
-                    list.Add((p.Name, p.PropertyType, isOpt, val != null));
+                    try { val = p.GetValue(nb); } catch { }
                 }
+                list.Add((p.Name, p.PropertyType, p.IsDefined(typeof(OptionalInjectAttribute), false), val != null));
             }
+
+            foreach (var m in scanned.Methods)
+                foreach (var parameter in m.GetParameters())
+                    list.Add(($"{m.Name}({parameter.Name})", parameter.ParameterType, parameter.IsDefined(typeof(OptionalInjectAttribute), false), null));
 
             return list;
         }

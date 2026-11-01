@@ -141,24 +141,18 @@ namespace Nexus.Editor.Inspector
                 if (comp == null) continue;
                 if (!hasCustomTargets && (comp == binding ||
                     (binding.Scope == InjectionScope.Children && comp.gameObject == binding.gameObject))) continue;
+                // The members the container injects, as InjectScanner finds them: the leaf type's GetFields missed a base
+                // class's private members, and [Inject] methods were not read (#254).
                 var members = new List<(string, Type)>();
-                var type = comp.GetType();
-
-                foreach (var f in type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                {
-                    if (f.IsDefined(typeof(InjectAttribute), true) || f.IsDefined(typeof(OptionalInjectAttribute), true))
-                    {
-                        members.Add((f.Name, f.FieldType));
-                    }
-                }
-
-                foreach (var p in type.GetProperties(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance))
-                {
-                    if (p.IsDefined(typeof(InjectAttribute), true) || p.IsDefined(typeof(OptionalInjectAttribute), true))
-                    {
-                        members.Add((p.Name, p.PropertyType));
-                    }
-                }
+                var scanned = InjectScanner.ScanMembers(comp.GetType());
+                foreach (var f in scanned.Fields)
+                    members.Add((f.Name, f.FieldType));
+                var properties = new HashSet<string>();
+                foreach (var p in scanned.Properties)
+                    if (properties.Add(p.Name)) members.Add((p.Name, p.PropertyType));
+                foreach (var m in scanned.Methods)
+                    foreach (var parameter in m.GetParameters())
+                        members.Add(($"{m.Name}({parameter.Name})", parameter.ParameterType));
 
                 if (members.Count > 0)
                 {

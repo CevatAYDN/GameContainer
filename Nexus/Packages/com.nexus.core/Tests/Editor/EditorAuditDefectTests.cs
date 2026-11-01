@@ -16,6 +16,26 @@ using Object = UnityEngine.Object;
 
 namespace Nexus.Editor.Tests
 {
+    public interface IInspectorAuditDep { }
+
+    public class InspectorAuditComponentBase : MonoBehaviour
+    {
+        [Inject] private IInspectorAuditDep _fromBase = null;
+        public IInspectorAuditDep FromBase => _fromBase;
+        [Inject] public void Construct(IInspectorAuditDep dep) { }
+    }
+
+    public class InspectorAuditComponent : InspectorAuditComponentBase { }
+
+    public class InspectorAuditBehaviourBase : NexusBehaviour
+    {
+        [Inject] private IInspectorAuditDep _fromBase = null;
+        public IInspectorAuditDep FromBase => _fromBase;
+        [Inject] public void Construct(IInspectorAuditDep dep) { }
+    }
+
+    public class InspectorAuditBehaviour : InspectorAuditBehaviourBase { }
+
     /// <summary>Editor defects the audit #206 found (#252-#260); each test fails on the code before its fix.</summary>
     public class EditorAuditDefectTests
     {
@@ -55,6 +75,33 @@ namespace Nexus.Editor.Tests
                 ErrorCollection.Clear();
                 ErrorCollection.Enabled = enabled;
                 ErrorCollection.Suspended = suspended;
+            }
+        }
+
+        [Test]
+        public void Inspectors_ListABaseClassPrivateInjectField_AndAnInjectMethodsParameter()
+        {
+            // both inspectors read the leaf type's fields and properties: a base class's private member and [Inject]
+            // methods were missing, so a component showed no dependency while Nexus injected it (#254)
+            var go = new GameObject("InspectorAudit254");
+            try
+            {
+                var binding = go.AddComponent<NexusBinding>();
+                binding.Scope = InjectionScope.Self;
+                go.AddComponent<InspectorAuditComponent>();
+                var behaviour = go.AddComponent<InspectorAuditBehaviour>();
+
+                var component = Inspector.NexusBindingEditor.DiscoverInjectables(binding).FirstOrDefault(item => item.Component is InspectorAuditComponent);
+                Assert.IsNotNull(component.Component, "the binding inspector lists the component");
+                CollectionAssert.AreEquivalent(new[] { "_fromBase", "Construct(dep)" }, component.InjectedMembers.Select(m => m.Name).ToArray());
+
+                var dependencies = (IList)typeof(Inspector.NexusBehaviourEditor).GetMethod("GetInjectedDependencies", Static).Invoke(null, new object[] { behaviour });
+                var names = dependencies.Cast<object>().Select(entry => (string)entry.GetType().GetField("Item1").GetValue(entry)).ToArray();
+                CollectionAssert.IsSubsetOf(new[] { "_fromBase", "Construct(dep)" }, names, "the behaviour inspector lists both");
+            }
+            finally
+            {
+                Object.DestroyImmediate(go);
             }
         }
     }
