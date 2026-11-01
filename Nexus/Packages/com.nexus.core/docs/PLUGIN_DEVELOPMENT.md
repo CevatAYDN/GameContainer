@@ -63,7 +63,7 @@ Before submitting a new plugin or refactor, verify:
 |---|---|
 | **Window hidden / tab inactive** | `OnUpdate()` is driven by `NexusWindow` only for active tabs. Hidden tabs do not consume CPU. |
 | **Domain reload (script recompile)** | Static caches survive reload. Use `[DidReloadScripts]` attribute to clear static caches (`s_typedCatalog.Clear()`). |
-| **Play Mode entry** | The window rebuilds the shown tab when Play Mode starts or ends: `OnDisable()`, then `OnEnable()` and `CreateView()`. `CreateView()` reads `Application.isPlaying`; a plugin does not subscribe to `EditorApplication.playModeStateChanged` itself. |
+| **Play Mode entry** | The window rebuilds the shown tab when Play Mode starts or ends: `OnDisable()`, then `OnEnable()` and `CreateView()`. `CreateView()` reads `Application.isPlaying`, so a view does not subscribe to `EditorApplication.playModeStateChanged` itself. A static handler for state outside the view may: the Setup Wizard's cancels a starter scene still waiting for its scripts to compile. |
 | **Play Mode exit** | `OnDisable()` stops what the view started (the Performance tab stops recording) and resets live runtime metrics. |
 | **Context disposed during update** | Null-check active context references (`if (ctx == null) continue;`) before dereferencing containers. |
 | **`OnDisable` called before `OnEnable`** | `OnDisable()` must be defensive and null-check all references (`_scheduledHighlight?.Pause()`). |
