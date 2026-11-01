@@ -27,7 +27,7 @@
     {"key": "live_models", "value": "CANLI MODELLER"},
     {"key": "open", "value": "Aç"},
     {"key": "framework", "value": "ALTYAPI"},
-    {"key": "framework_desc", "value": "Nexus Observable Architecture v{0}\nUnity 6 • UI Toolkit • MIT Lisansı\n\n0-GC, JIT-free generic gözlemlenebilir altyapı üzerine inşa edildi:\n• Nedensellik Takibi — sıfır allocation ile sinyal zinciri izleme\n• 4 Çalıştırma Modu — Sıralı, Eşzamanlı, Tekil, Bileşik\n• Derleme Doğrulama — derleme öncesi öncelik çakışmalarını yakalar\n• Otomatik Keşif — Lifecycle, Command, View ve Mediator'lar\n• Komut Havuzlama — 0-GC kararlı durum için otomatik havuzlama\n\nEditör Paketi: 16 eklenti, Kod Üretici, Canlı İzleyici, Grafik Görüntüleyici, Tip Analizörü"},
+    {"key": "framework_desc", "value": "Nexus Observable Architecture v{0}\nUnity 6 • UI Toolkit • MIT Lisansı\n\nGözlemlenebilir bir MVCS altyapısı:\n• Nedensellik Takibi — NEXUS_DEBUG tanımıyla sinyal zinciri izleme (allocation yapabilir)\n• 4 Çalıştırma Modu — Sıralı, Eşzamanlı, Tekil, Bileşik\n• Derleme Doğrulama — derleme öncesi öncelik çakışmalarını yakalar\n• Otomatik Keşif — Lifecycle, Command, View ve Mediator'lar\n• Komut Havuzlama — README'nin Performance scope tablosundaki yollarda kararlı durumda allocation yok\n\nEditör: 13 eklenti (com.nexus.fsm ile 14), Kod Üretici, Canlı İzleyici, Grafik Görüntüleyici, Tip Analizörü"},
     {"key": "signals", "value": "Sinyaller"},
     {"key": "total_sigs", "value": "Toplam Sinyal"},
     {"key": "gc_memory", "value": "GC Bellek"},

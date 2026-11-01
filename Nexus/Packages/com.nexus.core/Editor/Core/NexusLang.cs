@@ -134,13 +134,13 @@ namespace Nexus.Editor
             s_strings["framework"] = "FRAMEWORK";
             s_strings["framework_desc"] = "Nexus Observable Architecture v{0}\n" +
                 "Unity 6 • UI Toolkit • MIT License\n\n" +
-                "Built on a 0-GC, JIT-free generic observable framework with:\n" +
-                "• Causal Tracing — zero-allocation causality tracking\n" +
+                "An observable MVCS framework with:\n" +
+                "• Causal Tracing — signal chains, with the NEXUS_DEBUG define (it may allocate)\n" +
                 "• 4 Execution Modes — Sequential, Concurrent, Exclusive, Composite\n" +
                 "• Build Validation — catches priority conflicts before compile\n" +
                 "• Auto-Discovery — Lifecycle, Commands, Views and Mediators\n" +
-                "• Command Pooling — automatic pooling for 0-GC steady-state\n\n" +
-                "Editor Suite: 16 plugins, Code Generator, Live Tracer, Graph Viewer, Type Analyzer";
+                "• Command Pooling — no allocation in steady state on the paths the README's Performance scope lists\n\n" +
+                "Editor: 13 plugins (14 with com.nexus.fsm), Code Generator, Live Tracer, Graph Viewer, Type Analyzer";
             s_strings["signals"] = "Signals";
             s_strings["total_sigs"] = "Total Sigs";
             s_strings["gc_memory"] = "GC Memory";

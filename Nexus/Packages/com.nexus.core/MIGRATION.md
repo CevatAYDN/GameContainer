@@ -67,6 +67,71 @@ thread, and the instance can already be destroyed then. Release what the instanc
 destroy it only if it is alive (`if (instance != null)`). `UICanvasSystem.UpdateLayerInteractivity` is replaced by
 `SetModalOpen(bool)` and `ReleaseWithoutDestroy` is gone; code that called them leaves the canvas to `UIManager`.
 
+#### The editor moves to Unity 6000.6
+
+The `unity` field of `com.nexus.core`, `com.nexus.fsm`, `com.nexus.dots`, `com.nexus.firebase` and `com.nexus.iap.unity`
+is 6000.6 (issue #139), and `com.nexus.core` depends on `com.unity.ugui` 2.6.0 (#138), which the 6000.6 editor ships. Open
+the game in the framework's editor patch, 6000.6.7f1 (gate 11 records each game's editor). After the move, select the
+Android Target API Level again in Player Settings: 6000.6.3f1 to 6000.6.6 saved a level 6 lower than the one selected
+(UUM-151786, fixed in 6000.6.7f1). A release build below API 36 now fails the ads family's pre-build check (#194).
+
+#### Regenerate the binder after the re-pin
+
+A binder generated before this release calls `RegisterInjector<T>` without the member list (CS7036, #191), and older binders
+name types that are gone (`AdMobAdapter`, `FloatingTextService`). Regenerate it once in batch with `-ignorecompilererrors`
+(TROUBLESHOOTING, "Stale Generated Binder"), or with **Nexus > Generate AOT Binder** once the project compiles. Never empty the
+file by hand: the generator refuses a zero-byte binder.
+
+#### Interfaces with new members
+
+A class of the game that implements one of these interfaces (a test fake, a wrapper) adds the members:
+
+| Interface | New members | Issue |
+|---|---|---|
+| `IAudioService` | `IsMusicMuted`, `IsSfxMuted` | #71 |
+| `IHapticService` | `CreateEffect(ms, amplitude)`, `CreateWaveform(timings, amplitudes)`, `Play(effect)` | #71 |
+| `ILocalizationService` | `Culture`, `Format` | #72 |
+| `IContextBuilder` | `BindServiceInstance<TInterface>(instance)` | #69 |
+| `ITickService` | `HoldPause()` | #77 |
+| `IIapService` | `UnrequestedPurchase` (above) | #204 |
+
+#### Tests reference the testing kit
+
+`MockContext`, `NexusTestHarness`, `MockIapStoreAdapter` and `MockAdNetworkAdapter` are in the assembly `com.nexus.core.testing`
+(#74, #162). It is not auto-referenced and compiles only in the editor or with `UNITY_INCLUDE_TESTS`: add `com.nexus.core.testing`
+to the `references` of each test assembly definition that uses them.
+
+#### Behaviour that changed under the same API
+
+- A signal fired with `FireThreadSafe` while `DrainThreadSafe` runs, from a thread-safe handler or another thread, waits for the
+  next drain, one frame later (#169). A game that relied on it running in the same drain reads the result a frame later.
+- A `[CommandTimeout]` command that times out goes through recovery (#168). `DefaultRecoveryStrategy` retries it up to 3
+  times and then aborts with `NexusRecoveryAbortException` (inner `CommandTimeoutException`), so an awaiting `FireAsync`
+  caller of a sequential line with a 3 s timeout can wait about 12 s instead of getting an `OperationCanceledException` at
+  the first timeout. A strategy that must not retry a timeout reads `CommandFailureContext.IsTimeout`.
+- The editor has one top-level **Nexus** menu (#193). `Window/Nexus/Dashboard`, `Nexus/Open Dashboard` and the
+  `Nexus/Create/*` items are gone: **Nexus > Open Window** (`Ctrl+Shift+N`) opens the window, `GameObject/Nexus/` creates roots,
+  and **Assets > Create > Nexus** creates assets.
+
+#### Removed
+
+Code that names one of these stops compiling; the changelog's Removed section gives each reason.
+
+| Removed | Instead |
+|---|---|
+| `NexusBootstrapManifest` and "Generate Skeleton from Manifest" (#193) | The Setup Wizard's generators |
+| The Context Wizard's Clean Deletion tab and the Help tab (#193) | Delete in the Hierarchy (with Undo); the Setup Wizard's document buttons |
+| `NexusWindow.ShowWindow()`, `OpenPlugin(id)`, `TypeDependencyAnalyzerWindow` (#193) | `NexusWindow.Open(id)` and `SwitchToPlugin(id)`; the Type Analyzer tab |
+| `Samples~/DevelopmentAssets/` (#201) | Nothing referenced it |
+| `AdMobAdapter`, `AdMobConfig`, `AdMobMainThread` (#14) | The ad family (`com.nexus.ads/MIGRATION.md`), before the re-pin |
+| `NexusTemplateProvider` (#41) | The Setup Wizard writes its own templates |
+| `ContextLifecycleOrchestrator.ExecuteLifecyclePhasesAsync` (#27) | Start the context through `Root`, `NexusLifetimeScope` or `Context.StartAsync` |
+| `IFloatingTextService`, `FloatingTextService` (#91) | A game's own floating text |
+| `ProviderFactory.RegisterBuiltIn` and the `"mock"` providers (#162) | The real adapters; the test doubles in `com.nexus.core.testing` |
+
+`ContextData.DisposeTimeoutSeconds` is obsolete (#59): nothing reads it, and the context never waits for async-disposable
+singletons. Remove its uses before it goes.
+
 ---
 
 ## Version 0.4.0 → 0.5.0
