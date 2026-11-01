@@ -124,6 +124,9 @@ namespace Nexus.Editor
             for (int i = 0; i < nodes.Count; i++)
             {
                 var n = nodes[i];
+                // The Root's object: a reloaded scene with the same layout gave the same signature, and the overlay kept
+                // the destroyed Roots and drew nothing (#257).
+                hash = hash * 31 + (n.GameObject != null ? n.GameObject.GetHashCode() : 0);
                 hash = hash * 31 + (n.ScopeTag?.GetHashCode() ?? 0);
                 hash = hash * 31 + n.Bounds.center.GetHashCode();
                 hash = hash * 31 + n.Bounds.size.GetHashCode();

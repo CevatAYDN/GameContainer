@@ -161,5 +161,36 @@ namespace Nexus.Editor.Tests
             finally { tracer.OnDisable(); }
         }
 #endif
+
+        [Test]
+        public void SceneOverlay_AfterARootIsReplacedByAnIdenticalOne_DrawsTheNewRoot()
+        {
+            // the change signature held scope tags, bounds, link counts and parents but not the Roots, so a reloaded
+            // scene with the same layout kept the destroyed Roots and drew nothing (#257)
+            var refresh = typeof(NexusSceneOverlay).GetMethod("RefreshData", Static);
+            var nodes = (System.Collections.Generic.List<NexusSceneOverlayContextNode>)typeof(NexusSceneOverlay).GetField("s_nodes", Static).GetValue(null);
+            var signature = typeof(NexusSceneOverlay).GetField("s_lastSignature", Static);
+            var first = new GameObject("OverlayAudit257");
+            GameObject second = null;
+            try
+            {
+                first.AddComponent<Root>();
+                refresh.Invoke(null, null);
+                Object.DestroyImmediate(first);
+                second = new GameObject("OverlayAudit257");
+                second.AddComponent<Root>();
+
+                refresh.Invoke(null, null);
+
+                Assert.IsTrue(nodes.Any(node => node.GameObject == second), "the overlay holds the new Root");
+            }
+            finally
+            {
+                if (first != null) Object.DestroyImmediate(first);
+                if (second != null) Object.DestroyImmediate(second);
+                nodes.Clear();
+                signature.SetValue(null, int.MinValue);
+            }
+        }
     }
 }
