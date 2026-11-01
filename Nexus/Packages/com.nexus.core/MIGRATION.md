@@ -50,6 +50,16 @@ bridge's entitlement now does. Register every product before `SetStoreAdapter`: 
 each transaction id once: `UnityIapAdapter` no longer consumes a paid consumable nobody handles, and it reports an order
 whose confirm failed in an earlier session again.
 
+#### The adapter factories have no `"mock"` provider
+
+`AdAdapterFactory` and `IapAdapterFactory` ship no provider (issue #162): `CreateAdapter("mock")` answers null with a warning,
+and without an adapter `IapService` and `AdService` answer as a release player does. A game that asked for `"mock"` in the
+editor or in development builds sets the real adapter there too: `UnityIapAdapter` (`com.nexus.iap.unity`; Unity IAP's own
+`FakeAppStore` in the editor, the store's test accounts on a device) and the ad family's bridge, whose bootstrap runs the
+labelled simulator in the editor. A test passes `MockIapStoreAdapter` or `MockAdNetworkAdapter` from `com.nexus.core.testing`
+to `SetStoreAdapter` or `SetNetworkAdapter`. A switch on `DEVELOPMENT_BUILD` goes with it: Unity 6000.6 deprecates the symbol
+(`UAC0009`, #140).
+
 #### A custom `IUIAssetProvider` gets its instances back
 
 `UIManager` now calls `ReleaseWindow` for each instance `InstantiateWindowAsync` returned (issue #185), once, on the main

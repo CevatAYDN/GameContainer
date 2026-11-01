@@ -68,8 +68,10 @@ compiles `FirebaseAdsRemoteConfig` over `IRemoteConfigService` (`ads.kill_switch
 `AdPolicy.Keys` names; remote can only tighten). Attach it with
 `AdsBootstrap.Instance.Controller.SetRemoteConfig(new FirebaseAdsRemoteConfig(remote))`.
 
-A paid reward is written to the store before the game hears of it: check
-`AdsBootstrap.Instance.Controller.PendingReward` at start-up, pay it, then `AcknowledgeReward`.
+A paid reward is written to the store before the game hears of it: check the static facade's
+`Ads.PendingReward` at start-up, pay it, then `Ads.AcknowledgeReward(receipt.Id)`. `IAdService`
+does not carry the receipt: a game whose reward carries data of its own (an amount captured at
+the offer, a target) keeps that data with the receipt id itself.
 
 ## Tests
 
