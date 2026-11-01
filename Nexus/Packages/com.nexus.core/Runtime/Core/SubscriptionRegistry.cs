@@ -234,6 +234,10 @@ namespace Nexus.Core
                         if (current.RawSubscription == rawSubscription)
                         {
                             current.IsActive = false;
+                            // A pending async dispatch defers the sweep; until then the node must not keep the handler and
+                            // what it captured alive (#218). Readers type-check Handler, so a null one is skipped.
+                            current.Handler = null;
+                            current.RawSubscription = null;
                             _pendingCleanups = true;
                             break;
                         }
@@ -251,6 +255,16 @@ namespace Nexus.Core
                     SweepDeadNodes();
                 }
             }
+        }
+
+        /// <summary>Whether a signal type has an active subscription: a node waiting for the sweep does not count (#218).</summary>
+        public bool HasActiveSubscriptions(Type signalType)
+        {
+            if (!_subscriptionsReadCopy.TryGetValue(signalType, out var current))
+                return false;
+            for (; current != null; current = current.Next)
+                if (current.IsActive) return true;
+            return false;
         }
 
         /// <summary>Checks if a signal type has any active async subscriptions.</summary>

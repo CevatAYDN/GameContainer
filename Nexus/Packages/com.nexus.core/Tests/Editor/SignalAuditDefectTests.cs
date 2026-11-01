@@ -15,8 +15,9 @@ namespace Nexus.Editor.Tests
     /// <summary>
     /// The signal and command defects the audit #206 found: a cancelled or aborted Concurrent dispatch wrote each
     /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214), a sync fallback
-    /// made later async fallbacks share one depth (#215), a failed async composite never ran its FallbackAsync (#216) and
-    /// a retried composite under FireAsync kept its state (#217).
+    /// made later async fallbacks share one depth (#215), a failed async composite never ran its FallbackAsync (#216), a
+    /// retried composite under FireAsync kept its state (#217) and an unsubscribed handler stayed reachable during a
+    /// dispatch (#218).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -68,6 +69,8 @@ namespace Nexus.Editor.Tests
                 if (++Attempts == 1) throw new InvalidOperationException("first attempt");
             }
         }
+
+        public struct TickSignal { }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -216,6 +219,26 @@ namespace Nexus.Editor.Tests
             await bus.FireAsync(new RetryB());
 
             CollectionAssert.AreEqual(new[] { 1, 1 }, RetriedComposite.Seen, errors.ToString());
+        }
+
+        [Test]
+        public void AHandlerUnsubscribedDuringADispatch_IsNoLongerHeldByTheRegistry()
+        {
+            using var registry = new SubscriptionRegistry { ImmediateSweepWhenIdle = true };
+            registry.EnterDispatch();
+            try
+            {
+                var payload = new object();
+                var subscription = registry.Subscribe<TickSignal>(_ => GC.KeepAlive(payload), CancellationToken.None);
+                subscription.Dispose();
+
+                // the sweep waits for the dispatch; until then the node is still in the chain
+                var node = registry.SubscriptionsReadCopy[typeof(TickSignal)];
+                Assert.IsNull(node.Handler);
+                Assert.IsNull(node.RawSubscription);
+                Assert.IsFalse(registry.HasActiveSubscriptions(typeof(TickSignal)));
+            }
+            finally { registry.ExitDispatch(); }
         }
     }
 }
