@@ -66,6 +66,8 @@ namespace Nexus.Tests
         [Test]
         public void LocalSignal_DoesNotBroadcast()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.CrossContextTests\+LocalSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
             using (var ctx1 = new Context())
             using (var ctx2 = new Context())
             {

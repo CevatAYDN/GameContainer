@@ -120,6 +120,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public async Task FlexibleDomainLifecycles_Executes_Start_And_Stop_Hooks()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ 'Nexus\.Editor\.Tests\.TestDomainController'\ implements\ both\ IStartable\ and\ IAsyncStartable;\ BOTH\ hooks\ a"));
             var state = new TestCapState();
             using var ctx = NexusTestHarness.CreateContext(builder =>
             {
@@ -256,6 +258,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void NexusBehaviour_Resolves_Subscribes_And_AutoDisposesOnDestroy()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.TestCapSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ registered\."));
             var state = new TestCapState();
             using var ctx = NexusTestHarness.CreateContext(builder =>
             {

@@ -66,6 +66,7 @@ namespace Nexus.Tests
         {
             Root.ClearRegistry();
             _panel = ScriptableObject.CreateInstance<PanelSettings>();
+            _panel.themeStyleSheet = ScriptableObject.CreateInstance<ThemeStyleSheet>(); // without one Unity warns "No Theme Style Sheet" (#198)
         }
 
         [TearDown]
@@ -73,6 +74,7 @@ namespace Nexus.Tests
         {
             Time.timeScale = 1f;
             Cleanup();
+            UnityEngine.Object.DestroyImmediate(_panel.themeStyleSheet);
             UnityEngine.Object.DestroyImmediate(_panel);
         }
 
@@ -132,6 +134,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator AScreen_IsShownByDisplayAndClass_ExactlyWhileItHoldsTheTopOfItsLayer()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             var menu = AddScreen<MenuScreen>(app, _panel);
@@ -153,6 +157,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator TheBackKeyDriver_IsDestroyedWithItsContext()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             Assert.That(GameObject.Find("[Nexus_BackKey]"), Is.Not.Null);
@@ -165,6 +171,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator AChildContextsScreens_TakeAPressBeforeTheParents_AndOnlyTheTopRouterHasARootBehaviour()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             var shop = CreateRoot("Shop", app, BindStack);
             yield return WaitUntil(() => app.IsInitialized && shop.IsInitialized, "the two contexts did not start");
@@ -202,6 +210,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator ASecondStackInAnUnrelatedContext_LogsAnError_AndDoesNotReadTheKey()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             LogAssert.Expect(LogType.Error, new Regex(@"^\[Nexus\] ScreenStack of context '(A|B)' does not read the back key"));
             var a = CreateRoot("A", null, BindStack);
             var b = CreateRoot("B", null, BindStack);
@@ -215,6 +225,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator ATransition_DelaysTheTask_AndAHideKeepsTheRootDisplayedUntilItEnds()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             AddScreen<MenuScreen>(app, _panel);
@@ -242,6 +254,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator ATransition_EndsOnUnscaledTime_WhileTheTimeScaleIsZero()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             AddScreen<MenuScreen>(app, _panel);
@@ -262,6 +276,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator ADisabledDocument_EndsItsTransitionAtOnce_AndItsNewRootGetsTheScreensState()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             var menu = AddScreen<MenuScreen>(app, _panel);
@@ -289,6 +305,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator WithoutATransition_ShownAgainWithOtherArgs_OrUnderReducedMotion_TheTaskIsCompleteAtOnce()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             AddScreen<MenuScreen>(app, _panel);
@@ -316,6 +334,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator ADeactivatedScreen_LeavesItsContextsHistory_AndComesBackHidden()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             var menu = AddScreen<MenuScreen>(app, _panel);
@@ -337,6 +357,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator AScreenWhoseComponentIsDisabled_LeavesTheHistory_AndItsDocumentIsHidden()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             var menu = AddScreen<MenuScreen>(app, _panel);
@@ -352,6 +374,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator AScreenWhoseDocumentIsEnabledAfterItBinds_IsHiddenOnTheNextFrame()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var app = CreateRoot("App", null, BindStack);
             yield return WaitUntil(() => app.IsInitialized, "the context did not start");
             var documentObject = new GameObject("Document");
@@ -386,11 +410,13 @@ namespace Nexus.Tests
             base.Setup();
             Root.ClearRegistry();
             _panel = ScriptableObject.CreateInstance<PanelSettings>();
+            _panel.themeStyleSheet = ScriptableObject.CreateInstance<ThemeStyleSheet>(); // without one Unity warns "No Theme Style Sheet" (#198)
         }
 
         public override void TearDown()
         {
             ScreenStackTests.Cleanup();
+            UnityEngine.Object.DestroyImmediate(_panel.themeStyleSheet);
             UnityEngine.Object.DestroyImmediate(_panel);
             base.TearDown();
         }

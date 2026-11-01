@@ -235,6 +235,10 @@ namespace Nexus.Ads.Tests.Runtime
         [UnityTest]
         public IEnumerator Release_WarnsEachAdFailureOncePerCause_AndEveryFailedShow()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\ Ads\]\ NoFill\ Rewarded\ '':\ no\ fill\ \(first\ this\ session;\ repeats\ are\ not\ logged\)"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\ Ads\]\ PolicyViolation\ UnknownPlacement\ \(Interstitial\ 'no_such_placement'\):\ placement\ 'no_such_placement'"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\ Ads\]\ ConsentRefused:\ the\ consent\ flow\ allows\ no\ ad\ request;\ no\ ads\ until\ the\ player\ changes\ it\ in\ the\ p"));
             SimulatorProvider provider = null;
             var previous = AdsBootstrap.SwapProviderForTests(AdProviderKind.LevelPlay, (scheduler, _) => provider = new SimulatorProvider(scheduler, SimulatorScenario.NoFill));
             AdsBootstrap.BuildForTests = BuildKind.Release;
@@ -409,6 +413,9 @@ namespace Nexus.Ads.Tests.Runtime
         [UnityTest]
         public IEnumerator RewardedButton_IsHiddenWhileNothingIsLoaded_AndPaysOnceOnReward()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\ Ads\]\ NoFill\ Rewarded\ '':\ no\ fill\ \(first\ this\ session;\ repeats\ are\ not\ logged\)"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\ Ads\]\ NoFill\ Interstitial\ '':\ no\ fill\ \(first\ this\ session;\ repeats\ are\ not\ logged\)"));
             yield return Boot(SimulatorScenario.NoFill);
             var buttonObject = new GameObject("button", typeof(RectTransform), typeof(CanvasGroup), typeof(Button));
             buttonObject.transform.SetParent(_root.transform);

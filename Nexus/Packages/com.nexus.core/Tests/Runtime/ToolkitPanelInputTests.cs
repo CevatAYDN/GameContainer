@@ -139,6 +139,8 @@ namespace Nexus.Tests
         [UnityTest]
         public IEnumerator AScreenOnAPanelSettingsOfItsOwn_MadeAfterTheComponent_GetsItsPanelsEventObjects()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
             var eventSystem = CreateEventSystem();
             var input = eventSystem.gameObject.AddComponent<ToolkitPanelInput>();
             yield return null;

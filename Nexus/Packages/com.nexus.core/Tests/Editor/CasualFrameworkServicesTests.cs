@@ -101,6 +101,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public async Task EconomyService_ServerRejectedSpend_RestoresBalance()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Economy\]\ Server\ rejected\ spend\ of\ \d+\ 'Coins'\ —\ balance\ restored\."));
             var validator = new FakeNetworkValidator();
             using var eco = new EconomyService { NetworkValidator = validator };
             eco.SetBalance("Coins", 100);

@@ -420,6 +420,8 @@ namespace Nexus.Tests
         [Test]
         public void ViewBinder_PoolLeakWarning_FiresWhenReturningStillActiveMediator()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Mediator\ 'ResettableMockMediator'\ returned\ to\ the\ pool\ while\ still\ tracked\ as\ active\ —\ possible\ mediat"));
             // The leak detector can't trip via the public API (UnregisterView removes the
             // mediator from _activeMediators BEFORE returning it), so exercise it directly:
             // force-return a mediator that is STILL tracked as active — exactly the zombie

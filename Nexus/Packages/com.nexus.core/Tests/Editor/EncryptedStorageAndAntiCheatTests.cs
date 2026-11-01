@@ -432,6 +432,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void EncryptedStorageService_TamperDetectionRejectsCorruptedFile()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[EncryptedStorage\]\ Save\ file\ tampering\ detected\ for\ key:\ SecretScore!\ Reverting\ to\ default\."));
             var storage = new EncryptedStorageService("Test_Salt_Tamper");
             storage.AutoSave = true; // Make sure it saves to disk immediately
 

@@ -27,6 +27,8 @@ namespace Nexus.Ads.Bridge.Tests.Runtime
         [UnityTest]
         public IEnumerator ConnectBeforeTheBootstrapStarted_ThenARewardFlowsThroughTheService()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[AdAdapterFactory\]\ Unknown\ ad\ provider:\ 'simulator'\.\ Available:\ "));
             _settings = ScriptableObject.CreateInstance<AdsSettings>();
             _settings.SelectedMediation = AdProviderKind.LevelPlay;
             _settings.Placements.Add(new PlacementEntry { Name = "shop_refill", Format = AdFormat.Rewarded });

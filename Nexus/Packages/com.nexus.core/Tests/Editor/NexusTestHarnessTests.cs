@@ -113,6 +113,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void UnregisteredSignal_IsNotTracked()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.NexusTestHarnessTests\+UnregisteredSignal'\ fired\ but\ has\ no\ subscribers\ or\ c"));
             using (var testContext = NexusTestHarness.CreateContext())
             {
                 testContext.Dispatch(new UnregisteredSignal());

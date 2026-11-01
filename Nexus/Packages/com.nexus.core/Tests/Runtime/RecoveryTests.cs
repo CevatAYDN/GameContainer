@@ -177,6 +177,8 @@ namespace Nexus.Tests
             _strategy.DecisionFactory = ctx => RecoveryDecision.Retry(3);
 
             ExpectCommandFailed("ThrowCommand", "Command failed intendedly: RetryTest", attempts: 4); // 1 initial + 3 retries
+            // the warnings this test causes, after the errors above (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Retry\ limit\ of\ \d+\ reached\.\ Forcing\ Abort\."));
 
             // The recovery engine surfaces the retry-limit abort as the TYPED
             // NexusRecoveryAbortException (an InvalidOperationException subclass).
@@ -321,6 +323,8 @@ namespace Nexus.Tests
             var timeouts = new System.Collections.Generic.List<bool>();
             _strategy.DecisionFactory = ctx => { timeouts.Add(ctx.IsTimeout); return RecoveryDecision.Retry(3); };
             ExpectCommandFailed("HangingAsyncCommand", @"timed out after 50 ms \(\[CommandTimeout\]\)", attempts: 4);
+            // the warnings this test causes, after the errors above (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Retry\ limit\ of\ \d+\ reached\.\ Forcing\ Abort\."));
 
             // Raced against 5 s: a timeout that never fires would hang the signal line, and the test with it.
             var fireTask = _signalBus.FireAsync(new FailSignal("Timeout")).AsTask();

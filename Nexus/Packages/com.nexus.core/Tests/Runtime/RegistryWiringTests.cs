@@ -58,6 +58,8 @@ namespace Nexus.Tests.Runtime
         [Test]
         public void SignalBus_Unsubscribe_WhileIdle_ReclaimsImmediately()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.Runtime\.RegistryWiringTests\+WiringSignalA'\ fired\ but\ has\ no\ subscribers\ or\ command"));
             using var di = new NexusDI();
             var bus = new SignalBus(di, new CommandPoolManager(di), new MockContext());
             int received = 0;
@@ -133,6 +135,8 @@ namespace Nexus.Tests.Runtime
         [Test]
         public void WiredBus_MatchesStandalone_SubscriptionLifecycle()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.Runtime\.RegistryWiringTests\+WiringSignalA'\ fired\ but\ has\ no\ subscribers\ or\ command"));
             // The same subscribe→fire→dispose→fire sequence through the real bus and the
             // standalone registry must produce identical counts.
             using var di = new NexusDI();
@@ -171,6 +175,8 @@ namespace Nexus.Tests.Runtime
         [Test]
         public void ConcurrentChurn_OnWiredBus_NoDeadDelivery()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.Runtime\.RegistryWiringTests\+WiringSignalA'\ fired\ but\ has\ no\ subscribers\ or\ command"));
             using var di = new NexusDI();
             var bus = new SignalBus(di, new CommandPoolManager(di), new MockContext());
             const int threads = 4;

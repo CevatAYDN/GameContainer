@@ -171,6 +171,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void CompositeRegistration_PreservesConsumerFactory()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Composite\ command\ 'FactoryCommand'\ implements\ a\ single\-signal\ generic\ command\ interface\ \(ICommand<T>/I"));
             using var context = ContextFactory.Create();
             int calls = 0;
             context.Container.BindFactory<FactoryCommand>(() => new FactoryCommand(() => calls++));
@@ -263,6 +265,12 @@ namespace Nexus.Editor.Tests
         [Test]
         public void FailingSave_RetryLimitCannotDiscardNewerAction()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[SaveThrottler\]\ Save\ execution\ failed\ \(\d+/\d+\ consecutive\):\ controlled\ failure"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[SaveThrottler\]\ Save\ execution\ failed\ \(\d+/\d+\ consecutive\):\ controlled\ failure"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[SaveThrottler\]\ Save\ execution\ failed\ \(\d+/\d+\ consecutive\):\ controlled\ failure"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[SaveThrottler\]\ Save\ execution\ failed\ \(\d+/\d+\ consecutive\):\ controlled\ failure"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[SaveThrottler\]\ Save\ execution\ failed\ \(\d+/\d+\ consecutive\):\ controlled\ failure"));
             var clock = new Clock(); var throttler = new SaveThrottler { TimeProvider = clock }; int failures = 0, saved = 0;
             throttler.TryRequestSave("owner", () =>
             {
@@ -305,6 +313,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void Refund_SaturatesInsteadOfWrapping()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Economy\]\ Server\ rejected\ spend\ of\ \d+\ 'coin'\ —\ balance\ restored\."));
             var validator = new Validator(); using var economy = new EconomyService { NetworkValidator = validator };
             economy.SetBalance("coin", 100); economy.Spend("coin", 100); economy.SetBalance("coin", long.MaxValue);
             validator.Response.SetResult(false); Assert.AreEqual(long.MaxValue, economy.GetBalance("coin"));
@@ -457,6 +467,9 @@ namespace Nexus.Editor.Tests
             context.SignalBus.Fire(new First());
 #if UNITY_EDITOR
             UnityEngine.TestTools.LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Command FailingTypedCommand failed: first attempt"));
+            // the warnings this test causes, after the errors above (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.HardeningRegressionTests\+First'\ fired\ but\ has\ no\ subscribers\ or\ command\ han"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.HardeningRegressionTests\+Second'\ fired\ but\ has\ no\ subscribers\ or\ command\ ha"));
 #endif
             Assert.Throws<InvalidOperationException>(() => context.SignalBus.Fire(new Second()));
             context.SignalBus.Fire(new First()); context.SignalBus.Fire(new Second());
@@ -467,6 +480,9 @@ namespace Nexus.Editor.Tests
         [Test]
         public void TypedComposite_UsesLatestValues_AndDisposes()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.HardeningRegressionTests\+First'\ fired\ but\ has\ no\ subscribers\ or\ command\ han"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.HardeningRegressionTests\+Second'\ fired\ but\ has\ no\ subscribers\ or\ command\ ha"));
             using var context = new Context(); TypedCommand.Calls = TypedCommand.Sum = 0;
             var registration = context.SignalBus.BindComposite<First, Second, TypedCommand>();
             context.SignalBus.Fire(new First { Value = 1 }); context.SignalBus.Fire(new First { Value = 2 });
@@ -504,6 +520,9 @@ namespace Nexus.Editor.Tests
         [Test]
         public void TypedComposite_OneShot_ExecutesOnce()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.HardeningRegressionTests\+First'\ fired\ but\ has\ no\ subscribers\ or\ command\ han"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.HardeningRegressionTests\+Second'\ fired\ but\ has\ no\ subscribers\ or\ command\ ha"));
             using var context = new Context(); TypedCommand.Calls = 0;
             using var registration = context.SignalBus.BindComposite<First, Second, TypedCommand>(oneShot: true);
             context.SignalBus.Fire(new First()); context.SignalBus.Fire(new Second());
@@ -542,6 +561,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void UnsupportedReplace_PreservesAndRecoversPreviousCommit()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[EncryptedStorage\]\ File\.Replace\ not\ supported;\ preserving\ a\ recoverable\ backup\ during\ commit\."));
             using var storage = new UnsupportedReplaceStorage(); const string key = "backup";
             try
             {
@@ -559,6 +580,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void QueuedImport_DoesNotOverwriteNewerMutation()
         {
+            // the queued import refuses on its worker thread, with a warning (#198)
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[EncryptedStorage\] Import of key 'save' refused: the key was written while the import waited"));
             using var storage = new EncryptedStorageService("import-" + Guid.NewGuid().ToString("N")) { AutoSave = true };
             const string key = "save";
             try

@@ -200,6 +200,12 @@ namespace Nexus.Tests
         [Test]
         public void Benchmark_SignalFire_HotPathNs()
         {
+            // the warnings this test causes, in the order it causes them (#198); the overflow warning is logged once per
+            // trace reset, and this test's 22000 fires overflow the 10000-event ring by themselves
+            NexusTrace.Reset();
+#if NEXUS_DEBUG
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[NexusTrace\]\ Ring\ buffer\ overflow\ detected\.\ Traced\ events\ count\ \(\d+\)\ exceeded\ MaxEvents\ limit\ \(\d+\)\.\ Olde"));
+#endif
             const int warmup = 2000;
             const int iterations = 20000;
 

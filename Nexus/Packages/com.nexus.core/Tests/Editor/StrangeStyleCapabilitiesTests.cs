@@ -186,6 +186,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void Once_SyncCommand_FiresExactlyOnce_ThenUnregisters()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.StrangeStyleCapabilitiesTests\+ETOnceSignal'\ fired\ but\ has\ no\ subscribers\ or"));
             ETOnceCommand.Executions = 0;
 
             using var ctx = NexusTestHarness.CreateContext(

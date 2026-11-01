@@ -239,6 +239,8 @@ namespace Nexus.Tests.Runtime
         [Test]
         public void SignalBus_SubscriptionNodeNested_UnsubscribeCleanup()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.Runtime\.ArchitecturalDeepeningTests\+TestSignal'\ fired\ but\ has\ no\ subscribers\ or\ co"));
             var context = ContextFactory.Create();
             var signalBus = context.SignalBus;
 

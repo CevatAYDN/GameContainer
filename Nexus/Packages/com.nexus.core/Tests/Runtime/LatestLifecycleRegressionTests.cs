@@ -38,6 +38,8 @@ namespace Nexus.Core.Tests
         [UnityTest]
         public IEnumerator BehaviourAwakeBeforeCodeFirstStartup_RetriesAndStartsExactlyOnce()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Core\.Tests\.LifecycleSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ registered\."));
             var go = new GameObject("Early consumer");
             Context context = null;
             try

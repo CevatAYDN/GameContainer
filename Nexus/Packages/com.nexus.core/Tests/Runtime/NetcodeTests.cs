@@ -54,6 +54,8 @@ namespace Nexus.Tests
         [Test]
         public void Fire_StoresTypedHistory_WithoutBoxing()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
             _networkBus.SetTick(0);
             _networkBus.Fire(new TestPlayerSignal(1, 100));
 
@@ -200,6 +202,8 @@ namespace Nexus.Tests
         [Test]
         public void PruneHistory_RemovesOldEntries()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
             _networkBus.SetTick(0);
             _networkBus.Fire(new TestPlayerSignal(1, 100));
             _networkBus.SetTick(1);
@@ -217,6 +221,8 @@ namespace Nexus.Tests
         [Test]
         public void Clear_RemovesAllHistoriesAndModels()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
             var model = new TestPlayerSnapshot();
             _networkBus.RegisterModel(model);
             _networkBus.SetTick(0);
@@ -230,6 +236,8 @@ namespace Nexus.Tests
         [Test]
         public void Prune_PreservesRelativeOrderOfSurvivors()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
             // Prune keeps signals strictly newer than the confirmed tick; survivors must
             // stay in chronological order after the O(N) in-place compaction rewrite.
             _networkBus.SetTick(0);
@@ -254,6 +262,8 @@ namespace Nexus.Tests
         [Test]
         public void Prune_PrunesEverythingWhenAllOlderThanConfirmedTick()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
             _networkBus.SetTick(0);
             _networkBus.Fire(new TestPlayerSignal(1, 10));
             _networkBus.SetTick(1);
@@ -268,6 +278,8 @@ namespace Nexus.Tests
         [Test]
         public void RemoveSignalsAfter_KeepsOnlyAtOrBeforeTick()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
             _networkBus.SetTick(0);
             _networkBus.Fire(new TestPlayerSignal(1, 10));
             _networkBus.SetTick(1);
@@ -324,6 +336,8 @@ namespace Nexus.Tests
         [Test]
         public void NetcodeApi_CallableWithNamedArguments()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
             // Compile-time guard: these exact calls must keep compiling. If a parameter
             // is renamed, this file stops compiling with CS1739 — the fastest possible
             // regression signal (this is exactly what broke during the Prune rename).

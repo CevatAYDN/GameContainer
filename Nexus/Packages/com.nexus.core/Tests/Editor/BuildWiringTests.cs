@@ -94,6 +94,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void OnPreprocessBuild_RegeneratesBinderBeforeValidation()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Architecture\ Validation\ bypassed\ via\ NEXUS_DISABLE_VALIDATION\ environment\ variable\."));
             // Isolate the binder-regeneration behavior by bypassing the validation pass.
             Environment.SetEnvironmentVariable("NEXUS_DISABLE_VALIDATION", "1");
             if (File.Exists(_binderPath)) File.Delete(_binderPath);
@@ -112,6 +114,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void OnPreprocessBuild_SkipsBinderWhenAutogenDisabled()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Architecture\ Validation\ bypassed\ via\ NEXUS_DISABLE_VALIDATION\ environment\ variable\."));
             Environment.SetEnvironmentVariable("NEXUS_DISABLE_AUTOGEN", "1");
             Environment.SetEnvironmentVariable("NEXUS_DISABLE_VALIDATION", "1");
             if (File.Exists(_binderPath)) File.Delete(_binderPath);

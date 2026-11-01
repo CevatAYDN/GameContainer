@@ -132,6 +132,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void LongRefund_AfterPromotionUpdatesCanonicalBalance()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Economy\]\ Server\ rejected\ spend\ of\ \d+\ 'coin'\ —\ balance\ restored\."));
             var validator = new LongValidator();
             using var economy = new EconomyService { NetworkValidator = validator };
             economy.SetBalance("coin", 100); Assert.IsTrue(economy.Spend("coin", 40));

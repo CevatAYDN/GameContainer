@@ -38,10 +38,12 @@ namespace Nexus.Tests
         private AudioClip _trackB;
 
         private AudioSource[] Music => _provider.Root.GetComponents<AudioSource>();
+        private GameObject _listener;
 
         [SetUp]
         public void SetUp()
         {
+            _listener = new GameObject("[AudioServiceTests listener]", typeof(AudioListener)); // without one Unity warns every frame (#198)
             _provider = new TestRootProvider();
             _audio = new AudioService { AudioRootProvider = _provider };
             _audio.InitializeAsync(default).GetAwaiter().GetResult();
@@ -53,6 +55,7 @@ namespace Nexus.Tests
         public void TearDown()
         {
             _audio?.Dispose();
+            UnityEngine.Object.Destroy(_listener);
             UnityEngine.Object.Destroy(_trackA);
             UnityEngine.Object.Destroy(_trackB);
         }

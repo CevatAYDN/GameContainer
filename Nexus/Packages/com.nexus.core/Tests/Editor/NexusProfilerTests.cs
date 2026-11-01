@@ -16,6 +16,8 @@ namespace Nexus.Editor.Tests.Editor
         [Test]
         public void Fire_IncrementsSignalsDispatchedCounter()
         {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Editor\.Tests\.Editor\.NexusProfilerTests\+ProfilerSmokeSignal'\ fired\ but\ has\ no\ subscribers"));
             var container = new NexusDI();
             var poolManager = new CommandPoolManager(container);
             var bus = new SignalBus(container, poolManager, new MockContext());

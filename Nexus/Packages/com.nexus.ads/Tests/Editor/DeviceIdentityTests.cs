@@ -15,6 +15,7 @@ namespace Nexus.Ads.Tests
         [Test]
         public void AFailedLookupOnTheLookupThreadAnswersWithTheFallbackId()
         {
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] the advertising id is unavailable \(InvalidOperationException: no Play services\)")); // #198
             string answered = null;
             Exception escaped = null;
             var lookup = new Thread(() =>
