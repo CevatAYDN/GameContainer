@@ -8,6 +8,15 @@ using UnityEngine.Scripting;
 
 namespace Nexus.Core.Services
 {
+    /// <summary>
+    /// Currency balances. Amounts (#196): <see cref="Spend(string,long,string)"/>, <see cref="Earn"/>,
+    /// <see cref="SpendBig(string,BigDouble,string)"/> and <see cref="EarnBig"/> take a positive amount; <see cref="CanAfford"/>,
+    /// <see cref="CanAffordBig"/>, <see cref="SetBalance"/> and <see cref="SetBigBalance"/> a nonnegative one. Any other amount
+    /// (zero where a change is required, negative, NaN, infinite) is a programming error and throws
+    /// <see cref="ArgumentOutOfRangeException"/>. A spend the service refuses at run time returns false, and the overload with an
+    /// <see cref="EconomyRefusal"/> says why. When the network validator refuses a spend the service has already applied, the
+    /// amount comes back and <see cref="SpendRefundedSignal"/> is fired.
+    /// </summary>
     public interface IEconomyService
     {
         long GetBalance(string currencyId);
@@ -19,6 +28,8 @@ namespace Nexus.Core.Services
         SecureObservableLong GetObservableBalance(string currencyId);
         bool CanAfford(string currencyId, long amount);
         bool Spend(string currencyId, long amount, string reason = "");
+        /// <summary>As <see cref="Spend(string,long,string)"/>; on false, <paramref name="refusal"/> says why.</summary>
+        bool Spend(string currencyId, long amount, out EconomyRefusal refusal, string reason = "");
         void Earn(string currencyId, long amount, string reason = "");
         void SetBalance(string currencyId, long amount);
 
@@ -26,9 +37,49 @@ namespace Nexus.Core.Services
         BigDouble GetBigBalance(string currencyId);
         SecureObservableBigDouble GetObservableBigBalance(string currencyId);
         bool CanAffordBig(string currencyId, BigDouble amount);
+        /// <summary>Throws <see cref="NotSupportedException"/> when the bound network validator is not an <see cref="INetworkBigEconomyValidator"/>, as <see cref="EarnBig"/> and <see cref="SetBigBalance"/> do.</summary>
         bool SpendBig(string currencyId, BigDouble amount, string reason = "");
+        /// <summary>As <see cref="SpendBig(string,BigDouble,string)"/>; on false, <paramref name="refusal"/> says why.</summary>
+        bool SpendBig(string currencyId, BigDouble amount, out EconomyRefusal refusal, string reason = "");
         void EarnBig(string currencyId, BigDouble amount, string reason = "");
         void SetBigBalance(string currencyId, BigDouble amount);
+    }
+
+    /// <summary>Why a spend returned false (#196).</summary>
+    public enum EconomyRefusal
+    {
+        /// <summary>The spend was applied.</summary>
+        None,
+        /// <summary>The balance is below the amount.</summary>
+        InsufficientBalance,
+        /// <summary>The currency id is null or empty.</summary>
+        InvalidCurrencyId,
+        /// <summary>The service is disposed or being disposed.</summary>
+        Disposed,
+    }
+
+    /// <summary>
+    /// The network validator refused a spend the service had already applied, and the amount is back in the balance: a game
+    /// that granted something for the spend takes it back here (#196). Fired with <c>FireThreadSafe</c> from the thread the
+    /// validator completes on, so subscribers receive it on the main thread at the next drain.
+    /// </summary>
+    public readonly struct SpendRefundedSignal
+    {
+        public readonly string CurrencyId;
+        /// <summary>The refunded amount; a BigDouble refund above <see cref="long.MaxValue"/> saturates here.</summary>
+        public readonly long Amount;
+        /// <summary>The refunded amount, exact.</summary>
+        public readonly BigDouble BigAmount;
+        /// <summary>The reason the spend was made with.</summary>
+        public readonly string Reason;
+
+        public SpendRefundedSignal(string currencyId, long amount, BigDouble bigAmount, string reason)
+        {
+            CurrencyId = currencyId;
+            Amount = amount;
+            BigAmount = bigAmount;
+            Reason = reason;
+        }
     }
 
     public interface INetworkEconomyValidator
@@ -99,28 +150,39 @@ namespace Nexus.Core.Services
 
         public bool CanAfford(string currencyId, long amount)
         {
-            if (amount <= 0) return true;
+            RequireNonnegative(amount);
+            if (amount == 0) return true;
             return GetBalance(currencyId) >= amount;
         }
 
-        public bool Spend(string currencyId, long amount, string reason = "")
-        {
-            if (amount <= 0) return true;
+        public bool Spend(string currencyId, long amount, string reason = "") => Spend(currencyId, amount, out _, reason);
 
-            SecureObservableLong prop;
+        public bool Spend(string currencyId, long amount, out EconomyRefusal refusal, string reason = "")
+        {
+            RequirePositive(amount);
             PrefetchSaved(currencyId);
             lock (_balanceLock)
             {
-                if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
-                prop = LazyLoadBalance(currencyId);
+                refusal = RefusalLocked(currencyId);
+                if (refusal != EconomyRefusal.None) return false;
+                var prop = LazyLoadBalance(currencyId);
                 if (_bigBalances.TryGetValue(currencyId, out var big))
                 {
-                    if (big.Value < new BigDouble(amount)) return false;
-                    big.Value -= new BigDouble(amount);
+                    var cost = new BigDouble(amount);
+                    if (big.Value < cost)
+                    {
+                        refusal = EconomyRefusal.InsufficientBalance;
+                        return false;
+                    }
+                    big.Value -= cost;
                 }
                 else
                 {
-                    if (prop.Value < amount) return false;
+                    if (prop.Value < amount)
+                    {
+                        refusal = EconomyRefusal.InsufficientBalance;
+                        return false;
+                    }
                     prop.Value -= amount;
                 }
             }
@@ -138,14 +200,11 @@ namespace Nexus.Core.Services
 
         public void Earn(string currencyId, long amount, string reason = "")
         {
-            if (amount <= 0) return;
-
-            SecureObservableLong prop;
+            RequirePositive(amount);
             PrefetchSaved(currencyId);
             lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
-                prop = LazyLoadBalance(currencyId);
                 AddBalanceLocked(currencyId, amount);
             }
 
@@ -159,16 +218,45 @@ namespace Nexus.Core.Services
 
         public void SetBalance(string currencyId, long amount)
         {
-            SecureObservableLong prop;
+            RequireNonnegative(amount);
             PrefetchSaved(currencyId);
             lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
-                prop = LazyLoadBalance(currencyId);
-                if (_bigBalances.TryGetValue(currencyId, out var big)) big.Value = new BigDouble(Math.Max(0L, amount));
-                else prop.Value = Math.Max(0L, amount);
+                var prop = LazyLoadBalance(currencyId);
+                if (_bigBalances.TryGetValue(currencyId, out var big)) big.Value = new BigDouble(amount);
+                else prop.Value = amount;
             }
             SchedulePersist();
+        }
+
+        // Under the lock: the run-time reason a spend cannot start.
+        private EconomyRefusal RefusalLocked(string currencyId)
+            => _disposed || _disposing ? EconomyRefusal.Disposed
+                : string.IsNullOrEmpty(currencyId) ? EconomyRefusal.InvalidCurrencyId
+                : EconomyRefusal.None;
+
+        // #196: an amount outside the method's range is a programming error, never a silent no-op.
+        private static void RequirePositive(long amount)
+        {
+            if (amount <= 0) throw new ArgumentOutOfRangeException(nameof(amount), amount, "The amount must be positive.");
+        }
+
+        private static void RequireNonnegative(long amount)
+        {
+            if (amount < 0) throw new ArgumentOutOfRangeException(nameof(amount), amount, "The amount must not be negative.");
+        }
+
+        private static void RequirePositive(BigDouble amount)
+        {
+            if (!IsFiniteNonnegative(amount) || amount.Mantissa == 0)
+                throw new ArgumentOutOfRangeException(nameof(amount), "The amount must be finite and positive.");
+        }
+
+        private static void RequireNonnegative(BigDouble amount)
+        {
+            if (!IsFiniteNonnegative(amount))
+                throw new ArgumentOutOfRangeException(nameof(amount), "The amount must be finite and not negative.");
         }
 
         // Reads are lock-free (ConcurrentDictionary.TryGetValue); the
@@ -263,49 +351,49 @@ namespace Nexus.Core.Services
 
         public bool CanAffordBig(string currencyId, BigDouble amount)
         {
-            if (!IsFiniteNonnegative(amount)) return false;
+            RequireNonnegative(amount);
             if (amount.Mantissa == 0) return true;
             return GetBigBalance(currencyId) >= amount;
         }
 
-        public bool SpendBig(string currencyId, BigDouble amount, string reason = "")
+        public bool SpendBig(string currencyId, BigDouble amount, string reason = "") => SpendBig(currencyId, amount, out _, reason);
+
+        public bool SpendBig(string currencyId, BigDouble amount, out EconomyRefusal refusal, string reason = "")
         {
-            if (!IsFiniteNonnegative(amount)) return false;
-            if (amount.Mantissa == 0) return true;
-            var validator = NetworkValidator;
-            if (validator != null && !(validator is INetworkBigEconomyValidator)) return false;
+            RequirePositive(amount);
+            var validator = RequireBigValidator();
             amount = Normalize(amount);
 
-            SecureObservableBigDouble prop;
             PrefetchSaved(currencyId);
             lock (_balanceLock)
             {
-                if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return false;
-                prop = LazyLoadBigBalance(currencyId);
-                if (prop.Value < amount) return false;
+                refusal = RefusalLocked(currencyId);
+                if (refusal != EconomyRefusal.None) return false;
+                var prop = LazyLoadBigBalance(currencyId);
+                if (prop.Value < amount)
+                {
+                    refusal = EconomyRefusal.InsufficientBalance;
+                    return false;
+                }
                 prop.Value -= amount;
             }
 
             SchedulePersist();
-            if (validator is INetworkBigEconomyValidator bigValidator)
-                _ = ReconcileBigSpendAsync(bigValidator, currencyId, amount, reason);
+            if (validator != null) _ = ReconcileBigSpendAsync(validator, currencyId, amount, reason);
             return true;
         }
 
         public void EarnBig(string currencyId, BigDouble amount, string reason = "")
         {
-            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
-            ValidateBigMutation(amount);
-            if (amount.Mantissa == 0) return;
+            RequirePositive(amount);
             var validator = RequireBigValidator();
             amount = Normalize(amount);
 
-            SecureObservableBigDouble prop;
             PrefetchSaved(currencyId);
             lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
-                prop = LazyLoadBigBalance(currencyId);
+                var prop = LazyLoadBigBalance(currencyId);
                 prop.Value = Normalize(prop.Value + amount);
             }
 
@@ -315,17 +403,14 @@ namespace Nexus.Core.Services
 
         public void SetBigBalance(string currencyId, BigDouble amount)
         {
-            if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
-            ValidateBigMutation(amount);
+            RequireNonnegative(amount);
             RequireBigValidator();
             amount = Normalize(amount);
-            SecureObservableBigDouble prop;
             PrefetchSaved(currencyId);
             lock (_balanceLock)
             {
                 if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return;
-                prop = LazyLoadBigBalance(currencyId);
-                prop.Value = amount;
+                LazyLoadBigBalance(currencyId).Value = amount;
             }
             SchedulePersist();
         }
@@ -387,11 +472,6 @@ namespace Nexus.Core.Services
         {
             var normalized = new BigDouble(value.Mantissa, value.Exponent);
             return normalized > BigDouble.MaxValue ? BigDouble.MaxValue : normalized;
-        }
-
-        private static void ValidateBigMutation(BigDouble amount)
-        {
-            if (!IsFiniteNonnegative(amount)) throw new ArgumentOutOfRangeException(nameof(amount), "Currency amounts must be finite and nonnegative.");
         }
 
         private INetworkBigEconomyValidator RequireBigValidator()
@@ -497,6 +577,7 @@ namespace Nexus.Core.Services
                 if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
                 else PersistAllBalancesNow();
                 NexusLog.WarnAlways($"[Economy] Server rejected spend of {amount} '{currencyId}' — balance restored.");
+                SignalBus?.FireThreadSafe(new SpendRefundedSignal(currencyId, amount, new BigDouble(amount), reason));
             }
             catch (Exception ex)
             {
@@ -534,6 +615,8 @@ namespace Nexus.Core.Services
                 if (_disposed || _disposing) return;
                 if (SaveThrottler != null) SaveThrottler.ForceSave(SaveOwner, PersistAllBalancesNow);
                 else PersistAllBalancesNow();
+                NexusLog.WarnAlways($"[Economy] Server rejected spend of {amount} '{currencyId}' — balance restored.");
+                SignalBus?.FireThreadSafe(new SpendRefundedSignal(currencyId, ProjectLong(amount), amount, reason));
             }
             catch (Exception ex) { NexusLog.WarnAlways($"[Economy] Big spend validation failed for '{currencyId}': {ex.Message}"); }
         }

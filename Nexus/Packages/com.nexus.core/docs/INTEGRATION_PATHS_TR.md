@@ -127,7 +127,9 @@ long durumunu kullanarak yükseltir. Bundan sonra tek bir BigDouble defteri iki 
 yönetir; long okumalar/observable'lar kesirleri atar ve long.MaxValue'da doyar. Elde tutulan
 değiştirilebilir bir long observable'a yazmak, canonical tam sayı miktarını açıkça ayarlar.
 BigDouble idle/incremental oyunlar için yaklaşık double mantissa aritmetiği kullanır; büyük
-tam sayılarda kesin muhasebe garanti etmez. NaN/sonsuz ve negatif Big miktarlar reddedilir.
-Var olan bir network validator'ı, Big işlemler için INetworkBigEconomyValidator'ı da
-implemente etmelidir; desteklenmeyen SpendBig false döndürür, EarnBig/SetBigBalance
-NotSupportedException fırlatır. İstemci validator'ları/obfuscation sunucu otoritesi sağlamaz.
+tam sayılarda kesin muhasebe garanti etmez. Spend, Earn, SpendBig ve EarnBig pozitif bir miktar;
+CanAfford, CanAffordBig, SetBalance ve SetBigBalance negatif olmayan bir miktar alır; NaN ve
+sonsuz dahil başka her miktar ArgumentOutOfRangeException fırlatır (#196). Var olan bir network
+validator'ı, Big işlemler için INetworkBigEconomyValidator'ı da implemente etmelidir; etmezse
+SpendBig, EarnBig ve SetBigBalance NotSupportedException fırlatır. İstemci validator'ları/obfuscation
+sunucu otoritesi sağlamaz.

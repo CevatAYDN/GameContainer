@@ -63,6 +63,8 @@ namespace Nexus.Editor.Plugins
             var ecoSection = CreateSectionBox(NexusLang.Get("cs_sec_economy"));
             _currencyNameField = new TextField(NexusLang.Get("cs_currency_id")) { value = NexusLang.Get("cs_default_currency") };
             _currencyAmountField = new LongField(NexusLang.Get("cs_amount")) { value = 100 };
+            // Earn and Spend take a positive amount and throw for any other (#196).
+            _currencyAmountField.RegisterValueChangedCallback(evt => { if (evt.newValue < 1) _currencyAmountField.SetValueWithoutNotify(1); });
             ecoSection.Add(_currencyNameField);
             ecoSection.Add(_currencyAmountField);
             var addBtn = new Button(OnAddCurrency) { text = NexusLang.Get("cs_earn_currency") };

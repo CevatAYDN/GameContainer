@@ -144,11 +144,12 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void LongOnlyBackend_RejectsBigTransactionsWithoutChangingBalance()
+        public void LongOnlyBackend_BigTransactionsThrowNotSupportedWithoutChangingBalance()
         {
+            // SpendBig returned false here (#196), which a caller could not tell from an insufficient balance.
             using var economy = new EconomyService { NetworkValidator = new LongValidator() };
             economy.SetBalance("coin", 10);
-            Assert.IsFalse(economy.SpendBig("coin", new BigDouble(2)));
+            Assert.Throws<NotSupportedException>(() => economy.SpendBig("coin", new BigDouble(2)));
             Assert.Throws<NotSupportedException>(() => economy.EarnBig("coin", BigDouble.One));
             Assert.Throws<NotSupportedException>(() => economy.SetBigBalance("coin", BigDouble.One));
             Assert.AreEqual(10, economy.GetBalance("coin"));
@@ -157,6 +158,8 @@ namespace Nexus.Editor.Tests
         [Test]
         public void BigBackend_RefundsRejectedSpendAndIgnoresDisposedResponse()
         {
+            // the warnings this test causes, in the order it causes them (#198); the disposed service's refusal causes none
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Economy\]\ Server\ rejected\ spend\ of\ .+\ 'coin'\ —\ balance\ restored\."));
             var validator = new BigValidator();
             using var economy = new EconomyService { NetworkValidator = validator };
             economy.SetBigBalance("coin", new BigDouble(100));
@@ -173,18 +176,84 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void BigAmounts_RejectNonfiniteAndNegativeValues()
+        public void BigAmounts_NonfiniteNegativeOrZeroWhereAChangeIsRequired_Throw()
         {
+            // CanAffordBig and SpendBig returned false for these (#196) while EarnBig threw.
             using var economy = new EconomyService(); economy.SetBigBalance("coin", new BigDouble(10));
             foreach (double mantissa in new[] { double.NaN, double.PositiveInfinity, -1d })
             {
                 var malformed = new BigDouble { Mantissa = mantissa, Exponent = 0 };
-                Assert.IsFalse(economy.CanAffordBig("coin", malformed));
-                Assert.IsFalse(economy.SpendBig("coin", malformed));
+                Assert.Throws<ArgumentOutOfRangeException>(() => economy.CanAffordBig("coin", malformed));
+                Assert.Throws<ArgumentOutOfRangeException>(() => economy.SpendBig("coin", malformed));
                 Assert.Throws<ArgumentOutOfRangeException>(() => economy.EarnBig("coin", malformed));
                 Assert.Throws<ArgumentOutOfRangeException>(() => economy.SetBigBalance("coin", malformed));
             }
+            Assert.Throws<ArgumentOutOfRangeException>(() => economy.SpendBig("coin", BigDouble.Zero));
+            Assert.Throws<ArgumentOutOfRangeException>(() => economy.EarnBig("coin", BigDouble.Zero));
+            Assert.IsTrue(economy.CanAffordBig("coin", BigDouble.Zero));
             Assert.AreEqual(new BigDouble(10), economy.GetBigBalance("coin"));
+        }
+
+        [Test]
+        public void ARefusedSpend_SaysWhy_OnBothApis()
+        {
+            // Spend returned a bare false for an insufficient balance, an empty id and a disposed service alike (#196).
+            using var economy = new EconomyService();
+            economy.SetBalance("coin", 10);
+            Assert.IsFalse(economy.Spend("coin", 11, out var refusal));
+            Assert.AreEqual(EconomyRefusal.InsufficientBalance, refusal);
+            Assert.IsFalse(economy.Spend("", 1, out refusal));
+            Assert.AreEqual(EconomyRefusal.InvalidCurrencyId, refusal);
+            Assert.IsTrue(economy.Spend("coin", 4, out refusal));
+            Assert.AreEqual(EconomyRefusal.None, refusal);
+
+            economy.SetBigBalance("gem", new BigDouble(1, 30));
+            Assert.IsFalse(economy.SpendBig("gem", new BigDouble(2, 30), out refusal));
+            Assert.AreEqual(EconomyRefusal.InsufficientBalance, refusal);
+            Assert.IsTrue(economy.SpendBig("gem", new BigDouble(5, 29), out refusal));
+            Assert.AreEqual(EconomyRefusal.None, refusal);
+
+            economy.Dispose();
+            Assert.IsFalse(economy.Spend("coin", 1, out refusal));
+            Assert.AreEqual(EconomyRefusal.Disposed, refusal);
+            Assert.IsFalse(economy.SpendBig("gem", BigDouble.One, out refusal));
+            Assert.AreEqual(EconomyRefusal.Disposed, refusal);
+        }
+
+        private sealed class SignalledEconomy : EconomyService
+        {
+            public SignalledEconomy(ISignalBus bus) => SignalBus = bus;
+        }
+
+        [Test]
+        public void AServerRefusedSpend_FiresSpendRefundedSignal_WithTheAmountAndReason()
+        {
+            // A refund changed the balance with no event, so a game could not take back what it granted (#196).
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Economy\]\ Server\ rejected\ spend\ of\ 40\ 'coin'"));
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Economy\]\ Server\ rejected\ spend\ of\ .+\ 'gem'"));
+            var bus = new RecordingSignalBus();
+            var validator = new BigValidator();
+            using var economy = new SignalledEconomy(bus) { NetworkValidator = validator };
+            economy.SetBalance("coin", 100);
+            Assert.IsTrue(economy.Spend("coin", 40, "shop"));
+            Assert.AreEqual(0, bus.Count<SpendRefundedSignal>(), "Nothing is refunded before the server answers.");
+            validator.Response.SetResult(false);
+            var refund = bus.Last<SpendRefundedSignal>();
+            Assert.AreEqual("coin", refund.CurrencyId);
+            Assert.AreEqual(40, refund.Amount);
+            Assert.AreEqual(new BigDouble(40), refund.BigAmount);
+            Assert.AreEqual("shop", refund.Reason);
+
+            economy.SetBigBalance("gem", new BigDouble(5, 25));
+            Assert.IsTrue(economy.SpendBig("gem", new BigDouble(2, 25), "upgrade"));
+            validator.BigResponse.SetResult(false);
+            refund = bus.Last<SpendRefundedSignal>();
+            Assert.AreEqual("gem", refund.CurrencyId);
+            Assert.AreEqual(long.MaxValue, refund.Amount, "A refund above long.MaxValue saturates in the long field.");
+            Assert.AreEqual(new BigDouble(2, 25), refund.BigAmount);
+            Assert.AreEqual("upgrade", refund.Reason);
+            Assert.AreEqual(2, bus.Count<SpendRefundedSignal>());
+            Assert.AreEqual(new BigDouble(5, 25), economy.GetBigBalance("gem"));
         }
 
         [Test]

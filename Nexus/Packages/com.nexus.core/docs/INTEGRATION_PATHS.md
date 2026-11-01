@@ -125,7 +125,9 @@ stored state. Thereafter one BigDouble ledger drives both APIs; long reads/obser
 truncate fractions and saturate at long.MaxValue. Writing a retained mutable long
 observable explicitly sets the canonical integer amount. BigDouble uses approximate
 double mantissa arithmetic for idle/incremental games; it does not guarantee exact
-large integer accounting. NaN/infinity and negative Big amounts are rejected. An
+large integer accounting. Spend, Earn, SpendBig and EarnBig take a positive amount;
+CanAfford, CanAffordBig, SetBalance and SetBigBalance a nonnegative one; any other
+amount, NaN and infinity included, throws ArgumentOutOfRangeException (#196). An
 existing network validator must also implement INetworkBigEconomyValidator for Big
-transactions; unsupported SpendBig returns false, EarnBig/SetBigBalance throw
+transactions; otherwise SpendBig, EarnBig and SetBigBalance throw
 NotSupportedException. Client validators/obfuscation do not provide server authority.

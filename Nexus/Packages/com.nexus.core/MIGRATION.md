@@ -94,6 +94,7 @@ A class of the game that implements one of these interfaces (a test fake, a wrap
 | `IContextBuilder` | `BindServiceInstance<TInterface>(instance)` | #69 |
 | `ITickService` | `HoldPause()` | #77 |
 | `IIapService` | `UnrequestedPurchase` (above) | #204 |
+| `IEconomyService` | `Spend(currencyId, amount, out refusal, reason)`, `SpendBig(currencyId, amount, out refusal, reason)` | #196 |
 
 #### Tests reference the testing kit
 
@@ -112,6 +113,12 @@ to the `references` of each test assembly definition that uses them.
 - The editor has one top-level **Nexus** menu (#193). `Window/Nexus/Dashboard`, `Nexus/Open Dashboard` and the
   `Nexus/Create/*` items are gone: **Nexus > Open Window** (`Ctrl+Shift+N`) opens the window, `GameObject/Nexus/` creates roots,
   and **Assets > Create > Nexus** creates assets.
+- `EconomyService` throws `ArgumentOutOfRangeException` for an amount outside the method's range (#196): `Spend`, `Earn`,
+  `SpendBig` and `EarnBig` take a positive amount, `CanAfford`, `CanAffordBig`, `SetBalance` and `SetBigBalance` a nonnegative
+  one. Code that passed 0 or a negative amount and relied on it being ignored now throws: a price or reward that can be 0 (a
+  free item, a bonus from a rate that starts at 0, a designer value set to 0) skips the call. `SpendBig` with a validator that
+  is not an `INetworkBigEconomyValidator` throws `NotSupportedException` instead of returning false. A server-refused spend
+  fires `SpendRefundedSignal`; a game that grants something for a spend takes it back there.
 - `BigDouble` throws `ArgumentOutOfRangeException` for NaN and infinite input, the conversion from `double` included (#196).
   A value built from `Math.Pow` that overflows a double throws instead of becoming 0: build it with `BigDouble.Pow`.
 

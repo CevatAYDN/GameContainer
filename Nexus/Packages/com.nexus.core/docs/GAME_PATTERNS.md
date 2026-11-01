@@ -104,7 +104,8 @@ frame that saves (its `EncryptedStorageService` row) is outside such a budget.
           // Seconds since OfflineTimeCalculator.RecordQuitTimestamp(Save) ran on pause/quit:
           // 0 when the clock was set back, capped at 8 hours by default.
           long offlineSeconds = OfflineTimeCalculator.CalculateOfflineSeconds(Save);
-          Economy.Earn("Coins", CoinsPerSecond * offlineSeconds, "offline");
+          // Earn takes a positive amount and throws for zero (#196).
+          if (offlineSeconds > 0) Economy.Earn("Coins", CoinsPerSecond * offlineSeconds, "offline");
       }
   }
   ```

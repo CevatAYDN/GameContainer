@@ -87,13 +87,20 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void EconomyService_Earn_NegativeOrZeroAmountIgnored()
+        public void EconomyService_AnAmountOutsideTheMethodsRange_ThrowsAndLeavesTheBalance()
         {
+            // #196: Spend(-50) returned true and spent nothing, Earn(-50) was ignored, SetBalance(-5) clamped to 0.
             using var eco = new EconomyService();
             eco.SetBalance("Coins", 100);
 
-            eco.Earn("Coins", -50);
-            eco.Earn("Coins", 0);
+            foreach (long amount in new[] { 0L, -50L })
+            {
+                Assert.Throws<System.ArgumentOutOfRangeException>(() => eco.Spend("Coins", amount));
+                Assert.Throws<System.ArgumentOutOfRangeException>(() => eco.Earn("Coins", amount));
+            }
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => eco.SetBalance("Coins", -5));
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => eco.CanAfford("Coins", -5));
+            Assert.IsTrue(eco.CanAfford("Coins", 0), "Zero is affordable: a query changes nothing.");
 
             Assert.AreEqual(100, eco.GetBalance("Coins"));
         }
