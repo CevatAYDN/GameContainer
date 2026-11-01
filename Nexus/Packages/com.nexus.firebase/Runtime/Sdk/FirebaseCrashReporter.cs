@@ -15,12 +15,13 @@ namespace Nexus.Firebase.Sdk
 {
     /// <summary>
     /// Crashlytics behind <see cref="ICrashReporter"/>. It reports the commands Nexus's recovery engine gave up on, and the errors the game logs
-    /// (Debug.LogError), as non-fatals. Collection follows the same consent decision as analytics.
+    /// (Debug.LogError), as non-fatals, with the game's custom keys and log lines. Collection follows the same consent decision as analytics.
     /// </summary>
     public sealed class FirebaseCrashReporter : NexusService<ICrashReporter>, ICrashReporter
     {
         [ThreadStatic] private static bool _reporting;
 
+        private readonly CrashContext _context = new CrashContext();
         private ISignalSubscription _commandFailures;
         private bool _ready;
 
@@ -32,12 +33,14 @@ namespace Nexus.Firebase.Sdk
             if (status != FirebaseDependencyStatus.Available)
             {
                 NexusLog.WarnAlways("[Firebase] Crashlytics is off: the SDK's dependencies are " + status);
+                _context.Close();
                 return;
             }
 
             _ready = true;
             Consent.Changed += Apply;
             Apply();
+            _context.Open(FirebaseCrashlyticsSdk.SetCustomKey, FirebaseCrashlyticsSdk.Log);
             _commandFailures = SignalBus.Subscribe<CommandFailedSignal>(failed => RecordNonFatal(failed.Exception));
             Application.logMessageReceivedThreaded += OnLog;
         }
@@ -60,6 +63,10 @@ namespace Nexus.Firebase.Sdk
                 _reporting = false;
             }
         }
+
+        public void SetCustomKey(string key, string value) => _context.SetCustomKey(key, value);
+
+        public void Log(string message) => _context.Log(message);
 
         public override void Dispose()
         {

@@ -13,13 +13,13 @@ Firebase Analytics, Remote Config and Crashlytics behind Nexus services, with th
 | `IAnalyticsConsent` | Where the services read the answer and the choice from. Over Google's consent form, `com.nexus.ads.admob`'s `UmpAnalyticsConsent`; a game that asks its own analytics question implements it over that question. |
 | `AnalyticsGate`, `AnalyticsEvent` | Holds events until the answer is known, sends them in order once allowed, drops them when refused. The wait is bounded (256 events). |
 | `IRemoteConfigService`, `RemoteConfigFetchPolicy`, `RemoteConfigParser` | `FetchAsync`, typed reads with the game's fallback, a `Changed` event per key, a 12-hour fetch cache, and value parsing with the invariant culture. |
-| `ICrashReporter`, `LoggedErrorException` | Records an error the game survived as a non-fatal. |
-| `MockAnalyticsService`, `MockRemoteConfigService`, `MockCrashReporter`, `MockAnalyticsConsent` | In-memory versions for the editor, development builds and tests. The analytics mock drops what the Firebase service would drop. |
+| `ICrashReporter`, `LoggedErrorException`, `CrashContext` | Records an error the game survived as a non-fatal, and the custom keys (`SetCustomKey`) and log lines (`Log`) every later report carries. A key set before the reporter is ready is held and applied once it is, with its last value; so are the newest 64 lines. |
+| `MockAnalyticsService`, `MockRemoteConfigService`, `MockCrashReporter`, `MockAnalyticsConsent` | In-memory versions for the editor, development builds and tests. The analytics mock drops what the Firebase service would drop; the crash mock keeps the non-fatals, keys and lines (`Recorded`, `Keys`, `Logged`). |
 | `FirebaseAnalyticsService` (`NEXUS_FIREBASE_ANALYTICS`) | Analytics behind `IAnalyticsService`. Collection stays off until the decision allows it. |
 | `FirebaseRemoteConfigService` (`NEXUS_FIREBASE_REMOTE_CONFIG`) | Remote Config behind `IRemoteConfigService`. A value the console does not set returns the game's fallback. |
 | `FirebaseBindings.Bind<TConsent>(builder)` | Binds the three services in one call: the Firebase service of each installed SDK in a player, the mock in the Editor and without the SDK (see Binding). |
 | `FirebaseCollectionFlags` (Editor) | Writes Firebase's collection-off flags into the Android manifest on every build (see Consent and the platform manifest). |
-| `FirebaseCrashReporter` (`NEXUS_FIREBASE_CRASHLYTICS`) | Crashlytics behind `ICrashReporter`: reports the commands Nexus's recovery engine gave up on, and logged errors (`Debug.LogError`), as non-fatals. |
+| `FirebaseCrashReporter` (`NEXUS_FIREBASE_CRASHLYTICS`) | Crashlytics behind `ICrashReporter`: reports the commands Nexus's recovery engine gave up on, and logged errors (`Debug.LogError`), as non-fatals; custom keys and log lines go to `Crashlytics.SetCustomKey` and `Crashlytics.Log`. |
 
 ## Install the SDK
 
