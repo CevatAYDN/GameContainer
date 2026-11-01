@@ -141,7 +141,8 @@ namespace Nexus.Core
         /// <summary>
         /// Binds with an explicit <see cref="Lifetime"/>. <see cref="Lifetime.Singleton"/> bindings
         /// are registered on the ROOT container (one app-wide instance, disposed with the root; a reloaded
-        /// scene that binds it again keeps that instance, and its dependencies resolve on the root);
+        /// scene that binds it again keeps that instance unless it passes different <c>WithParameter</c> values, and
+        /// its dependencies resolve on the root);
         /// <see cref="Lifetime.Scoped"/> bindings live in the current container and are disposed with
         /// it (reverse creation order); <see cref="Lifetime.Transient"/> creates a fresh instance per
         /// resolve that the container never owns.

@@ -32,7 +32,8 @@ namespace Nexus.Core
     /// The binding is registered on the ROOT container regardless of where the Bind call happens,
     /// so every container in the hierarchy shares the same instance and it is disposed with the
     /// root (reverse creation order). A child that binds the same implementation again (a reloaded
-    /// scene) keeps that instance. Its dependencies resolve on the root: one that only the child binds
+    /// scene) keeps that instance, unless it passes <c>WithParameter</c> values that differ from the ones the instance
+    /// was built with: those build a new one, with a warning (a bind without values keeps it). Its dependencies resolve on the root: one that only the child binds
     /// is missing, and <see cref="NexusDI.ValidateBindings"/> reports it.</description></item>
     /// </list>
     /// The legacy <c>bool isSingleton</c> bind overloads map <c>true</c> → <see cref="Lifetime.Scoped"/>
@@ -425,6 +426,8 @@ namespace Nexus.Core
             private Lifetime _lifetime = Lifetime.Scoped;
             private bool _bindInterfaces;
             private readonly List<ParameterOverride> _overrides = new();
+            private Binding _applied;
+            private NexusDI _appliedTarget;
 
             internal FluentTypeBinder(NexusDI di)
             {
@@ -484,6 +487,12 @@ namespace Nexus.Core
                     ParameterOverrides = _overrides.Count > 0 ? _overrides.ToArray() : null,
                 };
                 var target = _di.BindingTarget(_lifetime);
+                // WithParameter(..).AsSingleton() on a child: the first step bound Scoped in the child, where it would
+                // shadow the root's singleton (#211)
+                if (_applied != null && _appliedTarget != target)
+                    _appliedTarget.RemoveBindingIfCurrent(_applied);
+                _applied = binding;
+                _appliedTarget = target;
                 lock (target._disposeLock)
                 {
                     target.ThrowIfDisposed();
@@ -1403,11 +1412,13 @@ namespace Nexus.Core
             if (_bindings.TryGetValue(key, out var existing) && !ReferenceEquals(existing, binding))
             {
                 // A scene that binds its Lifetime.Singleton again on every load keeps the instance the root already built,
-                // instead of building a second one and keeping the first alive (#197).
+                // instead of building a second one and keeping the first alive (#197); with WithParameter, when the values
+                // are equal (#211). Different values build a new one, with the warning below. A binding without values
+                // keeps it too: AsSingleton().WithParameter(x) applies AsSingleton first.
                 if (existing.Instance != null && !existing.BoundInstance && existing.Lifetime == Lifetime.Singleton
                     && binding.Lifetime == Lifetime.Singleton && existing.ConcreteType == binding.ConcreteType
                     && existing.Factory == null && binding.Factory == null && binding.Instance == null
-                    && existing.ParameterOverrides == null && binding.ParameterOverrides == null)
+                    && (binding.ParameterOverrides == null || SameOverrides(existing.ParameterOverrides, binding.ParameterOverrides)))
                     return;
                 // Re-registering the exact same shape with no live instance is a benign
                 // idempotent pattern (e.g. a command type bound once per handled signal);
@@ -1428,6 +1439,28 @@ namespace Nexus.Core
             }
             _bindings[key] = binding;
             Interlocked.Increment(ref _bindingVersion);
+        }
+
+        /// <summary>Removes every key still bound to this binding (a fluent chain moving its binding to another container).</summary>
+        private void RemoveBindingIfCurrent(Binding binding)
+        {
+            lock (_disposeLock)
+            {
+                bool removed = false;
+                var entries = (ICollection<KeyValuePair<Type, Binding>>)_bindings;
+                foreach (var entry in _bindings)
+                    if (ReferenceEquals(entry.Value, binding)) removed |= entries.Remove(entry);
+                if (removed) Interlocked.Increment(ref _bindingVersion);
+            }
+        }
+
+        private static bool SameOverrides(ParameterOverride[] a, ParameterOverride[] b)
+        {
+            if (a == null || b == null) return a == b;
+            if (a.Length != b.Length) return false;
+            for (int i = 0; i < a.Length; i++)
+                if (a[i].Type != b[i].Type || !Equals(a[i].Value, b[i].Value)) return false;
+            return true;
         }
 
         /// <summary>Named-map counterpart of <see cref="SetBinding"/>.</summary>
