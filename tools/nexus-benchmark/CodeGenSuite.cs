@@ -1191,6 +1191,12 @@ namespace NexusBench.Parity
         public PNamedPositional([Inject(""special"")] PDep dep) { FromConstructor = dep; }
         [Inject] public void Construct([Inject(""special"")] PDep dep) { FromMethod = dep; }
     }
+    // a framework member type and a framework generic over a game type, which the editor generator left to reflection (#245)
+    public sealed class PFrameworkMember
+    {
+        [Inject] public Random Rng;
+        [Inject] public IReadOnlyList<PDep> Deps { get; set; }
+    }
     // item 3: [OptionalInject] and C# defaults on constructor parameters
     public sealed class PCtorOptional
     {
@@ -1251,7 +1257,7 @@ namespace NexusBench.Parity
     {
         public static readonly string[] Names =
         {
-            ""PVirtual"", ""PVirtualMarked"", ""PProperty"", ""PHidden"", ""PShadow"", ""POverloads"", ""PNamed"", ""PNamedPositional"",
+            ""PVirtual"", ""PVirtualMarked"", ""PProperty"", ""PHidden"", ""PShadow"", ""POverloads"", ""PNamed"", ""PNamedPositional"", ""PFrameworkMember"",
             ""PCtorOptional"", ""PCtorDefaultNull"", ""PCtorDefaultString"", ""PMissingField"", ""PMissingProperty"",
             ""PMissingMethod"", ""PKeepsInitializer"", ""PLazy"", ""PInitOnly"", ""PExternal"", ""PBothAttributes""
         };
@@ -1266,6 +1272,8 @@ namespace NexusBench.Parity
             di.BindInstance(""special"", Special);
             di.BindInstance(new POther());
             di.BindInstance(new NexusBench.CodeGenDep());
+            di.BindInstance(new Random(7));
+            di.BindInstance<IReadOnlyList<PDep>>(new List<PDep> { Shared });
             var type = typeof(ParityCases).Assembly.GetType(""NexusBench.Parity."" + name);
             di.Bind(type, Lifetime.Transient);
             object instance = di.Resolve(type);
@@ -1311,7 +1319,7 @@ namespace NexusBench.Parity
         // generator that disagrees with the reflection metadata.
         private static readonly string[] ParityInjectorTypes =
         {
-            "PVirtual", "PVirtualMarked", "PProperty", "PHidden", "PShadow", "POverloads", "PNamed", "PNamedPositional", "PMissingField",
+            "PVirtual", "PVirtualMarked", "PProperty", "PHidden", "PShadow", "POverloads", "PNamed", "PNamedPositional", "PFrameworkMember", "PMissingField",
             "PMissingProperty", "PMissingMethod", "PKeepsInitializer", "PLazy", "PInitOnly", "PExternal", "PBothAttributes"
         };
         private static readonly string[] ParityFactoryTypes = { "PCtorOptional", "PCtorDefaultNull", "PNamed", "PNamedPositional" };
@@ -1330,6 +1338,7 @@ namespace NexusBench.Parity
                                "PNamed.FromMethod=special", "PNamed.FromConstructor=special" }),
             ("PNamedPositional", new[] { "PNamedPositional.Field=special", "PNamedPositional.<Property>k__BackingField=special",
                 "PNamedPositional._private=special", "PNamedPositional.FromMethod=special", "PNamedPositional.FromConstructor=special" }),
+            ("PFrameworkMember", new[] { "PFrameworkMember.Rng=Random", "PFrameworkMember.<Deps>k__BackingField=List`1" }),
             ("PCtorOptional", new[] { "PCtorOptional.Unbound=null", "PCtorOptional.Dep=shared" }),
             ("PCtorDefaultNull", new[] { "PCtorDefaultNull.Unbound=null", "PCtorDefaultNull.Dep=shared" }),
             ("PCtorDefaultString", new[] { "PCtorDefaultString.Label=parity" }),

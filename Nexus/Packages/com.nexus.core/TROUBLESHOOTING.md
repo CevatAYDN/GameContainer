@@ -748,6 +748,7 @@ The binder registers only the project's own types; the Nexus packages' types tak
 
 **Cause:** the binder cannot name every type. Each such type keeps the reflection path, which injects and constructs it correctly, and the editor generator's `link.xml` preserves it (a type only constructed gets its constructors preserved). The reasons (issue #191):
 - `not visible from the binder (internal or private)`, or `an [Inject] member's declaring or member type is not visible from the binder`
+- `an [Inject] member's type is in a Unity package or third-party assembly the binder's assembly may not reference` (editor generator): the binder names a member's type from the .NET class library, an engine module or a game assembly (issue #245)
 - `an open generic type: the binder names closed types only`
 - `constructor parameter '<name>' has a default value the binder does not repeat`; on an injectable type also `... is a value type, which only an explicit value supplies` and `... has a type the binder cannot name`
 - `its ICommand<T> is dispatched through MethodInfo.Invoke: the binder cannot name the command or the signal`, which costs an allocation per dispatch

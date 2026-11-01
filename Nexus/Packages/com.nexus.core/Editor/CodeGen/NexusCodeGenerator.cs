@@ -246,6 +246,29 @@ namespace Nexus.Editor
         }
 
         /// <summary>
+        /// True when the binder can name an [Inject] member's type (#245). <see cref="IsEmittableType"/> keeps framework and
+        /// third-party types out of what the binder registers; a member's type only has to be visible and come from an
+        /// assembly the binder's assembly references: the .NET class library, an engine module or a game assembly, and so
+        /// each generic argument and array element. A Unity package or third-party type keeps the reflection path
+        /// (<see cref="IsReferencedMemberType"/>): the binder's assembly may not reference it.
+        /// </summary>
+        private static bool IsVisibleMemberType(Type type) => type != null && type.IsVisible && GetCSharpTypeName(type) != null;
+
+        private static bool IsReferencedMemberType(Type type)
+        {
+            if (type.IsArray) return IsReferencedMemberType(type.GetElementType());
+            if (type.IsGenericType)
+                foreach (var arg in type.GetGenericArguments())
+                    if (!IsReferencedMemberType(arg)) return false;
+            string asm = AssemblyCatalog.GetSimpleName(type.Assembly);
+            return asm == "mscorlib" || asm == "netstandard" || asm == "System" || asm == "System.Core" || asm == "System.Private.CoreLib"
+                || asm == "UnityEngine" || (asm != null && asm.StartsWith("UnityEngine.", StringComparison.Ordinal) && asm.EndsWith("Module", StringComparison.Ordinal))
+                || IsEmittableType(type);
+        }
+
+        private static bool IsNameableMemberType(Type type) => IsVisibleMemberType(type) && IsReferencedMemberType(type);
+
+        /// <summary>
         /// True when a constructor factory (<c>new T(...)</c>) may be emitted for the type.
         /// UnityEngine.Object types (MonoBehaviour, ScriptableObject, Component...) are created by
         /// Unity and must never be constructed with <c>new</c>.
@@ -582,12 +605,20 @@ namespace Nexus.Editor
                 string typeSafeName = GetSafeIdentifierName(fullName);
                 var set = GetMemberSet(type, memberCache);
 
-                bool emittable = set.Fields.All(f => IsEmittableType(f.DeclaringType) && IsEmittableType(f.FieldType))
-                    && set.Properties.All(p => IsEmittableType(p.DeclaringType) && IsEmittableType(p.PropertyType))
-                    && set.Methods.All(m => IsEmittableType(m.DeclaringType) && m.GetParameters().All(x => IsEmittableType(x.ParameterType)));
+                // The framework and third-party exclusion applies to the declaring types; a member's type only has to be
+                // nameable, so a System.Random or IReadOnlyList<IFoo> member took the reflection path, called not visible (#245).
+                var memberTypes = set.Fields.Select(f => f.FieldType).Concat(set.Properties.Select(p => p.PropertyType))
+                    .Concat(set.Methods.SelectMany(m => m.GetParameters().Select(x => x.ParameterType))).ToList();
+                bool emittable = set.Fields.All(f => IsEmittableType(f.DeclaringType)) && set.Properties.All(p => IsEmittableType(p.DeclaringType))
+                    && set.Methods.All(m => IsEmittableType(m.DeclaringType)) && memberTypes.All(IsVisibleMemberType);
                 if (!emittable)
                 {
                     Fallback(type, "an [Inject] member's declaring or member type is not visible from the binder");
+                    continue;
+                }
+                if (!memberTypes.All(IsReferencedMemberType))
+                {
+                    Fallback(type, "an [Inject] member's type is in a Unity package or third-party assembly the binder's assembly may not reference");
                     continue;
                 }
 
@@ -702,7 +733,7 @@ namespace Nexus.Editor
                     if (!IsEmittableType(f.DeclaringType)) continue; // the reflection path + link.xml preserve it
                     string declaringName = GetCSharpTypeName(f.DeclaringType);
                     string local = $"_f_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(f.Name)}";
-                    if (f.IsPublic && IsEmittableType(f.FieldType))
+                    if (f.IsPublic && IsNameableMemberType(f.FieldType))
                         preserveSb.AppendLine($"                var {local} = default({declaringName}).{f.Name};");
                     else
                         preserveSb.AppendLine($"                var {local} = typeof({declaringName}).GetField({Literal(f.Name)}, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
@@ -712,7 +743,7 @@ namespace Nexus.Editor
                     if (!IsEmittableType(p.DeclaringType)) continue;
                     string declaringName = GetCSharpTypeName(p.DeclaringType);
                     string local = $"_p_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(p.Name)}";
-                    if (p.GetMethod != null && p.GetMethod.IsPublic && IsEmittableType(p.PropertyType))
+                    if (p.GetMethod != null && p.GetMethod.IsPublic && IsNameableMemberType(p.PropertyType))
                     {
                         preserveSb.AppendLine($"                var {local} = default({declaringName}).{p.Name};");
                         preserveSb.AppendLine($"                _ = {local}; // Suppress CS0219 warning");
