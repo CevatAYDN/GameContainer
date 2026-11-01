@@ -14,7 +14,8 @@ namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// The signal and command defects the audit #206 found: a cancelled or aborted Concurrent dispatch wrote each
-    /// handler's error again (#213) and a throwing CommandFailedSignal subscriber escaped FireAsync (#214).
+    /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214) and a sync
+    /// fallback made later async fallbacks share one depth (#215).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -34,6 +35,18 @@ namespace Nexus.Editor.Tests
 
         public struct ObservedSignal { }
         public sealed class ThrowingObserved : IAsyncCommand<ObservedSignal> { public async ValueTask ExecuteAsync(ObservedSignal s, CancellationToken ct) { await Task.Yield(); throw new InvalidOperationException("observed failure"); } }
+
+        public struct SyncFailSignal { }
+        public struct AsyncFailSignal { }
+        public sealed class FailingSync : ICommand<SyncFailSignal> { public void Execute(SyncFailSignal s) => throw new InvalidOperationException("sync failure"); }
+        public sealed class FailingAsync : IAsyncCommand<AsyncFailSignal> { public ValueTask ExecuteAsync(AsyncFailSignal s, CancellationToken ct) => throw new InvalidOperationException("async failure"); }
+        public sealed class SyncFallback : ICommand { public void Execute() { } }
+        public sealed class GatedFallback : IAsyncCommand
+        {
+            public static int Started;
+            public static TaskCompletionSource<bool> Gate;
+            public async ValueTask ExecuteAsync(CancellationToken ct) { Interlocked.Increment(ref Started); await Gate.Task; }
+        }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -130,6 +143,29 @@ namespace Nexus.Editor.Tests
 
             Assert.IsTrue(heard, "the signal's own subscriber still runs");
             Assert.AreEqual(1, errors.Count("observer of the async failure"), errors.ToString());
+        }
+
+        [Test]
+        public async Task ASyncFallbackOnTheThread_LeavesLaterConcurrentAsyncFallbacksTheirOwnDepth()
+        {
+            using var errors = new ErrorLines();
+            GatedFallback.Started = 0;
+            GatedFallback.Gate = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+            var strategy = new Strategy
+            {
+                Decide = f => f.CommandType == typeof(FailingSync) ? RecoveryDecision.Fallback<SyncFallback>() : RecoveryDecision.FallbackAsync<GatedFallback>()
+            };
+            var bus = NewBus(strategy, typeof(FailingSync), typeof(FailingAsync), typeof(SyncFallback), typeof(GatedFallback));
+            bus.RegisterCommand(typeof(SyncFailSignal), typeof(FailingSync), ExecutionMode.Sequential, 0, false);
+            bus.RegisterCommand(typeof(AsyncFailSignal), typeof(FailingAsync), ExecutionMode.Sequential, 0, true);
+
+            bus.Fire(new SyncFailSignal());
+            var pending = Enumerable.Range(0, 4).Select(_ => bus.FireAsync(new AsyncFailSignal()).AsTask()).ToArray();
+            int started = GatedFallback.Started;
+            GatedFallback.Gate.TrySetResult(true);
+            await Task.WhenAll(pending);
+
+            Assert.AreEqual(4, started, errors.ToString());
         }
     }
 }

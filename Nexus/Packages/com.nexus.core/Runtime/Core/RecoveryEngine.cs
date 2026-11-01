@@ -220,10 +220,13 @@ namespace Nexus.Core
             public volatile int Value;
         }
 
-        private static FallbackDepthBox GetFallbackDepthBox()
+        private static FallbackDepthBox GetFallbackDepthBox() => GetFallbackDepthBox(out _);
+
+        private static FallbackDepthBox GetFallbackDepthBox(out bool created)
         {
             var box = s_fallbackDepth.Value;
-            if (box == null)
+            created = box == null;
+            if (created)
             {
                 box = new FallbackDepthBox();
                 s_fallbackDepth.Value = box;
@@ -244,40 +247,48 @@ namespace Nexus.Core
             }
             if (plan.Action == RecoveryAction.Fallback)
             {
-                var depth = GetFallbackDepthBox();
-                if (++depth.Value > MaxFallbackDepth)
-                {
-                    depth.Value--;
-                    NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded in this recovery chain. Aborting.");
-                    return RecoveryAction.Abort;
-                }
-                bool depthClaimed = true;
-                if (plan.FallbackType != null)
-                {
-                    if (!IsSyncCapableFallbackType(plan.FallbackType, signal))
-                    {
-                        depth.Value--;
-                        depthClaimed = false;
-                        _fireFailedSync(plan.FailedSignal);
-                        return RecoveryAction.Skip;
-                    }
-
-                    try
-                    {
-                        // Use negative priority to ensure fallbacks run after normal handlers
-                        _executor.Execute(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, false), signal);
-                    }
-                    finally
-                    {
-                        depth.Value--;
-                        depthClaimed = false;
-                    }
-                }
-                if (depthClaimed)
-                    depth.Value--;
-                return RecoveryAction.Fallback;
+                // A sync method's AsyncLocal write stays on the caller's thread: the chain that created the box removes
+                // it, or every async chain started later on that thread would share one depth (#215).
+                var depth = GetFallbackDepthBox(out bool createdHere);
+                try { return ExecuteSyncFallback(plan, signal, depth); }
+                finally { if (createdHere) s_fallbackDepth.Value = null; }
             }
             return RecoveryAction.Retry;
+        }
+
+        private RecoveryAction ExecuteSyncFallback(RecoveryPlan plan, object signal, FallbackDepthBox depth)
+        {
+            if (++depth.Value > MaxFallbackDepth)
+            {
+                depth.Value--;
+                NexusRuntime.Logger?.LogError($"[Nexus] Max fallback depth ({MaxFallbackDepth}) exceeded in this recovery chain. Aborting.");
+                return RecoveryAction.Abort;
+            }
+            bool depthClaimed = true;
+            if (plan.FallbackType != null)
+            {
+                if (!IsSyncCapableFallbackType(plan.FallbackType, signal))
+                {
+                    depth.Value--;
+                    depthClaimed = false;
+                    _fireFailedSync(plan.FailedSignal);
+                    return RecoveryAction.Skip;
+                }
+
+                try
+                {
+                    // Use negative priority to ensure fallbacks run after normal handlers
+                    _executor.Execute(new CommandHandlerInfo(plan.FallbackType, ExecutionMode.Sequential, -1, false), signal);
+                }
+                finally
+                {
+                    depth.Value--;
+                    depthClaimed = false;
+                }
+            }
+            if (depthClaimed)
+                depth.Value--;
+            return RecoveryAction.Fallback;
         }
 
         private async ValueTask<RecoveryAction> ExecuteAsyncPlan(RecoveryPlan plan, object signal, CancellationToken ct)
