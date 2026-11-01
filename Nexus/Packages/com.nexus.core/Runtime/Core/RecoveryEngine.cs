@@ -286,7 +286,7 @@ namespace Nexus.Core
             {
                 // Async-safe dispatch — awaits the full handler chain
                 // and captures errors instead of throwing a sync/async mismatch.
-                await _fireFailedAsync(plan.FailedSignal);
+                await FireFailedContainedAsync(plan.FailedSignal);
                 return RecoveryAction.Skip;
             }
             if (plan.Action == RecoveryAction.Abort)
@@ -329,12 +329,25 @@ namespace Nexus.Core
                     // SkipPlan, so a null fallback type here means a plan constructed by a
                     // path that bypassed BuildPlan. Fire the failed signal rather than
                     // returning a nominal Fallback that would silently drop the error.
-                    await _fireFailedAsync(plan.FailedSignal);
+                    await FireFailedContainedAsync(plan.FailedSignal);
                     return RecoveryAction.Skip;
                 }
                 return RecoveryAction.Fallback;
             }
             return RecoveryAction.Retry;
+        }
+
+        // As the sync path (SignalBus.FireFailedSignalSafe): a throwing CommandFailedSignal subscriber is reported, and the
+        // skipped failure does not turn into an exception at the game's await FireAsync (#214).
+        private async ValueTask FireFailedContainedAsync(CommandFailedSignal failedSignal)
+        {
+            try { await _fireFailedAsync(failedSignal); }
+            catch (Exception ex) when (!(ex is OperationCanceledException))
+            {
+                SignalBus.RaiseUnhandledException(ex, "CommandFailedSignal async dispatch failed");
+                if (!WasLogged(ex))
+                    NexusRuntime.Logger?.LogError($"[Nexus] CommandFailedSignal async dispatch failed: {ex.Message}\n{ex.StackTrace}");
+            }
         }
 
         // ─── Plan ────────────────────────────────────────────────────────────────

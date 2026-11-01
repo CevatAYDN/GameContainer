@@ -14,7 +14,7 @@ namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// The signal and command defects the audit #206 found: a cancelled or aborted Concurrent dispatch wrote each
-    /// handler's error again (#213).
+    /// handler's error again (#213) and a throwing CommandFailedSignal subscriber escaped FireAsync (#214).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -31,6 +31,9 @@ namespace Nexus.Editor.Tests
         public struct ConcurrentSignal { }
         public sealed class ThrowingConcurrent : IAsyncCommand<ConcurrentSignal> { public async ValueTask ExecuteAsync(ConcurrentSignal s, CancellationToken ct) { await Task.Yield(); throw new InvalidOperationException("concurrent failure"); } }
         public sealed class QuietConcurrent : IAsyncCommand<ConcurrentSignal> { public async ValueTask ExecuteAsync(ConcurrentSignal s, CancellationToken ct) => await Task.Yield(); }
+
+        public struct ObservedSignal { }
+        public sealed class ThrowingObserved : IAsyncCommand<ObservedSignal> { public async ValueTask ExecuteAsync(ObservedSignal s, CancellationToken ct) { await Task.Yield(); throw new InvalidOperationException("observed failure"); } }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -111,6 +114,22 @@ namespace Nexus.Editor.Tests
 
             Assert.AreEqual(1, errors.Lines.Count, errors.ToString());
             StringAssert.Contains($"Command {nameof(ThrowingConcurrent)} failed", errors.Lines.Single());
+        }
+
+        [Test]
+        public async Task AThrowingCommandFailedSignalSubscriber_StaysInsideFireAsync()
+        {
+            using var errors = new ErrorLines();
+            var bus = NewBus(null, typeof(ThrowingObserved));
+            bus.RegisterCommand(typeof(ObservedSignal), typeof(ThrowingObserved), ExecutionMode.Sequential, 0, true);
+            bus.Subscribe<CommandFailedSignal>(_ => throw new InvalidOperationException("observer of the async failure"));
+            bool heard = false;
+            bus.Subscribe<ObservedSignal>(_ => heard = true);
+
+            await bus.FireAsync(new ObservedSignal());
+
+            Assert.IsTrue(heard, "the signal's own subscriber still runs");
+            Assert.AreEqual(1, errors.Count("observer of the async failure"), errors.ToString());
         }
     }
 }
