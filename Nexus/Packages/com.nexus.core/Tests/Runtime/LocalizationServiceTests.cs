@@ -1,8 +1,11 @@
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using Nexus.Core;
 using Nexus.Core.Services;
+using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Nexus.Tests
 {
@@ -25,7 +28,8 @@ namespace Nexus.Tests
             public bool HasKey(string key) => _data.ContainsKey(key);
             public void DeleteKey(string key) => _data.Remove(key);
             public void DeleteAll() => _data.Clear();
-            public void Save() { }
+            public System.Action Saving;
+            public void Save() => Saving?.Invoke();
         }
 
         [Test]
@@ -164,14 +168,91 @@ namespace Nexus.Tests
             Assert.AreEqual("1,234'5", service.Format("score", 1234.5));
         }
 
+        // Issue #187: the expected text was the reversal of itself, with a one-digit number, so a score of 125 reading 521 passed
         [Test]
         public void Format_FillsPlaceholdersBeforeTheRtlReversal()
         {
             var service = new LocalizationService(new TestPlayerPrefsService());
-            service.RegisterKey("ar", "points", "{0} نقاط");
+            service.RegisterKey("ar", "points", "{0} نقطة");
             service.SetLanguage("ar");
 
-            Assert.AreEqual(service.FormatRTLIfNeeded("7 نقاط"), service.Format("points", 7));
+            Assert.AreEqual("ةطقن 125", service.Format("points", 125));
+        }
+
+        // Issue #187: every text element was reversed, digits and Latin letters included
+        [TestCase("النقاط 125", "125 طاقنلا")]
+        [TestCase("النقاط: 1,250.50", "1,250.50 :طاقنلا")]
+        [TestCase("مستوى Level 12", "Level 12 ىوتسم")]
+        [TestCase("10 من 20", "20 نم 10")]
+        public void RtlText_KeepsDigitAndLatinRunsInTheirOwnOrder(string input, string expected)
+        {
+            var service = new LocalizationService(new TestPlayerPrefsService());
+            service.SetLanguage("ar");
+
+            Assert.AreEqual(expected, service.FormatRTLIfNeeded(input));
+        }
+
+        // Issue #187: a key found nowhere showed the key itself, and a language without a table or a text showed English, without a line
+        [Test]
+        public void MissingTexts_AreReportedOnceEach_NamingTheKeyAndTheLanguage()
+        {
+            var service = new LocalizationService(new TestPlayerPrefsService());
+            service.RegisterKey("en", "title", "Title");
+            service.RegisterKey("en", "play", "Play");
+            service.RegisterKey("de", "play", "Spielen");
+            service.SetLanguage("de");
+
+            LogAssert.Expect(LogType.Warning, new Regex(@"^\[LocalizationService\] 'de' has no text for 'title': the English text is shown"));
+            Assert.AreEqual("Title", service.GetString("title"));
+            Assert.AreEqual("Title", service.GetString("title"), "once per language and key");
+
+            LogAssert.Expect(LogType.Warning, new Regex(@"^\[LocalizationService\] 'shop' has no text in 'de' or English: the fallback or the key itself is shown"));
+            Assert.AreEqual("shop", service.GetString("shop"));
+            Assert.AreEqual("Shop", service.GetString("shop", "Shop"), "once per key");
+
+            service.SetLanguage("fr");
+            LogAssert.Expect(LogType.Warning, new Regex(@"^\[LocalizationService\] There is no 'fr' table: English texts are shown until one is registered"));
+            Assert.AreEqual("Play", service.GetString("play"));
+            Assert.AreEqual("Title", service.GetString("title"), "once per language");
+            LogAssert.NoUnexpectedReceived();
+        }
+
+        // Issue #187: language codes were lower-cased with the current culture, so on a Turkish phone "ID" became "ıd"
+        [Test]
+        public void ALanguageCode_ReadsTheSameTableOnATurkishPhone()
+        {
+            var previous = CultureInfo.CurrentCulture;
+            CultureInfo.CurrentCulture = new CultureInfo("tr-TR");
+            try
+            {
+                var prefs = new TestPlayerPrefsService();
+                var service = new LocalizationService(prefs);
+                service.RegisterLanguageTable("ID", new Dictionary<string, string> { ["title"] = "Judul" });
+                service.SetLanguage("id");
+                Assert.AreEqual("Judul", service.GetString("title"), "a table registered as \"ID\" serves \"id\"");
+
+                prefs.SetString("NT_Language", "ID");
+                Assert.AreEqual("id", Started(prefs, Tables("en"), "en", null).CurrentLanguage, "a saved \"ID\" reads as \"id\"");
+            }
+            finally
+            {
+                CultureInfo.CurrentCulture = previous;
+            }
+        }
+
+        // Issue #187: SetLanguage held the table lock across the disk write, so every GetString waited for it
+        [Test]
+        public void SetLanguage_SavesOutsideTheTableLock_SoAReaderOnAnotherThreadIsNotHeld()
+        {
+            var prefs = new TestPlayerPrefsService();
+            var service = new LocalizationService(prefs);
+            service.RegisterKey("tr", "title", "Başlık");
+            bool readWhileSaving = false;
+            prefs.Saving = () => readWhileSaving = System.Threading.Tasks.Task.Run(() => service.GetString("title")).Wait(2000);
+
+            service.SetLanguage("tr");
+
+            Assert.IsTrue(readWhileSaving, "GetString on another thread finished while the language was being saved");
         }
     }
 }

@@ -221,13 +221,13 @@ namespace NexusBench
             string basic = svc.FormatRTLIfNeeded("مرحبا");
             Check("L2. RTL_Reverses_Basic_Arabic", basic == "ابحرم", $"reversed='{basic}'");
 
-            // "A👋B🌍" must reverse to "🌍B👋A" — surrogate pairs stay intact.
-            string emoji = svc.FormatRTLIfNeeded("A👋B🌍");
-            Check("L3. RTL_Preserves_Emoji_SurrogatePairs", emoji == "🌍B👋A", $"reversed='{emoji}'");
+            // "م👋ر🌍" must reverse to "🌍ر👋م" — surrogate pairs stay intact (Latin letters keep their order since #187).
+            string emoji = svc.FormatRTLIfNeeded("م👋ر🌍");
+            Check("L3. RTL_Preserves_Emoji_SurrogatePairs", emoji == "🌍ر👋م", $"reversed='{emoji}'");
 
-            // "a\u0301b" (a + combining acute) must stay glued after reversal.
-            string combining = svc.FormatRTLIfNeeded("a\u0301b");
-            Check("L4. RTL_Preserves_CombiningMarks", combining == "ba\u0301", $"reversed='{combining}'");
+            // "م\u064Eر" (meem + combining fatha) must stay glued after reversal.
+            string combining = svc.FormatRTLIfNeeded("م\u064Eر");
+            Check("L4. RTL_Preserves_CombiningMarks", combining == "رم\u064E", $"reversed='{combining}'");
 
             var prefs = new FakeSessionPrefs();
             var persisting = new LocalizationService(prefs);

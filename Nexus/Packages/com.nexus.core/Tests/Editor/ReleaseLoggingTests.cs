@@ -169,9 +169,10 @@ namespace Nexus.Editor.Tests
                 Assert.AreEqual(0L, OfflineTimeCalculator.CalculateOfflineSeconds(prefs, key: "quit"));
 
                 var localization = new LocalizationService();
-                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"'\{0\} \{1\}' is not a valid format for 1 argument"));
-                Assert.AreEqual("{0} {1}", localization.Format("{0} {1}", 1), "the raw pattern is shown");
-                localization.Format("{0} {1}", 1); // once per key: Format can run every frame
+                localization.RegisterKey("en", "score", "{0} {1}");
+                LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"'score' is not a valid format for 1 argument"));
+                Assert.AreEqual("{0} {1}", localization.Format("score", 1), "the raw pattern is shown");
+                localization.Format("score", 1); // once per key: Format can run every frame
                 LogAssert.NoUnexpectedReceived();
             }
             finally

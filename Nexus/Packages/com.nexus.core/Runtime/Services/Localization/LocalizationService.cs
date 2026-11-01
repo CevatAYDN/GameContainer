@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
@@ -54,7 +55,11 @@ namespace Nexus.Core.Services
 
         private readonly Dictionary<string, Dictionary<string, string>> _localizedTable = new Dictionary<string, Dictionary<string, string>>();
         private readonly object _tableLock = new();
+        private readonly object _saveLock = new();
         private HashSet<string> _badFormatKeys;
+        // Each missing text is reported once (issue #187): (null, key) found nowhere, (language, null) no table for the
+        // language, (language, key) only the English text. A value tuple, so a repeated miss allocates nothing.
+        private HashSet<(string language, string key)> _reportedMisses;
         // Languages the game supplied (provider, RegisterLanguageTable, RegisterKey), not the built-in en/tr seeds.
         private readonly HashSet<string> _suppliedLanguages = new HashSet<string>();
 
@@ -79,7 +84,7 @@ namespace Nexus.Core.Services
         private void LoadSavedLanguage()
         {
             if (PlayerPrefsService != null && PlayerPrefsService.HasKey(LanguageKey))
-                CurrentLanguage = PlayerPrefsService.GetString(LanguageKey, "en").ToLower(); // tables are keyed lower-case (RegisterLanguageTable); a game may save "pt-BR"
+                CurrentLanguage = PlayerPrefsService.GetString(LanguageKey, "en").ToLowerInvariant(); // tables are keyed lower-case (RegisterLanguageTable); a game may save "pt-BR"
             else if (Options != null)
                 CurrentLanguage = FirstRunLanguage(Options); // not saved: the device language is followed until the player picks one
             _culture = CultureFor(_currentLanguage);
@@ -142,7 +147,8 @@ namespace Nexus.Core.Services
         {
             if (string.IsNullOrEmpty(langCode)) return;
 
-            string normalized = langCode.ToLower();
+            // Invariant: on a Turkish phone ToLower turns "ID" into "ıd" (issue #187)
+            string normalized = langCode.ToLowerInvariant();
             // Fast path check
             if (_currentLanguage == normalized) return;
 
@@ -152,13 +158,18 @@ namespace Nexus.Core.Services
                 if (_currentLanguage == normalized) return;
                 _currentLanguage = normalized;
                 _culture = CultureFor(normalized);
-                if (PlayerPrefsService != null)
+                // Capture delegate snapshot while under lock to ensure a consistent view
+                handlersToInvoke = OnLanguageChanged;
+            }
+            // Saved outside the table lock, so no GetString waits for the disk (issue #187); the save lock writes the
+            // language current when it runs, so two quick switches cannot leave the older one saved.
+            if (PlayerPrefsService != null)
+            {
+                lock (_saveLock)
                 {
                     PlayerPrefsService.SetString(LanguageKey, _currentLanguage);
                     PlayerPrefsService.Save();
                 }
-                // Capture delegate snapshot while under lock to ensure a consistent view
-                handlersToInvoke = OnLanguageChanged;
             }
 
             // Invoke per-subscriber: a throwing subscriber must not silence the rest of
@@ -205,45 +216,92 @@ namespace Nexus.Core.Services
 
         private bool TryLookup(string key, out string text)
         {
+            bool english;
+            string shown = null, diagnostic = null;
             // Capture current language and use it within the lock to avoid TOCTOU.
             lock (_tableLock)
             {
-                if (_localizedTable.TryGetValue(_currentLanguage, out var dict) && dict.TryGetValue(key, out text)) return true;
-                if (_localizedTable.TryGetValue("en", out var enDict) && enDict.TryGetValue(key, out text)) return true;
+                text = null;
+                string language = _currentLanguage;
+                bool hasTable = _localizedTable.TryGetValue(language, out var dict);
+                if (hasTable && dict.TryGetValue(key, out text)) return true;
+                english = _localizedTable.TryGetValue("en", out var enDict) && enDict.TryGetValue(key, out text);
+
+                // The player sees the key itself, or English in a language that has no table: in every build. One English
+                // text standing in a language's table is a diagnostic (issue #187, #164).
+                _reportedMisses ??= new HashSet<(string language, string key)>();
+                if (!english)
+                {
+                    if (_reportedMisses.Add((null, key)))
+                        shown = $"[LocalizationService] '{key}' has no text in {(language == "en" ? "English" : "'" + language + "' or English")}: the fallback or the key itself is shown.";
+                }
+                else if (!hasTable)
+                {
+                    if (_reportedMisses.Add((language, null)))
+                        shown = $"[LocalizationService] There is no '{language}' table: English texts are shown until one is registered.";
+                }
+                else if (_reportedMisses.Add((language, key)))
+                    diagnostic = $"[LocalizationService] '{language}' has no text for '{key}': the English text is shown.";
             }
-            text = null;
-            return false;
+            if (shown != null) NexusLog.WarnAlways(shown);
+            if (diagnostic != null) NexusRuntime.Logger?.LogWarning(diagnostic);
+            return english;
         }
 
         public string FormatRTLIfNeeded(string text)
         {
             if (string.IsNullOrEmpty(text) || !IsRTL) return text;
 
-            // Reverse by text element (grapheme cluster) instead of raw UTF-16 code
-            // units: Array.Reverse tears surrogate pairs (emoji, CJK ext) and combining
-            // marks apart, producing broken glyphs. Strategy: reverse the whole buffer,
-            // then re-reverse each cluster in place so its internal char order survives.
+            // By text element (grapheme cluster), so surrogate pairs (emoji, CJK ext) and combining marks stay whole.
             int[] elements = StringInfo.ParseCombiningCharacters(text);
             if (elements.Length <= 1) return text;
 
-            char[] chars = text.ToCharArray();
-            Array.Reverse(chars);
-
-            int n = chars.Length;
-            for (int k = 0; k < elements.Length; k++)
+            // Elements come out in reverse order, and a run of digits or Latin text keeps its own: a score of 125 read 521
+            // (issue #187). shortcut: not the Unicode bidi algorithm (UAX #9): brackets are not mirrored, a sign or percent at
+            // a number's edge is not joined to it, and a number joined to Latin text by spaces or punctuation stays in one
+            // run with it; for full bidi shaping, use a text engine that has it.
+            var result = new StringBuilder(text.Length);
+            for (int last = elements.Length - 1; last >= 0;)
             {
-                int start = elements[k];
-                int len = (k + 1 < elements.Length ? elements[k + 1] : n) - start;
-                // After the global reversal this cluster occupies [n - start - len, n - start).
-                int lo = n - start - len;
-                int hi = n - start;
-                for (int a = lo, b = hi - 1; a < b; a++, b--)
-                {
-                    char t = chars[a]; chars[a] = chars[b]; chars[b] = t;
-                }
+                int first = IsLeftToRight(text[elements[last]]) ? LeftToRightRunStart(text, elements, last) : last;
+                int end = last + 1 < elements.Length ? elements[last + 1] : text.Length;
+                result.Append(text, elements[first], end - elements[first]);
+                last = first - 1;
             }
-            return new string(chars);
+            return result.ToString();
         }
+
+        // Latin text takes the spaces and punctuation between its parts ("Level 12"); a number alone takes only its own
+        // separators ("1,250.50"), so two numbers apart read right to left, as the bidi algorithm orders them.
+        private static int LeftToRightRunStart(string text, int[] elements, int last)
+        {
+            int first = last;
+            bool latin = false;
+            for (int k = last; k >= 0; k--)
+            {
+                char c = text[elements[k]];
+                if (IsLeftToRight(c)) { first = k; latin |= char.IsLetter(c); }
+                else if (IsRightToLeft(c)) break;
+            }
+            if (latin) return first;
+
+            first = last;
+            for (int k = last - 1; k >= 0; k--)
+            {
+                char c = text[elements[k]];
+                if (char.IsDigit(c)) first = k;
+                else if (NumberSeparators.IndexOf(c) < 0) break;
+            }
+            return first;
+        }
+
+        private const string NumberSeparators = ".,:/\u066B\u066C"; // with the Arabic decimal and thousands separators
+
+        private static bool IsLeftToRight(char c) => char.IsDigit(c) || (char.IsLetter(c) && !IsRightToLeft(c));
+
+        // Hebrew, Arabic, Syriac, Thaana, N'Ko and the Hebrew and Arabic presentation forms
+        private static bool IsRightToLeft(char c) =>
+            (c >= '\u0590' && c <= '\u08FF') || (c >= '\uFB1D' && c <= '\uFDFF') || (c >= '\uFE70' && c <= '\uFEFF');
 
         /// <summary>
         /// Seeds generic UI strings (buttons and common dialog titles) for the two built-in
@@ -326,7 +384,7 @@ namespace Nexus.Core.Services
         public void RegisterLanguageTable(string langCode, IDictionary<string, string> dictionary)
         {
             if (string.IsNullOrEmpty(langCode) || dictionary == null) return;
-            string key = langCode.ToLower();
+            string key = langCode.ToLowerInvariant();
             lock (_tableLock)
             {
                 _suppliedLanguages.Add(key);
@@ -346,7 +404,7 @@ namespace Nexus.Core.Services
         public void RegisterKey(string langCode, string key, string value)
         {
             if (string.IsNullOrEmpty(langCode) || string.IsNullOrEmpty(key)) return;
-            string langKey = langCode.ToLower();
+            string langKey = langCode.ToLowerInvariant();
             lock (_tableLock)
             {
                 _suppliedLanguages.Add(langKey);
