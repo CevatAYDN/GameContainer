@@ -35,7 +35,7 @@
 - `NexusDI` injection via `[Inject]` attribute
 - `ObservableProperty<T>` reactive system
 - `Root` scene component behavior
-- Command execution order: Commands → Subscriptions → Composites
+- Command execution order: Commands → Subscriptions (newest first) → Composites; a subscriber that throws does not stop the others (README "Signals and commands")
 - **Service disposal contract** — the owning Context calls `OnDispose()` on every `INexusService` singleton exactly once; the DI container skips services (lifecycle ownership is Context-scoped)
 
 ---

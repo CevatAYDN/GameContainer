@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using UnityEngine.Scripting;
 
 namespace Nexus.Core
@@ -78,6 +79,7 @@ namespace Nexus.Core
                     _isNotifying = true;
                 }
 
+                Exception failure = null; // the first observer failure, rethrown once every observer was told (issue #189)
                 bool completedNormally = false;
                 try
                 {
@@ -91,7 +93,14 @@ namespace Nexus.Core
                         {
                             for (int i = 0; i < snapshot.Length; i++)
                             {
-                                snapshot[i]?.Invoke(old, current);
+                                // An observer that throws does not keep the others, or a value an observer set, from
+                                // being delivered (issue #189).
+                                try { snapshot[i]?.Invoke(old, current); }
+                                catch (Exception ex)
+                                {
+                                    SignalBus.ReportIsolatedFailure(ex, $"An observer of ObservableProperty<{typeof(T).Name}>");
+                                    failure ??= ex;
+                                }
                             }
                         }
 
@@ -138,6 +147,7 @@ namespace Nexus.Core
                         }
                     }
                 }
+                if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
             }
         }
 

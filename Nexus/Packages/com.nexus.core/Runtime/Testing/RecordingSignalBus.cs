@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -45,19 +46,40 @@ namespace Nexus.Core
                 if (s.Handler is Func<T, CancellationToken, ValueTask>)
                     throw new NexusSyncAsyncMismatchException($"Synchronous Fire() was called for signal '{typeof(T).FullName}', which has async subscribers; use FireAsync().");
             _fired.Add(signal);
+            Exception failure = null;
             foreach (var s in handlers)
-                if (s.IsActive) ((Action<T>)s.Handler)(signal);
+            {
+                if (!s.IsActive) continue;
+                // Like the bus: a subscriber that throws does not keep the others from the signal (issue #189).
+                try { ((Action<T>)s.Handler)(signal); }
+                catch (Exception ex) when (!SignalBus.IsDispatchControlFlow(ex))
+                {
+                    SignalBus.ReportIsolatedFailure(ex, $"A subscriber of {typeof(T).Name}");
+                    failure ??= ex;
+                }
+            }
+            if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         }
 
         public async ValueTask FireAsync<T>(T signal) where T : struct
         {
             _fired.Add(signal);
+            Exception failure = null;
             foreach (var s in Snapshot<T>())
             {
                 if (!s.IsActive) continue;
-                if (s.Handler is Action<T> sync) sync(signal);
-                else await ((Func<T, CancellationToken, ValueTask>)s.Handler)(signal, CancellationToken.None);
+                try
+                {
+                    if (s.Handler is Action<T> sync) sync(signal);
+                    else await ((Func<T, CancellationToken, ValueTask>)s.Handler)(signal, CancellationToken.None);
+                }
+                catch (Exception ex) when (!SignalBus.IsDispatchControlFlow(ex))
+                {
+                    SignalBus.ReportIsolatedFailure(ex, $"A subscriber of {typeof(T).Name}");
+                    failure ??= ex;
+                }
             }
+            if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         }
 
         /// <summary>Runs at once on the calling thread.</summary>
@@ -94,10 +116,12 @@ namespace Nexus.Core
             return subscription;
         }
 
+        // Newest first, the bus's delivery order (issue #189).
         private List<Subscription> Snapshot<T>()
         {
             var list = new List<Subscription>();
-            foreach (var s in _subscriptions) if (s.Type == typeof(T)) list.Add(s);
+            for (int i = _subscriptions.Count - 1; i >= 0; i--)
+                if (_subscriptions[i].Type == typeof(T)) list.Add(_subscriptions[i]);
             return list;
         }
 

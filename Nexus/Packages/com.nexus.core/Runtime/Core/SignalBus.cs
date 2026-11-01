@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine.Profiling;
@@ -673,6 +674,7 @@ namespace Nexus.Core
             // development build so the NexusProfilerModule chart has data (counters are
             // compiled out in non-development builds by Unity itself).
             NexusProfiler.SignalsDispatched.Value += 1;
+            Exception isolated = null; // the first failure this dispatch isolates (issue #189)
             _subscriptionRegistry.EnterDispatch();
             try
             {
@@ -750,7 +752,7 @@ namespace Nexus.Core
                     var crossContextAttr = _commandRegistry.GetCachedCrossContext<T>();
                     if (crossContextAttr != null)
                     {
-                        BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
+                        isolated = BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
                     }
                 }
 
@@ -784,7 +786,8 @@ namespace Nexus.Core
                     }
                 }
 
-                // Phase 2: Process subscriptions (observe final state)
+                // Phase 2: Process subscriptions (observe final state), newest first. A subscriber that throws does not
+                // keep the others from the signal (issue #189).
                 if (_subscriptionRegistry.SubscriptionsReadCopy.TryGetValue(type, out var node))
                 {
                     var current = node;
@@ -792,16 +795,26 @@ namespace Nexus.Core
                     {
                         if (current.IsActive && current.Handler is Action<T> syncSub)
                         {
-                            syncSub(signal);
+                            try { syncSub(signal); }
+                            catch (Exception ex) when (!IsDispatchControlFlow(ex))
+                            {
+                                ReportIsolatedFailure(ex, $"A subscriber of {typeof(T).Name}");
+                                isolated ??= ex;
+                            }
                         }
                         current = current.Next;
                     }
                 }
 
                 // Process composite triggers
-                ProcessCompositeTriggers(signal);
+                try { ProcessCompositeTriggers(signal); }
+                catch (Exception ex) when (!IsDispatchControlFlow(ex))
+                {
+                    ReportIsolatedFailure(ex, $"A composite command triggered by {typeof(T).Name}");
+                    isolated ??= ex;
+                }
 #if NEXUS_DEBUG
-                NexusTrace.EndEvent(eventId, TraceStatus.OK);
+                NexusTrace.EndEvent(eventId, isolated == null ? TraceStatus.OK : TraceStatus.Failed);
 #endif
             }
             catch (Exception ex)
@@ -815,6 +828,8 @@ namespace Nexus.Core
                     && !RecoveryEngine.WasLogged(ex); // the recovery engine already wrote this command failure (issue #7)
                 ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Signal, 
                     $"Signal dispatch failed for {typeof(T).FullName}", shouldLog);
+                // The dispatch levels this failure crosses on its way out do not write it again (issue #189).
+                if (shouldLog) RecoveryEngine.MarkLogged(ex);
                 throw;
             }
             finally
@@ -825,6 +840,8 @@ namespace Nexus.Core
                 s_stackDepth--;
                 _subscriptionRegistry.ExitDispatch();
             }
+            // Every subscriber, composite and cross-context target has run: the first failure reaches the caller (issue #189).
+            if (isolated != null) ExceptionDispatchInfo.Capture(isolated).Throw();
         }
 
         /// <summary>
@@ -891,6 +908,7 @@ namespace Nexus.Core
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
 #endif
             NexusProfiler.SignalsDispatched.Value += 1;
+            Exception isolated = null; // the first failure this dispatch isolates (issue #189)
             _subscriptionRegistry.EnterDispatch();
             try
             {
@@ -963,7 +981,7 @@ namespace Nexus.Core
                     var crossContextAttr = _commandRegistry.GetCachedCrossContext<T>();
                     if (crossContextAttr != null)
                     {
-                        BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
+                        isolated = BroadcastCrossContext(signal, crossContextAttr.ScopeTag);
                     }
                 }
 
@@ -1086,7 +1104,8 @@ namespace Nexus.Core
                     }
                 }
 
-                // Phase 2: Process subscriptions (observe final state)
+                // Phase 2: Process subscriptions (observe final state), newest first. A subscriber that throws does not
+                // keep the others from the signal (issue #189).
                 if (_subscriptionRegistry.SubscriptionsReadCopy.TryGetValue(type, out var node))
                 {
                     var current = node;
@@ -1095,15 +1114,23 @@ namespace Nexus.Core
                         if (current.IsActive)
                         {
                             var handler = current.Handler;
-                            if (handler is Action<T> syncSub)
+                            try
                             {
-                                syncSub(signal);
+                                if (handler is Action<T> syncSub)
+                                {
+                                    syncSub(signal);
+                                }
+                                else if (handler is Func<T, CancellationToken, ValueTask> asyncSub)
+                                {
+                                    // Pass the command-scoped token so subscriptions
+                                    // also honour the FireAsyncWithTimeout timeout.
+                                    await asyncSub(signal, commandCt);
+                                }
                             }
-                            else if (handler is Func<T, CancellationToken, ValueTask> asyncSub)
+                            catch (Exception ex) when (!IsDispatchControlFlow(ex))
                             {
-                                // Pass the command-scoped token so subscriptions
-                                // also honour the FireAsyncWithTimeout timeout.
-                                await asyncSub(signal, commandCt);
+                                ReportIsolatedFailure(ex, $"A subscriber of {typeof(T).Name}");
+                                isolated ??= ex;
                             }
                         }
                         current = current.Next;
@@ -1111,9 +1138,14 @@ namespace Nexus.Core
                 }
 
                 // Process composite triggers; async composites are awaited as part of FireAsync.
-                await ProcessCompositeTriggersAsync(signal, commandCt);
+                try { await ProcessCompositeTriggersAsync(signal, commandCt); }
+                catch (Exception ex) when (!IsDispatchControlFlow(ex))
+                {
+                    ReportIsolatedFailure(ex, $"A composite command triggered by {typeof(T).Name}");
+                    isolated ??= ex;
+                }
 #if NEXUS_DEBUG
-                NexusTrace.EndEvent(eventId, TraceStatus.OK);
+                NexusTrace.EndEvent(eventId, isolated == null ? TraceStatus.OK : TraceStatus.Failed);
 #endif
             }
             catch (Exception ex)
@@ -1127,6 +1159,8 @@ namespace Nexus.Core
                     && !RecoveryEngine.WasLogged(ex); // the recovery engine already wrote this command failure (issue #7)
                 ErrorCollection.CollectException(ex, ErrorCollection.ErrorCategory.Signal, 
                     $"Signal dispatch failed for {typeof(T).FullName}", shouldLog);
+                // The dispatch levels this failure crosses on its way out do not write it again (issue #189).
+                if (shouldLog) RecoveryEngine.MarkLogged(ex);
                 throw;
             }
             finally
@@ -1138,6 +1172,8 @@ namespace Nexus.Core
                 if (depthBox != null) depthBox.Value--;
                 _subscriptionRegistry.ExitDispatch();
             }
+            // Every subscriber, composite and cross-context target has run: the first failure reaches the caller (issue #189).
+            if (isolated != null) ExceptionDispatchInfo.Capture(isolated).Throw();
         }
 
         private void ExecuteClaimedOneShot<T>(CommandHandlerInfo handler, T signal, Type signalType) where T : struct
@@ -1292,16 +1328,25 @@ namespace Nexus.Core
             }
             s_compositeDepth++;
             int executed = 0;
+            Exception failure = null;
             try
             {
                 for (; executed < buffer.Count; executed++)
                 {
-                    _commandExecutor.ExecuteComposite(buffer[executed].trigger, buffer[executed].context);
+                    // A composite that throws does not keep the others from running; its one-shot is re-armed (issue #189).
+                    try { _commandExecutor.ExecuteComposite(buffer[executed].trigger, buffer[executed].context); }
+                    catch (Exception ex) when (!IsDispatchControlFlow(ex))
+                    {
+                        ReleaseOneShotComposite(buffer[executed].trigger);
+                        ReportIsolatedFailure(ex, $"A composite command triggered by {typeof(T).Name}");
+                        failure ??= ex;
+                    }
                 }
             }
             catch
             {
-                // The failed one-shot and the one-shots this pass did not reach are released.
+                // A reentrancy guard, a cancellation or a recovery abort ends the pass: the failed one-shot and the
+                // one-shots this pass did not reach are released.
                 for (int r = executed; r < buffer.Count; r++) ReleaseOneShotComposite(buffer[r].trigger);
                 throw;
             }
@@ -1313,10 +1358,13 @@ namespace Nexus.Core
                 if (isNested && s_nestedBufferFreeList == null)
                     s_nestedBufferFreeList = buffer;
             }
+            if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         }
 
-        private void BroadcastCrossContext<T>(T signal, string scopeTag) where T : struct
+        // Returns the first failure of a target context; the target's own dispatch has written it (issue #189).
+        private Exception BroadcastCrossContext<T>(T signal, string scopeTag) where T : struct
         {
+            Exception failure = null;
             var contexts = _contextResolver.GetActiveContexts();
             for (int i = 0; i < contexts.Count; i++)
             {
@@ -1351,7 +1399,10 @@ namespace Nexus.Core
                     }
                     else
                     {
-                        concreteBus.FireCrossContext(signal);
+                        // A target that throws does not keep the other targets, or this context's own commands and
+                        // subscribers, from the signal (issue #189).
+                        try { concreteBus.FireCrossContext(signal); }
+                        catch (Exception ex) when (!IsDispatchControlFlow(ex)) { failure ??= ex; }
                     }
                 }
                 else if (string.IsNullOrEmpty(scopeTag))
@@ -1359,11 +1410,25 @@ namespace Nexus.Core
                     Services.NexusLog.WarnAlways($"[Nexus] Cross-context broadcast failed: target context '{targetCtx.GetType().Name}' does not use a SignalBus-backed ISignalBus. Broadcast skipped.");
                 }
             }
+            return failure;
         }
 
         public void FireCrossContext<T>(T signal) where T : struct
         {
             FireInternal(signal, isCrossContextSource: true);
+        }
+
+        // Failures that end a dispatch on purpose and are not isolated: the reentrancy and async overflow guards,
+        // cancellation and timeouts, a recovery strategy's abort (issue #189).
+        internal static bool IsDispatchControlFlow(Exception ex) =>
+            ex is NexusReentrancyException || ex is NexusAsyncOverflowException || ex is OperationCanceledException || ex is NexusRecoveryAbortException;
+
+        // Writes a failure that dispatch isolates once, however many dispatch levels it crosses (issue #189).
+        internal static void ReportIsolatedFailure(Exception ex, string source)
+        {
+            if (IsDispatchControlFlow(ex) || RecoveryEngine.WasLogged(ex)) return;
+            NexusRuntime.Logger?.LogError($"[Nexus] {source} threw: {ex}");
+            RecoveryEngine.MarkLogged(ex);
         }
 
         /// <summary>
@@ -1494,16 +1559,28 @@ namespace Nexus.Core
             }
 
             int executed = 0;
+            Exception failure = null;
             try
             {
                 for (; executed < due.Count; executed++)
-                    await _commandExecutor.ExecuteCompositeAwaitedAsync(due[executed].trigger, due[executed].context, ct);
+                {
+                    // A composite that throws does not keep the others from running; its one-shot is re-armed (issue #189).
+                    try { await _commandExecutor.ExecuteCompositeAwaitedAsync(due[executed].trigger, due[executed].context, ct); }
+                    catch (Exception ex) when (!IsDispatchControlFlow(ex))
+                    {
+                        ReleaseOneShotComposite(due[executed].trigger);
+                        ReportIsolatedFailure(ex, $"A composite command triggered by {typeof(T).Name}");
+                        failure ??= ex;
+                    }
+                }
             }
             catch
             {
+                // A reentrancy guard, a cancellation or a recovery abort ends the pass (see the sync path).
                 for (int r = executed; r < due.Count; r++) ReleaseOneShotComposite(due[r].trigger);
                 throw;
             }
+            if (failure != null) ExceptionDispatchInfo.Capture(failure).Throw();
         }
 
         /// <summary>

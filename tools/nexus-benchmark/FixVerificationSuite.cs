@@ -38,6 +38,7 @@ namespace NexusBench
             Test_RegisterCommand_OneShot_Honored();
             Test_MixedMode_Rejected_On_Incoming();
             Test_ObservableList_Indexer_Notifies();
+            Test_ThrowingSubscriber_LeavesTheOthers();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -203,6 +204,26 @@ namespace NexusBench
         // ── Signal bus contracts ─────────────────────────────────────────────
 
         private struct FvThrowSignal { public int Value; }
+        private struct FvIsolatedSignal { }
+
+        // Issue #189: subscribers run newest first, and the newest one throwing kept every older one from the signal.
+        private static void Test_ThrowingSubscriber_LeavesTheOthers()
+        {
+            var container = new NexusDI();
+            var bus = new SignalBus(container, new CommandPoolManager(container), new MockContext());
+            int older = 0;
+            bus.Subscribe<FvIsolatedSignal>(_ => older++);
+            bus.Subscribe<FvIsolatedSignal>(_ => throw new InvalidOperationException("newest subscriber bug"));
+
+            string thrown = null;
+            try { bus.Fire(new FvIsolatedSignal()); }
+            catch (InvalidOperationException ex) { thrown = ex.Message; }
+
+            bus.Dispose();
+            container.Dispose();
+            Report("FV11. Throwing_Subscriber_Leaves_The_Others_And_Fire_Rethrows", older == 1 && thrown == "newest subscriber bug",
+                $"older={older} thrown={thrown ?? "nothing"}");
+        }
 
         private static void Test_FireAsyncAndForget_UsesOnError()
         {

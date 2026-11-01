@@ -58,8 +58,8 @@ namespace Nexus.Core
             return await ExecuteAsyncPlan(plan, signal, ct);
         }
 
-        // A failure this engine logged reaches Fire's catch when it surfaces (one-shot, abort); that catch still
-        // collects it but does not write a second console line for it.
+        // A failure this engine or a signal dispatch wrote reaches Fire's catch when it surfaces (one-shot, abort, an isolated
+        // subscriber, issue #189); that catch still collects it but does not write a second console line for it.
         private const string LoggedKey = "Nexus.RecoveryEngine.Logged";
 
         internal static bool WasLogged(Exception ex)
@@ -76,7 +76,7 @@ namespace Nexus.Core
             return abort;
         }
 
-        private static void MarkLogged(Exception ex)
+        internal static void MarkLogged(Exception ex)
         {
             try { ex.Data[LoggedKey] = true; }
             catch (NotSupportedException) { } // read-only Data: the console line may then appear twice, nothing else changes

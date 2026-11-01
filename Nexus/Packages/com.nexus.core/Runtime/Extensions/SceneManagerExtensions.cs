@@ -192,11 +192,16 @@ namespace Nexus.Core.Extensions
             await operation;
         }
 
-        // A subscriber that throws must not change what the load or unload did (issue #188).
+        // A subscriber that throws must not change what the load or unload did (issue #188). The bus has written a
+        // subscriber's failure (issue #189); a failure it did not write is written here.
         private void FireSafely<T>(T signal, string sceneName) where T : struct
         {
             try { _signalBus.Fire(signal); }
-            catch (Exception ex) { NexusRuntime.Logger?.LogError($"[Nexus] A {typeof(T).Name} subscriber for scene '{sceneName}' threw: {ex}"); }
+            catch (Exception ex)
+            {
+                if (!RecoveryEngine.WasLogged(ex))
+                    NexusRuntime.Logger?.LogError($"[Nexus] Firing {typeof(T).Name} for scene '{sceneName}' failed: {ex}");
+            }
         }
 
         public void SetActiveScene(string sceneName)
