@@ -93,5 +93,38 @@ namespace Nexus.Tests.Runtime
 
             Assert.That(seen, Is.EqualTo(new[] { false }));
         }
+
+        // Issue #199: Root forwarded only the pause, so Gigawatt and ChipCrisis hooked OnApplicationQuit and Application.lowMemory
+        // themselves, each with its own guard against a context that has not started
+        [UnityTest]
+        public IEnumerator QuitAndLowMemoryReachTheContextOnlyAfterItHasStarted()
+        {
+            Root.ClearRegistry();
+            var gate = new GatedStart();
+            var go = new GameObject("QuitRoot");
+            go.SetActive(false);
+            var root = go.AddComponent<Root>();
+            var data = ScriptableObject.CreateInstance<ContextData>();
+            data.ScopeTag = "QuitRoot";
+            data.AssemblyScopes = Array.Empty<string>();
+            root.SetUp(data);
+            root.RegisterLifecycle(gate);
+            go.SetActive(true);
+
+            var seen = new List<string>();
+            root.Context.SignalBus.Subscribe<ApplicationQuitSignal>(_ => seen.Add("quit"));
+            root.Context.SignalBus.Subscribe<LowMemorySignal>(_ => seen.Add("low memory"));
+            go.SendMessage("OnLowMemory");
+            go.SendMessage("OnApplicationQuit");
+
+            gate.Release.SetResult(true);
+            float deadline = Time.realtimeSinceStartup + 5f;
+            while (!root.IsInitialized && Time.realtimeSinceStartup < deadline) yield return null;
+            Assert.That(root.IsInitialized, Is.True, "the root did not start in 5 s");
+            go.SendMessage("OnLowMemory");
+            go.SendMessage("OnApplicationQuit");
+
+            Assert.That(seen, Is.EqualTo(new[] { "low memory", "quit" }));
+        }
     }
 }

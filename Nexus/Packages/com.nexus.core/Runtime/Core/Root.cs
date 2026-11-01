@@ -153,6 +153,7 @@ namespace Nexus.Core
 
         private void OnEnable()
         {
+            Application.lowMemory += OnLowMemory;
             if (_startupFailed) return;
             lock (s_rootLock)
             {
@@ -162,6 +163,7 @@ namespace Nexus.Core
 
         private void OnDisable()
         {
+            Application.lowMemory -= OnLowMemory;
             lock (s_rootLock)
             {
                 s_allRoots.Remove(this);
@@ -573,6 +575,18 @@ namespace Nexus.Core
             // Synchronous: Android may freeze the process as soon as this returns, so a save must finish inside the handler.
             if (Context != null && Context.IsInitialized && Context.SignalBusInternal.HasHandlers(typeof(ApplicationPauseSignal)))
                 Context.SignalBus.Fire(new ApplicationPauseSignal(pauseStatus));
+        }
+
+        private void OnApplicationQuit()
+        {
+            if (Context != null && Context.IsInitialized && Context.SignalBusInternal.HasHandlers(typeof(ApplicationQuitSignal)))
+                Context.SignalBus.Fire(new ApplicationQuitSignal());
+        }
+
+        private void OnLowMemory()
+        {
+            if (Context != null && Context.IsInitialized && Context.SignalBusInternal.HasHandlers(typeof(LowMemorySignal)))
+                Context.SignalBus.Fire(new LowMemorySignal());
         }
 
         private void OnDestroy()

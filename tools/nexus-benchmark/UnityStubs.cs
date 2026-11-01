@@ -37,6 +37,7 @@ namespace UnityEngine
         public static event LogCallback logMessageReceivedThreaded;
         public static event Action<bool> focusChanged;
         public static event Action quitting;
+        public static event Action lowMemory;
 #pragma warning restore 0067
 
         public static SystemLanguage systemLanguage => SystemLanguage.English;

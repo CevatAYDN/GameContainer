@@ -47,7 +47,8 @@ namespace Nexus.Core.Services
         /// <summary>
         /// Saves the current UTC timestamp under <paramref name="key"/> and the hardware monotonic tick beside it
         /// (<c>NT_LastQuitMonotonicMs</c> for the default key, <c>&lt;key&gt;_MonotonicMs</c> for any other).
-        /// Call in OnApplicationPause / OnApplicationQuit.
+        /// Call on <see cref="Nexus.Core.ApplicationPauseSignal"/> (a mobile app is usually ended in the background without a
+        /// quit call) and on <see cref="Nexus.Core.ApplicationQuitSignal"/>.
         /// </summary>
         public static void RecordQuitTimestamp(IPlayerPrefsService storage, string key = DefaultTimestampKey)
         {

@@ -24,4 +24,23 @@ namespace Nexus.Core
         public readonly bool IsPaused;
         public ApplicationPauseSignal(bool isPaused) { IsPaused = isPaused; }
     }
+
+    /// <summary>
+    /// Fired by <see cref="Root"/> on its context's signal bus from OnApplicationQuit, once the context has started (issue #199).
+    /// Android and iOS normally end a backgrounded app without calling OnApplicationQuit, so a save that must survive belongs
+    /// on <see cref="ApplicationPauseSignal"/>; this signal covers <c>Application.Quit</c>, a desktop window closed and the
+    /// editor leaving play mode. Fired synchronously: subscribe with <c>Subscribe</c>.
+    /// </summary>
+    public readonly struct ApplicationQuitSignal
+    {
+    }
+
+    /// <summary>
+    /// Fired by <see cref="Root"/> on its context's signal bus when the device reports low memory (<c>Application.lowMemory</c>,
+    /// which Unity raises only while the app is in the foreground), once the context has started (issue #199). Release what can
+    /// be rebuilt. Fired synchronously: subscribe with <c>Subscribe</c>.
+    /// </summary>
+    public readonly struct LowMemorySignal
+    {
+    }
 }
