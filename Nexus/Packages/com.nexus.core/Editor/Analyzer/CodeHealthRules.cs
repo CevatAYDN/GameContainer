@@ -110,7 +110,7 @@ namespace Nexus.Editor
                         FilePath = path,
                         LineNumber = lineNum,
                         Message = "Uncaught 'async void' method declaration.",
-                        Recommendation = "Replace 'async void' with 'async ValueTask' or 'async Task' to prevent process crashes on unhandled exceptions."
+                        Recommendation = "Replace 'async void' with 'async ValueTask' or 'async Task' to prevent process crashes on unhandled exceptions. When the signature must stay void (an event handler, an interface method) and the body catches every exception, append '// NEXUS002-exempt: <reason>' to the line."
                     });
                 }
 
@@ -167,6 +167,8 @@ namespace Nexus.Editor
         /// </summary>
         internal static bool IsNexus002Violation(string line)
         {
+            // an async void whose signature is fixed and whose body catches every exception says so in a trailing comment (raw line)
+            if (line.Contains("NEXUS002-exempt")) return false;
             string codeOnly = StripCommentsAndStrings(line);
             return codeOnly.Contains("async void")
                    && !codeOnly.Contains("OnClick")

@@ -97,7 +97,7 @@ namespace Nexus.Editor
         private static string ContextLabel(IContext context) =>
             string.IsNullOrEmpty(context.ScopeTag) ? NexusLang.Get("fire_untagged_context") : context.ScopeTag;
 
-        private async void Fire()
+        private async void Fire() // NEXUS002-exempt: a button's handler; the awaited firing is caught and shown in the form
         {
             var context = _fixedContext ?? (_contextField != null && _contextField.index >= 0 && _contextField.index < _contexts.Count
                 ? _contexts[_contextField.index] : null);

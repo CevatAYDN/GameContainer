@@ -155,6 +155,14 @@ namespace Nexus.Editor.Tests
             Assert.IsFalse(CodeHealthRules.IsNexus002Violation(line));
         }
 
+        [Test]
+        public void NEXUS002_ExemptMarkerSkipsAnAsyncVoidThatCatchesEverything()
+        {
+            // the Status tab listed three caught async void methods with fixed void signatures as errors (#193)
+            const string line = "        public async void Initialize(Action<bool> done) // NEXUS002-exempt: the interface returns void; the body is caught";
+            Assert.IsFalse(CodeHealthRules.IsNexus002Violation(line));
+        }
+
         // ── NEXUS001 (hot-path allocations) ───────────────────────────────────────
 
         [Test]

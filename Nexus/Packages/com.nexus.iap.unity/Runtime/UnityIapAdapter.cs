@@ -73,7 +73,7 @@ namespace Nexus.Iap.Unity
             return false;
         }
 
-        public async void Initialize(List<NexusProduct> products, Action<bool> onInitialized)
+        public async void Initialize(List<NexusProduct> products, Action<bool> onInitialized) // NEXUS002-exempt: IIapStoreAdapter.Initialize returns void and answers through onInitialized; the store calls are caught
         {
             if (_disposed) { onInitialized?.Invoke(false); return; }
             _catalog.Clear();
@@ -313,7 +313,7 @@ namespace Nexus.Iap.Unity
             }
         }
 
-        private async void RetryConfirm(string id, TimeSpan delay)
+        private async void RetryConfirm(string id, TimeSpan delay) // NEXUS002-exempt: started from a store callback that must return first; the whole body is caught
         {
             try
             {

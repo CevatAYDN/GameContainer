@@ -37,7 +37,9 @@ awaiting is genuinely impossible — e.g. a synchronous `PlayerPrefs`-style API 
 path also runs on the sync quit handler. In that case keep the call, append a trailing
 `// NEXUS003-exempt: <reason>` comment to the SAME line stating why awaiting is impossible,
 and use the `CancellationToken`-aware overload where one is available. Anything not marked
-exempt is listed as an error.
+exempt is listed as an error. NEXUS002 (`async void`) takes the same kind of marker, `// NEXUS002-exempt: <reason>`,
+only where the signature must stay void (an event handler, an interface method that returns void) and the body catches
+every exception.
 
 ---
 
