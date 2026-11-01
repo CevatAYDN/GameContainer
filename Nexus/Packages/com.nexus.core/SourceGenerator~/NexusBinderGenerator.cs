@@ -286,11 +286,14 @@ namespace Nexus.Generator
         private static string InjectName(ISymbol symbol)
         {
             if (!HasAttr(symbol, InjectAttribute, out var injectAttr)) return null;
+            // [Inject("name")] sets the same Name as [Inject(Name = "name")]; only the named form was read (#240). A named
+            // argument is applied after the constructor, so it wins, as InjectAttribute.Name does at run time.
+            string name = injectAttr.ConstructorArguments.Length == 1 ? injectAttr.ConstructorArguments[0].Value as string : null;
             foreach (var kvp in injectAttr.NamedArguments)
             {
-                if (kvp.Key == "Name" && kvp.Value.Value is string s && !string.IsNullOrEmpty(s)) return s;
+                if (kvp.Key == "Name") name = kvp.Value.Value as string;
             }
-            return null;
+            return string.IsNullOrEmpty(name) ? null : name;
         }
 
         /// <summary>The argument list of a TryResolve call: empty for the default binding, the name literal for a named one.</summary>

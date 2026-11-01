@@ -1167,6 +1167,17 @@ namespace NexusBench.Parity
         public PNamed([OptionalInject, Inject(Name = ""special"")] PDep dep) { FromConstructor = dep; }
         [Inject] public void Construct([Inject(Name = ""special"")] PDep dep) { FromMethod = dep; }
     }
+    // the constructor form [Inject(""name"")], which the source generator dropped (#240), on a required constructor parameter
+    public sealed class PNamedPositional
+    {
+        [Inject(""special"")] public PDep Field;
+        [Inject(""special"")] public PDep Property { get; set; }
+        [Inject(""special"")] private PDep _private;
+        public PDep FromMethod;
+        public readonly PDep FromConstructor;
+        public PNamedPositional([Inject(""special"")] PDep dep) { FromConstructor = dep; }
+        [Inject] public void Construct([Inject(""special"")] PDep dep) { FromMethod = dep; }
+    }
     // item 3: [OptionalInject] and C# defaults on constructor parameters
     public sealed class PCtorOptional
     {
@@ -1227,7 +1238,7 @@ namespace NexusBench.Parity
     {
         public static readonly string[] Names =
         {
-            ""PVirtual"", ""PVirtualMarked"", ""PProperty"", ""PHidden"", ""PShadow"", ""POverloads"", ""PNamed"",
+            ""PVirtual"", ""PVirtualMarked"", ""PProperty"", ""PHidden"", ""PShadow"", ""POverloads"", ""PNamed"", ""PNamedPositional"",
             ""PCtorOptional"", ""PCtorDefaultNull"", ""PCtorDefaultString"", ""PMissingField"", ""PMissingProperty"",
             ""PMissingMethod"", ""PKeepsInitializer"", ""PLazy"", ""PInitOnly"", ""PExternal"", ""PBothAttributes""
         };
@@ -1287,10 +1298,10 @@ namespace NexusBench.Parity
         // generator that disagrees with the reflection metadata.
         private static readonly string[] ParityInjectorTypes =
         {
-            "PVirtual", "PVirtualMarked", "PProperty", "PHidden", "PShadow", "POverloads", "PNamed", "PMissingField",
+            "PVirtual", "PVirtualMarked", "PProperty", "PHidden", "PShadow", "POverloads", "PNamed", "PNamedPositional", "PMissingField",
             "PMissingProperty", "PMissingMethod", "PKeepsInitializer", "PLazy", "PInitOnly", "PExternal", "PBothAttributes"
         };
-        private static readonly string[] ParityFactoryTypes = { "PCtorOptional", "PCtorDefaultNull", "PNamed" };
+        private static readonly string[] ParityFactoryTypes = { "PCtorOptional", "PCtorDefaultNull", "PNamed", "PNamedPositional" };
         // A constructor default the binder does not repeat: no factory, and the binder's header says why.
         private static readonly string[] ParityReflectionFactoryTypes = { "PCtorDefaultString" };
 
@@ -1304,6 +1315,8 @@ namespace NexusBench.Parity
             ("POverloads", new[] { "POverloads.One=1", "POverloads.Two=1" }),
             ("PNamed", new[] { "PNamed.Field=special", "PNamed.<Property>k__BackingField=special", "PNamed._private=special",
                                "PNamed.FromMethod=special", "PNamed.FromConstructor=special" }),
+            ("PNamedPositional", new[] { "PNamedPositional.Field=special", "PNamedPositional.<Property>k__BackingField=special",
+                "PNamedPositional._private=special", "PNamedPositional.FromMethod=special", "PNamedPositional.FromConstructor=special" }),
             ("PCtorOptional", new[] { "PCtorOptional.Unbound=null", "PCtorOptional.Dep=shared" }),
             ("PCtorDefaultNull", new[] { "PCtorDefaultNull.Unbound=null", "PCtorDefaultNull.Dep=shared" }),
             ("PCtorDefaultString", new[] { "PCtorDefaultString.Label=parity" }),
