@@ -103,7 +103,7 @@ namespace YourGame.Infrastructure
 ## 3. Verification
 
 - After adding the adapter, remove `ResourcesAssetLoadService` from the lifecycle and verify that no `Resources.Load`/`Resources.LoadAsync` references remain in the project (proof that the move to Addressables is complete).
-- In Play mode, open and close a screen; after each `LoadAsync` made without a `Release` call, check in the Memory Profiler that the handle count stays constant (leak test).
+- In Play mode, open and close a screen several times; with every `LoadAsync` paired with a `Release`, check in the Memory Profiler (or the Addressables event viewer) that the handle count returns to where it started (leak test). The adapter keeps every handle it loaded, so a `LoadAsync` without its `Release` adds one handle each time: that growth is the leak the test finds.
 - Editor test: `IAssetLoadService.LoadAsync` → the asset is not null; after `Release`, a second `LoadAsync` still works (no double release).
 
 ## 4. Out of scope

@@ -106,8 +106,12 @@ factories cut its transient cost by 2.5× (5.5 → 2.2 µs) and VContainer's gen
 cut its own by 3.9× (3.9 → 1.0 µs). VContainer's injector constructs the graph with one
 generated call per type; Nexus's factory resolves each constructor parameter through the
 container's full resolve path (lookup, lifetime, cycle bookkeeping), which is where the
-remaining 2.2× comes from and is the next lever. Cached resolution stays ahead in both
-configurations: 4.0× / 3.9× VContainer and 5.8× Reflex (reflection / generated).
+remaining 2.2× came from on this run. #111 (`d3b0e56`) then resolved a transient constructor
+parameter without the binding lookup; on the later gate run VContainer still builds the graph
+1.56× faster (1.61 vs 1.04 µs, `target-generated-android-007`), its generated injector being
+one call per type, and no further lever is planned before v0.6.0 (`docs/RELEASE_GATES.md`,
+gate 10). Cached resolution stays ahead in both configurations: 4.0× / 3.9× VContainer and
+5.8× Reflex (reflection / generated).
 
 Device runs drift between launches: Zenject, which has no generator and did not change,
 measured 99.1 µs and 64.3 µs startup in the two runs a few minutes apart (thermal and clock

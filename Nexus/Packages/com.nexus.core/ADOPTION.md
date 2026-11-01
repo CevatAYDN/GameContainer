@@ -36,7 +36,7 @@ each game re-pins.
 ## What to own vs. what not to fork
 
 **Own (customize in your fork):**
-- Service implementations (`Runtime/Services/...`) — adapt to your backend, analytics, ads, IAP.
+- Your backend, analytics, ads and IAP — through the seams the package has, not by editing `Runtime/Services/...`: a service's adapter interface (`docs/ADAPTERS.md`), or your own implementation bound with `BindService<TInterface, TImplementation>()`. An edit to a package service is a fix: open it as an issue upstream too, so the fork does not drift.
 - Validation rules (`Editor/Validation/BuildValidation.cs`) — enforce your team's conventions.
 - Binder output path / AOT settings (`NexusEditorSettings`).
 

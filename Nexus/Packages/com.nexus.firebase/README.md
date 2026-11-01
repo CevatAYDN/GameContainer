@@ -25,7 +25,7 @@ Firebase Analytics, Remote Config and Crashlytics behind Nexus services, with th
 
 ## Install the SDK
 
-The adapters were written against Firebase Unity SDK **14.0.0** (`expression` 14.0.0 in the assembly definition) and compiled against it in a disposable project. Google distributes the UPM packages as `.tgz` files, not through a registry: download `com.google.firebase.app`, `.analytics`, `.remote-config` and `.crashlytics` for one version from <https://developers.google.com/unity/archive>, put them in a `GooglePackages` folder next to `Packages`, and add them to `Packages/manifest.json` as `"com.google.firebase.analytics": "file:../GooglePackages/com.google.firebase.analytics-14.0.0.tgz"` and so on. `com.google.firebase.app` depends on the External Dependency Manager (1.2.190), from the OpenUPM registry as for `com.nexus.ads.admob`. All Firebase packages in a project must be the same version.
+The adapters were written against Firebase Unity SDK **14.0.0** (`expression` 14.0.0 in the assembly definition) and are compiled and tested against 14.0.0 and 14.1.0 in disposable projects (`Nexus/artifacts/firebase-20261027/`, `firebase-20261031/`; see the repository's `docs/RELEASE_GATES.md`). Google distributes the UPM packages as `.tgz` files, not through a registry: download `com.google.firebase.app`, `.analytics`, `.remote-config` and `.crashlytics` for one version from <https://developers.google.com/unity/archive>, put them in a `GooglePackages` folder next to `Packages`, and add them to `Packages/manifest.json` as `"com.google.firebase.analytics": "file:../GooglePackages/com.google.firebase.analytics-14.0.0.tgz"` and so on. `com.google.firebase.app` depends on the External Dependency Manager (1.2.190), from the OpenUPM registry as for `com.nexus.ads.admob`. All Firebase packages in a project must be the same version.
 
 ## Rules
 
@@ -53,7 +53,7 @@ A player gets the Firebase service of each SDK package the project has. For an S
 
 ## Not checked by 0.1.0
 
-- The adapters compile against 14.0.0; they have not been run in the editor or on a device here, which needs a `google-services.json`.
+- The adapters compile against 14.0.0 and 14.1.0 and their EditMode tests pass there; they have not been run against a real Firebase project in the editor or on a device here, which needs a `google-services.json`.
 - The manifest flags are checked in EditMode on a sample manifest; that a device starts with Crashlytics collection off has not been observed yet.
 - That Crashlytics reports an error logged while the SDK starts (the held non-fatals of `CrashContext`) has not been observed on a device; `CrashContext`'s holding is tested in EditMode.
 - The string length of event parameter values (100 characters for standard properties, per Google's documentation).

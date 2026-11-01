@@ -827,11 +827,10 @@ NEXUS_VALIDATION_WARN_ONLY=1  report validation failures as warnings and continu
 Menu: Nexus > Generate AOT Binder
 ```
 
-**Check link.xml in Build:**
-```
-Build Settings > Player Settings > Other Settings
-Ensure link.xml is included
-```
+**Check that the linker got the files:** Unity has no setting that includes a link.xml; it passes the linker
+the files under `Assets` (the generated one, see "Check link.xml Location" below), and `NexusPackagesLinkXml`
+adds the packages' own files. The player build log names the merged file:
+`[Nexus] N package link.xml files handed to the linker as ...`.
 
 **Add Preserve Attributes:**
 ```csharp
@@ -954,7 +953,9 @@ public void TearDown()
 
 **Solutions:**
 
-**Use Centralized MockContext:**
+**Use Centralized MockContext:** it lives in the `com.nexus.core.testing` assembly, which is not auto-referenced
+and compiles only in the editor or with `UNITY_INCLUDE_TESTS`, so the test assembly's asmdef lists
+`com.nexus.core.testing` under `references`.
 ```csharp
 using Nexus.Core;
 

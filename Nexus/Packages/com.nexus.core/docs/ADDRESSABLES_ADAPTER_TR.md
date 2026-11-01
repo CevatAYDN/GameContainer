@@ -103,7 +103,7 @@ namespace YourGame.Infrastructure
 ## 3. Doğrulama
 
 - Adaptörü ekledikten sonra `ResourcesAssetLoadService`'i lifecycle'dan kaldırın ve projede `Resources.Load`/`Resources.LoadAsync` referansı kalmadığını doğrulayın (Addressables'a geçişin tamamlandığının kanıtı).
-- Play mode'da bir ekran açıp kapatın; `Release` çağrılmadan yapılan her `LoadAsync` sonrası Memory Profiler'da handle sayısının sabit kaldığını kontrol edin (sızıntı testi).
+- Play mode'da bir ekranı birkaç kez açıp kapatın; her `LoadAsync` bir `Release` ile eşleşirken Memory Profiler'da (ya da Addressables event viewer'da) handle sayısının başladığı yere döndüğünü kontrol edin (sızıntı testi). Adaptör yüklediği her handle'ı tutar, bu yüzden `Release`'i olmayan her `LoadAsync` bir handle ekler: testin bulduğu sızıntı bu artıştır.
 - Editor testi: `IAssetLoadService.LoadAsync` → aset null değil; `Release` sonrası ikinci `LoadAsync` hâlâ çalışıyor (double-release yok).
 
 ## 4. Kapsam dışı

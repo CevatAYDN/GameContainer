@@ -9,9 +9,9 @@
 
 The keys here are the editor's. A game's own text goes through `LocalizationService` and its tables (package README, "Services").
 
-This document lists the localization key namespaces used by the editor window (`NexusWindow`) and the 15 Nexus Editor Plugins (the `NexusEditorPlugin` subclasses in `Editor/Plugins/`; the State Machine tab moved to `com.nexus.fsm` in #112) to prevent key collisions and ensure translation parity between **English (`en`)** and **Turkish (`tr`)**.
+This document lists the localization key namespaces used by the editor window (`NexusWindow`) and the 13 Nexus Editor Plugins (the `NexusEditorPlugin` subclasses in `Editor/Plugins/`; the State Machine tab moved to `com.nexus.fsm` in #112) to prevent key collisions and ensure translation parity between **English (`en`)** and **Turkish (`tr`)**.
 
-**Parity:** every one of the 686 keys in `NexusLang.AddDefaults()` has an entry in `Editor/Locales/tr.json`, and `tr.json` has no key the code does not define. A new key goes into both files in the same change, and a changed English text gets its Turkish text in the same change.
+**Parity:** every one of the 573 keys in `NexusLang.AddDefaults()` has an entry in `Editor/Locales/tr.json`, and `tr.json` has no key the code does not define. A new key goes into both files in the same change, and a changed English text gets its Turkish text in the same change.
 
 A few `tr.json` entries deliberately keep the English text:
 
@@ -26,12 +26,12 @@ Code never compares a displayed text with an English literal: `ExplorerPlugin` t
 
 | Prefix | Component / Plugin | Description |
 |:---|:---|:---|
-| `window_`, `brand_`, `sidebar_`, `discovery_`, `error_`, `actions_`, `status_`, `statusbar_` | NexusWindow | Window shell: brand, sidebar, plugin discovery errors, action bar, status bar |
+| `brand_`, `sidebar_`, `error_`, `actions_`, `status_`, `statusbar_` | NexusWindow | Window shell: brand, sidebar, plugin discovery errors, action bar, status bar |
 | `cat_` | NexusWindow sidebar | Section headers: `cat_status`, `cat_setup`, `cat_architecture` and `cat_live`, in that order (`NexusWindow.Sections`); `INexusEditorPlugin.Category` returns one of them, and any other key, such as the default `cat_other`, is a section after them |
 | `tab_` | NexusWindow sidebar | Sidebar button label per plugin, `tab_<plugin id in lower case>`; without the key the plugin's `DisplayName` is used. Also the `DisplayName` of the Dashboard, Context Inspector, Error and Performance plugins |
 | `action_` | Plugins | `action_<tool>_title`: the `DisplayName` of the Casual Services, Explorer, FSM, Game Manager, Graph, Hierarchy, Tracer, Type Analyzer and Wizard plugins |
 | `nav_` | GameManagerPlugin, HierarchyPlugin | Buttons that open another plugin |
-| no namespace prefix (`dashboard`, `contexts`, `build_validation`, `clear`, ...), `system_`, `perf_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | System status, project overview, build validation, runtime metrics, framework card |
+| no namespace prefix (`dashboard`, `contexts`, `build_validation`, `run_validation`, `project_overview`, `runtime_metrics`, `live_models`, `live_hint`, `total_sigs`, `gc_memory`, `no_roots`, `clear`, ...), `system_`, `perf_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | System status, project overview, build validation, runtime metrics, framework card |
 | `dash_`, `db_` | DashboardPlugin (`Dashboard/DashboardSections.cs`) | Quick actions, QuickFind, card tooltips, Nexus Health and Build readiness cards |
 | `setup_` | NexusSetupWizard | The Setup section's start page: starter scene, package samples, the way into the Context Wizard, document buttons, version line |
 | `wizard_` | WizardPlugin (`Wizard/WizardTabs.cs`, `Wizard/ScriptGenerator.cs`) | Context creation and the service, view/mediator and signal/command generators: fields, validation, results and next steps |

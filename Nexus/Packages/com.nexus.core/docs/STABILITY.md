@@ -11,7 +11,7 @@
 |-----------|--------|
 | **Breaking changes documented** | ✅ `BREAKING_CHANGES.md` |
 | **Migration guides provided** | ✅ `MIGRATION.md` |
-| **SemVer respected** | ✅ Patch = bugfixes only |
+| **SemVer respected** | ✅ Patch = bug fixes only; the one exception, 0.3.1, added `IPlayerPrefsService.GetLong`/`SetLong` (`BREAKING_CHANGES.md`) |
 | **Internal refactor without API changes** | ✅ Allowed at any time |
 | **Public API frozen until 1.0** | ❌ May change |
 
@@ -36,7 +36,7 @@
 - `ObservableProperty<T>` reactive system
 - `Root` scene component behavior
 - Command execution order: Commands → Subscriptions (newest first) → Composites; a subscriber that throws does not stop the others (README "Signals and commands")
-- **Service disposal contract** — the owning Context calls `OnDispose()` on every `INexusService` singleton exactly once; the DI container skips services (lifecycle ownership is Context-scoped)
+- **Service disposal contract** — every `INexusService` singleton gets `OnDispose()` exactly once (never a second `Dispose()`), with the context's other singletons in reverse creation order; a bare `NexusDI` or a child scope ends its services the same way (#197)
 
 ---
 

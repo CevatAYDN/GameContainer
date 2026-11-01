@@ -1,5 +1,5 @@
 > **CRITICAL INSTRUCTIONS FOR AI AGENTS BUILDING GAMES ON NEXUS CORE:**
-> This document is your primary source of truth when generating game logic, models, signals, commands, services, views, and mediators for any Unity game built on the **Nexus Core** framework.
+> This document guides you when generating game logic, models, signals, commands, services, views, and mediators for any Unity game built on the **Nexus Core** framework. The single recommended form of each API is in [CANONICAL-PATTERNS.md](CANONICAL-PATTERNS.md); where the two differ, CANONICAL-PATTERNS wins.
 > 
 > **MANDATORY RULES FOR ALL AI CODE GENERATION:**
 > 1. **Signals:** EVERY signal MUST be a value type (`public struct MySignal`). NEVER use reference types (`class`) for signals.

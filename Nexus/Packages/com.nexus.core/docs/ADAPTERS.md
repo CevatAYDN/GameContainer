@@ -32,6 +32,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Nexus.Core;
 using Nexus.Core.Services;
+using Nexus.Iap.Unity;   // com.nexus.iap.unity
 using UnityEngine;
 
 [RequireComponent(typeof(Root))]
@@ -59,7 +60,7 @@ public sealed class MonetizationLifecycle : MonoBehaviour, IContextLifecycle
         AdFactory.RegisterProvider("mynetwork", () => new MyAdNetworkAdapter());   // your class, see "Writing an adapter"
         Ads.SetNetworkAdapter(AdFactory.CreateAdapter(AdProviderName));
 
-        StoreFactory.RegisterProvider("unityiap", () => new UnityIapAdapter());
+        UnityIapAdapter.Register(StoreFactory);   // provider name UnityIapAdapter.ProviderName ("unity")
         Iap.RegisterProducts(new ProductDefinition { Id = "remove_ads", Type = ProductType.NonConsumable });
         Iap.SetStoreAdapter(StoreFactory.CreateAdapter(StoreProviderName));
         return default;
@@ -68,7 +69,7 @@ public sealed class MonetizationLifecycle : MonoBehaviour, IContextLifecycle
     public void OnDispose() { }
 
     // The same providers in every build: the editor and development players go through the real adapters too.
-    private const string AdProviderName = "mynetwork", StoreProviderName = "unityiap";
+    private const string AdProviderName = "mynetwork", StoreProviderName = UnityIapAdapter.ProviderName;
 }
 ```
 
@@ -144,9 +145,9 @@ iapService.SetStoreAdapter(iapFactory.CreateAdapter(UnityIapAdapter.ProviderName
 ```
 
 It was ported from the first shipped Nexus game and is verified by compiling against the real SDK
-package in a disposable project and by tests of its behaviour before initialization
-(`Nexus/artifacts/adapters-050/`; the deferred payment in `adapters-20261020/`; see the repository's
-`docs/RELEASE_GATES.md`). Gigawatt runs it in its signed Android IL2CPP release build; a price, a
+package in a disposable project and by tests of its behaviour before initialization and of a
+confirmed purchase through a store plugged into Unity IAP (Unity IAP 5.4.4 in
+`Nexus/artifacts/iap-20261028/` and `iap-20261031/`; see the repository's `docs/RELEASE_GATES.md`). Gigawatt runs it in its signed Android IL2CPP release build; a price, a
 purchase and a restore against Google Play are the open item.
 
 Adapter warnings (an ad that did not load, a store that is not reachable, products not fetched)

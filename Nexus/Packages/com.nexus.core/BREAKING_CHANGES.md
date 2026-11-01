@@ -173,14 +173,14 @@ These changes are safe and don't require code modification:
    - Provide migration path
 
 2. **Warning Period**
-   - Maintain for at least 2 minor versions
+   - Maintain for the period in Deprecation Timeline below (1 minor version while 0.x)
    - Compiler warnings during this period
    - Documentation updated
 
 3. **Removal**
    - Remove after warning period
    - Update migration guide
-   - Release notes
+   - Changelog entry under Removed
 
 ### Obsolete Attribute Usage
 
@@ -353,10 +353,10 @@ Features marked as beta:
 
 ### Announcement Channels
 
-1. **Changelog** - All changes documented
-2. **GitHub Releases** - Major announcements
-3. **GitHub Discussions** - Community feedback
-4. **Blog Posts** - Major architectural changes
+1. **Changelog** - All changes documented (`CHANGELOG.md`)
+2. **Migration guide** - The steps per version (`MIGRATION.md`)
+3. **Git tag** - One per release (`v0.5.0`); games pin a commit on `main`
+4. **GitHub Issues** - Questions and reports (the repository has no Releases page and no Discussions)
 
 ### Timeline Communication
 
@@ -424,11 +424,28 @@ Features marked as beta:
 - The generated binder header carries the package version: regenerate the binder after upgrading, or the build guard stops player builds.
 - `WindowManager` / `IWindowManager` removed — `UIManager` (`IUIManager`) is the single runtime UI manager with UI pooling. `UILayer` and `IUIWindowLifecycle` were extracted from the old `WindowManager.cs`. See [ADR-0001](../../../docs/adr/0001-ui-stack-in-game-ugui-editor-ui-toolkit.md).
 - `Assets/Scripts/Demo/` sample scaffolding removed — the single canonical project example is the wizard-generated `Game/Samples` (scene-wired via `NexusStarter.unity`).
-- Analyzer rule `NEXUS004` (the WindowManager deprecation driver) retired with `WindowManager`; the Code Health Analyzer now enforces NEXUS001/002/003 and gates CI.
+- Analyzer rule `NEXUS004` (the WindowManager deprecation driver) retired with `WindowManager`; the id now names another rule, leftover trace logging (`MIGRATION.md`, "NEXUS004 Now Names a Different Rule"). The architecture analyzer runs in the editor; the repository has no CI (GitHub Actions is not used, `docs/RELEASE_GATES.md`).
 
 **Migration:** See [MIGRATION.md](MIGRATION.md#version-040--050).
 
-#### Version 0.3.0 (2026-07-07)
+#### Version 0.4.0 (2026-07-18)
+
+**Breaking Changes:**
+- `NEXUS_DEBUG` is opt-in: nothing enables it automatically any more
+- `EncryptedStorageService` uses AES-256 with a separate HMAC key (legacy AES-128 payloads are migrated on first decrypt)
+- `BindCommand`/`BindAsyncCommand` reject `ExecutionMode.Composite` (`ArgumentException`)
+- `[SignalHandler]` discovery finds commands that implement only `ICommand<T>`/`IAsyncCommand<T>`, and a `[SignalHandler]` type that implements neither is an error at startup
+
+**Migration:** See [MIGRATION.md](MIGRATION.md#version-032--040)
+
+#### Version 0.3.1 (2026-07-07)
+
+**Breaking Changes:**
+- `IPlayerPrefsService` gained `GetLong`/`SetLong`; a custom implementation must add them (a patch release that broke the patch rule of `docs/STABILITY.md`)
+
+**Migration:** See [MIGRATION.md](MIGRATION.md#version-030--031)
+
+#### Version 0.3.0 (2026-06-30)
 
 **Breaking Changes:**
 - IReactiveModel.OnBind signature changed
@@ -454,5 +471,5 @@ If you have questions about this policy:
 
 1. **Read this document** thoroughly
 2. **Check MIGRATION.md** for specific version changes
-3. **Open a GitHub Discussion** for clarification
+3. **Open a GitHub issue** for clarification
 4. **Review GitHub Issues** for similar questions

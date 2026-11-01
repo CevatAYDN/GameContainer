@@ -18,9 +18,10 @@
 ## 📦 Step 1: Install Nexus (1 min)
 
 1. Open **Window > Package Manager**
-2. Click **+** → **Add package from disk...**
-3. Browse to `Nexus/Packages/com.nexus.core/package.json`
-4. Click **Open**
+2. Click **+** → **Install package from git URL...**
+3. Enter `https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<commit>`, with the
+   full 40-character commit you pin (games pin a commit on `main`, never a `file:` path or an embedded copy)
+4. Click **Install**
 
 > **That's it.** No additional setup scripts, no DLLs to copy, no Bootstrapper prefab.
 
@@ -35,7 +36,7 @@ A **Context** is Nexus's central container — it holds models, services, comman
 1. In the Project window, right-click **Create > Nexus > Context Data**
 2. Name it `GameContextData`
 3. Select it and check **Enable Auto-Discovery**
-   - Enables the `{ScopeTag}Lifecycle` name-convention scan (see Step 3c). The `Root` component additionally discovers every `IContextLifecycle` component attached to its GameObject.
+   - The `Root` component always uses the `IContextLifecycle` components attached to its GameObject. This switch adds a fallback: when there is none, it scans for a class named `{ScopeTag}Lifecycle` (see Step 3c).
 
 ### 2b. Add the Root component
 
@@ -45,7 +46,7 @@ A **Context** is Nexus's central container — it holds models, services, comman
 
 > ✅ **Done.** At runtime, the `Root` component will:
 > 1. Create a `Context` with your configuration
-> 2. Scan for `IContextLifecycle` classes
+> 2. Take the `IContextLifecycle` components on its GameObject, or, with none and auto-discovery on, the `{ScopeTag}Lifecycle` class
 > 3. Call `OnConfigure` → `OnInitializeAsync` → `OnStartAsync`
 
 ---
@@ -153,19 +154,24 @@ public class ScoreView : View
     public Text scoreText;
     public Button addButton;
 
+    private ScoreModel _model;
+
     protected override void OnBind(IContext context)
     {
-        var model = Context.Resolve<ScoreModel>();
-        model.Total.OnChanged((oldVal, newVal) =>
-        {
-            scoreText.text = $"Score: {newVal}";
-        });
-
-        addButton.onClick.AddListener(() =>
-        {
-            Context.SignalBus.Fire(new ScoreSignal(10));
-        });
+        _model = Context.Resolve<ScoreModel>();
+        _model.Total.OnChanged(ShowScore);
+        addButton.onClick.AddListener(AddScore);
     }
+
+    // A pooled or re-bound view binds again: without this each bind adds another handler.
+    protected override void OnUnbind()
+    {
+        _model.Total.RemoveOnChanged(ShowScore);
+        addButton.onClick.RemoveListener(AddScore);
+    }
+
+    private void ShowScore(int oldVal, int newVal) => scoreText.text = $"Score: {newVal}";
+    private void AddScore() => Context.SignalBus.Fire(new ScoreSignal(10));
 }
 ```
 

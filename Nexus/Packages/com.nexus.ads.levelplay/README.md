@@ -115,8 +115,9 @@ network. The phone's advertising id: [Which build talks to which SDK](../com.nex
 
 ## Verification
 
-Compiled against LevelPlay 9.5.1 in the disposable project `Nexus/artifacts/levelplay-20261024/`
-(see `docs/RELEASE_GATES.md`), with the Android build target: the package's editor platform exists only
+Compiled and tested against LevelPlay 9.6.0 in the disposable project `Nexus/artifacts/levelplay-20261031/`,
+and against the minimum 9.5.1 in `levelplay-20261024/` and `minimums-20261031/` (see `docs/RELEASE_GATES.md`),
+with the Android build target: the package's editor platform exists only
 when the active build target is Android or iOS; on another target `LevelPlay.Init` does nothing.
 EditMode tests (`Tests/Editor/LevelPlayProviderTests.cs`) lock the behaviour before initialization and
 the pass-through consent flow. PlayMode tests (`Tests/Runtime/LevelPlayProviderPlayModeTests.cs`) run

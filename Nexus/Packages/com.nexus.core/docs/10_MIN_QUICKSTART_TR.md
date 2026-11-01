@@ -18,9 +18,10 @@
 ## 📦 Adım 1: Nexus'u Kurun (1 dk)
 
 1. **Window > Package Manager**'ı açın
-2. **+** butonuna tıklayın → **Add package from disk...**
-3. `Nexus/Packages/com.nexus.core/package.json` dosyasını seçin
-4. **Open**'a tıklayın
+2. **+** butonuna tıklayın → **Install package from git URL...**
+3. `https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.core#<commit>` girin; `<commit>`
+   sabitlediğiniz 40 karakterlik commit'tir (oyunlar `main` üzerindeki bir commit'e sabitlenir, asla `file:` yolu ya da gömülü kopya değil)
+4. **Install**'a tıklayın
 
 > **Bu kadar.** Ek kurulum script'i, DLL kopyalama veya Bootstrapper prefab'ı gerekmez.
 
@@ -35,7 +36,7 @@
 1. Project penceresinde sağ tıklayın → **Create > Nexus > Context Data**
 2. Adını `GameContextData` olarak değiştirin
 3. Üzerine tıklayın ve **Enable Auto-Discovery** seçeneğini işaretleyin
-   - `{ScopeTag}Lifecycle` isim-konvansiyonu taramasını etkinleştirir (bkz. Adım 3c). `Root` bileşeni ayrıca kendi GameObject'ine eklenen her `IContextLifecycle` bileşenini otomatik bulur.
+   - `Root` bileşeni her zaman kendi GameObject'ine eklenen `IContextLifecycle` bileşenlerini kullanır. Bu seçenek bir yedek ekler: hiç yoksa `{ScopeTag}Lifecycle` adlı sınıfı tarar (bkz. Adım 3c).
 
 ### 2b. Root bileşenini ekleyin
 
@@ -45,7 +46,7 @@
 
 > ✅ **Tamam.** Çalışma zamanında `Root` bileşeni:
 > 1. Context'inizi oluşturacak
-> 2. `IContextLifecycle` sınıflarını tarayacak
+> 2. GameObject'indeki `IContextLifecycle` bileşenlerini, hiç yoksa ve otomatik keşif açıksa `{ScopeTag}Lifecycle` sınıfını alacak
 > 3. Sırasıyla `OnConfigure` → `OnInitializeAsync` → `OnStartAsync` çağıracak
 
 ---
@@ -153,19 +154,24 @@ public class ScoreView : View
     public Text scoreText;
     public Button addButton;
 
+    private ScoreModel _model;
+
     protected override void OnBind(IContext context)
     {
-        var model = Context.Resolve<ScoreModel>();
-        model.Total.OnChanged((oldVal, newVal) =>
-        {
-            scoreText.text = $"Skor: {newVal}";
-        });
-
-        addButton.onClick.AddListener(() =>
-        {
-            Context.SignalBus.Fire(new ScoreSignal(10));
-        });
+        _model = Context.Resolve<ScoreModel>();
+        _model.Total.OnChanged(ShowScore);
+        addButton.onClick.AddListener(AddScore);
     }
+
+    // Havuzdan dönen ya da yeniden bağlanan view tekrar bağlanır: bu olmadan her bağlama bir handler daha ekler.
+    protected override void OnUnbind()
+    {
+        _model.Total.RemoveOnChanged(ShowScore);
+        addButton.onClick.RemoveListener(AddScore);
+    }
+
+    private void ShowScore(int oldVal, int newVal) => scoreText.text = $"Skor: {newVal}";
+    private void AddScore() => Context.SignalBus.Fire(new ScoreSignal(10));
 }
 ```
 

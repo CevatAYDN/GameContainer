@@ -125,7 +125,7 @@ A context's `INexusService` singletons end together with its other singletons, n
 - Any other singleton gets its `[Deconstruct]` hooks and `Dispose()`. One that is only `IAsyncDisposable` is awaited by `DisposeAsync()`, and `Dispose()` disposes it on one ordered background chain.
 
 ### 6. Recovery Fallback Dispatch
-Both recovery paths dispatch fallback commands through object-based `ExecuteCommand`/`ExecuteCommandAsync`, which now support **generic-only** commands (`ICommand<TSignal>` / `IAsyncCommand<TSignal>` that do not implement the non-generic interface) via cached reflection dispatchers. The sync error handler additionally rejects async-only fallback types (it cannot await them) to avoid re-entering the same strategy decision endlessly — those are logged and treated as `Skip`.
+Both recovery paths dispatch fallback commands through `CommandExecutor`'s object-based `Execute(CommandHandlerInfo, object)` / `ExecuteAsync(CommandHandlerInfo, object, CancellationToken)`, which support **generic-only** commands (`ICommand<TSignal>` / `IAsyncCommand<TSignal>` that do not implement the non-generic interface) via cached reflection dispatchers. The sync error handler additionally rejects async-only fallback types (it cannot await them) to avoid re-entering the same strategy decision endlessly — those are logged and treated as `Skip`.
 
 ### 7. DI Validation Scope
 `ContextBuilder.Validate()` validates the *concrete* implementations of interface bindings (`Bind<TInterface, TImplementation>`) — not just the interface keys — so missing constructor/`[Inject]` dependencies are reported for the types that are actually constructed. `LazyInjection<T>` fields are excluded (the injector constructs them directly).

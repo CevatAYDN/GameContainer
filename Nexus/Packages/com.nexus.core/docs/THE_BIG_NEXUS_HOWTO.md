@@ -183,8 +183,8 @@ public class GameLifecycle : MonoBehaviour, IContextLifecycle
         // The mediator is not registered: the [Mediator] attribute on the view is enough; the ViewBinder pools it.
     }
 
-    public async ValueTask OnInitializeAsync(CancellationToken ct) { /* async preparation */ }
-    public async ValueTask OnStartAsync(CancellationToken ct) { /* start the game */ }
+    public ValueTask OnInitializeAsync(CancellationToken ct) => default; // async preparation; mark it async once it awaits something
+    public ValueTask OnStartAsync(CancellationToken ct) => default;      // start the game
     public void OnDispose() { /* release resources */ }
 }
 ```

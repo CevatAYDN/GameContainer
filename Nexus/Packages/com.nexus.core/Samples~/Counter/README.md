@@ -58,5 +58,6 @@ The trace sink is attached in `OnStartAsync` via `NexusTrace.AddSink(...)`.
    `{ScopeTag}Lifecycle` name.
 6. Enter **Play Mode** and click the button. Watch the Console: you will see the
    Sequential increment, the Concurrent load, the Exclusive persist, the Async
-   load, the Composite fan-in trigger, telemetry, and the `[Trace]` causal events
-   — every building block firing from one click.
+   load, the Composite fan-in trigger and telemetry — every building block firing
+   from one click. The `[Trace]` causal events appear only with the `NEXUS_DEBUG`
+   scripting define, which is off by default; without it tracing is compiled out.

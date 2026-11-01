@@ -27,7 +27,9 @@ https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.co
 Pin a commit (the full 40-character hash: the Package Manager does not take a short one) or release
 tag in production. Unity resolves the declared dependencies
 (`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`,
-`com.unity.modules.androidjni`). Minimum Unity is 6000.6; the package is verified on 6000.6.7f1.
+`com.unity.modules.androidjni`, `com.unity.modules.uielements`). Minimum Unity is 6000.6; on 6000.6.7f1 the
+EditMode and PlayMode suites pass, and the player, comparison and device gates get their 6000.6.7f1 runs in
+the next gate cycle (the repository's `docs/RELEASE_GATES.md`).
 
 ## Start: pick your level
 

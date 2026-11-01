@@ -183,8 +183,8 @@ public class GameLifecycle : MonoBehaviour, IContextLifecycle
         // Mediator kaydedilmez: view'daki [Mediator] attribute'u yeter, ViewBinder onu havuzlar.
     }
 
-    public async ValueTask OnInitializeAsync(CancellationToken ct) { /* async hazırlık */ }
-    public async ValueTask OnStartAsync(CancellationToken ct) { /* oyunu başlat */ }
+    public ValueTask OnInitializeAsync(CancellationToken ct) => default; // async hazırlık; bir şey await ettiğinde async yapın
+    public ValueTask OnStartAsync(CancellationToken ct) => default;      // oyunu başlat
     public void OnDispose() { /* kaynakları bırak */ }
 }
 ```
