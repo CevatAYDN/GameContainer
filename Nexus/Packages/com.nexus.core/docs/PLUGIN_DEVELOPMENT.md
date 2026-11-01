@@ -41,7 +41,7 @@ public interface INexusEditorPlugin
 Before submitting a new plugin or refactor, verify:
 
 - [ ] Extends `NexusEditorPlugin` (not just bare `INexusEditorPlugin`).
-- [ ] `Id` is unique across all plugins (15 in the core, `FSMPlugin` in `com.nexus.fsm`) (e.g. `"Dashboard"`, `"Tracer"`, `"GameManager"`).
+- [ ] `Id` is unique across all plugins (11 in the core, `FSMPlugin` in `com.nexus.fsm`) (e.g. `"Dashboard"`, `"Tracer"`, `"GameManager"`).
 - [ ] `DisplayName` uses `NexusLang.Get("key")` for localization.
 - [ ] `Order` is specified (e.g. 0 for Dashboard, 1 for Wizard, 6 for GameManager).
 - [ ] `CreateView()` returns a non-null `VisualElement` tree.
@@ -70,7 +70,7 @@ Before submitting a new plugin or refactor, verify:
 | **Tab opened multiple times** | Each `CreateView()` invocation creates a new tree. Instance fields store view elements cleanly. |
 | **Locale switched at runtime** | Text relies on `NexusLang.Get()`. Re-render view on language change if needed. |
 | **No active context (Edit Mode)** | Show a clean `NexusEditorStyles.CreateEmptyState` panel with an "Enter Play Mode" hint. |
-| **Rapid typing in text fields** | Search fields re-filter in their `RegisterValueChangedCallback`; no plugin debounces. A one-shot delay (`schedule.Execute(...).StartingIn(ms)`, as `GraphPlugin`'s 500 ms node highlight) is kept in a field and paused in `OnDisable()`. |
+| **Rapid typing in text fields** | Search fields re-filter in their `RegisterValueChangedCallback`; no plugin debounces. A one-shot delay (`schedule.Execute(...).StartingIn(ms)`, as the Architecture graph's 500 ms node highlight) is kept in a field and paused in `OnDisable()`. |
 | **Empty or null data collections** | Render `CreateEmptyState()`, do not throw `NullReferenceException` or leave blank panel. |
 
 ---

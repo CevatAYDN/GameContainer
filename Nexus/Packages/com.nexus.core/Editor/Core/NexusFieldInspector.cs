@@ -10,7 +10,7 @@ namespace Nexus.Editor
     /// <summary>
     /// Deep module owning the "how do we inspect a runtime member in the editor?" decision.
     ///
-    /// <c>ExplorerPlugin.CreateSignalFieldUI</c> and <c>HierarchyPlugin.CreateFieldUI</c>
+    /// The signal tester and <c>HierarchyPlugin.CreateFieldUI</c>
     /// were near-identical type → UI Toolkit switch trees that had already drifted
     /// (read-only support, undo hooks, fallback labels). This module owns the mapping once,
     /// so every inspector agrees on how each type renders and which members are editable.

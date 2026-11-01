@@ -255,7 +255,7 @@ namespace Nexus.Editor
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
             actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_gamemanager"), () => Window?.SwitchToPlugin("GameManager"), NexusEditorStyles.BtnBlue));
-            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_explorer"), () => Window?.SwitchToPlugin("Explorer"), NexusEditorStyles.BtnPurple));
+            actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_architecture"), () => Window?.SwitchToPlugin("Architecture"), NexusEditorStyles.BtnPurple));
             actionRow.Add(NexusEditorStyles.CreateButton(NexusLang.Get("nav_open_tracer"), () => Window?.SwitchToPlugin("Tracer"), NexusEditorStyles.BtnTeal));
             card.Add(actionRow);
 

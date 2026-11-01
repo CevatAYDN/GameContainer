@@ -30,8 +30,6 @@ namespace Nexus.Editor
 
         // Signal fire state
         private Type _fireSignalType;
-        private object _fireSignalInstance;
-        private FieldInfo[] _fireSignalFields = Array.Empty<FieldInfo>();
 
         // ── UI refs ───────────────────────────────────────────────
         private VisualElement _view;
@@ -741,7 +739,6 @@ namespace Nexus.Editor
                 return;
             }
 
-            // Signal type dropdown
             var allSignalTypes = GetAvailableSignalTypes();
             if (allSignalTypes.Count == 0)
             {
@@ -749,190 +746,23 @@ namespace Nexus.Editor
                 return;
             }
 
-            var typeNames = allSignalTypes.Select(t => t.FullName ?? t.Name).ToList();
-            var dropdown = new DropdownField(NexusLang.Get("ci_signal_type"), typeNames, 0);
-            dropdown.style.marginBottom = 8;
-            dropdown.RegisterValueChangedCallback(evt =>
-            {
-                _fireSignalType = allSignalTypes.FirstOrDefault(t =>
-                    (t.FullName ?? t.Name) == evt.newValue);
-                BuildSignalForm();
-            });
-            _content.Add(dropdown);
-
-            if (_fireSignalType == null && allSignalTypes.Count > 0)
+            // a signal chosen in another context that this one does not bind falls back to the first
+            if (_fireSignalType == null || !allSignalTypes.Contains(_fireSignalType))
                 _fireSignalType = allSignalTypes[0];
 
-            BuildSignalForm();
-        }
-
-        private VisualElement _signalFormContainer;
-
-        private void BuildSignalForm()
-        {
-            // Remove old form if present
-            if (_signalFormContainer != null && _content.Contains(_signalFormContainer))
-                _content.Remove(_signalFormContainer);
-
-            _signalFormContainer = new VisualElement();
-
-            if (_fireSignalType == null)
+            var typeNames = allSignalTypes.Select(t => t.FullName ?? t.Name).ToList();
+            var dropdown = new DropdownField(NexusLang.Get("ci_signal_type"), typeNames, allSignalTypes.IndexOf(_fireSignalType));
+            dropdown.style.marginBottom = 8;
+            var form = new VisualElement();
+            dropdown.RegisterValueChangedCallback(_ =>
             {
-                _signalFormContainer.Add(new Label(NexusLang.Get("ci_select_signal_type")));
-                _content.Add(_signalFormContainer);
-                return;
-            }
-
-            try
-            {
-                _fireSignalInstance = Activator.CreateInstance(_fireSignalType);
-            }
-            catch
-            {
-                _signalFormContainer.Add(new Label(NexusLang.Get("ci_cannot_instantiate"))
-                {
-                    style = { color = new StyleColor(NexusEditorStyles.AccentRed) }
-                });
-                _content.Add(_signalFormContainer);
-                return;
-            }
-
-            _fireSignalFields = _fireSignalType.GetFields(BindingFlags.Public | BindingFlags.Instance);
-
-            if (_fireSignalFields.Length == 0)
-            {
-                _signalFormContainer.Add(new Label(NexusLang.Get("ci_no_public_fields"))
-                {
-                    style = { color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 8, fontSize = 9 }
-                });
-            }
-            else
-            {
-                _signalFormContainer.Add(new Label(NexusLang.Get("ci_fill_fields"))
-                {
-                    style = { fontSize = 9, color = new StyleColor(NexusEditorStyles.TextSecondary), marginBottom = 4 }
-                });
-
-                foreach (var field in _fireSignalFields)
-                {
-                    var row = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 4 } };
-                    row.Add(new Label(field.Name + ":")
-                    {
-                        style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary), minWidth = 100 }
-                    });
-
-                    var fieldRef = field; // capture
-                    if (field.FieldType == typeof(string))
-                    {
-                        var tf = new TextField { value = (string)field.GetValue(_fireSignalInstance) ?? "" };
-                        tf.style.flexGrow = 1;
-                        tf.RegisterValueChangedCallback(evt => fieldRef.SetValue(_fireSignalInstance, evt.newValue));
-                        row.Add(tf);
-                    }
-                    else if (field.FieldType == typeof(int))
-                    {
-                        var tf = new IntegerField { value = (int)field.GetValue(_fireSignalInstance) };
-                        tf.style.flexGrow = 1;
-                        tf.RegisterValueChangedCallback(evt => fieldRef.SetValue(_fireSignalInstance, evt.newValue));
-                        row.Add(tf);
-                    }
-                    else if (field.FieldType == typeof(float))
-                    {
-                        var tf = new FloatField { value = (float)field.GetValue(_fireSignalInstance) };
-                        tf.style.flexGrow = 1;
-                        tf.RegisterValueChangedCallback(evt => fieldRef.SetValue(_fireSignalInstance, evt.newValue));
-                        row.Add(tf);
-                    }
-                    else if (field.FieldType == typeof(bool))
-                    {
-                        var tf = new Toggle { value = (bool)field.GetValue(_fireSignalInstance) };
-                        tf.RegisterValueChangedCallback(evt => fieldRef.SetValue(_fireSignalInstance, evt.newValue));
-                        row.Add(tf);
-                    }
-                    else
-                    {
-                        row.Add(new Label(string.Format(NexusLang.Get("ci_not_editable"), field.FieldType.Name))
-                        {
-                            style = { color = new StyleColor(NexusEditorStyles.DimText), fontSize = 9 }
-                        });
-                    }
-
-                    _signalFormContainer.Add(row);
-                }
-            }
-
-            // Result label
-            var resultLabel = new Label("")
-            {
-                style =
-                {
-                    fontSize = 10, marginTop = 8, marginBottom = 8,
-                    whiteSpace = WhiteSpace.Normal
-                }
-            };
-            _signalFormContainer.Add(resultLabel);
-
-            // Fire button
-            var fireBtn = new Button(() =>
-            {
-                if (!Application.isPlaying)
-                {
-                    resultLabel.text = "Signal firing requires Play Mode.";
-                    resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentOrange);
-                    return;
-                }
-                if (_selectedContext?.SignalBus == null || _fireSignalInstance == null)
-                {
-                    resultLabel.text = NexusLang.Get("ci_err_no_context_signal");
-                    resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentRed);
-                    return;
-                }
-                try
-                {
-                    // Use reflection to call SignalBus.Fire<T>(T signal)
-                    var fireMethod = _selectedContext.SignalBus.GetType()
-                        .GetMethods(BindingFlags.Public | BindingFlags.Instance)
-                        .FirstOrDefault(m => m.Name == "Fire" && m.IsGenericMethod &&
-                                             m.GetParameters().Length == 1);
-                    if (fireMethod != null)
-                    {
-                        var generic = fireMethod.MakeGenericMethod(_fireSignalType);
-                        generic.Invoke(_selectedContext.SignalBus, new[] { _fireSignalInstance });
-                        resultLabel.text = string.Format(NexusLang.Get("ci_fired_ok"), _fireSignalType.Name, DateTime.Now.ToString("HH:mm:ss.fff"));
-                        resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentGreen);
-                    }
-                    else
-                    {
-                        resultLabel.text = NexusLang.Get("ci_err_fire_notfound");
-                        resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentRed);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    resultLabel.text = string.Format(NexusLang.Get("ci_err_generic"), ex.InnerException?.Message ?? ex.Message);
-                    resultLabel.style.color = new StyleColor(NexusEditorStyles.AccentRed);
-                    Debug.LogException(ex);
-                }
-            })
-            {
-                text = Application.isPlaying
-                    ? string.Format(NexusLang.Get("ci_fire_btn"), _fireSignalType?.Name ?? "Signal")
-                    : string.Format(NexusLang.Get("ci_fire_btn"), _fireSignalType?.Name ?? "Signal") + " (Play Mode Required)",
-                enabledSelf = Application.isPlaying,
-                style =
-                {
-                    backgroundColor = new StyleColor(Application.isPlaying ? NexusEditorStyles.BtnRed : NexusEditorStyles.BtnGray),
-                    color = Color.white,
-                    unityFontStyleAndWeight = FontStyle.Bold,
-                    paddingTop = 6, paddingBottom = 6,
-                    paddingLeft = 16, paddingRight = 16,
-                    borderTopLeftRadius = 4, borderTopRightRadius = 4,
-                    borderBottomLeftRadius = 4, borderBottomRightRadius = 4
-                }
-            };
-            _signalFormContainer.Add(fireBtn);
-
-            _content.Add(_signalFormContainer);
+                _fireSignalType = allSignalTypes[dropdown.index];
+                form.Clear();
+                form.Add(SignalFireForm.Create(_fireSignalType, _selectedContext));
+            });
+            _content.Add(dropdown);
+            form.Add(SignalFireForm.Create(_fireSignalType, _selectedContext));
+            _content.Add(form);
         }
 
         // ── Helpers ───────────────────────────────────────────────

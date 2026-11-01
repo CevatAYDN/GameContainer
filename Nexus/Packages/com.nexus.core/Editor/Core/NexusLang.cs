@@ -112,7 +112,6 @@ namespace Nexus.Editor
             s_strings["gm_count_models"] = "{0} models";
             s_strings["gm_count_services"] = "{0} services";
             s_strings["gm_count_others"] = "{0} others";
-            s_strings["gm_count_handlers"] = "{0} handler(s)";
             s_strings["tracer_status_ok"] = "OK";
             s_strings["tracer_status_fail"] = "FAIL";
             s_strings["tracer_status_cancel"] = "CANCEL";
@@ -141,7 +140,6 @@ namespace Nexus.Editor
                 "• Auto-Discovery — Lifecycle, Commands, Views and Mediators\n" +
                 "• Command Pooling — no allocation in steady state on the paths the README's Performance scope lists\n\n" +
                 "Editor: 13 plugins (14 with com.nexus.fsm), Code Generator, Live Tracer, Graph Viewer, Type Analyzer";
-            s_strings["signals"] = "Signals";
             s_strings["total_sigs"] = "Total Sigs";
             s_strings["gc_memory"] = "GC Memory";
             s_strings["pass"] = "PASS";
@@ -157,31 +155,93 @@ namespace Nexus.Editor
             s_strings["perf_commands"] = "Commands/s";
             s_strings["action_wizard_title"] = "Context Wizard";
             s_strings["action_hierarchy_title"] = "Hierarchy & Data";
-            s_strings["action_explorer_title"] = "Signal Explorer";
             s_strings["action_tracer_title"] = "Live Tracer";
-            s_strings["action_graph_title"] = "Signal Graph";
             s_strings["action_gamemanager_title"] = "Game Manager";
-            s_strings["action_typeanalyzer_title"] = "Type Analyzer";
             s_strings["action_casual_services_title"] = "Casual Debugger";
             s_strings["action_fsm_title"] = "State Machine";
             s_strings["tab_dashboard"] = "Dashboard";
             s_strings["tab_wizard"] = "Wizard";
             s_strings["tab_hierarchy"] = "Hierarchy";
-            s_strings["tab_explorer"] = "Explorer";
             s_strings["tab_tracer"] = "Tracer";
-            s_strings["tab_graph"] = "Graph";
             s_strings["tab_gamemanager"] = "Game Manager";
-            s_strings["tab_typeanalyzer"] = "Type Analyzer";
-            s_strings["tab_casual_services"] = "Casual Debugger";
             s_strings["tab_errordashboard"] = "Error Dashboard";
             s_strings["tab_performancedashboard"] = "Performance";
             s_strings["tab_contextinspector"] = "Context Inspector";
             s_strings["tab_fsm"] = "State Machine";
+            s_strings["tab_casual_services"] = "Casual Debugger";
 
             s_strings["cat_status"] = "Status";
             s_strings["cat_setup"] = "Setup";
             s_strings["cat_architecture"] = "Architecture";
             s_strings["cat_live"] = "Live";
+
+            // Architecture tab and the signal fire form (#193 phase 3)
+            s_strings["action_architecture_title"] = "Architecture";
+            s_strings["nav_open_architecture"] = "Architecture";
+            s_strings["arch_rule"] = "Signals are the TSignal of each ICommand<T> or IAsyncCommand<T> and the types [SignalHandler] and [CompositeSignalHandler] name. A signal with only Subscribe listeners, or a command bound in code to a signal it does not name, shows once a context runs.";
+            s_strings["arch_summary_tooltip"] = "Click to show only this kind; click again to show every kind.";
+            s_strings["arch_search"] = "Search";
+            s_strings["arch_kind_all"] = "All kinds";
+            s_strings["arch_kind_signal"] = "Signals";
+            s_strings["arch_kind_command"] = "Commands";
+            s_strings["arch_kind_service"] = "Services";
+            s_strings["arch_kind_model"] = "Models";
+            s_strings["arch_kind_view"] = "Views";
+            s_strings["arch_kind_mediator"] = "Mediators";
+            s_strings["arch_all_assemblies"] = "All assemblies";
+            s_strings["arch_show_graph"] = "Show graph";
+            s_strings["arch_show_map"] = "Show map";
+            s_strings["arch_rescan"] = "Rescan";
+            s_strings["arch_empty"] = "The game's assemblies declare no signal, command, service, model, view or mediator.";
+            s_strings["arch_no_match"] = "Nothing matches the filter.";
+            s_strings["arch_select"] = "Select a type on the left.";
+            s_strings["arch_open_script"] = "Open script";
+            s_strings["arch_no_script"] = "No script file is named after this type.";
+            s_strings["arch_handled_by"] = "Handled by";
+            s_strings["arch_no_handler"] = "No command in the game's code names this signal.";
+            s_strings["arch_runtime_only"] = "bound at runtime";
+            s_strings["arch_bound_in_code"] = "bound in code";
+            s_strings["arch_handles"] = "Handles";
+            s_strings["arch_no_signal"] = "No signal named in code: a BindCommand call binds this command, and its signal appears in the signal list while a context runs.";
+            s_strings["arch_source_implements"] = "implements {0}";
+            s_strings["arch_source_attribute"] = "[SignalHandler] {0}, priority {1}";
+            s_strings["arch_source_composite"] = "[CompositeSignalHandler], priority {0}";
+            s_strings["arch_tag_async"] = "async";
+            s_strings["arch_tag_oneshot"] = "one-shot";
+            s_strings["arch_bound"] = "Bound in the running contexts";
+            s_strings["arch_bound_none"] = "No running context binds it.";
+            s_strings["arch_bound_row"] = "{0}: {1}, priority {2}";
+            s_strings["arch_fire"] = "Fire";
+            s_strings["arch_implements"] = "Implements";
+            s_strings["arch_mediators"] = "Mediators";
+            s_strings["arch_view"] = "View";
+            s_strings["arch_dependencies"] = "Injected into it";
+            s_strings["arch_no_dependencies"] = "Nexus injects nothing into it.";
+            s_strings["arch_dependents"] = "Receives it";
+            s_strings["arch_no_dependents"] = "No member in the game's code receives it.";
+            s_strings["arch_optional"] = "optional";
+            s_strings["arch_graph_max_nodes"] = "Max nodes";
+            s_strings["arch_graph_empty"] = "No signal matches the filter.";
+            s_strings["arch_graph_left_out"] = "{0} nodes are not drawn: raise Max nodes or narrow the filter.";
+            s_strings["arch_graph_stats"] = "{0} signals, {1} edges. Double-click a node to open it in the map.";
+            s_strings["fire_needs_play_mode"] = "Firing a signal needs Play Mode.";
+            s_strings["fire_cannot_create"] = "{0} cannot be created: {1}";
+            s_strings["fire_no_fields"] = "This signal has no public fields.";
+            s_strings["fire_field_not_editable"] = "{0} ({1}) cannot be edited here.";
+            s_strings["fire_no_context"] = "No context is running.";
+            s_strings["fire_context"] = "Context";
+            s_strings["fire_button"] = "Fire {0}";
+            s_strings["fire_refresh_contexts"] = "Refresh contexts";
+            s_strings["fire_untagged_context"] = "(no scope tag)";
+            s_strings["fire_context_gone"] = "That context is no longer running; refresh the contexts.";
+            s_strings["fire_running"] = "Firing {0} in {1}…";
+            s_strings["fire_done"] = "{0} fired in {1}; every handler finished at {2}.";
+            s_strings["fire_failed"] = "{0} failed: {1}: {2}";
+            s_strings["fire_presets"] = "Presets";
+            s_strings["fire_preset_default"] = "Default";
+            s_strings["fire_preset_save"] = "Save";
+            s_strings["fire_preset_load"] = "Load";
+            s_strings["fire_no_presets"] = "No preset is saved for this signal.";
             s_strings["cat_other"] = "Other";
 
             // NexusWindow — sidebar, status bar, discovery, actions
@@ -223,25 +283,8 @@ namespace Nexus.Editor
             s_strings["hier_reset_contexts"] = "🧹 Reset Contexts";
 
             // Explorer plugin
-            s_strings["exp_action_codegen"] = "⚡ CodeGen";
-            s_strings["exp_action_inspector"] = "🔍 Inspector";
-            s_strings["exp_action_rescan"] = "🔄 Rescan";
-            s_strings["exp_all_assemblies"] = "All Assemblies";
-            s_strings["exp_refresh_cache"] = "Refresh Cache";
-            s_strings["exp_badge_async"] = "ASYNC";
-            s_strings["exp_btn_copy"] = "📋";
-            s_strings["exp_tooltip_copy"] = "Copy Signal Name";
-            s_strings["exp_btn_open"] = "🔍";
-            s_strings["exp_tooltip_open"] = "Open Script in IDE";
-            s_strings["exp_preset_default"] = "Default";
-            s_strings["exp_btn_save"] = "Save";
-            s_strings["exp_no_presets"] = "No Presets";
-            s_strings["exp_btn_load"] = "Load";
 
             // Graph plugin
-            s_strings["graph_max_nodes"] = "Max Nodes";
-            s_strings["graph_port_output"] = "▶";
-            s_strings["graph_port_input"] = "◀";
 
             // Tracer plugin
             s_strings["tracer_clear"] = "Clear";
@@ -251,24 +294,13 @@ namespace Nexus.Editor
             s_strings["tracer_time_suffix"] = "s";
 
             // GameManager plugin
-            s_strings["gm_quick_find"] = "Quick Find";
-            s_strings["gm_quick_find_tooltip"] = "Type a section name such as contexts, signals, models, services, live";
             s_strings["gm_contexts_header"] = "CONTEXTS ({0} active)";
             s_strings["gm_roots_hint"] = "\nScene Roots: {0} Root GameObject(s) in scene.";
-            s_strings["gm_models_header"] = "MODELS ({0} registered)";
-            s_strings["gm_signals_header"] = "SIGNALS ({0} defined)";
-            s_strings["gm_commands_header"] = "COMMANDS ({0} bound)";
-            s_strings["gm_views_header"] = "VIEWS ({0} defined)";
-            s_strings["gm_services_header"] = "SERVICES ({0} registered)";
             s_strings["gm_playmode_only"] = " (Play Mode only)";
             s_strings["gm_gc_alloc"] = "GC Alloc";
             s_strings["gm_contexts_metric"] = "Contexts";
             s_strings["gm_sig_per_sec"] = "Sig/s";
             s_strings["gm_cmd_per_sec"] = "Cmd/s";
-            s_strings["gm_signal_test_panel"] = "SIGNAL TEST PANEL";
-            s_strings["gm_all_matching"] = "All (matching)";
-            s_strings["gm_result_error"] = "✘ {0}: no active context handles this signal.";
-            s_strings["gm_result_success"] = "✔ Fired {0} into {1} context(s) @ {2:HH:mm:ss}";
 
             // FSM plugin
             s_strings["fsm_fallback_context"] = "context";
@@ -356,16 +388,6 @@ namespace Nexus.Editor
             s_strings["ci_select_context_first"] = "Select a context first.";
             s_strings["ci_no_signal_types"] = "No signal types found in loaded assemblies.";
             s_strings["ci_signal_type"] = "Signal Type";
-            s_strings["ci_select_signal_type"] = "(select a signal type)";
-            s_strings["ci_cannot_instantiate"] = "Cannot instantiate signal (no default constructor).";
-            s_strings["ci_no_public_fields"] = "(no public fields — signal is parameter-less)";
-            s_strings["ci_fill_fields"] = "Fill in signal fields:";
-            s_strings["ci_not_editable"] = "({0} — not editable)";
-            s_strings["ci_err_no_context_signal"] = "❌ No context or signal selected.";
-            s_strings["ci_fired_ok"] = "✅ Fired {0} at {1}";
-            s_strings["ci_err_fire_notfound"] = "❌ Fire<T> method not found on SignalBus.";
-            s_strings["ci_err_generic"] = "❌ Error: {0}";
-            s_strings["ci_fire_btn"] = "🔥 Fire {0}";
 
             // ── FSM plugin ──────────────────────────────────────
             s_strings["fsm_toolbar"] = "STATE MACHINE";
@@ -424,7 +446,6 @@ namespace Nexus.Editor
             s_strings["ed_export_csv"] = "Export CSV";
             s_strings["ed_copy_all"] = "📋 Copy All";
             s_strings["ed_copy_log"] = "📋 Copy Log";
-            s_strings["ed_copied"] = "Copied to clipboard!";
             s_strings["ed_clear"] = "Clear";
             s_strings["ed_total"] = "TOTAL";
             s_strings["ed_info"] = "INFO";
@@ -471,30 +492,14 @@ namespace Nexus.Editor
 
             // ── Cross-plugin navigation & stray labels ─────────
             s_strings["nav_open_hierarchy"] = "Open Hierarchy";
-            s_strings["nav_open_explorer"] = "Open Explorer";
             s_strings["nav_open_tracer"] = "Open Tracer";
             s_strings["nav_open_gamemanager"] = "Open Game Manager";
-            s_strings["nav_open_typeanalyzer"] = "Open Type Analyzer";
-            s_strings["common_refresh"] = "Refresh";
             s_strings["clear"] = "Clear";
-            s_strings["ex_refresh_targets"] = "Refresh Targets";
-            s_strings["gm_go"] = "Go";
             s_strings["gm_refresh_all"] = "Refresh All";
             s_strings["gm_no_contexts"] = "No active contexts. Enter Play Mode to activate.";
-            s_strings["gm_no_reactive_models"] = "No IReactiveModel implementations found.";
             s_strings["tr_pause"] = "Pause";
-            s_strings["gm_tip_reactive"] = "Tip: Implement IReactiveModel on your models to enable live inspection here.";
-            s_strings["gm_no_signals"] = "No signal structs found.";
-            s_strings["gm_pill_unhandled"] = "unhandled";
-            s_strings["gm_no_commands"] = "No command bindings found.";
-            s_strings["gm_no_views"] = "No View subclasses found.";
-            s_strings["gm_no_services"] = "No INexusService implementations found.";
-            s_strings["gm_tip_services"] = "Tip: Use builder.BindService<TInterface, TImpl>() to register services in your lifecycle.";
             s_strings["gm_no_active_contexts"] = "No active contexts.";
             s_strings["gm_hint_live_model"] = "Live model inspection resolves IReactiveModel instances. Open the Live Tracer for real-time signal monitoring.";
-            s_strings["gm_enter_playmode_fire"] = "Enter Play Mode to fire test signals.";
-            s_strings["gm_no_contexts_fire"] = "No active contexts to fire signals into.";
-            s_strings["gm_hint_fire"] = "Select a target context (or 'All (matching)') above, then click any signal to fire it. Use the Explorer tab for signals with custom payloads.";
             s_strings["db_quick_find"] = "Quick Find";
             s_strings["db_nexus_health"] = "Nexus Health";
             s_strings["db_health_note"] = "Use this panel to catch missing Roots, empty Contexts, and validation issues before handoff.";
@@ -519,7 +524,6 @@ namespace Nexus.Editor
             s_strings["tr_detail_time_label"] = "Time: ";
             s_strings["tr_detail_parent_id_label"] = "Parent ID: ";
             s_strings["tr_detail_none_root"] = "None (root)";
-            s_strings["tr_detail_parent_event"] = "\n<b>Parent Event:</b> #{0} [{1}] {2}";
             s_strings["tr_detail_children"] = "\n<b>Children ({0}):</b>";
             s_strings["tr_detail_child_row"] = "  #{0} [{1}] {2} — {3}";
             s_strings["tr_tree_prefix"] = "└─ ";
@@ -529,17 +533,12 @@ namespace Nexus.Editor
             s_strings["ci_null_label"] = "(null)";
 
             // Explorer kalan
-            s_strings["exp_unnamed_context"] = "Unnamed Context";
-            s_strings["exp_target_context_label"] = "Target Context";
-            s_strings["exp_tooltip_ctx_dropdown"] = "Fire the test signal into the selected context";
-            s_strings["exp_tooltip_fire_btn"] = "Fire the selected signal into the target context";
 
             // Hierarchy kalan
             s_strings["hier_bullet"] = "• ";
             s_strings["hier_null_value"] = "null";
 
             // TypeAnalyzer
-            s_strings["ta_type_name"] = "Type Name";
             s_strings["db_play_mode"] = "Play Mode";
             s_strings["db_edit_mode"] = "Edit Mode";
             s_strings["db_health_no_root"] = "No active Root in scene. Add a Nexus Root before entering Play Mode.";
@@ -566,7 +565,6 @@ namespace Nexus.Editor
             s_strings["db_rd_check"] = "Check now";
             s_strings["db_rd_generate"] = "Generate binder";
             s_strings["db_rd_note"] = "These rows mirror the release gates: a stale binder or link.xml stops a player build, and scripting defines belong to the active target.";
-            s_strings["ta_enter_type"] = "Please enter a type name to analyze.";
 
 
             s_strings["wizard_title"] = "CREATE A CONTEXT AND ITS SCRIPTS";
@@ -622,73 +620,20 @@ namespace Nexus.Editor
             s_strings["hierarchy_search_filter"] = "Search Filter";
             s_strings["hierarchy_context_fallback"] = "Context";
 
-            s_strings["explorer_title"] = "SIGNAL EXPLORER & PLAY-MODE TESTER";
-            s_strings["explorer_signal_type"] = "Signal Type";
-            s_strings["explorer_handler_command"] = "Handler / Command";
-            s_strings["explorer_mode"] = "Mode";
-            s_strings["explorer_tester_title"] = "SIGNAL PLAY-MODE TESTER";
-            s_strings["explorer_live_models_hint"] = "Live Models are only available in Play Mode.";
-            s_strings["explorer_no_contexts"] = "No active Contexts found.";
-            s_strings["explorer_refresh"] = "Refresh Data";
-            s_strings["explorer_fire_test"] = "Fire Test Signal";
-            s_strings["explorer_presets"] = "Presets";
-            s_strings["explorer_select_signal"] = "Select a signal type from the list to test fire.";
-            s_strings["explorer_testing_hint"] = "Signal testing is only active in Play Mode. Select a signal on the left to prepare testing.";
-            s_strings["explorer_selected_signal"] = "Selected Signal: {0}";
-            s_strings["explorer_no_context_target"] = "No active Contexts available. Play Mode target signal bus is missing.";
-            s_strings["explorer_fired"] = "\u2713 Fired: {0} on context '{1}'";
-            s_strings["explorer_fire_failed"] = "Fire failed: {0}";
-            s_strings["explorer_error_context"] = "Error: Target context not selected.";
-            s_strings["explorer_error_offline"] = "Error: Target context '{0}' or SignalBus is offline.";
-            s_strings["explorer_error_invalid_bus"] = "Error: Invalid SignalBus implementation.";
-            s_strings["explorer_create_error"] = "Create instance error: {0}";
-            s_strings["explorer_unsupported_type"] = "{0}: {1} (Unsupported Type)";
 
             s_strings["tracer_title"] = "LIVE SIGNAL & COMMAND TRACER";
             s_strings["tracer_enable"] = "Enable Full Causal Tracing & Recompile";
-            s_strings["tracer_offline"] = "Tracer is offline. Enter Play Mode to trace signals.";
             s_strings["tracer_type_filter"] = " Type:";
             s_strings["tracer_status_filter"] = " Status:";
             s_strings["tracer_debug_disabled_title"] = "CAUSAL TRACING: NEXUS_DEBUG DISABLED";
             s_strings["tracer_debug_disabled_desc"] = "Full causal tracing (event trees, parent/child chains) is compiled out.\nBasic production trace is active below — showing recent signal dispatches.";
-            s_strings["graph_overflow_desc"] = "{0} nodes exceed the {1} limit.\nConsider splitting your architecture into multiple smaller contexts,\nor use the Signal Explorer for text-based inspection.";
 
-            s_strings["graph_title"] = "SIGNAL GRAPH MAP";
-            s_strings["graph_ready"] = "Graph ready. Click Refresh to build.";
-            s_strings["graph_refresh"] = "Refresh";
-            s_strings["graph_no_mappings"] = "No signal mappings found. Define commands or enter Play Mode.";
-            s_strings["graph_overflow"] = "{0} nodes exceeds {1} limit — split into smaller contexts.";
-            s_strings["graph_stats"] = "Graph: {0} signals → {1} commands ({2} nodes, {3} edges)";
 
             s_strings["gamemanager_title"] = "GAME MANAGER";
-            s_strings["gamemanager_active"] = "\u25CF ACTIVE \u2014 Play Mode";
-            s_strings["gamemanager_standby"] = "\u25CB STANDBY \u2014 Editor Mode";
             s_strings["gamemanager_open_wizard"] = "Open Context Wizard";
-            s_strings["gamemanager_open_tracer"] = "Open Live Tracer";
-            s_strings["gamemanager_open_graph"] = "Open Signal Graph";
-            s_strings["gamemanager_refresh"] = "Refresh Now";
-            s_strings["gamemanager_quick_fire"] = "QUICK FIRE \u2014 Click to dispatch signal with default values";
             s_strings["gamemanager_performance"] = "PERFORMANCE METRICS";
             s_strings["gamemanager_rate_graph"] = "RATE GRAPH";
             s_strings["gamemanager_context_label"] = "Context: {0}";
-            s_strings["gamemanager_command_col"] = "Command";
-            s_strings["gamemanager_signal_col"] = "Signal";
-            s_strings["gamemanager_mode_col"] = "Mode";
-            s_strings["gamemanager_quick_actions"] = "QUICK ACTIONS";
-            s_strings["gamemanager_stat_contexts"] = "Contexts";
-            s_strings["gamemanager_stat_models"] = "Models";
-            s_strings["gamemanager_stat_signals"] = "Signals";
-            s_strings["gamemanager_stat_commands"] = "Commands";
-            s_strings["gamemanager_stat_views"] = "Views";
-            s_strings["gamemanager_stat_services"] = "Services";
-            s_strings["gamemanager_stat_roots"] = "Scene Roots";
-            s_strings["gamemanager_desc_contexts"] = "Active runtime contexts";
-            s_strings["gamemanager_desc_models"] = "IReactiveModel implementations";
-            s_strings["gamemanager_desc_signals"] = "Signal structs (ending in 'Signal')";
-            s_strings["gamemanager_desc_commands"] = "Command bindings (attribute + fluent)";
-            s_strings["gamemanager_desc_views"] = "View subclasses";
-            s_strings["gamemanager_desc_services"] = "INexusService implementations";
-            s_strings["gamemanager_desc_roots"] = "Root GameObjects in scene";
             s_strings["gamemanager_pill_child"] = "Child";
             s_strings["gamemanager_pill_root"] = "Root";
             s_strings["gamemanager_pill_tag"] = "Tag: {0}";
@@ -697,30 +642,13 @@ namespace Nexus.Editor
             s_strings["gamemanager_unnamed"] = "(unnamed)";
             s_strings["gamemanager_live_title"] = "LIVE MODEL & PERFORMANCE INSPECTOR";
             s_strings["gamemanager_live_playmode"] = "Enter Play Mode to inspect live model values and performance metrics.";
-            s_strings["gamemanager_empty_signals"] = "No registered signal types found. Register commands for your signals first.";
             s_strings["gamemanager_metric_signals_s"] = "Signals/s";
             s_strings["gamemanager_metric_commands_s"] = "Commands/s";
             s_strings["gamemanager_metric_total_signals"] = "Total Signals";
             s_strings["gamemanager_metric_total_cmds"] = "Total Cmds";
-            s_strings["gamemanager_section_overview"] = "Overview";
             s_strings["gamemanager_section_contexts"] = "Contexts";
-            s_strings["gamemanager_section_models"] = "Models";
-            s_strings["gamemanager_section_signals"] = "Signals";
-            s_strings["gamemanager_section_commands"] = "Commands";
-            s_strings["gamemanager_section_views"] = "Views";
-            s_strings["gamemanager_section_services"] = "Services";
             s_strings["gamemanager_section_live"] = "Live";
-            s_strings["gamemanager_section_test"] = "Test";
-            s_strings["explorer_tab_signals"] = "Signal Explorer";
-            s_strings["explorer_tab_models"] = "Live Models";
 
-            s_strings["typeanalyzer_title"] = "TYPE COUPLING ANALYZER";
-            s_strings["typeanalyzer_analyze"] = "Analyze";
-            s_strings["typeanalyzer_not_found"] = "Could not find type '{0}' in active assemblies.";
-            s_strings["typeanalyzer_dependencies"] = "Dependencies (Required Injections):";
-            s_strings["typeanalyzer_dependents"] = "Referenced By (Dependents):";
-            s_strings["typeanalyzer_no_deps"] = "No [Inject] dependencies found.";
-            s_strings["typeanalyzer_no_dependents"] = "No other types are injecting this type.";
 
         }
 

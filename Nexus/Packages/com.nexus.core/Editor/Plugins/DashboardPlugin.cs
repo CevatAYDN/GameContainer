@@ -238,7 +238,7 @@ namespace Nexus.Editor
             var actionRow = new VisualElement();
             actionRow.AddToClassList("nexus-actions-row");
             actionRow.Add(CreateMetricJumpButton(NexusLang.Get("contexts"), NexusLang.Get("dash_tip_contexts"), NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("Hierarchy")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("handlers"), NexusLang.Get("dash_tip_handlers"), NexusEditorStyles.AccentPurple, () => Window?.SwitchToPlugin("Explorer")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("handlers"), NexusLang.Get("dash_tip_handlers"), NexusEditorStyles.AccentPurple, () => Window?.SwitchToPlugin("Architecture")));
             actionRow.Add(CreateMetricJumpButton(NexusLang.Get("roots"), NexusLang.Get("dash_tip_roots"), NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
             statusCard.Add(actionRow);
 
@@ -397,10 +397,10 @@ namespace Nexus.Editor
             card.Add(statRow);
 
             var actionRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, marginTop = 6 } };
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("models"), NexusLang.Get("dash_tip_models"), NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("services"), NexusLang.Get("dash_tip_services"), NexusEditorStyles.AccentGreen, () => Window?.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("commands"), NexusLang.Get("dash_tip_commands"), NexusEditorStyles.AccentOrange, () => Window?.SwitchToPlugin("GameManager")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("views"), NexusLang.Get("dash_tip_views"), NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("GameManager")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("models"), NexusLang.Get("dash_tip_models"), NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("Architecture")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("services"), NexusLang.Get("dash_tip_services"), NexusEditorStyles.AccentGreen, () => Window?.SwitchToPlugin("Architecture")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("commands"), NexusLang.Get("dash_tip_commands"), NexusEditorStyles.AccentOrange, () => Window?.SwitchToPlugin("Architecture")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("views"), NexusLang.Get("dash_tip_views"), NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("Architecture")));
             card.Add(actionRow);
 
             parent.Add(card);

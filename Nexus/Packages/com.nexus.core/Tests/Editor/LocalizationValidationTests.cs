@@ -21,7 +21,6 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual("3 models", string.Format(NexusLang.Get("gm_count_models"), 3));
             Assert.AreEqual("2 services", string.Format(NexusLang.Get("gm_count_services"), 2));
             Assert.AreEqual("1 others", string.Format(NexusLang.Get("gm_count_others"), 1));
-            Assert.AreEqual("4 handler(s)", string.Format(NexusLang.Get("gm_count_handlers"), 4));
         }
 
         [Test]
@@ -33,7 +32,6 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual("3 model", string.Format(NexusLang.Get("gm_count_models"), 3));
             Assert.AreEqual("2 servis", string.Format(NexusLang.Get("gm_count_services"), 2));
             Assert.AreEqual("1 diğer", string.Format(NexusLang.Get("gm_count_others"), 1));
-            Assert.AreEqual("4 işleyici", string.Format(NexusLang.Get("gm_count_handlers"), 4));
         }
 
         [Test]

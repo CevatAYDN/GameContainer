@@ -103,11 +103,12 @@ needs is installed below its asmdef's `versionDefines` expression (issue #143; t
 `NexusBinderSelfHeal` recovers a binder that no longer compiles, and a generated injector written for other `[Inject]`
 members than its type has now is dropped before its first run, with a warning, and the type falls back to reflection.
 
-**Editor window** (menu **Nexus**, **Open Window** `Ctrl+Shift+N`): one window, 13 plugins, one tab each, in
+**Editor window** (menu **Nexus**, **Open Window** `Ctrl+Shift+N`): one window, 11 plugins, one tab each, in
 four sidebar sections. **Status**: Dashboard. **Setup**: Setup Wizard (starter scene, sample import, documents),
 Context Wizard (a ContextData and its Root; Service, View/Mediator and Signal/Command scripts, never written over an
-existing file). **Architecture**: Explorer, Graph, GameManager,
-TypeAnalyzer. **Live**: Hierarchy, Tracer, ContextInspector, ErrorDashboard (it collects nothing while tests run), PerformanceDashboard, CasualServices;
+existing file). **Architecture**: the map of the game's signals, commands, services, models, views and mediators,
+with each signal's handlers, each type's injected members and the members that receive it, a signal graph and, in
+Play Mode, the handlers the running contexts bind and a fire form. **Live**: Hierarchy, Tracer, GameManager, ContextInspector, ErrorDashboard (it collects nothing while tests run), PerformanceDashboard, CasualServices;
 `com.nexus.fsm` adds a State Machine tab. The Nexus menu opens each section, and holds the binder generator,
 validation, the Code Health Analyzer, the scene overlay toggle, the editor settings and, with `com.nexus.ads`, the Ads
 items; GameObject > Nexus creates Roots, scopes, bindings and the UI canvas. The Dashboard's build-readiness card shows the AOT binder state,

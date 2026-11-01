@@ -73,7 +73,7 @@ namespace Nexus.Editor
             // Must be here: the window calls CreateView on every tab show, but OnEnable only
             // once at window open. Entering Play Mode while this tab is open does NOT re-run
             // CreateView, so without this subscription recording would never start (the panel
-            // would show "—" forever). Mirror the DashboardPlugin/ExplorerPlugin pattern.
+            // would show "—" forever). Mirror the DashboardPlugin pattern.
             EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
             EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
 

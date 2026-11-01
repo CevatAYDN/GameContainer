@@ -130,7 +130,8 @@ Code that names one of these stops compiling; the changelog's Removed section gi
 |---|---|
 | `NexusBootstrapManifest` and "Generate Skeleton from Manifest" (#193) | The Setup Wizard's generators |
 | The Context Wizard's Clean Deletion tab and the Help tab (#193) | Delete in the Hierarchy (with Undo); the Setup Wizard's document buttons |
-| `NexusWindow.ShowWindow()`, `OpenPlugin(id)`, `TypeDependencyAnalyzerWindow` (#193) | `NexusWindow.Open(id)` and `SwitchToPlugin(id)`; the Type Analyzer tab |
+| `NexusWindow.ShowWindow()`, `OpenPlugin(id)`, `TypeDependencyAnalyzerWindow` (#193) | `NexusWindow.Open(id)` and `SwitchToPlugin(id)`; the Architecture tab |
+| `ExplorerPlugin`, `GraphPlugin` with `SignalGraphView`, `TypeAnalyzerPlugin`, and the Game Manager's type lists and signal test (#193) | The Architecture tab (`NexusWindow.Open("Architecture")`) |
 | `Samples~/DevelopmentAssets/` (#201) | Nothing referenced it |
 | `AdMobAdapter`, `AdMobConfig`, `AdMobMainThread` (#14) | The ad family (`com.nexus.ads/MIGRATION.md`), before the re-pin |
 | `NexusTemplateProvider` (#41) | The Setup Wizard writes its own templates |
@@ -494,7 +495,8 @@ New editor tools available:
 - Network Signal Tracer
 - Game Manager Inspector
 
-They are tabs of the Nexus window: **Nexus > Open Window** (`Ctrl+Shift+N`).
+They are tabs of the Nexus window: **Nexus > Open Window** (`Ctrl+Shift+N`). After 0.5.0 the Architecture tab holds the
+Type Dependency Analyzer and the Game Manager's type lists (#193).
 
 ### Deprecated Features
 
