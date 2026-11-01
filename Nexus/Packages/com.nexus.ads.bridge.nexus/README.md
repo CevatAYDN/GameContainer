@@ -39,8 +39,8 @@ public void OnConfigure(IContextBuilder builder)
 
 public ValueTask OnStartAsync(CancellationToken ct)
 {
-    // store and product are optional: with them, owning "remove_ads" stops interstitials and keeps rewarded ads;
-    // while the store has not said whether it is owned (offline, before its purchase fetch), interstitials stop too (#183)
+    // store and product are optional: with them, owning "remove_ads" stops interstitials and banners and keeps rewarded ads;
+    // while the store has not said whether it is owned (offline, before its purchase fetch), interstitials and banners stop too (#183)
     NexusAdsBridge.Connect(_context.Resolve<IAdService>(), _context.Resolve<IAdAdapterFactory>(), _context.Resolve<IIapService>(), "remove_ads");
     return default;
 }

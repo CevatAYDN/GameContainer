@@ -108,9 +108,9 @@ namespace Nexus.Ads.Bridge
     }
 
     /// <summary>
-    /// "Remove ads" bought in the store: interstitials stop, rewarded ads stay. While the store has not said whether the
-    /// product is owned (offline, or before its purchase fetch answered), interstitials stop too, so a paying player never
-    /// sees one (issue #183). <see cref="Dispose"/> unsubscribes it from the store.
+    /// "Remove ads" bought in the store: interstitials and banners stop, rewarded ads stay (issue #195). While the store has not
+    /// said whether the product is owned (offline, or before its purchase fetch answered), they stop too, so a paying player
+    /// never sees one (issue #183). <see cref="Dispose"/> unsubscribes it from the store.
     /// </summary>
     public sealed class IapAdFreeEntitlement : IAdFreeEntitlement, IDisposable
     {

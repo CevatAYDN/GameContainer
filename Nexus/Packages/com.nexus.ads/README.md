@@ -42,7 +42,9 @@ every block as an error; a release build logs the first block of each rule and p
 warning (`[Nexus Ads] PolicyViolation <rule> (<format> '<placement>'): <reason>`). The guard cannot
 be turned off; the floors in `AdPolicy` can only be tightened, by the settings, a game or remote
 configuration alike. The kill switch and the ad-free entitlement are not violations: they answer
-`NotReady`. The policies behind each rule, with the pages they were read from, are in the register.
+`NotReady` before the guard runs, and hide a banner on screen. The kill switch stops every format; the
+ad-free entitlement removes interstitials and banners and keeps rewarded ads, which the player asks
+for (#195). The policies behind each rule, with the pages they were read from, are in the register.
 
 | Rule | Blocks |
 |---|---|

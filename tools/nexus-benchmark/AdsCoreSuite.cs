@@ -647,6 +647,36 @@ namespace NexusBench
                 Check("AC33. Banner_ShowHide_NoPreload", r == AdResult.Closed && rig.Provider.Loads.Count == 0 && !rig.Provider.BannerShown, "banner shown then hidden, no full-screen preload");
             }
 
+            // #195: the ad-free entitlement left banners on screen and showable, and inside a pacing window the guard answered an
+            // ad-free interstitial or a kill-switched show with a violation instead of NotReady
+            {
+                var adFree = new AdsAdFree();
+                var remote = new AdsRemote();
+                var cfg = AdsRig.Config(null, BuildKind.Development, AdsRig.Rewarded, AdsRig.LevelEnd, new AdPlacement("hud", AdFormat.Banner));
+                using var rig = new AdsRig(cfg, adFree: adFree, remote: remote).Running();
+                rig.Controller.ShowBanner("hud", BannerPosition.Bottom);
+                bool shownBefore = rig.Provider.BannerShown;
+                adFree.AdFree = true;
+                bool hidden = !rig.Provider.BannerShown;
+                AdResult? banner = null;
+                rig.Controller.ShowBanner("hud", BannerPosition.Top, r => banner = r);
+                var viaShow = rig.Show("hud");
+                Check("AC55. AdFree_HidesAndRefusesBanners_KeepsRewarded",
+                    shownBefore && hidden && !rig.Controller.IsReady("hud") && banner == AdResult.NotReady && viaShow == AdResult.NotReady && !rig.Provider.BannerShown && rig.Controller.IsReady("shop_refill"),
+                    $"shown before={shownBefore}, hidden on ad-free={hidden}, IsReady(hud)={rig.Controller.IsReady("hud")}, ShowBanner={banner}, Show(hud)={viaShow}, rewarded ready={rig.Controller.IsReady("shop_refill")}");
+
+                int violations = rig.Violations.Count;
+                var paced = rig.Show("level_end"); // the clock is at 0: inside the 60 s first-show floor
+                adFree.AdFree = false;
+                rig.Controller.ShowBanner("hud", BannerPosition.Bottom);
+                remote.KillSwitch = true;
+                bool killHidden = !rig.Provider.BannerShown;
+                var killed = rig.Show("level_end");
+                Check("AC56. AdFreeAndKillSwitch_AnswerNotReady_WithoutAViolation_InsideAPacingWindow",
+                    paced == AdResult.NotReady && killed == AdResult.NotReady && rig.Violations.Count == violations && killHidden,
+                    $"ad-free interstitial={paced}, kill-switched={killed}, violations={rig.Violations.Count - violations} (expected 0), banner hidden by the kill switch={killHidden}");
+            }
+
             // readiness polled every frame reaches the provider once per window; Show still asks live (issue #32)
             using (var rig = new AdsRig().Running())
             {

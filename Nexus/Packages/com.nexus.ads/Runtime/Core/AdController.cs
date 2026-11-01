@@ -115,7 +115,7 @@ namespace Nexus.Ads
             _provider.Opened += OnOpened;
             _provider.Revenue += OnRevenue;
             _visibility.Changed += OnVisibilityChanged;
-            if (_adFree != null) _adFree.Changed += RaiseReadyChanged;
+            if (_adFree != null) _adFree.Changed += OnAdFreeChanged;
             if (_remote != null)
             {
                 _remote.Changed += OnRemoteChanged;
@@ -136,8 +136,7 @@ namespace Nexus.Ads
         public bool IsReady(string placement)
         {
             var declared = _config.Find(placement);
-            if (declared == null || State != Phase.Running || _killSwitch) return false;
-            if (declared.Format == AdFormat.Interstitial && _adFree != null && _adFree.AdFree) return false;
+            if (declared == null || State != Phase.Running || _killSwitch || AdFreeCovers(declared.Format)) return false;
             if (declared.Format == AdFormat.Banner) return true;
             if (!_slots.TryGetValue(declared.Format, out var slot) || slot.State != SlotState.Ready || !ProviderReady(declared.Format)) return false;
             return Guard.Check(placement, declared.Format, new GuardState(_fullScreenOpen, false)).Allowed;
@@ -175,6 +174,7 @@ namespace Nexus.Ads
         {
             var declared = _config.Find(placement);
             var format = declared?.Format ?? AdFormat.Interstitial;
+            if (SwitchedOff(declared, onResult)) return;
             var verdict = Guard.Check(placement, format, new GuardState(_fullScreenOpen, State == Phase.AwaitingConsent));
             if (!verdict.Allowed)
             {
@@ -182,9 +182,9 @@ namespace Nexus.Ads
                 onResult?.Invoke(AdResult.Blocked);
                 return;
             }
-            if (State != Phase.Running || _killSwitch || (format == AdFormat.Interstitial && _adFree != null && _adFree.AdFree))
+            if (State != Phase.Running)
             {
-                NotReady(declared, _killSwitch ? "kill switch" : State != Phase.Running ? State.ToString() : "ad-free");
+                NotReady(declared, State.ToString());
                 onResult?.Invoke(AdResult.NotReady);
                 return;
             }
@@ -288,9 +288,10 @@ namespace Nexus.Ads
         public void ShowBanner(string placement, BannerPosition position, Action<AdResult> onResult = null)
         {
             var declared = _config.Find(placement);
+            if (SwitchedOff(declared, onResult)) return;
             var verdict = Guard.Check(placement, AdFormat.Banner, new GuardState(_fullScreenOpen, State == Phase.AwaitingConsent));
             if (!verdict.Allowed) { Raise(new PolicyViolation(verdict.Rule, placement ?? "", AdFormat.Banner, verdict.Reason)); onResult?.Invoke(AdResult.Blocked); return; }
-            if (State != Phase.Running || _killSwitch) { NotReady(declared, _killSwitch ? "kill switch" : State.ToString()); onResult?.Invoke(AdResult.NotReady); return; }
+            if (State != Phase.Running) { NotReady(declared, State.ToString()); onResult?.Invoke(AdResult.NotReady); return; }
             _lastPlacement[AdFormat.Banner] = placement;
             _provider.ShowBanner(placement, position);
             onResult?.Invoke(AdResult.Closed);
@@ -299,10 +300,10 @@ namespace Nexus.Ads
         /// <summary>Attaches (or replaces) the ad-free entitlement after construction; the bridge wires it once the store exists.</summary>
         public void SetAdFreeEntitlement(IAdFreeEntitlement adFree)
         {
-            if (_adFree != null) _adFree.Changed -= RaiseReadyChanged;
+            if (_adFree != null) _adFree.Changed -= OnAdFreeChanged;
             _adFree = adFree;
-            if (_adFree != null) _adFree.Changed += RaiseReadyChanged;
-            RaiseReadyChanged();
+            if (_adFree != null) _adFree.Changed += OnAdFreeChanged;
+            OnAdFreeChanged();
         }
 
         /// <summary>Attaches (or replaces) the remote configuration after construction and applies it at once.</summary>
@@ -361,7 +362,7 @@ namespace Nexus.Ads
             _provider.Opened -= OnOpened;
             _provider.Revenue -= OnRevenue;
             _visibility.Changed -= OnVisibilityChanged;
-            if (_adFree != null) _adFree.Changed -= RaiseReadyChanged;
+            if (_adFree != null) _adFree.Changed -= OnAdFreeChanged;
             if (_remote != null) _remote.Changed -= OnRemoteChanged;
             foreach (var slot in _slots.Values) { slot.Retry?.Dispose(); slot.Retry = null; }
             _initRetry?.Dispose();
@@ -533,6 +534,7 @@ namespace Nexus.Ads
             {
                 _killSwitch = kill;
                 _telemetry.Record(new AdEvent(AdEventKind.KillSwitch, AdFormat.Interstitial, "", kill ? "on" : "off"));
+                if (kill) _provider.HideBanner(); // a banner on screen goes with the rest (issue #195)
                 if (!kill && State == Phase.Running) foreach (var format in _slots.Keys) Preload(format);
             }
             for (int i = 0; i < AdPolicy.Keys.All.Length; i++)
@@ -541,6 +543,25 @@ namespace Nexus.Ads
         });
 
         // ----- helpers
+
+        // The ad-free entitlement removes interstitials and banners; rewarded ads stay, since the player asks for them (issue #195).
+        private bool AdFreeCovers(AdFormat format) => format != AdFormat.Rewarded && _adFree != null && _adFree.AdFree;
+
+        // The kill switch and the ad-free entitlement answer NotReady without a violation, so they come before the guard: a paced
+        // ad-free interstitial raised a PolicyViolation (issue #195). An undeclared placement still reaches the guard's UnknownPlacement.
+        private bool SwitchedOff(AdPlacement declared, Action<AdResult> onResult)
+        {
+            if (declared == null || !(_killSwitch || AdFreeCovers(declared.Format))) return false;
+            NotReady(declared, _killSwitch ? "kill switch" : "ad-free");
+            onResult?.Invoke(AdResult.NotReady);
+            return true;
+        }
+
+        private void OnAdFreeChanged()
+        {
+            if (_adFree != null && _adFree.AdFree) _provider.HideBanner(); // a banner on screen goes once the player owns ad-free
+            RaiseReadyChanged();
+        }
 
         private void NotReady(AdPlacement placement, string why)
             => _telemetry.Record(new AdEvent(AdEventKind.NotReady, placement?.Format ?? AdFormat.Interstitial, placement?.Name ?? "", why));
@@ -572,7 +593,7 @@ namespace Nexus.Ads
             {
                 var placement = placements[i];
                 if (!_slots.TryGetValue(placement.Format, out var slot) || slot.State != SlotState.Ready) continue;
-                if (placement.Format == AdFormat.Interstitial && (!placement.NaturalBreak || (_adFree != null && _adFree.AdFree))) continue;
+                if ((placement.Format == AdFormat.Interstitial && !placement.NaturalBreak) || AdFreeCovers(placement.Format)) continue;
                 if (Guard.SessionCapReached(placement)) continue;
                 if (Guard.DayCapReached(placement)) { dayCapped = true; continue; }
                 double wait = Guard.SecondsUntilPacingEnds(placement);

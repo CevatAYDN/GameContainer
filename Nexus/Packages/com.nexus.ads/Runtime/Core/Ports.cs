@@ -51,7 +51,7 @@ namespace Nexus.Ads
         void Record(in AdEvent e);
     }
 
-    /// <summary>The player bought "remove ads": interstitials stop, rewarded ads stay.</summary>
+    /// <summary>The player bought "remove ads": interstitials and banners stop, rewarded ads stay (issue #195).</summary>
     public interface IAdFreeEntitlement
     {
         bool AdFree { get; }
