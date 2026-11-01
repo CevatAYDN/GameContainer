@@ -1717,6 +1717,21 @@ namespace Nexus.Core
             SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), Factory = factory, IsSingleton = false });
         }
 
+        /// <summary>Binds a factory with an explicit <see cref="Lifetime"/>; see <see cref="ITypeBinder.BindFactory{T}(Func{T}, Lifetime)"/>.</summary>
+        public void BindFactory<T>(Func<T> factory, Lifetime lifetime) where T : class
+        {
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            BindingTarget(lifetime).SetBinding(typeof(T), new Binding { ConcreteType = typeof(T), Factory = factory, Lifetime = lifetime });
+        }
+
+        /// <summary>Binds a named factory with an explicit <see cref="Lifetime"/>.</summary>
+        public void BindFactory<T>(string name, Func<T> factory, Lifetime lifetime) where T : class
+        {
+            if (string.IsNullOrEmpty(name)) { BindFactory(factory, lifetime); return; }
+            if (factory == null) throw new ArgumentNullException(nameof(factory));
+            BindingTarget(lifetime).SetNamedBinding((typeof(T), name), new Binding { ConcreteType = typeof(T), Factory = factory, Lifetime = lifetime });
+        }
+
         // ─── Public API: typed factories ───
         /// <summary>
         /// Binds <see cref="IFactory{TValue}"/>: every <c>Create()</c> constructs a new
@@ -2006,6 +2021,17 @@ namespace Nexus.Core
         /// Shared resolve core for both default and named bindings: singleton construction
         /// with cross-thread waiting, factory mapping, and transient instantiation.
         /// </summary>
+        // The game's delegate: its exception reaches the caller unchanged, and the error log names the binding it belongs to (#149).
+        private static object InvokeFactory(Type type, string name, Func<object> factory)
+        {
+            try { return factory(); }
+            catch (Exception ex)
+            {
+                NexusRuntime.Logger?.LogError($"[Nexus] The factory bound for '{type.FullName}'{(name == null ? string.Empty : $" (name '{name}')")} threw {ex.GetType().Name}: {ex.Message}");
+                throw;
+            }
+        }
+
         private object ResolveBinding(Type type, Binding binding, string name = null)
         {
             ThrowIfDisposed();
@@ -2030,7 +2056,7 @@ namespace Nexus.Core
             ManualResetEventSlim waitHandle = null;
             try
             {
-                if (binding.Factory != null) return binding.Factory();
+                if (binding.Factory != null && !binding.IsSingleton) return InvokeFactory(type, name, binding.Factory);
 
                 if (binding.IsSingleton)
                 {
@@ -2074,8 +2100,17 @@ namespace Nexus.Core
 
                     try
                     {
-                        singletonInstance = _injector.CreateInstance(binding.ConcreteType, binding.ParameterOverrides);
-                        _injector.Inject(singletonInstance);
+                        if (binding.Factory != null)
+                        {
+                            // a factory's instance is built by the game's delegate: the container injects nothing into it (#149)
+                            singletonInstance = InvokeFactory(type, name, binding.Factory)
+                                ?? throw new InvalidOperationException($"[Nexus] The factory bound for '{type.FullName}' returned null.");
+                        }
+                        else
+                        {
+                            singletonInstance = _injector.CreateInstance(binding.ConcreteType, binding.ParameterOverrides);
+                            _injector.Inject(singletonInstance);
+                        }
                         bool orphaned;
                         lock (_singletonLock)
                         {

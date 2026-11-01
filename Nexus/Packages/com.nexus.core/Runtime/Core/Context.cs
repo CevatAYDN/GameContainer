@@ -801,6 +801,8 @@ namespace Nexus.Core
         public T Resolve<T>() where T : class => Container.Resolve<T>();
         public T TryResolve<T>() where T : class => Container.TryResolve<T>();
         public T TryResolve<T>(string name) where T : class => Container.TryResolve<T>(name);
+        public object Resolve(Type type) => Container.Resolve(type);
+        public object TryResolve(Type type, string name = null) => Container.TryResolve(type, name);
         public T ResolveCrossBoundary<T>() where T : class
         {
             try

@@ -291,6 +291,7 @@ Açıkça istenen ama kayıtlı olmayan bir ad **sessizce default bağlamaya dü
 |---|---|---|
 | `Resolve<T>(name)` | hayır | `InvalidOperationException` (strict) |
 | `TryResolve<T>(name)` | hayır | `null` |
+| `TryResolve(type, name)` | hayır | `null` |
 | `IsRegistered(type, name)` | hayır (default da yok) | `false` |
 | `Resolve<T>("")` veya `Resolve<T>(null)` | — | her zaman default yola düşer |
 

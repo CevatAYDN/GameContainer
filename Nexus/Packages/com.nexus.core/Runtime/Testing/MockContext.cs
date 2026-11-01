@@ -23,17 +23,17 @@ namespace Nexus.Core
         /// <summary>
         /// Resolves via the assigned <see cref="Container"/>. Per the <see cref="IContext"/>
         /// contract, Resolve throws when the type cannot be resolved — use
-        /// <see cref="TryResolve{T}()"/> for the null-returning variant.
+        /// <see cref="TryResolve{T}()"/> for the null-returning variant. The <see cref="Type"/> forms do the same.
         /// </summary>
-        public T Resolve<T>() where T : class
-        {
-            if (Container != null) return Container.Resolve<T>();
-            throw new InvalidOperationException(
-                $"MockContext has no Container assigned — cannot resolve '{typeof(T).Name}'. " +
-                "Assign a Container with the needed registrations, or use TryResolve for an optional lookup.");
-        }
+        public T Resolve<T>() where T : class => Container != null ? Container.Resolve<T>() : throw NoContainer(typeof(T));
         public T TryResolve<T>() where T : class => Container?.TryResolve<T>();
         public T TryResolve<T>(string name) where T : class => Container?.TryResolve<T>(name);
+        public object Resolve(Type type) => Container != null ? Container.Resolve(type) : throw NoContainer(type);
+        public object TryResolve(Type type, string name = null) => Container?.TryResolve(type, name);
+
+        private static InvalidOperationException NoContainer(Type type) => new InvalidOperationException(
+            $"MockContext has no Container assigned — cannot resolve '{type?.Name}'. " +
+            "Assign a Container with the needed registrations, or use TryResolve for an optional lookup.");
         public T ResolveCrossBoundary<T>() where T : class => null;
         public void RegisterPlugin(INexusPlugin plugin) { }
         public void RemovePlugin(INexusPlugin plugin) { }

@@ -102,6 +102,8 @@ namespace Nexus.Core
         public void BindTypedFactory<TValue>(Func<TValue> create) => _container.BindTypedFactory(create);
         public void BindTypedFactory<TParam, TValue>(Func<TParam, TValue> create) => _container.BindTypedFactory(create);
         public void BindTypedFactory<TParam1, TParam2, TValue>(Func<TParam1, TParam2, TValue> create) => _container.BindTypedFactory(create);
+        public void BindFactory<T>(Func<T> create, Lifetime lifetime) where T : class => _container.BindFactory(create, lifetime);
+        public void BindFactory<T>(string name, Func<T> create, Lifetime lifetime) where T : class => _container.BindFactory(name, create, lifetime);
 
         /// <summary>Binds with an explicit <see cref="Lifetime"/> (see <see cref="Lifetime"/> for semantics).</summary>
         public void Bind<TInterface, TImplementation>(Lifetime lifetime) where TImplementation : class, TInterface

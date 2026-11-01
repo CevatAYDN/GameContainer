@@ -59,8 +59,9 @@ disposal; named bindings; lazy services; fluent chain (`BindFluent<T>().To<TImpl
 .WithParameter(...)`); `BindInterfacesAndSelfTo`, `BindMultiple`, cross-boundary bindings;
 `ValidateBindings()` reports missing, ambiguous, captive and cyclic bindings without constructing
 objects. Typed factories (`BindTypedFactory<TValue>()`, `BindTypedFactory<TParam, TValue>()`) give a
-class an `IFactory<...>` that constructs and injects new instances on demand; `Construct<T>()` builds
-an unbound type through the container.
+class an `IFactory<...>` that constructs and injects new instances on demand; `BindFactory<T>(create, lifetime)`
+binds a type to a delegate that builds it; `Construct<T>()` builds an unbound type through the container.
+`IResolver` resolves a runtime `Type` too (`Resolve(type)`, `TryResolve(type, name)`).
 
 **Signals and commands** (`SignalBus`): `struct` signals; `ICommand<T>` / `IAsyncCommand<T>`
 handlers pooled per signal; execution modes `Sequential`, `Concurrent`, `Exclusive`, `Composite`

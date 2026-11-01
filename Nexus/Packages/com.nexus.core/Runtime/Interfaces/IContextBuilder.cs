@@ -124,6 +124,21 @@ namespace Nexus.Core
         void BindTypedFactory<TParam1, TParam2, TValue>(Func<TParam1, TParam2, TValue> create);
 
         /// <summary>
+        /// Binds <typeparamref name="T"/> to a delegate that builds it: for a service made from a value read in
+        /// <c>OnConfigure</c> (a settings asset, a remote value, a platform switch). The lifetime is the one
+        /// <see cref="Bind{T}(Lifetime)"/> gives: <see cref="Lifetime.Singleton"/> runs the delegate once for the application
+        /// (bound on the root container), <see cref="Lifetime.Scoped"/> once for this context, and the container disposes
+        /// either instance with itself; <see cref="Lifetime.Transient"/> runs it on every resolve and never owns the result.
+        /// The delegate runs at the first resolve, and the container sets no [Inject] members on what it returns. When it
+        /// throws, the error log names the bound type and the exception reaches the resolve, so a context whose start
+        /// resolves it fails its start. A Singleton factory bound again (a scene that loads again) replaces the first
+        /// binding with a warning, and the next resolve builds a second instance: bind it once.
+        /// </summary>
+        void BindFactory<T>(Func<T> create, Lifetime lifetime) where T : class;
+        /// <summary>Binds a named <typeparamref name="T"/> to a delegate (see <see cref="BindFactory{T}(Func{T}, Lifetime)"/>).</summary>
+        void BindFactory<T>(string name, Func<T> create, Lifetime lifetime) where T : class;
+
+        /// <summary>
         /// Binds with an explicit <see cref="Lifetime"/>. <see cref="Lifetime.Singleton"/> bindings
         /// are registered on the ROOT container (one app-wide instance, disposed with the root; a reloaded
         /// scene that binds it again keeps that instance, and its dependencies resolve on the root);

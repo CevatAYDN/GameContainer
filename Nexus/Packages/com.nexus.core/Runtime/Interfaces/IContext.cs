@@ -16,6 +16,17 @@ namespace Nexus.Core
         T TryResolve<T>(string name) where T : class;
 
         /// <summary>
+        /// Resolves a runtime <see cref="Type"/> as <see cref="Resolve{T}"/> does: the context first, then its parents;
+        /// throws when none of them registers it.
+        /// </summary>
+        object Resolve(Type type);
+        /// <summary>
+        /// Resolves a runtime <see cref="Type"/> as <see cref="TryResolve{T}()"/> does, or a named binding as
+        /// <see cref="TryResolve{T}(string)"/> does: null when neither the context nor a parent registers it.
+        /// </summary>
+        object TryResolve(Type type, string name = null);
+
+        /// <summary>
         /// Resolves a dependency by walking UP the parent-context chain.
         /// Searches the current context first, then parent, then grandparent, etc.
         /// This is the explicit opt-in equivalent of StrangeIoC's <c>crossContextInjectionBinder</c>.

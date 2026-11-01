@@ -290,6 +290,7 @@ A name that is explicitly requested but not registered **does not silently fall 
 |---|---|---|
 | `Resolve<T>(name)` | no | `InvalidOperationException` (strict) |
 | `TryResolve<T>(name)` | no | `null` |
+| `TryResolve(type, name)` | no | `null` |
 | `IsRegistered(type, name)` | no (no default either) | `false` |
 | `Resolve<T>("")` or `Resolve<T>(null)` | — | always falls back to the default path |
 

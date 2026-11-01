@@ -95,6 +95,8 @@ A class of the game that implements one of these interfaces (a test fake, a wrap
 | `ITickService` | `HoldPause()` | #77 |
 | `IIapService` | `UnrequestedPurchase` (above) | #204 |
 | `IEconomyService` | `Spend(currencyId, amount, out refusal, reason)`, `SpendBig(currencyId, amount, out refusal, reason)` | #196 |
+| `IResolver` (so `IContext`) | `Resolve(type)`, `TryResolve(type, name = null)` | #148 |
+| `IContextBuilder` (`ITypeBinder`) | `BindFactory<T>(create, lifetime)`, `BindFactory<T>(name, create, lifetime)` | #149 |
 
 #### Tests reference the testing kit
 
@@ -104,6 +106,8 @@ to the `references` of each test assembly definition that uses them.
 
 #### Behaviour that changed under the same API
 
+- `IContext` inherits `Resolve` and `TryResolve` from `IResolver`, so `typeof(IContext).GetMethod("TryResolve")` returns null
+  and a reflective call returns without resolving anything. Call `TryResolve(type)` or `Resolve(type)` (#148).
 - A signal fired with `FireThreadSafe` while `DrainThreadSafe` runs, from a thread-safe handler or another thread, waits for the
   next drain, one frame later (#169). A game that relied on it running in the same drain reads the result a frame later.
 - A `[CommandTimeout]` command that times out goes through recovery (#168). `DefaultRecoveryStrategy` retries it up to 3
