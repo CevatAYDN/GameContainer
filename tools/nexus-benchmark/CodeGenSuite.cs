@@ -263,6 +263,12 @@ namespace NexusBench.CG2Source
         public sealed class SrcDerived : SrcVisibleBase { }
     }
 
+    // A MonoBehaviour: Unity creates it, so no constructor factory, but its [Inject] member gets an injector (#249)
+    public sealed class SrcView : UnityEngine.MonoBehaviour
+    {
+        [Inject] public CodeGenDep Dep;
+    }
+
     // [PostConstruct] must run after the GENERATED injector (runtime guarantee).
     public sealed class SrcPostConstruct
     {
@@ -354,6 +360,11 @@ namespace NexusBench.CG2Source
                 bool harnessInjectorAbsent = !HasRegistration(source, "RegisterInjector", "NexusBench.CodeGenInjected");
                 bool metadataInjectorAbsent = !HasRegistration(source, "RegisterInjector", "NexusBench.CodeGenHierarchy.CodeGenDerivedWithVisibleBase");
                 bool nonEmittableInjectorAbsent = !HasRegistration(source, "RegisterInjector", "NexusBench.CodeGenHierarchy.CodeGenNonEmittableMember");
+                //    UnityEngine.Object types, in the compilation and referenced: no `new T()` factory, as the editor scan (#249)
+                bool unityFactoriesAbsent = !HasRegistration(source, "RegisterConstructorFactory", "NexusBench.CG2Source.SrcView")
+                    && !HasRegistration(source, "RegisterConstructorFactory", "NexusBench.CodeGenUnityBehaviour")
+                    && !HasRegistration(source, "RegisterConstructorFactory", "NexusBench.CodeGenUnityAsset");
+                bool unityInjector = HasRegistration(source, "RegisterInjector", "NexusBench.CG2Source.SrcView");
 
                 // 4) Compile + boot the generated binder, resolve through it end to end (the stub
                 //    is file-loaded, so it is already among the AppDomain-wide references).
@@ -445,6 +456,7 @@ namespace NexusBench.CG2Source
                      && srcChainInjector && srcPostInjector
                      && harnessFactory && harnessMarked && harnessValueSkipped
                      && harnessInjectorAbsent && metadataInjectorAbsent && nonEmittableInjectorAbsent
+                     && unityFactoriesAbsent && unityInjector
                      && srcCtorDep != null && ReferenceEquals(srcCtorDep, shared)
                      && srcFixtureInjected && ReferenceEquals(srcFixtureDep, shared)
                      && ReferenceEquals(srcOverrideDep, manual)
@@ -456,6 +468,7 @@ namespace NexusBench.CG2Source
                          $"harnessFactory={harnessFactory} harnessMarked={harnessMarked} harnessValueSkipped={harnessValueSkipped} " +
                          $"harnessInjectorAbsent={harnessInjectorAbsent} metadataInjectorAbsent={metadataInjectorAbsent} " +
                          $"nonEmittableInjectorAbsent={nonEmittableInjectorAbsent} " +
+                         $"unityFactoriesAbsent={unityFactoriesAbsent} unityInjector={unityInjector} " +
                          $"srcCtor={srcCtorDep != null} srcInjected={srcFixtureInjected} " +
                          $"srcOverrideWins={ReferenceEquals(srcOverrideDep, manual)} " +
                          $"srcChainInjected={srcDerivedInjected} srcPostRan={srcPostRan} srcPostInjected={srcPostInjected} " +

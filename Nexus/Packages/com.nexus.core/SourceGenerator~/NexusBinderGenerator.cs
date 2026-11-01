@@ -234,6 +234,15 @@ namespace Nexus.Generator
 
         private static bool IsEmittable(ITypeSymbol type) => type != null && IsVisible(type);
 
+        /// <summary>A MonoBehaviour, ScriptableObject or other UnityEngine.Object: Unity creates it, so a constructor factory
+        /// (`new T()`) is never valid. The editor scan skipped them and this one did not (#249).</summary>
+        private static bool IsUnityObject(ITypeSymbol type)
+        {
+            for (var t = type; t != null; t = t.BaseType)
+                if (t.ToDisplayString() == "UnityEngine.Object") return true;
+            return false;
+        }
+
         private static string Name(ITypeSymbol type) => type.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat);
 
         /// <summary>A type's name in the binder's header list of types the reflection path serves.</summary>
@@ -505,7 +514,7 @@ namespace Nexus.Generator
                 // Constructor factory candidates (mirror of the editor scan): exactly one
                 // [Inject]/[Construct]-marked public ctor, or a single public ctor.
                 var publicCtors = type.InstanceConstructors.Where(c => c.DeclaredAccessibility == Accessibility.Public).ToList();
-                if (publicCtors.Count > 0)
+                if (publicCtors.Count > 0 && !IsUnityObject(type))
                 {
                     var marked = publicCtors.Where(c => HasAttr(c, InjectAttribute) || HasAttr(c, ConstructAttribute)).ToList();
                     if (marked.Count == 1)
