@@ -685,9 +685,9 @@ namespace Nexus.Core
             int eventId = NexusTrace.BeginEvent(TraceEventType.Signal, typeof(T).Name);
             s_DispatchMarker.Begin();
 #endif
-            // Counter is ungated (unlike the NEXUS_DEBUG marker): it must record in any
-            // development build so the NexusProfilerModule chart has data (counters are
-            // compiled out in non-development builds by Unity itself).
+            // Counter is ungated (unlike the NEXUS_DEBUG marker): it must record wherever the profiler
+            // runs so the NexusProfilerModule chart has data; its body compiles only where ENABLE_PROFILER
+            // is defined (the editor, and Unity 6.6's Instrumented, Checked and Debug variants; #194).
             NexusProfiler.SignalsDispatched.Value += 1;
             Exception isolated = null; // the first failure this dispatch isolates (issue #189)
             _subscriptionRegistry.EnterDispatch();

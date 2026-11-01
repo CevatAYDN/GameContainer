@@ -10,8 +10,10 @@ namespace Nexus.Core
     ///   already exist on the SignalBus/CommandExecutor/TickService paths; this class adds the
     ///   counter layer on top so the framework's own throughput is visible as CHARTABLE data.
     /// - <see cref="ProfilerCounterValue{T}"/> counters: written on every dispatch/resolve and
-    ///   flushed at end of frame. Per Unity docs they are **compiled out in non-development
-    ///   builds**, so the hot-path cost is a single store in dev builds and zero in release.
+    ///   flushed at end of frame. Their bodies are compiled only where <c>ENABLE_PROFILER</c> is defined
+    ///   (com.unity.profiling.core): the editor, and a player of Unity 6.6's Instrumented, Checked or
+    ///   Debug managed code variant. There the hot-path cost is a single store; a Release variant player
+    ///   pays nothing (issue #194).
     ///
     /// Editor: the <c>NexusProfilerModule</c> (com.nexus.core.editor, namespace Nexus.Editor)
     /// surfaces these counters as a ready-made "Nexus" chart in the Profiler window.

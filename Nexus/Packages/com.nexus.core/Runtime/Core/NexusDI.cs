@@ -1948,8 +1948,9 @@ namespace Nexus.Core
             return IsRegistered(type, name) ? Resolve(type, name) : null;
         }
 
-        // Profiler marker + counter on the resolve hot path. Both exist only where Unity enables
-        // the profiler (editor and development builds); release players pay nothing. See NexusProfiler.
+        // Profiler marker + counter on the resolve hot path. Both exist only where ENABLE_PROFILER is defined: the editor, and a
+        // player of Unity 6.6's Instrumented, Checked or Debug managed code variant; a Release variant player pays nothing (#194).
+        // See NexusProfiler.
 #if ENABLE_PROFILER
         private static readonly ProfilerMarker s_ResolveMarker = new ProfilerMarker("Nexus.DI.Resolve");
 #endif
