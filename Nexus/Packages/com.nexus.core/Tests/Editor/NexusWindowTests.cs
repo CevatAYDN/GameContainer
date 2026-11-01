@@ -1,9 +1,11 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.TestTools;
 using UnityEngine.UIElements;
 
 namespace Nexus.Editor.Tests
@@ -121,6 +123,43 @@ namespace Nexus.Editor.Tests
             Assert.IsNotEmpty(paths);
             foreach (var path in paths)
                 Assert.IsTrue(path.StartsWith("Nexus/") || path.StartsWith("GameObject/Nexus/"), path + " is outside the Nexus menu");
+        }
+
+        [Test]
+        public void APluginThatFailsToLoad_LosesOnlyItsOwnTab_AndTheErrorNamesIt()
+        {
+            // one plugin that threw while it was created emptied the whole window, with a message naming no plugin (#255)
+            var cache = typeof(NexusWindow).GetField("s_discoveredPluginTypes", BindingFlags.Static | BindingFlags.NonPublic);
+            var discover = typeof(NexusWindow).GetMethod("DiscoverPlugins", Private);
+            try
+            {
+                discover.Invoke(_window, null);
+                int tabs = Field<List<INexusEditorPlugin>>("_plugins").Count;
+                Assert.Greater(tabs, 1);
+
+                cache.SetValue(null, new List<System.Type>((List<System.Type>)cache.GetValue(null)) { typeof(UnloadablePlugin) });
+                LogAssert.Expect(LogType.Error, new Regex(Regex.Escape(typeof(UnloadablePlugin).FullName)));
+                discover.Invoke(_window, null);
+
+                Assert.AreEqual(tabs, Field<List<INexusEditorPlugin>>("_plugins").Count, "every other plugin keeps its tab");
+                Assert.IsFalse(Field<bool>("_discoveryFailed"));
+            }
+            finally
+            {
+                cache.SetValue(null, null); // the next window scans again
+            }
+        }
+
+        // Its constructor is not public, so discovery never lists it (GetConstructor(Type.EmptyTypes)); the test adds it
+        // to the discovered types, and Activator.CreateInstance throws for it.
+        private sealed class UnloadablePlugin : NexusEditorPlugin
+        {
+            internal UnloadablePlugin() { }
+
+            public override string Id => "Unloadable";
+            public override string DisplayName => Id;
+            public override int Order => 0;
+            public override VisualElement CreateView() => new VisualElement();
         }
 
         // No parameterless constructor, so plugin discovery never adds it to a real window.

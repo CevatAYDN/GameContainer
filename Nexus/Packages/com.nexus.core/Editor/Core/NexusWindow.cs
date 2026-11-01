@@ -280,12 +280,23 @@ namespace Nexus.Editor
                     }
                 }
 
-                var foundPlugins = new List<INexusEditorPlugin>();
+                // Each plugin loads on its own: one that throws while it is created, initialized or asked for its Category
+                // or Order loses its tab and is named in the error, and the others keep theirs. One try around them all
+                // cleared every tab and logged the TargetInvocationException's message, which names no plugin (#255).
+                var foundPlugins = new List<(INexusEditorPlugin Plugin, string Category, int Order)>();
                 foreach (var type in s_discoveredPluginTypes)
                 {
-                    var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
-                    plugin.Initialize(this);
-                    foundPlugins.Add(plugin);
+                    try
+                    {
+                        var plugin = (INexusEditorPlugin)Activator.CreateInstance(type);
+                        plugin.Initialize(this);
+                        foundPlugins.Add((plugin, plugin.Category, plugin.Order));
+                    }
+                    catch (Exception ex)
+                    {
+                        var cause = ex is System.Reflection.TargetInvocationException { InnerException: { } inner } ? inner : ex;
+                        Debug.LogError($"[NexusWindow] The plugin {type.FullName} failed to load and has no tab: {cause.GetType().Name}: {cause.Message}\n{cause.StackTrace}");
+                    }
                 }
 
                 // Sidebar order: the sections in their order, then the other categories; by Order inside each.
@@ -295,6 +306,7 @@ namespace Nexus.Editor
                     .ThenBy(p => p.Order)
                     .GroupBy(p => p.Category)
                     .SelectMany(g => g)
+                    .Select(p => p.Plugin)
                     .ToList();
             }
             catch (Exception ex)
