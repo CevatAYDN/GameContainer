@@ -6,6 +6,9 @@ namespace Nexus.Core
     /// <summary>
     /// Lightweight struct for Idle & Incremental games supporting numbers up to 1e(9*10^18).
     /// Stores number as mantissa * 10^exponent with auto-normalization and Idle suffix formatting (K, M, B, T, aa, ab...).
+    /// A NaN or infinite input throws <see cref="ArgumentOutOfRangeException"/>, the conversion from <c>double</c> included,
+    /// as division by zero throws (#196): <c>baseIncome * Math.Pow(1.15, level)</c> overflows a double, while
+    /// <c>baseIncome * BigDouble.Pow(1.15, level)</c> does not.
     /// </summary>
     [Serializable]
     [Preserve]
@@ -27,6 +30,7 @@ namespace Nexus.Core
 
         public BigDouble(double mantissa, long exponent = 0)
         {
+            ThrowIfNotFinite(mantissa, nameof(mantissa));
             Mantissa = mantissa;
             Exponent = exponent;
             Normalize();
@@ -34,7 +38,8 @@ namespace Nexus.Core
 
         public BigDouble(double value)
         {
-            if (double.IsNaN(value) || double.IsInfinity(value) || value == 0.0)
+            ThrowIfNotFinite(value, nameof(value));
+            if (value == 0.0)
             {
                 Mantissa = 0.0;
                 Exponent = 0;
@@ -50,9 +55,17 @@ namespace Nexus.Core
         public BigDouble(long value) : this((double)value) { }
         public BigDouble(int value) : this((double)value) { }
 
+        private static void ThrowIfNotFinite(double value, string name)
+        {
+            if (double.IsNaN(value) || double.IsInfinity(value))
+                throw new ArgumentOutOfRangeException(name, value, "A BigDouble must be finite; use BigDouble.Pow for powers a double cannot hold.");
+        }
+
         private void Normalize()
         {
-            if (Mantissa == 0.0 || double.IsNaN(Mantissa) || double.IsInfinity(Mantissa))
+            // Inputs are finite (ThrowIfNotFinite). An infinite mantissa remains only for a subnormal input below
+            // about 1e-308, whose 10^exponent underflows to 0 in the double constructor: it reads as zero.
+            if (Mantissa == 0.0 || double.IsInfinity(Mantissa))
             {
                 Mantissa = 0.0;
                 Exponent = 0;
@@ -129,6 +142,35 @@ namespace Nexus.Core
             if (b.Mantissa == 0.0) throw new DivideByZeroException("Cannot divide BigDouble by Zero.");
             // Saturate the exponent difference instead of underflowing long.
             return new BigDouble(a.Mantissa / b.Mantissa, SaturateSubExponent(a.Exponent, b.Exponent));
+        }
+
+        /// <summary>
+        /// <paramref name="value"/> to the power <paramref name="power"/>, computed in log10 space so the result can exceed
+        /// a double (<c>BigDouble.Pow(1.15, 10000)</c> is about 9.5e606). A result above <see cref="MaxValue"/> saturates;
+        /// a result too small for the exponent is zero. Throws <see cref="ArgumentOutOfRangeException"/> for a non-finite
+        /// power or a negative value to a fractional power, and <see cref="DivideByZeroException"/> for zero to a negative power.
+        /// </summary>
+        public static BigDouble Pow(BigDouble value, double power)
+        {
+            ThrowIfNotFinite(power, nameof(power));
+            if (power == 0.0) return One;
+            if (value.Mantissa == 0.0)
+            {
+                if (power < 0.0) throw new DivideByZeroException("Cannot raise a zero BigDouble to a negative power.");
+                return Zero;
+            }
+            bool negative = value.Mantissa < 0.0;
+            if (negative && power != Math.Floor(power))
+                throw new ArgumentOutOfRangeException(nameof(power), power, "A negative BigDouble has no real fractional power.");
+
+            double log10 = (Math.Log10(Math.Abs(value.Mantissa)) + value.Exponent) * power;
+            double exponent = Math.Floor(log10);
+            bool negativeResult = negative && Math.Abs(power % 2.0) == 1.0;
+            // (double)long.MaxValue rounds up to 2^63, so a floor below it fits a long.
+            if (exponent >= (double)long.MaxValue) return negativeResult ? MinValue : MaxValue;
+            if (exponent <= (double)long.MinValue) return Zero;
+            double mantissa = Math.Pow(10.0, log10 - exponent);
+            return new BigDouble(negativeResult ? -mantissa : mantissa, (long)exponent);
         }
 
         /// <summary>clamped exponent addition; never overflows long.</summary>

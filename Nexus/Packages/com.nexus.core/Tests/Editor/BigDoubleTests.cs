@@ -31,6 +31,41 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public void ANonFiniteInput_Throws_TheConversionFromDoubleIncluded()
+        {
+            // NaN and infinity became 0 (#196): gold = baseIncome * Math.Pow(1.15, level) silently zeroed on overflow.
+            foreach (double value in new[] { double.NaN, double.PositiveInfinity, double.NegativeInfinity })
+            {
+                Assert.Throws<System.ArgumentOutOfRangeException>(() => new BigDouble(value));
+                Assert.Throws<System.ArgumentOutOfRangeException>(() => new BigDouble(value, 3));
+                Assert.Throws<System.ArgumentOutOfRangeException>(() => { BigDouble converted = value; });
+            }
+            BigDouble baseIncome = 100;
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => { BigDouble gold = baseIncome * System.Math.Pow(1.15, 6000); });
+        }
+
+        [Test]
+        public void Pow_ReachesPastTheDoubleRange_AndMatchesMathPowInsideIt()
+        {
+            BigDouble inside = BigDouble.Pow(new BigDouble(1.15), 1000);
+            Assert.AreEqual(System.Math.Pow(1.15, 1000), (double)inside, System.Math.Pow(1.15, 1000) * 1e-9);
+            Assert.AreEqual(1024.0, (double)BigDouble.Pow(new BigDouble(2), 10), 1e-9);
+            Assert.AreEqual(0.25, (double)BigDouble.Pow(new BigDouble(2), -2), 1e-12);
+            Assert.AreEqual(-8.0, (double)BigDouble.Pow(new BigDouble(-2), 3), 1e-9);
+
+            // 1.15^6000 = 10^(6000 * log10 1.15) = 10^364.187: a double overflows, a BigDouble does not.
+            BigDouble past = new BigDouble(100) * BigDouble.Pow(new BigDouble(1.15), 6000);
+            Assert.AreEqual(366, past.Exponent);
+            Assert.AreEqual(System.Math.Pow(10, 6000 * System.Math.Log10(1.15) - 364), past.Mantissa, 1e-6);
+
+            Assert.AreEqual(BigDouble.MaxValue, BigDouble.Pow(BigDouble.MaxValue, 2), "A result above MaxValue saturates.");
+            Assert.AreEqual(BigDouble.One, BigDouble.Pow(BigDouble.Zero, 0));
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => BigDouble.Pow(new BigDouble(-2), 0.5));
+            Assert.Throws<System.ArgumentOutOfRangeException>(() => BigDouble.Pow(new BigDouble(2), double.NaN));
+            Assert.Throws<System.DivideByZeroException>(() => BigDouble.Pow(BigDouble.Zero, -1));
+        }
+
+        [Test]
         public void BigDouble_IdleSuffixFormatting_FormatsCorrectly()
         {
             BigDouble val1 = new BigDouble(1250); // 1.25K

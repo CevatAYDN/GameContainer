@@ -112,6 +112,8 @@ to the `references` of each test assembly definition that uses them.
 - The editor has one top-level **Nexus** menu (#193). `Window/Nexus/Dashboard`, `Nexus/Open Dashboard` and the
   `Nexus/Create/*` items are gone: **Nexus > Open Window** (`Ctrl+Shift+N`) opens the window, `GameObject/Nexus/` creates roots,
   and **Assets > Create > Nexus** creates assets.
+- `BigDouble` throws `ArgumentOutOfRangeException` for NaN and infinite input, the conversion from `double` included (#196).
+  A value built from `Math.Pow` that overflows a double throws instead of becoming 0: build it with `BigDouble.Pow`.
 
 #### Removed
 

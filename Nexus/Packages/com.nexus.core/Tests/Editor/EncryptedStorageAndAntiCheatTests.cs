@@ -483,6 +483,63 @@ namespace Nexus.Editor.Tests
             deviceBStorage.Dispose();
         }
 
+        private static object SecureCore(object property)
+            => property.GetType().GetField("_core", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(property);
+
+        // The storage fields are private to the core's base class, which GetField on the leaf type does not see.
+        private static System.Reflection.FieldInfo CoreField(object core, string name)
+        {
+            for (var type = core.GetType(); type != null; type = type.BaseType)
+            {
+                var field = type.GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);
+                if (field != null) return field;
+            }
+            throw new System.MissingFieldException(core.GetType().Name, name);
+        }
+
+        [Test]
+        public void AnEditedCanary_IsReported_AndTheValueComesFromTheRedundantCopy_OrResetsWhenConfigured()
+        {
+            // No test exercised a tamper path (#196).
+            var previous = SecureObservableSettings.TamperResponse;
+            try
+            {
+                var gold = new SecureObservableInt(500, "gold");
+                int reports = 0;
+                gold.TamperDetected += _ => reports++;
+                var core = SecureCore(gold);
+                var guard = CoreField(core, "_guard");
+                guard.SetValue(core, (int)guard.GetValue(core) ^ 1);
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"Memory tamper detected on SecureObservableInt\[gold\]\. Value restored from the redundant copy\."));
+                Assert.AreEqual(500, gold.Value);
+                Assert.AreEqual(1, reports);
+                Assert.AreEqual(500, gold.Value, "The repair reseals both copies: the next read is clean.");
+                Assert.AreEqual(1, reports);
+
+                SecureObservableSettings.TamperResponse = SecureTamperResponse.ResetToDefault;
+                guard.SetValue(core, (int)guard.GetValue(core) ^ 1);
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"Memory tamper detected on SecureObservableInt\[gold\]\. Value reset to the default\."));
+                Assert.AreEqual(0, gold.Value);
+                Assert.AreEqual(2, reports);
+            }
+            finally { SecureObservableSettings.TamperResponse = previous; }
+        }
+
+        [Test]
+        public void ABigDoublePayloadEditedToNaN_IsATamper_NotAnException()
+        {
+            // BigDouble refuses a NaN mantissa (#196); the decode of an edited payload must take the tamper path instead.
+            var gold = new SecureObservableBigDouble(new BigDouble(1.5, 40), "gold");
+            int reports = 0;
+            gold.TamperDetected += _ => reports++;
+            var core = SecureCore(gold);
+            long compound = (long)CoreField(core, "_cryptoKey1").GetValue(core) ^ (long)CoreField(core, "_cryptoKey2").GetValue(core);
+            CoreField(core, "_obscuredMantissa").SetValue(core, System.BitConverter.DoubleToInt64Bits(double.NaN) ^ compound);
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Error, new System.Text.RegularExpressions.Regex(@"Memory tamper detected on SecureObservableBigDouble\[gold\]\. Value restored from the redundant copy\."));
+            Assert.AreEqual(new BigDouble(1.5, 40), gold.Value);
+            Assert.AreEqual(1, reports);
+        }
+
         [Test]
         public void SecureObservableInt_RAMObfuscationWorksAndFiresOnChanged()
         {

@@ -15,8 +15,9 @@ namespace Nexus.Core
     /// What this actually provides:
     ///   • naive single-field value scans ("find 500, write 999") find nothing, because no
     ///     field ever holds the plaintext;
-    ///   • keys are rotated on every write, so a value frozen/pinned in RAM stops matching
-    ///     its canary and the freeze attempt is detected on the next access;
+    ///   • keys are rotated on every write, so pinning the obscured field does not pin the value:
+    ///     after the next write it decodes to another number. That is not detected, because the
+    ///     canary covers the keys, not the payload (see below);
     ///   • a detected mismatch raises <see cref="OnTamperDetected"/> and
     ///     <see cref="TamperDetected"/> so the game can force server-side re-validation.
     ///

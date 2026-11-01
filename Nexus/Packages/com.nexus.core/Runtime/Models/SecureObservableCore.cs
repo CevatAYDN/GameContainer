@@ -247,7 +247,9 @@ namespace Nexus.Core
     }
 
     /// <summary>
-    /// How the SecureObservable family reacts to a detected integrity (canary) mismatch.
+    /// How the SecureObservable family reacts to a detected integrity (canary) mismatch. A reset changes the value
+    /// without OnChanged, and a repair restores the last value written, which OnChanged already reported: the tamper
+    /// events are the notification for both, and OnChanged reports only writes through Value (#196).
     /// </summary>
     public enum SecureTamperResponse
     {
@@ -819,8 +821,7 @@ namespace Nexus.Core
                 value = default;
                 return false;
             }
-            value = Compose(_obscuredMantissa ^ compound, _obscuredExponent ^ compound);
-            return true;
+            return TryCompose(_obscuredMantissa ^ compound, _obscuredExponent ^ compound, out value);
         }
 
         protected override bool TryUnsealRedundant(out BigDouble value)
@@ -831,22 +832,32 @@ namespace Nexus.Core
                 value = default;
                 return false;
             }
-            value = Compose(_shadowMantissa ^ k3, _shadowExponent ^ k3);
-            return true;
+            return TryCompose(_shadowMantissa ^ k3, _shadowExponent ^ k3, out value);
         }
 
         protected override bool VerifySeal(BigDouble expected)
         {
             long compound = _cryptoKey1 ^ _cryptoKey2;
             if ((_guard ^ GuardConst) != compound) return false;
-            if (!ValuesEqual(Compose(_obscuredMantissa ^ compound, _obscuredExponent ^ compound), expected)) return false;
+            if (!TryCompose(_obscuredMantissa ^ compound, _obscuredExponent ^ compound, out var primary) || !ValuesEqual(primary, expected)) return false;
 
             long k3 = _shadowKey;
             if ((_shadowGuard ^ ShadowGuardConst) != k3) return false;
-            return ValuesEqual(Compose(_shadowMantissa ^ k3, _shadowExponent ^ k3), expected);
+            return TryCompose(_shadowMantissa ^ k3, _shadowExponent ^ k3, out var redundant) && ValuesEqual(redundant, expected);
         }
 
-        private static BigDouble Compose(long mantissaBits, long exponent)
-            => new BigDouble(BitConverter.Int64BitsToDouble(mantissaBits), exponent);
+        // An edited payload can decode to a NaN or infinite mantissa, which BigDouble refuses (#196): that copy
+        // fails like a canary mismatch, so the tamper path handles it instead of an exception out of Value.
+        private static bool TryCompose(long mantissaBits, long exponent, out BigDouble value)
+        {
+            double mantissa = BitConverter.Int64BitsToDouble(mantissaBits);
+            if (double.IsNaN(mantissa) || double.IsInfinity(mantissa))
+            {
+                value = default;
+                return false;
+            }
+            value = new BigDouble(mantissa, exponent);
+            return true;
+        }
     }
 }
