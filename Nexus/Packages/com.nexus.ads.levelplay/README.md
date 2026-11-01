@@ -88,7 +88,7 @@ reverted, it comes back on the next open.
 | `Load(format)` | `LoadAd()`; `OnAdLoaded` → `Loaded`, `OnAdLoadFailed` → `LoadFailed` with the SDK's code and message |
 | `IsReady(format)` | `IsAdReady()` |
 | `Show(format, placement)` | `ShowAd(placement)`; `OnAdDisplayed` → `Opened`; a rewarded ad's `OnAdClosed` answers `Closed` after a grace period of 1.5 s unless `OnAdRewarded` arrived (the SDK documents that the reward can fire after the close), an interstitial's answers `Closed` at once; `OnAdDisplayFailed` → `Failed` |
-| `ShowBanner`, `HideBanner` | one adaptive `LevelPlayBannerAd` at the top or bottom, `ShowAd` / `HideAd` |
+| `ShowBanner`, `HideBanner` | one adaptive `LevelPlayBannerAd` at the top or bottom, `ShowAd` / `HideAd`; another position or placement destroys it and builds a new one (the SDK's banner has no setter for either), and a missing banner unit id logs one warning naming the tab |
 | `OpenTestSuite` | `LevelPlay.LaunchTestSuite()` (needs the test suite metadata, which test mode sets) |
 | `Revenue` | each ad's `OnAdImpressionDataReady` → `AdRevenue(network, placement, format, revenue, "USD", precision)`, the format taken from the ad object (the SDK's `AdFormat` string is `rewarded_video` on Android) |
 

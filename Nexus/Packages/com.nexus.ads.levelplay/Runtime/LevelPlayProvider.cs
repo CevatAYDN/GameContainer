@@ -39,6 +39,9 @@ namespace Nexus.Ads.LevelPlay
         private LevelPlayRewardedAd _rewarded;
         private LevelPlayInterstitialAd _interstitial;
         private LevelPlayBannerAd _banner;
+        private string _bannerPlacement;
+        private BannerPosition _bannerPosition;
+        private bool _testTab, _bannerUnitMissingWarned;
         private Action<bool> _onReady;
         private bool _initialized;
         private ShowState _show;
@@ -74,6 +77,7 @@ namespace Nexus.Ads.LevelPlay
             if (config == null) throw new ArgumentNullException(nameof(config));
             if (_initialized) { onReady?.Invoke(true); return; }
             _onReady = onReady;
+            _testTab = config.TestMode; // LevelPlay's test mode is the Test tab (AdsSettings.ProviderConfigFor)
             _units.Clear();
             foreach (var pair in config.AdUnitIds) _units[pair.Key] = pair.Value;
 
@@ -207,9 +211,24 @@ namespace Nexus.Ads.LevelPlay
 
         public void ShowBanner(string placement, BannerPosition position)
         {
-            if (!_initialized || !_units.TryGetValue(AdFormat.Banner, out var unit) || string.IsNullOrEmpty(unit)) return;
+            if (!_initialized) return;
+            if (!_units.TryGetValue(AdFormat.Banner, out var unit) || string.IsNullOrEmpty(unit))
+            {
+                if (!_bannerUnitMissingWarned)
+                    Debug.LogWarning("[Nexus Ads] LevelPlay has no banner ad unit id on the " + (_testTab ? "Test" : "Release") + " tab of the ads settings: ShowBanner shows nothing");
+                _bannerUnitMissingWarned = true;
+                return;
+            }
+            placement = placement ?? "";
+            if (_banner != null && (position != _bannerPosition || placement != _bannerPlacement))
+            {
+                _banner.DestroyAd(); // LevelPlay 9.6's banner fixes its position and placement when it is built: another one rebuilds it (issue #195)
+                _banner = null;
+            }
             if (_banner == null)
             {
+                _bannerPlacement = placement;
+                _bannerPosition = position;
                 var config = new LevelPlayBannerAd.Config.Builder()
                     .SetSize(LevelPlayAdSize.CreateAdaptiveAdSize())
                     .SetPosition(position == BannerPosition.Top ? LevelPlayBannerPosition.TopCenter : LevelPlayBannerPosition.BottomCenter)

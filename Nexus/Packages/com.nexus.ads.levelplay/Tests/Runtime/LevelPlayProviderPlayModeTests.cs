@@ -27,7 +27,7 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
         {
             if (_host != null) Object.Destroy(_host);
             // each ad object leaves its mock prefab in the scene; a later Close would otherwise find a stale one
-            foreach (var name in new[] { "RewardedPrefab", "InterstitialPrefab" })
+            foreach (var name in new[] { "RewardedPrefab", "InterstitialPrefab", "BannerPrefab" })
                 foreach (var prefab in Object.FindObjectsByType(PrefabType(name)))
                     Object.DestroyImmediate(((MonoBehaviour)prefab).gameObject);
         }
@@ -36,6 +36,12 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
 
         private static ProviderConfig Config() => new ProviderConfig("key",
             new Dictionary<AdFormat, string> { { AdFormat.Rewarded, "rewarded" }, { AdFormat.Interstitial, "interstitial" } }, true, new[] { "gaid" }, false, false, false, "G");
+
+        private static ProviderConfig BannerConfig() => new ProviderConfig("key",
+            new Dictionary<AdFormat, string> { { AdFormat.Banner, "banner" } }, true, new[] { "gaid" }, false, false, false, "G");
+
+        private static LevelPlayBannerAd Banner(LevelPlayProvider provider) =>
+            (LevelPlayBannerAd)typeof(LevelPlayProvider).GetField("_banner", BindingFlags.NonPublic | BindingFlags.Instance).GetValue(provider);
 
         private static bool Online() => true; // the test machine's network must not decide these tests; the wait for one has its own test
 
@@ -73,6 +79,36 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
         {
             Assert.IsTrue(AdsBootstrap.IsProviderRegistered(AdProviderKind.LevelPlay), "registered by RuntimeInitializeOnLoadMethod before the first scene");
             Assert.AreEqual("levelplay", LevelPlayProvider.ProviderName);
+        }
+
+        // Issue #195: the banner kept the position and placement of the first ShowBanner; LevelPlay 9.6's banner has no setter for either
+        [Test]
+        public void ShowBanner_AtAnotherPositionOrPlacement_RebuildsTheBannerThere()
+        {
+            _host = new GameObject("scheduler");
+            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>(), Online);
+            provider.Initialize(BannerConfig(), _ => { });
+            provider.ShowBanner("menu", BannerPosition.Bottom);
+            Assert.AreSame(LevelPlayBannerPosition.BottomCenter, Banner(provider).GetPosition());
+
+            provider.ShowBanner("menu", BannerPosition.Top);
+            Assert.AreSame(LevelPlayBannerPosition.TopCenter, Banner(provider).GetPosition(), "the banner moved to the top");
+            provider.ShowBanner("shop", BannerPosition.Top);
+            Assert.AreEqual("shop", Banner(provider).GetPlacementName(), "the banner reports the new placement");
+            Assert.AreEqual(1, Object.FindObjectsByType(PrefabType("BannerPrefab")).Length, "the replaced banners were destroyed");
+        }
+
+        // Issue #195: a missing banner unit made ShowBanner a silent no-op
+        [Test]
+        public void ShowBanner_WithoutABannerUnit_WarnsOnceNamingTheTab()
+        {
+            _host = new GameObject("scheduler");
+            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>(), Online);
+            provider.Initialize(Config(), _ => { });
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus Ads\] LevelPlay has no banner ad unit id on the Test tab"));
+            provider.ShowBanner("menu", BannerPosition.Bottom);
+            provider.ShowBanner("menu", BannerPosition.Bottom);
+            LogAssert.NoUnexpectedReceived();
         }
 
         [Test]
