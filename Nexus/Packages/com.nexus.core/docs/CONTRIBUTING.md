@@ -43,11 +43,11 @@ exempt is reported as an Error by the analyzer.
 
 ### 5. Wizard template changes
 
-The Setup Wizard's eight generated files are single-source templates (`NexusSetupWizard` `*Template` properties) whose canonical copies live in the development project under `Nexus/Assets/Scripts/Game/Samples`. `WizardTemplateSyncTests` enforces four layers: the template mapping equals the canonical files byte for byte, the real write path reproduces those bytes in a temporary directory, the generated sources compile with Unity's own Roslyn, and each template's SHA-256 matches the "Template content hashes" table in `CHANGELOG.md`. To change a template:
+The Setup Wizard's eight generated files are single-source templates (`NexusSetupWizard` `*Template` properties) whose canonical copies live in the development project under `Nexus/Assets/Scripts/Game/Samples`. `WizardTemplateSyncTests` enforces four layers: the template mapping equals the canonical files byte for byte, the real write path reproduces those bytes in a temporary directory, the generated sources compile with Unity's own Roslyn, and each template's SHA-256 appears in `CHANGELOG.md` on one line with the file's path. The "Template content hashes" table of the released [0.5.0] section keeps the hashes that release shipped with. To change a template:
 
 1. Change the wizard template and the canonical sample file in the same commit, with identical content.
 2. Run `WizardTemplateSyncTests`; the hash test's failure message prints the new SHA-256.
-3. Update the "Template content hashes" table in `CHANGELOG.md` and state the reason for the change in the release notes.
+3. Under `[Unreleased]`, write the reason for the change in an entry that names the file's path and its new hash on one line. Never edit a released section's table: it records what that release shipped (#200).
 
 ### 6. Concurrency style guide
 

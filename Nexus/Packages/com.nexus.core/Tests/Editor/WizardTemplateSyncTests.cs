@@ -237,8 +237,9 @@ namespace Nexus.Editor.Tests
 
                 Assert.IsNotNull(row,
                     $"Generated file '{relativePath}' changed: its content hash (`{hash}`) is not documented in " +
-                    "CHANGELOG.md. If the change is intentional, update the template-hash table and the " +
-                    "release note for that template; if not, an unintended template edit slipped in.");
+                    "CHANGELOG.md. If the change is intentional, name the path and the new hash on one line of an " +
+                    "[Unreleased] entry that gives the reason (a released section keeps the hashes it shipped with); " +
+                    "if not, an unintended template edit slipped in.");
             }
         }
 
