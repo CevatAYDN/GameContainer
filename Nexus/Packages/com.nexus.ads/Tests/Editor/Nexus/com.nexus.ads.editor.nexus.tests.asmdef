@@ -1,0 +1,35 @@
+{
+    "name": "com.nexus.ads.editor.nexus.tests",
+    "rootNamespace": "Nexus.Ads.Tests",
+    "references": [
+        "Nexus.Ads.Core",
+        "Nexus.Ads.Unity",
+        "Nexus.Ads.Editor",
+        "Nexus.Ads.Editor.Nexus",
+        "com.nexus.core.editor",
+        "UnityEngine.TestRunner",
+        "UnityEditor.TestRunner"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "nunit.framework.dll"
+    ],
+    "autoReferenced": false,
+    "defineConstraints": [
+        "UNITY_INCLUDE_TESTS",
+        "NEXUS_CORE"
+    ],
+    "versionDefines": [
+        {
+            "name": "com.nexus.core",
+            "expression": "0.5.0",
+            "define": "NEXUS_CORE"
+        }
+    ],
+    "noEngineReferences": false
+}

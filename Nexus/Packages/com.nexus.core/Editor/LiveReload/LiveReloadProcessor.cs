@@ -10,6 +10,8 @@ using Nexus.Core;
 [assembly: InternalsVisibleTo("com.nexus.core.editor.tests")]
 // The State Machine tab moved to com.nexus.fsm with the FSM (#112) and keeps the window's strings and styles.
 [assembly: InternalsVisibleTo("com.nexus.fsm.editor")]
+// com.nexus.ads lists its validator on the Status tab with the window's strings when the core is installed (#193).
+[assembly: InternalsVisibleTo("Nexus.Ads.Editor.Nexus")]
 
 namespace Nexus.Editor
 {

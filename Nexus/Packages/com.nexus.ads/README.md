@@ -30,6 +30,7 @@ Next: the settings ([Using it without Nexus](#using-it-without-nexus)), then the
 | `Runtime/Core` | `Nexus.Ads.Core` (`noEngineReferences: true`, no references) | Placements, `AdPolicy` floors, `PolicyGuard`, `AdController`, `RetryPolicy`, `ProviderGate`, `MediationLock`, `SimulatorProvider`, the ports in `Ports.cs`. Compiled and proven in the host harness (`dotnet run --project tools/nexus-benchmark`, suite `AdsCoreSuite`). |
 | `Runtime/Unity` | `Nexus.Ads.Unity` (references Core and `UnityEngine.UI`) | `AdsSettings` asset, `ProviderStatusResolver`, `AdsBootstrap`, the static `Ads` facade, `SimulatorOverlay`, `AdRewardedButton`, the port implementations. |
 | `Editor` | `Nexus.Ads.Editor` (references Core and Unity) | Project Settings page, setup wizard, Placement Tester, `AdsValidator` (+ `RunCli`, pre-build hook), `AdPlacements` generator, app-ads.txt, link.xml and manifest pinning helpers; `PlatformCatalog.json` (links, official test data with source, SDK distribution, setup steps EN + TR) read through `PlatformCatalog`. |
+| `Editor/Nexus` | `Nexus.Ads.Editor.Nexus` (references the Editor assembly and `com.nexus.core.editor`; compiled only with `com.nexus.core` installed, `NEXUS_CORE`) | `AdsStatusSource`: the validator in the Nexus window's Status list. |
 | `docs` | | [POLICY_COMPLIANCE.md](docs/POLICY_COMPLIANCE.md) ([Türkçe](docs/POLICY_COMPLIANCE_TR.md)): every platform rule and where the package covers it. |
 | `Samples~/PlainUnity`, `Samples~/Nexus` | (imported by the Package Manager) | Ads without Nexus over the static facade; a Nexus game's lifecycle with `NexusAdsBridge.Connect`. |
 | `Tests/Editor`, `Tests/Runtime` | `com.nexus.ads.editor.tests`, `com.nexus.ads.tests` | EditMode tests of the settings, the resolver, the validator (through a fake project probe) and the text generators; PlayMode tests of the bootstrap, overlay, scheduler and button. |
@@ -250,7 +251,8 @@ as the `PendingReward` for the game's next start.
 page, the wizard, the CLI and the pre-build hook call it and own no rule of their own. The pre-build
 hook (`AdsBuildGuard`) runs on Android and iOS builds only, validates the Test tab for a development
 build and the Release tab otherwise, writes its report to `Library/NexusAds/ads-validation.json`, and
-stops the build on a fail. An ad-free release (the Release
+stops the build on a fail. With `com.nexus.core` installed, the Nexus window's Status tab lists the same
+check for the active build target and the development flag, each warn and fail with its fix. An ad-free release (the Release
 tab with Ad-free release on) starts no SDK, so the checks of a running mediation pass and say so
 (`consent.form`, `provider.compiled`, `mediation.status`, `keys.release.missing`, `android.edm`, and
 the Android plan checks `android.nativesdk`, `android.gradle`, `android.adapter`), while the checks

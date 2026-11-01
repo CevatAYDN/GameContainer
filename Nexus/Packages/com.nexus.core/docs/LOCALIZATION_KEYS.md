@@ -11,7 +11,7 @@ The keys here are the editor's. A game's own text goes through `LocalizationServ
 
 This document lists the localization key namespaces used by the editor window (`NexusWindow`) and the 9 Nexus Editor Plugins in `com.nexus.core` (the `NexusEditorPlugin` subclasses under `Editor/Plugins/`; the State Machine tab moved to `com.nexus.fsm` in #112) to prevent key collisions and ensure translation parity between **English (`en`)** and **Turkish (`tr`)**.
 
-**Parity:** every one of the 399 keys in `NexusLang.AddDefaults()` has an entry in `Editor/Locales/tr.json`, and `tr.json` has no key the code does not define. A new key goes into both files in the same change, and a changed English text gets its Turkish text in the same change.
+**Parity:** every one of the 401 keys in `NexusLang.AddDefaults()` has an entry in `Editor/Locales/tr.json`, and `tr.json` has no key the code does not define. A new key goes into both files in the same change, and a changed English text gets its Turkish text in the same change.
 
 A few `tr.json` entries deliberately keep the English text:
 
@@ -31,7 +31,7 @@ Code never compares a displayed text with an English literal: `ArchitecturePlugi
 | `tab_` | NexusWindow sidebar | Sidebar button label per plugin, `tab_<plugin id in lower case>`; without the key the plugin's `DisplayName` is used. Also the `DisplayName` of the Status, Context Inspector, Error and Performance plugins |
 | `action_` | Plugins | `action_<tool>_title`: the `DisplayName` of the Architecture, Casual Services, FSM, Tracer and Wizard plugins |
 | no namespace prefix (`contexts`, `handlers`, `roots`, `live_hint`, `no_roots`, `ready`, ...), `system_` | StatusPlugin, shared labels | The Status tab's state card and labels other tabs share |
-| `status_` (other than the window shell's `status_edit_mode` and `status_play_mode_active`) | StatusPlugin, `Validation/NexusStatus.cs`, `Validation/StatusSources.cs` | The problems list, its checks (`status_src_`), fix buttons (`status_fix_`), messages and the packages card |
+| `status_` (other than the window shell's `status_edit_mode` and `status_play_mode_active`) | StatusPlugin, `Validation/NexusStatus.cs`, `Validation/StatusSources.cs`, `com.nexus.ads`'s `AdsStatusSource` | The problems list, its checks (`status_src_`), fix buttons (`status_fix_`), messages and the packages card |
 | `setup_` | NexusSetupWizard | The Setup section's start page: starter scene, package samples, the way into the Context Wizard, document buttons, version line |
 | `wizard_` | WizardPlugin (`Wizard/WizardTabs.cs`, `Wizard/ScriptGenerator.cs`) | Context creation and the service, view/mediator and signal/command generators: fields, validation, results and next steps |
 | `ci_`, `hierarchy_`, `hier_`, `gm_no_active_contexts` | ContextInspectorPlugin | The running contexts' tree; the selected context's overview, singletons with their fields, DI bindings, services, signal handlers, extensions, test fire |

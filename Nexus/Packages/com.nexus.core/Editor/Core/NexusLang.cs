@@ -458,12 +458,14 @@ namespace Nexus.Editor
             s_strings["status_src_package_versions"] = "Package versions";
             s_strings["status_src_runtime"] = "Run time";
             s_strings["status_src_di"] = "Bindings";
+            s_strings["status_src_ads"] = "Ads";
             s_strings["status_fix"] = "Fix";
             s_strings["status_fix_open"] = "Open";
             s_strings["status_fix_generate"] = "Generate";
             s_strings["status_fix_package_manager"] = "Package Manager";
             s_strings["status_fix_errors"] = "Show errors";
             s_strings["status_fix_inspect"] = "Inspect";
+            s_strings["status_fix_ads_setup"] = "Ads Setup";
             s_strings["status_binder_stale"] = "The generated binder or link.xml no longer matches the code. A player build regenerates both; Generate does it now.";
             s_strings["status_binder_stale_build_stops"] = "The generated binder or link.xml no longer matches the code, and NEXUS_DISABLE_AUTOGEN=1 makes a player build stop on it. Generate regenerates both.";
             s_strings["status_binder_dropped_injectors"] = "The container set aside generated injectors written for other members and injects these types by reflection: {0}. Generate the binder again.";
