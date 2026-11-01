@@ -12,7 +12,7 @@ namespace Nexus.Editor.Tests
 {
     /// <summary>
     /// The model and service defects the audit #206 found: a throwing secure observer stopped the others and left Earn,
-    /// Spend and SetLevel unsaved (#225).
+    /// Spend and SetLevel unsaved (#225), and IsRTL was false for a regional code such as ar-EG (#228).
     /// </summary>
     public sealed class ModelServiceAuditDefectTests
     {
@@ -83,6 +83,19 @@ namespace Nexus.Editor.Tests
                 LogAssert.NoUnexpectedReceived();
             }
             finally { progression.Dispose(); }
+        }
+
+        [Test]
+        public void IsRTL_IsTrueForARegionalCodeOfARightToLeftLanguage()
+        {
+            var localization = new LocalizationService(new InMemoryPlayerPrefsService());
+
+            localization.SetLanguage("ar-EG");
+            Assert.IsTrue(localization.IsRTL);
+            localization.SetLanguage("he_IL");
+            Assert.IsTrue(localization.IsRTL);
+            localization.SetLanguage("en-US");
+            Assert.IsFalse(localization.IsRTL);
         }
     }
 }

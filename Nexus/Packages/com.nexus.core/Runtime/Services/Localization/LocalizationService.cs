@@ -36,14 +36,18 @@ namespace Nexus.Core.Services
         private CultureInfo _culture;
         public CultureInfo Culture => _culture ?? (_culture = CultureFor(_currentLanguage));
 
+        // The language part decides, so "ar-eg" and "he_il" (the codes a device locale gives) read right to left too (issue #228).
         public bool IsRTL
         {
             get
             {
                 var lang = _currentLanguage;
-                return lang == "ar" || lang == "he" || lang == "fa" || lang == "ur";
+                if (lang == null || lang.Length < 2 || (lang.Length > 2 && lang[2] != '-' && lang[2] != '_')) return false;
+                return IsLanguage(lang, "ar") || IsLanguage(lang, "he") || IsLanguage(lang, "fa") || IsLanguage(lang, "ur");
             }
         }
+
+        private static bool IsLanguage(string code, string language) => string.CompareOrdinal(code, 0, language, 0, 2) == 0;
 
         public LocalizationService() { }
 
