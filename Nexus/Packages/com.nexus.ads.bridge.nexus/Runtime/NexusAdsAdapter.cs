@@ -11,12 +11,13 @@ namespace Nexus.Ads.Bridge
     /// policy's interstitial floor (set by <see cref="NexusAdsBridge"/>). Revenue is forwarded to
     /// <see cref="AdService.RaiseImpression"/> by the bridge.
     /// </summary>
-    public sealed class NexusAdsAdapter : IAdNetworkAdapter, IAdOutcomeAdapter, IAdReadinessAdapter, IAdConsentAdapter
+    public sealed class NexusAdsAdapter : IAdNetworkAdapter, IAdOutcomeAdapter, IAdReadinessAdapter, IAdConsentAdapter, IDisposable
     {
         public const string ProviderName = "nexus-ads";
 
         private readonly AdController _controller;
         private Action _onInitialized;
+        private bool _disposed;
 
         public event Action ReadyChanged;
 
@@ -26,6 +27,15 @@ namespace Nexus.Ads.Bridge
         {
             _controller = controller ?? throw new ArgumentNullException(nameof(controller));
             _controller.ReadyChanged += OnReadyChanged;
+        }
+
+        /// <summary>Detaches from the controller; the bridge disposes the adapter a later Attach for the same controller replaces (issue #177).</summary>
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            _controller.ReadyChanged -= OnReadyChanged;
+            _onInitialized = null;
         }
 
         /// <summary>Starts the controller when it is not running yet; <paramref name="onInitialized"/> runs once, when the first readiness answer exists.</summary>

@@ -13,9 +13,16 @@ namespace Nexus.Ads.Bridge
     /// </summary>
     public static class NexusAdsBridge
     {
-        private static readonly System.Collections.Generic.HashSet<AdController> Forwarded = new System.Collections.Generic.HashSet<AdController>();
-        // the entitlement each controller got last: the next Attach disposes it, or every Attach left one subscribed to the store (issue #118)
-        private static readonly System.Collections.Generic.Dictionary<AdController, IapAdFreeEntitlement> Entitlements = new System.Collections.Generic.Dictionary<AdController, IapAdFreeEntitlement>();
+        // What one Attach wired to a controller. The next Attach for the same controller (a game that rebuilt its context) detaches it:
+        // revenue went to the first service for good, and each Attach left an adapter and an entitlement subscribed (issues #118, #177).
+        private sealed class Connection
+        {
+            public NexusAdsAdapter Adapter;
+            public Action<AdRevenue> Revenue;
+            public IapAdFreeEntitlement Entitlement;
+        }
+
+        private static readonly System.Collections.Generic.Dictionary<AdController, Connection> Connections = new System.Collections.Generic.Dictionary<AdController, Connection>();
 
         /// <summary>
         /// Connects <paramref name="ads"/> to the controller of <see cref="AdsBootstrap.Instance"/> (or the one given).
@@ -37,18 +44,30 @@ namespace Nexus.Ads.Bridge
         public static NexusAdsAdapter Attach(IAdService ads, IAdAdapterFactory factory, AdController controller, string providerName, IIapService store = null, string removeAdsProductId = null)
         {
             if (controller == null) throw new ArgumentNullException(nameof(controller));
+            Connections.TryGetValue(controller, out var previous);
+            if (previous != null)
+            {
+                if (previous.Revenue != null) controller.Revenue -= previous.Revenue;
+                previous.Entitlement?.Dispose();
+                previous.Adapter.Dispose();
+            }
             var adapter = new NexusAdsAdapter(controller);
+            var connection = new Connection { Adapter = adapter };
+            Connections[controller] = connection;
             factory.RegisterProvider(NexusAdsAdapter.ProviderName, () => adapter);
             if (!string.IsNullOrEmpty(providerName)) factory.RegisterProvider(providerName, () => adapter);
             ads.SetInterstitialCooldown((float)controller.Guard.Policy.MinInterstitialGapSeconds);
-            if (ads is AdService service && Forwarded.Add(controller)) controller.Revenue += r => service.RaiseImpression(r.Network, r.Value, r.Placement); // one forward per controller, however often Connect runs
+            if (ads is AdService service)
+            {
+                connection.Revenue = r => service.RaiseImpression(r.Network, r.Value, r.Placement);
+                controller.Revenue += connection.Revenue;
+            }
             if (store != null && !string.IsNullOrEmpty(removeAdsProductId))
             {
-                if (Entitlements.TryGetValue(controller, out var previous)) previous.Dispose();
-                var entitlement = new IapAdFreeEntitlement(store, removeAdsProductId);
-                Entitlements[controller] = entitlement;
-                controller.SetAdFreeEntitlement(entitlement);
+                connection.Entitlement = new IapAdFreeEntitlement(store, removeAdsProductId);
+                controller.SetAdFreeEntitlement(connection.Entitlement);
             }
+            else if (previous?.Entitlement != null) controller.SetAdFreeEntitlement(null); // the disposed entitlement must not keep answering
             ads.SetNetworkAdapter(factory.CreateAdapter(NexusAdsAdapter.ProviderName));
             return adapter;
         }

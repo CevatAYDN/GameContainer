@@ -104,6 +104,31 @@ namespace Nexus.Ads.Bridge.Tests
             Assert.IsTrue(_controller.PendingReward.HasValue, "a reward the game did not finish paying is paid at the next start");
         }
 
+        // Issue #177: revenue was forwarded once per controller, to the first service, and each Connect left its adapter subscribed
+        // to the controller: a game that rebuilt its context lost every ad_impression and kept feeding the disposed service
+        [Test]
+        public void ASecondConnect_SendsRevenueToTheNewServiceOnly_AndDetachesTheFirstAdapter()
+        {
+            var first = (NexusAdsAdapter)_factory.CreateAdapter(NexusAdsAdapter.ProviderName);
+            var heardByFirst = new List<string>();
+            _service.OnImpressionRecorded += (network, revenue, placement) => heardByFirst.Add(placement);
+            using var rebuilt = new AdService();
+            var heardByRebuilt = new List<string>();
+            rebuilt.OnImpressionRecorded += (network, revenue, placement) => heardByRebuilt.Add(placement);
+            NexusAdsBridge.Attach(rebuilt, _factory, _controller, _simulator.Name, _store, "remove_ads");
+            int firstAdapterEvents = 0;
+            first.ReadyChanged += () => firstAdapterEvents++;
+
+            AdOutcome? outcome = null;
+            rebuilt.RequestReward("shop_refill", o => outcome = o);
+
+            Assert.AreEqual(AdOutcome.Rewarded, outcome);
+            CollectionAssert.AreEqual(new[] { "shop_refill" }, heardByRebuilt, "the latest Connect's service records the impression");
+            CollectionAssert.IsEmpty(heardByFirst, "the replaced service hears nothing");
+            Assert.AreEqual(0, firstAdapterEvents, "the replaced adapter is detached from the controller");
+            Assert.AreEqual(1, _store.StoreChangedHandlers, "one entitlement stays subscribed to the store");
+        }
+
         [Test]
         public void TheFactoryKnowsTheBridge_UnderBothNames()
         {
