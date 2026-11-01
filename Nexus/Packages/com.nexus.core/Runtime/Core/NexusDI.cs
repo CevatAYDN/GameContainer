@@ -2969,10 +2969,15 @@ namespace Nexus.Core
         /// </summary>
         private static async System.Threading.Tasks.Task DisposeAllAsyncInBackground(IReadOnlyList<IAsyncDisposable> asyncDisposables)
         {
+            var logger = NexusRuntime.Logger; // read before the first await, on the disposing thread
             for (int i = 0; i < asyncDisposables.Count; i++)
             {
                 try { await asyncDisposables[i].DisposeAsync().ConfigureAwait(false); }
-                catch (OperationCanceledException) { /* Expected on context teardown */ }
+                catch (OperationCanceledException ex)
+                {
+                    // nothing here cancels it: the singleton's own dispose stopped part-way (#212)
+                    Services.NexusLog.WarnAlways(logger, $"[Nexus] {asyncDisposables[i].GetType().FullName}.DisposeAsync was cancelled before it finished: {ex.Message}");
+                }
                 catch (Exception ex)
                 {
                     NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {asyncDisposables[i].GetType().FullName}: {ex}");

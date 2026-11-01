@@ -139,11 +139,16 @@ namespace Nexus.Core.Lifecycle
             {
                 // Use a short timeout so fire-and-forget cleanup doesn't hang indefinitely.
                 using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                // a stop still running at the timeout is reported, whether or not it honours the token (#212); the logger is
+                // read here, not on the timer thread, where the context it resolves from may be mid-dispose
+                var logger = NexusRuntime.Logger;
+                using var timeout = cts.Token.Register(() => Services.NexusLog.WarnAlways(logger,
+                    $"[Nexus] {stoppable.GetType().FullName}.StopAsync did not finish within 5 s of the context's teardown and was cancelled."));
                 // ConfigureAwait(false) prevents the continuation from hopping back to
                 // the (already torn-down) Unity SynchronizationContext during context dispose.
                 await stoppable.StopAsync(cts.Token).ConfigureAwait(false);
             }
-            catch (OperationCanceledException) { /* timeout or cancellation during teardown */ }
+            catch (OperationCanceledException) { /* reported by the timeout above, or the stop's own cancellation */ }
             catch (Exception ex)
             {
                 NexusRuntime.Logger?.LogError($"[Nexus] Fire-and-forget IAsyncStoppable.StopAsync failed: {ex.Message}");

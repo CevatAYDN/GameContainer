@@ -16,8 +16,9 @@ namespace Nexus.Editor.Tests
     /// <summary>
     /// The DI and lifecycle defects the audit #206 found: a child context ran its parent's lifecycle (#207), a Singleton
     /// startable a scene bound after the root started never started (#208), a cycle through a binding shared by two keys
-    /// froze Resolve for 10 s (#209), AsImplementedInterfaces dropped a game interface under "Systems." (#210), and a
-    /// WithParameter singleton was rebuilt by every scene that bound it (#211).
+    /// froze Resolve for 10 s (#209), AsImplementedInterfaces dropped a game interface under "Systems." (#210), a
+    /// WithParameter singleton was rebuilt by every scene that bound it (#211), and a stop that outran the teardown
+    /// timeout left no line (#212).
     /// </summary>
     public sealed class DiAuditDefectTests
     {
@@ -48,6 +49,11 @@ namespace Nexus.Editor.Tests
         {
             public readonly Config Config;
             public Configured(Config config) => Config = config;
+        }
+
+        public sealed class StopThatNeverEnds : IAsyncStoppable
+        {
+            public ValueTask StopAsync(CancellationToken ct) => new ValueTask(new TaskCompletionSource<bool>().Task);
         }
 
         private static ContextData NewData()
@@ -141,6 +147,24 @@ namespace Nexus.Editor.Tests
             var other = new Config();
             using (var scene = root.CreateChildScope(s => s.BindFluent<Configured>().AsSingleton().WithParameter(other))) third = scene.Resolve<Configured>();
             Assert.AreSame(other, third.Config);
+        }
+
+        [Test]
+        public async Task AStopAsyncStillRunningAtTheTeardownTimeout_IsReported()
+        {
+            var warnings = new ConcurrentQueue<string>();
+            Application.LogCallback capture = (message, stack, type) => { if (type == LogType.Warning) warnings.Enqueue(message); };
+            Application.logMessageReceivedThreaded += capture;
+            try
+            {
+                new ContextLifecycleOrchestrator().ExecuteStoppableLifecyclesSync(new object[] { new StopThatNeverEnds() });
+                var deadline = DateTime.UtcNow.AddSeconds(8);
+                while (DateTime.UtcNow < deadline && !warnings.Any(w => w.Contains(nameof(StopThatNeverEnds)))) await Task.Delay(100);
+            }
+            finally { Application.logMessageReceivedThreaded -= capture; }
+
+            Assert.IsTrue(warnings.Any(w => w.Contains(nameof(StopThatNeverEnds)) && w.Contains("did not finish within 5 s")),
+                string.Join("\n", warnings));
         }
     }
 }
