@@ -493,7 +493,9 @@ namespace Nexus.Core
             }
 
             // IStartable and IAsyncStartable singletons start whether or not something resolved them (#190)
-            Container.ResolveStartableSingletons();
+            // a Lifetime.Singleton this context bound after the root started lives in the root, which will not start it (#208)
+            var routedStartables = Container.ResolveStartableSingletons();
+            if (routedStartables != null) await _orchestrator.ExecuteStartableLifecyclesAsync(routedStartables, ct);
             await _orchestrator.ExecuteStartableLifecyclesAsync(Container.GetActiveSingletons(), ct);
 
             // Drain lazy services first resolved during OnStartAsync (e.g. by views/mediators).

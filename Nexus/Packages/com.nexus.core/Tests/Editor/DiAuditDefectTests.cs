@@ -14,9 +14,9 @@ using UnityEngine.TestTools;
 namespace Nexus.Editor.Tests
 {
     /// <summary>
-    /// The DI and lifecycle defects the audit #206 found: a child context ran its parent's lifecycle (#207), a cycle
-    /// through a binding shared by two keys froze Resolve for 10 s (#209), and AsImplementedInterfaces dropped a game
-    /// interface under "Systems." (#210).
+    /// The DI and lifecycle defects the audit #206 found: a child context ran its parent's lifecycle (#207), a Singleton
+    /// startable a scene bound after the root started never started (#208), a cycle through a binding shared by two keys
+    /// froze Resolve for 10 s (#209), and AsImplementedInterfaces dropped a game interface under "Systems." (#210).
     /// </summary>
     public sealed class DiAuditDefectTests
     {
@@ -27,6 +27,12 @@ namespace Nexus.Editor.Tests
             public ValueTask OnInitializeAsync(CancellationToken ct) { Inits++; return default; }
             public ValueTask OnStartAsync(CancellationToken ct) { Starts++; return default; }
             public void OnDispose() => Disposes++;
+        }
+
+        public sealed class LateStartable : IStartable
+        {
+            public static int Starts;
+            public void Start() => Starts++;
         }
 
         public interface IFirst { }
@@ -62,6 +68,30 @@ namespace Nexus.Editor.Tests
                 Assert.AreEqual((1, 0, 0, 0), (lifecycle.Configures, lifecycle.Inits, lifecycle.Starts, lifecycle.Disposes));
             }
             finally { parent.Dispose(); }
+        }
+
+        [Test]
+        public async Task ASingletonStartableASceneBindsAfterTheRootStarted_StartsOnce()
+        {
+            LateStartable.Starts = 0;
+            var global = ContextFactory.Create(null, NewData()).OwnsContextData();
+            try
+            {
+                global.Configure();
+                await global.InitializeLifecycleAsync(global.ConfiguredLifecycles, CancellationToken.None);
+
+                for (int load = 0; load < 2; load++)
+                {
+                    var scene = ContextFactory.Create(global, NewData()).OwnsContextData();
+                    scene.GetOrCreateBuilder().Bind<LateStartable>(Lifetime.Singleton);
+                    scene.Configure();
+                    await scene.InitializeLifecycleAsync(scene.ConfiguredLifecycles, CancellationToken.None);
+                    scene.Dispose();
+                }
+
+                Assert.AreEqual(1, LateStartable.Starts, "started by the first scene, kept and not started again by the reloaded one");
+            }
+            finally { global.Dispose(); }
         }
 
         [Test]

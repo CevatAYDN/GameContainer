@@ -178,6 +178,7 @@ namespace Nexus.Core
         // membership/count/editor snapshots; this list carries the order guarantee.
         private List<object> _resolvedSingletonOrder;
         private int _keptSingletonCount; // guarded by _singletonLock
+        private int _startablesResolved; // 1 once a context started this container's startables (#208)
         private List<IAsyncDisposable> _asyncDisposeBacklog; // guarded by _singletonLock
         private int _disposeState;
         private readonly object _disposeLock = new();
@@ -349,6 +350,9 @@ namespace Nexus.Core
             /// <summary>The managed id of the thread that constructs this singleton, 0 when none (guarded by _singletonLock;
             /// another thread waits on a handle, the same thread is in a cycle).</summary>
             public int Constructing;
+
+            /// <summary>1 once a context took this startable singleton into its start (#208).</summary>
+            public int Started;
         }
 
         /// <summary>Bumped by every change to the static caches so per-binding caches refresh.</summary>
@@ -2577,19 +2581,42 @@ namespace Nexus.Core
         /// type that nothing has resolved yet, so they start like a resolved one; lazy services and mediators stay
         /// unresolved (#190).
         /// </summary>
-        internal void ResolveStartableSingletons()
+        /// <summary>
+        /// Builds this container's startable singletons, which the context then starts from <see cref="GetActiveSingletons"/>.
+        /// A child also returns the root's startable singletons that no context started yet: a scene's
+        /// <see cref="Lifetime.Singleton"/> binding goes to the root, and when the root started before the scene bound it,
+        /// nothing else starts it (#208). Null when there is none.
+        /// </summary>
+        internal List<object> ResolveStartableSingletons()
         {
-            var lazy = Volatile.Read(ref _lazyServiceTypes);
             foreach (var entry in _bindings)
             {
-                var binding = entry.Value;
-                var type = binding.ConcreteType;
-                if (!binding.IsSingleton || binding.Instance != null || type == null) continue;
-                if (!typeof(IStartable).IsAssignableFrom(type) && !typeof(IAsyncStartable).IsAssignableFrom(type)) continue;
-                if (typeof(IMediator).IsAssignableFrom(type)) continue;
-                if (lazy != null && (lazy.ContainsKey(entry.Key) || lazy.ContainsKey(type))) continue;
-                Resolve(entry.Key);
+                if (!IsEagerStartable(entry.Key, entry.Value)) continue;
+                Volatile.Write(ref entry.Value.Started, 1);
+                if (entry.Value.Instance == null) Resolve(entry.Key);
             }
+            Volatile.Write(ref _startablesResolved, 1);
+
+            var root = GetRootContainer();
+            if (root == this || Volatile.Read(ref root._startablesResolved) == 0) return null;
+            List<object> routed = null;
+            foreach (var entry in root._bindings)
+            {
+                // one binding under several keys (AsImplementedInterfaces) is taken once
+                if (!root.IsEagerStartable(entry.Key, entry.Value) || Interlocked.CompareExchange(ref entry.Value.Started, 1, 0) != 0) continue;
+                (routed ??= new List<object>()).Add(entry.Value.Instance ?? root.Resolve(entry.Key));
+            }
+            return routed;
+        }
+
+        private bool IsEagerStartable(Type key, Binding binding)
+        {
+            var type = binding.ConcreteType;
+            if (!binding.IsSingleton || type == null) return false;
+            if (!typeof(IStartable).IsAssignableFrom(type) && !typeof(IAsyncStartable).IsAssignableFrom(type)) return false;
+            if (typeof(IMediator).IsAssignableFrom(type)) return false;
+            var lazy = Volatile.Read(ref _lazyServiceTypes);
+            return lazy == null || !(lazy.ContainsKey(key) || lazy.ContainsKey(type));
         }
 
         public IEnumerable<object> GetActiveSingletons()
