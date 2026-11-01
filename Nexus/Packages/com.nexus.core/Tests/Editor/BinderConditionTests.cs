@@ -18,6 +18,8 @@ namespace Nexus.Editor.Tests
         public sealed class ProviderTool { }
         public class BaseTool { }
         public sealed class DerivedTool : BaseTool { }
+        public sealed class NestedBlockTool { }
+        public sealed class AfterInnerBlockTool { }
 
         private static BinderConditions Read(Dictionary<string, string> files, string[] typeDefines, string[] binderDefines)
         {
@@ -42,6 +44,22 @@ namespace Nexus.Editor.Tests
             Assert.That(conditions.For(typeof(DevOnlyTool)), Is.EqualTo("DEVELOPMENT_BUILD || UNITY_EDITOR"));
             Assert.That(conditions.For(typeof(List<DevOnlyTool>)), Is.EqualTo("DEVELOPMENT_BUILD || UNITY_EDITOR"));
             Assert.That(conditions.For(typeof(DevOnlyTool), typeof(string), typeof(DevOnlyTool)), Is.EqualTo("DEVELOPMENT_BUILD || UNITY_EDITOR"));
+        }
+
+        [Test]
+        public void ATypeInNestedNamespaceBlocksKeepsItsIf()
+        {
+            // #250: the inner block's name replaced the outer one, so the type was looked up as "Editor.Tests" and named
+            // unconditionally; a type after a closed inner block kept the inner name the same way
+            var nested = Read(
+                "namespace Nexus\n{\n    namespace Editor.Tests\n    {\n#if DEVELOPMENT_BUILD || UNITY_EDITOR\n        public sealed class NestedBlockTool { }\n#endif\n    }\n}\n",
+                "UNITY_EDITOR");
+            var afterInner = Read(
+                "namespace Nexus.Editor.Tests\n{\n    namespace Inner\n    {\n        public sealed class Unrelated { string Format => \"}\"; }\n    }\n#if DEVELOPMENT_BUILD || UNITY_EDITOR\n    public sealed class AfterInnerBlockTool { }\n#endif\n}\n",
+                "UNITY_EDITOR");
+
+            Assert.That(nested.For(typeof(NestedBlockTool)), Is.EqualTo("DEVELOPMENT_BUILD || UNITY_EDITOR"));
+            Assert.That(afterInner.For(typeof(AfterInnerBlockTool)), Is.EqualTo("DEVELOPMENT_BUILD || UNITY_EDITOR"));
         }
 
         [Test]

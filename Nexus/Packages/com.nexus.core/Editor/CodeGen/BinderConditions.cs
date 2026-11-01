@@ -28,6 +28,8 @@ namespace Nexus.Editor
         private static readonly Regex s_declaration = new Regex(
             @"\b(?:record\s+(?:class|struct)|class|struct|interface|enum|record)\s+@?([A-Za-z_]\w*)", RegexOptions.Compiled);
         private static readonly Regex s_partial = new Regex(@"\bpartial\b", RegexOptions.Compiled);
+        // String and char literals, emptied before braces are counted: "{0}" opens no block.
+        private static readonly Regex s_literal = new Regex(@"@""(?:[^""]|"""")*""|""(?:[^""\\]|\\.)*""|'(?:[^'\\]|\\.)*'", RegexOptions.Compiled);
         private static readonly Regex s_inject = new Regex(
             @"(?:\[\s*(?:\w+\s*:\s*)?|,)\s*(?:global::)?(?:Nexus\.Core\.)?(?:Optional)?Inject(?:Attribute)?\s*(?:\]|\(|,)", RegexOptions.Compiled);
 
@@ -263,7 +265,35 @@ namespace Nexus.Editor
             var scan = new FileScan();
             var frames = new List<Frame>();
             var injects = new List<(int Line, (Frame Frame, int Branch)[] Branches)>();
-            string ns = "";
+            // Namespace blocks nest: `namespace A { namespace B {` declares A.B, and a type after B's closing brace is in
+            // A again (#250). shortcut: braces inside /* */ comments and raw string literals are counted; an unbalanced one
+            // there gives the types after it the wrong namespace, so their #if is missed. Track comments if a game hits it.
+            var namespaces = new List<(string Name, int Depth)>();
+            string fileNamespace = "", pendingNamespace = null;
+            int depth = 0;
+            void Braces(string code, int from, int to)
+            {
+                for (int i = from; i < to; i++)
+                {
+                    if (code[i] == '{')
+                    {
+                        depth++;
+                        if (pendingNamespace != null) { namespaces.Add((pendingNamespace, depth)); pendingNamespace = null; }
+                    }
+                    else if (code[i] == '}')
+                    {
+                        if (namespaces.Count > 0 && namespaces[namespaces.Count - 1].Depth == depth) namespaces.RemoveAt(namespaces.Count - 1);
+                        depth--;
+                    }
+                }
+            }
+            string Namespace()
+            {
+                var parts = new List<string>();
+                if (fileNamespace.Length > 0) parts.Add(fileNamespace);
+                foreach (var block in namespaces) parts.Add(block.Name);
+                return string.Join(".", parts);
+            }
             var lines = source.Split('\n');
             for (int n = 0; n < lines.Length; n++)
             {
@@ -283,15 +313,24 @@ namespace Nexus.Editor
                     continue;
                 }
                 line = StripComment(line);
-                var nsMatch = s_namespace.Match(line);
-                if (nsMatch.Success) ns = nsMatch.Groups[1].Value;
+                string code = s_literal.Replace(line, "\"\"");
+                var nsMatch = s_namespace.Match(code);
+                if (nsMatch.Success)
+                {
+                    if (code.TrimEnd().EndsWith(";")) fileNamespace = nsMatch.Groups[1].Value;
+                    else pendingNamespace = nsMatch.Groups[1].Value;
+                }
                 var current = frames.Select(f => (f, f.Branches.Count - 1)).ToArray();
                 bool declared = false;
-                foreach (Match m in s_declaration.Matches(line))
+                int counted = 0;
+                foreach (Match m in s_declaration.Matches(code))
                 {
-                    scan.Declarations.Add((ns, m.Groups[1].Value, Condition(current), n + 1, s_partial.IsMatch(line.Substring(0, m.Index))));
+                    Braces(code, counted, m.Index);
+                    counted = m.Index;
+                    scan.Declarations.Add((Namespace(), m.Groups[1].Value, Condition(current), n + 1, s_partial.IsMatch(code.Substring(0, m.Index))));
                     declared = true;
                 }
+                Braces(code, counted, code.Length);
                 if (declared)
                     foreach (var frame in frames) frame.Declares[frame.Declares.Count - 1] = true;
                 if (frames.Count > 0 && s_inject.IsMatch(line)) injects.Add((n + 1, current));
