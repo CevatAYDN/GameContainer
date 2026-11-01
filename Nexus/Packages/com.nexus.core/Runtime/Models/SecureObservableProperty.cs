@@ -32,7 +32,7 @@ namespace Nexus.Core
     /// <see cref="SecureObservableCore{T}"/> core.
     /// </summary>
     [Preserve]
-    public sealed class SecureObservableInt
+    public sealed class SecureObservableInt : IReadOnlyObservableProperty<int>
     {
         private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 
@@ -103,7 +103,7 @@ namespace Nexus.Core
     /// can read process memory. Server-side validation remains required.
     /// </summary>
     [Preserve]
-    public sealed class SecureObservableLong
+    public sealed class SecureObservableLong : IReadOnlyObservableProperty<long>
     {
         private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 
@@ -294,7 +294,7 @@ namespace Nexus.Core
     /// read process memory. Server-side validation remains required.
     /// </summary>
     [Preserve]
-    public sealed class SecureObservableBigDouble
+    public sealed class SecureObservableBigDouble : IReadOnlyObservableProperty<BigDouble>
     {
         private static readonly Func<Action<string>> StaticTamperAccessor = () => OnTamperDetected;
 

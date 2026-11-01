@@ -15,10 +15,10 @@ namespace Nexus.Core.Services
 
     public interface IProgressionService
     {
-        // XOR-masked reactive properties: level data must not sit in plain RAM where
-        // GameGuardian / CheatEngine scans can find and edit it.
-        SecureObservableInt CurrentLevel { get; }
-        SecureObservableInt MaxUnlockedLevel { get; }
+        // Read-only views of XOR-masked properties (level data must not sit in plain RAM where GameGuardian / CheatEngine
+        // scans can find and edit it): a level changes through SetLevel and CompleteCurrentLevel, which save it (#231).
+        IReadOnlyObservableProperty<int> CurrentLevel { get; }
+        IReadOnlyObservableProperty<int> MaxUnlockedLevel { get; }
 
         void CompleteCurrentLevel();
         void SetLevel(int levelIndex);
@@ -44,8 +44,10 @@ namespace Nexus.Core.Services
         // clobber it and vice versa.
         private const string SaveOwner = "progression";
 
-        public SecureObservableInt CurrentLevel { get; } = new(1);
-        public SecureObservableInt MaxUnlockedLevel { get; } = new(1);
+        private readonly SecureObservableInt _currentLevel = new(1);
+        private readonly SecureObservableInt _maxUnlockedLevel = new(1);
+        public IReadOnlyObservableProperty<int> CurrentLevel => _currentLevel;
+        public IReadOnlyObservableProperty<int> MaxUnlockedLevel => _maxUnlockedLevel;
 
         // Serializes the read-modify-write chains (CompleteCurrentLevel / SetLevel):
         // ObservableProperty makes a SINGLE set atomic, but these methods read, compute,
@@ -66,12 +68,12 @@ namespace Nexus.Core.Services
             var store = Store;
             if (store != null)
             {
-                CurrentLevel.SetByService(Math.Max(1, store.GetInt(KeyCurrentLevel, 1)));
-                MaxUnlockedLevel.SetByService(Math.Max(CurrentLevel.Value, store.GetInt(KeyMaxLevel, 1)));
+                _currentLevel.SetByService(Math.Max(1, store.GetInt(KeyCurrentLevel, 1)));
+                _maxUnlockedLevel.SetByService(Math.Max(_currentLevel.Value, store.GetInt(KeyMaxLevel, 1)));
             }
 
-            CurrentLevel.OnChanged(OnLevelChanged);
-            MaxUnlockedLevel.OnChanged(OnLevelChanged);
+            _currentLevel.OnChanged(OnLevelChanged);
+            _maxUnlockedLevel.OnChanged(OnLevelChanged);
 
             return default;
         }
@@ -98,8 +100,8 @@ namespace Nexus.Core.Services
         {
             var store = Store;
             if (store == null) return;
-            store.SetInt(KeyCurrentLevel, CurrentLevel.Value);
-            store.SetInt(KeyMaxLevel, MaxUnlockedLevel.Value);
+            store.SetInt(KeyCurrentLevel, _currentLevel.Value);
+            store.SetInt(KeyMaxLevel, _maxUnlockedLevel.Value);
             store.Save();
         }
 
@@ -107,8 +109,8 @@ namespace Nexus.Core.Services
         {
             lock (_levelLock)
             {
-                if (CurrentLevel.Value == int.MaxValue) return;
-                SetLevelLocked(CurrentLevel.Value + 1);
+                if (_currentLevel.Value == int.MaxValue) return;
+                SetLevelLocked(_currentLevel.Value + 1);
             }
         }
 
@@ -122,14 +124,14 @@ namespace Nexus.Core.Services
 
         private void SetLevelLocked(int level)
         {
-            if (CurrentLevel.Value == level && MaxUnlockedLevel.Value >= level) return;
+            if (_currentLevel.Value == level && _maxUnlockedLevel.Value >= level) return;
             _updateDepth++;
             try
             {
                 // Publish the unlocked bound first so observers never see current > max.
                 // an observer's failure does not stop the second write or the save (#225)
-                if (level > MaxUnlockedLevel.Value) MaxUnlockedLevel.SetByService(level);
-                CurrentLevel.SetByService(level);
+                if (level > _maxUnlockedLevel.Value) _maxUnlockedLevel.SetByService(level);
+                _currentLevel.SetByService(level);
             }
             finally
             {
@@ -171,8 +173,8 @@ namespace Nexus.Core.Services
                 try { SaveThrottler.ForceSave(SaveOwner, PersistNow); }
                 catch (Exception ex) { NexusLog.WarnAlways($"[Progression] Final persist failed on dispose: {ex.Message}"); }
             }
-            CurrentLevel.RemoveOnChanged(OnLevelChanged);
-            MaxUnlockedLevel.RemoveOnChanged(OnLevelChanged);
+            _currentLevel.RemoveOnChanged(OnLevelChanged);
+            _maxUnlockedLevel.RemoveOnChanged(OnLevelChanged);
         }
     }
 }

@@ -21,11 +21,12 @@ namespace Nexus.Core.Services
     {
         long GetBalance(string currencyId);
         /// <summary>
-        /// The currency's observable balance. Its change handlers run synchronously while the service holds its balance
+        /// The currency's observable balance, read-only: the balance changes through the service, which checks and saves each
+        /// change (#231). Its change handlers run synchronously while the service holds its balance
         /// lock (the long view of a BigDouble balance depends on that), so a handler must not wait for another thread
         /// that uses the economy; update UI or post the work instead. The same holds for <see cref="GetObservableBigBalance"/>.
         /// </summary>
-        SecureObservableLong GetObservableBalance(string currencyId);
+        IReadOnlyObservableProperty<long> GetObservableBalance(string currencyId);
         bool CanAfford(string currencyId, long amount);
         bool Spend(string currencyId, long amount, string reason = "");
         /// <summary>As <see cref="Spend(string,long,string)"/>; on false, <paramref name="refusal"/> says why.</summary>
@@ -35,7 +36,7 @@ namespace Nexus.Core.Services
 
         // BigDouble API for idle, incremental, and large-scale numeric game genres
         BigDouble GetBigBalance(string currencyId);
-        SecureObservableBigDouble GetObservableBigBalance(string currencyId);
+        IReadOnlyObservableProperty<BigDouble> GetObservableBigBalance(string currencyId);
         bool CanAffordBig(string currencyId, BigDouble amount);
         /// <summary>Throws <see cref="NotSupportedException"/> when the bound network validator is not an <see cref="INetworkBigEconomyValidator"/>, as <see cref="EarnBig"/> and <see cref="SetBigBalance"/> do.</summary>
         bool SpendBig(string currencyId, BigDouble amount, string reason = "");
@@ -131,7 +132,6 @@ namespace Nexus.Core.Services
         // collection itself). A promoted currency's long observable remains the same instance, projecting its
         // canonical BigDouble balance.
         private readonly object _balanceLock = new object();
-        private readonly Dictionary<string, long> _projectingLegacy = new();
         // A currency's first touch reads storage (file I/O and decryption with EncryptedStorageService). The read
         // runs before the balance lock (PrefetchSaved) and the create path under the lock takes its result.
         private readonly ConcurrentDictionary<string, SavedBalance> _prefetched = new();
@@ -264,7 +264,7 @@ namespace Nexus.Core.Services
         // where the check-then-mutate sequence on SecureObservableLong.Value must be
         // atomic against other mutators (two concurrent Spends could both pass the
         // CanAfford check). Do NOT remove the lock from mutation paths.
-        public SecureObservableLong GetObservableBalance(string currencyId)
+        public IReadOnlyObservableProperty<long> GetObservableBalance(string currencyId)
         {
             if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return null;
             if (_balances.TryGetValue(currencyId, out var existing))
@@ -314,8 +314,6 @@ namespace Nexus.Core.Services
         private SecureObservableLong LazyLoadBalance(string currencyId)
             => _balances.TryGetValue(currencyId, out var prop) ? prop : CreateBalanceLocked(currencyId);
 
-        // Split from the lookup: the OnChanged lambda captures currencyId, and C# allocates a captured
-        // parameter's closure on method entry, so in one method every Earn/Spend paid for it.
         private SecureObservableLong CreateBalanceLocked(string currencyId)
         {
             var saved = TakeSaved(currencyId);
@@ -328,16 +326,6 @@ namespace Nexus.Core.Services
                 : saved.Long;
             var prop = new SecureObservableLong(Math.Max(0, savedAmount));
             _balances[currencyId] = prop;
-            prop.OnChanged((_, value) =>
-            {
-                lock (_balanceLock)
-                {
-                    if (_disposed || _disposing || !_bigBalances.TryGetValue(currencyId, out var canonical)) return;
-                    if (_projectingLegacy.TryGetValue(currencyId, out long projection) && value == projection) return;
-                    // Preserve existing mutable observable ownership after promotion.
-                    canonical.Value = new BigDouble(Math.Max(0L, value));
-                }
-            });
             return prop;
         }
 
@@ -416,7 +404,7 @@ namespace Nexus.Core.Services
             SchedulePersist();
         }
 
-        public SecureObservableBigDouble GetObservableBigBalance(string currencyId)
+        public IReadOnlyObservableProperty<BigDouble> GetObservableBigBalance(string currencyId)
         {
             if (_disposed || _disposing || string.IsNullOrEmpty(currencyId)) return null;
             if (_bigBalances.TryGetValue(currencyId, out var existing))
@@ -435,7 +423,8 @@ namespace Nexus.Core.Services
             => _bigBalances.TryGetValue(currencyId, out var prop) ? prop
                 : CreateBigBalanceLocked(currencyId, _balances.ContainsKey(currencyId) ? default : TakeSaved(currencyId));
 
-        // Split from the lookup for the same closure reason as CreateBalanceLocked.
+        // Split from the lookup: the OnChanged lambda captures currencyId, and C# allocates a captured
+        // parameter's closure on method entry, so in one method every big Earn/Spend paid for it.
         private SecureObservableBigDouble CreateBigBalanceLocked(string currencyId, SavedBalance saved)
         {
             BigDouble savedAmount = BigDouble.Zero;
@@ -492,16 +481,7 @@ namespace Nexus.Core.Services
 
         private void ProjectLegacyLocked(string currencyId, BigDouble value)
         {
-            if (!_balances.TryGetValue(currencyId, out var legacy)) return;
-            long projection = ProjectLong(value);
-            bool hadPrevious = _projectingLegacy.TryGetValue(currencyId, out long previous);
-            _projectingLegacy[currencyId] = projection;
-            try { legacy.Value = projection; }
-            finally
-            {
-                if (hadPrevious) _projectingLegacy[currencyId] = previous;
-                else _projectingLegacy.Remove(currencyId);
-            }
+            if (_balances.TryGetValue(currencyId, out var legacy)) legacy.SetByService(ProjectLong(value));
         }
 
         private void AddBalanceLocked(string currencyId, long amount)
@@ -651,7 +631,6 @@ namespace Nexus.Core.Services
                     _balances.Clear();
                     foreach (var kvp in _bigBalances) kvp.Value.ClearOnChanged();
                     _bigBalances.Clear();
-                    _projectingLegacy.Clear();
                     _prefetched.Clear();
                 }
             }

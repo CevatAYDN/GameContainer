@@ -117,19 +117,6 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void LegacyObservable_RemainsConnectedAfterPromotionIncludingReentrantWrite()
-        {
-            using var economy = new EconomyService();
-            var legacy = economy.GetObservableBalance("coin");
-            economy.GetBigBalance("coin");
-            legacy.Value = 7; Assert.AreEqual(new BigDouble(7), economy.GetBigBalance("coin"));
-            legacy.OnChanged((_, value) => { if (value == 10) legacy.Value = 20; });
-            economy.SetBigBalance("coin", new BigDouble(10));
-            Assert.AreEqual(20, legacy.Value);
-            Assert.AreEqual(new BigDouble(20), economy.GetBigBalance("coin"));
-        }
-
-        [Test]
         public void LongRefund_AfterPromotionUpdatesCanonicalBalance()
         {
             // the warnings this test causes, in the order it causes them (#198)

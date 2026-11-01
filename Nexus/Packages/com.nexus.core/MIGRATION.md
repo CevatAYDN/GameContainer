@@ -36,6 +36,17 @@ an assembly that referenced `com.nexus.core.dots` references `com.nexus.dots` in
 their last parameter (issue #184): it moved the pool's root, and the inactive instances died with that object. Remove
 the argument. To place the spawned objects, pass the parent to `Spawn`.
 
+#### Balances and levels are read-only
+
+`IEconomyService.GetObservableBalance` and `GetObservableBigBalance` return `IReadOnlyObservableProperty<long>` and
+`IReadOnlyObservableProperty<BigDouble>`, and `IProgressionService.CurrentLevel` and `MaxUnlockedLevel` return
+`IReadOnlyObservableProperty<int>` (issue #231): a value written through the property skipped the services' checks, and a
+balance written that way was not saved. Change a balance with `Earn`, `Spend` and `SetBalance` (or their `Big` forms) and a
+level with `SetLevel` and `CompleteCurrentLevel`. Code that reads `Value`, calls `OnChanged` or `RemoveOnChanged`, or passes
+the property to `TrackObservable` compiles unchanged. A class of the game that implements `IEconomyService` or
+`IProgressionService` (a test fake) declares the new return types; `ObservableProperty<T>` and the `SecureObservable` types
+implement `IReadOnlyObservableProperty<T>`, so the fields behind them stay.
+
 #### Ownership can be unknown
 
 `IIapService.GetOwnership(productId)` answers `Owned`, `NotOwned` or `Unknown` (issue #183). `IsProductOwned` stays false
