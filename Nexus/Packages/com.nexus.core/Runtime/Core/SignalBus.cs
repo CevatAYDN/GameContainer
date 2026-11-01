@@ -199,6 +199,19 @@ namespace Nexus.Core
             public static readonly string Fire = "▶ " + typeof(T).Name;
         }
 
+        /// <summary>
+        /// Whether the "no subscribers" hint applies to a signal type, read once per type. A signal a Nexus package fires
+        /// to announce something (a screen opened, the app paused, a scene loaded) has no listener by design, so only the
+        /// game's own signals, and the packages' test signals, are hinted (#198).
+        /// </summary>
+        private static class UnheardSignalHint<T> where T : struct
+        {
+            public static readonly bool Applies = !IsAnnouncement(typeof(T).Assembly.GetName().Name);
+
+            private static bool IsAnnouncement(string assembly)
+                => NexusAssemblyPolicy.IsNexusPackageAssembly(assembly) && !NexusAssemblyPolicy.IsTestAssembly(assembly);
+        }
+
         // Serializes composite-trigger state mutation across concurrent dispatches of this
         // bus (the trigger tables themselves live in the command registry).
         private readonly object _compositeLock = new();
@@ -647,7 +660,9 @@ namespace Nexus.Core
             }
 
             // === FAST PATH: All handlers are synchronous ===
-            if (NexusBuild.IsDevelopment && !_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _))
+            // A composite trigger and the other contexts of a [CrossContext] signal hear it too (#198).
+            if (NexusBuild.IsDevelopment && !_subscriptionRegistry.SubscriptionsReadCopy.ContainsKey(type) && !_commandRegistry.TryGetHandlers(type, out _)
+                && UnheardSignalHint<T>.Applies && !_commandRegistry.TryGetCompositeTriggers(type, out _) && _commandRegistry.GetCachedCrossContext<T>() == null)
             {
                 // A disabled logger drops warnings, so the message is not built for it (a test context measuring its hot path).
                 var logger = NexusRuntime.Logger;

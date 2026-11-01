@@ -124,6 +124,10 @@ namespace Nexus.Editor.Tests
         }
 
         public struct UnheardSignal { }
+        public struct HeardByCompositeA { }
+        public struct HeardByCompositeB { }
+        [CrossContext] public struct HeardInOtherContexts { }
+        public sealed class CompositeListener : ICommand { public void Execute() { } }
 
         /// <summary>
         /// The editor-only "no subscribers" warning is logged once per signal type: a game that fires an unheard signal
@@ -136,6 +140,7 @@ namespace Nexus.Editor.Tests
             int warnings = 0;
             Application.LogCallback count = (message, _, type) => { if (type == LogType.Warning && message.Contains("UnheardSignal")) warnings++; };
             Application.logMessageReceived += count;
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] Signal '.*\+UnheardSignal' fired but has no subscribers"));
             try
             {
                 _signalBus.Fire(new UnheardSignal());
@@ -144,6 +149,22 @@ namespace Nexus.Editor.Tests
             finally { Application.logMessageReceived -= count; }
 
             Assert.AreEqual(1, warnings);
+        }
+
+        /// <summary>
+        /// A composite trigger, the other contexts of a [CrossContext] signal and nobody at all for a signal a Nexus package
+        /// announces: none of them is a missing BindCommand or Subscribe call, and each logged the hint (#198).
+        /// </summary>
+        [Test]
+        public void Fire_OfASignalACompositeOrAnotherContextHears_OrThatAPackageAnnounces_LogsNoUnheardHint()
+        {
+            _signalBus.RegisterCompositeCommand(new[] { typeof(HeardByCompositeA), typeof(HeardByCompositeB) }, typeof(CompositeListener), oneShot: false, priority: 0, isAsync: false);
+
+            _signalBus.Fire(new HeardByCompositeA());
+            _signalBus.Fire(new HeardInOtherContexts());
+            _signalBus.Fire(new Nexus.Core.Services.ScreenOpenedSignal("Shop", null));
+
+            LogAssert.NoUnexpectedReceived();
         }
 
         /// <summary>

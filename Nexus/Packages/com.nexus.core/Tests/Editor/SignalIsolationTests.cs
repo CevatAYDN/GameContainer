@@ -81,8 +81,6 @@ namespace Nexus.Editor.Tests
             bus.Subscribe<IsoB>(_ => { });
             bus.Fire(new IsoB());
             LogAssert.Expect(LogType.Error, new Regex(@"^\[Nexus\] Command IsoFailingComposite failed: composite bug"));
-            // The failed command fires CommandFailedSignal, which this test does not handle.
-            LogAssert.Expect(LogType.Warning, new Regex(@"^\[Nexus\] Signal 'Nexus\.Core\.CommandFailedSignal' fired but has no subscribers"));
 
             Assert.Throws<InvalidOperationException>(() => bus.Fire(new IsoA()));
 
