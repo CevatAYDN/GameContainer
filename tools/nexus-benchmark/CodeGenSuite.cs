@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using Nexus.Core;
 using Nexus.Editor;
 using Microsoft.CodeAnalysis;
@@ -531,8 +532,12 @@ namespace NexusBench.CG2Source
                 string linkXml = File.ReadAllText(Path.Combine(rootDir, "link.xml"));
                 bool lifecycleKept = linkXml.Contains("fullname=\"NexusBench.CodeGenConventionLifecycle\"");
                 bool filterKept = linkXml.Contains("fullname=\"NexusBench.CodeGenUnboundFilter\"");
-                ok = lifecycleKept && filterKept;
-                detail = $"convention lifecycle kept={lifecycleKept}, unbound signal filter kept={filterKept} (pre-fix: neither, they carry no [Inject])";
+                // #241: an assembly the player lacks (editor-only, define- or platform-gated) failed the linker without it.
+                int assemblies = Regex.Matches(linkXml, "<assembly ").Count;
+                int tolerant = Regex.Matches(linkXml, "<assembly fullname=\"[^\"]+\" ignoreIfMissing=\"true\">").Count;
+                ok = lifecycleKept && filterKept && assemblies > 0 && tolerant == assemblies;
+                detail = $"convention lifecycle kept={lifecycleKept}, unbound signal filter kept={filterKept} (pre-fix: neither, they carry no [Inject]); " +
+                         $"assembly elements with ignoreIfMissing={tolerant}/{assemblies}";
             }
             catch (Exception ex)
             {

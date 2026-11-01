@@ -903,7 +903,9 @@ namespace Nexus.Editor
             xmlSb.AppendLine("<linker>");
             foreach (var kvp in typesByAssembly)
             {
-                xmlSb.AppendLine($"  <assembly fullname=\"{kvp.Key}\">");
+                // ignoreIfMissing: the editor loads assemblies a player lacks (editor-only, define- or platform-gated), and
+                // one link.xml serves every build target; the linker fails on a named assembly it cannot find (#241).
+                xmlSb.AppendLine($"  <assembly fullname=\"{kvp.Key}\" ignoreIfMissing=\"true\">");
                 foreach (var type in kvp.Value)
                 {
                     xmlSb.AppendLine(reflectionConstructed.Contains(type)
