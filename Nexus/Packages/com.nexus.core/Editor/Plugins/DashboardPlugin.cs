@@ -29,14 +29,12 @@ namespace Nexus.Editor
         private Label _serviceStat;
         private Label _commandStat;
         private Label _viewStat;
-        private Label _perfStat;
         private Label _validationSummary;
         private Label _healthSummary;
         private VisualElement _validationCard;
         // Last "Check now" result: null = not checked, true = binder current, false = stale.
         private static bool? s_binderCurrent;
         private static int s_diIssueCount = -1;
-        private VisualElement _runtimeCardContainer;
 
         private static int s_cachedModelCount = -1, s_cachedServiceCount = -1, s_cachedCommandCount = -1, s_cachedViewCount = -1;
         private static bool s_overviewCacheValid = false;
@@ -44,7 +42,6 @@ namespace Nexus.Editor
         private static List<(Type type, string category, Color color)> s_typedCatalog;
         private static bool s_catalogValid = false;
 
-        private bool _subscribedPlayMode;
         private bool _quickFindDirty;
         private double _quickFindDirtyAt;
 
@@ -122,45 +119,19 @@ namespace Nexus.Editor
             BuildQuickFindSection(scroll);
             BuildOverviewSection(scroll);
 
-            _runtimeCardContainer = new VisualElement();
-            scroll.Add(_runtimeCardContainer);
-            BuildRuntimeSection(_runtimeCardContainer);
-
             BuildHealthSection(scroll);
             BuildValidationSection(scroll);
             BuildReadinessSection(scroll);
             BuildFrameworkInfo(scroll);
 
             _view.Add(scroll);
-            // E-C2 fix: no playModeStateChanged subscription here. CreateView() is invoked
-            // by RefreshActivePlugin() EVERY time this tab becomes visible, while the
-            // matching unsubscribe lives in OnDisable() — which the window only calls on
-            // tab SWITCH or window close. A re-show after an edit-mode refresh would double-
-            // subscribe the static event; with domain reload disabled the duplicate handler
-            // (and the captured view refs) leaked for the process lifetime. Lifecycle
-            // subscriptions belong in OnEnable/OnDisable exclusively.
             return _view;
-        }
-
-        public override void OnEnable()
-        {
-            base.OnEnable();
-            if (!_subscribedPlayMode)
-            {
-                EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-                _subscribedPlayMode = true;
-            }
         }
 
         public override void OnDisable()
         {
             _quickFindDirty = false;
             _quickFindDirtyAt = 0d;
-            if (_subscribedPlayMode)
-            {
-                EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
-                _subscribedPlayMode = false;
-            }
             base.OnDisable();
         }
 
@@ -179,16 +150,6 @@ namespace Nexus.Editor
             UpdateQuickFindResults();
         }
 
-        private void OnPlayModeStateChanged(PlayModeStateChange state)
-        {
-            RefreshStats();
-            if (_runtimeCardContainer != null)
-            {
-                _runtimeCardContainer.Clear();
-                BuildRuntimeSection(_runtimeCardContainer);
-            }
-        }
-
         public override IReadOnlyList<(string Label, Action Action, Color Color)> GetContextActions()
             => new List<(string, Action, Color)>
             {
@@ -200,7 +161,6 @@ namespace Nexus.Editor
                     Selection.activeObject = go;
                 }, NexusEditorStyles.BtnTeal),
                 (NexusLang.Get("dash_action_inspector"),   () => Window?.SwitchToPlugin("ContextInspector"), NexusEditorStyles.BtnPurple),
-                (NexusLang.Get("dash_action_gamemanager"), () => Window?.SwitchToPlugin("GameManager"),       NexusEditorStyles.BtnGray),
             };
 
         private void BuildStatusSection(VisualElement parent)
@@ -237,9 +197,8 @@ namespace Nexus.Editor
 
             var actionRow = new VisualElement();
             actionRow.AddToClassList("nexus-actions-row");
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("contexts"), NexusLang.Get("dash_tip_contexts"), NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("Hierarchy")));
+            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("contexts"), NexusLang.Get("dash_tip_contexts"), NexusEditorStyles.AccentBlue, () => Window?.SwitchToPlugin("ContextInspector")));
             actionRow.Add(CreateMetricJumpButton(NexusLang.Get("handlers"), NexusLang.Get("dash_tip_handlers"), NexusEditorStyles.AccentPurple, () => Window?.SwitchToPlugin("Architecture")));
-            actionRow.Add(CreateMetricJumpButton(NexusLang.Get("roots"), NexusLang.Get("dash_tip_roots"), NexusEditorStyles.AccentYellow, () => Window?.SwitchToPlugin("GameManager")));
             statusCard.Add(actionRow);
 
             string hintText = GetStatusHintText(playing, rootCount, contextCount);
@@ -404,84 +363,6 @@ namespace Nexus.Editor
             card.Add(actionRow);
 
             parent.Add(card);
-        }
-
-        private void BuildRuntimeSection(VisualElement parent)
-        {
-            if (!Application.isPlaying) return;
-
-            NexusRuntime.Metrics.UpdateRates();
-
-            var card = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
-            card.style.marginTop = 8;
-
-            card.Add(DashboardSections.CreateSectionTitle(NexusLang.Get("runtime_metrics"), NexusEditorStyles.AccentGreen));
-
-            var statRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
-            _perfStat = CreateStatBox(statRow, $"{NexusRuntime.Metrics.SignalsPerSecond:F1}/s", NexusLang.Get("perf_signals"), NexusEditorStyles.AccentBlue);
-            CreateStatBox(statRow, $"{NexusRuntime.Metrics.CommandsPerSecond:F1}/s", NexusLang.Get("perf_commands"), NexusEditorStyles.AccentGreen);
-            CreateStatBox(statRow, $"{NexusRuntime.Metrics.TotalSignalsDispatched:N0}", NexusLang.Get("total_sigs"), NexusEditorStyles.AccentPurple);
-            CreateStatBox(statRow, $"{System.GC.GetTotalMemory(false) / 1024 / 1024:N0}M", NexusLang.Get("gc_memory"), NexusEditorStyles.TextSecondary);
-            card.Add(statRow);
-
-            parent.Add(card);
-
-            var contexts = NexusRuntime.ActiveContexts;
-            if (contexts != null && contexts.Count > 0)
-            {
-                var modelCard = NexusEditorStyles.CreateCard(NexusEditorStyles.CardBgAlt);
-                modelCard.style.marginTop = 8;
-                var shownTotal = 0;
-
-                var modelTitle = new Label(NexusLang.Get("live_models"))
-                {
-                    style = { fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold, color = new StyleColor(NexusEditorStyles.AccentPurple), marginBottom = 8 }
-                };
-                modelCard.Add(modelTitle);
-
-                foreach (var ctxObj in contexts)
-                {
-                    if (ctxObj is not Context ctx || shownTotal >= 8) continue;
-                    var singletons = ctx.Container.GetActiveSingletons();
-                    foreach (var obj in singletons)
-                    {
-                        if (obj is IReactiveModel && shownTotal < 8)
-                        {
-                            var row = new VisualElement { style = { flexDirection = FlexDirection.Row, marginBottom = 3, alignItems = Align.Center } };
-                            row.Add(new Label(obj.GetType().Name)
-                                { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextPrimary), width = 132, unityTextAlign = TextAnchor.MiddleLeft } });
-
-                            var t = obj.GetType();
-                            int props = 0;
-                            foreach (var prop in t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                            {
-                                if (props >= 3) break;
-                                if (!prop.CanRead || prop.GetIndexParameters().Length > 0) continue;
-                                try
-                                {
-                                    var val = prop.GetValue(obj);
-                                    var valStr = val?.ToString() ?? "null";
-                                    if (valStr.Length > 16) valStr = valStr.Substring(0, 13) + "...";
-                                    row.Add(new Label($"{prop.Name}={valStr}")
-                                        { style = { fontSize = 8, color = new StyleColor(NexusEditorStyles.AccentBlue), marginLeft = 5 } });
-                                    props++;
-                                }
-                                catch (Exception ex)
-                                {
-                                    Debug.LogWarning($"[Nexus Dashboard] Property read failed for {prop.Name}: {ex.Message}");
-                                }
-                            }
-                            modelCard.Add(row);
-                            shownTotal++;
-                        }
-                    }
-                }
-                if (shownTotal == 0)
-                    modelCard.Add(new Label(NexusLang.Get("no_reactive_models"))
-                        { style = { fontSize = 10, color = new StyleColor(NexusEditorStyles.TextSecondary) } });
-
-                parent.Add(modelCard);
-            }
         }
 
         // Delegated to DashboardSections — keep these shims for backward compat
@@ -727,12 +608,6 @@ namespace Nexus.Editor
             if (_healthSummary != null)
             {
                 _healthSummary.text = BuildHealthText();
-            }
-
-            if (_perfStat != null && Application.isPlaying)
-            {
-                NexusRuntime.Metrics.UpdateRates();
-                _perfStat.text = $"{NexusRuntime.Metrics.SignalsPerSecond:F1}/s";
             }
         }
     }

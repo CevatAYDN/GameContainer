@@ -41,9 +41,9 @@ public interface INexusEditorPlugin
 Before submitting a new plugin or refactor, verify:
 
 - [ ] Extends `NexusEditorPlugin` (not just bare `INexusEditorPlugin`).
-- [ ] `Id` is unique across all plugins (11 in the core, `FSMPlugin` in `com.nexus.fsm`) (e.g. `"Dashboard"`, `"Tracer"`, `"GameManager"`).
+- [ ] `Id` is unique across all plugins (9 in the core, `FSMPlugin` in `com.nexus.fsm`) (e.g. `"Dashboard"`, `"Tracer"`, `"ContextInspector"`).
 - [ ] `DisplayName` uses `NexusLang.Get("key")` for localization.
-- [ ] `Order` is specified (e.g. 0 for Dashboard, 1 for Wizard, 6 for GameManager).
+- [ ] `Order` is specified (e.g. 0 for Dashboard, 1 for Wizard, 2 for ContextInspector).
 - [ ] `CreateView()` returns a non-null `VisualElement` tree.
 - [ ] **`OnUpdate()` is overridden** for periodic data polling — **NEVER** a repeating `schedule.Execute(...).Every(...)` or `EditorApplication.update`. A slower cadence is throttled inside `OnUpdate()` with `EditorApplication.timeSinceStartup` (`CasualServicesPlugin` 0.5 s, `com.nexus.fsm`'s `FSMPlugin` 0.3 s).
 - [ ] `OnDisable()` resets: instance fields, flags, counters, queues.
@@ -63,8 +63,8 @@ Before submitting a new plugin or refactor, verify:
 |---|---|
 | **Window hidden / tab inactive** | `OnUpdate()` is driven by `NexusWindow` only for active tabs. Hidden tabs do not consume CPU. |
 | **Domain reload (script recompile)** | Static caches survive reload. Use `[DidReloadScripts]` attribute to clear static caches (`s_typedCatalog.Clear()`). |
-| **Play Mode entry** | Subscribe to `EditorApplication.playModeStateChanged` in `CreateView()` / `OnEnable()`. |
-| **Play Mode exit** | Unsubscribe from `EditorApplication.playModeStateChanged` in `OnDisable()`. Reset live runtime metrics. |
+| **Play Mode entry** | The window rebuilds the shown tab when Play Mode starts or ends: `OnDisable()`, then `OnEnable()` and `CreateView()`. `CreateView()` reads `Application.isPlaying`; a plugin does not subscribe to `EditorApplication.playModeStateChanged` itself. |
+| **Play Mode exit** | `OnDisable()` stops what the view started (the Performance tab stops recording) and resets live runtime metrics. |
 | **Context disposed during update** | Null-check active context references (`if (ctx == null) continue;`) before dereferencing containers. |
 | **`OnDisable` called before `OnEnable`** | `OnDisable()` must be defensive and null-check all references (`_scheduledHighlight?.Pause()`). |
 | **Tab opened multiple times** | Each `CreateView()` invocation creates a new tree. Instance fields store view elements cleanly. |
@@ -103,10 +103,10 @@ public override void OnDisable()
 // GOOD:
 public override void OnDisable()
 {
-    _hasLiveEvents = false;
-    _productionTraceFrameCounter = 0;
+    NexusTrace.RemoveSink(this);
     while (_incomingEvents.TryDequeue(out _)) {}
-    EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
+    _allEvents.Clear();
+    _selectedEventId = -1;
     base.OnDisable();
 }
 ```

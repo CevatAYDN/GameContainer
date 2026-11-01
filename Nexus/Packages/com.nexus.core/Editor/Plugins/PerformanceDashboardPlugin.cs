@@ -70,13 +70,6 @@ namespace Nexus.Editor
         // ─────────────────────────────────────────────────────────
         public override VisualElement CreateView()
         {
-            // Must be here: the window calls CreateView on every tab show, but OnEnable only
-            // once at window open. Entering Play Mode while this tab is open does NOT re-run
-            // CreateView, so without this subscription recording would never start (the panel
-            // would show "—" forever). Mirror the DashboardPlugin pattern.
-            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
-            EditorApplication.playModeStateChanged += OnPlayModeStateChanged;
-
             _view = new VisualElement { style = { flexGrow = 1 } };
 
             var toolbar = NexusEditorStyles.CreateToolbar(NexusLang.Get("pd_toolbar"));
@@ -96,7 +89,7 @@ namespace Nexus.Editor
 
             _view.Add(scroll);
 
-            // Start recording by default when Play Mode is active
+            // the window rebuilds this view when Play Mode starts or ends, so recording follows Play Mode
             if (Application.isPlaying) StartRecording();
 
             return _view;
@@ -104,8 +97,6 @@ namespace Nexus.Editor
 
         public override void OnDisable()
         {
-            EditorApplication.playModeStateChanged -= OnPlayModeStateChanged;
-
             // CONTRIBUTING: OnDisable() must reset all flags, queues, and debounces.
             // The stat-row cache holds rows belonging to the (now-detached) old container;
             // a later CreateView rebuilds _statsContainer, so the cache must be cleared to
@@ -116,16 +107,6 @@ namespace Nexus.Editor
             _statsContainer = null;
 
             base.OnDisable();
-        }
-
-        private void OnPlayModeStateChanged(PlayModeStateChange state)
-        {
-            // Auto-start recording when entering Play Mode (with a fresh baseline) and stop
-            // on exit, so the panel works even when the tab was open before Play started.
-            if (state == PlayModeStateChange.ExitingPlayMode)
-                StopRecording();
-            else if (state == PlayModeStateChange.EnteredPlayMode)
-                StartRecording();
         }
 
         public override void OnUpdate()

@@ -34,9 +34,6 @@ namespace Nexus.Editor
 
         private int _selectedEventId = -1;
 
-        private static int s_nextTraceId = 0;
-        private static int NextTraceId() => System.Threading.Interlocked.Increment(ref s_nextTraceId);
-
         // Thread-safe buffer for incoming trace events
         private readonly ConcurrentQueue<TraceEvent> _incomingEvents = new();
         private readonly List<TraceEvent> _allEvents = new();
@@ -173,21 +170,6 @@ namespace Nexus.Editor
                 _allEvents.Add(events[i]);
             }
 
-            // Production trace fallback: load from Metrics ring buffer
-            if (_allEvents.Count == 0)
-            {
-                var traces = NexusRuntime.Metrics.GetRecentTraces(out int traceCount);
-                for (int i = 0; i < traceCount && _allEvents.Count < 200; i++)
-                {
-                    if (!string.IsNullOrEmpty(traces[i]))
-                    {
-                        _allEvents.Add(new TraceEvent(NextTraceId(), -1, TraceEventType.Signal,
-                            NexusTrace.TimestampNow, traces[i],
-                            TraceStatus.OK, ExecutionMode.Sequential));
-                    }
-                }
-            }
-
             BuildChildrenCache();
             RefreshTracerLogs();
 
@@ -206,8 +188,6 @@ namespace Nexus.Editor
         public override void OnDisable()
         {
             NexusTrace.RemoveSink(this);
-            _hasLiveEvents = false;
-            _productionTraceFrameCounter = 0;
             while (_incomingEvents.TryDequeue(out _)) {}
             _allEvents.Clear();
             _filteredSnapshot.Clear();
@@ -231,54 +211,9 @@ namespace Nexus.Editor
             _incomingEvents.Enqueue(traceEvent);
         }
 
-        private int _productionTraceFrameCounter;
-        private bool _hasLiveEvents;
-
         private void OnMainThreadUpdate()
         {
-            if (!_isPaused)
-            {
-                bool hasNewEvents = ProcessIncomingQueue();
-
-                if (!_hasLiveEvents)
-                {
-                    _productionTraceFrameCounter++;
-                    if (_productionTraceFrameCounter >= 5)
-                    {
-                        _productionTraceFrameCounter = 0;
-                        if (ReloadProductionTraces()) hasNewEvents = true;
-                    }
-                }
-
-                if (hasNewEvents)
-                {
-                    RefreshTracerLogs();
-                }
-            }
-        }
-
-        private bool ReloadProductionTraces()
-        {
-            var traces = NexusRuntime.Metrics.GetRecentTraces(out int traceCount);
-
-            var rebuilt = new List<TraceEvent>(Math.Min(traceCount, 200));
-            for (int i = 0; i < traceCount && rebuilt.Count < 200; i++)
-            {
-                if (!string.IsNullOrEmpty(traces[i]))
-                {
-                    rebuilt.Add(new TraceEvent(
-                        NextTraceId(), -1, TraceEventType.Signal,
-                        NexusTrace.TimestampNow, traces[i],
-                        TraceStatus.OK, ExecutionMode.Sequential));
-                }
-            }
-
-            if (rebuilt.Count == _allEvents.Count) return false;
-
-            _allEvents.Clear();
-            _allEvents.AddRange(rebuilt);
-            if (_allEvents.Count > 0) BuildChildrenCache();
-            return true;
+            if (!_isPaused && ProcessIncomingQueue()) RefreshTracerLogs();
         }
 
         private bool ProcessIncomingQueue()
@@ -288,11 +223,6 @@ namespace Nexus.Editor
             {
                 _allEvents.Add(ev);
                 addedAny = true;
-            }
-
-            if (addedAny)
-            {
-                _hasLiveEvents = true;
             }
 
             if (_allEvents.Count > 5000)

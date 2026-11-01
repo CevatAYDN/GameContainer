@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
+using Nexus.Core;
 using Nexus.Editor;
 using UnityEngine.UIElements;
 
@@ -41,6 +42,21 @@ namespace Nexus.Editor.Tests
             var listView = view.Q<ListView>();
             Assert.IsNotNull(listView, "TracerPlugin must contain a ListView for virtualized logs.");
             Assert.AreEqual(28f, listView.fixedItemHeight, "ListView fixedItemHeight should be 28 for safe padding.");
+        }
+
+        [Test]
+        public void ContextTree_ListsEachChildUnderItsParent_AndAContextWhoseParentIsNotRunning_AtTheTop()
+        {
+            // the Hierarchy tab dropped a context whose parent was not running: it waited under a parent it never drew
+            using var root = new Context();
+            using var child = new Context(root);
+            using var stoppedParent = new Context();
+            using var orphan = new Context(stoppedParent);
+
+            var tree = ContextInspectorPlugin.BuildTree(new IContext[] { child, orphan, root });
+
+            CollectionAssert.AreEqual(new (IContext, int)[] { (orphan, 0), (root, 0), (child, 1) },
+                tree.Select(e => (e.Context, e.Depth)).ToArray());
         }
 
         [Test]

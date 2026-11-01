@@ -10,10 +10,9 @@ namespace Nexus.Editor
     /// <summary>
     /// Deep module owning the "how do we inspect a runtime member in the editor?" decision.
     ///
-    /// The signal tester and <c>HierarchyPlugin.CreateFieldUI</c>
-    /// were near-identical type → UI Toolkit switch trees that had already drifted
-    /// (read-only support, undo hooks, fallback labels). This module owns the mapping once,
-    /// so every inspector agrees on how each type renders and which members are editable.
+    /// The signal fire form and the Context Inspector's singleton fields share this
+    /// type → UI Toolkit mapping, so every inspector agrees on how each type renders,
+    /// which members are editable and how a live value is shown again.
     /// </summary>
     public static class NexusFieldInspector
     {
@@ -82,6 +81,23 @@ namespace Nexus.Editor
 
             // Unsupported type: the host supplies the fallback label.
             return null;
+        }
+
+        /// <summary>Shows a new value in a field <see cref="CreateField"/> built, without raising its change callback.</summary>
+        internal static void SetValueWithoutNotify(VisualElement field, object value)
+        {
+            switch (field)
+            {
+                case IntegerField f: f.SetValueWithoutNotify((int)(value ?? 0)); break;
+                case FloatField f:   f.SetValueWithoutNotify((float)(value ?? 0f)); break;
+                case DoubleField f:  f.SetValueWithoutNotify((double)(value ?? 0.0)); break;
+                case Toggle f:       f.SetValueWithoutNotify((bool)(value ?? false)); break;
+                case TextField f:    f.SetValueWithoutNotify((string)value ?? ""); break;
+                case Vector2Field f: f.SetValueWithoutNotify((Vector2)(value ?? Vector2.zero)); break;
+                case Vector3Field f: f.SetValueWithoutNotify((Vector3)(value ?? Vector3.zero)); break;
+                case ColorField f:   f.SetValueWithoutNotify((Color)(value ?? Color.white)); break;
+                case EnumField f:    if (value is Enum e) f.SetValueWithoutNotify(e); break;
+            }
         }
 
         private static VisualElement Wire<T>(BaseField<T> field, Action<object> setter, BeforeWriteHandler beforeWrite)
