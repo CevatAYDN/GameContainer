@@ -18,7 +18,8 @@ namespace Nexus.Editor.Tests
     /// made later async fallbacks share one depth (#215), a failed async composite never ran its FallbackAsync (#216), a
     /// retried composite under FireAsync kept its state (#217), an unsubscribed handler stayed reachable during a
     /// dispatch (#218), NexusRuntime.Reset removed the binder's dispatchers (#219), HasHandlers missed a composite
-    /// (#220), the Tracer tab's Clear detached every sink (#221) and FireAsync was not counted (#223).
+    /// (#220), the Tracer tab's Clear detached every sink (#221), FireAsync was not counted (#223) and a throwing sync
+    /// subscriber was written twice (#224).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -87,6 +88,9 @@ namespace Nexus.Editor.Tests
         }
 
         public struct CountedSignal { }
+
+        public struct SyncObservedSignal { }
+        public sealed class FailingSyncObserved : ICommand<SyncObservedSignal> { public void Execute(SyncObservedSignal s) => throw new InvalidOperationException("sync observed failure"); }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -316,6 +320,19 @@ namespace Nexus.Editor.Tests
                 Assert.AreEqual(1, NexusRuntime.Metrics.TotalSignalsDispatched - before);
             }
             finally { NexusRuntime.Metrics.MetricsEnabled = enabled; }
+        }
+
+        [Test]
+        public void AThrowingSyncCommandFailedSignalSubscriber_IsWrittenOnce()
+        {
+            using var errors = new ErrorLines();
+            var bus = NewBus(null, typeof(FailingSyncObserved));
+            bus.RegisterCommand(typeof(SyncObservedSignal), typeof(FailingSyncObserved), ExecutionMode.Sequential, 0, false);
+            bus.Subscribe<CommandFailedSignal>(_ => throw new InvalidOperationException("observer of the sync failure"));
+
+            bus.Fire(new SyncObservedSignal());
+
+            Assert.AreEqual(1, errors.Count("observer of the sync failure"), errors.ToString());
         }
     }
 }

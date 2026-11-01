@@ -888,7 +888,9 @@ namespace Nexus.Core
                 catch (Exception ex)
                 {
                     RaiseUnhandledException(ex, "CommandFailedSignal sync dispatch failed");
-                    NexusRuntime.Logger?.LogError($"[Nexus] CommandFailedSignal sync dispatch failed: {ex.Message}\n{ex.StackTrace}");
+                    // a subscriber's exception was written by the dispatch already (#224)
+                    if (!RecoveryEngine.WasLogged(ex))
+                        NexusRuntime.Logger?.LogError($"[Nexus] CommandFailedSignal sync dispatch failed: {ex.Message}\n{ex.StackTrace}");
                 }
             }
         }
