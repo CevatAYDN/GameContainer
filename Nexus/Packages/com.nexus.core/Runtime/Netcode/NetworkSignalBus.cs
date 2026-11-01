@@ -19,6 +19,8 @@ namespace Nexus.Netcode
     public interface INetworkModelSnapshotHandler
     {
         void Capture(int tick);
+        /// <summary>True when a snapshot of <paramref name="tick"/> is kept, so <see cref="Restore"/> can return to it.</summary>
+        bool HasSnapshot(int tick);
         void Restore(int tick);
         void Prune(int confirmedTick);
     }
@@ -43,12 +45,14 @@ namespace Nexus.Netcode
             _snapshots[tick] = _model.CaptureSnapshot();
         }
 
+        public bool HasSnapshot(int tick) => _snapshots.ContainsKey(tick);
+
         public void Restore(int tick)
         {
-            if (_snapshots.TryGetValue(tick, out var state))
-            {
-                _model.RestoreSnapshot(state);
-            }
+            // a missing snapshot left the model at its current state, under a replay of inputs it had already applied (#170)
+            if (!_snapshots.TryGetValue(tick, out var state))
+                throw new InvalidOperationException($"No snapshot of tick {tick} for {_model.GetType().Name}.");
+            _model.RestoreSnapshot(state);
         }
 
         public void Prune(int confirmedTick)
@@ -563,6 +567,17 @@ namespace Nexus.Netcode
             if (Thread.CurrentThread.ManagedThreadId != _ownerThreadId)
                 throw new InvalidOperationException("Rollback must run on the network bus owning thread.");
             if (rollbackTick > targetTick) throw new ArgumentOutOfRangeException(nameof(targetTick));
+            // Every model must be able to return to the tick before anything changes: a model without its snapshot kept its
+            // current state while the journal replayed the inputs it had already applied (#170).
+            lock (_modelHandlersLock)
+            {
+                for (int i = 0; i < _modelHandlers.Count; i++)
+                {
+                    if (!_modelHandlers[i].HasSnapshot(rollbackTick))
+                        throw new InvalidOperationException(
+                            $"Cannot roll back to tick {rollbackTick}: a registered model has no snapshot of it (the tick was pruned, or the model was registered after it). Nothing was changed.");
+                }
+            }
             int replayCount;
             lock (_tickLock)
             {
@@ -639,7 +654,9 @@ namespace Nexus.Netcode
         }
 
         /// <summary>
-        /// Prunes history older than a confirmed checkpoint tick to prevent memory leaks.
+        /// Prunes the confirmed tick and every tick before it (signals, journal and model snapshots) to bound memory.
+        /// Once tick N is confirmed a rollback targets a later tick, so the oldest tick a rollback can reach afterwards
+        /// is N + 1; a rollback to a pruned tick throws (#170).
         /// </summary>
         public void PruneHistory(int confirmedTick)
         {

@@ -155,6 +155,48 @@ namespace Nexus.Tests
                 "Repeated rollback must be deterministic (no double-apply).");
         }
 
+        // Issue #170: a rollback to a tick some model has no snapshot of restored nothing and replayed the journal over
+        // the current state, applying every input twice; it now fails before it changes anything.
+        [Test]
+        public void RollbackToAPrunedTick_ThrowsBeforeItChangesAnything()
+        {
+            var model = new TestPlayerSnapshot();
+            _networkBus.RegisterModel(model);
+            _container.BindInstance(model);
+            _container.Bind<UpdateHealthCommand>(isSingleton: false);
+            _signalBus.RegisterCommand(typeof(TestPlayerSignal), typeof(UpdateHealthCommand), ExecutionMode.Sequential, 0, false);
+            _networkBus.SetTick(0);
+            _networkBus.Fire(new TestPlayerSignal(1, 100));
+            _networkBus.SetTick(1);
+            _networkBus.Fire(new TestPlayerSignal(1, 90));
+            _networkBus.SetTick(2);
+            _networkBus.Fire(new TestPlayerSignal(1, 80));
+            _networkBus.PruneHistory(confirmedTick: 1);
+
+            var error = Assert.Throws<System.InvalidOperationException>(() => _networkBus.RollbackAndResimulate(1, 2));
+            StringAssert.Contains("tick 1", error.Message);
+            Assert.AreEqual(80, model.LastHealth);
+            var history = (NetworkSignalHistory<TestPlayerSignal>)_networkBus.Histories[typeof(TestPlayerSignal)];
+            Assert.AreEqual(1, history.Signals.Count, "the failed rollback removed history");
+
+            _networkBus.RollbackAndResimulate(2, 2);
+            Assert.AreEqual(80, model.LastHealth, "the oldest tick after the confirmed one stays reachable");
+        }
+
+        [Test]
+        public void RollbackToATickBeforeAModelWasRegistered_Throws()
+        {
+            var early = new TestPlayerSnapshot();
+            _networkBus.RegisterModel(early);
+            _networkBus.SetTick(0);
+            var late = new TestPlayerSnapshot();
+            _networkBus.RegisterModel(late);
+            _networkBus.SetTick(1);
+
+            Assert.Throws<System.InvalidOperationException>(() => _networkBus.RollbackAndResimulate(0, 1));
+            _networkBus.RollbackAndResimulate(1, 1);
+        }
+
         [Test]
         public void PruneHistory_RemovesOldEntries()
         {
