@@ -218,7 +218,7 @@ namespace Nexus.Editor
             s_strings["actions_label"] = "ACTIONS ({0})";
             s_strings["status_play_mode_active"] = "PLAY MODE ACTIVE";
             s_strings["status_edit_mode"] = "EDIT MODE";
-            s_strings["statusbar_play"] = "Nexus ● ACTIVE  |  {0} context(s) active  |  {1} static handler(s) registered";
+            s_strings["statusbar_play"] = "Nexus ● ACTIVE  |  {0} context(s) active  |  {1} handler(s) registered";
             s_strings["statusbar_standby"] = "Nexus ○ STANDBY  |  {0} Root(s) in scene  |  Enter Play Mode to activate";
 
             // Performance Dashboard plugin

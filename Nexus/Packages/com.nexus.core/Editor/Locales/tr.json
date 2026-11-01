@@ -265,7 +265,7 @@
     {"key": "actions_label", "value": "İŞLEMLER ({0})"},
     {"key": "status_play_mode_active", "value": "PLAY MODE AKTİF"},
     {"key": "status_edit_mode", "value": "DÜZENLEME MODU"},
-    {"key": "statusbar_play", "value": "Nexus ● AKTİF  |  {0} context aktif  |  {1} statik handler kayıtlı"},
+    {"key": "statusbar_play", "value": "Nexus ● AKTİF  |  {0} context aktif  |  {1} handler kayıtlı"},
     {"key": "statusbar_standby", "value": "Nexus ○ BEKLEMEDE  |  Sahnede {0} Root  |  Etkinleştirmek için Play Mode'a girin"},
     {"key": "pd_value_placeholder", "value": "—"},
     {"key": "pd_unit_mb", "value": " MB"},

@@ -83,6 +83,10 @@ namespace Nexus.Editor
                             });
                         }
 
+                        // The runtime's scan binds these as well (Context.ScanAssembliesAndRegister).
+                        if (type.IsDefined(typeof(RegisterCommandAttribute), false) || type.IsDefined(typeof(RegisterCompositeCommandAttribute), false))
+                            hasHandlers = true;
+
                         if (hasHandlers)
                         {
                             s_cachedHandlerCount++;
@@ -107,16 +111,22 @@ namespace Nexus.Editor
             return s_cachedMappings;
         }
 
+        /// <summary>
+        /// While contexts run, the handlers their buses hold; otherwise the command types the attribute scan finds. The
+        /// running count already holds what a Root's attribute scan registered, so adding the static scan counted those
+        /// commands twice (#258).
+        /// </summary>
         internal static int GetHandlerCount()
         {
-            EnsureCached();
             int runtimeCount = 0;
+            bool running = false;
             var contexts = NexusRuntime.ActiveContexts;
             if (contexts != null)
             {
                 foreach (var ctx in contexts)
                 {
                     if (ctx?.SignalBus == null) continue;
+                    running = true;
 
                     var handlers = ctx.SignalBus.RegisteredHandlers;
                     if (handlers != null)
@@ -126,7 +136,9 @@ namespace Nexus.Editor
                     }
                 }
             }
-            return s_cachedHandlerCount + runtimeCount;
+            if (running) return runtimeCount;
+            EnsureCached();
+            return s_cachedHandlerCount;
         }
 
         // ── Scene roots ─────────────────────────────────────────

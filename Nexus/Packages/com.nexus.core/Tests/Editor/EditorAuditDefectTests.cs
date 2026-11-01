@@ -192,5 +192,39 @@ namespace Nexus.Editor.Tests
                 signature.SetValue(null, int.MinValue);
             }
         }
+
+        public struct HandlerCountSignal { }
+
+        public sealed class HandlerCountCommand : ICommand<HandlerCountSignal>
+        {
+            public void Execute(HandlerCountSignal signal) { }
+        }
+
+        [Test]
+        public async Task HandlerCount_WhileContextsRun_IsWhatTheirBusesHold_NotThatPlusTheAttributeScan()
+        {
+            // the count added the static [SignalHandler] scan to the handlers the running contexts registered, and a
+            // Root's attribute scan registers the same commands, so each one was counted twice (#258)
+            var provider = typeof(NexusEditorDataProvider);
+            var context = await ContextFactory.StartAsync("handler-count-258", builder => builder.BindCommand<HandlerCountSignal, HandlerCountCommand>());
+            try
+            {
+                NexusEditorDataProvider.GetHandlerCount(); // builds the static scan
+                provider.GetField("s_cachedHandlerCount", Static).SetValue(null, 1); // as if it had found the bound command
+                int registered = 0;
+                foreach (var running in NexusRuntime.ActiveContexts)
+                {
+                    var handlers = running?.SignalBus?.RegisteredHandlers;
+                    if (handlers != null) foreach (var entry in handlers) registered += entry.Value.Count;
+                }
+
+                Assert.AreEqual(registered, NexusEditorDataProvider.GetHandlerCount());
+            }
+            finally
+            {
+                provider.GetField("s_cacheValid", Static).SetValue(null, false);
+                await context.DisposeAsync();
+            }
+        }
     }
 }
