@@ -64,6 +64,10 @@ namespace Nexus.Core.Services
         // Each missing text is reported once (issue #187): (null, key) found nowhere, (language, null) no table for the
         // language, (language, key) only the English text. A value tuple, so a repeated miss allocates nothing.
         private HashSet<(string language, string key)> _reportedMisses;
+        // In a right-to-left language, the reversed form of each text GetString returned, by the text: GetString keeps its
+        // 0 B there too (issue #229). The reversal depends on the text alone; the cache is emptied when the language changes.
+        private readonly Dictionary<string, string> _rtlShaped = new Dictionary<string, string>();
+        private const int MaxRtlShaped = 4096;
         // Languages the game supplied (provider, RegisterLanguageTable, RegisterKey), not the built-in en/tr seeds.
         private readonly HashSet<string> _suppliedLanguages = new HashSet<string>();
 
@@ -82,6 +86,7 @@ namespace Nexus.Core.Services
             {
                 _localizedTable.Clear();
                 _suppliedLanguages.Clear();
+                _rtlShaped.Clear();
             }
         }
 
@@ -162,6 +167,7 @@ namespace Nexus.Core.Services
                 if (_currentLanguage == normalized) return;
                 _currentLanguage = normalized;
                 _culture = CultureFor(normalized);
+                _rtlShaped.Clear();
                 // Capture delegate snapshot while under lock to ensure a consistent view
                 handlersToInvoke = OnLanguageChanged;
             }
@@ -197,7 +203,26 @@ namespace Nexus.Core.Services
         public string GetString(string key, string fallback = "")
         {
             if (string.IsNullOrEmpty(key)) return fallback;
-            return FormatRTLIfNeeded(TryLookup(key, out var text) ? text : (!string.IsNullOrEmpty(fallback) ? fallback : key));
+            string text = TryLookup(key, out var found) ? found : (!string.IsNullOrEmpty(fallback) ? fallback : key);
+            return IsRTL ? ShapedForRightToLeft(text) : text;
+        }
+
+        private string ShapedForRightToLeft(string text)
+        {
+            string shaped;
+            lock (_tableLock)
+            {
+                if (_rtlShaped.TryGetValue(text, out shaped)) return shaped;
+            }
+            shaped = FormatRTLIfNeeded(text);
+            lock (_tableLock)
+            {
+                // shortcut: a game that passes a new fallback text on every call would grow the cache without end, so it is
+                // emptied at MaxRtlShaped entries; a table of more texts than that reverses some of them again.
+                if (_rtlShaped.Count >= MaxRtlShaped) _rtlShaped.Clear();
+                _rtlShaped[text] = shaped;
+            }
+            return shaped;
         }
 
         public string Format(string key, params object[] args)

@@ -1182,8 +1182,21 @@ namespace NexusBench
                     svc.GetString("missing_key", "fb");
                 }
             });
-            Check("G3. Localization_GetString_ZeroGC", alloc <= 128,
-                $"allocated={alloc} bytes for 3000 lookups (limit <=128)");
+
+            // A right-to-left language reverses each text; the reversal is kept per text (issue #229).
+            svc.RegisterLanguageTable("ar", new System.Collections.Generic.Dictionary<string, string> { { "btn_ok", "موافق" } });
+            svc.SetLanguage("ar");
+            for (int i = 0; i < 100; i++) { svc.GetString("btn_ok"); svc.GetString("missing_key", "fb"); }
+            long rtlAlloc = MeasuredAllocations(() =>
+            {
+                for (int i = 0; i < 1000; i++)
+                {
+                    svc.GetString("btn_ok");
+                    svc.GetString("missing_key", "fb");
+                }
+            });
+            Check("G3. Localization_GetString_ZeroGC", alloc <= 128 && rtlAlloc <= 128,
+                $"allocated={alloc} bytes for 3000 lookups in en/tr, {rtlAlloc} bytes for 2000 in ar (limit <=128 each)");
         }
 
         // #71: effects are built once; Play only looks the effect up (the Android JNI call is not run here).
