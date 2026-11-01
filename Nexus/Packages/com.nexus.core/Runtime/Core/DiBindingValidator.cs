@@ -85,7 +85,7 @@ namespace Nexus.Core
                     }
                     if (!overridden)
                         Check(parameters[i], meta.ConstructorParameterNames?[i],
-                            meta.ConstructorParameterHasDefault?[i] == true, false,
+                            meta.ConstructorParameterHasDefault?[i] == true || meta.ConstructorParameterOptional?[i] == true, false,
                             DiValidationIssueType.MissingConstructorDependency, $"constructor parameter {i}");
                 }
                 foreach (var field in meta.Fields)

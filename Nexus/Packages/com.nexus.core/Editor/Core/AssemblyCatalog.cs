@@ -161,8 +161,11 @@ namespace Nexus.Editor
                 string binderScript = System.IO.Path.Combine(binderFolder, "NexusGeneratedBinder.g.cs").Replace('\\', '/');
                 binderAssembly = System.IO.Path.GetFileNameWithoutExtension(
                     UnityEditor.Compilation.CompilationPipeline.GetAssemblyNameFromScriptPath(binderScript));
+                // The binder declares no game type, and a regeneration may have deleted it since the last compile (#191).
                 foreach (var compiled in UnityEditor.Compilation.CompilationPipeline.GetAssemblies(UnityEditor.Compilation.AssembliesType.Editor))
-                    result[compiled.name] = (compiled.sourceFiles.Select(UnityEditor.FileUtil.GetPhysicalPath).ToArray(), compiled.defines);
+                    result[compiled.name] = (compiled.sourceFiles
+                        .Where(file => !string.Equals(file.Replace('\\', '/'), binderScript, StringComparison.OrdinalIgnoreCase))
+                        .Select(UnityEditor.FileUtil.GetPhysicalPath).ToArray(), compiled.defines);
             }
             catch (Exception ex)
             {

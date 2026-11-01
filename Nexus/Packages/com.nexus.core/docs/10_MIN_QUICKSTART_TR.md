@@ -223,7 +223,7 @@ builder.AddSignalFilter<DamageSignal, CapDamageFilter>();      // tip formu, OnC
 ```
 Filtreler hem `Fire` hem `FireAsync` üzerinde kayıt sırasıyla çalışır. Eski object-tabanlı `ISignalInterceptor` hâlâ çalışır; kayıtlıyken her fire'da bir kez box'lanır.
 
-**Sıfır-reflection constructor'lar (AOT/IL2CPP)** — Nexus kod üreteci, tek public constructor'ı (veya tek `[Inject]`/`[Construct]` işaretli constructor'ı) olan her tip için `NexusDI.RegisterConstructorFactory<T>` lambda'ları üretir. Çalışma zamanında `new T(...)` doğrudan çalışır — `ConstructorInfo.Invoke` yok — yani `readonly`/immutable durum IL2CPP'de de çalışır. Sizin tarafınızda yapmanız gereken bir şey yok; constructor injection'ı kullanmaya devam edin.
+**Sıfır-reflection constructor'lar (AOT/IL2CPP)** — Nexus kod üreteci, tek public constructor'ı (veya tek `[Inject]`/`[Construct]` işaretli constructor'ı) olan ve parametreleri binder'ın adlandırabildiği referans tipler olan her tip için `NexusDI.RegisterConstructorFactory<T>` lambda'ları üretir. Değer tipi parametresi ya da null dışında varsayılan değeri olan bir constructor reflection yolunda kalır ve bildirilen varsayılanı geçer; binder böyle bir enjekte edilebilir tipi dosyanın başında listeler. Çalışma zamanında `new T(...)` doğrudan çalışır — `ConstructorInfo.Invoke` yok — yani `readonly`/immutable durum IL2CPP'de de çalışır. Sizin tarafınızda yapmanız gereken bir şey yok; constructor injection'ı kullanmaya devam edin.
 
 ---
 

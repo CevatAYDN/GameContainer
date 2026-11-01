@@ -89,14 +89,17 @@ persistent global root; `ContextFactory.StartAsync` for scan-free code-first sta
 
 **AOT and IL2CPP**: the editor generator (Nexus → Generate AOT Binder) and the Roslyn source
 generator (`SourceGenerator~/`) emit injectors, constructor factories and typed command
-dispatchers; only the editor generator writes `link.xml`. Both cover the game's own types: the Nexus packages' types
+dispatchers; only the editor generator writes `link.xml`. Both give the reflection path's answers (issue #191: an
+unbound `[Inject]` member is logged and filled later by `ReInjectAll`, or throws in strict mode; `[OptionalInject]`
+and binding names are honoured), and both list at the top of the binder every type they leave to the reflection
+path, with the reason. Both cover the game's own types, in the assemblies that reference Nexus: the Nexus packages' types
 take the reflection path and each package preserves them in its own `link.xml` (handed to UnityLinker by
 `NexusPackagesLinkXml`; Unity reads only the files under `Assets`), so a package update does not leave a
 binder naming a removed type (issue #110). `NexusBinderBuildGuard` stops a player build with a stale binder,
 `VersionDefineBuildGuard` stops one in which a Nexus package's optional code is compiled out because the package it
 needs is installed below its asmdef's `versionDefines` expression (issue #143; the editor logs it after each compile),
-`NexusBinderSelfHeal` recovers a binder that no longer compiles, and a stale generated injector
-falls back to reflection at runtime with a warning.
+`NexusBinderSelfHeal` recovers a binder that no longer compiles, and a generated injector written for other `[Inject]`
+members than its type has now is dropped before its first run, with a warning, and the type falls back to reflection.
 
 **Editor window** (menu **Nexus**, **Open Window** `Ctrl+Shift+N`): one window, 13 plugins, one tab each, in
 four sidebar sections. **Status**: Dashboard. **Setup**: Setup Wizard (starter scene, sample import, documents),

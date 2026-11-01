@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using NUnit.Framework;
 
 namespace Nexus.Editor.Tests
@@ -15,6 +16,8 @@ namespace Nexus.Editor.Tests
         public sealed class SplitTool { }
         public sealed class EditorBranchTool { }
         public sealed class ProviderTool { }
+        public class BaseTool { }
+        public sealed class DerivedTool : BaseTool { }
 
         private static BinderConditions Read(Dictionary<string, string> files, string[] typeDefines, string[] binderDefines)
         {
@@ -23,7 +26,7 @@ namespace Nexus.Editor.Tests
                 [typeof(BinderConditionTests).Assembly.GetName().Name] = (new List<string>(files.Keys).ToArray(), typeDefines),
                 ["Binder"] = (new string[0], binderDefines),
             };
-            return new BinderConditions(assemblies, "Binder", path => files[path]);
+            return new BinderConditions(assemblies, "Binder", path => files.TryGetValue(path, out var text) && text != null ? text : throw new IOException("locked"));
         }
 
         private static BinderConditions Read(string source, params string[] defines)
@@ -77,6 +80,53 @@ namespace Nexus.Editor.Tests
 
             Assert.That(conditions.For(typeof(ProviderTool)), Is.Null);
             Assert.That(conditions.For(typeof(DevOnlyTool)), Is.EqualTo("UNITY_EDITOR || DEVELOPMENT_BUILD"));
+        }
+
+        // #191: an unreadable file was skipped in silence, so a type declared there under its own #if was named always.
+        [Test]
+        public void AnUnreadableSourceLeavesTheTypesItMayDeclareOutOfTheBinder()
+        {
+            var conditions = Read(new Dictionary<string, string>
+            {
+                ["Provider.cs"] = "namespace Nexus.Editor.Tests { public class ProviderTool { } public partial class SplitTool { } }",
+                ["DevOnly.cs"] = null,
+            }, new[] { "UNITY_EDITOR" }, new[] { "UNITY_EDITOR" });
+
+            Assert.That(conditions.For(typeof(ProviderTool)), Is.Null);
+            Assert.That(conditions.For(typeof(DevOnlyTool)), Is.EqualTo(BinderConditions.Never));
+            Assert.That(conditions.For(typeof(List<DevOnlyTool>), typeof(ProviderTool)), Is.EqualTo(BinderConditions.Never));
+            Assert.That(conditions.Problems[typeof(DevOnlyTool)], Is.EqualTo("could not read DevOnly.cs"));
+            Assert.That(conditions.Warnings, Is.EquivalentTo(new[] { "could not read DevOnly.cs (locked)" }));
+            Assert.That(conditions.MemberProblem(typeof(ProviderTool)), Is.Null, "a type declared whole in a readable file keeps its binder lines");
+            Assert.That(conditions.MemberProblem(typeof(SplitTool)), Is.EqualTo("could not read DevOnly.cs"), "the unread file may hold a part of a partial type");
+        }
+
+        // #191: the binder set an [Inject] member under its own #if through a FieldInfo a release player does not have.
+        [Test]
+        public void AnInjectMemberUnderAnIfOfABaseTypeKeepsTheDerivedTypeOnTheReflectionPath()
+        {
+            var conditions = Read(new Dictionary<string, string>
+            {
+                ["Base.cs"] = "namespace Nexus.Editor.Tests\n{\n    public class BaseTool\n    {\n#if UNITY_EDITOR\n        [Inject] private ISignalBus _signals;\n#endif\n    }\n}\n",
+                ["Derived.cs"] = "namespace Nexus.Editor.Tests { public sealed class DerivedTool : BaseTool { } }",
+            }, new[] { "UNITY_EDITOR" }, new[] { "UNITY_EDITOR" });
+
+            Assert.That(conditions.MemberProblem(typeof(DerivedTool)), Is.EqualTo("an [Inject] member in Base.cs (line 6) is declared under #if UNITY_EDITOR"));
+            Assert.That(conditions.For(typeof(DerivedTool)), Is.Null);
+        }
+
+        [Test]
+        public void AnIfAroundAWholeTypeOrOnTheTypesOwnDefineIsNoMemberCondition()
+        {
+            var conditions = Read(new Dictionary<string, string>
+            {
+                ["DevOnly.cs"] = "#if DEVELOPMENT_BUILD || UNITY_EDITOR\nnamespace Nexus.Editor.Tests\n{\n    public sealed class DevOnlyTool\n    {\n        [Inject] public ISignalBus Signals { get; set; }\n    }\n}\n#endif\n",
+                ["Provider.cs"] = "namespace Nexus.Editor.Tests\n{\n    public sealed class ProviderTool\n    {\n#if NEXUS_LEVELPLAY\n        [Inject] public ISignalBus Signals;\n#endif\n    }\n}\n",
+            }, new[] { "UNITY_EDITOR", "NEXUS_LEVELPLAY" }, new[] { "UNITY_EDITOR" });
+
+            Assert.That(conditions.MemberProblem(typeof(DevOnlyTool)), Is.Null);
+            Assert.That(conditions.For(typeof(DevOnlyTool)), Is.EqualTo("DEVELOPMENT_BUILD || UNITY_EDITOR"));
+            Assert.That(conditions.MemberProblem(typeof(ProviderTool)), Is.Null);
         }
     }
 }

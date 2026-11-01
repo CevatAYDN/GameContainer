@@ -231,8 +231,11 @@ namespace Nexus.Core
 
         private static readonly ConcurrentDictionary<Type, Action<object, NexusDI>> s_customInjectors = new();
         private static readonly ConcurrentDictionary<Type, Action<object>> s_customClearers = new();
-        // Generated injectors are checked once per type against the type's real [Inject] members. A binder generated
-        // before a member was added never sets that member, and no reflection pass runs while an injector exists.
+        // The [Inject] members each generated injector was written for (InjectableMetadata.MemberSignature at generation).
+        private static readonly ConcurrentDictionary<Type, string> s_injectorMembers = new();
+        // Generated injectors are checked once per type, before their first run, against the type's real [Inject] members
+        // (#191). A binder generated before a member was added, removed or re-attributed never sets it right, and no
+        // reflection pass runs while an injector exists. True = current, false = dropped for reflection.
         private static readonly ConcurrentDictionary<Type, bool> s_checkedInjectors = new();
         // AOT codegen constructor factories (NexusGeneratedBinder.g.cs): zero-reflection
         // instantiation on every build target. Keyed by the CONCRETE type; the generated
@@ -342,7 +345,6 @@ namespace Nexus.Core
             public InjectableMetadata CachedMeta;
             public Func<NexusDI, object> CachedConstructor;
             public Action<object, NexusDI> CachedInjector;
-            public bool CachedInjectorVerified;
 
             /// <summary>1 while a thread constructs this singleton (guarded by _singletonLock; concurrent readers wait on a handle).</summary>
             public int Constructing;
@@ -548,8 +550,36 @@ namespace Nexus.Core
             public bool[] ConstructorParameterHasDefault { get; set; }
             /// <summary>Per-parameter default value when <see cref="ConstructorParameterHasDefault"/> is true.</summary>
             public object[] ConstructorParameterDefaults { get; set; }
+            /// <summary>Per-parameter <c>[OptionalInject]</c> flag: an unbound optional parameter takes null without a log or a strict failure.</summary>
+            public bool[] ConstructorParameterOptional { get; set; }
             /// <summary>True when any [Inject] field, property or method exists (the member-injection loops have work).</summary>
             public bool HasMembers => Fields.Length > 0 || Properties.Length > 0 || Methods.Length > 0;
+            private string _memberSignature;
+            /// <summary>
+            /// The injected members as the generated binder writes them next to each injector (#191): one entry per field
+            /// (<c>f:</c>), property (<c>p:</c>) and method (<c>m:</c>, one <c>p</c> per parameter), each with its declaring
+            /// type's name, <c>?</c> when optional and <c>=name</c> when named, sorted ordinally and joined by <c>;</c>.
+            /// An injector whose signature differs was generated for other members and is dropped before it runs.
+            /// </summary>
+            public string MemberSignature => _memberSignature ??= BuildMemberSignature();
+
+            private string BuildMemberSignature()
+            {
+                var entries = new List<string>(Fields.Length + Properties.Length + Methods.Length);
+                foreach (var f in Fields) entries.Add("f:" + f.Field.DeclaringType.Name + "." + f.Field.Name + SignatureFlags(f.IsOptional, f.Name));
+                foreach (var p in Properties) entries.Add("p:" + p.Property.DeclaringType.Name + "." + p.Property.Name + SignatureFlags(p.IsOptional, p.Name));
+                foreach (var m in Methods)
+                {
+                    var parameters = new string[m.ParameterTypes.Length];
+                    for (int i = 0; i < parameters.Length; i++) parameters[i] = "p" + SignatureFlags(m.OptionalParameterMask[i], m.ParameterNames[i]);
+                    entries.Add("m:" + m.Method.DeclaringType.Name + "." + m.Method.Name + "(" + string.Join(",", parameters) + ")");
+                }
+                entries.Sort(StringComparer.Ordinal);
+                return string.Join(";", entries);
+            }
+
+            private static string SignatureFlags(bool optional, string name)
+                => (optional ? "?" : "") + (string.IsNullOrEmpty(name) ? "" : "=" + name);
             /// <summary>
             /// A leaf takes nothing from the container (no constructor parameters, no members, no
             /// post-construct hooks) and therefore cannot take part in a resolution cycle.
@@ -593,6 +623,15 @@ namespace Nexus.Core
                     typeChain.Reverse();
                     const BindingFlags DeclaredFlags = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance | BindingFlags.DeclaredOnly;
 
+                    // A static member is never injected: the attribute on one was ignored in silence by every path (#191).
+                    foreach (var level in typeChain)
+                    foreach (var member in level.GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
+                    {
+                        if (member is Type) continue;
+                        if (member.IsDefined(typeof(InjectAttribute), false) || member.IsDefined(typeof(OptionalInjectAttribute), false))
+                            throw new InvalidOperationException($"[Inject] on static member {level.FullName}.{member.Name}: Nexus DI injects instance members only. Remove the attribute or make the member an instance member.");
+                    }
+
                     var fieldList = new List<InjectableField>();
                     foreach (var level in typeChain)
                     foreach (var field in level.GetFields(DeclaredFlags))
@@ -624,6 +663,8 @@ namespace Nexus.Core
                     // Overridden virtual properties appear once per declaring level in the
                     // chain walk; dedupe by name so injection runs once (the base-level
                     // PropertyInfo still dispatches virtually to the most-derived setter).
+                    // The first level that carries the attribute is kept, so an [Inject] declared
+                    // only on an override is honoured; both generators keep the same level (#191).
                     var seenPropNames = new HashSet<string>();
                     foreach (var level in typeChain)
                     foreach (var prop in level.GetProperties(DeclaredFlags))
@@ -631,8 +672,10 @@ namespace Nexus.Core
                         var injectAttr = prop.GetCustomAttribute<InjectAttribute>();
                         var optionalAttr = prop.GetCustomAttribute<OptionalInjectAttribute>();
                         // P-fix: accept [OptionalInject]-only properties (see field comment).
-                        if ((injectAttr != null || optionalAttr != null) && prop.CanWrite && seenPropNames.Add(prop.Name))
+                        if ((injectAttr != null || optionalAttr != null) && seenPropNames.Add(prop.Name))
                         {
+                            if (!prop.CanWrite)
+                                throw new InvalidOperationException($"[Inject] on get-only property {level.FullName}.{prop.Name}: the container cannot set it. Add a setter (it may be private) or remove the attribute.");
                             if (prop.PropertyType.IsValueType)
                                 throw new InvalidOperationException($"Cannot inject value type property {t.FullName}.{prop.Name}. Nexus DI only supports reference-type dependencies.");
                             propList.Add(new InjectableProperty
@@ -764,6 +807,7 @@ namespace Nexus.Core
                     string[] ctorParamNames = null;
                     bool[] ctorParamHasDefault = null;
                     object[] ctorParamDefaults = null;
+                    bool[] ctorParamOptional = null;
                     if (targetCtor != null)
                     {
                         var parameters = targetCtor.GetParameters();
@@ -771,6 +815,7 @@ namespace Nexus.Core
                         ctorParamNames = new string[parameters.Length];
                         ctorParamHasDefault = new bool[parameters.Length];
                         ctorParamDefaults = new object[parameters.Length];
+                        ctorParamOptional = new bool[parameters.Length];
                         for (int i = 0; i < parameters.Length; i++)
                         {
                             // Value-type parameters are permitted here: they can only be
@@ -784,6 +829,7 @@ namespace Nexus.Core
                                 ctorParamDefaults[i] = parameters[i].DefaultValue;
                             var paramInject = parameters[i].GetCustomAttribute<InjectAttribute>();
                             if (paramInject != null) ctorParamNames[i] = paramInject.Name;
+                            ctorParamOptional[i] = parameters[i].IsDefined(typeof(OptionalInjectAttribute), false);
                         }
                     }
 
@@ -800,7 +846,8 @@ namespace Nexus.Core
                         ConstructorParameterTypes = ctorParamTypes,
                         ConstructorParameterNames = ctorParamNames,
                         ConstructorParameterHasDefault = ctorParamHasDefault,
-                        ConstructorParameterDefaults = ctorParamDefaults
+                        ConstructorParameterDefaults = ctorParamDefaults,
+                        ConstructorParameterOptional = ctorParamOptional
                     };
                 });
             }
@@ -924,11 +971,6 @@ namespace Nexus.Core
                 if (injector != null)
                 {
                     injector(instance, _di);
-                    if (!binding.CachedInjectorVerified)
-                    {
-                        CheckGeneratedInjectorOnce(instance, type, meta);
-                        binding.CachedInjectorVerified = Volatile.Read(ref s_cacheGeneration) == generation;
-                    }
                     RunPostConstructs(instance, meta);
                     return instance;
                 }
@@ -947,11 +989,10 @@ namespace Nexus.Core
                 var type = binding.ConcreteType;
                 var meta = MetadataCache.GetOrCreateInjectMetadata(type);
                 s_constructorFactories.TryGetValue(type, out var factory);
-                s_customInjectors.TryGetValue(type, out var injector);
                 binding.CachedMeta = meta;
                 binding.CachedConstructor = factory ?? meta.CompiledConstructor;
-                binding.CachedInjector = injector;
-                binding.CachedInjectorVerified = false;
+                // a stale injector is dropped here, which moves the generation: the next creation refreshes again
+                binding.CachedInjector = GetVerifiedInjector(type, meta);
                 Volatile.Write(ref binding.CacheGeneration, generation); // publish after the fields
             }
 
@@ -992,6 +1033,8 @@ namespace Nexus.Core
                         args[i] = meta.ConstructorParameterDefaults[i];
                         continue;
                     }
+                    // [OptionalInject]: null is the declared answer for an unbound parameter (#191).
+                    if (args[i] == null && meta.ConstructorParameterOptional[i]) continue;
 
                     if (args[i] == null && _di.StrictInjection)
                     {
@@ -1034,20 +1077,17 @@ namespace Nexus.Core
                 }
 
                 var type = instance.GetType();
-                if (s_customInjectors.TryGetValue(type, out var injector))
+                var meta = MetadataCache.GetOrCreateInjectMetadata(type);
+                var injector = GetVerifiedInjector(type, meta);
+                if (injector != null)
                 {
                     // A generated (AOT) injector replaces member injection, but [PostConstruct]
                     // must still run — the reflection path always ran it, so skipping it here
-                    // would silently drop post-construction hooks on the AOT path. The metadata
-                    // is cached, so this is a one-time scan per type, not a per-resolve cost.
+                    // would silently drop post-construction hooks on the AOT path.
                     injector(instance, _di);
-                    var generatedMeta = MetadataCache.GetOrCreateInjectMetadata(type);
-                    CheckGeneratedInjectorOnce(instance, type, generatedMeta);
-                    RunPostConstructs(instance, generatedMeta);
+                    RunPostConstructs(instance, meta);
                     return;
                 }
-
-                var meta = MetadataCache.GetOrCreateInjectMetadata(type);
 
                 InjectFields(instance, type, meta);
                 InjectProperties(instance, type, meta);
@@ -1055,50 +1095,40 @@ namespace Nexus.Core
                 RunPostConstructs(instance, meta);
             }
 
-            /// <summary>
-            /// First instance of a type after a generated injector ran: if a required member the container could have
-            /// supplied is still null, the binder is stale for that type; the injector and clearer are dropped (every
-            /// per-binding cache refreshes through the generation bump) and this instance is injected by reflection.
-            /// </summary>
-            private void CheckGeneratedInjectorOnce(object instance, Type type, InjectableMetadata meta)
+            // ─── A dependency the container cannot supply: the one answer every path gives (#191) ───
+            // Strict injection throws; otherwise the member is recorded for ReInjectAll and the error is logged in every build,
+            // because a silently-null [Inject] member surfaces as an unexplained NullReferenceException far from the cause.
+
+            internal void MissingField(object instance, Type type, InjectableField f)
             {
-                if (s_checkedInjectors.ContainsKey(type)) return;
-                string missing = FirstMemberTheInjectorSkipped(instance, meta);
-                s_checkedInjectors[type] = missing == null;
-                if (missing == null) return;
-                s_customInjectors.TryRemove(type, out _);
-                s_customClearers.TryRemove(type, out _);
-                Interlocked.Increment(ref s_cacheGeneration);
-                Services.NexusLog.WarnAlways($"[Nexus] The generated binder does not inject '{type.FullName}.{missing}' (it was generated before that member existed). " +
-                    "Falling back to reflection for this type; regenerate the binder (Nexus > Generate AOT Binder).");
-                InjectFields(instance, type, meta);
-                InjectProperties(instance, type, meta);
-                InjectMethods(instance, type, meta);
+                if (_di.StrictInjection)
+                    throw new InvalidOperationException(
+                        $"Strict injection failed: [Inject] field '{type.FullName}.{f.Field.Name}' of type '{f.Type.FullName}'{NameClause(f.Name)} is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                _di.RecordPendingField(instance, f);
+                NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{f.Type.FullName}' for field '{type.FullName}.{f.Field.Name}' is not registered; the field was left null.");
             }
 
-            /// <summary>
-            /// Name of the first [Inject] or [OptionalInject] field or property that a generated injector left null although
-            /// this container could have supplied it, or null when the injector covered every such member. Members whose
-            /// binding is absent are not counted: reflection would leave them null too, so they say nothing about the binder.
-            /// Optional members count (issue #81): a framework service that gains an [OptionalInject] member is otherwise
-            /// left without it, silently, until the game regenerates its binder.
-            /// </summary>
-            private string FirstMemberTheInjectorSkipped(object instance, InjectableMetadata meta)
+            internal void MissingProperty(object instance, Type type, InjectableProperty p)
             {
-                for (int i = 0; i < meta.Fields.Length; i++)
-                {
-                    var f = meta.Fields[i];
-                    if (f.IsLazy || f.Type.IsValueType || !_di.IsRegistered(f.Type, f.Name)) continue;
-                    if ((f.Getter != null ? f.Getter(instance) : f.Field.GetValue(instance)) == null) return f.Field.Name;
-                }
-                for (int i = 0; i < meta.Properties.Length; i++)
-                {
-                    var p = meta.Properties[i];
-                    if (p.IsLazy || p.Type.IsValueType || !p.Property.CanRead || !_di.IsRegistered(p.Type, p.Name)) continue;
-                    if (p.Property.GetValue(instance) == null) return p.Property.Name;
-                }
-                return null;
+                if (_di.StrictInjection)
+                    throw new InvalidOperationException(
+                        $"Strict injection failed: [Inject] property '{type.FullName}.{p.Property.Name}' of type '{p.Type.FullName}'{NameClause(p.Name)} is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                _di.RecordPendingProperty(instance, p);
+                NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{p.Type.FullName}' for property '{type.FullName}.{p.Property.Name}' is not registered; the property was left null.");
             }
+
+            /// <summary>The method is not invoked: ReInjectAll invokes it once every required parameter is bound.</summary>
+            internal void MissingParameter(object instance, Type type, InjectableMethod m, int index)
+            {
+                string name = m.ParameterNames[index];
+                if (_di.StrictInjection)
+                    throw new InvalidOperationException(
+                        $"Strict injection failed: [Inject] method '{type.FullName}.{m.Method.Name}' parameter {index} of type '{m.ParameterTypes[index].FullName}'{NameClause(name)} is not registered. Mark with [OptionalInject] if this dependency is optional.");
+                _di.RecordPendingMethodParam(instance, m, index);
+                NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{m.ParameterTypes[index].FullName}' for method '{type.FullName}.{m.Method.Name}' is not registered; method invocation deferred.");
+            }
+
+            private static string NameClause(string name) => string.IsNullOrEmpty(name) ? "" : $" (name '{name}')";
 
             /// <summary>
             /// Invokes every [PostConstruct]-tagged method in ascending Order after all
@@ -1175,22 +1205,9 @@ namespace Nexus.Core
                         ? _di.TryResolve(f.Type)
                         : _di.TryResolve(f.Type, f.Name);
                     if (resolvedValue != null)
-                    {
                         MetadataCache.ApplyFieldSetter(f, instance, resolvedValue);
-                    }
-                    else if (f.IsOptional) { }
-                    else if (_di.StrictInjection)
-                    {
-                        throw new InvalidOperationException(
-                            $"Strict injection failed: [Inject] field '{type.FullName}.{f.Field.Name}' of type '{f.Type.FullName}'{(string.IsNullOrEmpty(f.Name) ? "" : $" (name '{f.Name}')")} is not registered. Mark with [OptionalInject] if this dependency is optional.");
-                    }
-                    else
-                    {
-                        _di.RecordPendingField(instance, f);
-                        // Logged in ALL build targets — a silently-null [Inject] field in a
-                        // production build surfaces as an unexplained NRE far from the cause.
-                        NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{f.Type.FullName}' for field '{type.FullName}.{f.Field.Name}' is not registered; the field was left null.");
-                    }
+                    else if (!f.IsOptional)
+                        MissingField(instance, type, f);
                 }
             }
 
@@ -1227,20 +1244,9 @@ namespace Nexus.Core
                         ? _di.TryResolve(p.Type)
                         : _di.TryResolve(p.Type, p.Name);
                     if (resolvedValue != null)
-                    {
                         MetadataCache.ApplyPropertySetter(p, instance, resolvedValue);
-                    }
-                    else if (p.IsOptional) { }
-                    else if (_di.StrictInjection)
-                    {
-                        throw new InvalidOperationException(
-                            $"Strict injection failed: [Inject] property '{type.FullName}.{p.Property.Name}' of type '{p.Type.FullName}'{(string.IsNullOrEmpty(p.Name) ? "" : $" (name '{p.Name}')")} is not registered. Mark with [OptionalInject] if this dependency is optional.");
-                    }
-                    else
-                    {
-                        _di.RecordPendingProperty(instance, p);
-                        NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{p.Type.FullName}' for property '{type.FullName}.{p.Property.Name}' is not registered; the property was left null.");
-                    }
+                    else if (!p.IsOptional)
+                        MissingProperty(instance, type, p);
                 }
             }
 
@@ -1264,23 +1270,11 @@ namespace Nexus.Core
                         args[j] = string.IsNullOrEmpty(paramName)
                             ? _di.TryResolve(m.ParameterTypes[j])
                             : _di.TryResolve(m.ParameterTypes[j], paramName);
-                        if (args[j] == null)
+                        // Optional: null is acceptable — leave it null.
+                        if (args[j] == null && !m.OptionalParameterMask[j])
                         {
-                            if (m.OptionalParameterMask[j])
-                            {
-                                // Optional: null is acceptable — leave it null.
-                            }
-                            else if (_di.StrictInjection)
-                            {
-                                throw new InvalidOperationException(
-                                    $"Strict injection failed: [Inject] method '{type.FullName}.{m.Method.Name}' parameter {j} of type '{m.ParameterTypes[j].FullName}'{(string.IsNullOrEmpty(paramName) ? "" : $" (name '{paramName}')")} is not registered. Mark with [OptionalInject] if this dependency is optional.");
-                            }
-                            else
-                            {
-                                _di.RecordPendingMethodParam(instance, m, j);
-                                allRequiredResolved = false;
-                                NexusRuntime.Logger?.LogError($"[Nexus] [Inject] dependency '{m.ParameterTypes[j].FullName}' for method '{type.FullName}.{m.Method.Name}' is not registered; method invocation deferred.");
-                            }
+                            MissingParameter(instance, type, m, j);
+                            allRequiredResolved = false;
                         }
                     }
 
@@ -1305,7 +1299,9 @@ namespace Nexus.Core
                     resettable.Reset();
 
                 var type = instance.GetType();
-                if (s_customClearers.TryGetValue(type, out var clearer))
+                // a generated clearer is as old as its injector: used only once the injector is known current
+                if (s_customClearers.TryGetValue(type, out var clearer)
+                    && GetVerifiedInjector(type, MetadataCache.GetOrCreateInjectMetadata(type)) != null)
                 {
                     clearer(instance);
                     return;
@@ -1834,11 +1830,13 @@ namespace Nexus.Core
         public T TryResolve<T>(string name) where T : class => TryResolve(typeof(T), name) as T;
 
         /// <summary>
-        /// Codegen support for the AOT binder (<see cref="NexusCodeGenerator"/>): resolves a
-        /// constructor parameter with EXACTLY the reflection path's semantics
-        /// (<see cref="Injector.CreateInstance"/>) — TryResolve, strict throw on missing,
+        /// Codegen support for the AOT binder (<see cref="NexusCodeGenerator"/>): resolves a required
+        /// constructor parameter (neither <c>[OptionalInject]</c> nor a C# default) with the reflection
+        /// path's semantics (<see cref="Injector.CreateInstance"/>) — TryResolve, strict throw on missing,
         /// warn-and-pass-null otherwise. Emitted into <c>RegisterConstructorFactory</c> lambdas
-        /// so IL2CPP builds keep identical behavior without <c>ConstructorInfo.Invoke</c>.
+        /// so IL2CPP builds keep identical behavior without <c>ConstructorInfo.Invoke</c>. An optional or
+        /// null-default parameter is emitted as <c>TryResolve</c>; a type with any other default keeps the
+        /// reflection path, which passes the declared default (#191).
         /// </summary>
         /// <param name="parameterIndex">Zero-based constructor parameter index (for diagnostics).</param>
         /// <param name="ownerTypeName">Full name of the type being constructed (for diagnostics).</param>
@@ -2608,11 +2606,92 @@ namespace Nexus.Core
             return stale.ToArray();
         }
 
-        public static void RegisterInjector<T>(Action<T, NexusDI> injector) where T : class
+        /// <summary>
+        /// Codegen support: registers a generated injector together with the members it was generated for
+        /// (<paramref name="members"/>, the type's member signature at generation). Before its first run the injector is
+        /// compared with the type's current [Inject] members; a binder generated for other members is dropped, with one
+        /// warning, and the type is injected by reflection until the binder is regenerated (#191).
+        /// </summary>
+        public static void RegisterInjector<T>(Action<T, NexusDI> injector, string members) where T : class
         {
+            if (injector == null) throw new ArgumentNullException(nameof(injector));
+            if (members == null) throw new ArgumentNullException(nameof(members));
+            s_injectorMembers[typeof(T)] = members;
             s_customInjectors[typeof(T)] = (instance, di) => injector((T)instance, di);
+            s_checkedInjectors.TryRemove(typeof(T), out _);
             Interlocked.Increment(ref s_cacheGeneration);
         }
+
+        /// <summary>The generated injector for <paramref name="type"/> when it was generated for the type's current members, else null.</summary>
+        private static Action<object, NexusDI> GetVerifiedInjector(Type type, InjectableMetadata meta)
+        {
+            if (!s_customInjectors.TryGetValue(type, out var injector)) return null;
+            if (s_checkedInjectors.TryGetValue(type, out bool current)) return current ? injector : null;
+            s_injectorMembers.TryGetValue(type, out var members);
+            if (members == meta.MemberSignature)
+            {
+                s_checkedInjectors[type] = true;
+                return injector;
+            }
+            s_checkedInjectors[type] = false;
+            if (s_customInjectors.TryRemove(type, out _))
+            {
+                s_customClearers.TryRemove(type, out _);
+                s_injectorMembers.TryRemove(type, out _);
+                Interlocked.Increment(ref s_cacheGeneration);
+                Services.NexusLog.WarnAlways($"[Nexus] The generated binder was written for other [Inject] members of '{type.FullName}' " +
+                    $"(binder: {Describe(members)}; type: {Describe(meta.MemberSignature)}). Falling back to reflection for this type; " +
+                    "regenerate the binder (Nexus > Generate AOT Binder).");
+            }
+            return null;
+        }
+
+        private static string Describe(string signature) => string.IsNullOrEmpty(signature) ? "none" : signature;
+
+        /// <summary>
+        /// Codegen support: a generated injector found nothing bound for a required [Inject] field or property. Gives the
+        /// reflection path's answer: strict injection throws, otherwise the member is recorded for <see cref="ReInjectAll"/>
+        /// and the error is logged.
+        /// </summary>
+        public void ReportMissingMember(object instance, Type declaringType, string memberName)
+        {
+            if (instance == null) throw new ArgumentNullException(nameof(instance));
+            var type = instance.GetType();
+            var meta = MetadataCache.GetOrCreateInjectMetadata(type);
+            foreach (var f in meta.Fields)
+                if (f.Field.DeclaringType == declaringType && f.Field.Name == memberName) { _injector.MissingField(instance, type, f); return; }
+            foreach (var p in meta.Properties)
+                if (p.Property.DeclaringType == declaringType && p.Property.Name == memberName) { _injector.MissingProperty(instance, type, p); return; }
+            throw new InvalidOperationException($"[Nexus] The generated binder reports '{declaringType?.FullName}.{memberName}', which is not an [Inject] member of '{type.FullName}'. Regenerate the binder (Nexus > Generate AOT Binder).");
+        }
+
+        /// <summary>
+        /// Codegen support: a generated injector found nothing bound for a required parameter of an [Inject] method. Gives
+        /// the reflection path's answer: strict injection throws, otherwise the call is recorded for
+        /// <see cref="ReInjectAll"/>, the error is logged and false is returned (the injector does not invoke the method).
+        /// </summary>
+        public bool ReportMissingParameter(object instance, MethodInfo method, int parameterIndex)
+        {
+            if (instance == null) throw new ArgumentNullException(nameof(instance));
+            if (method == null) throw new ArgumentNullException(nameof(method));
+            var type = instance.GetType();
+            var meta = MetadataCache.GetOrCreateInjectMetadata(type);
+            foreach (var m in meta.Methods)
+            {
+                if (m.Method.DeclaringType != method.DeclaringType || m.Method.Name != method.Name) continue;
+                var parameters = method.GetParameters();
+                if (parameters.Length != m.ParameterTypes.Length) continue;
+                bool same = true;
+                for (int i = 0; i < parameters.Length && same; i++) same = parameters[i].ParameterType == m.ParameterTypes[i];
+                if (!same) continue;
+                _injector.MissingParameter(instance, type, m, parameterIndex);
+                return false;
+            }
+            throw new InvalidOperationException($"[Nexus] The generated binder reports '{method.DeclaringType?.FullName}.{method.Name}', which is not an [Inject] method of '{type.FullName}'. Regenerate the binder (Nexus > Generate AOT Binder).");
+        }
+
+        /// <summary>Codegen support: the <see cref="LazyInjection{T}"/> the reflection path assigns to an unset lazy [Inject] member.</summary>
+        public LazyInjection<T> CreateLazyInjection<T>(string name = null) where T : class => new LazyInjection<T>(this, name);
 
         public static void RegisterClearer<T>(Action<T> clearer) where T : class
         {
@@ -2881,6 +2960,7 @@ namespace Nexus.Core
         {
             s_customInjectors.Clear();
             s_customClearers.Clear();
+            s_injectorMembers.Clear();
             s_constructorFactories.Clear();
             ClearCaches();
         }

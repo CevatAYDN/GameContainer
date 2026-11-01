@@ -154,6 +154,16 @@ namespace NexusBench
 #pragma warning restore 0649
     }
 
+    /// <summary>CG10 (#191): a base class in another assembly than the type it serves. The source generator reads the harness as
+    /// metadata, where a private setter and a private field are visible only when it imports every member.</summary>
+    public abstract class ParityExternalBase
+    {
+#pragma warning disable 0649
+        [Inject] public CodeGenDep Dep { get; private set; }
+        [Inject] private CodeGenDep _hidden;
+#pragma warning restore 0649
+    }
+
     /// <summary>
     /// Runs the REAL NexusCodeGenerator (editor code compiled into the harness with UnityEditor
     /// stubs), then compiles the emitted binder with Roslyn and boots it. This closes the gap
@@ -177,6 +187,8 @@ namespace NexusBench
             Console.WriteLine("===============================================================================");
 
             Test_Codegen_Emits_Compiles_And_Boots();
+            // Before CG2: CG2 deletes its stub's file, and an editor binder that names the stub's types no longer compiles.
+            Test_Reflection_EditorBinder_SourceGenerator_Agree();
             Test_Generator_Emits_Compiles_And_Boots();
             Test_Codegen_Skips_Factories_For_UnityObjects();
             Test_ConstructorFactoryPolicy_Decisions();
@@ -186,6 +198,9 @@ namespace NexusBench
             // Last: they load an assembly named like a package, which every later scan would see.
             Test_Binders_Register_No_Package_Assembly_Type();
             Test_Shipped_SourceGenerator_Matches_Source();
+            Test_Binder_Leaves_Unknown_Conditions_To_Reflection();
+            // Last of all: with its fixture loaded every editor generation throws.
+            Test_Unsettable_Inject_Members_Rejected();
 
             Console.WriteLine();
             Console.WriteLine(_failures == 0
@@ -540,6 +555,7 @@ namespace NexusBench.CG2Source
 
         private const string PackageFixtureAssembly = "com.nexus.harnessfixture";
         private const string GameFixtureAssembly = "NexusBench.GameFixture";
+        private const string PlainLibraryAssembly = "NexusBench.PlainLibrary";
         private static string[] _fixtureErrors;
 
         private const string PackageFixtureSource = @"
@@ -603,12 +619,14 @@ namespace NexusBench.PackageFixture
                 // A referenced assembly gets factories and dispatchers only (CG2: Roslyn metadata hides non-public members).
                 bool generatorGameFixture = HasRegistration(generated, "RegisterConstructorFactory", "NexusBench.GameFixture.PackageCtorService") &&
                                             generated.Contains("typeof(global::NexusBench.GameFixture.PackageCommand)");
+                bool plainLibrarySkipped = !binder.Contains("NexusBench.PlainLibrary") && !generated.Contains("NexusBench.PlainLibrary");
 
                 ok = editorBinderClean && editorLinkClean && editorGameKept && editorGameFixture &&
-                     generatorClean && generatorGameKept && generatorGameFixture;
+                     generatorClean && generatorGameKept && generatorGameFixture && plainLibrarySkipped;
                 detail = $"editorBinderClean={editorBinderClean} editorLinkXmlClean={editorLinkClean} editorGameKept={editorGameKept} " +
                          $"editorGameFixtureRegistered={editorGameFixture} sourceGeneratorClean={generatorClean} " +
-                         $"sourceGeneratorGameKept={generatorGameKept} sourceGeneratorGameFixtureRegistered={generatorGameFixture}";
+                         $"sourceGeneratorGameKept={generatorGameKept} sourceGeneratorGameFixtureRegistered={generatorGameFixture} " +
+                         $"libraryWithoutNexusSkipped={plainLibrarySkipped}";
             }
             catch (Exception ex)
             {
@@ -633,6 +651,8 @@ namespace NexusBench.PackageFixture
             {
                 (Assembly: PackageFixtureAssembly, Source: PackageFixtureSource),
                 (Assembly: GameFixtureAssembly, Source: PackageFixtureSource.Replace("NexusBench.PackageFixture", "NexusBench.GameFixture")),
+                // a library that does not use Nexus (Newtonsoft, DOTween, an SDK): no binder names its types (#191)
+                (Assembly: PlainLibraryAssembly, Source: "namespace NexusBench.PlainLibrary { public sealed class PlainService { public PlainService(System.Text.StringBuilder log) { } } }"),
             };
             foreach (var fixture in fixtures)
             {
@@ -799,6 +819,26 @@ namespace NexusBench.PackageFixture
                     }
                 }
 
+                // Game assemblies the name policy took for framework, third-party, editor or test code (#191): a dropped game
+                // assembly loses its binder registrations and link.xml entries in silence (#37, #113). The editor policy and
+                // the source generator, which cannot reference it, give the same answer for every name.
+                string[] gameAssemblies = { "Systems.Gameplay", "BeeKeeper.Core", "Contests.Runtime", "Monopoly.Core", "Plasticity.Core",
+                    "Game.Editorial", "Unityville", "Assembly-CSharp", "ChipCrisis.Game", "PixelFlow" };
+                string[] otherAssemblies = { "System", "System.Core", "Microsoft.CSharp", "Unity.Mathematics", "UnityEngine.CoreModule",
+                    "UnityEditor.UI", "Mono.Cecil", "nunit.framework", "netstandard", "Newtonsoft.Json", "Bee.BeeDriver", "Assembly-CSharp-Editor",
+                    "Assembly-CSharp-Editor-firstpass", "ChipCrisis.Editor", "Game.EditorTools", "Game.Tests", "Gigawatt.FrameworkTests",
+                    "ChipCrisis.Tests.EditMode", "PixelFlow.Editor.Tests", "com.nexus.core.testing", "PlayerBuildProgramLibrary.Data",
+                    "UnityPipeline.System.Reflection.Metadata", "SystemWebTestShim", "monodoc" };
+                foreach (string game in gameAssemblies.Concat(otherAssemblies))
+                {
+                    bool expected = gameAssemblies.Contains(game);
+                    bool policy = !NexusAssemblyPolicy.IsFrameworkAssembly(game) && !NexusAssemblyPolicy.IsThirdPartyAssembly(game)
+                        && !NexusAssemblyPolicy.IsEditorAssembly(game) && !NexusAssemblyPolicy.IsTestAssembly(game);
+                    if (policy != expected) problems.Add($"'{game}': the policy {(policy ? "takes" : "does not take")} it for game code");
+                    if (Nexus.Generator.NexusBinderGenerator.IsGameAssembly(game) != expected)
+                        problems.Add($"'{game}': the source generator {(expected ? "does not take" : "takes")} it for game code");
+                }
+
                 // Game assemblies, the harness runtime and empty names stay game code for both predicates.
                 string[] gameNames = { "Assembly-CSharp", "Gigawatt", "Wickling.Monetization", "ChipCrisis.Game", "NexusBenchmark", "Nexus.Starter", string.Empty, null };
                 foreach (string game in gameNames)
@@ -955,12 +995,14 @@ namespace NexusBench.PackageFixture
                 bool emittableMemberInjector = source.Contains("RegisterInjector<NexusBench.CodeGenHierarchy.CodeGenEmittableMember>");
                 bool nonEmittableInjectorAbsent = !source.Contains("RegisterInjector<NexusBench.CodeGenHierarchy.CodeGenNonEmittableMember>");
                 bool postConstructInjector = source.Contains("RegisterInjector<NexusBench.CodeGenPostConstruct>");
-                bool namedEmitted = source.Contains("instance.Field = di.Resolve<NexusBench.CodeGenDep>(\"special\")")
-                                    && source.Contains("di.TryResolve<NexusBench.CodeGenDep>(\"special\")");
-                // [OptionalInject] mirrors the runtime: TryResolve (unbound stays null, never throws), and the clearer nulls it.
-                bool optionalEmitted = source.Contains("instance.Missing = di.TryResolve<NexusBench.CodeGenUnbound>();")
+                // Every member resolves through TryResolve with its name; an unbound required member goes to the runtime (#191).
+                bool namedEmitted = source.Contains("di.TryResolve<NexusBench.CodeGenDep>(\"special\")")
+                                    && source.Contains("di.ReportMissingMember(instance, typeof(NexusBench.CodeGenNamed), \"Field\")")
+                                    && !source.Contains("di.Resolve<");
+                // [OptionalInject] mirrors the runtime: an unbound member is left as it is (no report), and the clearer nulls it.
+                bool optionalEmitted = source.Contains("di.TryResolve<NexusBench.CodeGenUnbound>()")
                                        && source.Contains("instance.Missing = null;")
-                                       && !source.Contains("di.Resolve<NexusBench.CodeGenUnbound>");
+                                       && !source.Contains("\"Missing\")");
 
                 string[] compileErrors = CompileGeneratedBinder(source, out Assembly binderAssembly);
                 if (compileErrors.Length > 0)
@@ -1051,6 +1093,612 @@ namespace NexusBench.PackageFixture
                 }
             }
             Report("CG1. Codegen_Emits_Compiles_And_Boots", ok, detail);
+        }
+
+        // ─── CG10: reflection, the editor binder and the source generator agree (#191) ───
+        // Both generators replace the reflection path, so a difference changes what a game does depending on whether its
+        // binder was regenerated. Every case runs through the three paths under both injection modes: the outcomes, logs
+        // included, must be equal and must be the reflection path's documented semantic. The fixtures load from a file so
+        // the editor generator scans them and the source generator reads the same text as its own compilation (CG2's
+        // pattern); the file stays until the next run because later CodeGen tests reference the loaded assembly.
+        private const string ParityAssemblyName = "NexusBench.ParityFixtures";
+        private const string ParitySource = @"
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using System.Text;
+using Nexus.Core;
+
+namespace NexusBench.Parity
+{
+#pragma warning disable 0649, 0169, 0414
+    public sealed class PDep { }
+    public sealed class POther { }
+    public sealed class PUnbound { }
+
+    // item 1: a virtual [Inject] method runs once, through its override
+    public class PVirtualBase
+    {
+        public int BaseCalls;
+        [Inject] public virtual void Construct(PDep dep) { BaseCalls++; }
+    }
+    public sealed class PVirtual : PVirtualBase
+    {
+        public int OverrideCalls;
+        public override void Construct(PDep dep) { OverrideCalls++; }
+    }
+    public class PVirtualMarkedBase
+    {
+        public int Calls;
+        [Inject] public virtual void Construct(PDep dep) { Calls += 1; }
+    }
+    public sealed class PVirtualMarked : PVirtualMarkedBase
+    {
+        [Inject] public override void Construct(PDep dep) { Calls += 10; }
+    }
+    // an [Inject] declared on the override of a property its base did not mark
+    public class PPropertyBase { public virtual PDep Dep { get; set; } }
+    public sealed class PProperty : PPropertyBase { [Inject] public override PDep Dep { get; set; } }
+    // a public field hidden by a derived field: both are injected
+    public class PHiddenBase { [Inject] public PDep Value; }
+    public sealed class PHidden : PHiddenBase { [Inject] public new PDep Value; }
+    // item 11: same-named private fields at two levels, overloaded [Inject] methods
+    public class PShadowBase { [Inject] private PDep _dep; }
+    public sealed class PShadow : PShadowBase { [Inject] private PDep _dep; }
+    public sealed class POverloads
+    {
+        public int One, Two;
+        [Inject] public void Construct(PDep dep) { One++; }
+        [Inject] public void Construct(PDep dep, POther other) { Two++; }
+    }
+    // item 2: [Inject(Name)] on every member kind and on an optional constructor parameter
+    public sealed class PNamed
+    {
+        [Inject(Name = ""special"")] public PDep Field;
+        [Inject(Name = ""special"")] public PDep Property { get; set; }
+        [Inject(Name = ""special"")] private PDep _private;
+        public PDep FromMethod;
+        public readonly PDep FromConstructor;
+        public PNamed([OptionalInject, Inject(Name = ""special"")] PDep dep) { FromConstructor = dep; }
+        [Inject] public void Construct([Inject(Name = ""special"")] PDep dep) { FromMethod = dep; }
+    }
+    // item 3: [OptionalInject] and C# defaults on constructor parameters
+    public sealed class PCtorOptional
+    {
+        public readonly PUnbound Unbound;
+        public readonly PDep Dep;
+        public PCtorOptional([OptionalInject] PUnbound unbound, PDep dep) { Unbound = unbound; Dep = dep; }
+    }
+    public sealed class PCtorDefaultNull
+    {
+        public readonly PUnbound Unbound;
+        public readonly PDep Dep;
+        public PCtorDefaultNull(PDep dep, PUnbound unbound = null) { Unbound = unbound; Dep = dep; }
+    }
+    public sealed class PCtorDefaultString
+    {
+        public readonly string Label;
+        public readonly PDep Dep;
+        public PCtorDefaultString(PDep dep, string label = ""parity"") { Label = label; Dep = dep; }
+    }
+    // item 4: a required member the container cannot supply
+    public sealed class PMissingField
+    {
+        [Inject] public PUnbound Missing;
+        [Inject] public PDep Dep;
+    }
+    public sealed class PMissingProperty
+    {
+        [Inject] public PUnbound Missing { get; set; }
+        [Inject] public PDep Dep { get; set; }
+    }
+    public sealed class PMissingMethod
+    {
+        public int Calls;
+        [Inject] public void Construct(PDep dep, PUnbound unbound) { Calls++; }
+    }
+    // an unbound optional member keeps its initializer, as the reflection path leaves it
+    public sealed class PKeepsInitializer
+    {
+        public static readonly PUnbound Sentinel = new PUnbound();
+        [OptionalInject] public PUnbound Optional = Sentinel;
+        [OptionalInject] private PUnbound _private = Sentinel;
+    }
+    // LazyInjection<T> members
+    public sealed class PLazy
+    {
+        [Inject] public LazyInjection<PDep> Lazy;
+        [Inject(Name = ""special"")] private LazyInjection<PDep> _named;
+    }
+    // an init-only [Inject] property
+    public sealed class PInitOnly { [Inject] public PDep Dep { get; init; } }
+    // a base class in another assembly (the harness) with a private setter and a private field
+    public sealed class PExternal : NexusBench.ParityExternalBase { }
+    // [Inject, OptionalInject] on one property (Pixel-Flow-Clone's shape)
+    public sealed class PBothAttributes { [Inject, OptionalInject] public PUnbound Config { get; set; } }
+#pragma warning restore 0649, 0169, 0414
+
+    public static class ParityCases
+    {
+        public static readonly string[] Names =
+        {
+            ""PVirtual"", ""PVirtualMarked"", ""PProperty"", ""PHidden"", ""PShadow"", ""POverloads"", ""PNamed"",
+            ""PCtorOptional"", ""PCtorDefaultNull"", ""PCtorDefaultString"", ""PMissingField"", ""PMissingProperty"",
+            ""PMissingMethod"", ""PKeepsInitializer"", ""PLazy"", ""PInitOnly"", ""PExternal"", ""PBothAttributes""
+        };
+        public static readonly PDep Shared = new PDep();
+        public static readonly PDep Special = new PDep();
+
+        public static string Run(string name, bool strict)
+        {
+            var di = new NexusDI();
+            di.StrictInjection = strict;
+            di.BindInstance(Shared);
+            di.BindInstance(""special"", Special);
+            di.BindInstance(new POther());
+            di.BindInstance(new NexusBench.CodeGenDep());
+            var type = typeof(ParityCases).Assembly.GetType(""NexusBench.Parity."" + name);
+            di.Bind(type, Lifetime.Transient);
+            object instance = di.Resolve(type);
+            string result = Dump(instance);
+            if (name.StartsWith(""PMissing"", StringComparison.Ordinal))
+            {
+                di.BindInstance(new PUnbound());
+                di.ReInjectAll();
+                result += "" | after: "" + Dump(instance);
+            }
+            di.Dispose();
+            return result;
+        }
+
+        public static string Dump(object instance)
+        {
+            var chain = new List<Type>();
+            for (var t = instance.GetType(); t != null && t != typeof(object); t = t.BaseType) chain.Insert(0, t);
+            var sb = new StringBuilder();
+            foreach (var level in chain)
+                foreach (var f in level.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.DeclaredOnly))
+                    sb.Append(level.Name).Append('.').Append(f.Name).Append('=').Append(Label(f.GetValue(instance))).Append(' ');
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string Label(object value)
+        {
+            if (value == null) return ""null"";
+            if (ReferenceEquals(value, Shared)) return ""shared"";
+            if (ReferenceEquals(value, Special)) return ""special"";
+            if (ReferenceEquals(value, PKeepsInitializer.Sentinel)) return ""sentinel"";
+            var type = value.GetType();
+            if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(LazyInjection<>))
+                return ""lazy("" + Label(type.GetProperty(""Value"").GetValue(value)) + "")"";
+            if (value is int || value is string) return value.ToString();
+            return type.Name;
+        }
+    }
+}
+";
+
+        // Fixture types whose binder registration must survive the run: an injector the runtime drops as stale is a
+        // generator that disagrees with the reflection metadata.
+        private static readonly string[] ParityInjectorTypes =
+        {
+            "PVirtual", "PVirtualMarked", "PProperty", "PHidden", "PShadow", "POverloads", "PNamed", "PMissingField",
+            "PMissingProperty", "PMissingMethod", "PKeepsInitializer", "PLazy", "PInitOnly", "PExternal", "PBothAttributes"
+        };
+        private static readonly string[] ParityFactoryTypes = { "PCtorOptional", "PCtorDefaultNull", "PNamed" };
+        // A constructor default the binder does not repeat: no factory, and the binder's header says why.
+        private static readonly string[] ParityReflectionFactoryTypes = { "PCtorDefaultString" };
+
+        private static readonly (string Key, string[] Contains)[] ParityExpectations =
+        {
+            ("PVirtual", new[] { "PVirtualBase.BaseCalls=0", "PVirtual.OverrideCalls=1" }),
+            ("PVirtualMarked", new[] { "PVirtualMarkedBase.Calls=10" }),
+            ("PProperty", new[] { "PProperty.<Dep>k__BackingField=shared" }),
+            ("PHidden", new[] { "PHiddenBase.Value=shared", "PHidden.Value=shared" }),
+            ("PShadow", new[] { "PShadowBase._dep=shared", "PShadow._dep=shared" }),
+            ("POverloads", new[] { "POverloads.One=1", "POverloads.Two=1" }),
+            ("PNamed", new[] { "PNamed.Field=special", "PNamed.<Property>k__BackingField=special", "PNamed._private=special",
+                               "PNamed.FromMethod=special", "PNamed.FromConstructor=special" }),
+            ("PCtorOptional", new[] { "PCtorOptional.Unbound=null", "PCtorOptional.Dep=shared" }),
+            ("PCtorDefaultNull", new[] { "PCtorDefaultNull.Unbound=null", "PCtorDefaultNull.Dep=shared" }),
+            ("PCtorDefaultString", new[] { "PCtorDefaultString.Label=parity" }),
+            ("PMissingField", new[] { "PMissingField.Missing=null PMissingField.Dep=shared | after: PMissingField.Missing=PUnbound",
+                "[Error] [Nexus] [Inject] dependency 'NexusBench.Parity.PUnbound' for field 'NexusBench.Parity.PMissingField.Missing' is not registered; the field was left null." }),
+            ("PMissingField (strict)", new[] { "throws InvalidOperationException: Strict injection failed: [Inject] field 'NexusBench.Parity.PMissingField.Missing'" }),
+            ("PMissingProperty", new[] { "| after: PMissingProperty.<Missing>k__BackingField=PUnbound",
+                "[Error] [Nexus] [Inject] dependency 'NexusBench.Parity.PUnbound' for property 'NexusBench.Parity.PMissingProperty.Missing' is not registered; the property was left null." }),
+            ("PMissingProperty (strict)", new[] { "throws InvalidOperationException: Strict injection failed: [Inject] property 'NexusBench.Parity.PMissingProperty.Missing'" }),
+            ("PMissingMethod", new[] { "PMissingMethod.Calls=0 | after: PMissingMethod.Calls=1",
+                "[Error] [Nexus] [Inject] dependency 'NexusBench.Parity.PUnbound' for method 'NexusBench.Parity.PMissingMethod.Construct' is not registered; method invocation deferred." }),
+            ("PMissingMethod (strict)", new[] { "throws InvalidOperationException: Strict injection failed: [Inject] method 'NexusBench.Parity.PMissingMethod.Construct' parameter 1" }),
+            ("PKeepsInitializer", new[] { "PKeepsInitializer.Optional=sentinel", "PKeepsInitializer._private=sentinel" }),
+            ("PLazy", new[] { "PLazy.Lazy=lazy(shared)", "PLazy._named=lazy(special)" }),
+            ("PInitOnly", new[] { "PInitOnly.<Dep>k__BackingField=shared" }),
+            ("PExternal", new[] { "ParityExternalBase.<Dep>k__BackingField=CodeGenDep", "ParityExternalBase._hidden=CodeGenDep" }),
+            ("PBothAttributes", new[] { "PBothAttributes.<Config>k__BackingField=null" }),
+        };
+
+        private static void Test_Reflection_EditorBinder_SourceGenerator_Agree()
+        {
+            const string name = "CG10. Reflection_EditorBinder_SourceGenerator_Agree";
+            string rootDir = NexusEditorSettings.OutputRoot;
+            string dir = Path.Combine(Path.GetTempPath(), "nexus-parity");
+            var problems = new List<string>();
+            int compared = 0;
+            try
+            {
+                try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
+                Directory.CreateDirectory(dir);
+                string[] errors = EmitSource(ParitySource, ParityAssemblyName, out byte[] pe);
+                if (errors.Length > 0)
+                {
+                    Report(name, false, "fixtures FAILED to compile: " + string.Join(" | ", errors.Take(3)));
+                    return;
+                }
+                string path = Path.Combine(dir, ParityAssemblyName + ".dll");
+                File.WriteAllBytes(path, pe);
+                var fixtures = Assembly.LoadFrom(path);
+                var cases = fixtures.GetType("NexusBench.Parity.ParityCases");
+                var run = cases.GetMethod("Run");
+                var names = (string[])cases.GetField("Names").GetValue(null);
+
+                NexusRuntime.Reset();
+                NexusDI.ClearGeneratedRegistrations();
+                var reflection = RunParityCases(run, names);
+
+                NexusRuntime.Reset();
+                NexusDI.ClearGeneratedRegistrations();
+                if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
+                NexusCodeGenerator.GenerateBinder();
+                string editorSource = File.ReadAllText(Path.Combine(rootDir, "NexusGeneratedBinder.g.cs"));
+                var editor = RunThroughBinder("editor binder", editorSource, "NexusParityEditorBinder", fixtures, run, names, problems);
+
+                NexusRuntime.Reset();
+                NexusDI.ClearGeneratedRegistrations();
+                string generatorSource = GenerateBinderSource(new Nexus.Generator.NexusBinderGenerator(), ParityAssemblyName, ParitySource);
+                var generator = RunThroughBinder("source generator", generatorSource, "NexusParitySourceBinder", fixtures, run, names, problems);
+
+                foreach (var key in reflection.Keys)
+                {
+                    string r = reflection[key];
+                    var expectation = ParityExpectations.FirstOrDefault(x => x.Key == key);
+                    if (expectation.Contains == null && key.EndsWith(" (strict)"))
+                        expectation = ParityExpectations.FirstOrDefault(x => x.Key == key.Substring(0, key.Length - " (strict)".Length));
+                    if (expectation.Contains == null) problems.Add($"{key}: no expectation");
+                    else foreach (var part in expectation.Contains)
+                        if (!r.Contains(part)) problems.Add($"{key}: reflection gave '{r}', expected '{part}'");
+                    bool logsExpected = key.StartsWith("PMissing") && !key.EndsWith(" (strict)");
+                    if (!logsExpected && r.Contains(" logs: ")) problems.Add($"{key}: reflection logged: {r}");
+                    if (editor != null && editor.TryGetValue(key, out var e))
+                    {
+                        compared++;
+                        if (e != r) problems.Add($"{key}: editor binder gave '{e}', reflection '{r}'");
+                    }
+                    if (generator != null && generator.TryGetValue(key, out var g))
+                    {
+                        compared++;
+                        if (g != r) problems.Add($"{key}: source generator gave '{g}', reflection '{r}'");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                problems.Add($"EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                try { NexusRuntime.Reset(); NexusDI.ClearGeneratedRegistrations(); } catch { }
+                try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report(name, problems.Count == 0, problems.Count == 0
+                ? $"{compared} generated outcomes equal the reflection path's, every outcome its documented semantic"
+                : $"{problems.Count} problem(s): " + string.Join(" || ", problems.Take(14)));
+        }
+
+        /// <summary>Each case under non-strict then strict injection: its outcome (an exception unwrapped to its cause) and every Unity log line it wrote.</summary>
+        private static Dictionary<string, string> RunParityCases(MethodInfo run, string[] names)
+        {
+            var results = new Dictionary<string, string>();
+            foreach (bool strict in new[] { false, true })
+                foreach (var caseName in names)
+                {
+                    var logs = new List<string>();
+                    Action<string, string> listener = (level, text) => logs.Add("[" + level + "] " + text);
+                    UnityEngine.Debug.Logged += listener;
+                    string outcome;
+                    try { outcome = (string)run.Invoke(null, new object[] { caseName, strict }); }
+                    catch (TargetInvocationException ex)
+                    {
+                        Exception cause = ex;
+                        while (cause is TargetInvocationException && cause.InnerException != null) cause = cause.InnerException;
+                        outcome = "throws " + cause.GetType().Name + ": " + cause.Message;
+                    }
+                    finally { UnityEngine.Debug.Logged -= listener; }
+                    results[caseName + (strict ? " (strict)" : "")] = outcome + (logs.Count > 0 ? " logs: " + string.Join(" ; ", logs) : "");
+                }
+            return results;
+        }
+
+        private static Dictionary<string, string> RunThroughBinder(string label, string source, string assemblyName, Assembly fixtures,
+            MethodInfo run, string[] names, List<string> problems)
+        {
+            if (string.IsNullOrEmpty(source))
+            {
+                problems.Add(label + ": no binder emitted");
+                return null;
+            }
+            string[] errors = CompileSource(source, assemblyName, out Assembly binder, out _);
+            if (errors.Length > 0)
+            {
+                problems.Add($"{label} FAILED to compile ({errors.Length} errors): " + string.Join(" | ", errors.Take(4)));
+                return null;
+            }
+            binder.GetType("Nexus.Generated.NexusGeneratedBinder").GetMethod("Initialize").Invoke(null, null);
+            foreach (var t in ParityFactoryTypes)
+                if (!NexusDI.HasRegisteredConstructorFactory(fixtures.GetType("NexusBench.Parity." + t))) problems.Add($"{label}: no constructor factory for {t}");
+            foreach (var t in ParityReflectionFactoryTypes)
+            {
+                if (NexusDI.HasRegisteredConstructorFactory(fixtures.GetType("NexusBench.Parity." + t))) problems.Add($"{label}: {t} has a constructor factory");
+                if (!source.Contains("//   NexusBench.Parity." + t + ": ")) problems.Add($"{label}: the binder's header does not say why {t} takes the reflection path");
+            }
+            var registered = GeneratedInjectorTypes();
+            foreach (var t in ParityInjectorTypes)
+                if (!registered.Contains(fixtures.GetType("NexusBench.Parity." + t))) problems.Add($"{label}: no injector for {t}");
+            var results = RunParityCases(run, names);
+            var kept = GeneratedInjectorTypes();
+            foreach (var t in ParityInjectorTypes)
+            {
+                var type = fixtures.GetType("NexusBench.Parity." + t);
+                if (registered.Contains(type) && !kept.Contains(type)) problems.Add($"{label}: the injector for {t} was dropped as stale");
+            }
+            return results;
+        }
+
+        private static HashSet<Type> GeneratedInjectorTypes()
+            => new HashSet<Type>(((System.Collections.IDictionary)typeof(NexusDI)
+                .GetField("s_customInjectors", BindingFlags.NonPublic | BindingFlags.Static).GetValue(null)).Keys.Cast<Type>());
+
+        // ─── CG11: an [Inject] member no path can set is rejected by all three (#191) ───
+        // A get-only property, a static field and a static method were skipped in silence by the reflection path and both
+        // generators. Runs last: once the fixture is loaded every editor generation throws, as it must.
+        private const string InvalidInjectSource = @"
+using Nexus.Core;
+
+namespace NexusBench.InvalidInject
+{
+#pragma warning disable 0649
+    public sealed class IDep { }
+    public sealed class GetOnlyProperty { [Inject] public IDep Dep { get; } }
+    public sealed class StaticField { [Inject] public static IDep Dep; }
+    public sealed class StaticMethod { [Inject] public static void Construct(IDep dep) { } }
+#pragma warning restore 0649
+}
+";
+
+        private static void Test_Unsettable_Inject_Members_Rejected()
+        {
+            const string name = "CG11. Unsettable_Inject_Members_Rejected";
+            var problems = new List<string>();
+            string rootDir = NexusEditorSettings.OutputRoot;
+            string[] members = { "GetOnlyProperty.Dep", "StaticField.Dep", "StaticMethod.Construct" };
+            try
+            {
+                var diagnostics = GenerateBinderDiagnostics(new Nexus.Generator.NexusBinderGenerator(), "NexusBench.InvalidInject", InvalidInjectSource);
+                int sg003 = diagnostics.Count(d => d.Id == "NEXUS_SG003");
+                if (sg003 != members.Length) problems.Add($"source generator reported {sg003} NEXUS_SG003 errors for {members.Length} members ({string.Join(" | ", diagnostics.Select(d => d.Id + " " + d.GetMessage()))})");
+
+                string dir = Path.Combine(Path.GetTempPath(), "nexus-invalid-inject");
+                try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
+                Directory.CreateDirectory(dir);
+                string[] errors = EmitSource(InvalidInjectSource, "NexusBench.InvalidInject", out byte[] pe);
+                if (errors.Length > 0) { Report(name, false, "fixtures FAILED to compile: " + string.Join(" | ", errors.Take(3))); return; }
+                string path = Path.Combine(dir, "NexusBench.InvalidInject.dll");
+                File.WriteAllBytes(path, pe);
+                var fixtures = Assembly.LoadFrom(path);
+
+                NexusRuntime.Reset();
+                NexusDI.ClearGeneratedRegistrations();
+                foreach (var member in members)
+                {
+                    var type = fixtures.GetType("NexusBench.InvalidInject." + member.Split('.')[0]);
+                    var container = new NexusDI();
+                    try
+                    {
+                        container.Inject(Activator.CreateInstance(type));
+                        problems.Add($"reflection injected {member} without an error");
+                    }
+                    catch (InvalidOperationException ex) when (ex.Message.Contains(member)) { }
+                    catch (Exception ex) { problems.Add($"reflection threw for {member}: {ex.GetType().Name}: {ex.Message}"); }
+                    finally { container.Dispose(); }
+                }
+
+                try
+                {
+                    if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
+                    NexusCodeGenerator.GenerateBinder();
+                    problems.Add("the editor generator wrote a binder for the unsettable members");
+                }
+                catch (InvalidOperationException ex)
+                {
+                    foreach (var member in members)
+                        if (!ex.Message.Contains(member)) problems.Add($"the editor generator's error does not name {member}: {ex.Message}");
+                }
+            }
+            catch (Exception ex)
+            {
+                problems.Add($"EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                try { NexusRuntime.Reset(); NexusDI.ClearGeneratedRegistrations(); } catch { }
+                try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report(name, problems.Count == 0, problems.Count == 0
+                ? "reflection, the editor generator and the source generator reject a get-only property, a static field and a static method"
+                : string.Join(" || ", problems));
+        }
+
+        private const string ConditionsSource = @"
+using Nexus.Core;
+namespace NexusBench.Conditions
+{
+    public interface IDep { }
+    public sealed class PlainType { [Inject] public IDep Dep; }
+    public sealed class PlainWithUnknownDep { [Inject] public UnknownIfType Other; }
+    public sealed class MemberIfType { [Inject] public IDep Dep; }
+    public sealed class UnknownIfType { [Inject] public IDep Dep; }
+    public sealed class UnknownCtorOnly { public UnknownCtorOnly(IDep dep) { } }
+    internal sealed class InternalInjected { [Inject] public IDep Dep; }
+    public sealed class OpenGeneric<T> { [Inject] public IDep Dep; }
+    public sealed class ValueCtor { [Inject] public IDep Dep; public ValueCtor(int count) { } }
+    public sealed class DefaultCtor { public DefaultCtor(string name = ""main"") { } }
+    public struct PlainSignal { }
+    internal sealed class HiddenCommand : ICommand<PlainSignal> { public void Execute(PlainSignal signal) { } }
+}
+";
+
+        // What the binder's #if reading sees on disk for the fixture types above.
+        private static readonly (string File, string Text)[] ConditionsFiles =
+        {
+            ("Plain.cs", "namespace NexusBench.Conditions\n{\n    public interface IDep { }\n    public sealed class PlainType { [Inject] public IDep Dep; }\n"
+                + "    public sealed class PlainWithUnknownDep { [Inject] public UnknownIfType Other; }\n}\n"),
+            ("MemberIf.cs", "namespace NexusBench.Conditions\n{\n    public sealed class MemberIfType\n    {\n#if UNITY_EDITOR\n        [Inject] public IDep Dep;\n#endif\n    }\n}\n"),
+            // The reading takes directive lines only, so a commented example opens an #if it cannot parse.
+            ("UnknownIf.cs", "namespace NexusBench.Conditions\n{\n/* an example:\n#if a commented example\n*/\n#if UNITY_EDITOR\n"
+                + "    public sealed class UnknownIfType { [Inject] public IDep Dep; }\n    public sealed class UnknownCtorOnly { public UnknownCtorOnly(IDep dep) { } }\n#endif\n}\n"),
+        };
+
+        // The types each generator leaves to the reflection path, and the reason it gives at the top of the binder.
+        private static readonly (string Type, string Reason)[] FallbackReasons =
+        {
+            ("InternalInjected", "not visible from the binder (internal or private)"),
+            ("OpenGeneric", "an open generic type: the binder names closed types only"),
+            ("ValueCtor", "constructor parameter 'count' is a value type, which only an explicit value supplies"),
+            ("DefaultCtor", "constructor parameter 'name' has a default value the binder does not repeat"),
+            ("HiddenCommand", "its ICommand<PlainSignal> is dispatched through MethodInfo.Invoke: the binder cannot name the command or the signal"),
+        };
+
+        /// <summary>
+        /// #191 items 7 and 9. Both generators left most shapes they cannot emit to the reflection path in silence (an
+        /// internal or open generic injectable, a constructor they cannot repeat, a command they cannot name); each is now
+        /// listed with its reason at the top of the binder. An #if the editor generator's reading could not parse counted
+        /// as "always", so a type under it was named in players without it (CS0234), and an [Inject] member under an #if
+        /// of its own was set through a FieldInfo the player does not have (an NRE only in release). Both now leave the
+        /// binder and keep the reflection path, listed with the reason; the unparsable #if is logged.
+        /// </summary>
+        private static void Test_Binder_Leaves_Unknown_Conditions_To_Reflection()
+        {
+            const string name = "CG12. Binder_Lists_Every_Type_It_Leaves_To_Reflection";
+            var problems = new List<string>();
+            string rootDir = NexusEditorSettings.OutputRoot;
+            string dir = Path.Combine(Path.GetTempPath(), "nexus-conditions");
+            var warnings = new List<string>();
+            Action<string, string> listener = (level, text) => { if (level == "Warning") warnings.Add(text); };
+            try
+            {
+                try { if (Directory.Exists(dir)) Directory.Delete(dir, true); } catch { }
+                Directory.CreateDirectory(dir);
+                string[] errors = EmitSource(ConditionsSource, "NexusBench.Conditions", out byte[] pe);
+                if (errors.Length > 0) { Report(name, false, "fixtures FAILED to compile: " + string.Join(" | ", errors.Take(3))); return; }
+                string path = Path.Combine(dir, "NexusBench.Conditions.dll");
+                File.WriteAllBytes(path, pe);
+                Assembly.LoadFrom(path);
+                var files = new List<string>();
+                foreach (var (file, text) in ConditionsFiles)
+                {
+                    string filePath = Path.Combine(dir, file);
+                    File.WriteAllText(filePath, text);
+                    files.Add(filePath);
+                }
+                Nexus.Editor.AssemblyCatalog.TestSources = new Dictionary<string, (string[] Files, string[] Defines)>
+                {
+                    ["NexusBench.Conditions"] = (files.ToArray(), new[] { "UNITY_EDITOR" }),
+                    ["NexusBench.ConditionsBinder"] = (new string[0], new[] { "UNITY_EDITOR" }),
+                };
+                Nexus.Editor.AssemblyCatalog.TestBinderAssembly = "NexusBench.ConditionsBinder";
+
+                if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
+                UnityEngine.Debug.Logged += listener;
+                try { NexusCodeGenerator.GenerateBinder(); }
+                finally { UnityEngine.Debug.Logged -= listener; }
+                string binder = File.ReadAllText(Path.Combine(rootDir, "NexusGeneratedBinder.g.cs"));
+                string linkXml = File.ReadAllText(Path.Combine(rootDir, "link.xml"));
+                var code = binder.Split('\n').Where(l => !l.TrimStart().StartsWith("//")).ToArray();
+                string header = string.Join("\n", binder.Split('\n').Where(l => l.StartsWith("//   ")));
+
+                foreach (var emitted in new[] { "RegisterInjector<NexusBench.Conditions.PlainType>", "RegisterConstructorFactory<NexusBench.Conditions.PlainWithUnknownDep>" })
+                    if (!code.Any(l => l.Contains(emitted))) problems.Add($"the binder lost {emitted}");
+                if (code.Any(l => l.Contains("RegisterInjector<NexusBench.Conditions.PlainWithUnknownDep>")))
+                    problems.Add("the injector of a type whose member type has an unknown #if was written");
+                foreach (var left in new[] { "MemberIfType", "UnknownIfType", "UnknownCtorOnly" })
+                {
+                    var named = code.Where(l => l.Contains("NexusBench.Conditions." + left)).ToArray();
+                    if (named.Length > 0) problems.Add($"the binder names {left}: {named[0].Trim()}");
+                }
+                if (!header.Contains($"NexusBench.Conditions.MemberIfType: an [Inject] member in {Path.Combine(dir, "MemberIf.cs")} (line 6) is declared under #if UNITY_EDITOR"))
+                    problems.Add("the header does not give the member #if reason: " + header);
+                if (!header.Contains("NexusBench.Conditions.UnknownIfType: every binder line that names it is left out: could not parse '#if (a commented example) && (UNITY_EDITOR)'"))
+                    problems.Add("the header does not give the unparsable #if reason: " + header);
+                if (warnings.Count(w => w.Contains("could not parse '#if (a commented example) && (UNITY_EDITOR)'")) != 1)
+                    problems.Add("the unparsable #if was not logged once: " + string.Join(" | ", warnings));
+                if (!linkXml.Contains("<type fullname=\"NexusBench.Conditions.UnknownCtorOnly\" preserve=\"nothing\"><method name=\".ctor\" /></type>"))
+                    problems.Add("link.xml does not keep the constructor the factory no longer calls");
+                foreach (var kept in new[] { "MemberIfType", "UnknownIfType" })
+                    if (!linkXml.Contains($"<type fullname=\"NexusBench.Conditions.{kept}\" preserve=\"all\" />")) problems.Add($"link.xml does not keep {kept}");
+
+                string sourceGenerator = GenerateBinderSource(new Nexus.Generator.NexusBinderGenerator(), "NexusBench.Conditions", ConditionsSource);
+                string sourceHeader = string.Join("\n", sourceGenerator.Split('\n').Where(l => l.StartsWith("//   ")));
+                foreach (var (type, reason) in FallbackReasons)
+                {
+                    if (!header.Split('\n').Any(l => l.Contains("NexusBench.Conditions." + type) && l.Contains(reason)))
+                        problems.Add($"the editor binder does not list {type}: {reason}");
+                    if (!sourceHeader.Split('\n').Any(l => l.Contains("NexusBench.Conditions." + type) && l.Contains(reason)))
+                        problems.Add($"the source generator does not list {type}: {reason}");
+                }
+            }
+            catch (Exception ex)
+            {
+                problems.Add($"EXCEPTION: {ex.GetType().Name}: {ex.Message}");
+            }
+            finally
+            {
+                Nexus.Editor.AssemblyCatalog.TestSources = null;
+                Nexus.Editor.AssemblyCatalog.TestBinderAssembly = null;
+                try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report(name, problems.Count == 0, problems.Count == 0
+                ? $"both generators list {FallbackReasons.Length} shapes with their reason; an unparsable #if and an [Inject] member under its own #if keep their types on the reflection path, listed, logged and preserved"
+                : string.Join(" || ", problems));
+        }
+
+        /// <summary>Compiles without loading: a fixture loaded both from bytes and from its file is scanned twice by the editor generator.</summary>
+        private static string[] EmitSource(string source, string assemblyName, out byte[] peBytes)
+        {
+            peBytes = null;
+            var compilation = CSharpCompilation.Create(
+                assemblyName,
+                new[] { CSharpSyntaxTree.ParseText(source) },
+                LoadedAssemblyReferences(),
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            using (var pe = new MemoryStream())
+            {
+                var emit = compilation.Emit(pe);
+                if (!emit.Success)
+                    return emit.Diagnostics.Where(d => d.Severity == DiagnosticSeverity.Error).Select(d => d.ToString()).ToArray();
+                peBytes = pe.ToArray();
+            }
+            return Array.Empty<string>();
+        }
+
+        private static IReadOnlyList<Diagnostic> GenerateBinderDiagnostics(IIncrementalGenerator generator, string assemblyName, string source)
+        {
+            var compilation = CSharpCompilation.Create(
+                assemblyName,
+                new[] { CSharpSyntaxTree.ParseText(source) },
+                LoadedAssemblyReferences(),
+                new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
+            CSharpGeneratorDriver.Create(generator).RunGeneratorsAndUpdateCompilation(compilation, out _, out var diagnostics);
+            return diagnostics;
         }
 
         /// <summary>

@@ -93,7 +93,8 @@ namespace Nexus.Core
             var parameters = constructor.GetParameters();
             for (int i = 0; i < parameters.Length; i++)
                 if (parameters[i].ParameterType.IsValueType || parameters[i].ParameterType.IsByRef
-                    || parameters[i].ParameterType.IsPointer || parameters[i].HasDefaultValue)
+                    || parameters[i].ParameterType.IsPointer || parameters[i].HasDefaultValue
+                    || parameters[i].IsDefined(typeof(OptionalInjectAttribute), false))
                     return null;
             var type = constructor.DeclaringType;
             try

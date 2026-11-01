@@ -794,9 +794,7 @@ namespace Nexus.Core
         private static bool ShouldSkipDefaultScanAssembly(Assembly assembly)
         {
             var name = assembly.GetName().Name;
-            if (string.IsNullOrEmpty(name)) return true;
-            var lowerName = name.ToLowerInvariant();
-            return lowerName.Contains(".tests") || lowerName.EndsWith(".editor");
+            return string.IsNullOrEmpty(name) || NexusAssemblyPolicy.IsTestAssembly(name) || NexusAssemblyPolicy.IsEditorAssembly(name);
         }
 
         public T Resolve<T>() where T : class => Container.Resolve<T>();

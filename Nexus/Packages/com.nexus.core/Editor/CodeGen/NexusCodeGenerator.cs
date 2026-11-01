@@ -116,9 +116,8 @@ namespace Nexus.Editor
             }
         }
 
-        /// <summary>Per-type reflection results shared across GenerateBinder's passes so
-        /// GetFields/GetProperties/GetMethods run ONCE per type instead of once per pass
-        /// (discovery, value-type check, injector gen, clearer gen, preserve gen).</summary>
+        /// <summary>A type's injectable members, selected exactly as NexusDI's MetadataCache selects them; computed once
+        /// per type and shared by every pass (discovery, validation, injector, clearer, preserve).</summary>
         private struct MemberSet
         {
             public FieldInfo[] Fields;
@@ -130,12 +129,10 @@ namespace Nexus.Editor
         {
             if (!cache.TryGetValue(type, out var set))
             {
-                // Walk the inheritance chain base-first with DeclaredOnly — exactly like the
-                // runtime Injector's MetadataCache — because reflection on the leaf type never
-                // returns PRIVATE members declared on base classes. Without this, a [Inject] on
-                // a private base-class field/property was silently never injected on the AOT
-                // path while the reflection path injected it (FV3 divergence). Overridden
-                // virtual properties are deduped by name so injection runs once per name.
+                // Base-first chain walk with DeclaredOnly, like the runtime: reflection on the leaf type never returns
+                // PRIVATE members declared on base classes. A property is kept at the first level that carries the
+                // attribute and once per name; a method once per base definition, so a virtual [Inject] method runs once,
+                // through its override (#191). Get-only properties stay in the set: validation rejects them.
                 var chain = new List<Type>();
                 for (var cur = type; cur != null && cur != typeof(object); cur = cur.BaseType)
                     chain.Add(cur);
@@ -146,14 +143,15 @@ namespace Nexus.Editor
                 var properties = new List<PropertyInfo>();
                 var methods = new List<MethodInfo>();
                 var seenPropNames = new HashSet<string>();
-                for (int level = 0; level < chain.Count; level++)
+                var seenMethods = new HashSet<MethodInfo>();
+                foreach (var level in chain)
                 {
-                    fields.AddRange(chain[level].GetFields(Declared));
-                    foreach (var p in chain[level].GetProperties(Declared))
-                    {
-                        if (seenPropNames.Add(p.Name)) properties.Add(p);
-                    }
-                    methods.AddRange(chain[level].GetMethods(Declared));
+                    foreach (var f in level.GetFields(Declared))
+                        if (HasInject(f)) fields.Add(f);
+                    foreach (var p in level.GetProperties(Declared))
+                        if (HasInject(p) && seenPropNames.Add(p.Name)) properties.Add(p);
+                    foreach (var m in level.GetMethods(Declared))
+                        if (HasInject(m) && seenMethods.Add(m.GetBaseDefinition())) methods.Add(m);
                 }
                 set = new MemberSet
                 {
@@ -165,6 +163,25 @@ namespace Nexus.Editor
             }
             return set;
         }
+
+        /// <summary>
+        /// The member signature NexusDI compares before a generated injector's first run
+        /// (<c>InjectableMetadata.MemberSignature</c>): the same entries, in the same order.
+        /// </summary>
+        private static string MemberSignature(MemberSet set)
+        {
+            var entries = new List<string>();
+            foreach (var f in set.Fields) entries.Add("f:" + f.DeclaringType.Name + "." + f.Name + SignatureFlags(IsOptional(f), InjectName(f)));
+            foreach (var p in set.Properties) entries.Add("p:" + p.DeclaringType.Name + "." + p.Name + SignatureFlags(IsOptional(p), InjectName(p)));
+            foreach (var m in set.Methods)
+                entries.Add("m:" + m.DeclaringType.Name + "." + m.Name + "("
+                    + string.Join(",", m.GetParameters().Select(x => "p" + SignatureFlags(IsOptional(x), InjectName(x)))) + ")");
+            entries.Sort(StringComparer.Ordinal);
+            return string.Join(";", entries);
+        }
+
+        private static string SignatureFlags(bool optional, string name)
+            => (optional ? "?" : "") + (string.IsNullOrEmpty(name) ? "" : "=" + name);
 
         /// <summary>
         /// E-C1 fix: converts a Type to a compilable C# reference name. The previous
@@ -219,6 +236,7 @@ namespace Nexus.Editor
             return sb.ToString();
         }
 
+        // Attribute lookups as NexusDI's MetadataCache makes them (GetCustomAttribute inherits through overrides).
         private static bool HasInject(FieldInfo f)
             => f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null;
 
@@ -228,16 +246,45 @@ namespace Nexus.Editor
         private static bool HasInject(MethodInfo m)
             => m.GetCustomAttribute<InjectAttribute>() != null;
 
-        /// <summary>The <c>[Inject(Name = ...)]</c> binding name as a C# string literal, or null for the default binding.</summary>
-        private static string BindingNameLiteral(string name)
-            => string.IsNullOrEmpty(name) ? null : "\"" + name.Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"";
+        private static bool IsOptional(MemberInfo member) => member.GetCustomAttribute<OptionalInjectAttribute>() != null;
+        private static bool IsOptional(ParameterInfo parameter) => parameter.GetCustomAttribute<OptionalInjectAttribute>() != null;
+        private static string InjectName(MemberInfo member) => member.GetCustomAttribute<InjectAttribute>()?.Name;
+        private static string InjectName(ParameterInfo parameter) => parameter.GetCustomAttribute<InjectAttribute>()?.Name;
 
-        /// <summary>The resolve call the reflection path makes for a member or parameter: TryResolve when optional, the named overload when named.</summary>
-        private static string ResolveCall(string typeName, bool optional, string name)
+        private static bool IsLazy(Type type) => type.IsGenericType && type.GetGenericTypeDefinition() == typeof(LazyInjection<>);
+
+        /// <summary>An init-only setter (<c>init;</c>) carries the IsExternalInit modifier and cannot be called from C# after construction.</summary>
+        private static bool IsInitOnly(MethodInfo setter)
+            => setter.ReturnParameter.GetRequiredCustomModifiers().Any(m => m.FullName == "System.Runtime.CompilerServices.IsExternalInit");
+
+        /// <summary>A C# string literal for any text (binding names, member names, the member signature).</summary>
+        internal static string Literal(string text)
         {
-            string nameLiteral = BindingNameLiteral(name);
-            return $"di.{(optional ? "TryResolve" : "Resolve")}<{typeName}>({nameLiteral})";
+            var sb = new StringBuilder(text.Length + 2).Append('"');
+            foreach (char c in text)
+            {
+                switch (c)
+                {
+                    case '\\': sb.Append("\\\\"); break;
+                    case '"': sb.Append("\\\""); break;
+                    case '\r': sb.Append("\\r"); break;
+                    case '\n': sb.Append("\\n"); break;
+                    case '\t': sb.Append("\\t"); break;
+                    case '\0': sb.Append("\\0"); break;
+                    default:
+                        if (char.IsControl(c)) sb.Append("\\x").Append(((int)c).ToString("x4"));
+                        else sb.Append(c);
+                        break;
+                }
+            }
+            return sb.Append('"').ToString();
         }
+
+        /// <summary>The argument list of a TryResolve call: empty for the default binding, the name literal for a named one.</summary>
+        private static string NameArgument(string name) => string.IsNullOrEmpty(name) ? "" : Literal(name);
+
+        /// <summary>A type's name in the binder's header list of types the reflection path serves.</summary>
+        private static string DisplayName(Type type) => type.FullName.Replace('+', '.');
 
         /// <summary>True when a type can be referenced from the generated binder file.</summary>
         private static bool ImplementsSignalFilter(Type type)
@@ -316,6 +363,32 @@ namespace Nexus.Editor
             var memberCache = new Dictionary<Type, MemberSet>();
             // Issue #85: a type declared under #if UNITY_EDITOR / DEVELOPMENT_BUILD is named only under that #if.
             var conditions = new BinderConditions(AssemblyCatalog.SourceAssemblies(settings.BinderOutputPath, out string binderAssembly), binderAssembly);
+            // [Inject] members no path can set (#191): a static member, a get-only property, a value type. Generation stops
+            // and names every one; the reflection path throws for the same members when it injects their type.
+            var invalid = new SortedSet<string>(StringComparer.Ordinal);
+            // Types the binder leaves to the reflection path, with each reason, written at the top of the binder.
+            var fallback = new SortedDictionary<string, SortedSet<string>>(StringComparer.Ordinal);
+            void Fallback(Type type, string reason)
+            {
+                string key = DisplayName(type);
+                if (!fallback.TryGetValue(key, out var reasons)) fallback[key] = reasons = new SortedSet<string>(StringComparer.Ordinal);
+                reasons.Add(reason);
+            }
+            // Public types whose constructor factory was not emitted: link.xml keeps their constructors for the reflection path.
+            var reflectionConstructed = new List<Type>();
+            void Validate(MemberSet set)
+            {
+                foreach (var f in set.Fields)
+                    if (f.FieldType.IsValueType) invalid.Add($"{f.DeclaringType.FullName}.{f.Name}: a value type ({f.FieldType.Name})");
+                foreach (var p in set.Properties)
+                {
+                    if (!p.CanWrite) invalid.Add($"{p.DeclaringType.FullName}.{p.Name}: get-only, add a setter (it may be private)");
+                    else if (p.PropertyType.IsValueType) invalid.Add($"{p.DeclaringType.FullName}.{p.Name}: a value type ({p.PropertyType.Name})");
+                }
+                foreach (var m in set.Methods)
+                    foreach (var prm in m.GetParameters())
+                        if (prm.ParameterType.IsValueType) invalid.Add($"{m.DeclaringType.FullName}.{m.Name}({prm.Name}): a value type ({prm.ParameterType.Name})");
+            }
             string InjectCondition(Type type)
             {
                 var set = GetMemberSet(type, memberCache);
@@ -345,6 +418,10 @@ namespace Nexus.Editor
                 bool emittable = emittableAssemblies.Contains(assembly);
                 foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
+                    foreach (var member in type.GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
+                        if (!(member is Type) && (member.IsDefined(typeof(InjectAttribute), false) || member.IsDefined(typeof(OptionalInjectAttribute), false)))
+                            invalid.Add($"{type.FullName}.{member.Name}: static, Nexus injects instance members only");
+
                     if (type.IsValueType && typeof(Nexus.Netcode.INetworkSignal).IsAssignableFrom(type))
                     {
                         networkSignalTypes.Add(type);
@@ -395,51 +472,29 @@ namespace Nexus.Editor
                             }
                         }
 
-                        bool hasInject = false;
-
                         // Chain walk (base-first) so a [Inject] on a PRIVATE base-class member
                         // marks the leaf type injectable — the reflection path injects it, so the
                         // type must at least be preserved in link.xml (the emitter below then
                         // decides whether the binder can replicate it).
                         var members = GetMemberSet(type, memberCache);
-                        foreach (var f in members.Fields)
-                        {
-                            if (f.IsDefined(typeof(InjectAttribute), false) || f.IsDefined(typeof(OptionalInjectAttribute), false))
-                            {
-                                hasInject = true;
-                                break;
-                            }
-                        }
-
-                        if (!hasInject)
-                        {
-                            foreach (var p in members.Properties)
-                            {
-                                if (p.IsDefined(typeof(InjectAttribute), false) || p.IsDefined(typeof(OptionalInjectAttribute), false))
-                                {
-                                    hasInject = true;
-                                    break;
-                                }
-                            }
-                        }
-
-                        if (!hasInject)
-                        {
-                            foreach (var m in members.Methods)
-                            {
-                                if (m.IsDefined(typeof(InjectAttribute), false))
-                                {
-                                    hasInject = true;
-                                    break;
-                                }
-                            }
-                        }
+                        bool hasInject = members.Fields.Length > 0 || members.Properties.Length > 0 || members.Methods.Length > 0;
+                        // An [Inject] member or constructor under an #if of its own (#191): a binder line naming it would
+                        // break the player compile, or set a member the player does not have.
+                        string memberProblem = emittable && codegenVisible && IsEmittableType(type) ? conditions.MemberProblem(type) : null;
 
                         if (hasInject)
                         {
+                            Validate(members);
                             linkXmlTypes.Add(type);
                             if (emittable && codegenVisible && IsEmittableType(type))
-                                injectTypes.Add(type);
+                            {
+                                if (memberProblem == null) injectTypes.Add(type);
+                                else Fallback(type, memberProblem);
+                            }
+                            else if (emittable && !type.IsDefined(typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), false))
+                                Fallback(type, type.ContainsGenericParameters
+                                    ? "an open generic type: the binder names closed types only"
+                                    : "not visible from the binder (internal or private)");
                         }
                         // Created only through Activator: a lifecycle found by name convention and an
                         // AddSignalFilter<TSignal, TFilter> type that is not bound. Nothing references
@@ -467,9 +522,12 @@ namespace Nexus.Editor
                                     ctorToRegister = publicCtors[0];
                             }
 
-                            if (ctorToRegister != null)
-                            {
+                            if (ctorToRegister != null && memberProblem == null)
                                 ctorFactoryTypes.Add((type, ctorToRegister));
+                            else if (ctorToRegister != null)
+                            {
+                                Fallback(type, memberProblem);
+                                if (!linkXmlTypes.Contains(type)) reflectionConstructed.Add(type);
                             }
                         }
                     }
@@ -481,27 +539,9 @@ namespace Nexus.Editor
             var preserveSb = new StringBuilder();
             var dispatcherSb = new StringBuilder();
 
-            // Check value types first (Issue 6)
-            foreach (var type in injectTypes)
-            {
-                var fields = GetMemberSet(type, memberCache).Fields;
-                foreach (var f in fields)
-                {
-                    if ((f.GetCustomAttribute<InjectAttribute>() != null || f.GetCustomAttribute<OptionalInjectAttribute>() != null) && f.FieldType.IsValueType)
-                    {
-                        throw new InvalidOperationException($"[Nexus CodeGen Error] Field '{f.Name}' in type '{type.FullName}' has [Inject]/[OptionalInject] attribute but is a value type ({f.FieldType.Name}). Injection on value types is not supported because value types are passed by value and injected values will be lost.");
-                    }
-                }
-
-                var properties = GetMemberSet(type, memberCache).Properties;
-                foreach (var p in properties)
-                {
-                    if ((p.GetCustomAttribute<InjectAttribute>() != null || p.GetCustomAttribute<OptionalInjectAttribute>() != null) && p.PropertyType.IsValueType)
-                    {
-                        throw new InvalidOperationException($"[Nexus CodeGen Error] Property '{p.Name}' in type '{type.FullName}' has [Inject]/[OptionalInject] attribute but is a value type ({p.PropertyType.Name}). Injection on value types is not supported because value types are passed by value and injected values will be lost.");
-                    }
-                }
-            }
+            if (invalid.Count > 0)
+                throw new InvalidOperationException("[Nexus CodeGen Error] These [Inject] members cannot be injected, so no binder was written:"
+                    + Environment.NewLine + "  " + string.Join(Environment.NewLine + "  ", invalid));
 
             // NetworkSignalBus dispatch is intentionally not emitted here.  The runtime
             // exposes only generic Fire<T> APIs, so a generated assignment to a
@@ -510,10 +550,11 @@ namespace Nexus.Editor
             // Network signal types are still included in link.xml below so IL2CPP can
             // preserve their serialized fields.
 
-            // Constructor factories: zero-reflection instantiation on IL2CPP. The lambda calls
-            // di.ResolveConstructorParameter<T> which reproduces the reflection path's
-            // strict/warn semantics byte-for-byte; [OptionalInject] params use TryResolve, and
-            // [Inject(Name=...)] params resolve the named binding.
+            // Constructor factories: zero-reflection instantiation on IL2CPP, with the reflection path's answers (#191):
+            // an [OptionalInject] or null-default parameter is TryResolve (null without a log), a required one
+            // di.ResolveConstructorParameter<T> (strict throw, or warn and pass null), a named one its named binding.
+            // A parameter with any other default keeps the reflection path, which passes the declared default; the
+            // binder's header lists the type and link.xml keeps its constructors.
             var ctorFactorySb = new StringBuilder();
             foreach (var (type, ctor) in ctorFactoryTypes)
             {
@@ -525,28 +566,46 @@ namespace Nexus.Editor
                 for (int i = 0; i < parameters.Length; i++)
                 {
                     var p = parameters[i];
-                    if (p.ParameterType.IsValueType) { skipType = true; break; }
-                    string pTypeName = GetCSharpTypeName(p.ParameterType);
-                    // Non-visible parameter types (private/internal nested) cannot be
-                    // referenced from the generated binder (CS0122) — keep the reflection path.
-                    if (pTypeName == null || !p.ParameterType.IsVisible) { skipType = true; break; }
-                    bool optional = p.IsDefined(typeof(OptionalInjectAttribute), false);
-                    var paramInject = p.GetCustomAttribute<InjectAttribute>();
-                    string paramName = paramInject?.Name;
-                    if (optional)
+                    // A value-type parameter takes an explicit value (WithParameter), which a factory does not; a parameter
+                    // type the binder cannot name is CS0122. Most such classes are never bound, so only an injectable
+                    // type, which link.xml keeps whole, is listed.
+                    string pTypeName = p.ParameterType.IsValueType ? null : GetCSharpTypeName(p.ParameterType);
+                    if (pTypeName == null || !p.ParameterType.IsVisible)
                     {
-                        argList.Add(ResolveCall(pTypeName, true, paramName));
+                        if (linkXmlTypes.Contains(type))
+                            Fallback(type, p.ParameterType.IsValueType
+                                ? $"constructor parameter '{p.Name}' is a value type, which only an explicit value supplies"
+                                : $"constructor parameter '{p.Name}' has a type the binder cannot name");
+                        skipType = true;
+                        break;
                     }
+                    if (p.HasDefaultValue && p.DefaultValue != null)
+                    {
+                        Fallback(type, $"constructor parameter '{p.Name}' has a default value the binder does not repeat");
+                        if (!linkXmlTypes.Contains(type)) reflectionConstructed.Add(type);
+                        skipType = true;
+                        break;
+                    }
+                    string paramName = p.GetCustomAttribute<InjectAttribute>()?.Name;
+                    if (p.IsDefined(typeof(OptionalInjectAttribute), false) || p.HasDefaultValue)
+                        argList.Add($"di.TryResolve<{pTypeName}>({NameArgument(paramName)})");
                     else
                     {
-                        string nameArg = string.IsNullOrEmpty(paramName) ? "" : ", " + BindingNameLiteral(paramName);
-                        argList.Add($"di.ResolveConstructorParameter<{pTypeName}>({i}, \"{fullName}\", \"{pTypeName}\"{nameArg})");
+                        string nameArg = string.IsNullOrEmpty(paramName) ? "" : ", " + Literal(paramName);
+                        argList.Add($"di.ResolveConstructorParameter<{pTypeName}>({i}, {Literal(type.FullName)}, {Literal(p.ParameterType.FullName)}{nameArg})");
                     }
                 }
                 if (skipType) continue;
+                string factoryCondition = conditions.For(new[] { type }.Concat(parameters.Select(p => p.ParameterType)));
+                if (factoryCondition == BinderConditions.Never)
+                {
+                    // a type whose #if could not be known: the reflection path constructs it, link.xml keeps the constructor
+                    if (!linkXmlTypes.Contains(type)) reflectionConstructed.Add(type);
+                    continue;
+                }
                 int factoryStart = ctorFactorySb.Length;
                 ctorFactorySb.AppendLine($"            NexusDI.RegisterConstructorFactory<{fullName}>((di) => new {fullName}({string.Join(", ", argList)}));");
-                WrapInCondition(ctorFactorySb, factoryStart, conditions.For(new[] { type }.Concat(parameters.Select(p => p.ParameterType))));
+                WrapInCondition(ctorFactorySb, factoryStart, factoryCondition);
             }
 
             // Generic-only command dispatchers: strongly-typed delegates registered into
@@ -556,10 +615,13 @@ namespace Nexus.Editor
             {
                 // typeof() on non-visible types is CS0122 from the generated binder; such
                 // commands keep the runtime MethodInfo.Invoke fallback instead.
-                if (!commandType.IsVisible || !signalType.IsVisible) continue;
-                string commandName = GetCSharpTypeName(commandType);
-                string signalName = GetCSharpTypeName(signalType);
-                if (commandName == null || signalName == null) continue;
+                string commandName = commandType.IsVisible ? GetCSharpTypeName(commandType) : null;
+                string signalName = signalType.IsVisible ? GetCSharpTypeName(signalType) : null;
+                if (commandName == null || signalName == null)
+                {
+                    Fallback(commandType, $"its {(isAsync ? "IAsyncCommand" : "ICommand")}<{signalType.Name}> is dispatched through MethodInfo.Invoke: the binder cannot name the command or the signal");
+                    continue;
+                }
 
                 int dispatcherStart = dispatcherSb.Length;
                 if (isAsync)
@@ -575,191 +637,110 @@ namespace Nexus.Editor
                 WrapInCondition(dispatcherSb, dispatcherStart, conditions.For(commandType, signalType));
             }
 
-            // Generate Injectors and Cache Definitions (Issue 5 & 7). All-or-nothing per type:
-            // a single non-emittable injectable member (non-visible or unnameable declaring or
-            // member type, through the base chain) drops the WHOLE injector+clearer for the type
-            // — the reflection path then serves it with identical semantics. A partial injector
-            // would silently diverge (e.g. a private base-class [Inject] field left null on the
-            // AOT path while the reflection path injects it).
+            // Injectors and clearers (#191). Every member resolves through TryResolve; an unbound required member goes to the
+            // runtime (ReportMissingMember / ReportMissingParameter), so the generated path gives the reflection path's answer
+            // (strict throw, or log and ReInjectAll) and an unbound optional member keeps its value. Each injector carries the
+            // member signature it was generated for: the runtime drops an injector whose type has other members since.
+            // All-or-nothing per type: a member the binder cannot name leaves the whole type to the reflection path.
             foreach (var type in injectTypes)
             {
-                // E-C1 fix: use the compilable C# name; skip open-generic types that can
-                // never be named (previously emitted `1 backtick arity markers → CS0246).
                 string fullName = GetCSharpTypeName(type);
-                if (fullName == null)
-                {
-                    Debug.LogWarning($"[Nexus CodeGen] Skipping open generic type '{type.FullName}' — injectors cannot be generated for unbound generic types.");
-                    continue;
-                }
                 string typeSafeName = GetSafeIdentifierName(fullName);
+                var set = GetMemberSet(type, memberCache);
 
-                var fields = GetMemberSet(type, memberCache).Fields;
-                var properties = GetMemberSet(type, memberCache).Properties;
-                var methods = GetMemberSet(type, memberCache).Methods;
-
-                bool emittable = true;
-                foreach (var f in fields)
-                {
-                    if (!HasInject(f) || f.FieldType.IsValueType) continue;
-                    if (!IsEmittableType(f.DeclaringType) || !IsEmittableType(f.FieldType)) { emittable = false; break; }
-                }
-                if (emittable)
-                {
-                    foreach (var p in properties)
-                    {
-                        if (!HasInject(p) || p.PropertyType.IsValueType || p.GetSetMethod(true) == null) continue;
-                        if (!IsEmittableType(p.DeclaringType) || !IsEmittableType(p.PropertyType)) { emittable = false; break; }
-                    }
-                }
-                if (emittable)
-                {
-                    foreach (var m in methods)
-                    {
-                        if (!HasInject(m)) continue;
-                        if (!IsEmittableType(m.DeclaringType)) { emittable = false; break; }
-                        foreach (var prm in m.GetParameters())
-                        {
-                            if (prm.ParameterType.IsValueType) continue; // method skipped, not the type
-                            if (!IsEmittableType(prm.ParameterType)) { emittable = false; break; }
-                        }
-                        if (!emittable) break;
-                    }
-                }
+                bool emittable = set.Fields.All(f => IsEmittableType(f.DeclaringType) && IsEmittableType(f.FieldType))
+                    && set.Properties.All(p => IsEmittableType(p.DeclaringType) && IsEmittableType(p.PropertyType))
+                    && set.Methods.All(m => IsEmittableType(m.DeclaringType) && m.GetParameters().All(x => IsEmittableType(x.ParameterType)));
                 if (!emittable)
                 {
-                    Debug.LogWarning($"[Nexus CodeGen] Skipping injector/clearer for '{type.FullName}': an injectable member is not referenceable from the generated binder (non-visible/unnameable declaring or member type). The reflection path serves this type with identical semantics.");
+                    Fallback(type, "an [Inject] member's declaring or member type is not visible from the binder");
                     continue;
                 }
 
                 int cacheStart = cacheSb.Length, initStart = initSb.Length;
+                var cacheNames = new HashSet<string>(StringComparer.Ordinal);
+                string Target(Type declaring) => declaring == type ? "instance" : $"(({GetCSharpTypeName(declaring)})instance)";
+                string Cache(string kind, string reflectionType, MemberInfo member, string lookup)
+                {
+                    string declaringName = GetCSharpTypeName(member.DeclaringType);
+                    string cacheName = $"s_{kind}_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(member.Name)}";
+                    if (cacheNames.Add(cacheName))
+                        cacheSb.AppendLine($"        private static readonly System.Reflection.{reflectionType} {cacheName} = typeof({declaringName}).{lookup}({Literal(member.Name)}, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly);");
+                    return cacheName;
+                }
+                // Public members are set directly; a private or protected member, a readonly field and a non-public or
+                // init-only setter go through the cached FieldInfo/PropertyInfo.
+                string Get(MemberInfo member)
+                {
+                    if (member is FieldInfo f)
+                        return f.IsPublic ? $"{Target(f.DeclaringType)}.{f.Name}" : $"{Cache("f", "FieldInfo", f, "GetField")}.GetValue(instance)";
+                    var p = (PropertyInfo)member;
+                    return p.GetMethod != null && p.GetMethod.IsPublic ? $"{Target(p.DeclaringType)}.{p.Name}" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.GetValue(instance)";
+                }
+                string Set(MemberInfo member, string value)
+                {
+                    if (member is FieldInfo f)
+                        return f.IsPublic && !f.IsInitOnly ? $"{Target(f.DeclaringType)}.{f.Name} = {value};" : $"{Cache("f", "FieldInfo", f, "GetField")}.SetValue(instance, {value});";
+                    var p = (PropertyInfo)member;
+                    var setter = p.GetSetMethod(true);
+                    return setter.IsPublic && !IsInitOnly(setter) ? $"{Target(p.DeclaringType)}.{p.Name} = {value};" : $"{Cache("p", "PropertyInfo", p, "GetProperty")}.SetValue(instance, {value});";
+                }
+                void EmitMember(MemberInfo member, Type memberType)
+                {
+                    string name = InjectName(member);
+                    if (IsLazy(memberType))
+                    {
+                        // the reflection path assigns a LazyInjection<T> only to a member that holds none
+                        initSb.AppendLine($"                if ({Get(member)} == null) {Set(member, $"di.CreateLazyInjection<{GetCSharpTypeName(memberType.GetGenericArguments()[0])}>({NameArgument(name)})")}");
+                        return;
+                    }
+                    initSb.AppendLine("                {");
+                    initSb.AppendLine($"                    var value = di.TryResolve<{GetCSharpTypeName(memberType)}>({NameArgument(name)});");
+                    initSb.AppendLine($"                    if (value != null) {Set(member, "value")}");
+                    if (!IsOptional(member))
+                        initSb.AppendLine($"                    else di.ReportMissingMember(instance, typeof({GetCSharpTypeName(member.DeclaringType)}), {Literal(member.Name)});");
+                    initSb.AppendLine("                }");
+                }
+
                 initSb.AppendLine($"            NexusDI.RegisterInjector<{fullName}>((instance, di) =>");
                 initSb.AppendLine("            {");
+                foreach (var f in set.Fields) EmitMember(f, f.FieldType);
+                foreach (var p in set.Properties) EmitMember(p, p.PropertyType);
 
-                // Inject Fields
-                foreach (var f in fields)
+                // Methods go through the cached MethodInfo of their declaring level (DeclaredOnly, explicit parameter types):
+                // Invoke dispatches a virtual method to its override, as the reflection path does. Parameters resolve in
+                // order; an unbound required one is reported and the method is not invoked (ReInjectAll invokes it later).
+                for (int methodIndex = 0; methodIndex < set.Methods.Length; methodIndex++)
                 {
-                    bool fOptional = f.GetCustomAttribute<OptionalInjectAttribute>() != null;
-                    if (!HasInject(f) || f.FieldType.IsValueType) continue;
-                    {
-                        // Optional members resolve through TryResolve (null when unbound) so an
-                        // absent optional dependency never throws at boot on the AOT path.
-                        string fTypeName = GetCSharpTypeName(f.FieldType);
-                        string fResolve = ResolveCall(fTypeName, fOptional, f.GetCustomAttribute<InjectAttribute>()?.Name);
-                        if (f.IsPublic)
-                        {
-                            initSb.AppendLine($"                instance.{f.Name} = {fResolve};");
-                        }
-                        else
-                        {
-                            // Cache FieldInfo from the DECLARING type (base-class private fields
-                            // are not visible through the leaf type's GetField) and key the cache
-                            // field by declaring type so shadowed names cannot collide.
-                            string declaringName = GetCSharpTypeName(f.DeclaringType);
-                            string cacheFieldName = $"s_f_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{f.Name}";
-                            cacheSb.AppendLine($"        private static readonly System.Reflection.FieldInfo {cacheFieldName} = typeof({declaringName}).GetField(\"{f.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                            initSb.AppendLine($"                {cacheFieldName}.SetValue(instance, {fResolve});");
-                        }
-                    }
-                }
-
-                // Inject Properties
-                foreach (var p in properties)
-                {
-                    bool pOptional = p.GetCustomAttribute<OptionalInjectAttribute>() != null;
-                    if (!HasInject(p) || p.PropertyType.IsValueType) continue;
-                    var setMethod = p.GetSetMethod(true);
-                    if (setMethod != null)
-                    {
-                        string pTypeName = GetCSharpTypeName(p.PropertyType);
-                        string pResolve = ResolveCall(pTypeName, pOptional, p.GetCustomAttribute<InjectAttribute>()?.Name);
-                        if (setMethod.IsPublic)
-                        {
-                            initSb.AppendLine($"                instance.{p.Name} = {pResolve};");
-                        }
-                        else
-                        {
-                            string declaringName = GetCSharpTypeName(p.DeclaringType);
-                            string cachePropName = $"s_p_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{p.Name}";
-                            cacheSb.AppendLine($"        private static readonly System.Reflection.PropertyInfo {cachePropName} = typeof({declaringName}).GetProperty(\"{p.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                            initSb.AppendLine($"                {cachePropName}.SetValue(instance, {pResolve});");
-                        }
-                    }
-                }
-
-                // Inject Methods (method-level OptionalInject is impossible per AttributeUsage;
-                // per-PARAM [OptionalInject] below is the meaningful case → TryResolve).
-                // All methods go through the cached MethodInfo + Invoke path (declaring type +
-                // explicit parameter types): the runtime itself invokes methods via
-                // MethodInfo.Invoke, and this removes overload-ambiguity and base-class
-                // visibility issues that direct calls would have.
-                foreach (var m in methods)
-                {
-                    if (!HasInject(m)) continue;
-                    bool hasValueTypeParams = false;
-                    var paramList = new List<string>();
-                    foreach (var param in m.GetParameters())
-                    {
-                        if (param.ParameterType.IsValueType)
-                        {
-                            hasValueTypeParams = true;
-                            break;
-                        }
-                        // [OptionalInject] on a parameter → TryResolve (null when unbound).
-                        bool paramOptional = param.GetCustomAttribute<OptionalInjectAttribute>() != null;
-                        string paramTypeName = GetCSharpTypeName(param.ParameterType);
-                        paramList.Add(ResolveCall(paramTypeName, paramOptional, param.GetCustomAttribute<InjectAttribute>()?.Name));
-                    }
-                    if (hasValueTypeParams) continue;
-
+                    var m = set.Methods[methodIndex];
+                    var prms = m.GetParameters();
                     string declaringName = GetCSharpTypeName(m.DeclaringType);
-                    string cacheMethodName = $"s_m_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{m.Name}";
-                    var paramTypesString = string.Join(", ", m.GetParameters().Select(param => $"typeof({GetCSharpTypeName(param.ParameterType)})"));
-                    cacheSb.AppendLine($"        private static readonly System.Reflection.MethodInfo {cacheMethodName} = typeof({declaringName}).GetMethod(\"{m.Name}\", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance, null, new System.Type[] {{ {paramTypesString} }}, null);");
-                    initSb.AppendLine($"                if ({cacheMethodName} == null) throw new InvalidOperationException(\"[Nexus CodeGen] Failed to bind injector method {fullName}.{m.Name}.\");");
-                    initSb.AppendLine($"                {cacheMethodName}.Invoke(instance, new object[] {{ {string.Join(", ", paramList)} }});");
+                    string cacheName = $"s_m_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(m.Name)}_{methodIndex}";
+                    string parameterTypes = string.Join(", ", prms.Select(x => $"typeof({GetCSharpTypeName(x.ParameterType)})"));
+                    cacheSb.AppendLine($"        private static readonly System.Reflection.MethodInfo {cacheName} = typeof({declaringName}).GetMethod({Literal(m.Name)}, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.DeclaredOnly, null, new System.Type[] {{ {parameterTypes} }}, null);");
+                    initSb.AppendLine("                {");
+                    initSb.AppendLine($"                    if ({cacheName} == null) throw new InvalidOperationException({Literal($"[Nexus CodeGen] Failed to bind injector method {fullName}.{m.Name}.")});");
+                    bool anyRequired = prms.Any(x => !IsOptional(x));
+                    if (anyRequired) initSb.AppendLine("                    bool ready = true;");
+                    for (int i = 0; i < prms.Length; i++)
+                    {
+                        initSb.AppendLine($"                    var a{i} = di.TryResolve<{GetCSharpTypeName(prms[i].ParameterType)}>({NameArgument(InjectName(prms[i]))});");
+                        if (!IsOptional(prms[i]))
+                            initSb.AppendLine($"                    if (a{i} == null && !di.ReportMissingParameter(instance, {cacheName}, {i})) ready = false;");
+                    }
+                    string args = prms.Length == 0 ? "System.Array.Empty<object>()" : "new object[] { " + string.Join(", ", prms.Select((x, i) => "a" + i)) + " }";
+                    initSb.AppendLine($"                    {(anyRequired ? "if (ready) " : "")}{cacheName}.Invoke(instance, {args});");
+                    initSb.AppendLine("                }");
                 }
+                initSb.AppendLine($"            }}, {Literal(MemberSignature(set))});");
 
-                initSb.AppendLine("            });");
-
-                // Generate AOT Clearers (0 GC Allocation optimization for pooling reuse)
-                // [OptionalInject]-only members are cleared too (they may hold a resolved value).
-                var clearFields = fields.Where(f => HasInject(f) && !f.FieldType.IsValueType).ToList();
-                var clearProps = properties.Where(p => HasInject(p) && !p.PropertyType.IsValueType && p.GetSetMethod(true) != null).ToList();
-
-                if (clearFields.Count > 0 || clearProps.Count > 0)
+                // Clearer (0 GC pooling reuse): every injected field and property, as the reflection clearer does.
+                if (set.Fields.Length > 0 || set.Properties.Length > 0)
                 {
                     initSb.AppendLine($"            NexusDI.RegisterClearer<{fullName}>(instance =>");
                     initSb.AppendLine("            {");
-
-                    foreach (var f in clearFields)
-                    {
-                        if (f.IsPublic)
-                        {
-                            initSb.AppendLine($"                instance.{f.Name} = null;");
-                        }
-                        else
-                        {
-                            string declaringName = GetCSharpTypeName(f.DeclaringType);
-                            string cacheFieldName = $"s_f_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{f.Name}";
-                            initSb.AppendLine($"                {cacheFieldName}.SetValue(instance, null);");
-                        }
-                    }
-
-                    foreach (var p in clearProps)
-                    {
-                        var setMethod = p.GetSetMethod(true);
-                        if (setMethod.IsPublic)
-                        {
-                            initSb.AppendLine($"                instance.{p.Name} = null;");
-                        }
-                        else
-                        {
-                            string declaringName = GetCSharpTypeName(p.DeclaringType);
-                            string cachePropName = $"s_p_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{p.Name}";
-                            initSb.AppendLine($"                {cachePropName}.SetValue(instance, null);");
-                        }
-                    }
-
+                    foreach (var f in set.Fields) initSb.AppendLine($"                {Set(f, "null")}");
+                    foreach (var p in set.Properties) initSb.AppendLine($"                {Set(p, "null")}");
                     initSb.AppendLine("            });");
                 }
 
@@ -778,41 +759,32 @@ namespace Nexus.Editor
 
             foreach (var type in injectTypes)
             {
-                // E-C1: same naming fix as the injector pass above.
-                string fullName = GetCSharpTypeName(type);
-                if (fullName == null) continue;
-                string typeSafeName = GetSafeIdentifierName(fullName);
+                string typeSafeName = GetSafeIdentifierName(GetCSharpTypeName(type));
                 int preserveStart = preserveSb.Length;
-
-                var fields = GetMemberSet(type, memberCache).Fields;
-                foreach (var f in fields)
+                var set = GetMemberSet(type, memberCache);
+                // Locals are keyed by declaring type too: a hidden or shadowed member shares its name with another.
+                foreach (var f in set.Fields)
                 {
-                    if (HasInject(f))
-                    {
-                        // Members whose declaring or member type is not referenceable are skipped
-                        // here too: the reflection path + link.xml preserve them.
-                        if (f.IsPublic && IsEmittableType(f.DeclaringType) && IsEmittableType(f.FieldType))
-                            preserveSb.AppendLine($"                var _f_{typeSafeName}_{f.Name} = default({fullName}).{f.Name};");
-                        else if (IsEmittableType(f.DeclaringType))
-                            preserveSb.AppendLine($"                var _f_{typeSafeName}_{f.Name} = typeof({GetCSharpTypeName(f.DeclaringType)}).GetField(\"{f.Name}\", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                    }
+                    if (!IsEmittableType(f.DeclaringType)) continue; // the reflection path + link.xml preserve it
+                    string declaringName = GetCSharpTypeName(f.DeclaringType);
+                    string local = $"_f_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(f.Name)}";
+                    if (f.IsPublic && IsEmittableType(f.FieldType))
+                        preserveSb.AppendLine($"                var {local} = default({declaringName}).{f.Name};");
+                    else
+                        preserveSb.AppendLine($"                var {local} = typeof({declaringName}).GetField({Literal(f.Name)}, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
                 }
-
-                var properties = GetMemberSet(type, memberCache).Properties;
-                foreach (var p in properties)
+                foreach (var p in set.Properties)
                 {
-                    if (HasInject(p))
+                    if (!IsEmittableType(p.DeclaringType)) continue;
+                    string declaringName = GetCSharpTypeName(p.DeclaringType);
+                    string local = $"_p_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(p.Name)}";
+                    if (p.GetMethod != null && p.GetMethod.IsPublic && IsEmittableType(p.PropertyType))
                     {
-                        if (p.GetMethod != null && p.GetMethod.IsPublic && IsEmittableType(p.DeclaringType) && IsEmittableType(p.PropertyType))
-                        {
-                            preserveSb.AppendLine($"                var _p_{typeSafeName}_{p.Name} = default({fullName}).{p.Name};");
-                            preserveSb.AppendLine($"                _ = _p_{typeSafeName}_{p.Name}; // Suppress CS0219 warning");
-                        }
-                        else if (IsEmittableType(p.DeclaringType))
-                        {
-                            preserveSb.AppendLine($"                var _p_{typeSafeName}_{p.Name} = typeof({GetCSharpTypeName(p.DeclaringType)}).GetProperty(\"{p.Name}\", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                        }
+                        preserveSb.AppendLine($"                var {local} = default({declaringName}).{p.Name};");
+                        preserveSb.AppendLine($"                _ = {local}; // Suppress CS0219 warning");
                     }
+                    else
+                        preserveSb.AppendLine($"                var {local} = typeof({declaringName}).GetProperty({Literal(p.Name)}, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
                 }
                 WrapInCondition(preserveSb, preserveStart, InjectCondition(type));
             }
@@ -860,6 +832,17 @@ namespace Nexus.Editor
             sb.AppendLine("//     the code is regenerated.");
             sb.AppendLine("// </auto-generated>");
             sb.AppendLine("//------------------------------------------------------------------------------");
+            // Types whose #if could not be known (#191): no binder line names them, so nothing the player lacks is named.
+            foreach (var problem in conditions.Problems)
+                Fallback(problem.Key, "every binder line that names it is left out: " + problem.Value);
+            if (write)
+                foreach (var warning in conditions.Warnings)
+                    Debug.LogWarning($"[Nexus] Binder conditions: {warning}. The types this hides keep the reflection path; the binder lists them at its top.");
+            if (fallback.Count > 0)
+            {
+                sb.AppendLine("// The reflection path serves these types (the binder does not name them):");
+                foreach (var entry in fallback) sb.AppendLine($"//   {entry.Key}: {string.Join("; ", entry.Value)}");
+            }
             sb.AppendLine();
             sb.AppendLine("#pragma warning disable CS0618");
             sb.AppendLine("using System;");
@@ -969,7 +952,7 @@ namespace Nexus.Editor
                 }
                 list.Add(type);
             }
-            foreach (var type in networkSignalTypes)
+            foreach (var type in networkSignalTypes.Concat(reflectionConstructed))
             {
                 var asmName = type.Assembly.GetName().Name;
                 if (!typesByAssembly.TryGetValue(asmName, out var list))
@@ -989,7 +972,9 @@ namespace Nexus.Editor
                 xmlSb.AppendLine($"  <assembly fullname=\"{kvp.Key}\">");
                 foreach (var type in kvp.Value)
                 {
-                    xmlSb.AppendLine($"    <type fullname=\"{type.FullName}\" preserve=\"all\" />");
+                    xmlSb.AppendLine(reflectionConstructed.Contains(type)
+                        ? $"    <type fullname=\"{type.FullName}\" preserve=\"nothing\"><method name=\".ctor\" /></type>"
+                        : $"    <type fullname=\"{type.FullName}\" preserve=\"all\" />");
                 }
                 xmlSb.AppendLine("  </assembly>");
             }
@@ -1029,7 +1014,8 @@ namespace Nexus.Editor
             if (changed)
             {
                 AssetDatabase.Refresh();
-                Debug.Log($"[Nexus] AOT Binder successfully generated at {destBinderFile}");
+                Debug.Log($"[Nexus] AOT Binder successfully generated at {destBinderFile}"
+                    + (fallback.Count > 0 ? $"; {fallback.Count} type(s) keep the reflection path, listed at the top of the file" : ""));
                 Debug.Log($"[Nexus] AOT link.xml successfully generated at {destLinkXmlFile}");
             }
             else
@@ -1042,6 +1028,7 @@ namespace Nexus.Editor
         /// <summary>Puts what was appended since <paramref name="start"/> under <c>#if condition</c>; null leaves it as is.</summary>
         private static void WrapInCondition(StringBuilder sb, int start, string condition)
         {
+            if (condition == BinderConditions.Never) { sb.Length = start; return; }
             if (condition == null || sb.Length == start) return;
             sb.Insert(start, "#if " + condition + Environment.NewLine);
             sb.AppendLine("#endif");

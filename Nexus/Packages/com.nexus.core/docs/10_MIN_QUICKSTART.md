@@ -223,7 +223,7 @@ builder.AddSignalFilter<DamageSignal, CapDamageFilter>();      // type form, in 
 ```
 Filters run in registration order on both `Fire` and `FireAsync`. The legacy object-based `ISignalInterceptor` still works; when registered it boxes once per fire.
 
-**Zero-reflection constructors (AOT/IL2CPP)** — the Nexus code generator emits `NexusDI.RegisterConstructorFactory<T>` lambdas for every type with a single public constructor (or one `[Inject]`/`[Construct]`-marked constructor). At runtime `new T(...)` runs directly — no `ConstructorInfo.Invoke` — so `readonly`/immutable state works on IL2CPP. Nothing to do on your side; just keep using constructor injection.
+**Zero-reflection constructors (AOT/IL2CPP)** — the Nexus code generator emits `NexusDI.RegisterConstructorFactory<T>` lambdas for every type with a single public constructor (or one `[Inject]`/`[Construct]`-marked constructor) whose parameters are reference types the binder can name. A constructor with a value-type parameter, or with a default other than null, keeps the reflection path, which passes the declared default; the binder lists such an injectable type at its top. At runtime `new T(...)` runs directly — no `ConstructorInfo.Invoke` — so `readonly`/immutable state works on IL2CPP. Nothing to do on your side; just keep using constructor injection.
 
 ---
 

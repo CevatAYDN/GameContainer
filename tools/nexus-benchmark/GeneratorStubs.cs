@@ -97,11 +97,15 @@ namespace Nexus.Editor
         /// </summary>
         public static IEnumerable<Assembly> BinderAssemblies(string binderFolder) => NexusReferencingAssemblies();
 
-        /// <summary>No compilation pipeline in the harness: no sources, so the binder names every type without its #if.</summary>
+        /// <summary>Source files and defines a harness test hands to the binder's #if reading (CG12), and the binder's assembly.</summary>
+        public static Dictionary<string, (string[] Files, string[] Defines)> TestSources;
+        public static string TestBinderAssembly;
+
+        /// <summary>No compilation pipeline in the harness: no sources unless a test sets them, so the binder names every type without its #if.</summary>
         public static Dictionary<string, (string[] Files, string[] Defines)> SourceAssemblies(string binderFolder, out string binderAssembly)
         {
-            binderAssembly = null;
-            return new Dictionary<string, (string[] Files, string[] Defines)>();
+            binderAssembly = TestSources == null ? null : TestBinderAssembly;
+            return TestSources ?? new Dictionary<string, (string[] Files, string[] Defines)>();
         }
 
         /// <summary>As the editor's: a partial load returns the types that loaded and warns, so a partial-load regression shows (#198).</summary>
