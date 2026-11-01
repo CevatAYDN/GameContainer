@@ -137,7 +137,14 @@ namespace NexusBench
         public event Action<AdFormat> Opened;
         public event Action<AdRevenue> Revenue;
 
-        public void Initialize(ProviderConfig config, Action<bool> onReady) { Config = config; InitCallback = onReady; }
+        /// <summary>Thrown by the next <see cref="Initialize"/>, as an SDK's start can throw; cleared when thrown.</summary>
+        public Exception InitThrows;
+        public void Initialize(ProviderConfig config, Action<bool> onReady)
+        {
+            if (InitThrows != null) { var ex = InitThrows; InitThrows = null; throw ex; }
+            Config = config;
+            InitCallback = onReady;
+        }
         /// <summary>Thrown by the next <see cref="Load"/>, as an SDK's load call can throw; cleared when thrown.</summary>
         public Exception LoadThrows;
         public void Load(AdFormat format)
@@ -1068,6 +1075,23 @@ namespace NexusBench
                     a.results == 1 && a.last == AdResult.Rewarded && a.threw == null && failed.Detail != null && failed.Detail.Contains("JNI load failed")
                     && retried && rig.Controller.IsReady("shop_refill"),
                     $"results={a.results} last={a.last} threw={a.threw ?? "-"} LoadFailed=[{failed}] retried={retried} ready after the fill={rig.Controller.IsReady("shop_refill")}");
+            }
+
+            // #195: an SDK start that threw left the controller Initializing for good: no retry, no start line, no Started event
+            using (var rig = new AdsRig())
+            {
+                rig.Provider.InitThrows = new InvalidOperationException("JNI init failed");
+                string threw = null;
+                try { rig.Controller.Start(); }
+                catch (Exception ex) { threw = ex.Message; }
+                var failed = rig.Telemetry.Events.Find(e => e.Kind == AdEventKind.InitFailed);
+                bool failedState = rig.Controller.State == AdController.Phase.InitFailed;
+                rig.Scheduler.Advance(RetryPolicy.DelaySeconds(1));
+                bool retried = rig.Provider.InitCallback != null;
+                rig.Provider.InitCallback?.Invoke(true);
+                Check("AC57. AThrowingSdkStart_IsAFailedStart_RetriedWithTheBackOff",
+                    threw == null && failedState && failed.Detail != null && failed.Detail.Contains("JNI init failed") && retried && rig.Controller.State == AdController.Phase.Running,
+                    $"threw={threw ?? "-"} state after the throw={(failedState ? "InitFailed" : "not InitFailed")} InitFailed=[{failed}] retried={retried} state={rig.Controller.State}");
             }
         }
 

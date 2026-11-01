@@ -413,29 +413,34 @@ namespace Nexus.Ads
         {
             State = Phase.Initializing;
             WaitForAnswer("the SDK has not answered its start in {0} s: no ad loads until it does (an SDK may wait for a network)");
-            _provider.Initialize(_config.Provider, ok => OnMain(() =>
+            // a throwing SDK start left the controller Initializing for good, with no start line and no Started event; it is a
+            // failed start, retried with the back-off (issue #195)
+            try { _provider.Initialize(_config.Provider, ok => OnMain(() => OnInitAnswered(ok, null))); }
+            catch (Exception ex) { if (State == Phase.Initializing) OnInitAnswered(false, "provider threw " + ex.GetType().Name + ": " + ex.Message); }
+        }
+
+        private void OnInitAnswered(bool ok, string thrown)
+        {
+            if (_disposed) return;
+            _answerWait?.Dispose();
+            _answerWait = null;
+            if (ok)
             {
-                if (_disposed) return;
-                _answerWait?.Dispose();
-                _answerWait = null;
-                if (ok)
-                {
-                    _telemetry.Record(new AdEvent(AdEventKind.Initialized, AdFormat.Interstitial, "", _initFailures == 0 ? null : "after " + _initFailures + " failed start(s)"));
-                    _initFailures = 0;
-                    State = Phase.Running;
-                    foreach (var format in _slots.Keys) Preload(format);
-                }
-                else
-                {
-                    State = Phase.InitFailed;
-                    _initFailures++;
-                    double delay = RetryPolicy.DelaySeconds(_initFailures);
-                    _telemetry.Record(new AdEvent(AdEventKind.InitFailed, AdFormat.Interstitial, "", "attempt " + _initFailures + ", retry in " + delay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " s"));
-                    _initRetry?.Dispose();
-                    _initRetry = _scheduler.Schedule(delay, () => { if (!_disposed && State == Phase.InitFailed) InitializeProvider(); });
-                }
-                RaiseReadyChanged();
-            }));
+                _telemetry.Record(new AdEvent(AdEventKind.Initialized, AdFormat.Interstitial, "", _initFailures == 0 ? null : "after " + _initFailures + " failed start(s)"));
+                _initFailures = 0;
+                State = Phase.Running;
+                foreach (var format in _slots.Keys) Preload(format);
+            }
+            else
+            {
+                State = Phase.InitFailed;
+                _initFailures++;
+                double delay = RetryPolicy.DelaySeconds(_initFailures);
+                _telemetry.Record(new AdEvent(AdEventKind.InitFailed, AdFormat.Interstitial, "", (thrown != null ? thrown + "; " : "") + "attempt " + _initFailures + ", retry in " + delay.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture) + " s"));
+                _initRetry?.Dispose();
+                _initRetry = _scheduler.Schedule(delay, () => { if (!_disposed && State == Phase.InitFailed) InitializeProvider(); });
+            }
+            RaiseReadyChanged();
         }
 
         // ----- loading (the only two callers of IAdProvider.Load: preload and retry; see PolicyRules.NoAutomaticRequests)
