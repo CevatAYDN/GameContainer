@@ -192,6 +192,44 @@ namespace Nexus.Editor.Tests
             Assert.IsNull(view2.Context, "View2 must be cleanly unbound");
         }
 
+        // ─── An abstraction bound as a singleton still gives every view its own mediator (issue #190) ───
+
+        public class OwnMediatorView : TestView
+        {
+            public OwnViewMediator Mediator;
+        }
+
+        public class OwnViewMediator : Mediator<OwnMediatorView>, ITestMediator
+        {
+            public bool Bound { get; private set; }
+            protected override void OnBind() { View.Mediator = this; Bound = true; }
+            protected override void OnUnbind() => Bound = false;
+        }
+
+        [Mediator(typeof(OwnViewMediator), typeof(ITestMediator))]
+        public class OwnMediatorAbstractionView : OwnMediatorView { }
+
+        [Test]
+        public void MediatorBinding_AbstractionBoundAsSingleton_GivesEachViewItsOwnMediator()
+        {
+            using var testContext = NexusTestHarness.CreateContext(builder =>
+            {
+                builder.Bind<ITestMediator, OwnViewMediator>();
+            });
+            var first = new OwnMediatorAbstractionView();
+            var second = new OwnMediatorAbstractionView();
+            testContext.Context.RegisterView(first);
+            testContext.Context.RegisterView(second);
+
+            Assert.IsNotNull(first.Mediator);
+            Assert.IsNotNull(second.Mediator);
+            Assert.AreNotSame(first.Mediator, second.Mediator, "two views shared one mediator");
+
+            testContext.Context.UnregisterView(first);
+            Assert.IsFalse(first.Mediator.Bound);
+            Assert.IsTrue(second.Mediator.Bound, "unregistering one view unbound the other view's mediator");
+        }
+
         // ─── MA8: Mediator with abstraction receives OnBind ───
 
         [Test]

@@ -38,25 +38,15 @@ namespace Nexus.Core.Lifecycle
                 // Implementing both is usually unintended, so it is reported once per type —
                 // splitting the work across two hooks that both fire is easy to misread as
                 // "only the async one runs".
+                // A startable that throws fails the start-up, as a service's InitializeAsync does, instead of a context
+                // that reports started without it; the caller (Root) logs the failure and disposes the context (#190).
                 if (inst is IAsyncStartable asyncStartable)
                 {
                     if (inst is IStartable) WarnBothImplemented(inst.GetType(), nameof(IStartable), nameof(IAsyncStartable));
-                    try { await asyncStartable.StartAsync(ct); }
-                    catch (Exception ex)
-                    {
-                        NexusRuntime.Logger?.LogError($"[Nexus] Exception in IAsyncStartable.StartAsync ({inst.GetType().FullName}): {ex.Message}");
-                        NexusRuntime.Logger?.LogException(ex);
-                    }
+                    await asyncStartable.StartAsync(ct);
                 }
                 if (inst is IStartable startable)
-                {
-                    try { startable.Start(); }
-                    catch (Exception ex)
-                    {
-                        NexusRuntime.Logger?.LogError($"[Nexus] Exception in IStartable.Start ({inst.GetType().FullName}): {ex.Message}");
-                        NexusRuntime.Logger?.LogException(ex);
-                    }
-                }
+                    startable.Start();
             }
         }
 

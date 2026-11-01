@@ -257,8 +257,8 @@ namespace NexusBench
             // L3: a boot lifecycle whose OnStartAsync throws must fail the boot lifecycle
             // FAST (Context.InitializeLifecycleAsync propagates the exception; Root.Start
             // catches it, disposes the context and clears IsInitialized). This is the
-            // documented fail-fast contract for boot lifecycles — deliberately distinct
-            // from ContextLifecycleOrchestrator, which isolates IStartable singletons.
+            // documented fail-fast contract for boot lifecycles; IStartable singletons
+            // follow it too since issue #190.
             var lifecycle = new StartProbeLifecycle { ThrowOnStart = true };
             var ctx = ContextFactory.Create();
             bool threw = false;

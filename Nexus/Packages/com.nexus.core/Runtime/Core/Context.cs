@@ -434,6 +434,14 @@ namespace Nexus.Core
             if (_builder != null) await _builder.InitializeServicesAsync(ct);
         }
 
+        // A cancelled or disposed start-up stops before the next game step instead of running it on a dead context;
+        // a cancellation, not ObjectDisposedException, so Root takes its quiet path (#190).
+        private void ThrowIfStartupStopped(CancellationToken ct)
+        {
+            if (IsDisposed) throw new OperationCanceledException($"[Nexus] Context '{ScopeTag}' was disposed during its start-up.");
+            ct.ThrowIfCancellationRequested();
+        }
+
         internal async ValueTask InitializeLifecycleAsync(IReadOnlyList<IContextLifecycle> lifecycles, CancellationToken ct)
         {
             Volatile.Write(ref _lifecycleState, 1);
@@ -443,7 +451,9 @@ namespace Nexus.Core
                 NexusRuntime.Metrics.ApplyTraceBufferSize(_contextData.TracerRingBufferSize);
 
             await InitializeReactiveModelsAsync(ct);
+            ThrowIfStartupStopped(ct);
             await InitializeServicesAsync(ct);
+            ThrowIfStartupStopped(ct);
             // Lifecycles are bound as instances, which the container does not inject; their [Inject]
             // members are set here, once the bindings exist and the services are initialized.
             if (lifecycles != null)
@@ -456,26 +466,34 @@ namespace Nexus.Core
             if (lifecycles != null)
             {
                 for (int i = 0; i < lifecycles.Count; i++)
+                {
                     await lifecycles[i].OnInitializeAsync(ct);
+                    ThrowIfStartupStopped(ct);
+                }
             }
 
             Container.ReInjectAll();
             await InitializeLazyServicesAsync(ct);
+            ThrowIfStartupStopped(ct);
 
             if (lifecycles != null)
             {
                 for (int i = 0; i < lifecycles.Count; i++)
+                {
                     await lifecycles[i].OnStartAsync(ct);
+                    ThrowIfStartupStopped(ct);
+                }
             }
 
-            // Execute IAsyncStartable and IStartable domain lifecycles
+            // IStartable and IAsyncStartable singletons start whether or not something resolved them (#190)
+            Container.ResolveStartableSingletons();
             await _orchestrator.ExecuteStartableLifecyclesAsync(Container.GetActiveSingletons(), ct);
 
             // Drain lazy services first resolved during OnStartAsync (e.g. by views/mediators).
             // Previously the single drain ran before OnStartAsync, so a lazy service resolved
             // during startup would never receive InitializeAsync.
             await InitializeLazyServicesAsync(ct);
-            ct.ThrowIfCancellationRequested();
+            ThrowIfStartupStopped(ct);
             // Fired only when something listens: an unheard framework signal would log "no subscribers" in every game.
             if (SignalBusInternal.HasHandlers(typeof(ContextStartedSignal)))
                 await SignalBus.FireAsync(new ContextStartedSignal(ScopeTag));
@@ -925,7 +943,8 @@ namespace Nexus.Core
                 {
                     try
                     {
-                        if (Container.TryGetExistingInstance(serviceTypes[i], out var existing) && existing is INexusService service
+                        // own bindings only: a child disposed before it resolved a service must not reach its parent's (#190)
+                        if (Container.TryGetOwnInstance(serviceTypes[i], out var existing) && existing is INexusService service
                             && disposedServices.Add(existing))
                         {
                             // NexusDI.Dispose skips INexusService instances BEFORE running

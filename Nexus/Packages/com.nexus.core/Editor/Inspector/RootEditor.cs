@@ -115,8 +115,9 @@ namespace Nexus.Editor.Inspector
                     NexusInspectorGUI.DrawKeyValue("Scope Tag", root.Context.ScopeTag ?? "Global");
                     NexusInspectorGUI.DrawKeyValue("Bound Services", root.Context.Container.ActiveSingletonsCount.ToString());
                     NexusInspectorGUI.DrawKeyValue("Commands", root.Context.SignalBusInternal.CommandHandlers.Count.ToString());
-                    var hasLifecycle = root.Context.Container.IsRegistered(typeof(IContextLifecycle));
-                    NexusInspectorGUI.DrawStatusRow("Lifecycle Hook", hasLifecycle ? "Registered" : "None", hasLifecycle ? StatusType.Success : StatusType.Info);
+                    // the configured lifecycles: a Root with several binds none under IContextLifecycle (#190)
+                    var lifecycles = root.Context.ConfiguredLifecycles.Count;
+                    NexusInspectorGUI.DrawStatusRow("Lifecycle Hooks", lifecycles > 0 ? lifecycles.ToString() : "None", lifecycles > 0 ? StatusType.Success : StatusType.Info);
                 }
                 else
                 {

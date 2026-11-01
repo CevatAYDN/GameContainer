@@ -327,13 +327,16 @@ namespace Nexus.Core
 
             // When resolving through an abstraction, the user must have registered the binding.
             // Do NOT auto-bind dynamically for abstraction resolution.
-            if (abstractionType == null)
+            if (abstractionType == null && !_container.IsRegistered(mediatorType))
             {
                 // Bind mediator dynamically as transient if not registered
-                if (!_container.IsRegistered(mediatorType))
-                {
-                    _container.Bind(mediatorType, isSingleton: false);
-                }
+                _container.Bind(mediatorType, isSingleton: false);
+            }
+            // A binding that names a type gives every view its own mediator of it: a singleton binding would hand one
+            // mediator to every view (#190). An instance or factory binding is used as bound.
+            else if (_container.TryGetConstructibleBinding(resolveType, out var concreteType, out var overrides))
+            {
+                return (IMediator)_container.Construct(concreteType, overrides);
             }
 
             return (IMediator)_container.Resolve(resolveType);

@@ -303,10 +303,10 @@ namespace Nexus.Core
                 _registeredLifecycles.Clear();
             }
 
-            for (int i = 0; i < _lifecycles.Length; i++)
-            {
-                Context.Container.BindInstance(_lifecycles[i]);
-            }
+            // The Context tears its lifecycles down (OnDispose), so the container does not own them; a key holds one
+            // binding, so only a single lifecycle is bound as IContextLifecycle (#190, as #26 did for the convention path).
+            if (_lifecycles.Length == 1)
+                Context.Container.BindInstance(_lifecycles[0], disposeWithContainer: false);
 
             try { Context.Configure(_lifecycles); }
             catch
@@ -416,11 +416,15 @@ namespace Nexus.Core
                 if (parentRoot != null)
                 {
                     double deadline = UnityEngine.Time.realtimeSinceStartupAsDouble + parentTimeoutSeconds;
-                    while (!parentRoot.IsInitialized && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
+                    while (!parentRoot.IsInitialized && !parentRoot._startupFailed && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
                     {
                         await Task.Yield();
                         Context.LifetimeToken.ThrowIfCancellationRequested();
                     }
+
+                    // a parent that failed to start stops this root at once, not after the timeout (#190)
+                    if (parentRoot._startupFailed)
+                        throw new InvalidOperationException($"Root '{gameObject.name}' cannot start: its parent root '{parentRoot.name}' failed to start.");
 
                     if (!parentRoot.IsInitialized)
                     {
@@ -461,11 +465,15 @@ namespace Nexus.Core
                 foreach (var sibling in _siblingsToWait)
                 {
                     double deadline = UnityEngine.Time.realtimeSinceStartupAsDouble + siblingTimeoutSeconds;
-                    while (sibling != null && !sibling.IsInitialized && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
+                    while (sibling != null && !sibling.IsInitialized && !sibling._startupFailed && UnityEngine.Time.realtimeSinceStartupAsDouble < deadline)
                     {
                         await Task.Yield();
                         Context.LifetimeToken.ThrowIfCancellationRequested();
                     }
+
+                    // a sibling that failed to start stops this root at once, as its timeout would have (#190)
+                    if (sibling != null && sibling._startupFailed)
+                        throw new InvalidOperationException($"Root '{gameObject.name}' cannot start: sibling root '{sibling.gameObject.name}', which starts before it, failed to start.");
 
                     if (sibling != null && !sibling.IsInitialized)
                     {

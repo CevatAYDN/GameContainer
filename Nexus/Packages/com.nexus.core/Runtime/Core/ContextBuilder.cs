@@ -466,11 +466,9 @@ namespace Nexus.Core
             {
                 if (ct.IsCancellationRequested) break;
 
-                var service = _container.Resolve(serviceType) as INexusService;
-                if (service != null)
-                {
+                // claimed once: a lazy resolve of the service, or a second service key bound to it, never runs it again (#190)
+                if (_container.Resolve(serviceType) is INexusService service && _container.TryClaimServiceInitialization(service))
                     await service.InitializeAsync(ct);
-                }
             }
         }
     }

@@ -66,7 +66,11 @@ namespace Nexus.Core
         internal bool TryDequeuePendingLazyService(out INexusService service)
         {
             var queue = Volatile.Read(ref _lazyServicesPendingInit);
-            if (queue != null) return queue.TryDequeue(out service);
+            // a queued service the start-up initialized meanwhile is skipped (#190)
+            while (queue != null && queue.TryDequeue(out service))
+            {
+                if (TryClaimServiceInitialization(service)) return true;
+            }
             service = null;
             return false;
         }
@@ -323,6 +327,8 @@ namespace Nexus.Core
                 set => _lifetime = value ? Nexus.Core.Lifetime.Scoped : Nexus.Core.Lifetime.Transient;
             }
             public Func<object> Factory { get; set; }
+            /// <summary>True for a <c>BindInstance</c> binding: its instance is the game's, never a type to construct (#190).</summary>
+            public bool BoundInstance;
             /// <summary>Explicit constructor parameter values (fluent <c>WithParameter</c>). Null when none.</summary>
             public ParameterOverride[] ParameterOverrides { get; set; }
 
@@ -1636,7 +1642,7 @@ namespace Nexus.Core
             lock (_disposeLock)
             {
                 ThrowIfDisposed();
-                SetBindingCore(typeof(T), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
+                SetBindingCore(typeof(T), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true, BoundInstance = true });
                 if (disposeWithContainer)
                 {
                     lock (_singletonLock)
@@ -1655,7 +1661,7 @@ namespace Nexus.Core
             lock (_disposeLock)
             {
                 ThrowIfDisposed();
-                SetNamedBindingCore((typeof(T), name), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true });
+                SetNamedBindingCore((typeof(T), name), new Binding { ConcreteType = typeof(T), Instance = instance, IsSingleton = true, BoundInstance = true });
                 lock (_singletonLock)
                 {
                     TrackResolvedSingleton(instance);
@@ -1725,6 +1731,26 @@ namespace Nexus.Core
             var instance = _injector.CreateInstance(type, overrides);
             _injector.Inject(instance);
             return instance;
+        }
+
+        /// <summary>
+        /// The type a binding of <paramref name="type"/> constructs, looked up through the parents; false for an instance
+        /// or a factory binding. A mediator binding is constructed once per view from it (#190).
+        /// </summary>
+        internal bool TryGetConstructibleBinding(Type type, out Type concreteType, out ParameterOverride[] overrides)
+        {
+            for (var container = this; container != null; container = container._parent)
+            {
+                if (!container._bindings.TryGetValue(type, out var binding)) continue;
+                var concrete = binding.ConcreteType;
+                bool constructible = binding.Factory == null && !binding.BoundInstance && concrete != null && concrete.IsClass && !concrete.IsAbstract;
+                concreteType = constructible ? concrete : null;
+                overrides = constructible ? binding.ParameterOverrides : null;
+                return constructible;
+            }
+            concreteType = null;
+            overrides = null;
+            return false;
         }
 
         // ─── Public API: Resolve ───
@@ -2405,16 +2431,13 @@ namespace Nexus.Core
             return result;
         }
 
-        internal bool TryGetExistingInstance(Type type, out object instance)
+        /// <summary>The instance this container's own binding of <paramref name="type"/> holds; never a parent's (#190).</summary>
+        internal bool TryGetOwnInstance(Type type, out object instance)
         {
             instance = null;
-            if (type == null) return false;
-            if (_bindings.TryGetValue(type, out var binding) && binding.Instance != null)
-            {
-                instance = binding.Instance;
-                return true;
-            }
-            return _parent != null && _parent.TryGetExistingInstance(type, out instance);
+            if (type == null || !_bindings.TryGetValue(type, out var binding) || binding.Instance == null) return false;
+            instance = binding.Instance;
+            return true;
         }
 
         /// <summary>
@@ -2430,7 +2453,9 @@ namespace Nexus.Core
             MetadataCache.GetOrCreateClearMetadata(type);
         }
 
-        private ConcurrentDictionary<INexusService, bool> _lazyServicesEnqueued;
+        // A service's one InitializeAsync, claimed by reference: queued by a lazy resolve, claimed by whoever runs it (#190).
+        private const byte LazyQueued = 1, InitClaimed = 2;
+        private ConcurrentDictionary<INexusService, byte> _serviceInitClaims;
 
         internal void MarkLazyService(Type type)
         {
@@ -2442,19 +2467,60 @@ namespace Nexus.Core
             var lazyServiceTypes = Volatile.Read(ref _lazyServiceTypes);
             if (lazyServiceTypes != null && instance is INexusService service
                 && (lazyServiceTypes.ContainsKey(requestedType) || lazyServiceTypes.ContainsKey(instance.GetType())))
-                NotifyLazyServiceResolved(instance.GetType(), service);
+                QueueLazyService(service);
         }
 
         internal void NotifyLazyServiceResolved(Type type, object instance)
         {
-            if (instance is INexusService service
-                && GetOrCreateOptionalMap(ref _lazyServicesEnqueued, ReferenceComparer<INexusService>.Instance).TryAdd(service, true))
+            if (instance is not INexusService service) return;
+            // The container that binds the type owns the service's initialization, so a child that resolves its
+            // parent's service never initializes it a second time (#190).
+            var owner = this;
+            for (var container = this; container != null; container = container._parent)
             {
-                var queue = Volatile.Read(ref _lazyServicesPendingInit)
-                    ?? Interlocked.CompareExchange(ref _lazyServicesPendingInit, new ConcurrentQueue<INexusService>(), null)
-                    ?? _lazyServicesPendingInit;
-                queue.Enqueue(service);
-                LazyServiceResolvedCallback?.Invoke(service);
+                if (container._bindings.ContainsKey(type)) { owner = container; break; }
+            }
+            owner.QueueLazyService(service);
+        }
+
+        private void QueueLazyService(INexusService service)
+        {
+            if (!GetOrCreateOptionalMap(ref _serviceInitClaims, ReferenceComparer<INexusService>.Instance).TryAdd(service, LazyQueued))
+                return;
+            var queue = Volatile.Read(ref _lazyServicesPendingInit)
+                ?? Interlocked.CompareExchange(ref _lazyServicesPendingInit, new ConcurrentQueue<INexusService>(), null)
+                ?? _lazyServicesPendingInit;
+            queue.Enqueue(service);
+            LazyServiceResolvedCallback?.Invoke(service);
+        }
+
+        /// <summary>
+        /// Claims a service's one <c>InitializeAsync</c>: true for the first caller, and for the start-up over a service
+        /// a lazy resolve only queued (it keeps its place in the start-up order; the drain then skips it) (#190).
+        /// </summary>
+        internal bool TryClaimServiceInitialization(INexusService service)
+        {
+            var claims = GetOrCreateOptionalMap(ref _serviceInitClaims, ReferenceComparer<INexusService>.Instance);
+            return claims.TryAdd(service, InitClaimed) || claims.TryUpdate(service, InitClaimed, LazyQueued);
+        }
+
+        /// <summary>
+        /// Resolves this container's own singleton bindings of an <see cref="IStartable"/> or <see cref="IAsyncStartable"/>
+        /// type that nothing has resolved yet, so they start like a resolved one; lazy services and mediators stay
+        /// unresolved (#190).
+        /// </summary>
+        internal void ResolveStartableSingletons()
+        {
+            var lazy = Volatile.Read(ref _lazyServiceTypes);
+            foreach (var entry in _bindings)
+            {
+                var binding = entry.Value;
+                var type = binding.ConcreteType;
+                if (!binding.IsSingleton || binding.Instance != null || type == null) continue;
+                if (!typeof(IStartable).IsAssignableFrom(type) && !typeof(IAsyncStartable).IsAssignableFrom(type)) continue;
+                if (typeof(IMediator).IsAssignableFrom(type)) continue;
+                if (lazy != null && (lazy.ContainsKey(entry.Key) || lazy.ContainsKey(type))) continue;
+                Resolve(entry.Key);
             }
         }
 

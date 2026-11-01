@@ -132,7 +132,7 @@ Both recovery paths dispatch fallback commands through object-based `ExecuteComm
 ### 8. Strategic Capabilities (added in 0.5.0)
 - **Attribute-Based Auto-Discovery (`[RegisterCommand]`)**: Commands decorated with `[RegisterCommand(typeof(TSignal))]` are auto-bound during assembly scanning.
 - **Convention-Based Binding (`BindInterfacesAndSelfTo<T>`)**: Polymorphic binding where all user-defined interfaces and the concrete type share ONE `Binding` instance.
-- **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Domain presenters and controllers receive lifecycle callbacks without implementing `INexusService`.
+- **Flexible Domain Lifecycles (`IStartable`, `IAsyncStartable`, `IStoppable`, `IAsyncStoppable`)**: Domain presenters and controllers receive lifecycle callbacks without implementing `INexusService`. A singleton bound with such a type starts after every `OnStartAsync` even when nothing resolved it (a lazy service once something has), and a start that throws fails the context's start-up.
 - **Scene Auto-Injection (`NexusBinding`)**: Scene component auto-injection with `Awake`/`Start` triggers and event-driven registration fallbacks.
 
 ---

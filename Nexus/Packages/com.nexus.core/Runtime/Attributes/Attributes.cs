@@ -195,6 +195,8 @@ namespace Nexus.Core
     /// <c>ToAbstraction&lt;IMediator&gt;()</c>): when set, the mediator is resolved through the
     /// specified interface/abstract type instead of the concrete <paramref name="mediatorType"/>.
     /// The abstraction must be registered in DI (e.g. <c>builder.Bind&lt;IMediator, ConcreteMediator&gt;()</c>).
+    /// Every view gets its own mediator: a binding that names a type is constructed once per view, whatever its
+    /// lifetime; an instance or factory binding is used as bound.
     /// Pooling still keys off the concrete <paramref name="mediatorType"/>.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
