@@ -258,5 +258,23 @@ namespace Nexus.Editor.Tests
                 await parent.DisposeAsync();
             }
         }
+
+        [Test]
+        public void StarterContextData_LetsTheRuntimeScanEveryGameAssembly()
+        {
+            // the Setup section's asset listed Assembly-CSharp only, and a non-empty list is all the runtime scans, so
+            // [SignalHandler]/[RegisterCommand] types in an asmdef the game added were never registered (#260)
+            var data = NexusSetupWizard.NewStarterContextData();
+            try
+            {
+                Assert.IsTrue(data.EnableAutoDiscovery);
+                Assert.That(data.AssemblyScopes == null || data.AssemblyScopes.Length == 0,
+                    "an empty list scans every assembly that references Nexus, and Assembly-CSharp");
+            }
+            finally
+            {
+                Object.DestroyImmediate(data);
+            }
+        }
     }
 }

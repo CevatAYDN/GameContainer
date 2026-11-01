@@ -133,12 +133,19 @@ namespace Nexus.Editor
 
         private static void CreateContextDataAsset()
         {
+            AssetDatabase.CreateAsset(NewStarterContextData(), ContextDataPath);
+            AssetDatabase.SaveAssets();
+        }
+
+        internal static ContextData NewStarterContextData()
+        {
             var asset = ScriptableObject.CreateInstance<ContextData>();
             asset.name = "GameContextData";
             asset.EnableAutoDiscovery = true;
-            asset.AssemblyScopes = new[] { "Assembly-CSharp" };
-            AssetDatabase.CreateAsset(asset, ContextDataPath);
-            AssetDatabase.SaveAssets();
+            // No AssemblyScopes: the runtime then scans every assembly that references Nexus, and Assembly-CSharp. A list is
+            // all it scans, and Assembly-CSharp alone left the handlers in an asmdef the game added unregistered (#260).
+            asset.AssemblyScopes = System.Array.Empty<string>();
+            return asset;
         }
 
         // ─── Scene + Root + Canvas/UI ─────────────────────────
