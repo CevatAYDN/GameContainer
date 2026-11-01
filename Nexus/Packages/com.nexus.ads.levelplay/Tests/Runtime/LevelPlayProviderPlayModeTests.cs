@@ -188,6 +188,34 @@ namespace Nexus.Ads.LevelPlay.Tests.Runtime
             Assert.AreEqual(1, results.Count, "no second answer after the grace period");
         }
 
+        // Issue #233: after the controller's watchdog ended a show the SDK never answered, the provider's latch answered NotReady
+        // to every later show
+        [UnityTest]
+        public IEnumerator AShowTheSdkNeverAnswered_DoesNotBlockTheNextShow()
+        {
+            _host = new GameObject("scheduler");
+            var provider = new LevelPlayProvider(_host.AddComponent<UnityAdScheduler>(), Online);
+            provider.Initialize(Config(), _ => { });
+            int opened = 0;
+            provider.Opened += _ => opened++;
+            provider.Load(AdFormat.Interstitial);
+            var first = new List<AdResult>();
+            provider.Show(AdFormat.Interstitial, "level_end", first.Add);
+            yield return null;
+
+            // no close: the controller's watchdog answered the game and loads the next ad
+            provider.Load(AdFormat.Interstitial);
+            var second = new List<AdResult>();
+            provider.Show(AdFormat.Interstitial, "level_end", second.Add);
+            yield return null;
+            Assert.AreEqual(2, opened, "the second show reached the SDK");
+            CollectionAssert.IsEmpty(second, "no NotReady while the first show is still open");
+
+            Close("InterstitialPrefab");
+            CollectionAssert.AreEqual(new[] { AdResult.Closed }, second, "the close answers the show that replaced the first");
+            CollectionAssert.IsEmpty(first, "the replaced show is not answered again: the controller already did");
+        }
+
         [UnityTest]
         public IEnumerator AnInterstitialClose_AnswersClosed_AtOnce()
         {

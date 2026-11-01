@@ -178,8 +178,14 @@ namespace Nexus.Ads.LevelPlay
         public void Show(AdFormat format, string placement, Action<AdResult> onResult)
         {
             if (onResult == null) throw new ArgumentNullException(nameof(onResult));
-            if (_show != null && !_show.Done) { onResult(AdResult.NotReady); return; } // one full-screen ad at a time; the guard blocks earlier
             if (!IsReady(format)) { onResult(AdResult.NotReady); return; }
+            // The controller asks for a show only after it answered the last one, so a show still open here is one the SDK never
+            // answered and the controller's watchdog ended (#180): a ready ad replaces it. The latch answered NotReady to every
+            // later show (#233); with nothing ready it stays, so a reward the SDK still pays reaches the controller's receipt.
+            // shortcut: one ad object per format, so a late callback of the replaced ad during the new show counts for the new one;
+            // tell them apart by the ad info if a device shows it.
+            var stale = _show;
+            if (stale != null && !stale.Done) { stale.Done = true; stale.Grace?.Dispose(); } // its grace would finish the new show
             var show = _show = new ShowState { Format = format, OnResult = onResult };
             try { if (format == AdFormat.Rewarded) _rewarded.ShowAd(placement); else _interstitial.ShowAd(placement); }
             catch { if (_show == show) _show = null; throw; } // an open show would answer NotReady to every later one (#151)

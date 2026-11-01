@@ -179,8 +179,13 @@ namespace Nexus.Ads.AdMob
         public void Show(AdFormat format, string placement, Action<AdResult> onResult)
         {
             if (onResult == null) throw new ArgumentNullException(nameof(onResult));
-            if (_show != null && !_show.Done) { onResult(AdResult.NotReady); return; } // one full-screen ad at a time; the guard blocks earlier
             if (!IsReady(format)) { onResult(AdResult.NotReady); return; }
+            // The controller asks for a show only after it answered the last one, so a show still open here is one the SDK never
+            // answered and the controller's watchdog ended (#180): a ready ad replaces it. The latch answered NotReady to every
+            // later show (#233); with nothing ready it stays, so a reward the SDK still pays reaches the controller's receipt.
+            // shortcut: a close of the replaced ad, if its object still lives (the reload destroys it), counts for a new show of
+            // its format.
+            if (_show != null && !_show.Done) _show.Done = true;
             var show = _show = new ShowState { Format = format, Placement = placement ?? "", OnResult = onResult };
             try
             {

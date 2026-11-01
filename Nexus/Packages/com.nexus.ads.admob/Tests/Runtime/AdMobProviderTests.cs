@@ -160,6 +160,39 @@ namespace Nexus.Ads.AdMob.Tests
             CollectionAssert.AreEqual(new[] { AdResult.Closed }, results);
         }
 
+        // Issue #233: after the controller's watchdog ended a show the SDK never answered, the provider's latch answered NotReady
+        // to every later show
+        [UnityTest]
+        public IEnumerator AShowTheSdkNeverAnswered_DoesNotBlockTheNextShow()
+        {
+            var provider = new AdMobProvider(Config());
+            yield return Started(provider, Config());
+            int loaded = 0, opened = 0;
+            provider.Loaded += f => { if (f == AdFormat.Interstitial) loaded++; };
+            provider.Opened += _ => opened++;
+            provider.Load(AdFormat.Interstitial);
+            yield return Until(() => loaded == 1, "the first placeholder interstitial");
+            var first = new List<AdResult>();
+            provider.Show(AdFormat.Interstitial, "level_end", first.Add);
+            yield return Until(() => opened == 1, "the first show opened");
+
+            // no close: the controller's watchdog answered the game and loads the next ad
+            provider.Load(AdFormat.Interstitial);
+            yield return Until(() => loaded == 2, "the second placeholder interstitial");
+            var second = new List<AdResult>();
+            provider.Show(AdFormat.Interstitial, "level_end", second.Add);
+            yield return Until(() => opened == 2, "the second show opened");
+            CollectionAssert.IsEmpty(second, "no NotReady while the first show is still open");
+
+            yield return CloseThePlaceholder();
+            yield return Until(() => second.Count > 0, "the second show's result");
+            CollectionAssert.AreEqual(new[] { AdResult.Closed }, second);
+            CollectionAssert.IsEmpty(first, "the replaced show is not answered again: the controller already did");
+            foreach (var button in UnityEngine.Object.FindObjectsByType<Text>().Where(t => t.text == "Close Ad")
+                         .Select(t => t.GetComponentInParent<Button>()).Where(b => b != null && b.interactable).ToList())
+                button.onClick.Invoke(); // a placeholder left open would take the next test's close
+        }
+
         /// <summary>Presses the placeholder's "Close Ad" button once it is clickable (the rewarded one after its 5 s countdown).</summary>
         private static IEnumerator CloseThePlaceholder()
         {
