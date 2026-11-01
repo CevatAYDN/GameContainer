@@ -319,7 +319,7 @@ namespace Nexus.Core
 
                 if (_contextData == null || _contextData.EnableAutoDiscovery)
                 {
-                    if (allLifecycles.Count == 0 && !Container.IsRegistered(typeof(IContextLifecycle)))
+                    if (allLifecycles.Count == 0 && !Container.IsRegisteredHere(typeof(IContextLifecycle)))
                     {
                         var lifecycleType = FindLifecycleTypeByConvention();
                         if (lifecycleType != null)
@@ -349,7 +349,8 @@ namespace Nexus.Core
                         NexusRuntime.Logger?.LogWarning("[Nexus] No IContextLifecycle was discovered or registered. The context can still run, but setup may be incomplete.");
                 }
 
-                if (allLifecycles.Count == 0 && Container.IsRegistered(typeof(IContextLifecycle)))
+                // this context's own binding: a child would otherwise configure, start and dispose its parent's lifecycle (#207)
+                if (allLifecycles.Count == 0 && Container.IsRegisteredHere(typeof(IContextLifecycle)))
                 {
                     var lifecycle = Container.Resolve<IContextLifecycle>();
                     allLifecycles.Add(lifecycle);
@@ -950,7 +951,7 @@ namespace Nexus.Core
                     catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }
                 }
             }
-            else if (Container.IsRegistered(typeof(IContextLifecycle)))
+            else if (Container.IsRegisteredHere(typeof(IContextLifecycle)))
             {
                 try { Container.TryResolve<IContextLifecycle>()?.OnDispose(); }
                 catch (Exception ex) { NexusRuntime.Logger?.LogException(ex); }

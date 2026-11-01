@@ -2363,6 +2363,9 @@ namespace Nexus.Core
             return _parent != null && _parent.IsRegistered(type);
         }
 
+        /// <summary>Whether this container itself binds the type, without its parents or the external adapter.</summary>
+        internal bool IsRegisteredHere(Type type) => _bindings.ContainsKey(type);
+
         /// <summary>
         /// Returns true only when a NAMED binding exists for the type+name (strict — no
         /// fallback to the default registration). This lets strict injection catch a
