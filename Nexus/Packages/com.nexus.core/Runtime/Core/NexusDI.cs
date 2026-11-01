@@ -2963,13 +2963,17 @@ namespace Nexus.Core
                         continue;
                     if (iface == typeof(INexusService) || iface == typeof(IReactiveModel) || iface == typeof(IContextLifecycle) || iface == typeof(IPostContextLifecycle))
                         continue;
-                    if (iface.Namespace != null && (iface.Namespace.StartsWith("System") || iface.Namespace.StartsWith("UnityEngine")))
+                    if (IsUnder(iface.Namespace, "System") || IsUnder(iface.Namespace, "UnityEngine"))
                         continue;
                     result.Add(iface);
                 }
                 return result.ToArray();
             });
         }
+
+        // "System" and "System.Collections", not "Systems.Gameplay" (#210).
+        private static bool IsUnder(string ns, string root)
+            => ns != null && ns.StartsWith(root, StringComparison.Ordinal) && (ns.Length == root.Length || ns[root.Length] == '.');
 
         /// <summary>
         /// Drops the derived caches (reflection metadata, interface scans, the per-type check of generated
