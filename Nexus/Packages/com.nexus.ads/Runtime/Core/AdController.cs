@@ -577,11 +577,17 @@ namespace Nexus.Ads
             Violation?.Invoke(violation);
         }
 
+        // each subscriber on its own: one that throws (a destroyed view's) leaves the later ones told (#236)
         private void RaiseReadyChanged()
         {
-            try { ReadyChanged?.Invoke(); }
-            catch (Exception ex) { RecordHandlerFailure(AdFormat.Interstitial, "", "a ReadyChanged subscriber", ex); }
-            finally { ArmPacingWake(); }
+            var handlers = ReadyChanged;
+            if (handlers != null)
+                foreach (Action handler in handlers.GetInvocationList())
+                {
+                    try { handler(); }
+                    catch (Exception ex) { RecordHandlerFailure(AdFormat.Interstitial, "", "a ReadyChanged subscriber", ex); }
+                }
+            ArmPacingWake();
         }
 
         // Arms one wake for the loaded placement whose time rules end first. Placements held back by anything else are left

@@ -1054,6 +1054,19 @@ namespace NexusBench
                     a.results == 1 && a.last == AdResult.Rewarded && a.threw == null && rig.Telemetry.Count(AdEventKind.HandlerFailed) == 1,
                     $"results={a.results} last={a.last} threw={a.threw ?? "-"} HandlerFailed={rig.Telemetry.Count(AdEventKind.HandlerFailed)}");
             }
+            // The subscribers ran as one multicast: one that threw stopped those after it, so a destroyed view's handler kept the
+            // rewarded button, subscribed later, hidden (#236)
+            using (var rig = new AdsRig().Running())
+            {
+                int before = rig.ReadyChanges, later = 0;
+                rig.Controller.ReadyChanged += () => throw new InvalidOperationException("destroyed view");
+                rig.Controller.ReadyChanged += () => later++;
+                var a = Answer(rig);
+                int raised = rig.ReadyChanges - before;
+                Check("AC58. AThrowingReadyChangedSubscriber_LeavesTheLaterOnesTold",
+                    a.results == 1 && raised > 0 && later == raised && rig.Telemetry.Count(AdEventKind.HandlerFailed) == raised,
+                    $"raised={raised} later subscriber heard={later} HandlerFailed={rig.Telemetry.Count(AdEventKind.HandlerFailed)} (pre-fix: heard 0)");
+            }
             using (var rig = new AdsRig().Running())
             {
                 rig.Telemetry.ThrowOn = AdEventKind.Rewarded;

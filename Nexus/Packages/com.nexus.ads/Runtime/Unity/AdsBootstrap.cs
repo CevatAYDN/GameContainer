@@ -358,7 +358,21 @@ namespace Nexus.Ads.Unity
         // every bootstrap's controller forwards its ReadyChanged here, so a subscription does not depend on when the bootstrap exists (issue #195)
         private static event Action ReadyChanged;
 
-        internal static void RaiseReadyChanged() => ReadyChanged?.Invoke();
+        // each handler on its own, recorded as the controller records its subscribers (#236)
+        internal static void RaiseReadyChanged()
+        {
+            var handlers = ReadyChanged;
+            if (handlers == null) return;
+            foreach (Action handler in handlers.GetInvocationList())
+            {
+                try { handler(); }
+                catch (Exception ex)
+                {
+                    AdsBootstrap.Instance?.Telemetry?.Record(new AdEvent(AdEventKind.HandlerFailed, AdFormat.Interstitial, "",
+                        "an Ads.OnReadyChanged handler threw " + ex.GetType().Name + ": " + ex.Message));
+                }
+            }
+        }
 
         /// <summary>Calls the handler whenever readiness may have changed, on the bootstrap running now or on one that
         /// starts later, a subscription made before any bootstrap exists included; returns an unsubscribe action.</summary>

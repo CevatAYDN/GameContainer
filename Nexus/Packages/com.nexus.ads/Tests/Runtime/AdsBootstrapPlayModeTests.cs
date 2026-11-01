@@ -410,6 +410,25 @@ namespace Nexus.Ads.Tests.Runtime
             finally { unsubscribe?.Invoke(); }
         }
 
+        // Issue #236: the handlers ran as one multicast, so one that threw stopped every handler after it
+        [UnityTest]
+        public IEnumerator AThrowingOnReadyChangedHandler_LeavesTheLaterOnesTold_AndIsLogged()
+        {
+            yield return null; // the previous test's bootstrap is destroyed at the end of its frame
+            LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(
+                @"^\[Nexus Ads\] HandlerFailed Interstitial '': an Ads\.OnReadyChanged handler threw InvalidOperationException: destroyed view \(first this session"));
+            int later = 0;
+            var first = Nexus.Ads.Unity.Ads.OnReadyChanged(() => throw new System.InvalidOperationException("destroyed view"));
+            var second = Nexus.Ads.Unity.Ads.OnReadyChanged(() => later++);
+            try
+            {
+                yield return Boot(SimulatorScenario.Normal);
+                yield return null;
+                Assert.Greater(later, 0, "the handler after the throwing one heard the fill");
+            }
+            finally { first(); second(); }
+        }
+
         [UnityTest]
         public IEnumerator RewardedButton_IsHiddenWhileNothingIsLoaded_AndPaysOnceOnReward()
         {
