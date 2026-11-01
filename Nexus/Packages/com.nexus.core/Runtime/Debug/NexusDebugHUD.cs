@@ -47,9 +47,34 @@ namespace Nexus.Core
             _isVisible = showOnStart;
         }
 
+#if !ENABLE_LEGACY_INPUT_MANAGER && UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
+        private KeyCode _parsedToggleKey = KeyCode.None;
+        private UnityEngine.InputSystem.Key _toggleInputSystemKey = UnityEngine.InputSystem.Key.None;
+#endif
+
+        // UnityEngine.Input throws on every call when the project's input handling is the Input System package only (#222).
+        private bool TogglePressed()
+        {
+#if ENABLE_LEGACY_INPUT_MANAGER
+            return Input.GetKeyDown(toggleKey);
+#elif UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
+            if (_parsedToggleKey != toggleKey)
+            {
+                // the Input System names letter and function keys as KeyCode does (F12, Backquote); parsed once per key
+                _parsedToggleKey = toggleKey;
+                if (!Enum.TryParse(toggleKey.ToString(), true, out _toggleInputSystemKey))
+                    _toggleInputSystemKey = UnityEngine.InputSystem.Key.None;
+            }
+            var keyboard = UnityEngine.InputSystem.Keyboard.current;
+            return keyboard != null && _toggleInputSystemKey != UnityEngine.InputSystem.Key.None && keyboard[_toggleInputSystemKey].wasPressedThisFrame;
+#else
+            return false;
+#endif
+        }
+
         private void Update()
         {
-            if (Input.GetKeyDown(toggleKey))
+            if (TogglePressed())
             {
                 _isVisible = !_isVisible;
             }
