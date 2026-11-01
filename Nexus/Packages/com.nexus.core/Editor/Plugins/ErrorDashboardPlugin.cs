@@ -39,9 +39,11 @@ namespace Nexus.Editor
         // CreateFilterButton's declared return type is VisualElement, so the cache holds
         // VisualElement (only .style is touched on refresh).
         private readonly List<(VisualElement Btn, ErrorCollection.ErrorSeverity? Severity)> _sevButtons = new();
-        // List rebuild throttle: the list is rebuilt only when the total error count or the
-        // active filters actually changed, not on every OnUpdate tick.
+        // List rebuild throttle: the list is rebuilt only when the collected entries or the
+        // active filters changed, not on every OnUpdate tick. A full buffer keeps its count while each
+        // new entry pushes out the oldest, so the newest entry's id is compared as well (#252).
         private int _lastBuiltTotal = -1;
+        private int _lastBuiltId = -1;
         private ErrorCollection.ErrorSeverity? _lastFilterSeverity;
         private ErrorCollection.ErrorCategory? _lastFilterCategory;
         private string _lastFilterSearch = string.Empty;
@@ -96,6 +98,7 @@ namespace Nexus.Editor
             _searchText = string.Empty;
             _dirty = false;
             _lastBuiltTotal = -1;
+            _lastBuiltId = -1;
             _sevButtons.Clear();
             _summaryRow = null;
             _filterBar = null;
@@ -213,7 +216,7 @@ namespace Nexus.Editor
             bool filtersChanged = _minSeverity != _lastFilterSeverity
                 || _categoryFilter != _lastFilterCategory
                 || _searchText != _lastFilterSearch;
-            bool dataChanged = ErrorCollection.TotalErrorCount != _lastBuiltTotal;
+            bool dataChanged = ErrorCollection.TotalErrorCount != _lastBuiltTotal || ErrorCollection.LastEntryId != _lastBuiltId;
 
             if (filtersChanged || dataChanged)
             {
@@ -225,6 +228,7 @@ namespace Nexus.Editor
                 RebuildList(errors);
 
                 _lastBuiltTotal = ErrorCollection.TotalErrorCount;
+                _lastBuiltId = ErrorCollection.LastEntryId;
                 _lastFilterSeverity = _minSeverity;
                 _lastFilterCategory = _categoryFilter;
                 _lastFilterSearch = _searchText;

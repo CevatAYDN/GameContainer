@@ -128,6 +128,10 @@ namespace Nexus.Core
 
         public static int TotalErrorCount => s_errors.Count;
 
+        /// <summary>The id of the newest collected entry. It only grows: a full buffer keeps its count while each new entry
+        /// pushes out the oldest, so a view that compared the count missed every new entry (#252).</summary>
+        internal static int LastEntryId => System.Threading.Volatile.Read(ref s_nextId);
+
         /// <summary>Current unique grouping keys retained (A10 testability accessor).</summary>
         internal static int GroupingKeyCount => s_errorGrouping.Count;
 
