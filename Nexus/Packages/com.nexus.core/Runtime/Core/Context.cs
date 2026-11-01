@@ -331,7 +331,9 @@ namespace Nexus.Core
                             }
                             catch (Exception ex)
                             {
-                                NexusRuntime.Logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {ex.Message}");
+                                // the constructor's own exception, with its stack: Activator wraps it in TargetInvocationException (issue #173)
+                                var cause = ex is TargetInvocationException { InnerException: not null } wrapped ? wrapped.InnerException : ex;
+                                NexusRuntime.Logger?.LogError($"[Nexus] Failed to instantiate lifecycle class '{lifecycleType.Name}' by convention: {cause}");
                             }
                         }
                     }
@@ -587,7 +589,7 @@ namespace Nexus.Core
             }
 
             var assemblies = (_contextData?.AssemblyScopes?.Length > 0)
-                ? LoadScopedAssemblies(logWarnings: false)
+                ? LoadScopedAssemblies()
                 : GetDefaultScanAssemblies();
             var found = FindLifecycleTypeInAssemblies(assemblies, ScopeTag);
 
@@ -621,7 +623,7 @@ namespace Nexus.Core
         private void ScanAssembliesAndRegister(ContextBuilder builder)
         {
             var assemblies = (_contextData?.AssemblyScopes?.Length > 0)
-                ? LoadScopedAssemblies(logWarnings: true)
+                ? LoadScopedAssemblies()
                 : GetDefaultScanAssemblies();
 
             foreach (var assembly in assemblies)
@@ -698,7 +700,11 @@ namespace Nexus.Core
             }
         }
 
-        private List<Assembly> LoadScopedAssemblies(bool logWarnings)
+        // A scope assembly the player lacks (an asmdef excluded for the platform, a rename, stripping) leaves the context without
+        // its lifecycle, bindings and handlers while it reports started: an error in every build, once per scope (issue #173).
+        private readonly HashSet<string> _reportedMissingScopes = new(StringComparer.Ordinal);
+
+        private List<Assembly> LoadScopedAssemblies()
         {
             var assemblies = new List<Assembly>();
             foreach (var scopeName in _contextData.AssemblyScopes)
@@ -706,7 +712,10 @@ namespace Nexus.Core
                 try { var assembly = Assembly.Load(scopeName); if (assembly != null) assemblies.Add(assembly); }
                 catch (Exception ex)
                 {
-                    if (logWarnings) Services.NexusLog.WarnAlways($"[Nexus] Failed to load assembly {scopeName}: {ex.Message}");
+                    bool first;
+                    lock (_reportedMissingScopes) first = _reportedMissingScopes.Add(scopeName);
+                    if (first)
+                        NexusRuntime.Logger?.LogError($"[Nexus] Context '{ScopeTag}': the scope assembly '{scopeName}' could not be loaded ({ex.GetType().Name}: {ex.Message}); the lifecycle, bindings and signal handlers it holds are missing from this context.");
                 }
             }
             return assemblies;
