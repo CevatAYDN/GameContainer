@@ -86,6 +86,24 @@ namespace Nexus.Ads.Bridge.Tests
             Assert.AreEqual(1, _store.StoreChangedHandlers);
         }
 
+        // Issue #178: the bridge never acknowledged a receipt, so a game that checks the pending reward at start-up, as the README
+        // says, paid every reward again at its next start, and the next reward replaced the receipt
+        [Test]
+        public void ARewardedOutcome_AcknowledgesItsReceipt_AfterTheGameHeardIt()
+        {
+            RewardReceipt? pendingWhileTheGameHears = null;
+            _service.RequestReward("shop_refill", o => pendingWhileTheGameHears = _controller.PendingReward);
+            Assert.IsTrue(pendingWhileTheGameHears.HasValue, "the receipt exists while the game pays");
+            Assert.IsFalse(_controller.PendingReward.HasValue, "acknowledged once the game's callback returned");
+        }
+
+        [Test]
+        public void AGameCallbackThatThrows_KeepsTheReceiptForTheNextStart()
+        {
+            Assert.Throws<InvalidOperationException>(() => _service.RequestReward("shop_refill", o => throw new InvalidOperationException("grant failed")));
+            Assert.IsTrue(_controller.PendingReward.HasValue, "a reward the game did not finish paying is paid at the next start");
+        }
+
         [Test]
         public void TheFactoryKnowsTheBridge_UnderBothNames()
         {

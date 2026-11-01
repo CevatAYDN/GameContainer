@@ -31,9 +31,16 @@ namespace Nexus.Ads.Tests.Runtime
             Assert.IsNotNull(_bootstrap.Controller, "the bootstrap started within 5 s");
         }
 
+        // RewardReceipts' row in PlayerPrefs: a test that pays a reward leaves its receipt, so each test starts and ends without one
+        private const string ReceiptRow = "nexus.ads.reward.pending";
+
+        [SetUp]
+        public void SetUp() => PlayerPrefs.DeleteKey(ReceiptRow);
+
         [TearDown]
         public void TearDown()
         {
+            PlayerPrefs.DeleteKey(ReceiptRow);
             if (_root != null) Object.Destroy(_root);
             if (_settings != null) Object.Destroy(_settings);
             Time.timeScale = 1f;
@@ -130,6 +137,31 @@ namespace Nexus.Ads.Tests.Runtime
             Assert.AreEqual(0f, Time.timeScale, "the game's pause holds");
             Assert.IsTrue(AudioListener.pause, "the game's muted audio holds");
             LogAssert.NoUnexpectedReceived();
+        }
+
+        // Issue #178: Ads.PendingReward read the controller, which does not exist before StartAds (startOnAwake off) or until the
+        // posted start ran, so the documented start-up check found nothing and the next reward overwrote the receipt
+        [UnityTest]
+        public IEnumerator APendingReward_IsReadAndAcknowledged_BeforeTheAdsStart()
+        {
+            PlayerPrefs.SetString(ReceiptRow, "r-1|shop_refill");
+            _settings = ScriptableObject.CreateInstance<AdsSettings>();
+            _settings.SelectedMediation = AdProviderKind.LevelPlay;
+            _settings.Placements.Add(new PlacementEntry { Name = "shop_refill", Format = AdFormat.Rewarded });
+            _root = new GameObject("AdsBootstrapTest");
+            _root.SetActive(false);
+            _bootstrap = _root.AddComponent<AdsBootstrap>();
+            _bootstrap.Configure(_settings, SimulatorScenario.Normal, logEvents: false, startOnAwake: false);
+            _root.SetActive(true);
+            yield return null;
+
+            Assert.IsNull(_bootstrap.Controller, "the ads have not started");
+            var receipt = Nexus.Ads.Unity.Ads.PendingReward;
+            Assert.IsTrue(receipt.HasValue, "the receipt of the killed run is read before the start");
+            Assert.AreEqual("r-1", receipt.Value.Id);
+            Assert.AreEqual("shop_refill", receipt.Value.Placement);
+            Nexus.Ads.Unity.Ads.AcknowledgeReward("r-1");
+            Assert.IsFalse(Nexus.Ads.Unity.Ads.PendingReward.HasValue, "acknowledged before the start");
         }
 
         [UnityTest]

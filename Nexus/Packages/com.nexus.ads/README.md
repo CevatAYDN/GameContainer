@@ -134,11 +134,17 @@ using Nexus.Ads;
 using Nexus.Ads.Unity;
 
 if (Ads.IsReady(AdPlacements.ShopRefill))
-    Ads.Show(AdPlacements.ShopRefill, result => { if (result == AdResult.Rewarded) Wallet.Add(50); });
+    Ads.Show(AdPlacements.ShopRefill, result =>
+    {
+        if (result != AdResult.Rewarded) return;
+        Wallet.Add(50);
+        var paid = Ads.PendingReward;   // this show's receipt: paid, so acknowledged
+        if (paid.HasValue) Ads.AcknowledgeReward(paid.Value.Id);
+    });
 
 Ads.Show(AdPlacements.LevelEnd); // interstitial: NaturalBreak placement, paced by the guard
 
-// at start-up: a reward the previous run was killed in the middle of
+// at start-up, before or after the ads start: a reward the previous run was killed in the middle of
 var receipt = Ads.PendingReward;
 if (receipt.HasValue) { Wallet.Add(50); Ads.AcknowledgeReward(receipt.Value.Id); }
 ```
@@ -168,8 +174,10 @@ too. A show's result reaches the game exactly once whatever a subscriber, a sink
 throws; an SDK load that throws is a failed load, retried with the back-off. A loaded ad the
 provider no longer has (AdMob drops one after an hour, or at a consent change) is seen at the next
 readiness check and reloads, with an `Expired` telemetry event (issue #175). A paid reward is written to the store before the game hears of
-it (`PendingReward`); `AdRewardedButton` acknowledges it after its listeners ran, a game that saves
-asynchronously acknowledges it itself.
+it (`PendingReward`, read from `PlayerPrefs` and so available before the ads start); `AdRewardedButton`
+acknowledges it after its listeners ran, the bridge's `IAdService` once the game's callback returned,
+and a game that saves asynchronously acknowledges it itself. One receipt is kept: a reward written
+over an unacknowledged one is logged in every build (`RewardReplaced`, issue #178).
 
 A show the provider never answers is ended as `Failed` after `AdController.ShowAnswerSeconds` (10 s)
 with the app visible, with a `ShowFailed` line that names the placement (issue #180). The time counts

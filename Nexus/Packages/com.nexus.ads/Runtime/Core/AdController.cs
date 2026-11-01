@@ -39,7 +39,6 @@ namespace Nexus.Ads
         private readonly Dictionary<AdFormat, Slot> _slots = new Dictionary<AdFormat, Slot>();
         // the placement the game last asked to show per format: provider events carry the format only, and revenue arrives after Closed
         private readonly Dictionary<AdFormat, string> _lastPlacement = new Dictionary<AdFormat, string>();
-        private const string PendingRewardKey = "nexus.ads.reward.pending";
         private int _rewardSequence;
         private bool _fullScreenOpen, _killSwitch, _disposed, _lockHeld;
         private int _initFailures;
@@ -320,29 +319,21 @@ namespace Nexus.Ads
         /// delivered, cleared by <see cref="AcknowledgeReward"/>. A game checks it at start-up and pays
         /// a reward the previous run was killed in the middle of. Null when nothing is pending.
         /// </summary>
-        public RewardReceipt? PendingReward
-        {
-            get
-            {
-                string raw = _store.Get(PendingRewardKey);
-                if (string.IsNullOrEmpty(raw)) return null;
-                int bar = raw.IndexOf('|');
-                return bar <= 0 ? (RewardReceipt?)null : new RewardReceipt(raw.Substring(0, bar), raw.Substring(bar + 1));
-            }
-        }
+        public RewardReceipt? PendingReward => RewardReceipts.Pending(_store);
 
         /// <summary>Clears the pending receipt when its id matches; any other id leaves it untouched.</summary>
-        public void AcknowledgeReward(string receiptId)
-        {
-            var pending = PendingReward;
-            if (pending.HasValue && pending.Value.Id == receiptId) _store.Set(PendingRewardKey, "");
-        }
+        public void AcknowledgeReward(string receiptId) => RewardReceipts.Acknowledge(_store, receiptId);
 
         private void WriteReceipt(string placement)
         {
             _rewardSequence++;
             string id = _clock.UtcDay + "-" + _rewardSequence + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
-            _store.Set(PendingRewardKey, id + "|" + placement);
+            var replaced = RewardReceipts.Pending(_store);
+            RewardReceipts.Write(_store, new RewardReceipt(id, placement));
+            // the next start pays only the newest receipt: an earlier reward nobody acknowledged is lost, and said so (issue #178)
+            if (replaced.HasValue)
+                _telemetry.Record(new AdEvent(AdEventKind.RewardReplaced, AdFormat.Rewarded, placement, "receipt " + replaced.Value.Id + " ('" + replaced.Value.Placement
+                    + "') was never acknowledged and is replaced by " + id + ": acknowledge each reward once it is paid"));
         }
 
         public bool PrivacyOptionsRequired => _consent != null && _consent.PrivacyOptionsRequired;

@@ -35,6 +35,34 @@ namespace Nexus.Ads
         }
     }
 
+    /// <summary>
+    /// The pending reward receipt, an <see cref="IPacingStore"/> row, so a game reads it at start-up before any controller exists
+    /// (issue #178). One receipt is kept: a reward written over an unacknowledged one is recorded as
+    /// <see cref="AdEventKind.RewardReplaced"/>.
+    /// </summary>
+    public static class RewardReceipts
+    {
+        internal const string Key = "nexus.ads.reward.pending";
+
+        /// <summary>The reward the game has not acknowledged yet, or null.</summary>
+        public static RewardReceipt? Pending(IPacingStore store)
+        {
+            string raw = store?.Get(Key);
+            if (string.IsNullOrEmpty(raw)) return null;
+            int bar = raw.IndexOf('|');
+            return bar <= 0 ? (RewardReceipt?)null : new RewardReceipt(raw.Substring(0, bar), raw.Substring(bar + 1));
+        }
+
+        /// <summary>Clears the pending receipt when its id matches; any other id leaves it untouched.</summary>
+        public static void Acknowledge(IPacingStore store, string receiptId)
+        {
+            var pending = Pending(store);
+            if (pending.HasValue && pending.Value.Id == receiptId) store.Set(Key, "");
+        }
+
+        internal static void Write(IPacingStore store, RewardReceipt receipt) => store.Set(Key, receipt.Id + "|" + receipt.Placement);
+    }
+
     public enum AdEventKind
     {
         Loaded,
@@ -63,6 +91,9 @@ namespace Nexus.Ads
         /// <summary>A subscriber or a telemetry sink threw while the controller answered a show or raised ReadyChanged; the detail
         /// names the step and the exception. The rest of the answer, the game's result included, still ran (issue #176).</summary>
         HandlerFailed,
+        /// <summary>A paid reward was written over a receipt the game never acknowledged, whose reward the next start no longer
+        /// sees; the detail names both receipts (issue #178).</summary>
+        RewardReplaced,
     }
 
     /// <summary>One telemetry row. The Unity layer forwards it to the game's analytics; every row carries the placement name.</summary>

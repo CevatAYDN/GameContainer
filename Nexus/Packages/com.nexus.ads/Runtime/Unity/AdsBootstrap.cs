@@ -342,10 +342,14 @@ namespace Nexus.Ads.Unity
 
         public static void HideBanner() => Controller?.HideBanner();
 
-        /// <summary>A paid reward no one acknowledged yet (the previous run may have been killed); pay it, then acknowledge.</summary>
-        public static RewardReceipt? PendingReward => Controller?.PendingReward;
+        // the receipt is a PlayerPrefs row, read before the controller exists: before StartAds, or before the posted start ran (issue #178)
+        private static readonly PlayerPrefsPacingStore ReceiptStore = new PlayerPrefsPacingStore();
 
-        public static void AcknowledgeReward(string receiptId) => Controller?.AcknowledgeReward(receiptId);
+        /// <summary>A paid reward no one acknowledged yet (the previous run may have been killed); pay it, then acknowledge.
+        /// Readable at start-up, before the ads start.</summary>
+        public static RewardReceipt? PendingReward => RewardReceipts.Pending(ReceiptStore);
+
+        public static void AcknowledgeReward(string receiptId) => RewardReceipts.Acknowledge(ReceiptStore, receiptId);
 
         public static bool PrivacyOptionsRequired => Controller != null && Controller.PrivacyOptionsRequired;
 
