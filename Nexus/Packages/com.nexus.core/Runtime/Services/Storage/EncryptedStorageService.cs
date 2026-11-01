@@ -86,6 +86,8 @@ namespace Nexus.Core.Services
 
         private readonly Dictionary<string, string> _cache = new(StringComparer.Ordinal);
         private readonly HashSet<string> _dirtyKeys = new(StringComparer.Ordinal);
+        // keys whose file is there but could not be read, until they are written, imported or deleted (issue #147)
+        private readonly HashSet<string> _unreadable = new(StringComparer.Ordinal);
         // Monotonic per-key generations make an out-of-lock disk write conditional: a
         // concurrent SetString/DeleteKey can never have its newer value hidden by an older
         // Save completion.
@@ -110,6 +112,7 @@ namespace Nexus.Core.Services
             _keyVersions.TryGetValue(key, out long version);
             version++;
             _keyVersions[key] = version;
+            _unreadable.Remove(key); // every write, import and delete bumps the version: the key is no longer the unreadable file
             return version;
         }
 
@@ -468,11 +471,6 @@ namespace Nexus.Core.Services
             SetString(key, BigDoubleStorageCodec.Encode(value));
         }
 
-        /// <summary>
-        /// Reads a value. B1: the slow parts (file existence check, read, decrypt)
-        /// run OUTSIDE the shared lock — a slow first read cannot stall every other
-        /// key operation. Only the small cache/dirty-set updates take the lock.
-        /// </summary>
         public string GetString(string key, string defaultValue = "")
         {
             if (_disposed)
@@ -480,14 +478,50 @@ namespace Nexus.Core.Services
                 ReportUseAfterDispose("GetString", key, "returns the default, not the saved value");
                 return defaultValue;
             }
-            if (string.IsNullOrEmpty(key)) return defaultValue;
+            return Read(key, out string value) == StorageReadStatus.Present ? value : defaultValue;
+        }
+
+        /// <summary>
+        /// Reads a value and says which case it is (issue #147): <see cref="StorageReadStatus.Present"/>,
+        /// <see cref="StorageReadStatus.Absent"/> (never written, or deleted) or <see cref="StorageReadStatus.Unreadable"/>: the
+        /// file is there but fails its check (tampered, written under another seed or on another phone), is damaged, or could
+        /// not be read this time; a warning in every build says which. A key stays Unreadable until it is written, imported or
+        /// deleted, and <see cref="HasKey"/> answers true for it.
+        /// </summary>
+        public StorageReadStatus TryGetString(string key, out string value)
+        {
+            if (_disposed)
+            {
+                ReportUseAfterDispose("TryGetString", key, "reports Unreadable, not the saved value");
+                value = null;
+                return StorageReadStatus.Unreadable;
+            }
+            return Read(key, out value);
+        }
+
+        private StorageReadStatus CachedLocked(string key, string cached, out string value)
+        {
+            value = cached;
+            if (cached != null) return StorageReadStatus.Present;
+            return _unreadable.Contains(key) ? StorageReadStatus.Unreadable : StorageReadStatus.Absent;
+        }
+
+        /// <summary>
+        /// Reads a value. B1: the slow parts (file existence check, read, decrypt)
+        /// run OUTSIDE the shared lock — a slow first read cannot stall every other
+        /// key operation. Only the small cache/dirty-set updates take the lock.
+        /// </summary>
+        private StorageReadStatus Read(string key, out string value)
+        {
+            value = null;
+            if (string.IsNullOrEmpty(key)) return StorageReadStatus.Absent;
 
             string filePath, mainPath;
             long readVersion;
             lock (_lock)
             {
                 if (_cache.TryGetValue(key, out string cachedVal))
-                    return cachedVal ?? defaultValue;
+                    return CachedLocked(key, cachedVal, out value);
 
                 filePath = ResolveExistingFilePath(key);
                 mainPath = GetFilePath(key);
@@ -498,7 +532,7 @@ namespace Nexus.Core.Services
             if (!File.Exists(filePath))
             {
                 CacheNegativeResult(key);
-                return defaultValue;
+                return StorageReadStatus.Absent;
             }
 
             try
@@ -524,9 +558,9 @@ namespace Nexus.Core.Services
                 if (problem != null)
                 {
                     if (problem == IntegrityFailure) LogTamperWarning(key);
-                    else NexusLog.WarnAlways($"[EncryptedStorage] The save file for key '{key}' {problem}: read as missing.");
-                    CacheNegativeResult(key);
-                    return defaultValue;
+                    else NexusLog.WarnAlways($"[EncryptedStorage] The save file for key '{key}' {problem}: unreadable, reverting to default.");
+                    CacheNegativeResult(key, unreadable: true);
+                    return StorageReadStatus.Unreadable;
                 }
 
                 // A recovered, v2 or unversioned value is re-encrypted as v3 under the current (FNV-1a) name; an unversioned
@@ -545,30 +579,32 @@ namespace Nexus.Core.Services
                     if (!IsCurrentVersionLocked(key, readVersion))
                     {
                         return _cache.TryGetValue(key, out string currentValue)
-                            ? currentValue ?? defaultValue
-                            : defaultValue;
+                            ? CachedLocked(key, currentValue, out value)
+                            : StorageReadStatus.Absent;
                     }
                     // Guard against TOCTOU race: if SetString was called concurrently while reading from disk,
                     // keep the fresher dirty cache value instead of overwriting with disk bytes.
                     if (_dirtyKeys.Contains(key) && _cache.TryGetValue(key, out string currentVal) && currentVal != null)
                     {
-                        return currentVal;
+                        value = currentVal;
+                        return StorageReadStatus.Present;
                     }
                     _cache[key] = val;
                 }
-                return val;
+                value = val;
+                return StorageReadStatus.Present;
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 // Transient (file locked by another process, disk busy): not cached, the next read retries the disk.
                 NexusLog.WarnAlways($"[EncryptedStorage] Could not read save key '{key}' this time: {ex.Message}");
-                return defaultValue;
+                return StorageReadStatus.Unreadable;
             }
             catch (Exception ex)
             {
                 NexusLog.WarnAlways($"[EncryptedStorage] Failed to read/decrypt save key '{key}': {ex.Message}");
-                CacheNegativeResult(key);
-                return defaultValue;
+                CacheNegativeResult(key, unreadable: true);
+                return StorageReadStatus.Unreadable;
             }
         }
 
@@ -577,13 +613,14 @@ namespace Nexus.Core.Services
         /// concurrent SetString wrote while the disk read was in flight (dirty key, or an
         /// AutoSave write that already updated the cache without marking it dirty).
         /// </summary>
-        private void CacheNegativeResult(string key)
+        private void CacheNegativeResult(string key, bool unreadable = false)
         {
             lock (_lock)
             {
                 if (_dirtyKeys.Contains(key)) return;
                 if (_cache.TryGetValue(key, out var existing) && existing != null) return;
                 _cache[key] = null;
+                if (unreadable) _unreadable.Add(key);
             }
         }
 
@@ -1038,7 +1075,7 @@ namespace Nexus.Core.Services
             lock (_lock)
             {
                 if (_cache.TryGetValue(key, out string cachedVal))
-                    return cachedVal != null;
+                    return cachedVal != null || _unreadable.Contains(key); // an unreadable file is still there (issue #147)
             }
 
             // B1 invariant: file I/O outside the shared lock so slow disk access doesn't stall other operations

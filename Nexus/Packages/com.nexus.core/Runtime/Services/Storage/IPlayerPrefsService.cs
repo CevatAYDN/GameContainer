@@ -1,9 +1,19 @@
 namespace Nexus.Core.Services
 {
+    /// <summary>What a read found (issue #147).</summary>
+    public enum StorageReadStatus
+    {
+        /// <summary>The key holds a value.</summary>
+        Present,
+        /// <summary>The key was never written, or was deleted: a first run for that key.</summary>
+        Absent,
+        /// <summary>The key's data is there but cannot be read: tampered, written under another seed or on another phone, or damaged.</summary>
+        Unreadable,
+    }
+
     /// <summary>
-    /// Oyunda kalıcı küçük veri saklamak için ince bir soyutlama.
-    /// Modellerin doğrudan UnityEngine.PlayerPrefs'e bağımlı olmasını engeller;
-    /// EditMode testlerde in-memory fake implementasyonla değiştirilebilir.
+    /// A thin abstraction for small persistent game data: models do not depend on UnityEngine.PlayerPrefs, and EditMode tests
+    /// replace it with an in-memory fake.
     /// </summary>
     public interface IPlayerPrefsService
     {
@@ -27,6 +37,17 @@ namespace Nexus.Core.Services
         {
             SetString(key, BigDoubleStorageCodec.Encode(value));
         }
+        /// <summary>
+        /// Reads a value and says which case it is: <see cref="StorageReadStatus.Present"/>, <see cref="StorageReadStatus.Absent"/>
+        /// or <see cref="StorageReadStatus.Unreadable"/>. A store whose values are always readable (PlayerPrefs, memory) answers
+        /// Present or Absent; <c>EncryptedStorageService</c> reports a value that fails its check as Unreadable (issue #147).
+        /// </summary>
+        StorageReadStatus TryGetString(string key, out string value)
+        {
+            value = HasKey(key) ? GetString(key, null) : null;
+            return value != null ? StorageReadStatus.Present : StorageReadStatus.Absent;
+        }
+
         bool HasKey(string key);
         void DeleteKey(string key);
         void Save();

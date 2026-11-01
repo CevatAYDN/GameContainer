@@ -165,6 +165,12 @@ the first run takes over the device-bound seed so existing data stays readable, 
 then also opens on another phone. Keep `Device` where a save must not move between phones. The seed is kept in
 PlayerPrefs and the saves in files: `PlayerPrefs.DeleteAll`, or a switch from `App` back to `Device`, leaves files no
 seed can read, and the next start logs an error in every build that names the cause and the file count (issue #166).
+`TryGetString(key, out value)` tells the three cases a read can meet apart (issue #147): `Present`; `Absent`, a key never
+written or deleted, which a game treats as a first run; and `Unreadable`, a file that is there but fails its check
+(tampered, written under another seed, a backup restored on another phone with a `Device` binding) or is damaged, with a
+warning in every build saying which. On `Unreadable` the game decides before it writes the key, because a write replaces
+the unreadable file: it can tell the player, fall back to a cloud copy, or report the event. `GetString` and the typed
+getters keep returning the default in both other cases; `HasKey` answers true for an unreadable key.
 Every live store saves its unsaved keys when the app pauses, on the main thread before `OnApplicationPause` returns, with
 or without a `Root` (issue #203); it also saves on quit, and on focus loss on a worker thread.
 `SettingsStores` names, per service (audio, haptics, economy, progression), the

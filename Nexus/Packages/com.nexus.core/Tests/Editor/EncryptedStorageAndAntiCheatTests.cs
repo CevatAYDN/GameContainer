@@ -129,7 +129,7 @@ namespace Nexus.Editor.Tests
 
                 UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'coins' is 0 bytes, shorter than any save: read the version before its last write from the backup, so that write is lost"));
                 UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'gems' fails its integrity check: read the version before its last write from the backup"));
-                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'lives' is 5 bytes, shorter than any save: read as missing"));
+                UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"key 'lives' is 5 bytes, shorter than any save: unreadable, reverting to default"));
                 var reader = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A");
                 Assert.AreEqual("100", reader.GetString("coins", null));
                 Assert.AreEqual("7", reader.GetString("gems", null));
@@ -755,6 +755,53 @@ namespace Nexus.Editor.Tests
                 "A newer SetString must remain dirty until its value reaches disk.");
             reloaded.DeleteKey(key);
             reloaded.Dispose();
+        }
+
+        // Issue #147: a value that failed its check and a key never written both returned the default, so a game could not tell a
+        // first run from lost or tampered progress without a sentinel (Pixel-Flow-Clone wrapped the store for that alone)
+        [Test]
+        public void TryGetString_TellsAPresentAnAbsentAndAnUnreadableValueApart()
+        {
+            const string salt = "Test_Salt_Read147";
+            ForgetStore(salt);
+            try
+            {
+                Write(salt, StorageKeyBinding.Device, "phone-A", 1234);
+                var otherPhone = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-B");
+                try
+                {
+                    UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"tampering detected for key: Coins"));
+                    Assert.AreEqual(StorageReadStatus.Unreadable, otherPhone.TryGetString("Coins", out string value), "another phone's save is there but unreadable");
+                    Assert.IsNull(value);
+                    Assert.AreEqual(StorageReadStatus.Unreadable, otherPhone.TryGetString("Coins", out _), "and stays so on the next read");
+                    Assert.AreEqual(-1, otherPhone.GetInt("Coins", -1), "GetInt still answers the default");
+                    Assert.IsTrue(otherPhone.HasKey("Coins"), "the key is there");
+                    Assert.AreEqual(StorageReadStatus.Absent, otherPhone.TryGetString("Gems", out _), "a key never written is absent");
+                    otherPhone.SetInt("Coins", 5);
+                    Assert.AreEqual(StorageReadStatus.Present, otherPhone.TryGetString("Coins", out value));
+                    Assert.AreEqual("5", value, "a write makes the key present again");
+                }
+                finally { otherPhone.Dispose(); }
+
+                var store = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-B") { AutoSave = true };
+                store.SetString("Lives", "3");
+                string path = Private<string>(store, "GetFilePath", "Lives");
+                store.Dispose();
+                byte[] bytes = File.ReadAllBytes(path);
+                bytes[bytes.Length - 1] ^= 0xFF;
+                File.WriteAllBytes(path, bytes);
+                var reread = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-B");
+                try
+                {
+                    UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"tampering detected for key: Lives"));
+                    Assert.AreEqual(StorageReadStatus.Unreadable, reread.TryGetString("Lives", out _), "a tampered payload is unreadable");
+                    Assert.AreEqual(StorageReadStatus.Present, reread.TryGetString("Coins", out string coins));
+                    Assert.AreEqual("5", coins);
+                }
+                finally { reread.Dispose(); }
+                UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+            }
+            finally { ForgetStore(salt); }
         }
 
         // Issue #164: a release player drops LogWarning, so a save read back as its default or a replaced seed left no trace in its log
