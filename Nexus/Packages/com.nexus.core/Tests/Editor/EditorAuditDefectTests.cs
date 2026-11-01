@@ -226,5 +226,37 @@ namespace Nexus.Editor.Tests
                 await context.DisposeAsync();
             }
         }
+
+        [Test]
+        public async Task CasualServicesEarn_UsesTheContextThatHoldsTheEconomy_NotWhicheverRootComesFirst()
+        {
+            // the actions took the first Root FindObjectsByType returned (unordered) and did nothing, with no line, when
+            // that Root's context lacked the service, as a Global parent does when the Game child binds the economy (#259)
+            var prefs = new InMemoryPlayerPrefsService();
+            var economy = new EconomyService { PlayerPrefsService = prefs };
+            var parent = await ContextFactory.StartAsync("casual-parent-259", _ => { });
+            Context child = null;
+            var plugin = new global::Nexus.Editor.Plugins.CasualServicesPlugin();
+            try
+            {
+                child = await ContextFactory.StartAsync("casual-child-259", builder =>
+                {
+                    builder.BindInstance<IPlayerPrefsService>(prefs);
+                    builder.BindInstance<IEconomyService>(economy);
+                }, parent);
+                var type = plugin.GetType();
+                type.GetField("_currencyNameField", Instance).SetValue(plugin, new TextField { value = "casual259" });
+                type.GetField("_currencyAmountField", Instance).SetValue(plugin, new LongField { value = 7 });
+
+                type.GetMethod("OnAddCurrency", Instance).Invoke(plugin, null);
+
+                Assert.AreEqual(7, economy.GetBalance("casual259"));
+            }
+            finally
+            {
+                if (child != null) await child.DisposeAsync();
+                await parent.DisposeAsync();
+            }
+        }
     }
 }

@@ -72,10 +72,9 @@ namespace Nexus.Editor.Plugins
             ecoSection.Add(addBtn);
             ecoSection.Add(spendBtn);
 
-            var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IPlayerPrefsService)))
+            var prefs = ResolveFromRunningContext<IPlayerPrefsService>();
+            if (prefs != null)
             {
-                var prefs = root.Context.Resolve<IPlayerPrefsService>();
                 string storageType = prefs.GetType().Name;
                 string saveInfo = string.Format(NexusLang.Get("cs_active_storage"), storageType);
                 if (prefs is EncryptedStorageService secureStorage)
@@ -111,17 +110,13 @@ namespace Nexus.Editor.Plugins
             var closeTopBtn = new Button(OnCloseTopScreen) { text = NexusLang.Get("cs_close_top") };
             uiSection.Add(closeTopBtn);
 
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IUIManager)))
+            if (ResolveFromRunningContext<IUIManager>() is UIManager concreteUiMgr && concreteUiMgr.AssetProvider != null)
             {
-                var uiMgr = root.Context.Resolve<IUIManager>();
-                if (uiMgr is UIManager concreteUiMgr && concreteUiMgr.AssetProvider != null)
-                {
-                    var providerLabel = new Label(string.Format(NexusLang.Get("cs_asset_provider"), concreteUiMgr.AssetProvider.GetType().Name));
-                    providerLabel.style.fontSize = 10;
-                    providerLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
-                    providerLabel.style.marginTop = 4;
-                    uiSection.Add(providerLabel);
-                }
+                var providerLabel = new Label(string.Format(NexusLang.Get("cs_asset_provider"), concreteUiMgr.AssetProvider.GetType().Name));
+                providerLabel.style.fontSize = 10;
+                providerLabel.style.color = new StyleColor(new Color(0.7f, 0.7f, 0.7f));
+                providerLabel.style.marginTop = 4;
+                uiSection.Add(providerLabel);
             }
 
             // Live open-screen stack (G-3): refreshed on a 500 ms schedule.
@@ -167,13 +162,13 @@ namespace Nexus.Editor.Plugins
             if (_openWindowsList == null || !Application.isPlaying) return;
             _openWindowsList.Clear();
 
-            var root = FindActiveRoot();
-            if (root?.Context == null || !root.Context.Container.IsRegistered(typeof(IUIManager)))
+            var manager = ResolveFromRunningContext<IUIManager>();
+            if (manager == null)
             {
                 _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_no_uimanager")));
                 return;
             }
-            if (root.Context.Resolve<IUIManager>() is not UIManager uiMgr)
+            if (manager is not UIManager uiMgr)
             {
                 _openWindowsList.Add(MakeDimLabel(NexusLang.Get("cs_custom_uimanager")));
                 return;
@@ -226,70 +221,43 @@ namespace Nexus.Editor.Plugins
             return box;
         }
 
-        private Root FindActiveRoot()
+        /// <summary>
+        /// The service from the deepest running context that resolves it (a Game context before its Global parent), or null.
+        /// The first Root <c>FindObjectsByType</c> returned (an unordered list) could be one without the service, and the
+        /// action then did nothing with no line (#259). An action passes its name and gets a warning when no context has it.
+        /// </summary>
+        private static T ResolveFromRunningContext<T>(string action = null) where T : class
         {
-            var roots = Object.FindObjectsByType<Root>(FindObjectsInactive.Exclude);
-            return roots.Length > 0 ? roots[0] : null;
+            IContext best = null;
+            int bestDepth = -1;
+            foreach (var context in NexusRuntime.ActiveContexts)
+            {
+                if (context?.Container == null || !context.Container.IsRegistered(typeof(T))) continue;
+                int depth = 0;
+                for (var parent = context.Parent; parent != null; parent = parent.Parent) depth++;
+                if (depth > bestDepth) { best = context; bestDepth = depth; }
+            }
+            if (best != null) return best.Resolve<T>();
+            if (action != null) Debug.LogWarning($"[Nexus] {action}: no running context resolves {typeof(T).Name}.");
+            return null;
         }
 
         private void OnAddCurrency()
-        {
-            var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IEconomyService)))
-            {
-                var eco = root.Context.Resolve<IEconomyService>();
-                eco?.Earn(_currencyNameField.value, _currencyAmountField.value);
-            }
-        }
+            => ResolveFromRunningContext<IEconomyService>("Earn")?.Earn(_currencyNameField.value, _currencyAmountField.value);
 
         private void OnSpendCurrency()
-        {
-            var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IEconomyService)))
-            {
-                var eco = root.Context.Resolve<IEconomyService>();
-                eco?.Spend(_currencyNameField.value, _currencyAmountField.value);
-            }
-        }
+            => ResolveFromRunningContext<IEconomyService>("Spend")?.Spend(_currencyNameField.value, _currencyAmountField.value);
 
         private void OnSetLevel()
-        {
-            var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IProgressionService)))
-            {
-                var prog = root.Context.Resolve<IProgressionService>();
-                prog?.SetLevel(_levelField.value);
-            }
-        }
+            => ResolveFromRunningContext<IProgressionService>("Set Level")?.SetLevel(_levelField.value);
 
         private void OnCloseTopScreen()
-        {
-            var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IUIManager)))
-            {
-                var uiMgr = root.Context.Resolve<IUIManager>();
-                uiMgr?.CloseTopScreenAsync();
-            }
-        }
+            => ResolveFromRunningContext<IUIManager>("Close Top")?.CloseTopScreenAsync();
 
         private void OnTestHaptic(HapticType type)
-        {
-            var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IHapticService)))
-            {
-                var haptic = root.Context.Resolve<IHapticService>();
-                haptic?.Vibrate(type);
-            }
-        }
+            => ResolveFromRunningContext<IHapticService>("Haptic")?.Vibrate(type);
 
         private void OnTestSuccessFeedback()
-        {
-            var root = FindActiveRoot();
-            if (root?.Context != null && root.Context.Container.IsRegistered(typeof(IFeedbackService)))
-            {
-                var feedback = root.Context.Resolve<IFeedbackService>();
-                feedback?.Play(FeedbackPreset.SuccessFanfare);
-            }
-        }
+            => ResolveFromRunningContext<IFeedbackService>("Feedback")?.Play(FeedbackPreset.SuccessFanfare);
     }
 }
