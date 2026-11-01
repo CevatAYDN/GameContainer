@@ -739,11 +739,12 @@ namespace Nexus.Editor
                 var fields = type.GetFields(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
                 foreach (var field in fields)
                 {
-                    // Skip [Inject]-annotated fields (auto-cleared by CommandPool)
-                    if (field.IsDefined(typeof(InjectAttribute), false))
+                    // Skip [Inject] and [OptionalInject] fields: the pool clears both on return. An optional one was reported
+                    // as a leak, an error with NEXUS_STRICT_QA_LEAK=1 (#248).
+                    if (field.IsDefined(typeof(InjectAttribute), false) || field.IsDefined(typeof(OptionalInjectAttribute), false))
                         continue;
 
-                    // Skip auto-property backing fields whose property has [Inject]
+                    // Skip auto-property backing fields whose property has [Inject] or [OptionalInject]
                     if (IsAutoPropertyWithInject(field, type))
                         continue;
 
@@ -795,13 +796,6 @@ namespace Nexus.Editor
         }
 
         /// <summary>
-        /// Returns true if <paramref name="field"/> is a C# auto-property backing field
-        /// (name pattern <code>&lt;PropertyName&gt;k__BackingField</code>) and the declaring
-        /// property has <see cref="InjectAttribute"/>. This prevents false positives when
-        /// <c>[Inject]</c> is placed on an auto-property — the attribute lives on the property,
-        /// not on the compiler-generated backing field.
-        /// </summary>
-        /// <summary>
         /// Runs every <see cref="IBuildValidationRule"/> of the project (any editor assembly; test assemblies only with
         /// <see cref="IncludeTestAssemblies"/>), in type-name order. A rule that throws aborts the run like any other step.
         /// </summary>
@@ -821,13 +815,20 @@ namespace Nexus.Editor
             }
         }
 
+        /// <summary>
+        /// Returns true if <paramref name="field"/> is a C# auto-property backing field
+        /// (name pattern <code>&lt;PropertyName&gt;k__BackingField</code>) and the declaring
+        /// property has <see cref="InjectAttribute"/> or <see cref="OptionalInjectAttribute"/>. This prevents false positives
+        /// when the attribute is placed on an auto-property — it lives on the property,
+        /// not on the compiler-generated backing field.
+        /// </summary>
         private static bool IsAutoPropertyWithInject(FieldInfo field, Type declaringType)
         {
             if (!field.Name.EndsWith("k__BackingField")) return false;
             if (!field.Name.StartsWith("<")) return false;
             string propName = field.Name.Substring(1, field.Name.IndexOf('>') - 1);
             var prop = declaringType.GetProperty(propName, BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-            return prop != null && prop.IsDefined(typeof(InjectAttribute), false);
+            return prop != null && (prop.IsDefined(typeof(InjectAttribute), false) || prop.IsDefined(typeof(OptionalInjectAttribute), false));
         }
 
         /// <summary>

@@ -101,6 +101,15 @@ namespace Nexus.Editor.Tests
             public void Execute(ConcurrentWaysSignal signal) {}
         }
 
+        // --- [OptionalInject] members, which the pool clears on return as it clears [Inject] ones (#248) ---
+        public class OptionalInjectPooledCommand : ICommand<MixedSignal>
+        {
+            [OptionalInject] private ISomeModel _optional;
+            [OptionalInject] public ISomeModel OptionalProperty { get; set; }
+            public bool HasOptional => _optional != null;
+            public void Execute(MixedSignal signal) {}
+        }
+
         // --- Dummy types for Command State Leak validation ---
         public class StateLeakCommand : ICommand<MixedSignal>
         {
@@ -178,6 +187,18 @@ namespace Nexus.Editor.Tests
                 Assert.AreEqual(1, (int)args[1], command.Name + ": " + string.Join("\n", errors));
                 StringAssert.Contains(command.FullName + " injects writeable model type ISomeModel", errors[0]);
             }
+        }
+
+        [Test]
+        public void StateLeakRule_SkipsOptionalInjectMembers_WhichThePoolClears()
+        {
+            var warnings = new List<string>();
+            BuildValidation.WarningLogger = warnings.Add;
+
+            GetPrivateStatic("ValidateCommandStateLeak").Invoke(null, new object[] { 0, 0 });
+
+            CollectionAssert.IsEmpty(warnings.FindAll(w => w.Contains(typeof(OptionalInjectPooledCommand).FullName + " ")));
+            Assert.IsTrue(warnings.Exists(w => w.Contains(typeof(StateLeakCommand).FullName + " ")), "a mutable field is still reported");
         }
 
         // --- Dummy type for the stub-service check (issue #104) ---
