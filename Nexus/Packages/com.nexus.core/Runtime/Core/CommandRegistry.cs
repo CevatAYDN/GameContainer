@@ -63,6 +63,10 @@ namespace Nexus.Core
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_signalSetterCache = new();
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_genericSyncDispatchCache = new();
         private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Func<object, object, CancellationToken, ValueTask>> s_genericAsyncDispatchCache = new();
+        // The binder's dispatchers are code, not caches: NexusRuntime.Reset keeps them, only
+        // NexusDI.ClearGeneratedRegistrations removes them (#219).
+        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Action<object, object>> s_generatedSyncDispatchers = new();
+        private static readonly ConcurrentDictionary<(Type commandType, Type signalType), Func<object, object, CancellationToken, ValueTask>> s_generatedAsyncDispatchers = new();
         private static readonly ConcurrentDictionary<Type, CrossContextAttribute> s_crossContextCache = new();
 
         // Per-type cross-context cache: the [CrossContext] attribute is fixed at the type level,
@@ -468,6 +472,7 @@ namespace Nexus.Core
         public Action<object, object> GetGenericSyncDispatcher(Type commandType, Type signalType)
         {
             var key = (commandType, signalType);
+            if (s_generatedSyncDispatchers.TryGetValue(key, out var generated)) return generated;
             if (s_genericSyncDispatchCache.TryGetValue(key, out var cached)) return cached;
 
             var genericInterface = typeof(ICommand<>).MakeGenericType(signalType);
@@ -506,6 +511,7 @@ namespace Nexus.Core
         public Func<object, object, CancellationToken, ValueTask> GetGenericAsyncDispatcher(Type commandType, Type signalType)
         {
             var key = (commandType, signalType);
+            if (s_generatedAsyncDispatchers.TryGetValue(key, out var generated)) return generated;
             if (s_genericAsyncDispatchCache.TryGetValue(key, out var cached)) return cached;
 
             var genericInterface = typeof(IAsyncCommand<>).MakeGenericType(signalType);
@@ -548,7 +554,7 @@ namespace Nexus.Core
         public static void RegisterGenericSyncDispatcher(Type commandType, Type signalType, Action<object, object> dispatcher)
         {
             if (commandType == null || signalType == null || dispatcher == null) return;
-            s_genericSyncDispatchCache[(commandType, signalType)] = dispatcher;
+            s_generatedSyncDispatchers[(commandType, signalType)] = dispatcher;
         }
 
         /// <summary>
@@ -559,7 +565,7 @@ namespace Nexus.Core
         public static void RegisterGenericAsyncDispatcher(Type commandType, Type signalType, Func<object, object, CancellationToken, ValueTask> dispatcher)
         {
             if (commandType == null || signalType == null || dispatcher == null) return;
-            s_genericAsyncDispatchCache[(commandType, signalType)] = dispatcher;
+            s_generatedAsyncDispatchers[(commandType, signalType)] = dispatcher;
         }
 
         /// <summary>Gets or creates a signal setter delegate.</summary>
@@ -713,6 +719,13 @@ namespace Nexus.Core
             s_genericSyncDispatchCache.Clear();
             s_genericAsyncDispatchCache.Clear();
             s_crossContextCache.Clear();
+        }
+
+        /// <summary>Removes the binder's generic dispatchers (<see cref="NexusDI.ClearGeneratedRegistrations"/>).</summary>
+        internal static void ClearGeneratedDispatchers()
+        {
+            s_generatedSyncDispatchers.Clear();
+            s_generatedAsyncDispatchers.Clear();
         }
     }
 }

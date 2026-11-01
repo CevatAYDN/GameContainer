@@ -16,8 +16,8 @@ namespace Nexus.Editor.Tests
     /// The signal and command defects the audit #206 found: a cancelled or aborted Concurrent dispatch wrote each
     /// handler's error again (#213), a throwing CommandFailedSignal subscriber escaped FireAsync (#214), a sync fallback
     /// made later async fallbacks share one depth (#215), a failed async composite never ran its FallbackAsync (#216), a
-    /// retried composite under FireAsync kept its state (#217) and an unsubscribed handler stayed reachable during a
-    /// dispatch (#218).
+    /// retried composite under FireAsync kept its state (#217), an unsubscribed handler stayed reachable during a
+    /// dispatch (#218) and NexusRuntime.Reset removed the binder's dispatchers (#219).
     /// </summary>
     public sealed class SignalAuditDefectTests
     {
@@ -71,6 +71,9 @@ namespace Nexus.Editor.Tests
         }
 
         public struct TickSignal { }
+
+        public sealed class GeneratedCommand { }
+        public struct GeneratedSignal { }
 
         // Error lines from any thread: an async command's continuation can write on a pool thread.
         private sealed class ErrorLines : IDisposable
@@ -239,6 +242,22 @@ namespace Nexus.Editor.Tests
                 Assert.IsFalse(registry.HasActiveSubscriptions(typeof(TickSignal)));
             }
             finally { registry.ExitDispatch(); }
+        }
+
+        [Test]
+        public void TheBindersGenericDispatchers_SurviveNexusRuntimeReset()
+        {
+            Action<object, object> syncDispatcher = (command, signal) => { };
+            Func<object, object, CancellationToken, ValueTask> asyncDispatcher = (command, signal, ct) => default;
+            CommandRegistry.RegisterGenericSyncDispatcher(typeof(GeneratedCommand), typeof(GeneratedSignal), syncDispatcher);
+            CommandRegistry.RegisterGenericAsyncDispatcher(typeof(GeneratedCommand), typeof(GeneratedSignal), asyncDispatcher);
+
+            NexusRuntime.Reset();
+
+            using var di = new NexusDI();
+            var registry = new CommandRegistry(di);
+            Assert.AreSame(syncDispatcher, registry.GetGenericSyncDispatcher(typeof(GeneratedCommand), typeof(GeneratedSignal)));
+            Assert.AreSame(asyncDispatcher, registry.GetGenericAsyncDispatcher(typeof(GeneratedCommand), typeof(GeneratedSignal)));
         }
     }
 }

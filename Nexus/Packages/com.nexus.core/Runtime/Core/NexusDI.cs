@@ -3078,6 +3078,7 @@ namespace Nexus.Core
             s_customClearers.Clear();
             s_injectorMembers.Clear();
             s_constructorFactories.Clear();
+            CommandRegistry.ClearGeneratedDispatchers();
             ClearCaches();
         }
 
