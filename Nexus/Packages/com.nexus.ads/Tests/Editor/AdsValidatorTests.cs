@@ -4,6 +4,7 @@ using NUnit.Framework;
 using Nexus.Ads.Editor;
 using Nexus.Ads.Unity;
 using UnityEngine;
+using UnityEngine.TestTools;
 
 namespace Nexus.Ads.Tests
 {
@@ -186,6 +187,59 @@ namespace Nexus.Ads.Tests
             Assert.AreEqual(AdsValidator.Tab.Test, tab);
             Assert.IsFalse(AdsValidator.TryParseTab("prod", out _), "an unknown tab is a bad argument, not the Test tab");
             Assert.IsFalse(AdsValidator.TryParseTab("1", out _), "an enum number is not a tab name");
+
+            // PrepareCli's own reading (#198): the Test tab without the argument, RunCli's reading with it
+            Assert.IsTrue(AndroidSetup.TryReadTab(new[] { "Unity.exe", "-batchmode" }, out tab));
+            Assert.AreEqual(AdsValidator.Tab.Test, tab);
+            Assert.IsTrue(AndroidSetup.TryReadTab(new[] { "-adsTab", "release" }, out tab));
+            Assert.AreEqual(AdsValidator.Tab.Release, tab);
+            Assert.IsFalse(AndroidSetup.TryReadTab(new[] { "-adsTab", "prod" }, out _));
+        }
+
+        // RunCli had no test (#198): exit 2 for an argument it cannot read or a project without settings, 1 for a fail,
+        // 0 otherwise, with the report it wrote; Enum.TryParse read "-adsPlatform 1" as Ios.
+        [Test]
+        public void TheCommandLine_ExitsTwoOnWhatItCannotRead_OneOnAFail_ZeroOnAPass_AndWritesItsReport()
+        {
+            WithGoogleConsent("ca-app-pub-1111111111111111~2222222222");
+            string report = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "nexus-ads-runcli-" + System.Guid.NewGuid().ToString("N") + ".json");
+            try
+            {
+                LogAssert.Expect(LogType.Error, "[Nexus Ads] -adsTab Test|Release is required");
+                Assert.AreEqual(2, AdsValidator.Run(new[] { "-adsReport", report }, _settings, _probe, _catalog));
+                LogAssert.Expect(LogType.Error, "[Nexus Ads] -adsPlatform Android|Ios, not '1'");
+                Assert.AreEqual(2, AdsValidator.Run(new[] { "-adsTab", "Release", "-adsPlatform", "1", "-adsReport", report }, _settings, _probe, _catalog));
+                LogAssert.Expect(LogType.Error, "[Nexus Ads] no Resources/" + AdsSettings.ResourceName + " asset");
+                Assert.AreEqual(2, AdsValidator.Run(new[] { "-adsTab", "Release", "-adsReport", report }, null, _probe, _catalog));
+                Assert.IsFalse(System.IO.File.Exists(report), "a run that could not read its input wrote a report");
+
+                Assert.AreEqual(0, AdsValidator.Run(new[] { "-adsTab", "release", "-adsPlatform", "android", "-adsReport", report }, _settings, _probe, _catalog));
+                StringAssert.Contains("\"outcome\": \"pass\"", System.IO.File.ReadAllText(report));
+
+                _settings.Release.LevelPlay.Android.AppKey = "";
+                Assert.AreEqual(1, AdsValidator.Run(new[] { "-adsTab", "Release", "-adsReport", report }, _settings, _probe, _catalog));
+                StringAssert.Contains("\"outcome\": \"fail\"", System.IO.File.ReadAllText(report));
+            }
+            finally
+            {
+                System.IO.File.Delete(report);
+            }
+        }
+
+        // The pre-build hook had no test (#198): a development build is checked against the Test tab, any other build
+        // against the Release tab, and a fail stops the build.
+        [Test]
+        public void ThePreBuildCheck_ReadsTheTestTabForADevelopmentBuild_AndStopsAReleaseBuildThatFails()
+        {
+            WithGoogleConsent("ca-app-pub-1111111111111111~2222222222");
+            _settings.Release.LevelPlay.Android.AppKey = "";
+
+            var development = AdsBuildGuard.Check(UnityEditor.BuildTarget.Android, UnityEditor.BuildOptions.Development, _settings, _probe, _catalog);
+            Assert.AreEqual(("Test", "Android", "pass"), (development.tab, development.platform, development.outcome));
+
+            var stopped = Assert.Throws<UnityEditor.Build.BuildFailedException>(
+                () => AdsBuildGuard.Check(UnityEditor.BuildTarget.Android, UnityEditor.BuildOptions.None, _settings, _probe, _catalog));
+            StringAssert.StartsWith("[Nexus Ads] Release tab, Android", stopped.Message);
         }
 
         [Test]

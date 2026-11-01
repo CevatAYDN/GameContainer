@@ -5,6 +5,8 @@
         "Nexus.Ads.Core",
         "Nexus.Ads.Unity",
         "Nexus.Ads.Bridge.Nexus",
+        "Nexus.Ads.Bridge.Nexus.Firebase",
+        "com.nexus.firebase",
         "com.nexus.core",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
@@ -22,6 +24,12 @@
     "defineConstraints": [
         "UNITY_INCLUDE_TESTS"
     ],
-    "versionDefines": [],
+    "versionDefines": [
+        {
+            "name": "com.nexus.firebase",
+            "expression": "0.1.0",
+            "define": "NEXUS_ADS_FIREBASE"
+        }
+    ],
     "noEngineReferences": false
 }

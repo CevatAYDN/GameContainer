@@ -532,23 +532,32 @@ namespace Nexus.Ads.Editor
             AssetDatabase.ImportAsset(path);
         }
 
+        // Unity's logger, not Console: one run's Console lines never reached its -logFile while the logger's did (issue #50)
+        private static void Report(string line) => Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null, "{0}", line);
+
+        /// <summary>
+        /// <see cref="PrepareCli"/>'s tab: the Test tab without <c>-adsTab</c>, otherwise RunCli's reading. "release" was the Test
+        /// tab here, which wrote the Test tab's sample App ID and could exit 0 (issue #195).
+        /// </summary>
+        internal static bool TryReadTab(string[] args, out AdsValidator.Tab tab)
+        {
+            string tabArg = AdsValidator.Arg(args, "-adsTab");
+            tab = AdsValidator.Tab.Test;
+            return tabArg == null || AdsValidator.TryParseTab(tabArg, out tab);
+        }
+
         /// <summary>
         /// Command line: <c>-executeMethod Nexus.Ads.Editor.AndroidSetup.PrepareCli [-adsTab Test|Release]</c> (Test when
         /// absent, any case), without <c>-quit</c> (package requests complete on the editor loop; the method exits the editor
         /// itself). Exit 0: every step Done; 1: Pending or Manual steps remain; 2: could not run (another -adsTab value
         /// included); 3: packages were added, run it again.
         /// </summary>
-        // Unity's logger, not Console: one run's Console lines never reached its -logFile while the logger's did (issue #50)
-        private static void Report(string line) => Debug.LogFormat(LogType.Log, LogOption.NoStacktrace, null, "{0}", line);
-
         public static void PrepareCli()
         {
             try
             {
-                string tabArg = AdsValidator.Arg(Environment.GetCommandLineArgs(), "-adsTab");
-                var tab = AdsValidator.Tab.Test;
-                // RunCli's reading: "release" was the Test tab here, which wrote the Test tab's sample App ID and could exit 0 (issue #195)
-                if (tabArg != null && !AdsValidator.TryParseTab(tabArg, out tab)) { Report("[Nexus Ads] -adsTab Test|Release, not '" + tabArg + "'"); EditorApplication.Exit(2); return; }
+                string[] args = Environment.GetCommandLineArgs();
+                if (!TryReadTab(args, out var tab)) { Report("[Nexus Ads] -adsTab Test|Release, not '" + AdsValidator.Arg(args, "-adsTab") + "'"); EditorApplication.Exit(2); return; }
                 var settings = AdsSettings.Load();
                 if (settings == null) { Report("[Nexus Ads] no settings asset (Resources/" + AdsSettings.ResourceName + ")"); EditorApplication.Exit(2); return; }
                 var catalog = PlatformCatalog.Load();

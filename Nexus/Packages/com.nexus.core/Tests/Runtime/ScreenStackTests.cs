@@ -251,6 +251,30 @@ namespace Nexus.Tests
             Assert.That((back.Result, Hidden(faded)), Is.EqualTo((BackResult.Popped, true)));
         }
 
+        // ReplaceRootAsync had no test (#198): its task waits for the new root's transition, as PushAsync's does.
+        [UnityTest]
+        public IEnumerator ReplaceRootAsync_CompletesWhenTheNewRootsTransitionEnds()
+        {
+            // the warnings this test causes, in the order it causes them (#198)
+            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ ScreenStack:\ no\ IInputService\ is\ bound,\ so\ the\ back\ key\ is\ not\ read;\ IBackRouter\.Press\(\)\ still\ runs\ th"));
+            var app = CreateRoot("App", null, BindStack);
+            yield return WaitUntil(() => app.IsInitialized, "the context did not start");
+            var menu = AddScreen<MenuScreen>(app, _panel);
+            var faded = AddScreen<ShopScreen>(app, _panel);
+            SetTransition(faded, 300);
+            yield return null; // the panel resolves the inline transition
+            yield return null;
+            var stack = app.Context.Container.Resolve<IScreenStack>();
+            stack.ReplaceRoot<MenuScreen>();
+
+            float start = Time.realtimeSinceStartup;
+            var replace = stack.ReplaceRootAsync<ShopScreen>().AsTask();
+            Assert.That(replace.IsCompleted, Is.False, "the task completed before the transition ran");
+            yield return WaitUntil(() => replace.IsCompleted, "the replace did not finish in 5 s");
+            Assert.That(Time.realtimeSinceStartup - start, Is.GreaterThanOrEqualTo(0.25f), "the task completed before the transition ended");
+            Assert.That((Displayed(faded), Hidden(menu)), Is.EqualTo((true, true)));
+        }
+
         [UnityTest]
         public IEnumerator ATransition_EndsOnUnscaledTime_WhileTheTimeScaleIsZero()
         {

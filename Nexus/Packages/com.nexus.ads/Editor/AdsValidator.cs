@@ -1,12 +1,15 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Text.RegularExpressions;
 using Nexus.Ads.Unity;
 using UnityEditor;
 using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
+
+[assembly: InternalsVisibleTo("com.nexus.ads.editor.tests")]
 
 namespace Nexus.Ads.Editor
 {
@@ -402,24 +405,31 @@ namespace Nexus.Ads.Editor
         /// </summary>
         public static void RunCli()
         {
+            int exit;
             try
             {
-                string[] args = Environment.GetCommandLineArgs();
-                string tabArg = Arg(args, "-adsTab"), platformArg = Arg(args, "-adsPlatform") ?? "Android", reportPath = Arg(args, "-adsReport") ?? DefaultReportPath;
-                if (!TryParseTab(tabArg, out Tab tab)) { Debug.LogError("[Nexus Ads] -adsTab Test|Release is required"); EditorApplication.Exit(2); return; }
-                if (!Enum.TryParse(platformArg, true, out AdPlatform platform)) { Debug.LogError("[Nexus Ads] -adsPlatform Android|Ios"); EditorApplication.Exit(2); return; }
-                var settings = AdsSettings.Load();
-                if (settings == null) { Debug.LogError("[Nexus Ads] no Resources/" + AdsSettings.ResourceName + " asset"); EditorApplication.Exit(2); return; }
-                var report = Validate(settings, tab, platform, new UnityProjectProbe(), PlatformCatalog.Load());
-                WriteReport(report, reportPath);
-                Debug.Log(report.Summary() + "\n[Nexus Ads] report: " + Path.GetFullPath(reportPath));
-                EditorApplication.Exit(report.Passed ? 0 : 1);
+                exit = Run(Environment.GetCommandLineArgs(), AdsSettings.Load(), new UnityProjectProbe(), PlatformCatalog.Load());
             }
             catch (Exception ex)
             {
                 Debug.LogError("[Nexus Ads] validator could not run: " + ex);
-                EditorApplication.Exit(2);
+                exit = 2;
             }
+            EditorApplication.Exit(exit);
+        }
+
+        /// <summary><see cref="RunCli"/> without the editor's exit: reads the arguments, validates, writes the report and returns the exit code.</summary>
+        internal static int Run(string[] args, AdsSettings settings, IProjectProbe probe, PlatformCatalog catalog)
+        {
+            string tabArg = Arg(args, "-adsTab"), platformArg = Arg(args, "-adsPlatform") ?? "Android", reportPath = Arg(args, "-adsReport") ?? DefaultReportPath;
+            if (!TryParseTab(tabArg, out Tab tab)) { Debug.LogError("[Nexus Ads] -adsTab Test|Release is required"); return 2; }
+            // Enum.TryParse read "-adsPlatform 1" as Ios: a number is not a platform name (#198)
+            if (!TryParseName(platformArg, out AdPlatform platform)) { Debug.LogError("[Nexus Ads] -adsPlatform Android|Ios, not '" + platformArg + "'"); return 2; }
+            if (settings == null) { Debug.LogError("[Nexus Ads] no Resources/" + AdsSettings.ResourceName + " asset"); return 2; }
+            var report = Validate(settings, tab, platform, probe, catalog);
+            WriteReport(report, reportPath);
+            Debug.Log(report.Summary() + "\n[Nexus Ads] report: " + Path.GetFullPath(reportPath));
+            return report.Passed ? 0 : 1;
         }
 
         public static void WriteReport(AdsValidationReport report, string path)
@@ -430,11 +440,14 @@ namespace Nexus.Ads.Editor
         }
 
         /// <summary>The <c>-adsTab</c> value of <see cref="RunCli"/> and <c>AndroidSetup.PrepareCli</c>: Test or Release, in any case.</summary>
-        public static bool TryParseTab(string value, out Tab tab)
+        public static bool TryParseTab(string value, out Tab tab) => TryParseName(value, out tab);
+
+        // A name of the enum in any case; Enum.TryParse also takes numbers, which no command line means.
+        private static bool TryParseName<TEnum>(string value, out TEnum result) where TEnum : struct, Enum
         {
-            foreach (Tab candidate in Enum.GetValues(typeof(Tab)))
-                if (string.Equals(value?.Trim(), candidate.ToString(), StringComparison.OrdinalIgnoreCase)) { tab = candidate; return true; }
-            tab = Tab.Test;
+            foreach (TEnum candidate in Enum.GetValues(typeof(TEnum)))
+                if (string.Equals(value?.Trim(), candidate.ToString(), StringComparison.OrdinalIgnoreCase)) { result = candidate; return true; }
+            result = default;
             return false;
         }
 
@@ -458,11 +471,17 @@ namespace Nexus.Ads.Editor
             if (report.summary.platform != BuildTarget.Android && report.summary.platform != BuildTarget.iOS) return; // ads ship on phones only
             var settings = AdsSettings.Load();
             if (settings == null) return;
-            bool development = (report.summary.options & BuildOptions.Development) != 0;
-            var platform = report.summary.platform == BuildTarget.iOS ? AdPlatform.Ios : AdPlatform.Android;
-            var result = AdsValidator.Validate(settings, development ? AdsValidator.Tab.Test : AdsValidator.Tab.Release, platform, new UnityProjectProbe(), PlatformCatalog.Load());
+            Check(report.summary.platform, report.summary.options, settings, new UnityProjectProbe(), PlatformCatalog.Load());
+        }
+
+        /// <summary>The guard's check of one phone build: the tab its options call for, the report written, a fail thrown as <see cref="BuildFailedException"/>.</summary>
+        internal static AdsValidationReport Check(BuildTarget target, BuildOptions options, AdsSettings settings, IProjectProbe probe, PlatformCatalog catalog)
+        {
+            bool development = (options & BuildOptions.Development) != 0;
+            var platform = target == BuildTarget.iOS ? AdPlatform.Ios : AdPlatform.Android;
+            var result = AdsValidator.Validate(settings, development ? AdsValidator.Tab.Test : AdsValidator.Tab.Release, platform, probe, catalog);
             AdsValidator.WriteReport(result, AdsValidator.BuildReportPath);
-            if (result.Passed) { Debug.Log(result.Summary()); return; }
+            if (result.Passed) { Debug.Log(result.Summary()); return result; }
             throw new BuildFailedException(result.Summary());
         }
     }

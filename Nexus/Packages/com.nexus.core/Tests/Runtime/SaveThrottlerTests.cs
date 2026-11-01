@@ -69,6 +69,33 @@ namespace Nexus.Tests
             throttler.OnDispose();
         }
 
+        // Flush(owner) had no test (#198): it writes that owner's save only, and the next tick does not write it again.
+        [Test]
+        public void FlushOfOneOwner_WritesItsPendingSaveOnly_AndTheNextTickDoesNotWriteItAgain()
+        {
+            var time = new TestTimeProvider();
+            var throttler = new SaveThrottler(new TestTickService(), TimeSpan.FromSeconds(2)) { TimeProvider = time };
+            try
+            {
+                int economy = 0, progression = 0;
+                throttler.TryRequestSave("economy", () => economy++);
+                throttler.TryRequestSave("economy", () => economy++); // inside the window: pending
+                throttler.TryRequestSave("progression", () => progression++);
+                throttler.TryRequestSave("progression", () => progression++);
+
+                throttler.Flush("economy");
+                Assert.AreEqual((2, 1), (economy, progression), "only the flushed owner is written");
+
+                time.Now = 3f;
+                throttler.Tick(0.016f);
+                Assert.AreEqual((2, 2), (economy, progression), "the tick writes the other owner's pending save, not the flushed one again");
+            }
+            finally
+            {
+                throttler.OnDispose();
+            }
+        }
+
         // Issue #202: a save already pending when a screen or an ad held the pause waited for the pause to end, so a crash
         // during the pause lost it with no line
         [Test]

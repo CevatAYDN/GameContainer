@@ -59,5 +59,34 @@ namespace Nexus.Tests.Runtime
 
             Assert.IsTrue(task.IsFaulted, $"status {task.Status}");
         }
+
+        // PrewarmAsync exists so that a large prewarm does not stall one frame; only its failure path had a test (#198).
+        [UnityTest]
+        public IEnumerator PrewarmAsync_CreatesAtMostInstancesPerFrameEachFrame_AndCompletesWithTheWholeCount()
+        {
+            var task = _pool.PrewarmAsync(_prefab, 5, instancesPerFrame: 2);
+            int previous = PooledInstances(), largestFrame = previous;
+
+            float deadline = Time.realtimeSinceStartup + 2f;
+            while (!task.IsCompleted && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+                int now = PooledInstances();
+                largestFrame = Mathf.Max(largestFrame, now - previous);
+                previous = now;
+            }
+
+            Assert.That((task.Status, PooledInstances(), largestFrame <= 2), Is.EqualTo((System.Threading.Tasks.TaskStatus.RanToCompletion, 5, true)),
+                $"the largest frame created {largestFrame} instances");
+        }
+
+        // The pool names its instances after the prefab and keeps them under its own root.
+        private int PooledInstances()
+        {
+            int count = 0;
+            foreach (var t in Object.FindObjectsByType<Transform>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                if (t.name == _prefab.name && t.gameObject != _prefab) count++;
+            return count;
+        }
     }
 }

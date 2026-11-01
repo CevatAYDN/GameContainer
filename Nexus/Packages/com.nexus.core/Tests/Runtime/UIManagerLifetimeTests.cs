@@ -135,6 +135,33 @@ namespace Nexus.Tests.Runtime
             AssertReleasedOnly(first);
         }
 
+        // UnregisterScreenPrefab had no test (#198): after it the screen loads through the asset provider again, not
+        // from the prefab that was registered.
+        [UnityTest]
+        public IEnumerator AnUnregisteredPrefab_IsNotUsed_AndTheScreenLoadsThroughTheProvider()
+        {
+            yield return StartManager();
+            var prefab = new GameObject("RegisteredPrefab");
+            prefab.SetActive(false); // a loose screen in the scene would look for its context
+            prefab.AddComponent<ProvidedScreen>();
+            try
+            {
+                _ui.RegisterScreenPrefab<ProvidedScreen>(prefab);
+                _ui.UnregisterScreenPrefab<ProvidedScreen>();
+
+                var open = _ui.OpenScreenAsync<ProvidedScreen>();
+                Assert.IsNotNull(_provider.Pending, "the open used the unregistered prefab instead of the provider");
+                var instance = _provider.Create();
+                yield return Open(instance, open);
+
+                Assert.IsTrue(open.Result != null && ReferenceEquals(instance, open.Result.gameObject));
+            }
+            finally
+            {
+                Object.Destroy(prefab);
+            }
+        }
+
         // The DontDestroyOnLoad canvas was never destroyed, though the comments said teardown cleaned it up. The last
         // manager to go destroys the canvas a manager created, and leaves one the scene holds.
         [UnityTest]
