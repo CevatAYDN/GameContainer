@@ -7,7 +7,7 @@ namespace Nexus.Samples.Counter
 {
     /// <summary>
     /// Context lifecycle: binds the model, services, recovery strategy and every
-    /// command (all four execution modes + async + composite). This single class is
+    /// command (the Sequential, Concurrent and Exclusive execution modes, async and composite). This single class is
     /// the "wiring" surface that demonstrates the full Nexus building-block set.
     /// </summary>
     public class CounterLifecycle : IContextLifecycle
@@ -36,7 +36,7 @@ namespace Nexus.Samples.Counter
             // SignalBus auto-resolves this when a command throws.
             builder.Bind<IRecoveryStrategy, CounterRecoveryStrategy>();
 
-            // ── Commands: all four execution modes + async ────────
+            // ── Commands: Sequential, Concurrent, Exclusive + async ────────
             // Sequential (default) — existing increment.
             builder.BindCommand<CounterSignal, CounterIncrementCommand>();
 
