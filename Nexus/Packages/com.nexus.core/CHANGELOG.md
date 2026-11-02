@@ -18,6 +18,14 @@ everything under Unreleased is in the repository but not yet in a tagged package
   - The new "Canonical Async" section shows a command awaiting `Awaitable.WaitForSecondsAsync` with the token Nexus passes.
   - It lists the `Awaitable` methods for frames, time and threads, and says that Nexus's pause does not stop an `Awaitable`.
   - The README line now says no adapter is needed and points to the section.
+- **`Select` and `CombineLatest` derive a read-only property from other properties** (issue #269).
+  - A value computed from properties ("the buy button is on while the balance covers the price") took one hand-written handler per source in every mediator.
+  - `source.Select(selector)` and `first.CombineLatest(second[, third], combiner)` return a `DerivedProperty<T>`. It recomputes on each change of a source and notifies only when its result changes.
+  - They extend `IReadOnlyObservableProperty<T>`, so they also work on the read-only balances and levels of #231 and on `SecureObservableInt`, `SecureObservableLong` and `SecureObservableBigDouble`.
+  - `Dispose` detaches it from every source; a mediator's new `TrackObservable(DerivedProperty<T>, handler)` overload disposes it on unbind.
+  - A selector that throws on a change leaves the value as it was, and the source reports the failure as it does any observer's (#189). One that throws at creation leaves no handler on the sources.
+  - `Where` is not provided (the owner's decision): a property holds a value, and a filter has no clear initial value.
+  - Harness: `ObservableOperatorsSuite` OP1–OP6, and GCA11: 5000 changes reaching a `Select` and a `CombineLatest` property allocate 0 B. OP6 fails without the unbind disposal.
 
 ### Fixed
 - **The 0.6.0 migration notes left out four interface changes and one behaviour change** (issue #266).

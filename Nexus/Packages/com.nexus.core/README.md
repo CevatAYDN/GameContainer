@@ -76,7 +76,8 @@ that throws is handled the same way (the economy and progression services keep a
 and `RecordingSignalBus` delivers in the bus's order.
 
 **Models and views**: `ObservableProperty<T>` (its read side `IReadOnlyObservableProperty<T>` for state a service alone
-sets) and `ObservableList<T>`; `SecureObservableInt`,
+sets) and `ObservableList<T>`; `Select` and `CombineLatest` (two or three sources) derive a read-only `DerivedProperty<T>`
+from such properties, which a mediator's `TrackObservable` disposes on unbind; `SecureObservableInt`,
 `SecureObservableLong`, `SecureObservableFloat`, `SecureObservableString` and
 `SecureObservableBigDouble` (memory obfuscation with a tamper canary); `IReactiveModel`; `View` and `Mediator<TView>` bound by
 `[Mediator(typeof(...))]` with pooled mediators and automatic unsubscribe on unbind; `ScreenView`
@@ -217,6 +218,7 @@ refused consent, a policy block) reach a release player's log once per cause (`c
 | Warmed DI resolution | A cached resolve 0 B/op on host in the pinned comparison runs (`after-reset-android-006` and `generated-android-002`, `host-results.json`; [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md)), a measurement, not a check run on every commit; a resolved `LazyInjection<T>` read 0 B (stress 12) |
 | Typed two-signal synchronous composite | Value payloads and pooled commands; 0 B per completion after warmup (EditMode `TypedComposite_SteadyStateHasNoManagedAllocation`) |
 | `ObservableProperty<T>` value change, `ObservableList<T>` add, remove and clear, with subscribers | 0 B after the first subscription (GCA2, stress 17 and 17b) |
+| A change reaching a `Select` and a `CombineLatest` property, each with a handler | 0 B after their creation (GCA11); a selector that builds a string or boxes allocates by itself |
 | `TickService` dispatch | 0 B per frame, running and paused (GCA3; stress 20, 10k frames × 300 tickables) |
 | `AdService.Tick` with an `ITickService` bound: a frame with no cooldown running, a frame inside the interstitial cooldown, the frame it ends | 0 B (GCA9, with a `ReadyChanged` handler that counts) |
 | `ScreenStack` back-button poll in a frame without a press | 0 B (GCA10: 5000 polls of the back chain with a fake input service) |

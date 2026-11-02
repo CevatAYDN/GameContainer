@@ -189,6 +189,29 @@ pre-build check then stops the build unless `NEXUS_VALIDATION_WARN_ONLY` is set.
 
 ---
 
+## 🥇 Canonical Derived State
+
+**Derive a value from properties with `Select` / `CombineLatest` and track it in the mediator — NOT with one hand-written handler per source.**
+
+```csharp
+public sealed class ShopMediator : Mediator<ShopView>
+{
+    [Inject] private IEconomyService _economy;
+    [Inject] private IShopModel _shop;
+
+    protected override void OnBind()
+    {
+        var canBuy = _economy.GetObservableBalance("coins").CombineLatest(_shop.Price, (coins, price) => coins >= price);
+        View.SetBuyEnabled(canBuy.Value);
+        TrackObservable(canBuy, (_, can) => View.SetBuyEnabled(can)); // disposed with the mediator on unbind
+    }
+}
+```
+
+A `DerivedProperty<T>` recomputes on each change of a source and notifies only when its result changes. Until it is disposed the sources keep it alive, so one created outside a mediator is disposed by its owner. A change reaching it allocates nothing after creation unless the selector does (issue #269).
+
+---
+
 ## 🥇 Canonical Signal Definition
 
 **Use `public struct` — never `class`.**

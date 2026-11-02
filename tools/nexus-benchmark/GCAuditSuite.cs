@@ -39,6 +39,7 @@ namespace NexusBench
             failures += AssertPass("GCA8. SaveThrottler_Tick_IdleAndDue_ZeroGC", TestSaveThrottlerTickZeroGC);
             failures += AssertPass("GCA9. AdService_Tick_IdleCoolingAndEnd_ZeroGC", TestAdServiceTickZeroGC);
             failures += AssertPass("GCA10. BackChain_PollWithoutAPress_FakeInput_ZeroGC", TestBackChainPollWithoutAPressZeroGC);
+            failures += AssertPass("GCA11. DerivedProperty_SelectAndCombineLatest_PropagateAChange_ZeroGC", TestDerivedPropertyPropagationZeroGC);
 
             if (failures == 0)
                 Console.WriteLine("\n[GCAudit] ALL ZERO-GC AUDIT TESTS PASSED ✓");
@@ -176,6 +177,35 @@ namespace NexusBench
                 return false;
             }
             return notifications == 5001;
+        }
+
+        // A change reaching a Select and a CombineLatest property, each with a handler, after their creation (#269)
+        [MethodImpl(MethodImplOptions.NoInlining)]
+        private static bool TestDerivedPropertyPropagationZeroGC()
+        {
+            var coins = new ObservableProperty<int>(0);
+            var price = new ObservableProperty<int>(100);
+            using var doubled = coins.Select(c => c * 2);
+            using var canBuy = coins.CombineLatest(price, (c, p) => c >= p);
+            int heard = 0;
+            doubled.OnChanged((_, _) => heard++);
+            canBuy.OnChanged((_, _) => heard++);
+
+            coins.Value = 1; // warmup: both handler snapshots built
+
+            long allocBefore = GC.GetAllocatedBytesForCurrentThread();
+            for (int i = 2; i < 5002; i++)
+            {
+                coins.Value = i;
+            }
+            long allocated = GC.GetAllocatedBytesForCurrentThread() - allocBefore;
+            if (allocated > 0)
+            {
+                Console.WriteLine($"      Allocated {allocated} bytes during 5000 changes propagated to two derived properties");
+                return false;
+            }
+            // doubled changes on every write; canBuy turns true once (at 100)
+            return heard == 5001 + 1 && doubled.Value == 10002 && canBuy.Value;
         }
 
         private class DummyTickable : ITickable

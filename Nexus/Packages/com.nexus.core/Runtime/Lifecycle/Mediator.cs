@@ -100,6 +100,20 @@ namespace Nexus.Core
         }
 
         /// <summary>
+        /// Subscribes to a property derived with <c>Select</c> or <c>CombineLatest</c> and disposes it on unbind, so it stops
+        /// following its sources with the mediator (issue #269).
+        /// </summary>
+        protected IDisposable TrackObservable<T>(DerivedProperty<T> property, Action<T, T> handler)
+        {
+            if (property == null) throw new ArgumentNullException(nameof(property));
+            if (handler == null) throw new ArgumentNullException(nameof(handler));
+            property.OnChanged(handler);
+            var sub = new ObservableSubscription<T>(property.RemoveOnChanged, handler, owned: property);
+            _subscriptions.Add(sub);
+            return sub;
+        }
+
+        /// <summary>
         /// Overloads for SecureObservable types so Mediator consumers don't have to manually
         /// subscribe/unsubscribe and risk leaking listeners. Each overload wraps the
         /// SecureObservable's OnChanged/RemoveOnChanged pair and tracks the subscription
@@ -165,14 +179,16 @@ namespace Nexus.Core
         {
             private Action<Action<T, T>> _unsubscribe;
             private Action<T, T> _handler;
+            private IDisposable _owned; // a derived property the mediator created and ends with the subscription
 
             public bool IsActive => _unsubscribe != null;
             public CancellationToken Lifetime => CancellationToken.None;
 
-            public ObservableSubscription(Action<Action<T, T>> unsubscribe, Action<T, T> handler)
+            public ObservableSubscription(Action<Action<T, T>> unsubscribe, Action<T, T> handler, IDisposable owned = null)
             {
                 _unsubscribe = unsubscribe;
                 _handler = handler;
+                _owned = owned;
             }
 
             public void Dispose()
@@ -183,6 +199,9 @@ namespace Nexus.Core
                     _unsubscribe = null;
                     _handler = null;
                 }
+                var owned = _owned;
+                _owned = null;
+                owned?.Dispose();
             }
         }
 
