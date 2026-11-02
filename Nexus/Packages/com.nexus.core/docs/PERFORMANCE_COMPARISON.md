@@ -107,9 +107,9 @@ cut its own by 3.9× (3.9 → 1.0 µs). VContainer's injector constructs the gra
 generated call per type; Nexus's factory resolves each constructor parameter through the
 container's full resolve path (lookup, lifetime, cycle bookkeeping), which is where the
 remaining 2.2× came from on this run. #111 (`d3b0e56`) then resolved a transient constructor
-parameter without the binding lookup; on the later gate run VContainer still builds the graph
-1.56× faster (1.61 vs 1.04 µs, `target-generated-android-007`), its generated injector being
-one call per type, and no further lever is planned before v0.6.0 (`docs/RELEASE_GATES.md`,
+parameter without the binding lookup; on the 0.6.0 gate run VContainer still builds the graph
+1.73× faster (1.71 vs 0.99 µs, `rc-060-generated-b`; 1.56× in `target-generated-android-007`), its
+generated injector being one call per type, and no further lever is planned (`docs/RELEASE_GATES.md`,
 gate 10). Cached resolution stays ahead in both configurations: 4.0× / 3.9× VContainer and
 5.8× Reflex (reflection / generated).
 
