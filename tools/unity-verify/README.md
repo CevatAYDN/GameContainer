@@ -163,6 +163,15 @@ have the same application id, so installing one replaces the other: before a pro
 `adb shell dumpsys package <application id> | grep lastUpdateTime` with the APK's time and look for a
 `[Probe]` line after the launch.
 
+The same development player holds `Assets/Scripts/Verify/ServicesProbe.cs`, the phone check of the share sheet
+(issue #134), local notifications (#160) and the debug menu (#270), which runs only when adb starts the player with
+`--es nexusProbe services`, so a plain launch is unchanged. Through a context bound as a game binds it, it opens the
+share sheet for a text and then for a file (press `KEYCODE_BACK` after each), logs the notification permission,
+schedules a notification 20 s ahead with the data `probe-data`, and logs `TakeOpenedWith` after each resume and each
+time the debug menu opens or closes (`adb shell input keyevent --longpress KEYCODE_GRAVE`; a plain key event releases
+at once and can be missed). Grant or revoke the permission first with `adb shell pm grant|revoke <application id>
+android.permission.POST_NOTIFICATIONS`, then read `adb shell dumpsys notification --noredact` and tap the notification.
+
 `NexusVerify.NexusVerifyBuild.BuildAndroidStackProbe` builds the development player with the define
 `NEXUS_STACK_PROBE` (`Nexus/builds/android-il2cpp-stackprobe.apk`), which compiles
 `Assets/Scripts/Verify/StackProbe.cs`, the phone check of the screen stack (issue #76, ADR-0003 verification
