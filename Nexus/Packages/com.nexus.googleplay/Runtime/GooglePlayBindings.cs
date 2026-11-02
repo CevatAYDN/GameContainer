@@ -6,13 +6,16 @@ using UnityEngine;
 #if NEXUS_PLAY_REVIEW
 using Nexus.GooglePlay.Review;
 #endif
+#if NEXUS_PLAY_APPUPDATE
+using Nexus.GooglePlay.AppUpdate;
+#endif
 
 [assembly: InternalsVisibleTo("com.nexus.googleplay.tests")]
 
 namespace Nexus.GooglePlay
 {
     /// <summary>
-    /// Binds the Google Play services in one call (#272). An Android player gets the Play service of each Google plugin package
+    /// Binds <see cref="IReviewService"/> and <see cref="IAppUpdateService"/> in one call (#272, #273). An Android player gets the Play service of each Google plugin package
     /// the project has, and for one it lacks the core's unavailable service, with an error at start that names the package; the
     /// editor gets this package's mocks. The choice is made here because the plugin defines (<c>NEXUS_PLAY_*</c>) exist only
     /// inside this assembly. Like Google's plugins, the assembly exists in Android players and the editor only, so a game that
@@ -26,6 +29,7 @@ namespace Nexus.GooglePlay
         internal static void Bind(IContextBuilder builder, bool player, bool withPlugins)
         {
             BindReview(builder, player, withPlugins);
+            BindAppUpdate(builder, player, withPlugins);
         }
 
         private static void BindReview(IContextBuilder builder, bool player, bool withPlugins)
@@ -44,6 +48,24 @@ namespace Nexus.GooglePlay
 #endif
             Missing("com.google.play.review", "IReviewService shows no rating sheet");
             builder.BindService<IReviewService, UnavailableReviewService>();
+        }
+
+        private static void BindAppUpdate(IContextBuilder builder, bool player, bool withPlugins)
+        {
+            if (!player)
+            {
+                builder.BindService<IAppUpdateService, MockAppUpdateService>();
+                return;
+            }
+#if NEXUS_PLAY_APPUPDATE
+            if (withPlugins)
+            {
+                builder.BindService<IAppUpdateService, PlayAppUpdateService>();
+                return;
+            }
+#endif
+            Missing("com.google.play.appupdate", "IAppUpdateService finds no update");
+            builder.BindService<IAppUpdateService, UnavailableAppUpdateService>();
         }
 
         private static void Missing(string package, string consequence) =>

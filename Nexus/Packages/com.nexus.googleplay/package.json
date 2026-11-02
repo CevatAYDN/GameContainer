@@ -2,13 +2,13 @@
   "name": "com.nexus.googleplay",
   "version": "0.1.0",
   "displayName": "Nexus Google Play",
-  "description": "Google Play's in-app review behind Nexus's IReviewService, with a mock for the editor. The Play service compiles only while Google's plugin package is installed; the assembly is limited to Android and the editor, as Google's are.",
+  "description": "Google Play's in-app review and in-app update behind Nexus's IReviewService and IAppUpdateService, with mocks for the editor. Each Play service compiles only while its Google plugin package is installed; the assembly is limited to Android and the editor, as Google's are.",
   "unity": "6000.6",
   "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.googleplay/README.md",
   "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
   "dependencies": {
     "com.nexus.core": "0.6.0"
   },
-  "keywords": [ "nexus", "google-play", "review", "android" ],
+  "keywords": [ "nexus", "google-play", "review", "in-app-update", "android" ],
   "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" }
 }

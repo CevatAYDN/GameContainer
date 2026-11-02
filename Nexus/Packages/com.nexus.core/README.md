@@ -164,6 +164,7 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 | `ShareService` | `Share` | Android's share sheet for a text (`ShareText`) or a file (`ShareFile`, through the package's `NexusShare.androidlib` provider, from the app's files and cache folders); returns whether the sheet opened; the editor logs, other platforms warn in every build (#134) |
 | `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause (`IsPaused`, `HoldPause`); a paused service still ticks its `IUnpausableTickable`s |
 | `UIManager` | `UI` | Typed uGUI `ScreenView` stack over the seven `UILayer` layers (`Background`, `HUD`, `Screen`, `Popup`, `Modal`, `Overlay`, `System`) with async open/close |
+| `UnavailableAppUpdateService` | `AppUpdate` | The `IAppUpdateService` of a build without a store: a check answers `AppUpdateAvailability.StoreUnavailable`, a start `AppUpdateOutcome.Unavailable`, and the first call says so in every build's log. Google Play's in-app update is in the `com.nexus.googleplay` package (#273) |
 | `UnavailableReviewService` | `Review` | The `IReviewService` of a build without a store: `RequestReviewAsync` returns `ReviewOutcome.Unavailable`, and the first request says so in every build's log. Google Play's in-app review is in the `com.nexus.googleplay` package (#272) |
 
 Localization: a game supplies its tables with

@@ -7,6 +7,7 @@
         "com.nexus.core.testing",
         "Google.Play.Common",
         "Google.Play.Review",
+        "Google.Play.AppUpdate",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],
@@ -28,6 +29,11 @@
             "name": "com.google.play.review",
             "expression": "1.8.3",
             "define": "NEXUS_PLAY_REVIEW"
+        },
+        {
+            "name": "com.google.play.appupdate",
+            "expression": "1.8.3",
+            "define": "NEXUS_PLAY_APPUPDATE"
         }
     ],
     "noEngineReferences": false

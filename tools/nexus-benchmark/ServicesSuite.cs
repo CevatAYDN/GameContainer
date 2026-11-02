@@ -178,6 +178,7 @@ namespace NexusBench
                 RunIap();
                 RunShare();
                 RunReview();
+                RunAppUpdate();
                 RunZeroGc();
             }
             catch (Exception ex)
@@ -1063,6 +1064,30 @@ namespace NexusBench
                     first == ReviewOutcome.Unavailable && second == ReviewOutcome.Unavailable
                         && logger.Messages.Count == 1 && logger.Messages[0].Contains("No store review provider"),
                     $"first={first} second={second} log=[{string.Join(" | ", logger.Messages)}]");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        private static void RunAppUpdate()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            try
+            {
+                var logger = new SvcLoggerRecorder();
+                ctx.Context.Container.BindInstance<ILoggerService>(logger);
+                ctx.Context.Container.Bind<IAppUpdateService, UnavailableAppUpdateService>(isSingleton: true);
+                var update = ctx.Context.Resolve<IAppUpdateService>();
+
+                var check = update.CheckAsync(default).GetAwaiter().GetResult();
+                var start = update.StartUpdateAsync(AppUpdateFlow.Immediate, default).GetAwaiter().GetResult();
+                var complete = update.CompleteUpdateAsync(default).GetAwaiter().GetResult();
+                Check("AU1. UnavailableAppUpdate_FindsNoStore_AndWarnsOnce",
+                    check.Availability == AppUpdateAvailability.StoreUnavailable && start == AppUpdateOutcome.Unavailable && !complete
+                        && logger.Messages.Count == 1 && logger.Messages[0].Contains("No store update provider"),
+                    $"check={check.Availability} start={start} complete={complete} log=[{string.Join(" | ", logger.Messages)}]");
             }
             finally
             {
