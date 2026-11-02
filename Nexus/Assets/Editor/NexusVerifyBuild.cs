@@ -21,7 +21,7 @@ namespace NexusVerify
     public static class NexusVerifyBuild
     {
         private static void Build(string targetName, BuildTargetGroup group, BuildTarget target, ScriptingImplementation backend,
-            BuildOptions buildOptions = BuildOptions.None, ManagedStrippingLevel? stripping = null, string[] defines = null)
+            BuildOptions buildOptions = BuildOptions.None, ManagedStrippingLevel? stripping = null, string[] defines = null, bool minify = false)
         {
             // Restore the pre-existing backend when the batch finishes (a stripping build still leaves
             // its previous level written explicitly; see the finally block). NamedBuildTarget is the
@@ -42,7 +42,9 @@ namespace NexusVerify
             var previousTarget = EditorUserBuildSettings.activeBuildTarget;
             var previousGroup = BuildPipeline.GetBuildTargetGroup(previousTarget);
             var previousStripping = PlayerSettings.GetManagedStrippingLevel(namedTarget);
+            bool previousMinify = PlayerSettings.Android.minifyDebug;
             PlayerSettings.SetScriptingBackend(namedTarget, backend);
+            if (minify) PlayerSettings.Android.minifyDebug = true;
             if (stripping.HasValue) PlayerSettings.SetManagedStrippingLevel(namedTarget, stripping.Value);
             try
             {
@@ -82,6 +84,7 @@ namespace NexusVerify
                 PlayerSettings.SetScriptingBackend(namedTarget, previous);
                 // No API unsets the level: after a stripping build, ProjectSettings.asset holds the previous level explicitly.
                 if (stripping.HasValue) PlayerSettings.SetManagedStrippingLevel(namedTarget, previousStripping);
+                PlayerSettings.Android.minifyDebug = previousMinify;
                 // The build saved the settings with its backend; without this a failed build exits with it on disk (issue #102).
                 AssetDatabase.SaveAssets();
                 if (EditorUserBuildSettings.activeBuildTarget != previousTarget)
@@ -143,10 +146,17 @@ namespace NexusVerify
             Build("android-il2cpp", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP);
         }
 
-        /// <summary>Android, IL2CPP, development build: holds Assets/Scripts/Verify/DeviceProbe.cs (phone checks for #77, #84 and #110).</summary>
+        /// <summary>
+        /// Android, IL2CPP, development build: holds Assets/Scripts/Verify/DeviceProbe.cs (phone checks for #77, #84 and #110)
+        /// and ServicesProbe.cs (#134, #160, #270; tools/unity-verify/services-probe.ps1). With -nexusMinify, R8 shrinks its
+        /// Java code (the project builds with minify off), as builds/android-il2cpp-dev-minify.apk: the phone check of the
+        /// packages' Android keep rules (#134's provider).
+        /// </summary>
         public static void BuildAndroidIL2CPPDevelopment()
         {
-            Build("android-il2cpp-dev.apk", BuildTargetGroup.Android, BuildTarget.Android, ScriptingImplementation.IL2CPP, BuildOptions.Development);
+            bool minify = Array.IndexOf(Environment.GetCommandLineArgs(), "-nexusMinify") >= 0;
+            Build(minify ? "android-il2cpp-dev-minify.apk" : "android-il2cpp-dev.apk", BuildTargetGroup.Android, BuildTarget.Android,
+                ScriptingImplementation.IL2CPP, BuildOptions.Development, minify: minify);
         }
 
         /// <summary>

@@ -187,6 +187,13 @@ flags are restored afterwards. The evidence goes to `Nexus/artifacts/<RunName>/`
 `probe-<run>.txt`, `logcat-<run>.txt` and the notification record or screen dump for each launch); exit 0 passed,
 1 failed, 2 could not run.
 
+The project builds with minify off, so R8 never runs on the packages' Android libraries there. With `-nexusMinify`,
+`BuildAndroidIL2CPPDevelopment` builds the development player with R8 (`Nexus/builds/android-il2cpp-dev-minify.apk`,
+the setting restored afterwards): R8's `configuration.txt`, `seeds.txt` and `usage.txt` under
+`Nexus/Library/Bee/Android/Prj/IL2CPP/Gradle/launcher/build/outputs/mapping/debug/` show the keep rules it took, what
+they kept and what it removed, and `services-probe.ps1 -Apk Nexus/builds/android-il2cpp-dev-minify.apk` checks the
+player (#134's `NexusFileProvider` through the file share).
+
 `NexusVerify.NexusVerifyBuild.BuildAndroidStackProbe` builds the development player with the define
 `NEXUS_STACK_PROBE` (`Nexus/builds/android-il2cpp-stackprobe.apk`), which compiles
 `Assets/Scripts/Verify/StackProbe.cs`, the phone check of the screen stack (issue #76, ADR-0003 verification

@@ -231,10 +231,11 @@ try {
     }
     else {
         $bound = Launch 'services-menu'
-        Write-Host 'THREE FINGERS: touch the screen with three fingers to open the menu (120 s)'
-        $opened = WaitFor 'menu open=True theme=True buttons=2 touches=[3-9]' 120
-        Write-Host 'THREE FINGERS: touch the screen with three fingers again to close the menu (120 s)'
-        $closed = $opened -and (WaitFor 'menu open=False theme=True buttons=0 touches=[3-9]' 120)
+        # One window for both: the person at the phone cannot see this script's prompts.
+        Write-Host 'THREE FINGERS: open the menu with three fingers, lift them, close it with three fingers (300 s)'
+        $deadline = (Get-Date).AddSeconds(300)
+        $opened = WaitFor 'menu open=True theme=True buttons=2 touches=[3-9]' 300
+        $closed = WaitFor 'menu open=False theme=True buttons=0 touches=[3-9]' ([math]::Max(1, ($deadline - (Get-Date)).TotalSeconds))
         $result = [ordered]@{ run = 'three-fingers'; bound = $bound; opened = $opened; closed = $closed }
         Finish 'three-fingers' $result ($bound -and $opened -and $closed)
     }
