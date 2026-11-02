@@ -55,7 +55,7 @@ function TopActivity { return (@(Adb @('shell', 'dumpsys', 'activity', 'activiti
 function GameOnTop { return (TopActivity) -match [regex]::Escape("$Package/") }
 function Pid { return ((Adb @('shell', 'pidof', $Package)) -join '').Trim() }
 function Key([string]$code) { Adb @('shell', 'input', 'keyevent', $code) | Out-Null }
-# adb's plain key event releases at once and was missed at 2 of 8 presses (likely press and release in one frame).
+# adb's plain key event releases at once and was missed at 1 of 12 presses (likely press and release in one frame).
 function HeldBackquote { Adb @('shell', 'input', 'keyevent', '--longpress', 'KEYCODE_GRAVE') | Out-Null }
 function OwnNotification { # the dumpsys block of this app's notification records
     $dump = (Adb @('shell', 'dumpsys', 'notification', '--noredact')) -join "`n"

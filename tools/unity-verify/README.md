@@ -172,7 +172,7 @@ seven launches, each of which must pass:
 - `no-permission` and `permission` (`POST_NOTIFICATIONS` revoked, then granted): the share sheet for a text and then a
   file (each must cover the game; Back closes it), the shared file read by adb's shell through the `content://` URI the
   probe grants it, a notification scheduled 20 s ahead, the debug menu opened and closed with a held Backquote key
-  (adb's plain key event releases at once and was missed at 2 of 8 presses, likely press and release in one frame),
+  (adb's plain key event releases at once and was missed at 1 of 12 presses, likely press and release in one frame),
   then HOME and a wait of up to 90 s, since Android posts an inexact alarm late. Without the permission nothing may be
   posted; with it a tap on the notification must bring the game back with `TakeOpenedWith` returning `probe-data` and
   remove it.
