@@ -48,9 +48,14 @@ namespace Nexus.Core.Services
                 using (var file = new AndroidJavaObject("java.io.File", path))
                 using (var provider = new AndroidJavaClass("androidx.core.content.FileProvider"))
                 using (var uri = provider.CallStatic<AndroidJavaObject>("getUriForFile", activity, authority, file))
+                using (var clipData = new AndroidJavaClass("android.content.ClipData"))
+                using (var clip = clipData.CallStatic<AndroidJavaObject>("newRawUri", "", uri))
                 {
                     using (intent.Call<AndroidJavaObject>("putExtra", "android.intent.extra.STREAM", uri)) { }
                     using (intent.Call<AndroidJavaObject>("addFlags", 1)) { } // FLAG_GRANT_READ_URI_PERMISSION
+                    // createChooser passes the grant on to the share sheet, which reads the file for its preview, only
+                    // through ClipData; without it the sheet logs "Permission Denial: opening provider" (#274)
+                    intent.Call("setClipData", clip);
                 }
             });
 #else

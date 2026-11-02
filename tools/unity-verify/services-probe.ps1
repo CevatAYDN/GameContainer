@@ -9,8 +9,9 @@ param(
 # development player that NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopment builds; its ServicesProbe runs
 # only when the player starts with the intent extra nexusProbe. Launches, each of which must pass:
 # - no-permission, permission: the share sheet for a text, then a file (each must cover the game; Back closes it),
-#   the shared file read by a second process (adb's shell, through the URI the probe grants it), a notification
-#   scheduled 20 s ahead, the debug menu opened and closed with a held Backquote key, then HOME and a wait. Without
+#   the file sheet holding the URI grant and no permission denial from it reading the file it previews (#274), the
+#   shared file read by a second process (adb's shell, through the URI the probe grants it), a notification scheduled
+#   20 s ahead, the debug menu opened and closed with a held Backquote key, then HOME and a wait. Without
 #   the permission nothing may be posted; with it the notification must be posted, and a tap on it must bring the game
 #   back with TakeOpenedWith = probe-data and remove it.
 # - cold: the notification is scheduled, the process is killed in the background (force-stop would cancel the alarm),
@@ -26,6 +27,7 @@ $ErrorActionPreference = 'Stop'
 trap { Write-Host "Services probe COULD NOT RUN: $_"; exit 2 }
 $Text = 'Scheduled 20 s ahead'   # ServicesProbe's notification text
 $FileText = 'Nexus probe file'   # and its shared file's
+$SheetDenial = 'Permission Denial: opening provider com\.nexus\.share\.NexusFileProvider'   # the sheet without the grant (#274)
 $Permission = 'android.permission.POST_NOTIFICATIONS'
 if ($RunName -notmatch '^[a-zA-Z0-9_-]+$') { throw 'RunName must be a simple folder name.' }
 $evidence = Join-Path ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))) ('Nexus/artifacts/' + $RunName)
@@ -52,6 +54,13 @@ function WaitFor([string]$pattern, [int]$seconds) {
 }
 function Has([string]$pattern) { return @($seen | Where-Object { $_ -match $pattern }).Count -gt 0 }
 function TopActivity { return (@(Adb @('shell', 'dumpsys', 'activity', 'activities') | Where-Object { $_ -match 'topResumedActivity=' })[0]).Trim() }
+# The packages that hold a read grant on a Nexus provider URI while the sheet is open, the sheet's own among them (#274).
+function ProviderGrants {
+    $lines = @(Adb @('shell', 'dumpsys', 'activity', 'permissions'))
+    for ($i = 0; $i -lt $lines.Count - 1; $i++) {
+        if ($lines[$i] -match 'UriPermission\{\S+ content://\S+\.nexusfileprovider/' -and $lines[$i + 1] -match 'targetPkg=(\S+)') { $Matches[1] }
+    }
+}
 function GameOnTop { return (TopActivity) -match [regex]::Escape("$Package/") }
 function Pid { return ((Adb @('shell', 'pidof', $Package)) -join '').Trim() }
 function Key([string]$code) { Adb @('shell', 'input', 'keyevent', $code) | Out-Null }
@@ -133,10 +142,19 @@ try {
             $name = if ($allowed) { 'permission' } else { 'no-permission' }
             SetPermission $allowed $false
             $bound = Launch 'services'
-            $sheets = @()
+            $sheets = @(); $sheetPackage = ''; $grants = @()
             foreach ($share in @('share text opened', 'share file opened')) {
-                if (WaitFor $share 60) { Start-Sleep -Seconds 2; $sheets += TopActivity; Key 'KEYCODE_BACK' }
+                if (WaitFor $share 60) {
+                    Start-Sleep -Seconds 2
+                    $top = TopActivity; $sheets += $top
+                    if ($share -eq 'share file opened') { $sheetPackage = $top -replace '.* u\d+ ([^/ ]+)/.*', '$1'; $grants = @(ProviderGrants) }
+                    Key 'KEYCODE_BACK'
+                }
             }
+            Set-Content -LiteralPath (Join-Path $evidence "provider-grants-$name.txt") -Value $grants
+            # read now: the buffer would drop a denial logged while the sheet was open before Finish dumps it
+            $denials = @(Adb @('logcat', '-d', '-v', 'time') | Where-Object { $_ -match $SheetDenial })
+            Set-Content -LiteralPath (Join-Path $evidence "sheet-denials-$name.txt") -Value $denials
             $uri = if (WaitFor 'share file uri=content://' 10) { (@($seen | Where-Object { $_ -match 'share file uri=(\S+)' })[0] -replace '.*share file uri=(\S+).*', '$1') } else { '' }
             $read = if ($uri) { (Adb @('shell', 'content', 'read', '--uri', $uri)) -join "`n" } else { '' }
             $read | Set-Content -LiteralPath (Join-Path $evidence "file-read-$name.txt")
@@ -151,12 +169,14 @@ try {
                 shareText = Has 'share text opened=True'; shareFile = Has 'share file opened=True'
                 sheetsCoveredTheGame = $sheets.Count -eq 2 -and @($sheets | Where-Object { $_ -match [regex]::Escape("$Package/") }).Count -eq 0
                 sheets = $sheets
+                sheetHoldsTheGrant = [bool]$sheetPackage -and $grants -contains $sheetPackage; sheetDenials = $denials.Count
                 fileReadByShell = $read.Trim() -eq $FileText
                 permission = Has "notification permission=$(if ($allowed) { 'Allowed' } else { 'NeedsPermission' })"
                 scheduled = $scheduled; posted = $record -match [regex]::Escape($Text); postedLateSeconds = LateSeconds $record
                 menu = $menuOpened -and $menuClosed
             }
-            $passed = $bound -and $result.shareText -and $result.shareFile -and $result.sheetsCoveredTheGame -and $result.fileReadByShell `
+            $passed = $bound -and $result.shareText -and $result.shareFile -and $result.sheetsCoveredTheGame -and $result.sheetHoldsTheGrant -and $result.sheetDenials -eq 0 `
+                -and $result.fileReadByShell `
                 -and $result.permission -and $result.scheduled -and $result.menu
             if ($allowed) {
                 $tapped = TapNotification $name
