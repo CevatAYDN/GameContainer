@@ -135,8 +135,8 @@ build. To run the package's own tests in a game, add `"testables": ["com.nexus.c
 `Packages/manifest.json`; the clean consumer gate (`tools/nexus-consumer`, `-ValidatePerformance`)
 runs seven of its suites that way.
 
-**Not in the package** (so that no one looks for it): UniTask or Awaitable integration (the API is
-`ValueTask`); real advertising, store or analytics SDKs (adapter contracts only, and no simulated store or ad in a player, see
+**Not in the package** (so that no one looks for it): a UniTask or `Awaitable` adapter (none is needed: the entry
+points return `ValueTask` and await either inside them, [CANONICAL-PATTERNS.md](docs/CANONICAL-PATTERNS.md) "Canonical Async"); real advertising, store or analytics SDKs (adapter contracts only, and no simulated store or ad in a player, see
 [ADAPTERS.md](docs/ADAPTERS.md)); server authority for the economy and storage services.
 
 ## Services

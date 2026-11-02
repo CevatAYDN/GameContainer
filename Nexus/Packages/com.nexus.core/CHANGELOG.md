@@ -12,6 +12,13 @@ everything under Unreleased is in the repository but not yet in a tagged package
 
 ## [Unreleased]
 
+### Added
+- **CANONICAL-PATTERNS says how to await frames, time and UniTask inside Nexus's `ValueTask` entry points** (issue #271).
+  - The README listed "UniTask or Awaitable integration" as not in the package, which read as "cannot be used with them".
+  - The new "Canonical Async" section shows a command awaiting `Awaitable.WaitForSecondsAsync` with the token Nexus passes.
+  - It lists the `Awaitable` methods for frames, time and threads, and says that Nexus's pause does not stop an `Awaitable`.
+  - The README line now says no adapter is needed and points to the section.
+
 ### Fixed
 - **The 0.6.0 migration notes left out four interface changes and one behaviour change** (issue #266).
   - MIGRATION's "Interfaces with new members" left out four changes:

@@ -251,6 +251,35 @@ public class GameplayLifecycle : MonoBehaviour, IContextLifecycle
 
 ---
 
+## 🥇 Canonical Async
+
+**Nexus's asynchronous entry points return `ValueTask`; inside them, await Unity's `Awaitable` for frames and time.**
+
+`IAsyncCommand<TSignal>.ExecuteAsync`, `IContextLifecycle.OnInitializeAsync` / `OnStartAsync` and `NexusService.InitializeAsync` return `ValueTask`. An `async ValueTask` method awaits any type that has an awaiter, so it awaits an `Awaitable`, a `Task` or a UniTask the same way. The package has no UniTask or `Awaitable` adapter because none is needed (issue #271).
+
+```csharp
+public sealed class ShowRewardCommand : IAsyncCommand<RewardEarnedSignal>
+{
+    [Inject] private IRewardView _view;
+
+    public async ValueTask ExecuteAsync(RewardEarnedSignal signal, CancellationToken ct)
+    {
+        _view.Show(signal.Amount);
+        await Awaitable.WaitForSecondsAsync(1.5f, ct); // the token Nexus passes ends the wait with the context
+        _view.Hide();
+    }
+}
+```
+
+- **Frames and time:** `Awaitable.NextFrameAsync(ct)`, `Awaitable.WaitForSecondsAsync(seconds, ct)`, `Awaitable.EndOfFrameAsync(ct)`, `Awaitable.FixedUpdateAsync(ct)`; an `AsyncOperation` (a scene load) through `Awaitable.FromAsyncOperation(op, ct)`.
+- **Threads:** `await Awaitable.BackgroundThreadAsync()` moves the rest of the method to a thread-pool thread and `await Awaitable.MainThreadAsync()` back. Fire signals and touch models and views on the main thread (`FireThreadSafe` is the exception).
+- **Cancellation:** pass the `CancellationToken` Nexus hands the method. The context cancels it when it ends, so a wait left running stops instead of touching disposed objects.
+- **Nexus's pause does not stop an `Awaitable`.** `TickService.IsPaused` and `HoldPause` stop `ITickable`s, not Unity's frame or time awaiters; a wait that must hold during a pause checks `IsPaused` itself.
+- **Await a `ValueTask` once.** Do not store it and await it again, and do not call `.Result` on one that has not completed.
+- **UniTask** works the same way inside these methods (`await UniTask.Delay(..., cancellationToken: ct)`); a project that uses it adds the package itself.
+
+---
+
 ## 🥇 Canonical Service Implementation
 
 **Implement `INexusService` via the `NexusService<T>` base class — NOT by implementing the interface directly.**
