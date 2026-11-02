@@ -12,6 +12,19 @@ everything under Unreleased is in the repository but not yet in a tagged package
 
 ## [Unreleased]
 
+### Fixed
+- **The 0.6.0 migration notes left out four interface changes and one behaviour change** (issue #266).
+  - MIGRATION's "Interfaces with new members" left out four changes:
+    - `IIapService.GetOwnership` (the row named only `UnrequestedPurchase`);
+    - `IIapStoreInfoAdapter.OwnershipKnown` (#183);
+    - `INetworkModelSnapshotHandler.HasSnapshot` (#170);
+    - `ICrashReporter.SetCustomKey` and `Log` (#199).
+  - "Behaviour that changed under the same API" did not say that a netcode rollback to a tick without a snapshot now throws (#170).
+  - BREAKING_CHANGES' 0.6.0 list left out both interfaces and the rollback.
+  - Found by comparing every runtime interface at `v0.5.0` with `v0.6.0`.
+  - Two members have a default body and need no step: `IAudioRootProvider.ReleaseRoot` and `IPlayerPrefsService.TryGetString`.
+  - No known game implements any of the four interfaces outside test fakes, and the games' re-pin issues list those fakes.
+
 ## [0.6.0] - 2026-11-02
 
 Breaking changes and migration steps: `BREAKING_CHANGES.md` and `MIGRATION.md` ("Version 0.5.0 → 0.6.0").

@@ -104,10 +104,13 @@ A class of the game that implements one of these interfaces (a test fake, a wrap
 | `ILocalizationService` | `Culture`, `Format` | #72 |
 | `IContextBuilder` | `BindServiceInstance<TInterface>(instance)` | #69 |
 | `ITickService` | `HoldPause()` | #77 |
-| `IIapService` | `UnrequestedPurchase` (above) | #204 |
+| `IIapService` | `GetOwnership(productId)`, `UnrequestedPurchase` (above) | #183, #204 |
+| `IIapStoreInfoAdapter` | `OwnershipKnown` | #183 |
 | `IEconomyService` | `Spend(currencyId, amount, out refusal, reason)`, `SpendBig(currencyId, amount, out refusal, reason)` | #196 |
 | `IResolver` (so `IContext`) | `Resolve(type)`, `TryResolve(type, name = null)` | #148 |
 | `IContextBuilder` (`ITypeBinder`) | `BindFactory<T>(create, lifetime)`, `BindFactory<T>(name, create, lifetime)` | #149 |
+| `INetworkModelSnapshotHandler` | `HasSnapshot(tick)` | #170 |
+| `ICrashReporter` (`com.nexus.firebase`, which came after 0.5.0) | `SetCustomKey(key, value)`, `Log(message)` | #199 |
 
 #### Tests reference the testing kit
 
@@ -125,6 +128,10 @@ to the `references` of each test assembly definition that uses them.
   times and then aborts with `NexusRecoveryAbortException` (inner `CommandTimeoutException`), so an awaiting `FireAsync`
   caller of a sequential line with a 3 s timeout can wait about 12 s instead of getting an `OperationCanceledException` at
   the first timeout. A strategy that must not retry a timeout reads `CommandFailureContext.IsTimeout`.
+- `NetworkSignalBus.RollbackAndResimulate` to a tick that a registered model has no snapshot of (pruned, or the model was
+  registered after it) throws `InvalidOperationException` before it changes anything, where it replayed that tick's inputs over
+  the current state; `NetworkModelSnapshotHandler.Restore` throws for a missing snapshot (#170). After `PruneHistory(N)` the
+  oldest tick a rollback can reach is N + 1.
 - The editor has one top-level **Nexus** menu (#193). `Window/Nexus/Dashboard`, `Nexus/Open Dashboard` and the
   `Nexus/Create/*` items are gone: **Nexus > Open Window** (`Ctrl+Shift+N`) opens the window, `GameObject/Nexus/` creates roots,
   and **Assets > Create > Nexus** creates assets.

@@ -427,8 +427,8 @@ Features marked as beta:
 - `UICanvasSystem.UpdateLayerInteractivity` is replaced by `SetModalOpen(bool)`, `ReleaseWithoutDestroy` is removed, and `UIManager` calls `IUIAssetProvider.ReleaseWindow` for each instance (#185).
 - The `unity` field is 6000.6 (#139), and `com.nexus.core` depends on `com.unity.ugui` 2.6.0 (#138).
 - A binder generated before 0.6.0 does not compile (CS7036, #191): regenerate it.
-- New members on `IAudioService`, `IHapticService`, `ILocalizationService`, `IContextBuilder`, `ITickService`, `IIapService`, `IEconomyService` and `IResolver`: a class of the game that implements one adds them (`MIGRATION.md`, "Interfaces with new members").
-- The same API behaves differently: `EconomyService` and `BigDouble` throw for input outside their range (#196), a command that times out goes through recovery (#168), a signal fired with `FireThreadSafe` during a drain runs at the next drain (#169), a player build regenerates the binder (#193), and `BuildValidation` runs the project's `IBuildValidationRule` classes (#193).
+- New members on `IAudioService`, `IHapticService`, `ILocalizationService`, `IContextBuilder`, `ITickService`, `IIapService`, `IIapStoreInfoAdapter`, `IEconomyService`, `IResolver`, `INetworkModelSnapshotHandler` and `ICrashReporter` (`com.nexus.firebase`): a class of the game that implements one adds them (`MIGRATION.md`, "Interfaces with new members").
+- The same API behaves differently: `EconomyService` and `BigDouble` throw for input outside their range (#196), a command that times out goes through recovery (#168), a signal fired with `FireThreadSafe` during a drain runs at the next drain (#169), a player build regenerates the binder (#193), `BuildValidation` runs the project's `IBuildValidationRule` classes (#193), and a netcode rollback to a tick some model has no snapshot of throws before it changes anything (#170).
 - The editor has one **Nexus** menu, and the Dashboard, the Code Health Analyzer and the System Diagnostic are the Status tab (#193); the removed types are listed in `MIGRATION.md`, "Removed".
 
 **Migration:** See [MIGRATION.md](MIGRATION.md#version-050--060).
