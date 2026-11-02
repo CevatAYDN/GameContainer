@@ -168,6 +168,14 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 | `UnavailableNotificationService` | `Notifications` | The `INotificationService` of a build without a provider: the permission is `Unavailable`, `Schedule` returns -1, and the first call says so in every build's log; a schedule before `SetChannel` throws, as in every implementation. Unity Mobile Notifications on Android is in the `com.nexus.notifications.unity` package (#160) |
 | `UnavailableReviewService` | `Review` | The `IReviewService` of a build without a store: `RequestReviewAsync` returns `ReviewOutcome.Unavailable`, and the first request says so in every build's log. Google Play's in-app review is in the `com.nexus.googleplay` package (#272) |
 
+Development menu: `DebugMenu` (`Runtime/Debug/Menu`, issue #270), bound once in the root context with
+`builder.BindService<IDebugMenu, DebugMenu>()`, takes the game's development actions:
+`AddButton(section, label, action)` and `AddToggle(section, label, get, set)`, each returning a handle whose `Dispose`
+removes the entry. In the editor's Play Mode and in development players three fingers on the screen or the Backquote key
+(left of 1) open and close it, a UI Toolkit overlay on its own panel above the game's UI; an action that throws is logged
+and the menu stays open. In a release player it creates nothing and the same calls store nothing, so game code needs no
+`#if`. Its theme (`Runtime/Debug/Menu/Resources/NexusDebugMenu.tss`) is a `Resources` asset and ships in every build.
+
 Localization: a game supplies its tables with
 `builder.BindInstance<ILocalizationTableProvider>(JsonLocalizationTableProvider.FromResources("Localization", "en", "tr"))`
 (one flat `{"key": "text"}` file per language under `Resources/Localization/`). Binding a
@@ -260,7 +268,7 @@ frame budget or full `Context` startup, and no universal winner is claimed.
 | `Runtime/Components` | `NexusBehaviour`, `NexusBinding`, `NexusLifetimeScope` |
 | `Runtime/Services` | The services above, `ProviderFactory<TAdapter>`, storage and save throttling |
 | `Runtime/Netcode` | Network signal bus with rollback journal |
-| `Runtime/Queue`, `Runtime/Recovery`, `Runtime/Plugins`, `Runtime/Tracing`, `Runtime/Debug`, `Runtime/Data`, `Runtime/Extensions` | Hybrid queue, recovery strategies, runtime plugin system, causal tracing, debug HUD, `BigDouble`, save manager and scene helpers |
+| `Runtime/Queue`, `Runtime/Recovery`, `Runtime/Plugins`, `Runtime/Tracing`, `Runtime/Debug`, `Runtime/Data`, `Runtime/Extensions` | Hybrid queue, recovery strategies, runtime plugin system, causal tracing, debug HUD and development menu, `BigDouble`, save manager and scene helpers |
 | `Runtime/Testing` | Test harness assembly (`com.nexus.core.testing`) |
 | `Editor/Core` | `NexusWindow` host, plugin base class, styles, localization, hierarchy menus |
 | `Editor/Plugins` | The 9 plugins, one window tab each (`com.nexus.fsm` adds the State Machine tab) |

@@ -1,0 +1,51 @@
+/* The development menu (#270), imported by Resources/NexusDebugMenu.tss after Unity's default runtime theme. */
+.nexus-debug-menu {
+    position: absolute;
+    left: 0;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(20, 20, 24, 0.94);
+}
+
+.nexus-debug-menu__header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin: 8px;
+}
+
+.nexus-debug-menu__title {
+    font-size: 18px;
+    -unity-font-style: bold;
+    color: rgb(235, 235, 235);
+}
+
+.nexus-debug-menu__section {
+    margin: 12px 8px 4px 8px;
+    font-size: 14px;
+    -unity-font-style: bold;
+    color: rgb(160, 200, 255);
+}
+
+.nexus-debug-menu Button {
+    min-height: 40px;
+    margin: 2px 8px;
+    font-size: 16px;
+}
+
+.nexus-debug-menu Toggle {
+    min-height: 40px;
+    margin: 2px 8px;
+    align-items: center;
+}
+
+.nexus-debug-menu .unity-base-field__label {
+    font-size: 16px;
+    color: rgb(235, 235, 235);
+}
+
+.nexus-debug-menu .unity-toggle__checkmark {
+    width: 24px;
+    height: 24px;
+}
