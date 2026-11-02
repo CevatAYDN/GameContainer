@@ -7,6 +7,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -175,6 +176,7 @@ namespace NexusBench
                 RunUIManager();
                 RunAds();
                 RunIap();
+                RunShare();
                 RunZeroGc();
             }
             catch (Exception ex)
@@ -1009,6 +1011,39 @@ namespace NexusBench
         // =========================================================================
         // IAP — adapter-gated purchases: catalog, graceful no-adapter fallback, delegation
         // =========================================================================
+
+        // #134: the share service never claims a share it did not make, and says why in every build's log. The harness
+        // is a player that is neither Android nor the editor, so it takes the unsupported-platform path.
+        private static void RunShare()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            string missing = Path.Combine(Path.GetTempPath(), "nexus-share-missing-" + Guid.NewGuid().ToString("N") + ".json");
+            string existing = Path.GetTempFileName();
+            try
+            {
+                var logger = new SvcLoggerRecorder();
+                ctx.Context.Container.BindInstance<ILoggerService>(logger);
+                ctx.Context.Container.Bind<IShareService, ShareService>(isSingleton: true);
+                var share = ctx.Context.Resolve<IShareService>();
+
+                bool missingShared = share.ShareFile(missing, "application/json", "Telemetry");
+                Check("SH1. ShareFile_OfAMissingFile_SharesNothing_AndWarnsWithThePath",
+                    !missingShared && logger.Messages.Exists(m => m.Contains(missing)),
+                    $"shared={missingShared} log=[{string.Join(" | ", logger.Messages)}]");
+
+                logger.Messages.Clear();
+                bool textShared = share.ShareText("My score: 120", "Share");
+                bool fileShared = share.ShareFile(existing, "text/plain", "Share");
+                Check("SH2. Sharing_OnAPlatformWithoutIt_ReturnsFalse_AndWarnsForEachCall",
+                    !textShared && !fileShared && logger.Messages.Count == 2 && logger.Messages.TrueForAll(m => m.Contains("Android only")),
+                    $"text={textShared} file={fileShared} log=[{string.Join(" | ", logger.Messages)}]");
+            }
+            finally
+            {
+                File.Delete(existing);
+                ctx.Dispose();
+            }
+        }
 
         private static void RunIap()
         {

@@ -42,7 +42,7 @@ Result files are local and git-ignored, under `Nexus/artifacts/`.
 
 ## Dependencies
 
-One row per dependency (#138; the rule is in `CLAUDE.md`, Dependencies). Minimum: what the packages declare (`package.json`, asmdef `versionDefines`). Proven: the version a gate or a proof project under `Nexus/artifacts/` ran. Newest stable: from the row's source on 2026-10-31: Unity's release API (`services.api.unity.com/unity/editor/release/v1/releases`), `packages.unity.com` (a version whose `unity` field is above the editor's does not count), GitHub releases, .NET's release metadata. A row whose newest says "set by the editor" follows the editor patch (`packages-lock.json` `source: builtin`, the compiler under `Editor/Data/DotNetSdk`). `python tools/check-versions.py` reads this table; `--newest` reads the sources again.
+One row per dependency (#138; the rule is in `CLAUDE.md`, Dependencies). Minimum: what the packages declare (`package.json`, asmdef `versionDefines`). Proven: the version a gate or a proof project under `Nexus/artifacts/` ran. Newest stable: from the row's source on 2026-10-31: Unity's release API (`services.api.unity.com/unity/editor/release/v1/releases`), `packages.unity.com` (a version whose `unity` field is above the editor's does not count), GitHub releases, .NET's release metadata. A row whose newest says "set by the editor" follows the editor patch (`packages-lock.json` `source: builtin`, the compiler under `Editor/Data/DotNetSdk`, a Gradle dependency of the editor's Android libraries under `PlaybackEngines/AndroidPlayer/Source`). `python tools/check-versions.py` reads this table; `--newest` reads the sources again.
 
 | Dependency | Declared minimum | Proven | Newest stable | Decision |
 |---|---|---|---|---|
@@ -54,6 +54,7 @@ One row per dependency (#138; the rule is in `CLAUDE.md`, Dependencies). Minimum
 | `com.unity.inputsystem` | 1.20.0 (core `package.json` and asmdef) | 1.20.1 (development project, every gate on `854db10`); 1.20.0 (every gate on `17d31d0`) | 1.20.1 (2026-10-05) | |
 | `com.unity.collections` | 6.6.0 (`com.nexus.dots` asmdef) | 6.6.0, the editor's built-in package (6.5.0 on 6000.5.6f1); with the 6.6.0 expression `minimums-20261031` (`com.nexus.dots.tests` PlayMode 3 / 3) | set by the editor | |
 | `com.unity.ugui` | 2.6.0 (core and `com.nexus.ads` `package.json`) | 2.6.0, the editor's built-in package (2.5.0 on 6000.5.6f1) | set by the editor | |
+| `androidx.core:core` | 1.9.0 (core `Runtime/Services/Share/Android/NexusShare.androidlib/build.gradle`, #134) | 1.9.0 (the development project's Android IL2CPP player, `share-20261102`) | set by the editor: the version 6000.6.7f1's own `UnityFoldingFeature.androidlib` takes | A newer version raises what every game's Gradle build needs (compile SDK, Kotlin); `check-versions.py` fails when the editor's Android libraries take another |
 | `com.unity.profiling.core` | 1.0.3 (core `package.json`) | 1.0.3 (development project) | 1.0.3 (2025-10-02) | |
 | `Microsoft.CodeAnalysis.CSharp` | 4.10.0 (`SourceGenerator~`) | 4.10.0, the compiler of 6000.6.7f1 (the same as 6000.5.6f1's) | set by the editor's compiler: a generator that references a newer version does not load | |
 | `com.google.external-dependency-manager` | none | 1.2.190 (`firebase-20261027`, `firebase-20261031`, `minimums-20261031`) | 1.2.190 (2026-09-29) | |

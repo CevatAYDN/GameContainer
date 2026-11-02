@@ -1,0 +1,22 @@
+apply plugin: 'com.android.library'
+
+dependencies {
+    // The version Unity's own UnityFoldingFeature.androidlib takes in this editor (check-versions.py compares them).
+    implementation 'androidx.core:core:1.9.0'
+}
+
+android {
+    namespace "com.nexus.share"
+    compileSdk getProperty("unity.compileSdkVersion") as int
+    buildToolsVersion getProperty("unity.buildToolsVersion")
+
+    compileOptions {
+        sourceCompatibility JavaVersion.valueOf(getProperty("unity.javaCompatibilityVersion"))
+        targetCompatibility JavaVersion.valueOf(getProperty("unity.javaCompatibilityVersion"))
+    }
+
+    defaultConfig {
+        minSdk getProperty("unity.minSdkVersion") as int
+        consumerProguardFiles "proguard-rules.pro"
+    }
+}

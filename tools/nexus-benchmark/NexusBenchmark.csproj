@@ -105,6 +105,8 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Feedback/FeedbackService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Haptics/HapticService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Haptics/IHapticService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Share/IShareService.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Share/ShareService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/IInputService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/InputService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Localization/*.cs" />

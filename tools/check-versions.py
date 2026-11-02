@@ -3,7 +3,8 @@
 Usage: python tools/check-versions.py [--newest]
 Offline: every declared minimum (package.json, asmdef versionDefines) agrees with the others and with the table;
 the development project resolves what its manifest asks for; git dependencies are pinned to a commit; every
-installed-editor path names the project's editor; the source generator references the editor's Roslyn; a row
+installed-editor path names the project's editor; the source generator references the editor's Roslyn; a Gradle
+dependency of a package's .androidlib that follows the editor is the version the editor's Android libraries take; a row
 whose proven version is not the newest gives its reason. --newest also reads each dependency's newest stable
 release from its source and fails when the table's newest column differs. Exit code 0 when every check passes.
 """
@@ -21,6 +22,7 @@ PACKAGES = ROOT / "Nexus" / "Packages"
 GATES = ROOT / "docs" / "RELEASE_GATES.md"
 GENERATOR = PACKAGES / "com.nexus.core" / "SourceGenerator~" / "Nexus.SourceGenerator.csproj"
 EDITOR_ROOT = pathlib.Path(r"C:\Program Files\Unity\Hub\Editor")
+GRADLE = re.compile(r"implementation '([\w.-]+:[\w.-]+):([^']+)'")
 VERSION = re.compile(r"\d+\.\d+(?:\.\d+)?(?:[abfp]\d+|-[0-9A-Za-z.]+)?")
 EDITOR_PATH = re.compile(r"(?:Hub[\\/]+Editor[\\/]+|<Unity )(\d{4}\.\d+\.\d+[abf]\d+)")
 GITHUB = {"com.google.ads.mobile": "googleads/googleads-mobile-unity", "com.google.firebase": "firebase/firebase-unity-sdk",
@@ -74,6 +76,10 @@ def declared(problems):
             for define in json.loads(asmdef.read_text(encoding="utf-8-sig")).get("versionDefines", []):
                 if not define["name"].startswith("com.nexus."):
                     entries.append((key(define["name"]), define["expression"], asmdef.relative_to(PACKAGES).as_posix()))
+        for gradle in sorted(package.rglob("build.gradle")):  # an Android library the package ships (#134)
+            if gradle.parent.suffix == ".androidlib":
+                entries += [(artifact, version, gradle.relative_to(PACKAGES).as_posix())
+                            for artifact, version in GRADLE.findall(gradle.read_text(encoding="utf-8"))]
         for name, version, where in entries:
             seen = found.setdefault(name, (version, where))
             if seen[0] != version:
@@ -137,6 +143,16 @@ def offline(rows, problems):
         for match in EDITOR_PATH.finditer(text):
             if match.group(1) != editor:
                 problems.append(f"{path}: names the editor {match.group(1)}, the project is on {editor}")
+    # a Gradle dependency whose row follows the editor takes the version the editor's own Android libraries take (#134)
+    android = EDITOR_ROOT / editor / "Editor/Data/PlaybackEngines/AndroidPlayer/Source"
+    shipped_gradle = dict(GRADLE.findall("".join(p.read_text(encoding="utf-8") for p in android.glob("*.androidlib/build.gradle"))))
+    for name, version in minimums.items():
+        if ":" not in name or name not in rows or not rows[name]["newest"].startswith("set by the editor"):
+            continue
+        if name not in shipped_gradle:
+            problems.append(f"{name}: not checked, no Android library of {editor} at {android} takes it")
+        elif shipped_gradle[name] != version:
+            problems.append(f"{name}: the packages take {version}, {editor}'s Android libraries take {shipped_gradle[name]}")
     roslyn = EDITOR_ROOT / editor / "Editor/Data/DotNetSdk"
     compilers = list(roslyn.glob("sdk/*/Roslyn/bincore/Microsoft.CodeAnalysis.CSharp.dll")) if roslyn.exists() else []
     if not compilers:  # an unchecked rule fails rather than passes (#198)

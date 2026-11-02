@@ -161,6 +161,7 @@ bound with `builder.BindService<...>()` and receives `InitializeAsync` / `Dispos
 | `ProgressionService` | `Progression` | Level index, max unlocked level, upgrade cost formulas; levels persist to `SettingsStores.Progression` when a game binds one |
 | `ResourcesAssetLoadService` | `Assets` | Default `IAssetLoadService` over `Resources`; an Addressables adapter is described in [ADDRESSABLES_ADAPTER.md](docs/ADDRESSABLES_ADAPTER.md) |
 | `ScreenStack` | `UI/Stack` | The UI Toolkit screen history of one context over `ToolkitScreen`s, USS transitions, and the back button's chain (`IBackRouter`: the game's steps, the screens, the root behaviour); bound with `BindServiceInterfacesAndSelfTo<ScreenStack>()` ([SCREEN_STACK.md](docs/SCREEN_STACK.md)) |
+| `ShareService` | `Share` | Android's share sheet for a text (`ShareText`) or a file (`ShareFile`, through the package's `NexusShare.androidlib` provider, from the app's files and cache folders); returns whether the sheet opened; the editor logs, other platforms warn in every build (#134) |
 | `TickService` | `Tick` | Drives `ITickable` / `IFixedTickable` / `ILateTickable`, time scale, global pause (`IsPaused`, `HoldPause`); a paused service still ticks its `IUnpausableTickable`s |
 | `UIManager` | `UI` | Typed uGUI `ScreenView` stack over the seven `UILayer` layers (`Background`, `HUD`, `Screen`, `Popup`, `Modal`, `Overlay`, `System`) with async open/close |
 
