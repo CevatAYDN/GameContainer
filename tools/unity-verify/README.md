@@ -165,15 +165,26 @@ have the same application id, so installing one replaces the other: before a pro
 
 The same development player holds `Assets/Scripts/Verify/ServicesProbe.cs`, the phone check of the share sheet
 (issue #134), local notifications (#160) and the debug menu (#270), which runs only when the player starts with the
-intent extra `nexusProbe=services`, so a plain launch is unchanged. `pwsh tools/unity-verify/services-probe.ps1
--AdbSerial <serial>` installs the development APK and launches it twice, after revoking and then granting
-`POST_NOTIFICATIONS`. Each launch opens the share sheet for a text and then a file (each must cover the game; Back
-closes it), schedules a notification 20 s ahead, opens and closes the debug menu with a held Backquote key (adb's
-plain key event releases at once and was missed at 2 of 8 presses, likely press and release in one frame), presses HOME and waits up to 90 s, since Android posts
-an inexact alarm late. Without the permission nothing may be posted; with it the notification must be posted, and a
-tap on it must bring the game back with `TakeOpenedWith` returning `probe-data` and remove it. The permission is
-restored afterwards. The evidence goes to `Nexus/artifacts/<RunName>/` (`services-probe.json` with the notification's
-delay, and `probe-<run>.txt`, `notification-<run>.txt` and `logcat-<run>.txt` for each launch); exit 0 passed,
+intent extra `nexusProbe` (`services`, `services-cold`, `services-ask`, `services-menu`), so a plain launch is
+unchanged. `pwsh tools/unity-verify/services-probe.ps1 -AdbSerial <serial>` installs the development APK and makes
+seven launches, each of which must pass:
+
+- `no-permission` and `permission` (`POST_NOTIFICATIONS` revoked, then granted): the share sheet for a text and then a
+  file (each must cover the game; Back closes it), the shared file read by adb's shell through the `content://` URI the
+  probe grants it, a notification scheduled 20 s ahead, the debug menu opened and closed with a held Backquote key
+  (adb's plain key event releases at once and was missed at 2 of 8 presses, likely press and release in one frame),
+  then HOME and a wait of up to 90 s, since Android posts an inexact alarm late. Without the permission nothing may be
+  posted; with it a tap on the notification must bring the game back with `TakeOpenedWith` returning `probe-data` and
+  remove it.
+- `cold`: the notification is scheduled, the process is killed in the background (`run-as <id> kill`; force-stop would
+  cancel the alarm), and the tap must start a new process whose `TakeOpenedWith` returns `probe-data`.
+- `ask-deny`, `ask-deny-again`, `ask-after-two-denials`, `ask-allow`: `RequestPermissionAsync` after `pm clear`, with
+  Android's dialog answered by its button ids; after two refusals the request must answer `NeedsPermission` without one.
+
+`-ThreeFingers` makes only the `three-fingers` launch, attended: someone at the phone opens the debug menu with three
+fingers, lifts them, and closes it with three fingers; the menu's lines carry the touches seen. The permission and its
+flags are restored afterwards. The evidence goes to `Nexus/artifacts/<RunName>/` (`services-probe.json`, and
+`probe-<run>.txt`, `logcat-<run>.txt` and the notification record or screen dump for each launch); exit 0 passed,
 1 failed, 2 could not run.
 
 `NexusVerify.NexusVerifyBuild.BuildAndroidStackProbe` builds the development player with the define
