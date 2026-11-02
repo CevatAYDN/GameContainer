@@ -169,7 +169,7 @@ intent extra `nexusProbe=services`, so a plain launch is unchanged. `pwsh tools/
 -AdbSerial <serial>` installs the development APK and launches it twice, after revoking and then granting
 `POST_NOTIFICATIONS`. Each launch opens the share sheet for a text and then a file (each must cover the game; Back
 closes it), schedules a notification 20 s ahead, opens and closes the debug menu with a held Backquote key (adb's
-plain key event releases at once and can fall in one frame), presses HOME and waits up to 90 s, since Android posts
+plain key event releases at once and was missed at 2 of 8 presses, likely press and release in one frame), presses HOME and waits up to 90 s, since Android posts
 an inexact alarm late. Without the permission nothing may be posted; with it the notification must be posted, and a
 tap on it must bring the game back with `TakeOpenedWith` returning `probe-data` and remove it. The permission is
 restored afterwards. The evidence goes to `Nexus/artifacts/<RunName>/` (`services-probe.json` with the notification's

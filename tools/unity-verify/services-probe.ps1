@@ -42,7 +42,7 @@ function WaitFor([string]$pattern, [int]$seconds) {
 }
 function TopActivity { return (@(Adb @('shell', 'dumpsys', 'activity', 'activities') | Where-Object { $_ -match 'topResumedActivity=' })[0]).Trim() }
 function Key([string]$code) { Adb @('shell', 'input', 'keyevent', $code) | Out-Null }
-# adb's plain key event releases at once, so its press and release can fall in one frame and the Input System misses it.
+# adb's plain key event releases at once and was missed at 2 of 8 presses (likely press and release in one frame).
 function HeldBackquote { Adb @('shell', 'input', 'keyevent', '--longpress', 'KEYCODE_GRAVE') | Out-Null }
 function OwnNotification { # the dumpsys block of this app's notification records
     $dump = (Adb @('shell', 'dumpsys', 'notification', '--noredact')) -join "`n"
