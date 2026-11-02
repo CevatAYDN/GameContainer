@@ -158,14 +158,20 @@ namespace Nexus.Core
                 // comparing the existing entries only against each other (they are always
                 // consistent, precisely because of this guard) let Sequential-then-Concurrent
                 // register happily and then dispatch under mismatched ordering rules.
-                if (list.Count > 0)
+                // A Detached handler is not awaited, so it stands outside the shared mode: it joins a signal of any
+                // mode but Exclusive, and the others keep agreeing among themselves (#155).
+                if (mode == ExecutionMode.Detached && !isAsync)
                 {
-                    var existingMode = list[0].Mode;
+                    throw new InvalidOperationException($"Detached execution mode violation: {commandType.Name} for signal {signalType.Name} is a sync ICommand; only an IAsyncCommand can run detached.");
+                }
+
+                if (mode != ExecutionMode.Detached)
+                {
                     for (int i = 0; i < list.Count; i++)
                     {
-                        if (list[i].Mode != mode)
+                        if (list[i].Mode != mode && list[i].Mode != ExecutionMode.Detached)
                         {
-                            throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {existingMode}, cannot add handler with mode {mode}.");
+                            throw new InvalidOperationException($"Mixed-mode dispatch error: Signal {signalType.Name} already registered with mode {list[i].Mode}, cannot add handler with mode {mode}.");
                         }
                     }
                 }
@@ -175,11 +181,17 @@ namespace Nexus.Core
                     throw new InvalidOperationException($"Exclusive execution mode violation: Signal {signalType.Name} already has a handler registered.");
                 }
 
-                if (mode != ExecutionMode.Concurrent)
+                if (mode == ExecutionMode.Detached && list.Count > 0 && list[0].Mode == ExecutionMode.Exclusive)
+                {
+                    throw new InvalidOperationException($"Exclusive execution mode violation: Signal {signalType.Name} has an Exclusive handler, so {commandType.Name} cannot join it as Detached.");
+                }
+
+                // Concurrent and Detached handlers are unordered, so only the ordered modes need distinct priorities.
+                if (mode != ExecutionMode.Concurrent && mode != ExecutionMode.Detached)
                 {
                     foreach (var handler in list)
                     {
-                        if (handler.Priority == priority)
+                        if (handler.Mode != ExecutionMode.Detached && handler.Priority == priority)
                         {
                             throw new InvalidOperationException($"Duplicate priority {priority} for signal {signalType.Name}.");
                         }
@@ -198,7 +210,7 @@ namespace Nexus.Core
                     _hasAsyncHandler[signalType] = false;
                 }
 
-                if (mode != ExecutionMode.Concurrent)
+                if (mode != ExecutionMode.Concurrent && mode != ExecutionMode.Detached)
                 {
                     list.Sort(s_priorityDescHandlers);
                 }

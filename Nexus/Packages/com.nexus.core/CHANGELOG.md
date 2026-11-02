@@ -26,6 +26,12 @@ everything under Unreleased is in the repository but not yet in a tagged package
   - A selector that throws on a change leaves the value as it was, and the source reports the failure as it does any observer's (#189). One that throws at creation leaves no handler on the sources.
   - `Where` is not provided (the owner's decision): a property holds a value, and a filter has no clear initial value.
   - Harness: `ObservableOperatorsSuite` OP1–OP6, and GCA11: 5000 changes reaching a `Select` and a `CombineLatest` property allocate 0 B. OP6 fails without the unbind disposal.
+- **`ExecutionMode.Detached`: a command a signal starts and does not wait for** (issue #155).
+  - `FireAsync` awaited every command of a signal before its subscribers, and the context awaits `ContextStartedSignal` before it counts as started, so a network command there held up both. Wickling started its fetch from a sync command and discarded the task.
+  - `FireAsync` now starts a signal's Detached commands before the others and does not await them. They run on the context's lifetime token: a `FireAsyncWithTimeout` timeout leaves them running, the context's disposal cancels them. A failure goes through recovery and the log like an awaited command's, and the fire does not fault.
+  - A Detached command may share a signal with any other mode but `Exclusive`; the others keep one mode among themselves, and a Concurrent signal stays concurrent. Its priority does not order it. A sync `ICommand` cannot be detached, and a signal with a Detached command throws the sync/async mismatch on `Fire` (`FireAsync` only, the owner's decision).
+  - `CommandRegistry.RegisterCommand` and the pre-build `BuildValidation` apply the same rules. CANONICAL-PATTERNS says which mode fits a network call on start-up.
+  - Harness: `DetachedCommandSuite` DT1–DT7; DT2 fails when a Detached handler turns a Concurrent signal sequential, DT4 when the fire's token reaches the Detached command. EditMode: `BuildValidationTests.DetachedHandler_JoinsASequentialSignal_ButNotAsASyncCommandOrBesideExclusive`.
 
 ### Fixed
 - **The 0.6.0 migration notes left out four interface changes and one behaviour change** (issue #266).

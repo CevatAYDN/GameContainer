@@ -109,6 +109,7 @@ Handles signal registration and command execution.
   - `Concurrent`: Executes commands asynchronously via tasks.
   - `Exclusive`: Ensures only one command instance executes for the signal type.
   - `Composite`: Triggers when multiple dependent signals are satisfied.
+  - `Detached`: An async command `FireAsync` starts before the others and does not await, on the context's lifetime token; it may share a signal with any mode but `Exclusive` (#155).
 - **Cross-Context Routing**: `IContextResolver` provides clean context lookup without exposing internal global registries.
 
 ### 3. `ObservableProperty<T>`

@@ -318,13 +318,26 @@ namespace Nexus.Editor
 
                 if (handlers.Count == 0) continue;
 
-                // Mixed execution mode validation
-                var firstMode = handlers[0].Attr.Mode;
+                // Detached handlers stand outside the shared mode, as in CommandRegistry.RegisterCommand (#155): they
+                // join a signal of any mode but Exclusive, need no distinct priority, and must be async.
+                var awaited = handlers.Where(h => h.Attr.Mode != ExecutionMode.Detached).ToList();
                 foreach (var handler in handlers)
+                {
+                    if (handler.Attr.Mode == ExecutionMode.Detached
+                        && (typeof(ICommand).IsAssignableFrom(handler.CommandType) || SignalBus.ImplementsGenericInterface(handler.CommandType, typeof(ICommand<>))))
+                    {
+                        Debug.LogError($"[Nexus Error] Detached Mode Violation: Command {handler.CommandType.FullName} handles signal {signalType.FullName} as Detached but is a sync ICommand; only an IAsyncCommand can run detached.");
+                        errorCount++;
+                    }
+                }
+
+                // Mixed execution mode validation
+                var firstMode = awaited.Count > 0 ? awaited[0].Attr.Mode : ExecutionMode.Detached;
+                foreach (var handler in awaited)
                 {
                     if (handler.Attr.Mode != firstMode)
                     {
-                        Debug.LogError($"[Nexus Error] Mixed-Mode Violation: Signal {signalType.FullName} is bound to multiple execution modes (e.g. {firstMode} on {handlers[0].CommandType.Name} and {handler.Attr.Mode} on {handler.CommandType.Name}).");
+                        Debug.LogError($"[Nexus Error] Mixed-Mode Violation: Signal {signalType.FullName} is bound to multiple execution modes (e.g. {firstMode} on {awaited[0].CommandType.Name} and {handler.Attr.Mode} on {handler.CommandType.Name}).");
                         errorCount++;
                     }
                 }
@@ -340,7 +353,7 @@ namespace Nexus.Editor
                 if (firstMode != ExecutionMode.Concurrent)
                 {
                     var priorities = new HashSet<int>();
-                    foreach (var handler in handlers)
+                    foreach (var handler in awaited)
                     {
                         if (!priorities.Add(handler.Attr.Priority))
                         {
@@ -353,7 +366,7 @@ namespace Nexus.Editor
                 // Concurrent model write validation
                 if (firstMode == ExecutionMode.Concurrent)
                 {
-                    foreach (var handler in handlers)
+                    foreach (var handler in awaited)
                     {
                         ValidateConcurrentCommandInjection(handler.CommandType, ref errorCount);
                     }

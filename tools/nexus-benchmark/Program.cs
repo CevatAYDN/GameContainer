@@ -561,6 +561,7 @@ namespace NexusBench
             _failures += NewFeatureSuite.Run();
             _failures += ConstructorParameterSuite.Run();
             _failures += ObservableOperatorsSuite.Run();
+            _failures += DetachedCommandSuite.Run();
             _failures += GCAuditSuite.Run();
             _failures += TeardownLeakSuite.Run();
             _failures += ScreenStackSuite.Run();

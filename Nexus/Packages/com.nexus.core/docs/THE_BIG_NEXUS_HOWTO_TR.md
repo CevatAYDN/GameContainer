@@ -108,7 +108,7 @@ Dürüst bir soru: `button.OnClick += () => wallet.Add(10)` neden yeterli değil
    çağrı tarafını değiştirmezsiniz; sadece bir satır eklersiniz. Çağıran,
    kimlerin dinlediğini bilmek *zorunda değildir*.
 3. **Zamanlama kontrolü.** `ExecutionMode` ile komutların sırayla mı, paralel mi,
-   yoksa özel olarak mı (Exclusive) çalışacağını yönetirsiniz. Doğrudan çağrıda
+   özel olarak mı (Exclusive), yoksa beklenmeden mi (Detached) çalışacağını yönetirsiniz. Doğrudan çağrıda
    böyle bir politika katmanı yoktur.
 
 > **Ne zaman kullanmayın:** Tek bir tüketicisi olan, oyuna özgü olmayan,

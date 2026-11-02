@@ -30,11 +30,18 @@ public class UpdateScoreCommand : ICommand<ScoreChangedSignal> { ... }
 
 `builder.BindSignal<TSignal>().To<TCommand>()` (and `.ToAsync<TCommand>()`) is the same registration written as a chain: it calls `BindCommand` / `BindAsyncCommand` with the same mode and priority. Existing code may keep it; new code, the samples and these documents use `BindCommand<>`. A command that runs once uses `BindCommandOnce<>` / `BindAsyncCommandOnce<>`.
 
-**Several commands on one signal.** Every command on a signal has the same `ExecutionMode`; `Exclusive` allows one command. Under `Sequential` each command needs its own `priority` (higher runs first): binding a second command with a priority the signal already has throws `InvalidOperationException` ("Duplicate priority"). `Concurrent` commands may share a priority.
+**Several commands on one signal.** Every command on a signal has the same `ExecutionMode`, except `Detached` ones; `Exclusive` allows one command. Under `Sequential` each command needs its own `priority` (higher runs first): binding a second command with a priority the signal already has throws `InvalidOperationException` ("Duplicate priority"). `Concurrent` commands may share a priority.
 
 ```csharp
 builder.BindCommand<LevelWonSignal, GrantRewardCommand>(priority: 20); // runs first
 builder.BindCommand<LevelWonSignal, SaveProgressCommand>(priority: 10);
+```
+
+**A command that must not hold up the signal.** `FireAsync` awaits a signal's commands before its subscribers, and the context awaits `ContextStartedSignal` before it counts as started, so a network call there delays both. Bind it `ExecutionMode.Detached`: `FireAsync` starts it before the other commands and goes on without it. It runs on the context's lifetime token (a `FireAsyncWithTimeout` timeout does not cancel it, the context's disposal does), and a failure goes through recovery and the log like any command's. Only an `IAsyncCommand` can be detached; it may join a signal of any mode but `Exclusive`, and its priority does not order it.
+
+```csharp
+builder.BindCommand<ContextStartedSignal, ApplySavedSettingsCommand>();                              // awaited
+builder.BindAsyncCommand<ContextStartedSignal, FetchRemoteTuningCommand>(ExecutionMode.Detached); // not awaited
 ```
 
 **Commands are pooled.** An instance is reused. When `Execute` returns, or the task from `ExecuteAsync` completes, the pool clears the command's `[Inject]` members. A callback that arrives later (an ad or store answer passed as a delegate, an event handler) must use locals captured before `Execute` returns; awaiting the answer inside `ExecuteAsync` is safe.

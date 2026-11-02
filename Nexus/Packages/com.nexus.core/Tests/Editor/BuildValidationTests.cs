@@ -110,6 +110,38 @@ namespace Nexus.Editor.Tests
             public void Execute(MixedSignal signal) {}
         }
 
+        // --- Detached handlers (#155): beside Sequential at the same priority, a sync one, one beside Exclusive ---
+        public struct DetachedBesideSequentialSignal { }
+        [SignalHandler(typeof(DetachedBesideSequentialSignal))]
+        public class BesideSequentialCommand : ICommand<DetachedBesideSequentialSignal>
+        {
+            public void Execute(DetachedBesideSequentialSignal signal) {}
+        }
+        [SignalHandler(typeof(DetachedBesideSequentialSignal), Mode = ExecutionMode.Detached)]
+        public class BesideSequentialDetachedCommand : IAsyncCommand<DetachedBesideSequentialSignal>
+        {
+            public System.Threading.Tasks.ValueTask ExecuteAsync(DetachedBesideSequentialSignal signal, System.Threading.CancellationToken ct) => default;
+        }
+
+        public struct DetachedSyncSignal { }
+        [SignalHandler(typeof(DetachedSyncSignal), Mode = ExecutionMode.Detached)]
+        public class DetachedSyncCommand : ICommand<DetachedSyncSignal>
+        {
+            public void Execute(DetachedSyncSignal signal) {}
+        }
+
+        public struct DetachedExclusiveSignal { }
+        [SignalHandler(typeof(DetachedExclusiveSignal), Mode = ExecutionMode.Exclusive)]
+        public class ExclusiveBesideDetachedCommand : IAsyncCommand<DetachedExclusiveSignal>
+        {
+            public System.Threading.Tasks.ValueTask ExecuteAsync(DetachedExclusiveSignal signal, System.Threading.CancellationToken ct) => default;
+        }
+        [SignalHandler(typeof(DetachedExclusiveSignal), Mode = ExecutionMode.Detached)]
+        public class DetachedBesideExclusiveCommand : IAsyncCommand<DetachedExclusiveSignal>
+        {
+            public System.Threading.Tasks.ValueTask ExecuteAsync(DetachedExclusiveSignal signal, System.Threading.CancellationToken ct) => default;
+        }
+
         // --- Dummy types for Command State Leak validation ---
         public class StateLeakCommand : ICommand<MixedSignal>
         {
@@ -154,6 +186,22 @@ namespace Nexus.Editor.Tests
             // 3. Priority tie error on EqualPrioritySignal (Priority 5 on both)
             // 4. Concurrent write error on ConcurrentWriteCommand (injects writable ISomeModel)
             Assert.GreaterOrEqual(errorCount, 4, $"Expected at least 4 errors from handler validation, got {errorCount}.");
+        }
+
+        [Test]
+        public void DetachedHandler_JoinsASequentialSignal_ButNotAsASyncCommandOrBesideExclusive()
+        {
+            var errors = new List<string>();
+            BuildValidation.ErrorLogger = errors.Add;
+            var method = typeof(BuildValidation).GetMethod("ValidateHandlers", BindingFlags.NonPublic | BindingFlags.Static);
+            method.Invoke(null, new object[] { 0, 0 });
+
+            Assert.IsFalse(errors.Exists(e => e.Contains(nameof(DetachedBesideSequentialSignal))),
+                "A Detached handler beside a Sequential one at the same priority is valid: " + string.Join(" | ", errors));
+            Assert.IsTrue(errors.Exists(e => e.Contains("Detached Mode Violation") && e.Contains(nameof(DetachedSyncSignal))),
+                "A sync ICommand marked Detached must be reported.");
+            Assert.IsTrue(errors.Exists(e => e.Contains("Exclusive Mode Violation") && e.Contains(nameof(DetachedExclusiveSignal))),
+                "A Detached handler beside an Exclusive one must be reported.");
         }
 
         [Test]

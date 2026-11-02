@@ -66,24 +66,29 @@ namespace Nexus.Core
         {
             try
             {
-                ValueTask task = func();
-                if (task.IsCompleted)
-                {
-                    if (task.IsFaulted)
-                    {
-                        Exception ex = task.AsTask().Exception?.InnerException;
-                        if (ex != null && !(ex is OperationCanceledException))
-                            ReportFailure(ex, errorContext, onError);
-                    }
-                    return;
-                }
-                _ = RunAsync(task, errorContext, onError);
+                Run(func(), errorContext, onError);
             }
             catch (Exception ex)
             {
                 if (!(ex is OperationCanceledException))
                     ReportFailure(ex, $"{errorContext} (sync throw)", onError);
             }
+        }
+
+        /// <summary>Observes an already started <see cref="ValueTask"/> without awaiting it; a failure is reported like the overload above.</summary>
+        public static void Run(ValueTask task, string errorContext, Action<Exception> onError = null)
+        {
+            if (task.IsCompleted)
+            {
+                if (task.IsFaulted)
+                {
+                    Exception ex = task.AsTask().Exception?.InnerException;
+                    if (ex != null && !(ex is OperationCanceledException))
+                        ReportFailure(ex, errorContext, onError);
+                }
+                return;
+            }
+            _ = RunAsync(task, errorContext, onError);
         }
 
         private static async ValueTask RunAsync(ValueTask task, string errorContext, Action<Exception> onError)
@@ -1018,16 +1023,20 @@ namespace Nexus.Core
                 // Phase 1: Process commands (mutate state)
                 if (_commandRegistry.TryGetHandlers(type, out var handlers))
                 {
+                    // Detached handlers start first and are never awaited (#155); the awaited ones decide whether
+                    // the signal runs concurrently, so a Detached handler never turns a Concurrent signal sequential.
+                    int awaitedCount = 0;
+                    bool anyDetached = false;
                     bool allConcurrent = true;
-                    if (handlers.Count == 0) allConcurrent = false;
-                    else
+                    for (int __i = 0; __i < handlers.Count; __i++)
                     {
-                        for (int __i = 0; __i < handlers.Count; __i++)
-                        {
-                            if (handlers[__i].Mode != ExecutionMode.Concurrent) { allConcurrent = false; break; }
-                        }
+                        var mode = handlers[__i].Mode;
+                        if (mode == ExecutionMode.Detached) { anyDetached = true; continue; }
+                        awaitedCount++;
+                        if (mode != ExecutionMode.Concurrent) allConcurrent = false;
                     }
-                    if (handlers.Count > 0 && allConcurrent)
+                    if (anyDetached) StartDetachedCommands(handlers, signal, type);
+                    if (awaitedCount > 0 && allConcurrent)
                     {
                         // One-shot handlers are claimed atomically BEFORE any task starts so a
                         // concurrent fire can never double-execute them. Claiming first also
@@ -1037,17 +1046,20 @@ namespace Nexus.Core
                         IReadOnlyList<CommandHandlerInfo> toRun = handlers;
                         bool anyOneShot = false;
                         for (int i = 0; i < handlers.Count && !anyOneShot; i++)
-                            anyOneShot = handlers[i].IsOneShot;
+                            anyOneShot = handlers[i].IsOneShot && handlers[i].Mode != ExecutionMode.Detached;
 
-                        if (anyOneShot)
+                        if (anyOneShot || anyDetached)
                         {
                             // Build a fresh runnable list: a one-shot that a concurrent fire
                             // already claimed must be dropped, so falling back to the original
-                            // snapshot (which still contains it) would double-execute.
-                            var runnable = new List<CommandHandlerInfo>(handlers.Count);
+                            // snapshot (which still contains it) would double-execute. The
+                            // Detached handlers already started above.
+                            var runnable = new List<CommandHandlerInfo>(awaitedCount);
                             for (int i = 0; i < handlers.Count; i++)
                             {
                                 var handler = handlers[i];
+                                if (handler.Mode == ExecutionMode.Detached)
+                                    continue;
                                 if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(type, handler.CommandType))
                                     continue; // already claimed by a concurrent fire — skip
                                 runnable.Add(handler);
@@ -1115,6 +1127,8 @@ namespace Nexus.Core
                         for (int i = 0; i < handlers.Count; i++)
                         {
                             var handler = handlers[i];
+                            if (handler.Mode == ExecutionMode.Detached)
+                                continue; // started above
                             if (handler.IsOneShot)
                             {
                                 if (!_commandRegistry.TryClaimOneShot(type, handler.CommandType))
@@ -1234,6 +1248,29 @@ namespace Nexus.Core
             {
                 _commandRegistry.ReleaseOneShot(signalType, handler.CommandType);
                 throw;
+            }
+        }
+
+        /// <summary>
+        /// Starts the signal's <see cref="ExecutionMode.Detached"/> handlers without awaiting them (#155). They run on
+        /// the context's lifetime token rather than the fire's, so a <c>FireAsyncWithTimeout</c> timeout leaves them
+        /// running; the executor routes a failure through recovery, and anything that still escapes is logged.
+        /// </summary>
+        private void StartDetachedCommands<T>(IReadOnlyList<CommandHandlerInfo> handlers, T signal, Type signalType) where T : struct
+        {
+            var lifetime = _context.LifetimeToken;
+            for (int i = 0; i < handlers.Count; i++)
+            {
+                var handler = handlers[i];
+                if (handler.Mode != ExecutionMode.Detached)
+                    continue;
+                if (handler.IsOneShot && !_commandRegistry.TryClaimOneShot(signalType, handler.CommandType))
+                    continue;
+                SafeAsyncRunner.Run(
+                    handler.IsOneShot
+                        ? ExecuteClaimedOneShotAsync(handler, signal, lifetime, signalType)
+                        : _commandExecutor.ExecuteAsync(handler, signal, lifetime),
+                    $"Detached command {handler.CommandType.Name} for signal {signalType.Name}");
             }
         }
 

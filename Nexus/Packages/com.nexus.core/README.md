@@ -65,7 +65,7 @@ binds a type to a delegate that builds it; `Construct<T>()` builds an unbound ty
 
 **Signals and commands** (`SignalBus`): `struct` signals; `ICommand<T>` / `IAsyncCommand<T>`
 handlers pooled per signal; execution modes `Sequential`, `Concurrent`, `Exclusive`, `Composite`
-(fan-in of several signals); priorities; one-shot bindings; `ISignalFilter<T>` middleware by
+(fan-in of several signals), `Detached` (started by `FireAsync` and not awaited); priorities; one-shot bindings; `ISignalFilter<T>` middleware by
 `ref`; cross-context broadcast; `Fire`, `FireAsync`, `FireThreadSafe`, `FireNextFrame`,
 `FireAsyncWithTimeout`; `Subscribe<T>` for plain handlers; recovery strategies (retry, fallback,
 abort) and `CommandFailedSignal`; loading-time `Context.Prewarm<TSignal>()`. A signal reaches its commands first,

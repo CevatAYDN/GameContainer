@@ -14,7 +14,17 @@ namespace Nexus.Core
         /// <summary>Only one handler is allowed for this signal.</summary>
         Exclusive = 2,
         /// <summary>Handler waits for multiple signals (fan-in) before executing.</summary>
-        Composite = 3
+        Composite = 3,
+        /// <summary>
+        /// An async command that <c>FireAsync</c> starts before the signal's other commands and does not await
+        /// (#155): the fire, the subscriptions and, for <c>ContextStartedSignal</c>, the context start go on
+        /// without it. It runs on the context's lifetime token, so a <c>FireAsyncWithTimeout</c> timeout does
+        /// not cancel it and the context's disposal does; a failure goes through recovery and the log like an
+        /// awaited command's. It may share a signal with handlers of any other mode except
+        /// <see cref="Exclusive"/>; its priority does not order it. A sync <c>ICommand</c> cannot be detached,
+        /// and a signal with a detached command is fired with <c>FireAsync</c>, never <c>Fire</c>.
+        /// </summary>
+        Detached = 4
     }
 
     /// <summary>Marks a command class to handle a specific signal type. Supports multiple signals per command.</summary>

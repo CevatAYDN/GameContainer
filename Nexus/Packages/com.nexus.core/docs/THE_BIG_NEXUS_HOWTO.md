@@ -108,7 +108,7 @@ There are three reasons:
    change the calling side; you just add one line. The caller does *not have to*
    know who is listening.
 3. **Timing control.** With `ExecutionMode` you decide whether commands run one after another, in parallel,
-   or exclusively (Exclusive). A direct call has no
+   exclusively (Exclusive) or without being awaited (Detached). A direct call has no
    such policy layer.
 
 > **When not to use it:** communication between two tightly coupled MonoBehaviours that
