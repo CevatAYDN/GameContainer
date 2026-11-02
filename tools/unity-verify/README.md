@@ -164,13 +164,17 @@ have the same application id, so installing one replaces the other: before a pro
 `[Probe]` line after the launch.
 
 The same development player holds `Assets/Scripts/Verify/ServicesProbe.cs`, the phone check of the share sheet
-(issue #134), local notifications (#160) and the debug menu (#270), which runs only when adb starts the player with
-`--es nexusProbe services`, so a plain launch is unchanged. Through a context bound as a game binds it, it opens the
-share sheet for a text and then for a file (press `KEYCODE_BACK` after each), logs the notification permission,
-schedules a notification 20 s ahead with the data `probe-data`, and logs `TakeOpenedWith` after each resume and each
-time the debug menu opens or closes (`adb shell input keyevent --longpress KEYCODE_GRAVE`; a plain key event releases
-at once and can be missed). Grant or revoke the permission first with `adb shell pm grant|revoke <application id>
-android.permission.POST_NOTIFICATIONS`, then read `adb shell dumpsys notification --noredact` and tap the notification.
+(issue #134), local notifications (#160) and the debug menu (#270), which runs only when the player starts with the
+intent extra `nexusProbe=services`, so a plain launch is unchanged. `pwsh tools/unity-verify/services-probe.ps1
+-AdbSerial <serial>` installs the development APK and launches it twice, after revoking and then granting
+`POST_NOTIFICATIONS`. Each launch opens the share sheet for a text and then a file (each must cover the game; Back
+closes it), schedules a notification 20 s ahead, opens and closes the debug menu with a held Backquote key (adb's
+plain key event releases at once and can fall in one frame), presses HOME and waits up to 90 s, since Android posts
+an inexact alarm late. Without the permission nothing may be posted; with it the notification must be posted, and a
+tap on it must bring the game back with `TakeOpenedWith` returning `probe-data` and remove it. The permission is
+restored afterwards. The evidence goes to `Nexus/artifacts/<RunName>/` (`services-probe.json` with the notification's
+delay, and `probe-<run>.txt`, `notification-<run>.txt` and `logcat-<run>.txt` for each launch); exit 0 passed,
+1 failed, 2 could not run.
 
 `NexusVerify.NexusVerifyBuild.BuildAndroidStackProbe` builds the development player with the define
 `NEXUS_STACK_PROBE` (`Nexus/builds/android-il2cpp-stackprobe.apk`), which compiles
