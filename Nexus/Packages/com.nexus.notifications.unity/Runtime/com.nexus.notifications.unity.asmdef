@@ -1,0 +1,26 @@
+{
+    "name": "com.nexus.notifications.unity",
+    "rootNamespace": "Nexus.Notifications.Unity",
+    "references": [
+        "com.nexus.core",
+        "Unity.Notifications.Android"
+    ],
+    "includePlatforms": [
+        "Android",
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.mobile.notifications",
+            "expression": "2.5.0",
+            "define": "NEXUS_UNITY_NOTIFICATIONS"
+        }
+    ],
+    "noEngineReferences": false
+}

@@ -1,0 +1,15 @@
+{
+  "name": "com.nexus.notifications.unity",
+  "version": "0.1.0",
+  "displayName": "Nexus Unity Mobile Notifications Adapter",
+  "description": "Unity Mobile Notifications on Android behind Nexus's INotificationService: one channel, the permission to post, scheduling and cancelling, and the notification a tap opened the app with; a mock for the editor. The assembly is limited to Android and the editor, as the package's Android API is.",
+  "unity": "6000.6",
+  "documentationUrl": "https://github.com/CevatAYDN/GameContainer/blob/main/Nexus/Packages/com.nexus.notifications.unity/README.md",
+  "licenses": [ { "type": "MIT", "url": "LICENSE" } ],
+  "dependencies": {
+    "com.nexus.core": "0.6.0",
+    "com.unity.mobile.notifications": "2.5.0"
+  },
+  "keywords": [ "nexus", "notifications", "local-notifications", "android" ],
+  "author": { "name": "Cevat Aydın", "url": "https://github.com/CevatAYDN/GameContainer" }
+}

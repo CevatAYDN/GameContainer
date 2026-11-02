@@ -109,6 +109,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Share/ShareService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Review/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/AppUpdate/*.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Notifications/*.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/IInputService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Input/InputService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Localization/*.cs" />

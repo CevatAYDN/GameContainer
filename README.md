@@ -56,7 +56,7 @@ Three importable samples ship with the package: **Code-first Startup** (one comp
 |---|---|
 | `Nexus/Packages/com.nexus.core` | The package: `Runtime`, `Editor`, `Tests`, `Samples~`, `SourceGenerator~` (Roslyn binder generator source), `SourceGenerators~` (its built analyzer DLL), `docs`, `CHANGELOG.md` |
 | `Nexus/Packages/com.nexus.ads`, `com.nexus.ads.bridge.nexus`, `com.nexus.ads.levelplay` | The ad package family (engine-free core, Unity layer, editor; the bridge to `com.nexus.core`'s `AdService`; the LevelPlay provider), changelog in `com.nexus.ads/CHANGELOG.md` |
-| `Nexus/Packages/com.nexus.ads.admob`, `com.nexus.iap.unity`, `com.nexus.firebase`, `com.nexus.googleplay` | Adapter packages: Google AdMob (the ad family's provider with Google's consent form), Unity IAP 5, Firebase, Google Play's in-app review and in-app update |
+| `Nexus/Packages/com.nexus.ads.admob`, `com.nexus.iap.unity`, `com.nexus.firebase`, `com.nexus.googleplay`, `com.nexus.notifications.unity` | Adapter packages: Google AdMob (the ad family's provider with Google's consent form), Unity IAP 5, Firebase, Google Play's in-app review and in-app update, Unity Mobile Notifications |
 | `Nexus/Packages/com.nexus.fsm`, `com.nexus.dots` | Split from the core in #112 with their namespaces kept: `GameStateMachine` and the window's State Machine tab; `NativeSignalQueue<T>`/`DOTSSignalBridge<T>`, compiled only with `com.unity.collections` |
 | `Nexus/` | Unity 6000.6.7f1 development project that hosts the packages and their EditMode/PlayMode tests |
 | `tools/nexus-benchmark` | .NET host harness: compiles the runtime against Unity stubs and runs stress, fuzz, zero-allocation, lifecycle, codegen, ads-core and evidence suites; also the pre-commit hook |

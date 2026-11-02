@@ -129,11 +129,11 @@ IL2CPP compiles the C# to C++ and strips unused code, so it validates that
 ```bash
 "<Unity 6000.6.7f1>/Editor/Unity.exe" -batchmode -nographics \
   -projectPath "Nexus" \
-  -executeMethod NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPP \
+  -buildTarget Android -executeMethod NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPP \
   -logFile "tools/unity-verify/artifacts/android-il2cpp-build.log" -quit
 ```
 
-The most realistic mobile pipeline (Android + IL2CPP + stripping).
+The most realistic mobile pipeline (Android + IL2CPP + stripping). Start every Android build with `-buildTarget Android`: editor code a package compiles only under `#if UNITY_ANDROID` runs only in an editor that starts on Android. A build started on Windows switches the target inside the build call, without those assemblies, and its player lacks what they add, such as the notification permission and receiver of `com.unity.mobile.notifications` (#160, `Nexus/artifacts/notifications-20261102/`).
 
 `NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopmentStripped -nexusStripping Low|Medium|High`
 (default High) builds the development player below at that managed stripping level

@@ -103,6 +103,15 @@
         "com.unity.purchasing": "5.4.4"
       }
     },
+    "com.nexus.notifications.unity": {
+      "version": "file:com.nexus.notifications.unity",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.nexus.core": "0.6.0",
+        "com.unity.mobile.notifications": "2.5.0"
+      }
+    },
     "com.unity.burst": {
       "version": "2.0.0",
       "depth": 1,
@@ -152,6 +161,15 @@
       "source": "registry",
       "dependencies": {
         "com.unity.modules.uielements": "1.0.0"
+      },
+      "url": "https://packages.unity.com"
+    },
+    "com.unity.mobile.notifications": {
+      "version": "2.5.0",
+      "depth": 1,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.modules.androidjni": "1.0.0"
       },
       "url": "https://packages.unity.com"
     },

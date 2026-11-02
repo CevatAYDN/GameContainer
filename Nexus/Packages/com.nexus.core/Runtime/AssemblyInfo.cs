@@ -8,3 +8,5 @@ using System.Runtime.CompilerServices;
 [assembly: InternalsVisibleTo("com.nexus.core.testing")]
 // GameStateMachine moved to com.nexus.fsm (#112) and still runs its exit hook on Dispose through SafeAsyncRunner.
 [assembly: InternalsVisibleTo("com.nexus.fsm")]
+// The notification adapter keeps the argument rules of INotificationService (#160) through NotificationArguments.
+[assembly: InternalsVisibleTo("com.nexus.notifications.unity")]

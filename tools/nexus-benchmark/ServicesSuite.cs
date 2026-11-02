@@ -179,6 +179,7 @@ namespace NexusBench
                 RunShare();
                 RunReview();
                 RunAppUpdate();
+                RunNotifications();
                 RunZeroGc();
             }
             catch (Exception ex)
@@ -1088,6 +1089,37 @@ namespace NexusBench
                     check.Availability == AppUpdateAvailability.StoreUnavailable && start == AppUpdateOutcome.Unavailable && !complete
                         && logger.Messages.Count == 1 && logger.Messages[0].Contains("No store update provider"),
                     $"check={check.Availability} start={start} complete={complete} log=[{string.Join(" | ", logger.Messages)}]");
+            }
+            finally
+            {
+                ctx.Dispose();
+            }
+        }
+
+        private static void RunNotifications()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            try
+            {
+                var logger = new SvcLoggerRecorder();
+                ctx.Context.Container.BindInstance<ILoggerService>(logger);
+                ctx.Context.Container.Bind<INotificationService, UnavailableNotificationService>(isSingleton: true);
+                var notifications = ctx.Context.Resolve<INotificationService>();
+
+                bool threwBeforeChannel = false;
+                try { notifications.Schedule("Title", "Text", DateTime.Now); }
+                catch (InvalidOperationException) { threwBeforeChannel = true; }
+                Check("NT2. Schedule_BeforeSetChannel_Throws",
+                    threwBeforeChannel && logger.Messages.Count == 0, $"threw={threwBeforeChannel} log=[{string.Join(" | ", logger.Messages)}]");
+
+                notifications.SetChannel("reminders", "Reminders", "Progress reminders");
+                int id = notifications.Schedule("Title", "Text", DateTime.Now.AddMinutes(5));
+                var permission = notifications.RequestPermissionAsync(default).GetAwaiter().GetResult();
+                Check("NT1. UnavailableNotifications_ScheduleNothing_AndWarnOnce",
+                    id == -1 && permission == NotificationPermission.Unavailable && notifications.Permission == NotificationPermission.Unavailable
+                        && notifications.TakeOpenedWith() == null
+                        && logger.Messages.Count == 1 && logger.Messages[0].Contains("No notification provider"),
+                    $"id={id} permission={permission} log=[{string.Join(" | ", logger.Messages)}]");
             }
             finally
             {
