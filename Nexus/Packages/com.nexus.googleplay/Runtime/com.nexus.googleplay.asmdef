@@ -1,0 +1,27 @@
+{
+    "name": "com.nexus.googleplay",
+    "rootNamespace": "Nexus.GooglePlay",
+    "references": [
+        "com.nexus.core",
+        "Google.Play.Common",
+        "Google.Play.Review"
+    ],
+    "includePlatforms": [
+        "Android",
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.google.play.review",
+            "expression": "1.8.3",
+            "define": "NEXUS_PLAY_REVIEW"
+        }
+    ],
+    "noEngineReferences": false
+}

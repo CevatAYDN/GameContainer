@@ -86,6 +86,14 @@
         "com.nexus.core": "0.6.0"
       }
     },
+    "com.nexus.googleplay": {
+      "version": "file:com.nexus.googleplay",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.nexus.core": "0.6.0"
+      }
+    },
     "com.nexus.iap.unity": {
       "version": "file:com.nexus.iap.unity",
       "depth": 0,

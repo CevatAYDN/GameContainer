@@ -177,6 +177,7 @@ namespace NexusBench
                 RunAds();
                 RunIap();
                 RunShare();
+                RunReview();
                 RunZeroGc();
             }
             catch (Exception ex)
@@ -1041,6 +1042,30 @@ namespace NexusBench
             finally
             {
                 File.Delete(existing);
+                ctx.Dispose();
+            }
+        }
+
+        // #272: a build without a store says so once, not on every request a game makes at each level end.
+        private static void RunReview()
+        {
+            var ctx = NexusTestHarness.CreateContext();
+            try
+            {
+                var logger = new SvcLoggerRecorder();
+                ctx.Context.Container.BindInstance<ILoggerService>(logger);
+                ctx.Context.Container.Bind<IReviewService, UnavailableReviewService>(isSingleton: true);
+                var review = ctx.Context.Resolve<IReviewService>();
+
+                var first = review.RequestReviewAsync(default).GetAwaiter().GetResult();
+                var second = review.RequestReviewAsync(default).GetAwaiter().GetResult();
+                Check("RV1. UnavailableReview_AnswersUnavailable_AndWarnsOnce",
+                    first == ReviewOutcome.Unavailable && second == ReviewOutcome.Unavailable
+                        && logger.Messages.Count == 1 && logger.Messages[0].Contains("No store review provider"),
+                    $"first={first} second={second} log=[{string.Join(" | ", logger.Messages)}]");
+            }
+            finally
+            {
                 ctx.Dispose();
             }
         }

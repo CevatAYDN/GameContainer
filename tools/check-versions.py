@@ -174,6 +174,11 @@ def fetch(url):
         return json.load(response)
 
 
+def fetch_text(url):
+    with urllib.request.urlopen(urllib.request.Request(url, headers={"User-Agent": "nexus-check-versions"}), timeout=30) as response:
+        return response.read().decode("utf-8", "replace")
+
+
 def newest_of(name, row, editor):
     if row["newest"].startswith("set by the editor"):
         return None
@@ -187,6 +192,9 @@ def newest_of(name, row, editor):
         releases = fetch(f"https://api.github.com/repos/{GITHUB[name]}/releases?per_page=30")
         tags = [first_version(r["tag_name"]) for r in releases if not r["prerelease"] and not r["draft"]]
         return max((t for t in tags if t), key=order)
+    if name.startswith("com.google.play."):  # Google's Play plugins are .tgz files on its archive page, not releases (#272)
+        page = fetch_text("https://developers.google.com/unity/archive")
+        return max(re.findall(re.escape(name) + r"-(\d+\.\d+\.\d+)\.tgz", page), key=order)
     if name.startswith("com.unity."):
         data = fetch(f"https://packages.unity.com/{name}")
         minor = order(".".join(editor.split(".")[:2]))
