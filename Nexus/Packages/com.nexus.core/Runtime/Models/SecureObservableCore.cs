@@ -168,6 +168,9 @@ namespace Nexus.Core
                         {
                             pOld = _pendingOld;
                             pNew = _pendingNew;
+                            // a SecureObservable promises that no field holds the plaintext (#279)
+                            _pendingOld = default;
+                            _pendingNew = default;
                             _hasPending = false;
                         }
                         else

@@ -1347,6 +1347,21 @@ namespace NexusBench
             Console.WriteLine($"[Nexus Architecture Stress] SecureObservableInt: integrity={integrityOk}, notifications={received}");
             Report("18. SecureObservable_Write_NoTamper", integrityOk && notifyOk,
                 $"integrity={integrityOk}, notifications={received} (expected 10000)");
+
+            // #279: a value a handler wrote during the notify stayed in plain form in the observer set's pending fields
+            const BindingFlags Private = BindingFlags.NonPublic | BindingFlags.Instance;
+            var reentrant = new SecureObservableInt(0);
+            reentrant.OnChanged((o, n) => { if (n == 500) reentrant.Value = 777; });
+            reentrant.Value = 500;
+            object core = typeof(SecureObservableInt).GetField("_core", Private).GetValue(reentrant);
+            Type owner = core.GetType();
+            while (owner.GetField("_observers", Private) == null) owner = owner.BaseType;
+            object set = owner.GetField("_observers", Private).GetValue(core);
+            int pendingOld = (int)set.GetType().GetField("_pendingOld", Private).GetValue(set);
+            int pendingNew = (int)set.GetType().GetField("_pendingNew", Private).GetValue(set);
+            Report("18b. SecureObservable_ReentrantWrite_LeavesNoPlaintextInItsPendingFields",
+                reentrant.Value == 777 && pendingOld == 0 && pendingNew == 0,
+                $"value={reentrant.Value} (expected 777), pendingOld={pendingOld}, pendingNew={pendingNew} (expected 0 and 0)");
         }
 
         // ---------------------------------------------------------------------
