@@ -13,6 +13,10 @@ everything under Unreleased is in the repository but not yet in a tagged package
 ## [Unreleased]
 
 ### Added
+- **CANONICAL-PATTERNS says how a lifecycle reads a parent context's service inside `OnConfigure`** (issue #157).
+  - A value that decides a binding, such as a remote-config parameter, cannot come through `[Inject]`, which is set after the services initialize. ChipCrisis found the route on its own.
+  - The section "Canonical Context Lifecycle" now shows it: `GetComponent<Root>().Context.Parent?.TryResolve<T>()`, a default bound and logged with `NexusLog.WarnAlways` when there is no parent or no binding.
+  - The parent's services have initialized only when the parent root started before this scene loaded. A `Root` configures in `Awake` and waits for its parent only in `Start`, so in the parent's scene, or while the parent still starts, the read returns a service whose `InitializeAsync` has not run. The example checks `ParentRoot.IsInitialized`.
 - **CANONICAL-PATTERNS says how to await frames, time and UniTask inside Nexus's `ValueTask` entry points** (issue #271).
   - The README listed "UniTask or Awaitable integration" as not in the package, which read as "cannot be used with them".
   - The new "Canonical Async" section shows a command awaiting `Awaitable.WaitForSecondsAsync` with the token Nexus passes.

@@ -279,6 +279,37 @@ public class GameplayLifecycle : MonoBehaviour, IContextLifecycle
 
 **Started, pause and resume.** When the start-up has run (services, every `OnStartAsync`, the startables), the context fires `ContextStartedSignal`; a view that registered before the services were ready redraws on it. Once its context has started, `Root` forwards `OnApplicationPause` as `ApplicationPauseSignal` (`IsPaused` true on pause, false on resume); a call that arrives before the start (Android sends one) is dropped. Subscribe to it with `Subscribe`, not `SubscribeAsync`: Android may freeze the process as soon as the pause call returns, so a save must finish inside the handler. `EncryptedStorageService` does its own pause save, on the main thread and without a `Root` (issue #203). In the same way `Root` forwards `OnApplicationQuit` as `ApplicationQuitSignal` and `Application.lowMemory` as `LowMemorySignal`, synchronously and only after the start. Android and iOS normally end a backgrounded app without a quit call, so a save that must survive belongs on the pause; the quit signal covers `Application.Quit`, a closed desktop window and the editor leaving play mode. Each of these signals is fired only when something subscribes to it.
 
+**Reading a parent's service while configuring** (issue #157). A value that decides a binding, such as a remote-config parameter, cannot come through `[Inject]`: `OnConfigure` runs while the bindings are made, and the lifecycle's `[Inject]` members are set only after the services have initialized. A lifecycle on a `Root`'s GameObject, where `Root` collects it, reads the value through its context's parent instead. `Root` sets `Context` before it calls `OnConfigure`.
+
+```csharp
+public sealed class ShopLifecycle : MonoBehaviour, IContextLifecycle
+{
+    public void OnConfigure(IContextBuilder builder)
+    {
+        Root root = GetComponent<Root>();
+        // [Inject] members are still null here; a parent that has not started counts as none (below)
+        IRemoteConfigService config = root.ParentRoot != null && root.ParentRoot.IsInitialized
+            ? root.Context.Parent?.TryResolve<IRemoteConfigService>()
+            : null;
+        if (config == null)
+            NexusLog.WarnAlways("[Shop] No started parent with IRemoteConfigService; binding the default shop.");
+
+        if (config != null && config.GetBool("new_shop", false)) builder.BindService<IShopService, NewShopService>();
+        else builder.BindService<IShopService, ShopService>();
+    }
+
+    public ValueTask OnInitializeAsync(CancellationToken ct) => default;
+    public ValueTask OnStartAsync(CancellationToken ct) => default;
+    public void OnDispose() { }
+}
+```
+
+- `TryResolve` answers null in two cases: the context has no parent, or the parent does not bind the type. A scene opened in the editor without its boot scene has no parent, because `Root` found no Global Root to link to. The lifecycle then binds its default. The warning goes through `NexusLog.WarnAlways` because that default changes what runs.
+- The parent's services have run `InitializeAsync` only when the parent root finished starting before this scene loaded. That is the boot-scene flow: the game loads the next scene after the boot root started.
+  - `Root` configures its context in `Awake`, configuring its parent's context first when the parent has not configured yet.
+  - The parent's services initialize in the parent's `Start`. The child waits for `ParentRoot.IsInitialized` only in its own `Start`, after its `OnConfigure` has run.
+  - So in the parent's own scene, or in a scene loaded while the parent is still starting, `TryResolve` returns the service before its `InitializeAsync` ran: the resolve constructs it, and the parent initializes the same instance later. The `IsInitialized` check above treats such a parent as none.
+
 ---
 
 ## 🥇 Canonical Async
