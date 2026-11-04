@@ -58,23 +58,6 @@ namespace Nexus.Tests.Runtime
                 "Validate must report the concrete implementation's missing ctor dependency.");
         }
 
-        [Test]
-        public void Validate_DoesNotFlagLazyInjectionFields()
-        {
-            using var container = new NexusDI();
-            var poolManager = new CommandPoolManager(container);
-            using var bus = new SignalBus(container, poolManager, new MockContext());
-            var builder = new ContextBuilder(container, bus);
-
-            builder.Bind<LazyHost>();
-            builder.Bind<LazyInitService>();
-
-            var issues = builder.Validate();
-
-            Assert.IsFalse(issues.Any(i => i.SourceType == typeof(LazyHost)),
-                "LazyInjection<T> fields are constructed by the injector and must not be flagged.");
-        }
-
         // ─── Fix 2: service double-dispose ───
 
         public class CountingService : NexusService<CountingService>

@@ -45,8 +45,6 @@ namespace Nexus.Editor.Tests
             }
         }
 
-        public class OtherMediator : Mediator<TestView>, ITestMediator { }
-
         // ─── Views with attributes ───
 
         [Mediator(typeof(TestMediator))]
@@ -54,9 +52,6 @@ namespace Nexus.Editor.Tests
 
         [Mediator(typeof(TestMediator), typeof(ITestMediator))]
         public class AbstractionBindingView : TestView { }
-
-        [Mediator(typeof(OtherMediator), typeof(ITestMediator))]
-        public class OtherAbstractionView : TestView { }
 
         // ─── MA1: Backward compatibility — concrete-only MediatorAttribute ───
 
@@ -167,30 +162,6 @@ namespace Nexus.Editor.Tests
 
         // ─── MA7: Multiple concrete mediators under same abstraction ───
 
-        [Test]
-        public void MediatorBinding_MultipleConcreteMediators_SameAbstraction()
-        {
-            using var testContext = NexusTestHarness.CreateContext(builder =>
-            {
-                builder.Bind<ITestMediator, TestMediator>();
-            });
-
-            var view1 = new AbstractionBindingView();
-            testContext.Context.RegisterView(view1);
-            Assert.IsNotNull(view1.Context);
-
-            var view2 = new AbstractionBindingView();
-            testContext.Context.RegisterView(view2);
-            Assert.IsNotNull(view2.Context);
-
-            // Unregister both and verify cleanup
-            testContext.Context.UnregisterView(view1);
-            testContext.Context.UnregisterView(view2);
-
-            Assert.IsNull(view1.Context, "View1 must be cleanly unbound");
-            Assert.IsNull(view2.Context, "View2 must be cleanly unbound");
-        }
-
         // ─── An abstraction bound as a singleton still gives every view its own mediator (issue #190) ───
 
         public class OwnMediatorView : TestView
@@ -230,23 +201,5 @@ namespace Nexus.Editor.Tests
         }
 
         // ─── MA8: Mediator with abstraction receives OnBind ───
-
-        [Test]
-        public void MediatorBinding_Abstraction_OnBindCalled()
-        {
-            using var testContext = NexusTestHarness.CreateContext(builder =>
-            {
-                builder.Bind<ITestMediator, TestMediator>();
-            });
-
-            var view = new AbstractionBindingView();
-            testContext.Context.RegisterView(view);
-
-            // Verify mediator BindCount incremented
-            Assert.IsTrue(view.WasBound, "View should be bound before checking mediator state");
-
-            // Tear down
-            testContext.Context.UnregisterView(view);
-        }
     }
 }

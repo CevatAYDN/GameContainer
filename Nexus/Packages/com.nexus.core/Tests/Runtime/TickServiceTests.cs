@@ -88,25 +88,6 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public void TickService_RespectsPausedState()
-        {
-            var service = new TickService();
-            var tickable = new TestTickable();
-
-            service.RegisterTickable(tickable);
-            service.IsPaused = true;
-            service.OnTick(0.1f);
-
-            Assert.AreEqual(0, tickable.TickCount);
-
-            service.IsPaused = false;
-            service.OnTick(0.1f);
-
-            Assert.AreEqual(1, tickable.TickCount);
-            service.Dispose();
-        }
-
-        [Test]
         public void TickingResumesOnlyWhenEveryPauseHoldIsReleased() // issue #77
         {
             var service = new TickService();

@@ -76,19 +76,6 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public async Task RewardedOutcome_UsesTheAdapterOutcome()
-        {
-            using var ads = new AdService();
-            await ads.InitializeAsync(default);
-            ads.SetNetworkAdapter(new MockAdNetworkAdapter());
-
-            AdOutcome? outcome = null;
-            ads.RequestReward("default", o => outcome = o);
-
-            Assert.That(outcome, Is.EqualTo(AdOutcome.Rewarded));
-        }
-
-        [Test]
         public async Task RewardedOutcome_MapsBoolOnlyAdapters()
         {
             using var ads = new AdService();

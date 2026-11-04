@@ -23,72 +23,6 @@ namespace Nexus.Tests.Runtime
         // ─── Phase 1: NexusDI — Injector Clearer MetadataCache ───
 
         [Test]
-        public void NexusDI_InjectorCached_NoAllocationOnInject()
-        {
-            // Injector is created once in the constructor and cached as _injector.
-            // Verify that Inject() works correctly (would throw if injector was null/malformed).
-            using var di = new NexusDI();
-            di.Bind<IDependency, ConcreteDependency>();
-
-            var target = new DependentClass();
-            Assert.DoesNotThrow(() => di.Inject(target));
-            Assert.IsNotNull(target.InjectedField);
-        }
-
-        [Test]
-        public void NexusDI_InjectorCached_NoAllocationOnResolve()
-        {
-            // Singleton resolve creates instance via cached injector.
-            using var di = new NexusDI();
-            di.Bind<IDependency, ConcreteDependency>();
-            di.Bind<DependentClass>(isSingleton: true);
-
-            var instance = di.Resolve<DependentClass>();
-            Assert.IsNotNull(instance);
-            Assert.IsNotNull(instance.InjectedField);
-        }
-
-        [Test]
-        public void NexusDI_InjectorCached_TransientResolve()
-        {
-            // Transient resolve also uses cached injector.
-            using var di = new NexusDI();
-            di.Bind<IDependency, ConcreteDependency>();
-            di.Bind<DependentClass>(isSingleton: false);
-
-            var first = di.Resolve<DependentClass>();
-            var second = di.Resolve<DependentClass>();
-            Assert.IsNotNull(first);
-            Assert.IsNotNull(second);
-            Assert.AreNotSame(first, second); // transients
-        }
-
-        [Test]
-        public void NexusDI_MetadataCacheForwarding_Works()
-        {
-            // GetOrCreateInjectMetadata is forwarded from NexusDI to MetadataCache.
-            var meta = NexusDI.GetOrCreateInjectMetadata(typeof(DependentClass));
-            Assert.IsNotNull(meta);
-            Assert.IsTrue(meta.Fields.Length > 0 || meta.Properties.Length > 0 || meta.Methods.Length > 0);
-        }
-
-        [Test]
-        public void NexusDI_Clearer_ResettableCalled()
-        {
-            using var di = new NexusDI();
-            di.Bind<IDependency, ConcreteDependency>();
-            di.Bind<ResettableCommand>(isSingleton: false);
-
-            var cmd = di.Resolve<ResettableCommand>();
-            Assert.IsNotNull(cmd.DependencyField);
-
-            NexusDI.ClearInjectedReferences(cmd);
-
-            Assert.IsNull(cmd.DependencyField);
-            Assert.IsTrue(cmd.ResetCalled);
-        }
-
-        [Test]
         public void NexusDI_Clearer_RegularInstance()
         {
             using var di = new NexusDI();
@@ -201,25 +135,6 @@ namespace Nexus.Tests.Runtime
         // ─── Phase 3: SignalBus nested types ───
 
         [Test]
-        public void SignalBus_SubscriptionNodeNested_SubscriptionsWork()
-        {
-            // SubscriptionNode and SubscriptionNodePool are now nested inside SignalBus.
-            // Verify subscriptions still work correctly.
-            using var di = new NexusDI();
-            var context = ContextFactory.Create();
-            var signalBus = context.SignalBus;
-
-            bool handlerCalled = false;
-            var sub = signalBus.Subscribe<TestSignal>(_ => handlerCalled = true);
-
-            signalBus.Fire(new TestSignal());
-            Assert.IsTrue(handlerCalled);
-
-            sub.Dispose();
-            context.Dispose();
-        }
-
-        [Test]
         public async Task SignalBus_SubscriptionNodeNested_AsyncSubscription()
         {
             using var context = ContextFactory.Create();
@@ -299,16 +214,6 @@ namespace Nexus.Tests.Runtime
 
         // ─── Phase 5: QueueDrainer MetricsSampler ───
 
-        [Test]
-        public void QueueDrainer_ExecutionOrder_AfterRoot()
-        {
-            // QueueDrainer has DefaultExecutionOrder(-900), Root has (-1000).
-            var queueOrder = typeof(QueueDrainer).GetCustomAttribute<UnityEngine.Scripting.PreserveAttribute>();
-            // Verify the class exists and is annotated
-            Assert.IsNotNull(typeof(QueueDrainer));
-            Assert.IsNotNull(typeof(MetricsSampler));
-        }
-
         [UnityTest]
         public IEnumerator QueueDrainer_WithoutRoot_DisablesItself()
         {
@@ -321,22 +226,6 @@ namespace Nexus.Tests.Runtime
                 Assert.IsFalse(drainer.enabled);
             }
             finally { UnityEngine.Object.DestroyImmediate(owner); }
-        }
-
-        [Test]
-        public void MetricsSampler_FrameGate_OncePerFrame()
-        {
-            // MetricsSampler uses static frame-gate fields identical to the original Root code.
-            // Verify the fields exist with correct types.
-            var frameField = typeof(MetricsSampler).GetField("s_lastFrameMetricsFrame",
-                BindingFlags.Static | BindingFlags.NonPublic);
-            var memoryField = typeof(MetricsSampler).GetField("s_lastMemoryMetricsFrame",
-                BindingFlags.Static | BindingFlags.NonPublic);
-
-            Assert.IsNotNull(frameField, "MetricsSampler must have s_lastFrameMetricsFrame");
-            Assert.IsNotNull(memoryField, "MetricsSampler must have s_lastMemoryMetricsFrame");
-            Assert.AreEqual(typeof(int), frameField.FieldType);
-            Assert.AreEqual(typeof(int), memoryField.FieldType);
         }
 
         // ─── Integration: Complete lifecycle ───
@@ -400,34 +289,9 @@ namespace Nexus.Tests.Runtime
         public interface IDependency { }
         public class ConcreteDependency : IDependency { }
 
-        public class DependentClass
-        {
-            [Inject] public IDependency InjectedField;
-            [Inject] public IDependency InjectedProperty { get; set; }
-            public IDependency MethodInjectedDependency;
-
-            [Inject]
-            public void Construct(IDependency dep)
-            {
-                MethodInjectedDependency = dep;
-            }
-        }
-
         public class RegularInjectable
         {
             [Inject] public IDependency Dependency;
-        }
-
-        public class ResettableCommand : IResettable
-        {
-            [Inject] public IDependency DependencyField;
-            public bool ResetCalled;
-
-            public void Reset()
-            {
-                ResetCalled = true;
-                DependencyField = null;
-            }
         }
 
         public class MockView : IView

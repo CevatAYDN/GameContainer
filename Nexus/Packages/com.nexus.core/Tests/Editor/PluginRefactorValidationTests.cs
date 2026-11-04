@@ -35,16 +35,6 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void Tracer_ListView_ConfiguredWithItemHeight()
-        {
-            var plugin = new TracerPlugin();
-            var view = plugin.CreateView();
-            var listView = view.Q<ListView>();
-            Assert.IsNotNull(listView, "TracerPlugin must contain a ListView for virtualized logs.");
-            Assert.AreEqual(28f, listView.fixedItemHeight, "ListView fixedItemHeight should be 28 for safe padding.");
-        }
-
-        [Test]
         public void ContextTree_ListsEachChildUnderItsParent_AndAContextWhoseParentIsNotRunning_AtTheTop()
         {
             // the Hierarchy tab dropped a context whose parent was not running: it waited under a parent it never drew

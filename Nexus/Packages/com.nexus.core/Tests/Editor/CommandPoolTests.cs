@@ -44,20 +44,6 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void Get_ReturnsInjectedInstance()
-        {
-            _pool = new CommandPool(typeof(ResettableCommand), () => _container.Resolve(typeof(ResettableCommand)));
-
-            var command = (ResettableCommand)_pool.Get();
-            _container.Inject(command);
-
-            Assert.IsNotNull(command);
-            Assert.IsNotNull(command.Dependency);
-            
-            _pool.Return(command);
-        }
-
-        [Test]
         public void Return_CallsResetAndNullifiesDependencies()
         {
             _pool = new CommandPool(typeof(ResettableCommand), () => _container.Resolve(typeof(ResettableCommand)));

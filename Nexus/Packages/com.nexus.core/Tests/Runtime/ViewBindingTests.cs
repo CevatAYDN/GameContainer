@@ -172,23 +172,6 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public void RegisterView_BindsView()
-        {
-            var go = new GameObject();
-            var view = go.AddComponent<TestView>();
-
-            _context.RegisterView(view);
-
-            Assert.IsTrue(view.IsBound);
-            Assert.AreSame(_context, view.BoundContext);
-
-            _context.UnregisterView(view);
-            Assert.IsFalse(view.IsBound);
-            
-            Object.DestroyImmediate(go);
-        }
-
-        [Test]
         public void RegisterView_WithoutMediatorAttribute_StillBindsContext()
         {
             var go = new GameObject();
@@ -199,11 +182,7 @@ namespace Nexus.Tests
 
             Assert.IsTrue(view.IsBound);
             Assert.AreSame(_context, view.BoundContext);
-
-            var activeMediatorsField = typeof(ViewBinder).GetField("_activeMediators", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var activeMediators = activeMediatorsField?.GetValue(binder) as System.Collections.IDictionary;
-            Assert.IsNotNull(activeMediators);
-            Assert.IsFalse(activeMediators.Contains(view));
+            Assert.AreEqual(0, binder.ActiveMediatorCount);
 
             binder.UnregisterView(view);
             Assert.IsFalse(view.IsBound);

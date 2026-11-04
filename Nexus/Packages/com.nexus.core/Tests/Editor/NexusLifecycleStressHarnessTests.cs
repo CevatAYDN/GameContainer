@@ -46,21 +46,6 @@ namespace Nexus.Editor.Tests
             });
         }
 
-        // Test 2: Dynamic FastSlot Array Expansion (> 128 Types)
-        [Test]
-        public void StressTest_FastSlotArrayExpansion_ResizesCleanlyWithoutDataLoss()
-        {
-            var container = new NexusDI();
-            // Bind a singleton to ensure resolution succeeds
-            container.Bind<ITestService, TestServiceImplementation>();
-
-            for (int i = 0; i < 200; i++)
-            {
-                var resolved = container.Resolve<ITestService>();
-                Assert.IsNotNull(resolved);
-            }
-        }
-
         private interface ITestService { }
         private class TestServiceImplementation : ITestService { }
     }

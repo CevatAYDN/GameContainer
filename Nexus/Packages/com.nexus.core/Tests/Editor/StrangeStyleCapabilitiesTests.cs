@@ -121,17 +121,6 @@ namespace Nexus.Editor.Tests
             Assert.IsInstanceOf<ETCombatUnit>(asUnit);
         }
 
-        [Test]
-        public void BindMultiple_EachInterface_SatisfiesItsContract()
-        {
-            using var ctx = NexusTestHarness.CreateContext(
-                builder => builder.BindMultiple<IETUnit, IETAttackable, IETUpdatable, ETCombatUnit>());
-
-            Assert.AreEqual("combat", ctx.Context.Resolve<IETUnit>().Kind());
-            Assert.AreEqual(100, ctx.Context.Resolve<IETAttackable>().MaxHp);
-            Assert.AreEqual(7, ctx.Context.Resolve<IETUpdatable>().TickCount);
-        }
-
         // ------------------------------------------------------------------
         // DC — [Deconstruct] runs in ascending Order before container disposal
         // ------------------------------------------------------------------

@@ -78,14 +78,6 @@ namespace Nexus.Ads.Bridge.Tests
         [TearDown]
         public void TearDown() { _controller.Dispose(); _service.Dispose(); }
 
-        // Issue #118: every Attach created an entitlement that stayed subscribed to the store
-        [Test]
-        public void ASecondAttach_LeavesOneEntitlementSubscribedToTheStore()
-        {
-            NexusAdsBridge.Attach(_service, _factory, _controller, _simulator.Name, _store, "remove_ads");
-            Assert.AreEqual(1, _store.StoreChangedHandlers);
-        }
-
         // Issue #178: the bridge never acknowledged a receipt, so a game that checks the pending reward at start-up, as the README
         // says, paid every reward again at its next start, and the next reward replaced the receipt
         [Test]
@@ -105,9 +97,10 @@ namespace Nexus.Ads.Bridge.Tests
         }
 
         // Issue #177: revenue was forwarded once per controller, to the first service, and each Connect left its adapter subscribed
-        // to the controller: a game that rebuilt its context lost every ad_impression and kept feeding the disposed service
+        // to the controller: a game that rebuilt its context lost every ad_impression and kept feeding the disposed service.
+        // Issue #118: every Attach created an entitlement that stayed subscribed to the store
         [Test]
-        public void ASecondConnect_SendsRevenueToTheNewServiceOnly_AndDetachesTheFirstAdapter()
+        public void ASecondConnect_SendsRevenueToTheNewServiceOnly_DetachesTheFirstAdapter_AndKeepsOneEntitlementSubscribed()
         {
             var first = (NexusAdsAdapter)_factory.CreateAdapter(NexusAdsAdapter.ProviderName);
             var heardByFirst = new List<string>();

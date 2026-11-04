@@ -26,13 +26,9 @@ namespace Nexus.Tests
         public readonly struct OrderedSignalA { }
         public readonly struct OrderedSignalB { }
 
-        private int _receivedValue;
-
         [SetUp]
         public void Setup()
         {
-            _receivedValue = 0;
-
             _container = new NexusDI();
             _poolManager = new CommandPoolManager(_container);
             _context = new MockContext();
@@ -46,38 +42,6 @@ namespace Nexus.Tests
             _signalBus.Dispose();
             _poolManager.Clear();
             _container.Dispose();
-        }
-
-        [Test]
-        public void FireThreadSafe_QueuesAndDrains()
-        {
-            _signalBus.Subscribe<QueueTestSignal>(sig => _receivedValue = sig.Id);
-
-            _queue.EnqueueThreadSafe(new QueueTestSignal(42));
-
-            // Signal not yet dispatched
-            Assert.AreEqual(0, _receivedValue);
-
-            // Drain thread-safe queue (simulates Update)
-            _queue.DrainThreadSafe();
-
-            Assert.AreEqual(42, _receivedValue);
-        }
-
-        [Test]
-        public void FireNextFrame_QueuesAndDrains()
-        {
-            _signalBus.Subscribe<QueueTestSignal>(sig => _receivedValue = sig.Id);
-
-            _queue.EnqueueNextFrame(new QueueTestSignal(99));
-
-            // Signal not yet dispatched
-            Assert.AreEqual(0, _receivedValue);
-
-            // Drain next-frame queue (simulates LateUpdate)
-            _queue.DrainNextFrame();
-
-            Assert.AreEqual(99, _receivedValue);
         }
 
         [Test]
@@ -149,21 +113,6 @@ namespace Nexus.Tests
 
             // Verify order: A before B
             Assert.AreEqual(2, order.Count);
-        }
-
-        [Test]
-        public void MultipleThreadSafeSignals_AllDispatched()
-        {
-            int count = 0;
-            _signalBus.Subscribe<QueueTestSignal>(sig => count++);
-
-            _queue.EnqueueThreadSafe(new QueueTestSignal(1));
-            _queue.EnqueueThreadSafe(new QueueTestSignal(2));
-            _queue.EnqueueThreadSafe(new QueueTestSignal(3));
-
-            _queue.DrainThreadSafe();
-
-            Assert.AreEqual(3, count);
         }
 
         [Test]

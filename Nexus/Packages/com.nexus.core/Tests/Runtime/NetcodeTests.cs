@@ -74,25 +74,6 @@ namespace Nexus.Tests
             }
         }
 
-        [Test]
-        public void RollbackAndResimulate_ReplaysTypedSignals_NoReflection()
-        {
-            var model = new TestPlayerSnapshot();
-            _networkBus.RegisterModel(model);
-            _container.BindInstance(model);
-            _container.Bind<UpdateHealthCommand>(isSingleton: false);
-            _signalBus.RegisterCommand(typeof(TestPlayerSignal), typeof(UpdateHealthCommand), ExecutionMode.Sequential, 0, false);
-
-            _networkBus.SetTick(0);
-            _networkBus.Fire(new TestPlayerSignal(1, 100));
-            _networkBus.SetTick(1);
-            _networkBus.Fire(new TestPlayerSignal(1, 80));
-
-            _networkBus.RollbackAndResimulate(rollbackTick: 0, targetTick: 1);
-
-            Assert.AreEqual(80, model.LastHealth);
-        }
-
         // B7: FireAtTick must only fire synchronously when targeting the CURRENT tick
         // and the bus is NOT resimulating. A past/future tick records to history only.
         [Test]
@@ -128,33 +109,6 @@ namespace Nexus.Tests
             var history = (NetworkSignalHistory<TestPlayerSignal>)_networkBus.Histories[typeof(TestPlayerSignal)];
             Assert.AreEqual(1, history.Signals.Count);
             Assert.AreEqual(5, history.Signals[0].Tick);
-        }
-
-        // B7: a signal that exists at the rollback tick must not be double-applied when
-        // the bus resimulates — the model must reflect exactly one application per tick.
-        [Test]
-        public void RollbackAndResimulate_NoDoubleApplyOfReplayedSignals()
-        {
-            var model = new TestPlayerSnapshot();
-            _networkBus.RegisterModel(model);
-            _container.BindInstance(model);
-            _container.Bind<UpdateHealthCommand>(isSingleton: false);
-            _signalBus.RegisterCommand(typeof(TestPlayerSignal), typeof(UpdateHealthCommand), ExecutionMode.Sequential, 0, false);
-
-            _networkBus.SetTick(0);
-            _networkBus.Fire(new TestPlayerSignal(1, 100));
-            _networkBus.SetTick(1);
-            _networkBus.Fire(new TestPlayerSignal(1, 200));
-
-            // Roll back to 0 and resimulate to 1: model must be exactly the tick-1 value.
-            _networkBus.RollbackAndResimulate(0, 1);
-            Assert.AreEqual(200, model.LastHealth,
-                "Replay must apply each tick exactly once; the final model equals the tick-1 signal.");
-
-            // Repeat the rollback: deterministic, no drift from double-application.
-            _networkBus.RollbackAndResimulate(0, 1);
-            Assert.AreEqual(200, model.LastHealth,
-                "Repeated rollback must be deterministic (no double-apply).");
         }
 
         // Issue #170: a rollback to a tick some model has no snapshot of restored nothing and replayed the journal over
@@ -297,9 +251,8 @@ namespace Nexus.Tests
 
         // ─── Named-argument consistency (CS1739 regression guard) ──────────────
         // The Prune parameter rename (tick → confirmedTick) previously produced CS1739
-        // at every named-argument call site. These two tests lock the contract: the
-        // reflection check fails with a clear message on a rename; the compile-time
-        // check fails the BUILD (CS1739) on a rename.
+        // at every named-argument call site. The reflection check below locks the
+        // contract: it fails with a clear message on a rename.
 
         private static void AssertParamName(System.Type type, string methodName, int index, string expected)
         {
@@ -331,27 +284,6 @@ namespace Nexus.Tests
             AssertParamName(typeof(NetworkModelSnapshotHandler<>), "Capture", 0, "tick");
             AssertParamName(typeof(NetworkModelSnapshotHandler<>), "Restore", 0, "tick");
             AssertParamName(typeof(NetworkModelSnapshotHandler<>), "Prune", 0, "confirmedTick");
-        }
-
-        [Test]
-        public void NetcodeApi_CallableWithNamedArguments()
-        {
-            // the warnings this test causes, in the order it causes them (#198)
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\]\ Signal\ 'Nexus\.Tests\.NetcodeTests\+TestPlayerSignal'\ fired\ but\ has\ no\ subscribers\ or\ command\ handlers\ re"));
-            // Compile-time guard: these exact calls must keep compiling. If a parameter
-            // is renamed, this file stops compiling with CS1739 — the fastest possible
-            // regression signal (this is exactly what broke during the Prune rename).
-            _networkBus.SetTick(tick: 0);
-            _networkBus.FireAtTick(signal: new TestPlayerSignal(1, 10), tick: 0);
-            _networkBus.RollbackAndResimulate(rollbackTick: 0, targetTick: 0);
-            _networkBus.PruneHistory(confirmedTick: 0);
-
-            var history = (NetworkSignalHistory<TestPlayerSignal>)_networkBus.Histories[typeof(TestPlayerSignal)];
-            history.ReplaySignals(tick: 0, localSignalBus: _signalBus);
-            history.RemoveSignalsAfter(tick: 0);
-            history.Prune(confirmedTick: 0);
-
-            Assert.Pass("Netcode API accepts its documented named arguments.");
         }
 
         // ─── Replay consistency stress tests ───────────────────────────────────

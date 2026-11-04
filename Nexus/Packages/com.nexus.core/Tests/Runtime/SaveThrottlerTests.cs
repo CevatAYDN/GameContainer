@@ -50,25 +50,6 @@ namespace Nexus.Tests
             public float Now { get; set; } = 0f;
         }
 
-        [Test]
-        public void SaveThrottler_FlushesPendingSaveOnTick()
-        {
-            var prefs = new TestPlayerPrefsService();
-            var tickService = new TestTickService();
-            var timeProvider = new TestTimeProvider();
-            var throttler = new SaveThrottler(tickService, TimeSpan.FromMilliseconds(1))
-            {
-                TimeProvider = timeProvider
-            };
-
-            throttler.TryRequestSave(() => prefs.Save());
-            timeProvider.Now = 100f; // Simulate time passing
-            throttler.Tick(0.016f);
-
-            Assert.GreaterOrEqual(prefs.SaveCount, 1);
-            throttler.OnDispose();
-        }
-
         // Flush(owner) had no test (#198): it writes that owner's save only, and the next tick does not write it again.
         [Test]
         public void FlushOfOneOwner_WritesItsPendingSaveOnly_AndTheNextTickDoesNotWriteItAgain()

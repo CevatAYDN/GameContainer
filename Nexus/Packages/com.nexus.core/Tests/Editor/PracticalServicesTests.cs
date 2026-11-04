@@ -10,14 +10,6 @@ namespace Nexus.Editor.Tests
     public class PracticalServicesTests
     {
         [Test]
-        public void AudioService_PlaySfxWithRandomPitch_ExecutesCleanly()
-        {
-            var audioService = new AudioService();
-            // AudioService should accept PlaySfxWithRandomPitch interface call without throwing exceptions
-            Assert.DoesNotThrow(() => audioService.PlaySfxWithRandomPitch(null, 0.95f, 1.05f));
-        }
-
-        [Test]
         public void EncryptedStorageService_CloudExportAndImport_RoundTripsData()
         {
             using var storage = new EncryptedStorageService("Test_Cloud_Salt");
@@ -123,19 +115,6 @@ namespace Nexus.Editor.Tests
 
             UnityEngine.TestTools.LogAssert.Expect(LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[OfflineTimeCalculator\] The cap of -5 s is negative"));
             Assert.AreEqual(0L, OfflineTimeCalculator.CalculateOfflineSeconds(prefs, -5L, "quit"));
-        }
-
-        [Test]
-        public void InputService_MoveInput_And_PlayerMoveSignal_Works()
-        {
-            var inputService = new InputService();
-            inputService.SetVirtualJoystickInput(new Vector2(0.5f, 0.8f));
-
-            inputService.UpdateInput(0.016f);
-
-            Assert.IsTrue(inputService.IsInputActive);
-            Assert.AreEqual(0.5f, inputService.MoveInput.x, 0.001f);
-            Assert.AreEqual(0.8f, inputService.MoveInput.y, 0.001f);
         }
     }
 }

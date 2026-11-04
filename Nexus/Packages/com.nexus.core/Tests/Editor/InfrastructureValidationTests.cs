@@ -6,9 +6,9 @@ using Nexus.Editor;
 namespace Nexus.Editor.Tests
 {
     /// <summary>
-    /// Locks the two infrastructure checks that are not ordinary feature tests:
-    /// architecture validation and AOT binder codegen. Both run with the package's
-    /// EditMode tests.
+    /// Locks architecture validation, an infrastructure check that is not an ordinary
+    /// feature test, with the package's EditMode tests. BuildWiringTests covers the
+    /// AOT binder codegen.
     /// </summary>
     [TestFixture]
     public class InfrastructureValidationTests
@@ -32,19 +32,6 @@ namespace Nexus.Editor.Tests
                 UnityEngine.Debug.Log($"[Nexus] Architecture Validation: {BuildValidation.LastWarningCount} warning(s) reported. Review 'BuildValidation.LastResults' for details.");
             }
             Assert.IsTrue(BuildValidation.LastRunPassed, "Architecture Validation did not pass.");
-        }
-
-        [Test]
-        public void AotBinder_GeneratesCleanly()
-        {
-            // Re-running the AOT binder generator must complete without throwing and
-            // must produce the generated binder + link.xml artifacts.
-            NexusCodeGenerator.GenerateBinder();
-
-            var settings = NexusEditorSettings.GetOrCreateSettings();
-            var binderPath = Path.Combine(settings.BinderOutputPath, "NexusGeneratedBinder.g.cs");
-            Assert.IsTrue(File.Exists(binderPath),
-                $"AOT binder was not generated at expected path: {binderPath}");
         }
     }
 }

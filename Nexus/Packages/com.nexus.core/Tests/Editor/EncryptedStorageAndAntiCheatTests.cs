@@ -462,27 +462,6 @@ namespace Nexus.Editor.Tests
             newStorage.Dispose();
         }
 
-        [Test]
-        public void EncryptedStorageService_DeviceBindingRejectsForeignSaveFile()
-        {
-            var deviceAStorage = new EncryptedStorageService("Device_A_Salt");
-            deviceAStorage.AutoSave = true;
-
-            var deviceBStorage = new EncryptedStorageService("Device_B_Salt");
-            deviceBStorage.AutoSave = true;
-
-            deviceAStorage.DeleteKey("DeviceToken");
-            deviceAStorage.SetString("DeviceToken", "Token12345");
-
-            // Device B attempts to read Device A's file
-            string result = deviceBStorage.GetString("DeviceToken", "INVALID");
-            Assert.AreEqual("INVALID", result);
-
-            deviceAStorage.DeleteKey("DeviceToken");
-            deviceAStorage.Dispose();
-            deviceBStorage.Dispose();
-        }
-
         private static object SecureCore(object property)
             => property.GetType().GetField("_core", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(property);
 

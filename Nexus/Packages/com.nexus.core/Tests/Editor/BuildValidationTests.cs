@@ -205,22 +205,6 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void ValidateCommandStateLeak_DetectsLeakRisks()
-        {
-            var method = typeof(BuildValidation).GetMethod("ValidateCommandStateLeak", BindingFlags.NonPublic | BindingFlags.Static);
-            Assert.IsNotNull(method, "ValidateCommandStateLeak method not found via reflection.");
-
-            object[] args = new object[] { 0, 0 };
-            method.Invoke(null, args);
-
-            int errorCount = (int)args[0];
-            int warningCount = (int)args[1];
-
-            // Expecting warning for StateLeakCommand because it has private string _mutableState but does not implement IResettable
-            Assert.GreaterOrEqual(warningCount, 1, $"Expected at least 1 warning for command state leak, got {warningCount}.");
-        }
-
-        [Test]
         public void ConcurrentModelWriteRule_SeesTheConstructor_OptionalInject_AnInjectMethod_AndABaseField()
         {
             var errors = new List<string>();

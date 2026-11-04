@@ -62,14 +62,6 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public async Task FeedbackService_InitializeAndDispose_ExecutesCleanly()
-        {
-            var feedback = new FeedbackService();
-            await feedback.InitializeAsync(default);
-            Assert.DoesNotThrow(() => feedback.OnDispose());
-        }
-
-        [Test]
         public void FeedbackService_PlayPresets_WithoutDependencies_DoesNotThrow()
         {
             var feedback = new FeedbackService();

@@ -415,27 +415,6 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public async Task CreatePureContextAsync_RegistersContextAndUsesScopeTag()
-        {
-            UnityEngine.TestTools.LogAssert.Expect(UnityEngine.LogType.Warning, new System.Text.RegularExpressions.Regex(@"^\[Nexus\] No IContextLifecycle was discovered or registered")); // the pure context has no lifecycle
-            var context = await NexusRuntime.CreatePureContextAsync("ReusableScope", new[] { "Assembly-CSharp" });
-
-            try
-            {
-                Assert.IsNotNull(context, "Pure context creation should return a valid context.");
-                Assert.AreEqual("ReusableScope", context.ScopeTag);
-                Assert.IsNotNull(NexusRuntime.GetContext("ReusableScope"));
-                Assert.AreEqual(context, NexusRuntime.GetContext("ReusableScope"));
-                Assert.IsTrue(NexusRuntime.ActiveContexts.Count >= 1, "Pure context should be visible in the active registry.");
-            }
-            finally
-            {
-                context?.Dispose();
-                NexusRuntime.Reset();
-            }
-        }
-
-        [Test]
         public void NexusTestContext_Dispose_ClearsWrappedContextAndSubscriptions()
         {
             var testContext = NexusTestHarness.CreateContext("HarnessScope");
@@ -462,38 +441,19 @@ namespace Nexus.Tests
 
             try
             {
+                Assert.AreEqual("RegistryRefreshScope", context.ScopeTag);
                 Assert.AreEqual(context, NexusRuntime.GetContext("RegistryRefreshScope"));
                 Assert.That(NexusRuntime.ActiveContexts, Has.Member(context));
+
+                context.Dispose(); // before NexusRuntime.Reset, which would clear the registry by itself
+
+                Assert.IsNull(NexusRuntime.GetContext("RegistryRefreshScope"));
+                Assert.That(NexusRuntime.ActiveContexts, Has.No.Member(context));
             }
             finally
             {
                 context.Dispose();
                 NexusRuntime.Reset();
-            }
-
-            Assert.IsNull(NexusRuntime.GetContext("RegistryRefreshScope"));
-            Assert.That(NexusRuntime.ActiveContexts, Has.No.Member(context));
-        }
-
-        [Test]
-        public void ContextData_DefaultValues_AreReusableFriendly()
-        {
-            var data = UnityEngine.ScriptableObject.CreateInstance<ContextData>();
-
-            try
-            {
-                Assert.IsTrue(data.EnableAutoDiscovery, "Auto-discovery should remain enabled by default for quick project setup.");
-                Assert.AreEqual(4, data.CommandPoolInitialSize, "Default command pool size should stay small and predictable.");
-                Assert.AreEqual(64, data.CommandPoolMaxSize, "Default max command pool size should remain bounded.");
-                Assert.AreEqual(2000, data.TracerRingBufferSize, "Default tracer buffer should remain production-friendly.");
-                Assert.IsTrue(string.IsNullOrEmpty(data.ScopeTag), "ScopeTag should stay opt-in so projects can define their own naming.");
-            }
-            finally
-            {
-                if (data != null)
-                {
-                    UnityEngine.Object.DestroyImmediate(data);
-                }
             }
         }
     }

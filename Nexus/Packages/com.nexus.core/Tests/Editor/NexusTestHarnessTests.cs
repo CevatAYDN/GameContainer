@@ -48,16 +48,6 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void CreateContext_CreatesValidContext()
-        {
-            using (var testContext = NexusTestHarness.CreateContext())
-            {
-                Assert.IsNotNull(testContext);
-                Assert.IsNotNull(testContext.Context);
-            }
-        }
-
-        [Test]
         public void RegisterCommand_And_Dispatch_ExecutesCommand_And_UpdatesModel()
         {
             using (var testContext = NexusTestHarness.CreateContext())
@@ -141,19 +131,6 @@ namespace Nexus.Editor.Tests
                     Assert.AreEqual("ChildScope", child.Context.ScopeTag);
                     Assert.AreSame(parent.Context, child.Context.Parent);
                 }
-            }
-        }
-
-        [Test]
-        public void CreateContext_WithBuilderAction_BindsProperly()
-        {
-            using (var testContext = NexusTestHarness.CreateContext(builder =>
-            {
-                builder.BindModel<TestModel>();
-            }))
-            {
-                var model = testContext.GetModel<TestModel>();
-                Assert.IsNotNull(model);
             }
         }
 

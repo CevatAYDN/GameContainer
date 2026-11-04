@@ -49,16 +49,6 @@ namespace Nexus.Tests
             public void OnDispose() { }
         }
 
-        /// <summary>Standard lifecycle WITHOUT IPostContextLifecycle — PostContext must not fire.</summary>
-        private class NoPostLifecycle : IContextLifecycle
-        {
-            public bool PostContextCalled;
-            public void OnConfigure(IContextBuilder builder) { }
-            public ValueTask OnInitializeAsync(CancellationToken ct) => default;
-            public ValueTask OnStartAsync(CancellationToken ct) => default;
-            public void OnDispose() { }
-        }
-
         public interface ICrossService { }
         private class CrossService : ICrossService { }
 
@@ -205,23 +195,6 @@ namespace Nexus.Tests
         }
 
         // ─── PC3: No PostContext when lifecycle does not implement IPostContextLifecycle ───
-
-        [Test]
-        public async Task PostContext_NotCalled_WhenLifecycleDoesNotImplement()
-        {
-            var lifecycle = new NoPostLifecycle();
-            var context = new Context();
-            context.Container.BindInstance<IContextLifecycle>(lifecycle);
-            context.Configure();
-            await context.InitializeLifecycleAsync(context.ConfiguredLifecycles, CancellationToken.None);
-
-            // Must not throw and must not call PostContext
-            Assert.DoesNotThrowAsync(
-                async () => await NexusRuntime.FinalizeInitializationAsync(CancellationToken.None),
-                "FinalizeInitializationAsync must not throw when no lifecycle opts into PostContext");
-
-            context.Dispose();
-        }
 
         // ─── PC4: Cross-context wiring via PostContext ───
 

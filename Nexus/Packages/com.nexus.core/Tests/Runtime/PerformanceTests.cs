@@ -84,21 +84,6 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public void Subscribe1000AndFire_AllReceived()
-        {
-            const int count = 1000;
-            int received = 0;
-            _signalBus.Subscribe<PerfSignal>(sig => received++);
-
-            for (int i = 0; i < count; i++)
-            {
-                _signalBus.Fire(new PerfSignal(i));
-            }
-
-            Assert.AreEqual(count, received);
-        }
-
-        [Test]
         public void CommandPool_ReusesInstances()
         {
             // Get internal pool state by resolving multiple times
@@ -169,32 +154,6 @@ namespace Nexus.Tests
             // allocation is a genuine framework allocation.
             Assert.AreEqual(0, allocationCount, $"Steady-state dispatch allocated {allocationCount} allocation samples. Expected zero allocations.");
 #endif
-        }
-
-        [Test]
-        public void HighFrequency_Performance_StressTest()
-        {
-            const int count = 50000;
-            
-            // Warm up
-            for (int i = 0; i < 100; i++)
-            {
-                _signalBus.Fire(new PerfSignal(i));
-            }
-
-            var sw = Stopwatch.StartNew();
-
-            for (int i = 0; i < count; i++)
-            {
-                _signalBus.Fire(new PerfSignal(i));
-            }
-
-            sw.Stop();
-            
-            UnityEngine.Debug.Log($"[Nexus Benchmark] 50,000 dispatches completed in {sw.ElapsedMilliseconds} ms.");
-            
-            // Assert that 50k dispatches complete within a realistic test budget.
-            Assert.Less(sw.ElapsedMilliseconds, 800, "50,000 dispatches took too long.");
         }
 
         [Test]

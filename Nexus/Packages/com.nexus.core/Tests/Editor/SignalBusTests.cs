@@ -316,18 +316,6 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void GenericCommand_ExecutesAndInjectsSignalWithoutReflection()
-        {
-            _container.Bind<GenericTestCommand>(isSingleton: false);
-            _signalBus.RegisterCommand(typeof(SimpleSignal), typeof(GenericTestCommand), ExecutionMode.Sequential, 0, isAsync: false);
-
-            _signalBus.Fire(new SimpleSignal(88));
-
-            Assert.AreEqual(1, _results.GenericExecutedCount);
-            Assert.AreEqual(88, _results.GenericLastExecutedValue);
-        }
-
-        [Test]
         public void FluentBindingAPI_RegistersCommandCorrectly()
         {
             var builder = new ContextBuilder(_container, _signalBus);

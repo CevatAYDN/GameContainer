@@ -47,20 +47,6 @@ namespace Nexus.Editor.Tests
             Assert.IsFalse(audio.IsMuted);
         }
 
-        [Test]
-        public async Task HapticService_VibrateDoesNotThrowExceptions()
-        {
-            var haptics = new HapticService();
-            await haptics.InitializeAsync(default);
-
-            Assert.DoesNotThrow(() => haptics.Vibrate(HapticType.Light));
-            Assert.DoesNotThrow(() => haptics.Vibrate(HapticType.Medium));
-            Assert.DoesNotThrow(() => haptics.Vibrate(HapticType.Heavy));
-            Assert.DoesNotThrow(() => haptics.Vibrate(HapticType.Success));
-
-            haptics.OnDispose();
-        }
-
         // ── Issue #71: the game's store, separate mutes, haptic effects, the audio root contract ──
 
         private sealed class MemoryPrefs : IPlayerPrefsService

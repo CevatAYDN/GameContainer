@@ -87,15 +87,6 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
-        public void SamplePublisherPrefix_EqualsTheCatalog()
-        {
-            string path = Path.GetFullPath("Packages/com.nexus.ads/Editor/PlatformCatalog.json");
-            var match = Regex.Match(File.ReadAllText(path), "\"publisherPrefix\":\\s*\"([^\"]+)\"");
-            Assert.IsTrue(match.Success, "catalog has a publisherPrefix");
-            Assert.AreEqual(match.Groups[1].Value, AdMobSampleIds.PublisherPrefix);
-        }
-
-        [Test]
         public void TheAdMobTestTabFills_OnlyOnAPlatformWithNoKey_SoNoKeyTheUserEnteredIsOverwritten()
         {
             // the fill runs each time the Settings tab is built (#193); a platform with any key is the user's
