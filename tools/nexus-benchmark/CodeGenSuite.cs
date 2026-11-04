@@ -343,8 +343,8 @@ namespace NexusBench.CG2Source
 
                 // 3) Content gates for the GENERATOR's emitted binder. The SG emits fully-qualified
                 //    names (with a `global::` prefix), so registrations are matched by
-                //    "RegisterX<[global::]Type". PreserveMembers legitimately references the
-                //    containing type of a skipped injector via typeof(), so the prefix matters.
+                //    "RegisterX<[global::]Type": a type named by one registration may be absent
+                //    from another, so the prefix matters.
                 //    Injectors exist ONLY for current-compilation types (complete member
                 //    visibility); referenced (metadata) types get ctor factories + dispatchers
                 //    only — emitting a partial injector would silently break invisible members.

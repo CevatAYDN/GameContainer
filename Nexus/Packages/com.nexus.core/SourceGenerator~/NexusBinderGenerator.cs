@@ -7,7 +7,7 @@
 // compilation plus every game-relevant referenced assembly (the Nexus packages'
 // own assemblies excluded: each preserves its types itself, #110), and emits the same
 // NexusGeneratedBinder shape the editor generator produces (RegisterConstructorFactory
-// / RegisterInjector / RegisterClearer / RegisterGeneric*Dispatcher / PreserveMembers).
+// / RegisterInjector / RegisterClearer / RegisterGeneric*Dispatcher).
 // It runs only in a game's runtime assembly: Unity applies Assets/csc.rsp to every assembly
 // without a csc.rsp of its own, and a Nexus package, editor or test compilation gets no
 // binder and no diagnostic (#264).
@@ -605,7 +605,6 @@ namespace Nexus.Generator
             //    required member goes to the runtime, so the generated path gives the reflection path's answer ──
             var cacheSb = new StringBuilder();
             var initSb = new StringBuilder();
-            var preserveSb = new StringBuilder();
             foreach (var type in injectTypes)
             {
                 var members = GetMemberSet(type);
@@ -709,29 +708,6 @@ namespace Nexus.Generator
                     foreach (var p in members.Properties) initSb.AppendLine($"                {Set(p, "null")}");
                     initSb.AppendLine("            });");
                 }
-
-                // Locals are keyed by declaring type too: a hidden or shadowed member shares its name with another.
-                foreach (var f in members.Fields)
-                {
-                    string declaringName = Name(f.ContainingType);
-                    string local = $"_f_{typeSafeName}_{SafeIdentifier(declaringName)}_{SafeIdentifier(f.Name)}";
-                    if (f.DeclaredAccessibility == Accessibility.Public)
-                        preserveSb.AppendLine($"                var {local} = default({declaringName}).{f.Name};");
-                    else
-                        preserveSb.AppendLine($"                var {local} = typeof({declaringName}).GetField({Literal(f.Name)}, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                }
-                foreach (var p in members.Properties)
-                {
-                    string declaringName = Name(p.ContainingType);
-                    string local = $"_p_{typeSafeName}_{SafeIdentifier(declaringName)}_{SafeIdentifier(p.Name)}";
-                    if (p.GetMethod != null && p.GetMethod.DeclaredAccessibility == Accessibility.Public)
-                    {
-                        preserveSb.AppendLine($"                var {local} = default({declaringName}).{p.Name};");
-                        preserveSb.AppendLine($"                _ = {local}; // Suppress CS0219 warning");
-                    }
-                    else
-                        preserveSb.AppendLine($"                var {local} = typeof({declaringName}).GetProperty({Literal(p.Name)}, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                }
             }
 
             // ── Assemble ──
@@ -765,17 +741,6 @@ namespace Nexus.Generator
             sb.Append(ctorFactorySb.ToString());
             sb.Append(initSb.ToString());
             sb.Append(dispatcherSb.ToString());
-            sb.AppendLine("        }");
-            sb.AppendLine();
-            sb.AppendLine("        /// <summary>Forces IL2CPP to keep injected members alive (compiled-in preservation).</summary>");
-            sb.AppendLine("        public static void PreserveMembers()");
-            sb.AppendLine("        {");
-            sb.AppendLine("            #pragma warning disable 0162, 0169, 0414, 0219");
-            sb.AppendLine("            if (false)");
-            sb.AppendLine("            {");
-            sb.Append(preserveSb.ToString());
-            sb.AppendLine("            }");
-            sb.AppendLine("            #pragma warning restore 0162, 0169, 0414, 0219");
             sb.AppendLine("        }");
             sb.AppendLine("    }");
             sb.AppendLine("}");

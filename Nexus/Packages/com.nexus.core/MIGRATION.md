@@ -38,6 +38,10 @@ A game that does gets CS1061. The replacements:
 | `GetRegisteredSingletons` | `NexusDI.GetActiveSingletons()`: this container's singleton instances in creation order, without the parent's and without their binding types |
 | `WaitForBackgroundDispose` | `await NexusDI.DisposeAsync()` (the deterministic teardown of `IAsyncDisposable` singletons) |
 
+Issue #251 removed `NexusGeneratedBinder.PreserveMembers` from the generated binder. It never ran, and the generated
+`link.xml` preserves the injectable types. Regenerate the binder (**Nexus > Generate AOT Binder**) at the re-pin. A game
+that called the method gets CS0117 and removes the call; nothing replaces it.
+
 ---
 
 ## Version 0.5.0 → 0.6.0

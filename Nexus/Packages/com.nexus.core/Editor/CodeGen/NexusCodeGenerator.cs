@@ -51,7 +51,7 @@ namespace Nexus.Editor
         }
 
         /// <summary>A type's injectable members, selected exactly as NexusDI's MetadataCache selects them; computed once
-        /// per type and shared by every pass (discovery, validation, injector, clearer, preserve).</summary>
+        /// per type and shared by every pass (discovery, validation, injector, clearer).</summary>
         private struct MemberSet
         {
             public FieldInfo[] Fields;
@@ -265,8 +265,6 @@ namespace Nexus.Editor
                 || asm == "UnityEngine" || (asm != null && asm.StartsWith("UnityEngine.", StringComparison.Ordinal) && asm.EndsWith("Module", StringComparison.Ordinal))
                 || IsEmittableType(type);
         }
-
-        private static bool IsNameableMemberType(Type type) => IsVisibleMemberType(type) && IsReferencedMemberType(type);
 
         /// <summary>
         /// True when a constructor factory (<c>new T(...)</c>) may be emitted for the type.
@@ -533,7 +531,6 @@ namespace Nexus.Editor
 
             var cacheSb = new StringBuilder();
             var initSb = new StringBuilder();
-            var preserveSb = new StringBuilder();
             var dispatcherSb = new StringBuilder();
 
             if (invalid.Count > 0)
@@ -754,50 +751,6 @@ namespace Nexus.Editor
                 WrapInCondition(initSb, initStart, injectCondition);
             }
 
-            // Generate PreserveMembers (Issue 4)
-            preserveSb.AppendLine("        // Forces IL2CPP to preserve members that are injected");
-            preserveSb.AppendLine("        public static void PreserveMembers()");
-            preserveSb.AppendLine("        {");
-            preserveSb.AppendLine("            #pragma warning disable 0162, 0169, 0414, 0219");
-            preserveSb.AppendLine("            if (false)");
-            preserveSb.AppendLine("            {");
-
-            foreach (var type in injectTypes)
-            {
-                string typeSafeName = GetSafeIdentifierName(GetCSharpTypeName(type));
-                int preserveStart = preserveSb.Length;
-                var set = GetMemberSet(type, memberCache);
-                // Locals are keyed by declaring type too: a hidden or shadowed member shares its name with another.
-                foreach (var f in set.Fields)
-                {
-                    if (!IsEmittableType(f.DeclaringType)) continue; // the reflection path + link.xml preserve it
-                    string declaringName = GetCSharpTypeName(f.DeclaringType);
-                    string local = $"_f_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(f.Name)}";
-                    if (f.IsPublic && IsNameableMemberType(f.FieldType))
-                        preserveSb.AppendLine($"                var {local} = default({declaringName}).{f.Name};");
-                    else
-                        preserveSb.AppendLine($"                var {local} = typeof({declaringName}).GetField({Literal(f.Name)}, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                }
-                foreach (var p in set.Properties)
-                {
-                    if (!IsEmittableType(p.DeclaringType)) continue;
-                    string declaringName = GetCSharpTypeName(p.DeclaringType);
-                    string local = $"_p_{typeSafeName}_{GetSafeIdentifierName(declaringName)}_{GetSafeIdentifierName(p.Name)}";
-                    if (p.GetMethod != null && p.GetMethod.IsPublic && IsNameableMemberType(p.PropertyType))
-                    {
-                        preserveSb.AppendLine($"                var {local} = default({declaringName}).{p.Name};");
-                        preserveSb.AppendLine($"                _ = {local}; // Suppress CS0219 warning");
-                    }
-                    else
-                        preserveSb.AppendLine($"                var {local} = typeof({declaringName}).GetProperty({Literal(p.Name)}, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);");
-                }
-                WrapInCondition(preserveSb, preserveStart, InjectCondition(type));
-            }
-
-            preserveSb.AppendLine("            }");
-            preserveSb.AppendLine("            #pragma warning restore 0162, 0169, 0414, 0219");
-            preserveSb.AppendLine("        }");
-
             // Assemble the final file
             var sb = new StringBuilder();
             sb.AppendLine("#define NEXUS_GENERATED_BINDER");
@@ -870,10 +823,6 @@ namespace Nexus.Editor
             sb.Append(initSb.ToString());
             sb.Append(dispatcherSb.ToString());
             sb.AppendLine("        }");
-            sb.AppendLine();
-            
-            // Write PreserveMembers
-            sb.Append(preserveSb.ToString());
             sb.AppendLine("    }");
             sb.AppendLine("}");
 

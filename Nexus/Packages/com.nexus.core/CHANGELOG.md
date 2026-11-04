@@ -111,6 +111,11 @@ everything under Unreleased is in the repository but not yet in a tagged package
   - **`Editor/Styles/NexusTheme.uss`:** the rules of 69 classes that no C# or UXML file names (908 lines to 445), with the section comments left without a rule.
   - **The search:** each member name, whole word, in `Nexus/Packages`, `Nexus/Assets`, `tools/` and `docs/` (`docs/archive` left out), and each class name in the C# and UXML files of `Nexus/Packages` and `Nexus/Assets` and in the 8 known games' `Assets`. No name was built at run time from parts. Each appeared only at its definition.
   - **Kept:** `NexusEditorStyles.AddToolbarButton`, which the issue listed; `com.nexus.ads`'s Settings and Setup tabs call it.
+- **The generated binder's `PreserveMembers`** (issue #251). Both generators, `NexusCodeGenerator` and the source generator, emitted a public static method on `NexusGeneratedBinder` whose body sat under `if (false)`. Nothing called it, so it rooted nothing for the linker. The generated `link.xml` preserves every injectable type on both paths.
+  - The editor generator's `IsNameableMemberType`, used only by that method, went with it.
+  - `SourceGenerators~/Nexus.SourceGenerator.dll` was rebuilt from the source. Harness CG9 checks that the DLL emits the source's binder.
+  - **The search:** `PreserveMembers`, whole word, in `Nexus/Packages`, `Nexus/Assets`, `tools/`, `docs/` (`docs/archive` left out) and the 8 known games. The only other hit in this repository is 0.6.0's issue #85 entry below. The games' hits were their own generated binders and old package copies inside Pixel-Flow-Clone, IdleProject, PuzzleGame and RingFlow, not calls.
+  - A game regenerates its binder at the re-pin (**Nexus > Generate AOT Binder**).
 
 ## [0.6.0] - 2026-11-02
 

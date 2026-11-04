@@ -424,6 +424,7 @@ Features marked as beta:
   - `InjectScanner.HasInjectableMembers`;
   - `CommandRegistry.UnregisterCommand`;
   - `CommandExecutor.InFlightAsyncCommands`.
+- Issue #251 removed the generated binder's `PreserveMembers`, which never ran; the generated `link.xml` preserves the injectable types. A game regenerates its binder.
 
 **Migration:** See [MIGRATION.md](MIGRATION.md#version-060--070-unreleased).
 
