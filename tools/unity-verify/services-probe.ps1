@@ -3,7 +3,8 @@ param(
     [string]$RunName = ('phone-services-' + (Get-Date -Format 'yyyyMMdd-HHmm')),
     [string]$AdbSerial = '',
     [string]$Package = 'com.UnityTechnologies.com.unity.template.urpblank',
-    [switch]$ThreeFingers
+    [switch]$ThreeFingers,
+    [switch]$MenuTap
 )
 # Phone check of the share sheet (issue #134), local notifications (#160) and the debug menu (#270) over the
 # development player that NexusVerify.NexusVerifyBuild.BuildAndroidIL2CPPDevelopment builds; its ServicesProbe runs
@@ -21,6 +22,9 @@ param(
 #   refusals end the dialog: the third request must answer NeedsPermission without one, as INotificationService documents.
 # -ThreeFingers runs only the three-fingers launch, attended: someone at the phone opens the debug menu with three
 # fingers, lifts them, and closes it with three fingers again.
+# -MenuTap runs only the menu-tap launch, unattended: the debug menu opened with a held Backquote key, a tap through
+# `adb shell input tap` on the centre of its "Probe button" (where the probe logs it, scaled when the player's screen is
+# not the display's size, since uiautomator cannot see UI Toolkit), the button's action logging, and the menu closed.
 # The permission and its flags are restored afterwards. Evidence in Nexus/artifacts/<RunName>/. Exit codes: 0 passed,
 # 1 failed, 2 could not run.
 $ErrorActionPreference = 'Stop'
@@ -135,9 +139,30 @@ $activity = @(Adb @('shell', 'cmd', 'package', 'resolve-activity', '--brief', $P
 if ($activity -notmatch '/') { throw "no launcher activity for $Package" }
 $granted = [bool]((Adb @('shell', 'dumpsys', 'package', $Package)) -match "${Permission}: granted=true")
 
+if ($ThreeFingers -and $MenuTap) { throw 'Pass -ThreeFingers or -MenuTap, not both.' }
 $results = @()
 try {
-    if (-not $ThreeFingers) {
+    if ($MenuTap) {
+        $bound = Launch 'services-menu'
+        HeldBackquote
+        $opened = WaitFor 'menu open=True theme=True buttons=2' 10
+        $located = WaitFor 'menu button at x=\d+ y=\d+ ' 10
+        $at = @($seen | Where-Object { $_ -match 'menu button at x=(\d+) y=(\d+) screen=(\d+)x(\d+) system=(\d+)x(\d+) .* inside=(\w+)' })
+        $tapX = $null; $tapY = $null; $inside = $false
+        if ($at.Count -gt 0 -and $at[0] -match 'menu button at x=(\d+) y=(\d+) screen=(\d+)x(\d+) system=(\d+)x(\d+) .* inside=(\w+)') {
+            # The player's surface can be smaller than the display (resolution scaling): scale to the display's pixels.
+            $tapX = [int]([int]$Matches[1] * [int]$Matches[5] / [int]$Matches[3])
+            $tapY = [int]([int]$Matches[2] * [int]$Matches[6] / [int]$Matches[4])
+            $inside = $Matches[7] -eq 'True'
+            Adb @('shell', 'input', 'tap', [string]$tapX, [string]$tapY) | Out-Null
+        }
+        $ran = WaitFor 'menu button ran' 10
+        HeldBackquote
+        $closed = WaitFor 'menu open=False' 10
+        $result = [ordered]@{ run = 'menu-tap'; bound = $bound; opened = $opened; located = $located; inside = $inside; tapX = $tapX; tapY = $tapY; ran = $ran; closed = $closed }
+        Finish 'menu-tap' $result ($bound -and $opened -and $located -and $inside -and $ran -and $closed)
+    }
+    elseif (-not $ThreeFingers) {
         foreach ($allowed in @($false, $true)) {
             $name = if ($allowed) { 'permission' } else { 'no-permission' }
             SetPermission $allowed $false
@@ -267,7 +292,7 @@ finally {
     SetPermission $granted $true
 }
 
-$expected = if ($ThreeFingers) { 1 } else { 7 }
+$expected = if ($ThreeFingers -or $MenuTap) { 1 } else { 7 }
 $ok = $results.Count -eq $expected -and @($results | Where-Object { -not $_.passed }).Count -eq 0
 [ordered]@{ device = $model; android = $android; apk = (Split-Path -Leaf $Apk); runs = $results } | ConvertTo-Json -Depth 4 |
     Set-Content -LiteralPath (Join-Path $evidence 'services-probe.json')

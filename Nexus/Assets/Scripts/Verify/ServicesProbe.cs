@@ -25,7 +25,8 @@ namespace NexusVerify.Device
     /// <item><c>services-ask</c>: RequestPermissionAsync's answer;</item>
     /// <item><c>services-menu</c>: only the debug menu.</item>
     /// </list>
-    /// Every mode logs each time the debug menu opens or closes, with the touches on the screen.
+    /// Every mode logs each time the debug menu opens or closes, with the touches on the screen, and where its "Probe
+    /// button" is on the screen.
     /// </summary>
     internal sealed class ServicesProbe : MonoBehaviour
     {
@@ -35,6 +36,7 @@ namespace NexusVerify.Device
         private INotificationService _notifications;
         private UIDocument _menuDocument;
         private bool _menuOpen;
+        private bool _buttonLogged;
 
         // The notification's tap starts the activity without the extra, so services-cold leaves this file for that launch.
         private static string ColdMarker => Path.Combine(Application.persistentDataPath, "nexus-services-probe-cold");
@@ -145,10 +147,33 @@ namespace NexusVerify.Device
                 _menuDocument = host != null ? host.GetComponent<UIDocument>() : null;
                 if (_menuDocument == null) return;
             }
+            if (_menuOpen && !_buttonLogged) _buttonLogged = LogProbeButton();
             if (_menuDocument.enabled == _menuOpen) return;
             _menuOpen = _menuDocument.enabled;
+            _buttonLogged = false;
             Debug.Log($"[Probe] menu open={_menuOpen} theme={_menuDocument.panelSettings.themeStyleSheet != null} " +
                 $"buttons={(_menuOpen ? _menuDocument.rootVisualElement.Query<Button>().ToList().Count : 0)} touches={Touches()}");
+        }
+
+        // The centre of "Probe button" in Android's touch coordinates (top-left origin), so services-probe.ps1 -MenuTap can
+        // tap it: uiautomator cannot see UI Toolkit (#270). Logged once per open, after the layout gave the button a size;
+        // inside= converts the point back to the panel and checks it lands on the button.
+        private bool LogProbeButton()
+        {
+            VisualElement root = _menuDocument.rootVisualElement;
+            Button button = null;
+            foreach (var candidate in root.Query<Button>().ToList())
+                if (candidate.text == "Probe button") button = candidate;
+            if (button == null) return false;
+            Rect bound = button.worldBound;
+            Rect panel = root.panel.visualTree.worldBound;
+            if (float.IsNaN(bound.width) || bound.width <= 0f || float.IsNaN(panel.width) || panel.width <= 0f) return false;
+            int x = Mathf.RoundToInt(bound.center.x / panel.width * Screen.width);
+            int y = Mathf.RoundToInt(bound.center.y / panel.height * Screen.height);
+            Vector2 back = RuntimePanelUtils.ScreenToPanel(root.panel, new Vector2(x, Screen.height - y)); // Unity's screen y is bottom-up
+            Debug.Log($"[Probe] menu button at x={x} y={y} screen={Screen.width}x{Screen.height} " +
+                $"system={Display.main.systemWidth}x{Display.main.systemHeight} safeArea={Screen.safeArea} inside={bound.Contains(back)}");
+            return true;
         }
 
         // The fingers on the screen in the frame the menu changed: three when they opened or closed it.
