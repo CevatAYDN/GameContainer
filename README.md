@@ -7,8 +7,8 @@ mobile and PC games, and an editor tool suite in one package.
 
 | | |
 |---|---|
-| Package | `Nexus/Packages/com.nexus.core` (version in `package.json`: **0.5.0**; unreleased work is listed in its `CHANGELOG.md`) |
-| Unity | 6000.6 minimum (`package.json`); the development project runs **6000.6.7f1**, where the EditMode and PlayMode suites, the host harness and the compile check pass; the player, comparison and device gates get their 6000.6.7f1 runs in the next gate cycle (#139) |
+| Package | `Nexus/Packages/com.nexus.core` (version in `package.json`: **0.6.0**; unreleased work is listed in its `CHANGELOG.md`) |
+| Unity | 6000.6 minimum (`package.json`); the development project and every gate but 11 (the games, each on its own pin) run **6000.6.7f1** (latest runs in [RELEASE_GATES.md](docs/RELEASE_GATES.md)) |
 | License | MIT |
 | Verification status | [docs/RELEASE_GATES.md](docs/RELEASE_GATES.md) |
 
@@ -39,7 +39,7 @@ Rules for games that consume Nexus:
 | 0 | Never used dependency injection or a signal bus | [10_MIN_QUICKSTART.md](Nexus/Packages/com.nexus.core/docs/10_MIN_QUICKSTART.md) ([TR](Nexus/Packages/com.nexus.core/docs/10_MIN_QUICKSTART_TR.md)), then the **Counter Example** sample |
 | 1 | Shipping a feature in a new Nexus project | [walkthrough.md](Nexus/Packages/com.nexus.core/walkthrough.md), [CANONICAL-PATTERNS.md](Nexus/Packages/com.nexus.core/docs/CANONICAL-PATTERNS.md) |
 | 2 | Adding Nexus to an existing game | [GETTING_STARTED.md](Nexus/Packages/com.nexus.core/docs/GETTING_STARTED.md) ([TR](Nexus/Packages/com.nexus.core/docs/GETTING_STARTED_TR.md)), [INTEGRATION_PATHS.md](Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS.md) ([TR](Nexus/Packages/com.nexus.core/docs/INTEGRATION_PATHS_TR.md)); from Zenject: [ZENJECT_MIGRATION.md](Nexus/Packages/com.nexus.core/docs/ZENJECT_MIGRATION.md) ([TR](Nexus/Packages/com.nexus.core/docs/ZENJECT_MIGRATION_TR.md)) |
-| 3 | Studio: release builds, performance, tooling | [ARCHITECTURE.md](Nexus/Packages/com.nexus.core/docs/ARCHITECTURE.md), [RELEASE_GATES.md](docs/RELEASE_GATES.md), [PERFORMANCE_COMPARISON.md](Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md), [ADAPTERS.md](Nexus/Packages/com.nexus.core/docs/ADAPTERS.md), [PLUGIN_DEVELOPMENT.md](Nexus/Packages/com.nexus.core/docs/PLUGIN_DEVELOPMENT.md), the Dashboard's build-readiness card |
+| 3 | Studio: release builds, performance, tooling | [ARCHITECTURE.md](Nexus/Packages/com.nexus.core/docs/ARCHITECTURE.md), [RELEASE_GATES.md](docs/RELEASE_GATES.md), [PERFORMANCE_COMPARISON.md](Nexus/Packages/com.nexus.core/docs/PERFORMANCE_COMPARISON.md), [ADAPTERS.md](Nexus/Packages/com.nexus.core/docs/ADAPTERS.md), [PLUGIN_DEVELOPMENT.md](Nexus/Packages/com.nexus.core/docs/PLUGIN_DEVELOPMENT.md), the Nexus window's Status tab |
 | AI agent | Generating game code on Nexus | [AI_GAME_DEVELOPER_GUIDE.md](Nexus/Packages/com.nexus.core/docs/AI_GAME_DEVELOPER_GUIDE.md), [GAME_PATTERNS.md](Nexus/Packages/com.nexus.core/docs/GAME_PATTERNS.md) |
 
 [THE_BIG_NEXUS_HOWTO.md](Nexus/Packages/com.nexus.core/docs/THE_BIG_NEXUS_HOWTO.md) ([TR](Nexus/Packages/com.nexus.core/docs/THE_BIG_NEXUS_HOWTO_TR.md)) tells the same story as

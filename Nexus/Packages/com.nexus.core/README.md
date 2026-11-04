@@ -27,9 +27,8 @@ https://github.com/CevatAYDN/GameContainer.git?path=/Nexus/Packages/com.nexus.co
 Pin a commit (the full 40-character hash: the Package Manager does not take a short one) or release
 tag in production. Unity resolves the declared dependencies
 (`com.unity.ugui`, `com.unity.profiling.core`, `com.unity.inputsystem`,
-`com.unity.modules.androidjni`, `com.unity.modules.uielements`). Minimum Unity is 6000.6; on 6000.6.7f1 the
-EditMode and PlayMode suites pass, and the player, comparison and device gates get their 6000.6.7f1 runs in
-the next gate cycle (the repository's `docs/RELEASE_GATES.md`).
+`com.unity.modules.androidjni`, `com.unity.modules.uielements`). Minimum Unity is 6000.6; every gate but 11 (the games)
+runs 6000.6.7f1 (the repository's `docs/RELEASE_GATES.md`).
 
 ## Start: pick your level
 
@@ -38,7 +37,7 @@ the next gate cycle (the repository's `docs/RELEASE_GATES.md`).
 | 0 | Never used dependency injection or a signal bus | [10_MIN_QUICKSTART.md](docs/10_MIN_QUICKSTART.md) ([TR](docs/10_MIN_QUICKSTART_TR.md)), then the **Counter Example** sample |
 | 1 | Shipping a feature in a new Nexus project | [walkthrough.md](walkthrough.md), [CANONICAL-PATTERNS.md](docs/CANONICAL-PATTERNS.md) |
 | 2 | Adding Nexus to an existing game | [GETTING_STARTED.md](docs/GETTING_STARTED.md) ([TR](docs/GETTING_STARTED_TR.md)), [INTEGRATION_PATHS.md](docs/INTEGRATION_PATHS.md) ([TR](docs/INTEGRATION_PATHS_TR.md)); from Zenject: [ZENJECT_MIGRATION.md](docs/ZENJECT_MIGRATION.md) ([TR](docs/ZENJECT_MIGRATION_TR.md)) |
-| 3 | Studio: release builds, performance, tooling | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md), [ADAPTERS.md](docs/ADAPTERS.md), [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md), the Dashboard's build-readiness card |
+| 3 | Studio: release builds, performance, tooling | [ARCHITECTURE.md](docs/ARCHITECTURE.md), [PERFORMANCE_COMPARISON.md](docs/PERFORMANCE_COMPARISON.md), [ADAPTERS.md](docs/ADAPTERS.md), [PLUGIN_DEVELOPMENT.md](docs/PLUGIN_DEVELOPMENT.md), the Nexus window's Status tab |
 | AI agent | Generating game code on Nexus | [AI_GAME_DEVELOPER_GUIDE.md](docs/AI_GAME_DEVELOPER_GUIDE.md), [GAME_PATTERNS.md](docs/GAME_PATTERNS.md) |
 
 [THE_BIG_NEXUS_HOWTO.md](docs/THE_BIG_NEXUS_HOWTO.md) ([TR](docs/THE_BIG_NEXUS_HOWTO_TR.md)) tells the same story as
