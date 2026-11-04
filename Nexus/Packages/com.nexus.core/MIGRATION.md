@@ -68,7 +68,10 @@ and without an adapter `IapService` and `AdService` answer as a release player d
 editor or in development builds sets the real adapter there too: `UnityIapAdapter` (`com.nexus.iap.unity`; Unity IAP's own
 `FakeAppStore` in the editor, the store's test accounts on a device) and the ad family's bridge, whose bootstrap runs the
 labelled simulator in the editor. A test passes `MockIapStoreAdapter` or `MockAdNetworkAdapter` from `com.nexus.core.testing`
-to `SetStoreAdapter` or `SetNetworkAdapter`. A switch on `DEVELOPMENT_BUILD` goes with it: Unity 6000.6 deprecates the symbol
+to `SetStoreAdapter` or `SetNetworkAdapter`, also when it boots the game's real context: Unity IAP 5.4.4's editor store
+opens a Buy/Cancel dialog for every purchase, so a purchase made through `UnityIapAdapter` in a batchmode test stays
+pending until the context is disposed and then answers `Unavailable` (#267; the define that turns the dialog off is in
+[ADAPTERS](docs/ADAPTERS.md)). A switch on `DEVELOPMENT_BUILD` goes with it: Unity 6000.6 deprecates the symbol
 (`UAC0009`, #140).
 
 #### A custom `IUIAssetProvider` gets its instances back

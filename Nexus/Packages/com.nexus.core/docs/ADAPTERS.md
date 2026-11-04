@@ -81,6 +81,18 @@ try a purchase in the editor, set the real adapter (`com.nexus.iap.unity`), whos
 own editor store there (`FakeAppStore`, the default store of the editor platform in Unity IAP 5.4.4);
 on a device, use the store's test accounts (Google Play license testers, App Store sandbox).
 
+That editor store opens a Buy/Cancel dialog for every purchase and waits for a click (issue #267):
+Unity IAP 5.4.4 starts it in `FakeStoreUIMode.StandardUser` unless the project defines
+`IAP_FAKE_STORE_DEFAULT` or `IAP_FAKE_STORE_DEVELOPER_USER` (`StoreFactory.InstantiateFakeStore`,
+`Runtime/Stores/Core/Store/StoreFactory.cs:168-178` in `com.unity.purchasing`). In a batchmode test
+nobody clicks: the purchase stays pending, and disposing the context completes it as `Unavailable`
+(`UnityIapAdapter.Dispose`, #118). A test therefore buys through `MockIapStoreAdapter` from
+`com.nexus.core.testing`, passed to `IIapService.SetStoreAdapter`, also when it boots the game's real
+context; `SetStoreAdapter` disposes the `UnityIapAdapter` it replaces. A project that wants no dialog
+in the editor at all can define `IAP_FAKE_STORE_DEFAULT`: by the same source the editor store then
+answers every purchase with success without a dialog. That define was read from Unity IAP's source,
+not run here.
+
 ## Capabilities a game relies on
 
 The base contracts answer with booleans. The services expose what a shipped game asks for,

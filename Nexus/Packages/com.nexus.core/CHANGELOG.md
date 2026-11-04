@@ -70,6 +70,10 @@ everything under Unreleased is in the repository but not yet in a tagged package
 - **`NexusProfilerModule` lacked `[Serializable]`** (issue #275).
   - The Profiler window keeps its modules in a `[SerializeReference]` field. An editor with the window open warned that the module "is being serialized by [SerializeReference], but is missing the [Serializable] attribute" (seen in Formatron).
   - EditMode `NexusProfilerTests.ProfilerModule_SerializedByReference_LogsNoWarning` serializes the module the same way. Without the attribute it failed on that warning.
+- **The 0.6.0 migration notes sent tests to Unity IAP's editor store without saying it waits for a click** (issue #267).
+  - MIGRATION's "The adapter factories have no `"mock"` provider" and ADAPTERS told a game to set `UnityIapAdapter` in the editor, where Unity IAP 5.4.4's `FakeAppStore` opens a Buy/Cancel dialog for every purchase (`FakeStoreUIMode.StandardUser`, `StoreFactory.InstantiateFakeStore`).
+  - In ChipCrisis' batchmode PlayMode test a purchase stayed pending, and disposing the context answered it `Unavailable`.
+  - Both documents now name the dialog and send a test to `MockIapStoreAdapter` through `SetStoreAdapter`, also when it boots the real context. ADAPTERS names Unity IAP's `IAP_FAKE_STORE_DEFAULT` define, which turns the dialog off; that define was read from Unity IAP's source, not run.
 - **The 0.6.0 migration notes left out four interface changes and one behaviour change** (issue #266).
   - MIGRATION's "Interfaces with new members" left out four changes:
     - `IIapService.GetOwnership` (the row named only `UnrequestedPurchase`);
