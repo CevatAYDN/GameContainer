@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.RegularExpressions;
 using NUnit.Framework;
@@ -28,6 +29,14 @@ namespace Nexus.Firebase.Tests
             public event Action Changed { add { } remove { } }
         }
 
+        private sealed class LocalSink : NexusService<IAnalyticsService>, IAnalyticsService
+        {
+            public readonly List<string> Calls = new();
+            public void LogEvent(string eventName) => Calls.Add(eventName);
+            public void LogEvent(string eventName, Dictionary<string, object> parameters) => Calls.Add(eventName);
+            public void SetUserProperty(string key, string value) => Calls.Add(key);
+        }
+
         private const string Manifest =
             "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n" +
             "<manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">\n" +
@@ -47,6 +56,29 @@ namespace Nexus.Firebase.Tests
             var consent = test.Context.Resolve<IAnalyticsConsent>();
             Assert.IsInstanceOf<MockAnalyticsConsent>(consent, "no Firebase service reads the game's consent in the Editor");
             Assert.AreEqual(ConsentState.NotRequired, consent.State);
+        }
+
+        // Issue #159: a second analytics backend (a development build's local file) meant replacing IAnalyticsService and Firebase with it
+        [Test]
+        public void AnExtraAnalyticsTarget_ReceivesEveryCall_AfterTheBuildsService()
+        {
+            var sink = new LocalSink();
+            using var test = NexusTestHarness.CreateContext(builder =>
+            {
+                builder.BindServiceInstance(sink);
+                FirebaseBindings.Bind<GameConsent>(builder, sink);
+            }, autoInitialize: true);
+
+            var analytics = test.Context.Resolve<IAnalyticsService>();
+            analytics.LogEvent("level_start");
+            analytics.SetUserProperty("tier", "whale");
+
+            var fanOut = (AnalyticsFanOut)analytics;
+            var mock = test.Context.Resolve<MockAnalyticsService>();
+            Assert.That(fanOut.Targets, Is.EqualTo(new IAnalyticsService[] { mock, sink }), "the build's service first, then the extra");
+            Assert.AreEqual("level_start", mock.Events[0].Name);
+            Assert.AreEqual("whale", mock.UserProperties["tier"]);
+            Assert.That(sink.Calls, Is.EqualTo(new[] { "level_start", "tier" }));
         }
 
         [Test]

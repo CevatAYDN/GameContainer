@@ -44,6 +44,25 @@ namespace NexusBench
         public void LogException(Exception exception) => Messages.Add(exception?.Message);
     }
 
+    /// <summary>Analytics target double: records each call as "Name:event" (#159).</summary>
+    public sealed class SvcAnalyticsRecorder : IAnalyticsService
+    {
+        private readonly string _name;
+        private readonly List<string> _calls;
+        public SvcAnalyticsRecorder(string name, List<string> calls) { _name = name; _calls = calls; }
+        public void LogEvent(string eventName) => _calls.Add($"{_name}:{eventName}");
+        public void LogEvent(string eventName, Dictionary<string, object> parameters) => _calls.Add($"{_name}:{eventName}");
+        public void SetUserProperty(string key, string value) => _calls.Add($"{_name}:{key}");
+    }
+
+    /// <summary>Analytics target double whose every call throws (#159).</summary>
+    public sealed class SvcThrowingAnalytics : IAnalyticsService
+    {
+        public void LogEvent(string eventName) => throw new InvalidOperationException("sink down");
+        public void LogEvent(string eventName, Dictionary<string, object> parameters) => throw new InvalidOperationException("sink down");
+        public void SetUserProperty(string key, string value) => throw new InvalidOperationException("sink down");
+    }
+
     /// <summary>ScreenView test double: records the async lifecycle order.</summary>
     public sealed class SvcScreenView : ScreenView
     {
@@ -580,6 +599,25 @@ namespace NexusBench
                 bare.LogEvent("no_logger_no_crash");
                 bare.SetUserProperty("k", "v");
                 Check("AN2. No_Logger_Registered_NoCrash", true, "3 calls with no logger");
+
+                // AN3 (#159): the fan-out sends every call to each target in order; a target that throws is reported
+                // once, through WarnAlways, and the targets after it still receive the call. A null target is refused.
+                var calls = new List<string>();
+                var fanOut = new AnalyticsFanOut(new SvcAnalyticsRecorder("A", calls), new SvcThrowingAnalytics(),
+                    new SvcAnalyticsRecorder("B", calls));
+                int before = logger.Messages.Count;
+                fanOut.LogEvent("e1");
+                fanOut.LogEvent("e2", new Dictionary<string, object> { { "k", 1 } });
+                fanOut.SetUserProperty("tier", "whale");
+                var warnings = logger.Messages.GetRange(before, logger.Messages.Count - before);
+                bool ordered = string.Join(",", calls) == "A:e1,B:e1,A:e2,B:e2,A:tier,B:tier";
+                bool reportedOnce = warnings.Count == 1
+                    && warnings[0].Contains("SvcThrowingAnalytics.LogEvent('e1') threw InvalidOperationException: sink down");
+                bool nullRefused = false;
+                try { new AnalyticsFanOut(new SvcAnalyticsRecorder("A", calls), null); }
+                catch (ArgumentNullException) { nullRefused = true; }
+                Check("AN3. FanOut_Reaches_Every_Target_In_Order_Past_A_Throwing_One", ordered && reportedOnce && nullRefused,
+                    $"calls=[{string.Join(",", calls)}] warnings=[{string.Join(" | ", warnings)}] nullRefused={nullRefused}");
             }
             finally
             {

@@ -1,3 +1,4 @@
+using System;
 using System.Runtime.CompilerServices;
 using Nexus.Core;
 using Nexus.Core.Services;
@@ -31,10 +32,24 @@ namespace Nexus.Firebase
         public static void Bind<TConsent>(IContextBuilder builder) where TConsent : class, IAnalyticsConsent, INexusService
             => Bind<TConsent>(builder, player: !Application.isEditor, withSdks: true);
 
+        /// <summary>
+        /// As <see cref="Bind{TConsent}(IContextBuilder)"/>, and every analytics call also goes to <paramref name="alsoSendTo"/>, in that
+        /// order, after the build's analytics service (Firebase in a player, the mock in the Editor), through an <see cref="AnalyticsFanOut"/>
+        /// bound as <see cref="IAnalyticsService"/> (#159). The build's service stays bound under its own type
+        /// (<c>FirebaseAnalyticsService</c>, <see cref="MockAnalyticsService"/> or <c>UnavailableAnalyticsService</c>). The fan-out only
+        /// forwards: bind each extra as a service under its own type (<c>builder.BindServiceInstance&lt;LocalFileSink&gt;(sink)</c>), so it
+        /// gets its <c>[Inject]</c> members, start and dispose, and pass the same instance here. An extra receives every call as the game
+        /// makes it, before consent and with the names Firebase refuses: limit it to the builds that may have it (a development build).
+        /// With no extra this binds what the one-argument overload binds.
+        /// </summary>
+        public static void Bind<TConsent>(IContextBuilder builder, params IAnalyticsService[] alsoSendTo) where TConsent : class, IAnalyticsConsent, INexusService
+            => Bind<TConsent>(builder, player: !Application.isEditor, withSdks: true, alsoSendTo);
+
         // withSdks false takes the path of a player that lacks every SDK package, in a project that has them too (tests).
-        internal static void Bind<TConsent>(IContextBuilder builder, bool player, bool withSdks) where TConsent : class, IAnalyticsConsent, INexusService
+        internal static void Bind<TConsent>(IContextBuilder builder, bool player, bool withSdks, IAnalyticsService[] alsoSendTo = null)
+            where TConsent : class, IAnalyticsConsent, INexusService
         {
-            BindAnalytics(builder, player, withSdks);
+            BindAnalytics(builder, player, withSdks, alsoSendTo);
             BindCrashReporter(builder, player, withSdks);
             BindRemoteConfig(builder, player, withSdks);
 
@@ -49,22 +64,41 @@ namespace Nexus.Firebase
             builder.BindInstance<IAnalyticsConsent>(consent);
         }
 
-        private static void BindAnalytics(IContextBuilder builder, bool player, bool withSdks)
+        private static void BindAnalytics(IContextBuilder builder, bool player, bool withSdks, IAnalyticsService[] alsoSendTo)
         {
 #if NEXUS_FIREBASE_ANALYTICS
             if (player && withSdks)
             {
-                builder.BindService<IAnalyticsService, FirebaseAnalyticsService>();
+                BindAnalytics<FirebaseAnalyticsService>(builder, alsoSendTo);
                 return;
             }
 #endif
             if (player)
             {
                 Missing("com.google.firebase.analytics", "IAnalyticsService sends no event");
-                builder.BindService<IAnalyticsService, UnavailableAnalyticsService>();
+                BindAnalytics<UnavailableAnalyticsService>(builder, alsoSendTo);
                 return;
             }
-            builder.BindService<IAnalyticsService, MockAnalyticsService>();
+            BindAnalytics<MockAnalyticsService>(builder, alsoSendTo);
+        }
+
+        // No extra: the service as IAnalyticsService, as before #159. Extras: the service under its own type, and the fan-out as
+        // IAnalyticsService, bound after it so the service starts first.
+        private static void BindAnalytics<TService>(IContextBuilder builder, IAnalyticsService[] alsoSendTo)
+            where TService : class, IAnalyticsService, INexusService, new()
+        {
+            if (alsoSendTo == null || alsoSendTo.Length == 0)
+            {
+                builder.BindService<IAnalyticsService, TService>();
+                return;
+            }
+            var service = new TService();
+            var targets = new IAnalyticsService[alsoSendTo.Length + 1];
+            targets[0] = service;
+            Array.Copy(alsoSendTo, 0, targets, 1, alsoSendTo.Length);
+            var fanOut = new AnalyticsFanOut(targets);
+            builder.BindServiceInstance(service);
+            builder.BindServiceInstance<IAnalyticsService>(fanOut);
         }
 
         private static void BindCrashReporter(IContextBuilder builder, bool player, bool withSdks)

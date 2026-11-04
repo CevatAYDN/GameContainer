@@ -19,7 +19,7 @@ Firebase Analytics, Remote Config and Crashlytics behind Nexus services, with th
 | `FirebaseAnalyticsService` (`NEXUS_FIREBASE_ANALYTICS`) | Analytics behind `IAnalyticsService`. Collection stays off until the decision allows it. |
 | `FirebaseRemoteConfigService` (`NEXUS_FIREBASE_REMOTE_CONFIG`) | Remote Config behind `IRemoteConfigService`. A value the console does not set returns the game's fallback. A fetch before Firebase has started fails and says so once in every build. |
 | `UnavailableAnalyticsService`, `UnavailableCrashReporter`, `UnavailableRemoteConfigService` | What a player binds for an SDK package it lacks: nothing is sent or reported, and every remote value is the game's fallback (see Binding). |
-| `FirebaseBindings.Bind<TConsent>(builder)` | Binds the three services in one call: the Firebase service of each installed SDK in a player, a service that does nothing for a missing one, the mocks in the Editor (see Binding). |
+| `FirebaseBindings.Bind<TConsent>(builder)` | Binds the three services in one call: the Firebase service of each installed SDK in a player, a service that does nothing for a missing one, the mocks in the Editor (see Binding). `Bind<TConsent>(builder, alsoSendTo)` also sends every analytics call to the game's other backends (see Binding, issue #159). |
 | `FirebaseCollectionFlags` (Editor) | Writes Firebase's collection-off flags into the Android manifest on every build, and fails the build when Firebase is in the project but not as UPM packages (see Consent and the platform manifest). |
 | `FirebaseCrashReporter` (`NEXUS_FIREBASE_CRASHLYTICS`) | Crashlytics behind `ICrashReporter`: reports the commands Nexus's recovery engine gave up on, and logged errors (`Debug.LogError`), as non-fatals; custom keys and log lines go to `Crashlytics.SetCustomKey` and `Crashlytics.Log`. It listens from the start of its initialization, so an error logged while the SDK starts is held and reported once it is ready (issue #171). |
 
@@ -46,6 +46,23 @@ public void OnConfigure(IContextBuilder builder)
 ```
 
 A player gets the Firebase service of each SDK package the project has. For an SDK package it lacks it gets a service that does nothing (`UnavailableAnalyticsService`, `UnavailableCrashReporter`, `UnavailableRemoteConfigService`), and an error at start names the package: `[Firebase] com.google.firebase.analytics is not installed as a package, so IAnalyticsService sends no event in this player` (issue #171). The Editor (every batch tool, no `google-services.json` needed) gets the mocks. In a player the game's consent reader is bound after the services, so they start Firebase before it asks the User Messaging Platform; in the Editor a `MockAnalyticsConsent` answering `NotRequired` is bound, so the mocks send at once. The reader is named in every build, so it must compile without the Firebase SDK (for example over the User Messaging Platform's status). The SDK defines exist only inside this package's assemblies: game code does not pick SDK or mock with a define of its own.
+
+To send every analytics call to another backend too, for example a development build's local file, pass it after the builder (issue #159):
+
+```csharp
+public void OnConfigure(IContextBuilder builder)
+{
+#if DEVELOPMENT_BUILD || UNITY_EDITOR
+    var file = new LocalFileSink(Application.persistentDataPath);   // the game's own IAnalyticsService
+    builder.BindServiceInstance(file);                              // under its own type: its [Inject] members, start and dispose
+    FirebaseBindings.Bind<UmpAnalyticsConsent>(builder, file);
+#else
+    FirebaseBindings.Bind<UmpAnalyticsConsent>(builder);
+#endif
+}
+```
+
+`IAnalyticsService` then resolves to the core's `AnalyticsFanOut`, which forwards each call first to the build's analytics service (the Firebase service, the mock or the unavailable one, still bound under its own type) and then to each extra in order. It only forwards: bind each extra yourself, as above, and resolve the extra under its own type when the game needs it. A backend that throws is reported once with `NexusLog.WarnAlways` and does not stop the others. The rules above (names, consent, reported refusals) belong to the Firebase service and the mock: an extra receives every call as the game makes it, before consent too, so keep it to the builds that may have it. With no extra this binds what the one-argument call binds.
 
 ## Consent and the platform manifest
 

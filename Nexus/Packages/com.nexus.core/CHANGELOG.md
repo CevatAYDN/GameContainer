@@ -13,6 +13,12 @@ everything under Unreleased is in the repository but not yet in a tagged package
 ## [Unreleased]
 
 ### Added
+- **`AnalyticsFanOut` sends each analytics call to several backends, and `FirebaseBindings.Bind<TConsent>(builder, params alsoSendTo)` puts the build's Firebase service in front of them** (issue #159).
+  - A second backend, such as a development build's local file, meant replacing `IAnalyticsService`, and Firebase with it. Formatron wrote its own `LocalFileSink` (its D-094).
+  - `new AnalyticsFanOut(targets)` is an `IAnalyticsService` that forwards every call to each target in order. A target that throws is reported once with `NexusLog.WarnAlways`, and the targets after it still receive the call; a null target throws at construction. It only forwards: it neither starts nor disposes its targets.
+  - The new `com.nexus.firebase` overload binds the build's analytics service (Firebase in a player, the mock in the Editor, the unavailable service for a missing SDK) under its own type, and the fan-out as `IAnalyticsService`. The game binds each extra under its own type (`builder.BindServiceInstance(sink)`) so the extra gets its `[Inject]` members, start and dispose, and passes the same instance. With no extra the call binds what the one-argument overload binds. No interface gains a member.
+  - Name validation and consent stay with each backend: an extra receives every call as the game makes it, before consent too, and the game keeps it to the builds that may have it. The issue's proposal, an `IAnalyticsSink` slot in the core service as the one place for validation and consent, was not done.
+  - Harness AN3 (call order, a throwing target reported once, a null target refused); EditMode `FirebaseBindingsTests.AnExtraAnalyticsTarget_ReceivesEveryCall_AfterTheBuildsService`.
 - **CANONICAL-PATTERNS says how a lifecycle reads a parent context's service inside `OnConfigure`** (issue #157).
   - A value that decides a binding, such as a remote-config parameter, cannot come through `[Inject]`, which is set after the services initialize. ChipCrisis found the route on its own.
   - The section "Canonical Context Lifecycle" now shows it: `GetComponent<Root>().Context.Parent?.TryResolve<T>()`, a default bound and logged with `NexusLog.WarnAlways` when there is no parent or no binding.

@@ -100,6 +100,7 @@
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Testing/RecordingSignalBus.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Testing/InMemoryPlayerPrefsService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Extensions/SceneManagerExtensions.cs" />
+    <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Analytics/AnalyticsFanOut.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Analytics/AnalyticsService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Audio/AudioService.cs" />
     <Compile Include="../../Nexus/Packages/com.nexus.core/Runtime/Services/Feedback/FeedbackService.cs" />
