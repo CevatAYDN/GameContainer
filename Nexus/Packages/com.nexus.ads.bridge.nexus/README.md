@@ -2,7 +2,7 @@
 
 Puts the `com.nexus.ads` controller behind `com.nexus.core`'s `AdService`. Game code written against
 `IAdService` (`RequestReward`, `ShowInterstitial`, `IsRewardedAvailable`, `ReadyChanged`,
-`PrivacyOptionsRequired`, `ShowPrivacyOptions`, `OnImpressionRecorded`) does not change; the
+`PrivacyOptionsRequired`, `ShowPrivacyOptions`, `OnImpressionRecorded`, `OnAdImpression`) does not change; the
 placements, the policy guard, the test and release tabs and the simulator come from the ads package.
 Plan and phases: [issue #8](https://github.com/CevatAYDN/GameContainer/issues/8); changes in the
 family's [CHANGELOG](../com.nexus.ads/CHANGELOG.md).
@@ -48,8 +48,9 @@ public ValueTask OnStartAsync(CancellationToken ct)
 
 `Connect` registers the adapter under `nexus-ads` and under the running provider's name, sets the
 service's interstitial cooldown to the policy's interstitial floor, forwards revenue to
-`AdService.RaiseImpression` (so `OnImpressionRecorded` fires with the network, the value and the
-placement), and completes on the bootstrap's `Started` event when the bootstrap has not fetched the
+`AdService.RaiseImpression` (so `OnAdImpression` fires with the network, the placement, the format,
+the value, the currency and the precision, and `OnImpressionRecorded` with the network, the value and
+the placement; issue #135), and completes on the bootstrap's `Started` event when the bootstrap has not fetched the
 device id yet.
 
 | `IAdService` member | Through the bridge |
@@ -61,7 +62,8 @@ device id yet.
 | `ShowBanner(placement, position)` | `"top"` or anything else = bottom |
 | `ReadyChanged` | the controller's, which also fires when a pacing window runs out (a cooldown, a first-show delay, an interstitial gap, a day cap at the UTC day change; issue #95); follow it instead of polling the two `Is…Available` members. `AdService` also raises it once when its own interstitial cooldown ends (issue #99); that cooldown starts at the show call and the controller's gap at the close, so in that handler `IsInterstitialAvailable` can still be false until the controller's event |
 | `PrivacyOptionsRequired`, `ShowPrivacyOptions` | the consent flow the bootstrap runs before the mediation: Google UMP for AdMob; for LevelPlay the one the ad settings name (issue #154): Google UMP from `com.nexus.ads.admob`, the game's own flow, or with `None` LevelPlay's pass-through, which never asks; the simulator's switch in the editor; none on a host that runs no ads |
-| `OnImpressionRecorded` | every `AdRevenue` the mediation reports |
+| `OnAdImpression` | every `AdRevenue` the mediation reports, as an `AdImpression` with its format (`"Rewarded"`, `"Interstitial"`, `"Banner"`), currency and precision; log revenue from this one, since an AdMob impression's currency is not always USD (issue #135) |
+| `OnImpressionRecorded` | the same impressions with the network, the value and the placement only |
 
 Remote configuration: with `com.nexus.firebase` installed, `Nexus.Ads.Bridge.Nexus.Firebase`
 compiles `FirebaseAdsRemoteConfig` over `IRemoteConfigService` (`ads.kill_switch` plus the

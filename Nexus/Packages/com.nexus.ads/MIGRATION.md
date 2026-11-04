@@ -12,7 +12,9 @@ issue in this repository, not a local edit of a package.
 
 Game code written against `IAdService` (`RequestReward`, `ShowInterstitial`, `ReadyChanged`,
 `PrivacyOptionsRequired`, `ShowPrivacyOptions`, `OnImpressionRecorded`) stays as it is: the bridge
-puts the family's controller behind the same service.
+puts the family's controller behind the same service. A game that logs ad revenue subscribes
+`OnAdImpression` instead of `OnImpressionRecorded`: it also carries the impression's format, currency
+and precision (issue #135).
 
 ## Steps
 

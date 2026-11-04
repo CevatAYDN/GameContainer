@@ -1016,6 +1016,25 @@ namespace NexusBench
                 Check("D4. Cooldown_Clamped_And_Impression_Event", instantlyAvailable && impression,
                     $"available={instantlyAvailable} impression=({net},{rev},{place})");
 
+                // D4c (issue #135): the impression reached games as (network, value, placement) only, so an AdMob game logged
+                // its revenue under a hard-coded currency. The full impression reaches OnAdImpression, the old event still fires,
+                // and the three-value raise reaches the new event with no currency rather than a guessed one.
+                var impressions = new List<AdImpression>();
+                ads.OnAdImpression += impressions.Add;
+                net = null;
+                ads.RaiseImpression(new AdImpression("admob", "level_end", "Interstitial", 0.0031, "EUR", "precise"));
+                bool oldFromStruct = net == "admob" && place == "level_end" && Math.Abs(rev - 0.0031) < 1e-9;
+                ads.RaiseImpression("levelplay", 0.5, "shop");
+                bool full = impressions.Count == 2
+                    && impressions[0].Network == "admob" && impressions[0].Placement == "level_end"
+                    && impressions[0].Format == "Interstitial" && Math.Abs(impressions[0].Value - 0.0031) < 1e-9
+                    && impressions[0].Currency == "EUR" && impressions[0].Precision == "precise";
+                bool oldStillFires = oldFromStruct && net == "levelplay" && place == "shop";
+                bool threeValues = impressions.Count == 2 && impressions[1].Network == "levelplay"
+                    && impressions[1].Currency == null && impressions[1].Format == null && Math.Abs(impressions[1].Value - 0.5) < 1e-9;
+                Check("D4c. Impression_Carries_Format_Currency_And_Precision", full && oldStillFires && threeValues,
+                    $"count={impressions.Count} full={full} old=({net},{place}) threeValues={threeValues}");
+
                 // D4b (issue #99): without the ad family's bridge nothing raised ReadyChanged when AdService's own
                 // interstitial cooldown ended, so a UI that follows the event kept its button hidden.
                 var tick = new TickService();

@@ -8,7 +8,7 @@ namespace Nexus.Ads.Bridge
     /// The one call a Nexus game makes: registers the adapter with the factory under
     /// <see cref="NexusAdsAdapter.ProviderName"/> and the running provider's name, hands it to the
     /// service, sets the service's interstitial cooldown to the policy floor, forwards revenue to
-    /// <see cref="AdService.RaiseImpression"/>, and wires the ad-free entitlement when a store and a
+    /// <see cref="AdService.RaiseImpression(AdImpression)"/> with its format, currency and precision, and wires the ad-free entitlement when a store and a
     /// product are given. Waits for the bootstrap when it has not started yet.
     /// </summary>
     public static class NexusAdsBridge
@@ -59,7 +59,7 @@ namespace Nexus.Ads.Bridge
             ads.SetInterstitialCooldown((float)controller.Guard.Policy.MinInterstitialGapSeconds);
             if (ads is AdService service)
             {
-                connection.Revenue = r => service.RaiseImpression(r.Network, r.Value, r.Placement);
+                connection.Revenue = r => service.RaiseImpression(new AdImpression(r.Network, r.Placement, FormatName(r.Format), r.Value, r.Currency, r.Precision));
                 controller.Revenue += connection.Revenue;
             }
             if (store != null && !string.IsNullOrEmpty(removeAdsProductId))
@@ -74,5 +74,14 @@ namespace Nexus.Ads.Bridge
 
         private static void Attach(IAdService ads, IAdAdapterFactory factory, IIapService store, string removeAdsProductId, AdsBootstrap bootstrap)
             => Attach(ads, factory, bootstrap.Controller, bootstrap.Provider?.Name, store, removeAdsProductId);
+
+        // AdImpression.Format names; literals, so an impression allocates no enum string.
+        private static string FormatName(AdFormat format) => format switch
+        {
+            AdFormat.Rewarded => "Rewarded",
+            AdFormat.Interstitial => "Interstitial",
+            AdFormat.Banner => "Banner",
+            _ => format.ToString(),
+        };
     }
 }

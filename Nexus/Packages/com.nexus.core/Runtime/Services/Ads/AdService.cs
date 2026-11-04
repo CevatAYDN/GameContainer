@@ -19,6 +19,30 @@ namespace Nexus.Core.Services
         void HideBanner();
     }
 
+    /// <summary>One ad impression's revenue as the mediation reports it (issue #135).</summary>
+    public readonly struct AdImpression
+    {
+        public readonly string Network;
+        public readonly string Placement;
+        /// <summary>"Rewarded", "Interstitial" or "Banner" through the ad family's bridge; null when the caller did not say.</summary>
+        public readonly string Format;
+        public readonly double Value;
+        /// <summary>The ISO 4217 code ("USD", "EUR"); null when the caller did not say.</summary>
+        public readonly string Currency;
+        /// <summary>The mediation's precision word ("exact", "estimated", "publisher_defined", ...); null when the caller did not say.</summary>
+        public readonly string Precision;
+
+        public AdImpression(string network, string placement, string format, double value, string currency, string precision)
+        {
+            Network = network;
+            Placement = placement;
+            Format = format;
+            Value = value;
+            Currency = currency;
+            Precision = precision;
+        }
+    }
+
     public interface IAdService
     {
         void SetNetworkAdapter(IAdNetworkAdapter adapter);
@@ -29,7 +53,12 @@ namespace Nexus.Core.Services
         void ShowRewarded(string placement, Action<bool> onComplete);
         void ShowBanner(string placement = "default", string position = "bottom");
         void HideBanner();
-        event Action<string, double, string> OnImpressionRecorded; // (network, revenue, placement)
+        /// <summary>(network, revenue, placement) of every impression; <see cref="OnAdImpression"/> also carries the format,
+        /// the currency and the precision.</summary>
+        event Action<string, double, string> OnImpressionRecorded;
+        /// <summary>Every impression with its format, currency and precision, raised with <see cref="OnImpressionRecorded"/>
+        /// (issue #135). Log revenue from this one: an AdMob impression's currency is not always USD.</summary>
+        event Action<AdImpression> OnAdImpression;
 
         /// <summary>Rewarded flow with a structured result; NotReady when nothing is loaded, without calling the adapter.</summary>
         void RequestReward(string placement, Action<AdOutcome> onOutcome);
@@ -68,6 +97,7 @@ namespace Nexus.Core.Services
         public bool IsInitialized => _isInitialized;
 
         public event Action<string, double, string> OnImpressionRecorded;
+        public event Action<AdImpression> OnAdImpression;
         public event Action ReadyChanged;
         private readonly Action _forwardReadyChanged;
 
@@ -273,9 +303,15 @@ namespace Nexus.Core.Services
             adapter?.HideBanner();
         }
 
+        /// <summary>Raises both impression events with no format, currency or precision.</summary>
         public void RaiseImpression(string network, double revenue, string placement)
+            => RaiseImpression(new AdImpression(network, placement, null, revenue, null, null));
+
+        /// <summary>Raises <see cref="OnAdImpression"/>, then <see cref="OnImpressionRecorded"/> (issue #135).</summary>
+        public void RaiseImpression(AdImpression impression)
         {
-            OnImpressionRecorded?.Invoke(network, revenue, placement);
+            OnAdImpression?.Invoke(impression);
+            OnImpressionRecorded?.Invoke(impression.Network, impression.Value, impression.Placement);
         }
 
         public override void Dispose()

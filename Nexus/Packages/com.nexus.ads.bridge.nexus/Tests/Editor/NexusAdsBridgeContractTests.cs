@@ -218,14 +218,22 @@ namespace Nexus.Ads.Bridge.Tests
         }
 
         [Test]
-        public void Revenue_ReachesTheServicesImpressionEvent()
+        public void Revenue_ReachesBothImpressionEvents_WithItsFormatCurrencyAndPrecision()
         {
             var seen = new List<(string network, double revenue, string placement)>();
+            var impressions = new List<AdImpression>();
             _service.OnImpressionRecorded += (n, r, p) => seen.Add((n, r, p));
+            _service.OnAdImpression += impressions.Add;
             _service.RequestReward("shop_refill", _ => { });
             Assert.AreEqual(1, seen.Count);
             Assert.AreEqual("simulator", seen[0].network);
             Assert.AreEqual("shop_refill", seen[0].placement);
+            // Before #135 the bridge dropped these three; the simulator reports a rewarded impression in USD, "simulated".
+            Assert.AreEqual(1, impressions.Count);
+            Assert.AreEqual("shop_refill", impressions[0].Placement);
+            Assert.AreEqual("Rewarded", impressions[0].Format);
+            Assert.AreEqual("USD", impressions[0].Currency);
+            Assert.AreEqual("simulated", impressions[0].Precision);
         }
 
         [Test]

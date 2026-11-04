@@ -425,6 +425,7 @@ Features marked as beta:
   - `CommandRegistry.UnregisterCommand`;
   - `CommandExecutor.InFlightAsyncCommands`.
 - Issue #251 removed the generated binder's `PreserveMembers`, which never ran; the generated `link.xml` preserves the injectable types. A game regenerates its binder.
+- Issue #135 added `IAdService.OnAdImpression`: a class that implements `IAdService` adds the event.
 
 **Migration:** See [MIGRATION.md](MIGRATION.md#version-060--070-unreleased).
 

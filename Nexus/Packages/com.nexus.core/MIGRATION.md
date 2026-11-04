@@ -42,6 +42,13 @@ Issue #251 removed `NexusGeneratedBinder.PreserveMembers` from the generated bin
 `link.xml` preserves the injectable types. Regenerate the binder (**Nexus > Generate AOT Binder**) at the re-pin. A game
 that called the method gets CS0117 and removes the call; nothing replaces it.
 
+#### `IAdService.OnAdImpression`
+
+Issue #135 added `event Action<AdImpression> OnAdImpression` to `IAdService`. A class of the game that implements
+`IAdService` gets CS0535 and adds the event; no known game or sample implements it. A game that logs ad revenue
+subscribes this event instead of `OnImpressionRecorded` and logs the impression's `Currency` instead of a fixed "USD";
+`Format` and `Precision` are there too. `OnImpressionRecorded` still fires for every impression.
+
 ---
 
 ## Version 0.5.0 → 0.6.0
