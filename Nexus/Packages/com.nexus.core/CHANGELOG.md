@@ -62,7 +62,7 @@ everything under Unreleased is in the repository but not yet in a tagged package
 
 ### Fixed
 - **A start whose product fetch failed left ownership `Unknown` for the rest of the session** (issue #268, `com.nexus.iap.unity`).
-  - `UnityIapAdapter` fetched the purchases only after a successful product fetch. When the product fetch failed, `OwnershipKnown` stayed false until a `Restore`, and `GetOwnership` answered `Unknown`. ChipCrisis hit this on a phone because `remove_ads` is not yet in Play Console; a network failure at start takes the same path.
+  - `UnityIapAdapter` fetched the purchases only after a successful product fetch. When the product fetch failed, `OwnershipKnown` stayed false until a `Restore`, and `GetOwnership` answered `Unknown`. ChipCrisis hit this on a phone because `remove_ads` is not yet in Play Console. Every other failed product fetch after a connect takes the same path; whether a start without a network connects first was not checked. A start whose connect fails still leaves ownership `Unknown`.
   - The ads bridge's `IapAdFreeEntitlement` reads `Unknown` as ad-free (#183), so for the rest of the session every ad but rewarded ones was withheld, also from players who never bought the product.
   - The adapter now fetches the purchases after a failed product fetch too. The start still answers false, and purchasing stays unavailable until a later start fetches the products. A failed product fetch is not retried.
   - Unity IAP 5.4.4 needs only a connected store to fetch purchases. On Google Play, an order whose product was not fetched carries an unknown product with the order's id (`ProductCache` falls back to `Product.CreateUnknownProduct`). Both facts come from reading the source; neither was run on a phone.
