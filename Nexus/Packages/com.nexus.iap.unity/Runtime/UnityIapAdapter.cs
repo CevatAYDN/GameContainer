@@ -57,7 +57,8 @@ namespace Nexus.Iap.Unity
         public event UnrequestedPurchaseHandler UnrequestedPurchase;
         private readonly HashSet<string> _keptUnrequested = new();   // orders left with the store for want of a handler, warned once
         public bool IsAvailable => _connected && _productsFetched;
-        /// <summary>True once a purchase fetch answered (each start and <see cref="Restore"/>); a failed fetch leaves it as it was (#183).</summary>
+        /// <summary>True once a purchase fetch answered (each connected start, also one whose product fetch failed (#268), and
+        /// <see cref="Restore"/>); a failed fetch leaves it as it was (#183).</summary>
         public bool OwnershipKnown { get; private set; }
 
         public string GetLocalizedPrice(string productId) => _store?.GetProductById(productId)?.metadata?.localizedPriceString;
@@ -158,7 +159,9 @@ namespace Nexus.Iap.Unity
         private void OnDeferred(DeferredOrder order) { Defer(order, true); if (Answers(order)) Complete(PurchaseOutcome.Pending); }
         private void OnPurchasesFetchFailed(PurchasesFetchFailureDescription failure) { Warn(Describe(failure)); FinishRestore(false); }
         private void OnProductsFetched(List<Product> products) { _productsFetched = true; _store.FetchPurchases(); FinishInitialize(true); Changed?.Invoke(); }
-        private void OnProductsFetchFailed(ProductFetchFailed failure) { _productsFetched = false; Warn(Describe(failure)); FinishInitialize(false); Changed?.Invoke(); }
+        // Unity IAP fetches purchases without the products (Google Play falls back to an unknown product with the order's id), so
+        // ownership becomes known while purchasing stays unavailable (#268)
+        private void OnProductsFetchFailed(ProductFetchFailed failure) { _productsFetched = false; Warn(Describe(failure)); _store.FetchPurchases(); FinishInitialize(false); Changed?.Invoke(); }
 
         public void Purchase(string productId, Action<bool, string> onComplete)
             => PurchaseWithOutcome(productId, outcome => onComplete?.Invoke(outcome == PurchaseOutcome.Purchased,

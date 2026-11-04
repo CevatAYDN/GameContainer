@@ -433,6 +433,31 @@ namespace Nexus.Iap.Unity.Tests
             }
             finally { UnityIAPServices.SetStoreAsDefault(previous); }
         }
+
+        // Issue #268: a start whose product fetch failed never fetched the purchases, so ownership stayed unknown for the session and
+        // the ads bridge, which reads unknown as ad-free, showed no interstitial to a player who never bought remove_ads
+        [UnityTest]
+        public IEnumerator AStartWhoseProductFetchFails_StillLearnsWhatTheAccountOwns()
+        {
+            string previous = UnityIAPServices.GetDefaultStore();
+            var store = UseTestStore("NexusProductsMissing", failConfirms: 0);
+            store.FailProducts = true;
+            try
+            {
+                var adapter = new UnityIapAdapter();
+                LogAssert.Expect(LogType.Warning, new Regex(@"^\[UnityIAP\] Products not fetched \(remove_ads\)"));
+                bool? ready = null;
+                adapter.Initialize(new List<NexusProduct> { new NexusProduct { Id = "remove_ads", Type = NexusProductType.NonConsumable } }, ok => ready = ok);
+                yield return Until(() => ready != null, "the start answered");
+                Assert.AreEqual(false, ready);
+                Assert.IsFalse(adapter.IsAvailable, "the products were not fetched");
+
+                yield return Until(() => adapter.OwnershipKnown, "ownership became known");
+                Assert.IsFalse(adapter.IsOwned("remove_ads"));
+                LogAssert.NoUnexpectedReceived();
+            }
+            finally { UnityIAPServices.SetStoreAsDefault(previous); }
+        }
     }
 }
 #endif

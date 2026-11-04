@@ -44,7 +44,9 @@ keeps handling the store's purchases. `SetStoreAdapter` disposes the adapter it 
 
 Order of events: `Initialize` connects, fetches the catalog's products and the purchases this
 account already owns, then confirms every pending order. A start whose connect or product fetch
-fails answers false and leaves the store unavailable; the next start connects again. A purchase reports `Purchased` to the
+fails answers false and leaves the store unavailable; the next start connects again. A start whose
+product fetch fails still fetches the purchases, so `GetOwnership` answers `Owned` or `NotOwned`
+instead of `Unknown` once the store answers (#268). A purchase reports `Purchased` to the
 game first and is confirmed with the store right after, so the game records ownership before
 acknowledgement. A confirm the store refuses is warned in every build and sent again after 5 s,
 30 s and 2 min; after that the next purchase fetch (each start and `Restore`) confirms it.
