@@ -473,6 +473,7 @@ namespace NexusBench
         {
             RunAudio_Core();
             RunAudio_PoolAndDedup();
+            RunAudio_VoicesAndInterval();
         }
 
         private static void RunAudio_Core()
@@ -583,6 +584,80 @@ namespace NexusBench
             finally
             {
                 ctx.Dispose();
+            }
+        }
+
+        // #161: the voice limit is set on the instance the game binds, and a clip can have a minimum interval
+        private static void RunAudio_VoicesAndInterval()
+        {
+            var audio = new AudioService { MaxSfxVoices = 12 };
+            var ctx = NexusTestHarness.CreateContext(b =>
+            {
+                b.BindInstance<IPlayerPrefsService>(new FakeSessionPrefs());
+                b.BindInstance<IAudioRootProvider>(new DefaultAudioRootProvider());
+                b.BindServiceInstance<IAudioService>(audio);
+            }, autoInitialize: true);
+            try
+            {
+                var clipA = new AudioClip("sfx_a");
+                var clipB = new AudioClip("sfx_b");
+                var hit = new AudioClip("hit");
+                var free = new AudioClip("free");
+                s_clipsToDestroy.Add(clipA);
+                s_clipsToDestroy.Add(clipB);
+                s_clipsToDestroy.Add(hit);
+                s_clipsToDestroy.Add(free);
+
+                int baseline = CountSfxSources();
+                for (int i = 0; i < 20; i++) audio.PlaySfx(clipA);
+                int bound = CountSfxSources() - baseline;
+
+                // A lower limit applies from the next effect: the sources above it are not taken again
+                audio.MaxSfxVoices = 2;
+                for (int i = 0; i < 10; i++) audio.PlaySfx(clipB);
+                int lowered = CountSfxSources() - baseline;
+                var held = new[] { SfxSourceClip(0), SfxSourceClip(1), SfxSourceClip(2), SfxSourceClip(11) };
+                bool lowerApplies = lowered == 12 && held[0] == clipB && held[1] == clipB && held[2] == clipA && held[3] == clipA;
+                Check("A9. SfxVoices_SetOnTheBoundInstance_AndALowerLimitAppliesAtOnce", bound == 12 && lowerApplies,
+                    $"20 plays with MaxSfxVoices=12 -> {bound} sources; limit 2, 10 plays -> {lowered} sources, 0/1/2/11 holding " +
+                    $"{held[0]?.name}/{held[1]?.name}/{held[2]?.name}/{held[3]?.name} (expected sfx_b/sfx_b/sfx_a/sfx_a)");
+
+                audio.MaxSfxVoices = 32;
+                audio.SetSfxMinInterval(hit, 0.125f);
+                baseline = CountSfxSources();
+                Time.realtimeSinceStartup = 10f;
+                audio.PlaySfx(hit);
+                int first = CountSfxSources() - baseline;
+                Time.realtimeSinceStartup = 10.1f;
+                audio.PlaySfx(hit);
+                int early = CountSfxSources() - baseline;
+                Time.realtimeSinceStartup = 10.13f;
+                audio.PlaySfx(hit);
+                int after = CountSfxSources() - baseline;
+                for (int i = 0; i < 3; i++) audio.PlaySfx(free);
+                int unlimited = CountSfxSources() - baseline;
+                audio.SetSfxMinInterval(hit, 0f);
+                audio.PlaySfx(hit);
+                int removed = CountSfxSources() - baseline;
+                Check("A10. SfxMinInterval_DropsTheClipInsideIt_AndADroppedPlayDoesNotRestartIt",
+                    first == 1 && early == 1 && after == 2 && unlimited == 5 && removed == 6,
+                    $"sources after t=10 {first}, t=10.1 {early}, t=10.13 {after} (expected 1,1,2); 3 plays of an unlimited clip -> " +
+                    $"{unlimited} (expected 5); interval removed -> {removed} (expected 6)");
+
+                audio.SetSfxMinInterval(hit, 0.125f);
+                Time.realtimeSinceStartup = 20f;
+                audio.PlaySfxAtPosition(hit, Vector3.zero);
+                int positioned = CountSfxSources() - baseline;
+                Time.realtimeSinceStartup = 20.05f;
+                audio.PlaySfxAtPosition(hit, Vector3.zero);
+                int positionedEarly = CountSfxSources() - baseline;
+                Check("A11. SfxMinInterval_AppliesToPositionedEffects", positioned == 7 && positionedEarly == 7,
+                    $"sources after t=20 {positioned}, t=20.05 {positionedEarly} (expected 7,7)");
+            }
+            finally
+            {
+                ctx.Dispose();
+                audio.Dispose();
             }
         }
 
@@ -1344,8 +1419,19 @@ namespace NexusBench
                 {
                     for (int i = 0; i < 2000; i++) audio.PlaySfx(clip);
                 });
-                Check("G2. Audio_PlaySfx_PoolWarmed_ZeroGC", alloc <= 128,
-                    $"allocated={alloc} bytes for 2000 pool-warmed plays (limit <=128)");
+
+                // #161: with a minimum interval the plays are both taken and dropped
+                var hit = new AudioClip("hit");
+                s_clipsToDestroy.Add(hit);
+                audio.SetSfxMinInterval(hit, 0.125f);
+                Time.realtimeSinceStartup = 500f;
+                for (int i = 0; i < 10; i++) { Time.realtimeSinceStartup += 0.05f; audio.PlaySfx(hit); }
+                long intervalAlloc = MeasuredAllocations(() =>
+                {
+                    for (int i = 0; i < 2000; i++) { Time.realtimeSinceStartup += 0.05f; audio.PlaySfx(hit); }
+                });
+                Check("G2. Audio_PlaySfx_PoolWarmed_ZeroGC", alloc <= 128 && intervalAlloc <= 128,
+                    $"allocated={alloc} bytes for 2000 pool-warmed plays, {intervalAlloc} for 2000 with a minimum interval (limit <=128 each)");
             }
             finally
             {
@@ -1409,6 +1495,13 @@ namespace NexusBench
         {
             return UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Exclude)
                 .Count(go => go.name.StartsWith("SFXSource_"));
+        }
+
+        private static AudioClip SfxSourceClip(int index)
+        {
+            var go = UnityEngine.Object.FindObjectsByType<GameObject>(FindObjectsInactive.Exclude)
+                .FirstOrDefault(g => g.name == $"SFXSource_{index}");
+            return go == null ? null : go.GetComponent<AudioSource>().clip;
         }
     }
 

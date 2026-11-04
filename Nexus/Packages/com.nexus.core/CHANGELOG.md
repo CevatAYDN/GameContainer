@@ -13,6 +13,12 @@ everything under Unreleased is in the repository but not yet in a tagged package
 ## [Unreleased]
 
 ### Added
+- **`AudioService`: a voice limit the game sets, and a minimum interval per clip** (issue #161).
+  - The effect voices were capped by a constant of 32, and nothing stopped one clip from filling them: a burst of hits played as many times as it was asked. Wickling keeps its own audio service for both (12 voices, one interval per sound).
+  - `AudioService.MaxSfxVoices` (default 32, at least 1) is set on the instance the game binds, `builder.BindServiceInstance<IAudioService>(new AudioService { MaxSfxVoices = 12 })`. A lower value applies from the next effect.
+  - `AudioService.SetSfxMinInterval(clip, seconds)` drops an effect of that clip asked for within `seconds` of real time after the last one that played; a dropped effect does not restart the interval, and 0 removes the limit. It covers `PlaySfx` and `PlaySfxAtPosition`. Each clip has its own interval.
+  - Both are members of `AudioService`, not of `IAudioService`, so the games' own implementations of the interface keep compiling.
+  - Harness A9, A10, A11; G2 also measures plays of a clip with an interval (0 B).
 - **`IPartialInputProvider`: an input provider can supply only some buttons** (issue #156).
   - An `IInputProvider` answered every button read of `InputService`, so a provider with movement only took Android's back key: `ScreenStack`'s back chain reads `GetButtonDown("Cancel")`. Wickling's floating joystick is not registered as a provider for this reason.
   - A provider that also implements `IPartialInputProvider` answers the buttons for which `ProvidesButton(actionName)` returns true; the service reads the others itself through the Input System or the Input Manager. The movement stays the provider's, neutral frames included.

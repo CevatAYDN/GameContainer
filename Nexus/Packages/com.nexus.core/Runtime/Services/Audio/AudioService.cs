@@ -113,12 +113,45 @@ namespace Nexus.Core.Services
         private bool _fadingOut; // the running fade is StopBgm's, so PlayBgm of its track brings it back (#186)
         private bool _warnedNoRoot;
 
-        // Hard cap on the SFX source pool. The old GetAvailableSfxSource grew the pool
-        // unboundedly (a new GameObject + interpolated name string per allocation) on
-        // SFX-heavy scenes — under a burst of simultaneous sounds the linear scan plus
-        // create became effectively O(N²) with permanent memory growth. Once the cap is
-        // reached the oldest channel is stolen instead of allocating another source.
-        private const int MaxSfxPoolSize = 32;
+        // The effect sources are capped (the pool once grew without bound); at the cap a playing source is taken over in turn.
+        private int _maxSfxVoices = 32;
+        private Dictionary<AudioClip, SfxThrottle> _sfxThrottles;
+
+        private sealed class SfxThrottle
+        {
+            public float Interval;
+            public float LastPlayed = float.NegativeInfinity;
+        }
+
+        /// <summary>
+        /// The most sound effects that play at once (default 32; a value below 1 counts as 1). At the limit the next effect
+        /// stops a playing one, taken in turn; a lower value applies from the next effect. A game sets it on the instance it
+        /// binds: <c>builder.BindServiceInstance&lt;IAudioService&gt;(new AudioService { MaxSfxVoices = 12 })</c> (issue #161).
+        /// </summary>
+        public int MaxSfxVoices
+        {
+            get => _maxSfxVoices;
+            set => _maxSfxVoices = Math.Max(1, value);
+        }
+
+        /// <summary>
+        /// Plays <paramref name="clip"/> at most once every <paramref name="seconds"/> of real time: an effect asked for sooner
+        /// is dropped, so a burst of hits sounds once instead of filling the voices. A dropped effect does not restart the
+        /// interval. <paramref name="seconds"/> of 0 or less removes the limit. Each clip has its own interval; variants of
+        /// one sound that share a budget are limited by the game (issue #161).
+        /// </summary>
+        public void SetSfxMinInterval(AudioClip clip, float seconds)
+        {
+            if (clip == null) throw new ArgumentNullException(nameof(clip));
+            if (seconds <= 0f)
+            {
+                _sfxThrottles?.Remove(clip);
+                return;
+            }
+            _sfxThrottles ??= new Dictionary<AudioClip, SfxThrottle>();
+            if (_sfxThrottles.TryGetValue(clip, out var throttle)) throttle.Interval = seconds;
+            else _sfxThrottles.Add(clip, new SfxThrottle { Interval = seconds });
+        }
 
         private float _masterVolume = 1f;
         private float _bgmVolume = 1f;
@@ -410,7 +443,7 @@ namespace Nexus.Core.Services
             // FeedbackService.PlayCustom swap so inverted pitch ranges never crash.
             if (pitchMin > pitchMax) (pitchMin, pitchMax) = (pitchMax, pitchMin);
 
-            var source = GetAvailableSfxSource();
+            var source = TakeSfxSource(clip);
             if (source == null) return;
             source.spatialBlend = 0f; // 2D sound
             source.volume = Mathf.Clamp01(volume) * _masterVolume * _sfxVolume;
@@ -422,7 +455,7 @@ namespace Nexus.Core.Services
         {
             if (clip == null || SfxMuted) return;
 
-            var source = GetAvailableSfxSource();
+            var source = TakeSfxSource(clip);
             if (source == null) return;
             source.transform.position = position;
             source.spatialBlend = 1f; // 3D spatial sound
@@ -437,9 +470,25 @@ namespace Nexus.Core.Services
         // cursor spreads the scan and finds an idle source in ~O(1) amortized.
         private int _sfxScanCursor;
 
+        // Null when the clip is inside its minimum interval; only an effect that gets a source restarts the interval (#161).
+        private AudioSource TakeSfxSource(AudioClip clip)
+        {
+            SfxThrottle throttle = null;
+            float now = 0f;
+            if (_sfxThrottles != null && _sfxThrottles.Count > 0 && _sfxThrottles.TryGetValue(clip, out throttle))
+            {
+                now = Time.realtimeSinceStartup;
+                if (now - throttle.LastPlayed < throttle.Interval) return null;
+            }
+            var source = GetAvailableSfxSource();
+            if (source != null && throttle != null) throttle.LastPlayed = now;
+            return source;
+        }
+
         private AudioSource GetAvailableSfxSource()
         {
-            int count = _sfxPool.Count;
+            // Sources above a lowered limit are not used again (#161).
+            int count = Math.Min(_sfxPool.Count, _maxSfxVoices);
             if (count > 0)
             {
                 int start = _sfxScanCursor % count;
@@ -454,11 +503,11 @@ namespace Nexus.Core.Services
                 }
             }
 
-            if (_sfxPool.Count >= MaxSfxPoolSize)
+            if (_sfxPool.Count >= _maxSfxVoices)
             {
                 // Pool exhausted — steal the channel at the cursor (round-robin), so
                 // steals cycle fairly instead of starving index 0.
-                int stealIdx = _sfxScanCursor % _sfxPool.Count;
+                int stealIdx = _sfxScanCursor % count;
                 var stolen = _sfxPool[stealIdx];
                 stolen.Stop();
                 _sfxScanCursor = stealIdx + 1;
