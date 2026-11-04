@@ -332,10 +332,11 @@ namespace Nexus.Core
                 {
                     command = _poolManager.GetCommand(handler.CommandType);
                     _container.Inject(command);
-                    InjectSignal(command, signal);
 
                     if (command is ICommand syncCmd)
                     {
+                        // only a non-generic command reads the payload from a member; a generic one gets it as the argument (#278)
+                        InjectSignal(command, signal);
                         if (_context is Context decoratorCtx && decoratorCtx.PluginsReadOnlyCopy.Count > 0)
                         {
                             ExecuteWithDecorators(syncCmd, () => syncCmd.Execute());
@@ -534,7 +535,8 @@ namespace Nexus.Core
 
                     command = _poolManager.GetCommand(handler.CommandType);
                     _container.Inject(command);
-                    InjectSignal(command, signal);
+                    // only a non-generic command reads the payload from a member; a generic one gets it as the argument (#278)
+                    if (command is IAsyncCommand || command is ICommand) InjectSignal(command, signal);
 
                     if (command is IAsyncCommand asyncCmd)
                     {
@@ -638,7 +640,7 @@ namespace Nexus.Core
 
         /// <summary>
         /// InjectSignal assigns the signal payload to the matching field or property on the command instance.
-        /// This is only used in non-generic ICommand execution. The compiled setter cache lives in the
+        /// This is only used in non-generic ICommand and IAsyncCommand execution. The compiled setter cache lives in the
         /// CommandRegistry (shared with the standalone registry; the CR/DIFF suite proves parity).
         /// </summary>
         internal void InjectSignal(object command, object signal)

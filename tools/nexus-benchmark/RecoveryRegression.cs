@@ -194,6 +194,11 @@ namespace NexusBench
             {
                 bus.RegisterCommand(typeof(FailSignal), typeof(ThrowingCommand), ExecutionMode.Sequential, 0, false);
                 bool threw = false;
+                // #278: the object path looked up a payload member on a command that gets the signal as its argument,
+                // and warned in every build that it "will execute without the payload"
+                int payloadWarnings = 0;
+                Action<string, string> listen = (level, text) => { if (text != null && text.Contains("has no member able to receive signal payload")) payloadWarnings++; };
+                UnityEngine.Debug.Logged += listen;
                 try
                 {
                     bus.Fire(new FailSignal(1));
@@ -203,10 +208,14 @@ namespace NexusBench
                     threw = true;
                     Console.WriteLine($"[Nexus Benchmark] unexpected exception: {ex.GetType().Name}: {ex.Message}");
                 }
+                finally
+                {
+                    UnityEngine.Debug.Logged -= listen;
+                }
 
                 // The restored tail dispatches the fallback; counter.Value becomes 1.
-                Check("SyncFallback_GenericOnlyDispatch", !threw && counter.Value == 1,
-                    $"threw={threw}, fallbackRuns={counter.Value} (expected 1)");
+                Check("SyncFallback_GenericOnlyDispatch", !threw && counter.Value == 1 && payloadWarnings == 0,
+                    $"threw={threw}, fallbackRuns={counter.Value} (expected 1), payloadWarnings={payloadWarnings} (expected 0)");
             }
             finally
             {
