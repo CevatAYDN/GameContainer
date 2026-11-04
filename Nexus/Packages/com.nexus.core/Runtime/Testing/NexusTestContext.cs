@@ -67,20 +67,13 @@ namespace Nexus.Core
             }
             else if (type.IsClass)
             {
-                // Commands (sync/async/composite) bind transient and register their
-                // [SignalHandler]/[CompositeSignalHandler] attributes through the shared
-                // production path (SignalBus.RegisterCommandType) — the same routine the
-                // runtime assembly scan uses, so tests can never drift from production.
+                // Commands (sync/async/composite) bind transient and register their handler
+                // attributes through the routines the runtime assembly scan uses
+                // (SignalBus.ReadHandlerAttributes, SignalBus.RegisterCommandType), so tests
+                // can never drift from production.
                 if (SignalBus.IsCommandType(type))
                 {
-                    // CommandRegistry binds the command type itself during RegisterCommandType.
-                    if (!Context.SignalBusInternal.RegisterCommandType(
-                            type,
-                            type.GetCustomAttributes<SignalHandlerAttribute>(),
-                            type.GetCustomAttribute<CompositeSignalHandlerAttribute>()))
-                    {
-                        throw new InvalidOperationException($"Command type {type.Name} does not have any [SignalHandler] or [CompositeSignalHandler] attributes.");
-                    }
+                    RegisterCommandAttributes(type, forceAsync: null);
                 }
                 else
                 {
@@ -94,33 +87,22 @@ namespace Nexus.Core
         /// <typeparam name="TCommand">The command type.</typeparam>
         public void RegisterCommand<TCommand>() where TCommand : class
         {
-            var type = typeof(TCommand);
-
-            // CommandRegistry binds the command type itself during RegisterCommandType.
-            if (!Context.SignalBusInternal.RegisterCommandType(
-                    type,
-                    type.GetCustomAttributes<SignalHandlerAttribute>(),
-                    type.GetCustomAttribute<CompositeSignalHandlerAttribute>(),
-                    forceAsync: false))
-            {
-                throw new InvalidOperationException($"Command type {type.Name} does not have any [SignalHandler] or [CompositeSignalHandler] attributes.");
-            }
+            RegisterCommandAttributes(typeof(TCommand), forceAsync: false);
         }
 
         /// <summary>Registers an asynchronous command type and wires it to its signal handlers.</summary>
         /// <typeparam name="TCommand">The command type.</typeparam>
         public void RegisterAsyncCommand<TCommand>() where TCommand : class
         {
-            var type = typeof(TCommand);
+            RegisterCommandAttributes(typeof(TCommand), forceAsync: true);
+        }
 
-            if (!Context.SignalBusInternal.RegisterCommandType(
-                    type,
-                    type.GetCustomAttributes<SignalHandlerAttribute>(),
-                    type.GetCustomAttribute<CompositeSignalHandlerAttribute>(),
-                    forceAsync: true))
-            {
-                throw new InvalidOperationException($"Command type {type.Name} does not have any [SignalHandler] or [CompositeSignalHandler] attributes.");
-            }
+        // CommandRegistry binds the command type itself during RegisterCommandType.
+        private void RegisterCommandAttributes(Type type, bool? forceAsync)
+        {
+            SignalBus.ReadHandlerAttributes(type, out var handlers, out var composite);
+            if (!Context.SignalBusInternal.RegisterCommandType(type, handlers, composite, forceAsync))
+                throw new InvalidOperationException($"Command type {type.Name} has no [SignalHandler], [RegisterCommand], [CompositeSignalHandler] or [RegisterCompositeCommand] attribute.");
         }
 
         private void RegisterSignalInternal<TSignal>() where TSignal : struct

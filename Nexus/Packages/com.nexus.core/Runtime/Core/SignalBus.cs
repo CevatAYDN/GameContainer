@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -372,6 +373,40 @@ namespace Nexus.Core
                 return new TypedCompositeRegistration<TFirst, TSecond>(this,
                     (first, second) => _commandExecutor.ExecuteTypedComposite<TFirst, TSecond, TCommand>(first, second, oneShot), oneShot);
             }
+        }
+
+        /// <summary>
+        /// Reads a command type's handler attributes: <c>[SignalHandler]</c> and <c>[RegisterCommand]</c> into
+        /// <paramref name="handlers"/>, <c>[CompositeSignalHandler]</c> or <c>[RegisterCompositeCommand]</c> into
+        /// <paramref name="composite"/>, each property carried across. The one routine the context's assembly scan and
+        /// <c>NexusTestContext</c> use (#280). Returns false when the type declares none.
+        /// </summary>
+        internal static bool ReadHandlerAttributes(Type type, out IReadOnlyList<SignalHandlerAttribute> handlers,
+            out CompositeSignalHandlerAttribute composite)
+        {
+            List<SignalHandlerAttribute> list = null;
+            foreach (var attr in type.GetCustomAttributes<SignalHandlerAttribute>())
+                (list ??= new List<SignalHandlerAttribute>()).Add(attr);
+            // OneShot and IsAsync must be carried across: dropping OneShot silently turned a once-only command into a permanent handler.
+            foreach (var attr in type.GetCustomAttributes<RegisterCommandAttribute>())
+                (list ??= new List<SignalHandlerAttribute>()).Add(new SignalHandlerAttribute(attr.SignalType)
+                {
+                    Mode = attr.Mode,
+                    Priority = attr.Priority,
+                    OneShot = attr.OneShot,
+                    IsAsync = attr.IsAsync ? true : (bool?)null
+                });
+            composite = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
+            var registerComposite = type.GetCustomAttribute<RegisterCompositeCommandAttribute>();
+            if (registerComposite != null)
+                composite = new CompositeSignalHandlerAttribute(registerComposite.SignalTypes)
+                {
+                    OneShot = registerComposite.OneShot,
+                    Priority = registerComposite.Priority,
+                    IsAsync = registerComposite.IsAsync ? true : (bool?)null
+                };
+            handlers = (IReadOnlyList<SignalHandlerAttribute>)list ?? Array.Empty<SignalHandlerAttribute>();
+            return list != null || composite != null;
         }
 
         /// <summary>

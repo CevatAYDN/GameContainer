@@ -144,9 +144,14 @@ namespace Nexus.Core
         private class ScannedHandlerData
         {
             public Type Type { get; }
-            public List<SignalHandlerAttribute> Handlers { get; } = new();
-            public CompositeSignalHandlerAttribute CompositeHandler { get; set; }
-            public ScannedHandlerData(Type type) { Type = type; }
+            public IReadOnlyList<SignalHandlerAttribute> Handlers { get; }
+            public CompositeSignalHandlerAttribute CompositeHandler { get; }
+            public ScannedHandlerData(Type type, IReadOnlyList<SignalHandlerAttribute> handlers, CompositeSignalHandlerAttribute composite)
+            {
+                Type = type;
+                Handlers = handlers;
+                CompositeHandler = composite;
+            }
         }
 
         private static readonly Dictionary<Assembly, List<ScannedHandlerData>> s_assemblyScanCache = new();
@@ -670,48 +675,9 @@ namespace Nexus.Core
                         cachedData = new List<ScannedHandlerData>();
                         foreach (var type in Services.AssemblyScanService.GetCachedTypes(assembly))
                         {
-                            if (type.IsClass && !type.IsAbstract)
-                            {
-                                ScannedHandlerData data = null;
-                                var handlerAttrs = type.GetCustomAttributes<SignalHandlerAttribute>();
-                                foreach (var attr in handlerAttrs)
-                                {
-                                    if (data == null) data = new ScannedHandlerData(type);
-                                    data.Handlers.Add(attr);
-                                }
-                                var regCmdAttrs = type.GetCustomAttributes<RegisterCommandAttribute>();
-                                foreach (var attr in regCmdAttrs)
-                                {
-                                    if (data == null) data = new ScannedHandlerData(type);
-                                    // OneShot and IsAsync must be carried across: dropping OneShot
-                                    // silently turned a once-only command into a permanent handler.
-                                    data.Handlers.Add(new SignalHandlerAttribute(attr.SignalType)
-                                    {
-                                        Mode = attr.Mode,
-                                        Priority = attr.Priority,
-                                        OneShot = attr.OneShot,
-                                        IsAsync = attr.IsAsync ? true : (bool?)null
-                                    });
-                                }
-                                var compositeAttr = type.GetCustomAttribute<CompositeSignalHandlerAttribute>();
-                                if (compositeAttr != null)
-                                {
-                                    if (data == null) data = new ScannedHandlerData(type);
-                                    data.CompositeHandler = compositeAttr;
-                                }
-                                var regCompositeAttr = type.GetCustomAttribute<RegisterCompositeCommandAttribute>();
-                                if (regCompositeAttr != null)
-                                {
-                                    if (data == null) data = new ScannedHandlerData(type);
-                                    data.CompositeHandler = new CompositeSignalHandlerAttribute(regCompositeAttr.SignalTypes)
-                                    {
-                                        OneShot = regCompositeAttr.OneShot,
-                                        Priority = regCompositeAttr.Priority,
-                                        IsAsync = regCompositeAttr.IsAsync ? true : (bool?)null
-                                    };
-                                }
-                                if (data != null) cachedData.Add(data);
-                            }
+                            if (type.IsClass && !type.IsAbstract
+                                && Nexus.Core.SignalBus.ReadHandlerAttributes(type, out var handlers, out var composite))
+                                cachedData.Add(new ScannedHandlerData(type, handlers, composite));
                         }
                         s_assemblyScanCache[assembly] = cachedData;
                     }

@@ -880,6 +880,19 @@ namespace NexusBench
                 catch (InvalidOperationException) { threw = true; }
                 Check("T4. Command_Without_Handler_Throws", threw,
                     $"threw={threw}");
+
+                // #280: Register rejected a command that declares only [RegisterCommand], which the assembly scan accepts
+                SvcOnceCommand.Executions = 0;
+                string onceError = null;
+                try
+                {
+                    harness.Register<SvcOnceCommand>();
+                    harness.Dispatch(new SvcOnceSignal());
+                    harness.Dispatch(new SvcOnceSignal());
+                }
+                catch (Exception ex) { onceError = $"{ex.GetType().Name}: {ex.Message}"; }
+                Check("T4b. Register_OfARegisterCommandOnlyCommand_KeepsItsOneShot", onceError == null && SvcOnceCommand.Executions == 1,
+                    onceError ?? $"executions={SvcOnceCommand.Executions} (expected 1)");
             }
             finally
             {
@@ -1528,6 +1541,15 @@ namespace NexusBench
     public class SvcNoHandlerCommand : ICommand<ServicesTestSignal>
     {
         public void Execute(ServicesTestSignal signal) { }
+    }
+
+    public readonly struct SvcOnceSignal { }
+
+    [RegisterCommand(typeof(SvcOnceSignal), OneShot = true)]
+    public class SvcOnceCommand : ICommand<SvcOnceSignal>
+    {
+        public static int Executions;
+        public void Execute(SvcOnceSignal signal) => Executions++;
     }
 
     // IContextLifecycle whose OnConfigure binds a service through the REAL Context

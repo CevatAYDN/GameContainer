@@ -275,24 +275,10 @@ namespace NexusBench
             var bus = new SignalBus(container, new CommandPoolManager(container), new MockContext());
             container.Bind<FvOnceCommand>(isSingleton: false);
 
-            // Route through the same attribute path the assembly scan uses, so the
+            // The routine the assembly scan and NexusTestContext read attributes with (#280), so the
             // OneShot flag has to survive attribute → registration.
-            var attrs = (RegisterCommandAttribute[])typeof(FvOnceCommand)
-                .GetCustomAttributes(typeof(RegisterCommandAttribute), false);
-            var handlers = new System.Collections.Generic.List<SignalHandlerAttribute>();
-            foreach (var a in attrs)
-            {
-                handlers.Add(new SignalHandlerAttribute(a.SignalType)
-                {
-                    Mode = a.Mode,
-                    Priority = a.Priority,
-                    OneShot = a.OneShot,
-                    IsAsync = a.IsAsync ? true : (bool?)null
-                });
-            }
-            bus.GetType()
-                .GetMethod("RegisterCommandType", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
-                .Invoke(bus, new object[] { typeof(FvOnceCommand), handlers, null, null });
+            SignalBus.ReadHandlerAttributes(typeof(FvOnceCommand), out var handlers, out var composite);
+            bus.RegisterCommandType(typeof(FvOnceCommand), handlers, composite);
 
             bus.Fire(new FvOnceSignal { Value = 1 });
             bus.Fire(new FvOnceSignal { Value = 2 });
