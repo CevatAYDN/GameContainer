@@ -10,8 +10,7 @@ namespace Nexus.Editor
 {
     internal static class NexusEditorDataProvider
     {
-        // ── Cached handler mappings ─────────────────────────────
-        private static List<HandlerMapping> s_cachedMappings;
+        // ── Cached handler count ────────────────────────────────
         private static int s_cachedHandlerCount;
         private static bool s_cacheValid;
 
@@ -31,10 +30,9 @@ namespace Nexus.Editor
 
         private static void EnsureCached()
         {
-            if (s_cacheValid && s_cachedMappings != null)
+            if (s_cacheValid)
                 return;
 
-            s_cachedMappings = new List<HandlerMapping>();
             s_cachedHandlerCount = 0;
 
             foreach (var assembly in AssemblyCatalog.GameAssemblies())
@@ -45,52 +43,12 @@ namespace Nexus.Editor
                     {
                         if (!type.IsClass || type.IsAbstract) continue;
 
-                        bool hasHandlers = false;
-
-                        // IsDefined guards: GetCustomAttributes<T>() allocates even when the
-                        // type has no attribute — this scan visits every class in the project.
-                        if (type.IsDefined(typeof(SignalHandlerAttribute), false))
-                        {
-                            foreach (var attr in type.GetCustomAttributes<SignalHandlerAttribute>())
-                            {
-                                hasHandlers = true;
-                                s_cachedMappings.Add(new HandlerMapping
-                                {
-                                    SignalName = attr.SignalType.Name,
-                                    CommandName = type.Name,
-                                    Mode = attr.Mode.ToString()
-                                });
-                            }
-                        }
-
-                        var compositeAttr = type.IsDefined(typeof(CompositeSignalHandlerAttribute), false)
-                            ? type.GetCustomAttribute<CompositeSignalHandlerAttribute>()
-                            : null;
-                        if (compositeAttr != null)
-                        {
-                            hasHandlers = true;
-                            var sigs = new System.Text.StringBuilder();
-                            foreach (var s in compositeAttr.SignalTypes)
-                            {
-                                if (sigs.Length > 0) sigs.Append(" + ");
-                                sigs.Append(s.Name);
-                            }
-                            s_cachedMappings.Add(new HandlerMapping
-                            {
-                                SignalName = sigs.ToString(),
-                                CommandName = type.Name,
-                                Mode = compositeAttr.OneShot ? "OneShot" : "Re-trigger"
-                            });
-                        }
-
-                        // The runtime's scan binds these as well (Context.ScanAssembliesAndRegister).
-                        if (type.IsDefined(typeof(RegisterCommandAttribute), false) || type.IsDefined(typeof(RegisterCompositeCommandAttribute), false))
-                            hasHandlers = true;
-
-                        if (hasHandlers)
-                        {
+                        // The runtime's scan binds the Register* ones as well (Context.ScanAssembliesAndRegister).
+                        if (type.IsDefined(typeof(SignalHandlerAttribute), false)
+                            || type.IsDefined(typeof(CompositeSignalHandlerAttribute), false)
+                            || type.IsDefined(typeof(RegisterCommandAttribute), false)
+                            || type.IsDefined(typeof(RegisterCompositeCommandAttribute), false))
                             s_cachedHandlerCount++;
-                        }
                     }
                 }
                 catch (ReflectionTypeLoadException rtle)
@@ -101,14 +59,7 @@ namespace Nexus.Editor
                 }
             }
 
-            s_cachedMappings.Sort((a, b) => string.Compare(a.SignalName, b.SignalName, StringComparison.Ordinal));
             s_cacheValid = true;
-        }
-
-        internal static List<HandlerMapping> GetHandlerMappings()
-        {
-            EnsureCached();
-            return s_cachedMappings;
         }
 
         /// <summary>
@@ -163,11 +114,6 @@ namespace Nexus.Editor
         }
 
         // ── Active contexts ─────────────────────────────────────
-        internal static IReadOnlyList<IContext> GetActiveContexts()
-        {
-            return NexusRuntime.ActiveContexts;
-        }
-
         internal static int GetActiveContextCount()
         {
             var ctx = NexusRuntime.ActiveContexts;
@@ -228,12 +174,5 @@ namespace Nexus.Editor
             catch (Exception ex) { Debug.LogWarning($"[NexusDataProvider] Failed to get resolved singletons: {ex.Message}"); }
             return result;
         }
-    }
-
-    internal struct HandlerMapping
-    {
-        internal string SignalName;
-        internal string CommandName;
-        internal string Mode;
     }
 }

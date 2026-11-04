@@ -107,37 +107,6 @@ namespace Nexus.Editor
             }
         }
 
-        // ─── Gauge (value indicator bar) ─────────────────────────
-        /// <summary>Creates a horizontal fill-bar gauge showing a value 0..max.</summary>
-        internal static VisualElement CreateGauge(float value, float max,
-            Color fillColor, float width = 100f, float height = 6f)
-        {
-            var bg = new VisualElement
-            {
-                style =
-                {
-                    width = width, height = height,
-                    backgroundColor = new StyleColor(NexusEditorStyles.DarkPanel),
-                    borderTopLeftRadius = 3, borderTopRightRadius = 3,
-                    borderBottomLeftRadius = 3, borderBottomRightRadius = 3,
-                    overflow = Overflow.Hidden
-                }
-            };
-            float ratio = max > 0 ? Mathf.Clamp01(value / max) : 0f;
-            var fill = new VisualElement
-            {
-                style =
-                {
-                    width = new Length(ratio * 100f, LengthUnit.Percent),
-                    height = height,
-                    backgroundColor = new StyleColor(fillColor),
-                    borderTopLeftRadius = 3, borderBottomLeftRadius = 3
-                }
-            };
-            bg.Add(fill);
-            return bg;
-        }
-
         // ─── Data Table ─────────────────────────────────────────
         internal static VisualElement CreateDataTable(
             (string Header, float WidthFraction)[] columns,

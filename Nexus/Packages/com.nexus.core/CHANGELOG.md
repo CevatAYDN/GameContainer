@@ -103,6 +103,14 @@ everything under Unreleased is in the repository but not yet in a tagged package
     - Each name appeared only at its definition.
     - The games' hits were old package copies inside Pixel-Flow-Clone, IdleProject, PuzzleGame and RingFlow, not game code.
   - **Kept:** `SignalSubscription<T>.Invoke` and `AsyncSignalSubscription<T>.InvokeAsync`, which nothing calls either. They are the only reads of the handler that the public constructors take, so removing them changes constructors the package itself uses. That needs the deprecation period in `BREAKING_CHANGES.md`.
+- **Editor members and styles nobody uses** (issue #263). All are internal to the editor assembly, so only the core's editor tests, `com.nexus.fsm`'s editor and `com.nexus.ads`'s Nexus editor could reach them.
+  - **Members:**
+    - `NexusEditorDataProvider.GetHandlerMappings`, its `HandlerMapping` struct and the list built for it (the cache now counts the handler types only, with the same attributes), and the editor's own `GetActiveContexts`;
+    - `NexusEditorStyles.AddClasses`, `GetIcon`, `SetIcon`, `CreateIcon`, `CreateSidebarButton`, `AddActionButton` and `CreateWarningBox`, and 18 class-name constants that no element received;
+    - `NexusVisualization.CreateGauge`.
+  - **`Editor/Styles/NexusTheme.uss`:** the rules of 69 classes that no C# or UXML file names (908 lines to 445), with the section comments left without a rule.
+  - **The search:** each member name, whole word, in `Nexus/Packages`, `Nexus/Assets`, `tools/` and `docs/` (`docs/archive` left out), and each class name in the C# and UXML files of `Nexus/Packages` and `Nexus/Assets` and in the 8 known games' `Assets`. No name was built at run time from parts. Each appeared only at its definition.
+  - **Kept:** `NexusEditorStyles.AddToolbarButton`, which the issue listed; `com.nexus.ads`'s Settings and Setup tabs call it.
 
 ## [0.6.0] - 2026-11-02
 

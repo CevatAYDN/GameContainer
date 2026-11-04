@@ -78,7 +78,6 @@ namespace Nexus.Editor
         // ─── USS Class Name Constants ───
         internal const string ClassSidebar = "nexus-sidebar";
         internal const string ClassSidebarBtn = "nexus-sidebar-btn";
-        internal const string ClassActiveSidebar = "nexus-sidebar-btn active";
         internal const string ClassSidebarLabel = "nexus-sidebar-label";
         internal const string ClassBrandTitle = "nexus-brand-title";
         internal const string ClassBrandSubtitle = "nexus-brand-subtitle";
@@ -86,12 +85,7 @@ namespace Nexus.Editor
         internal const string ClassCategoryHeader = "nexus-category-header";
         internal const string ClassCard = "nexus-card";
         internal const string ClassPill = "nexus-pill";
-        internal const string ClassPillGreen = "nexus-pill-green";
-        internal const string ClassPillBlue = "nexus-pill-blue";
-        internal const string ClassPillPurple = "nexus-pill-purple";
-        internal const string ClassPillYellow = "nexus-pill-yellow";
         internal const string ClassFilterBtn = "nexus-filter-btn";
-        internal const string ClassActionBtn = "nexus-action-btn";
         internal const string ClassToolbar = "nexus-toolbar";
         internal const string ClassToolbarTitle = "nexus-toolbar-title";
         internal const string ClassEmptyState = "nexus-empty-state";
@@ -99,25 +93,13 @@ namespace Nexus.Editor
         internal const string ClassStatBox = "nexus-stat-box";
         internal const string ClassStatValue = "nexus-stat-value";
         internal const string ClassStatLabel = "nexus-stat-label";
-        internal const string ClassMetricBox = "nexus-metric-box";
-        internal const string ClassMetricValue = "nexus-metric-value";
-        internal const string ClassMetricLabel = "nexus-metric-label";
         internal const string ClassBtn = "nexus-btn";
         internal const string ClassStatusDot = "nexus-status-dot";
         internal const string ClassStatusBar = "nexus-statusbar";
-        internal const string ClassWarningBox = "nexus-warning-box";
         internal const string ClassRow = "nexus-table-row";
         internal const string ClassHeader = "nexus-table-header";
-        internal const string ClassBarBg = "nexus-bar-bg";
-        internal const string ClassBarFill = "nexus-bar-fill";
         internal const string ClassMetricBtn = "nexus-metric-btn";
         internal const string ClassSearchField = "nexus-search-field";
-        internal const string ClassQfRow = "nexus-qf-row";
-        internal const string ClassQfBtn = "nexus-qf-btn";
-        internal const string ClassSectionTab = "nexus-section-tab";
-        internal const string ClassSectionTabText = "nexus-section-tab-text";
-        internal const string ClassBreadcrumb = "nexus-breadcrumb";
-        internal const string ClassQuickbar = "nexus-quickbar";
 
         // ─── USS Loading ───
         internal static void LoadTheme(VisualElement root)
@@ -147,19 +129,7 @@ namespace Nexus.Editor
             }
         }
 
-        /// <summary>Apply a class list to a VisualElement. Convenience for readability.</summary>
-        internal static void AddClasses(VisualElement el, params string[] classes)
-        {
-            foreach (var c in classes)
-                el.AddToClassList(c);
-        }
-
         // ─── Icon Helpers ───
-        internal static Texture2D GetIcon(string iconName)
-        {
-            return EditorGUIUtility.Load($"Editor Default Resources/Icons/{iconName}.png") as Texture2D;
-        }
-
         internal static VisualElement CreateColorIcon(Color color, int size = 16)
         {
             var icon = new VisualElement();
@@ -172,28 +142,6 @@ namespace Nexus.Editor
             icon.style.borderBottomRightRadius = size / 2;
             icon.style.backgroundColor = new StyleColor(color);
             return icon;
-        }
-
-        internal static void SetIcon(VisualElement element, string iconName) { }
-        internal static VisualElement CreateIcon(string iconName, int size = 16) => CreateColorIcon(Color.gray, size);
-
-        // ─── Sidebar Helpers ───
-        internal static Button CreateSidebarButton(string label, string iconName, System.Action onClick)
-        {
-            var btn = new Button(onClick);
-            btn.AddToClassList(ClassSidebarBtn);
-
-            if (!string.IsNullOrEmpty(iconName))
-            {
-                var icon = CreateIcon(iconName);
-                btn.Add(icon);
-            }
-
-            var txt = new Label(label);
-            txt.AddToClassList(ClassSidebarLabel);
-            btn.Add(txt);
-
-            return btn;
         }
 
         /// <summary>Creates a standardized stat tile card.</summary>
@@ -288,11 +236,6 @@ namespace Nexus.Editor
             return card;
         }
 
-        internal static void AddActionButton(VisualElement parent, string label, System.Action onClick, Color bgColor)
-        {
-            parent.Add(CreateButton(label, onClick, bgColor));
-        }
-
         internal static VisualElement CreateToolbar(string windowTitle)
         {
             var toolbar = new VisualElement();
@@ -364,13 +307,6 @@ namespace Nexus.Editor
             tag.style.backgroundColor = new StyleColor(bgColor);
             tag.style.color = new StyleColor(textColor);
             return tag;
-        }
-
-        internal static VisualElement CreateWarningBox(string text)
-        {
-            var box = new Label(text);
-            box.AddToClassList(ClassWarningBox);
-            return box;
         }
 
         internal static VisualElement CreateSectionTitle(string text)

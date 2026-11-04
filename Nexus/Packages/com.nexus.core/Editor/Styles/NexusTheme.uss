@@ -230,12 +230,6 @@
     background-color: rgb(46, 46, 51);
     flex-shrink: 0;
 }
-.nexus-card-green { background-color: rgb(36, 46, 36); }
-.nexus-card-yellow { background-color: rgb(51, 46, 36); }
-.nexus-card-red { background-color: rgb(51, 36, 36); }
-.nexus-card-blue { background-color: rgb(36, 41, 51); }
-.nexus-card-alt { background-color: rgb(41, 41, 46); }
-
 /* ─── Section Title ─── */
 .nexus-section-title {
     font-size: 10px;
@@ -243,18 +237,6 @@
     color: rgb(153, 153, 153);
     margin-bottom: 6px;
 }
-.nexus-section-header {
-    flex-direction: row;
-    align-items: center;
-    margin: 10px 0 5px 15px;
-}
-.nexus-section-header-text {
-    font-size: 12px;
-    -unity-font-style: bold;
-    color: rgb(217, 217, 217);
-    margin-left: 5px;
-}
-
 /* ─── Stat Boxes ─── */
 .nexus-stat-box {
     flex-grow: 1;
@@ -297,55 +279,6 @@
     white-space: normal;
 }
 
-/* ─── GM Stat Cards ─── */
-.nexus-gm-stat-card {
-    width: 140px;
-    height: 80px;
-    background-color: rgb(46, 46, 51);
-    border-radius: 6px;
-    margin: 5px;
-    padding: 8px 10px;
-    border-left-width: 3px;
-    cursor: link;
-}
-.nexus-gm-stat-card:hover {
-    background-color: rgb(51, 51, 56);
-}
-.nexus-gm-stat-value {
-    font-size: 22px;
-    -unity-font-style: bold;
-}
-.nexus-gm-stat-label {
-    font-size: 9px;
-    -unity-font-style: bold;
-    color: rgb(153, 153, 153);
-    margin-top: 2px;
-}
-.nexus-gm-stat-desc {
-    font-size: 8px;
-    color: rgb(102, 102, 102);
-    margin-top: 2px;
-    white-space: normal;
-}
-
-/* ─── Metric Boxes ─── */
-.nexus-metric-box {
-    flex-grow: 1;
-    align-items: center;
-    padding: 4px 6px;
-    margin-right: 4px;
-    border-right-width: 1px;
-    border-right-color: rgb(51, 51, 56);
-}
-.nexus-metric-value {
-    font-size: 16px;
-    -unity-font-style: bold;
-}
-.nexus-metric-label {
-    font-size: 8px;
-    color: rgb(153, 153, 153);
-}
-
 /* ─── Buttons ─── */
 .nexus-btn {
     color: white;
@@ -378,54 +311,6 @@
 }
 .nexus-metric-btn:hover { opacity: 0.85; }
 
-/* ─── Section Tabs (GameManager breadcrumb) ─── */
-.nexus-section-tab {
-    -unity-font-style: bold;
-    font-size: 10px;
-    padding: 5px 10px;
-    margin: 0 2px 4px;
-    border-radius: 4px;
-    border-width: 0;
-    flex-shrink: 0;
-    align-items: center;
-    flex-direction: row;
-    background-color: rgba(0, 0, 0, 0);
-    color: rgb(217, 217, 217);
-    cursor: link;
-    transition: background-color 0.15s;
-}
-.nexus-section-tab:hover {
-    background-color: rgb(40, 40, 45);
-}
-.nexus-section-tab.active {
-    background-color: rgb(46, 56, 71);
-    color: rgb(77, 204, 255);
-}
-.nexus-section-tab-text {
-    font-size: 10px;
-    -unity-font-style: bold;
-    color: rgb(217, 217, 217);
-}
-/* section-tab active text color handled via .active on btn */
-
-/* ─── Breadcrumb ─── */
-.nexus-breadcrumb {
-    flex-direction: row;
-    flex-wrap: wrap;
-    background-color: rgb(25, 25, 30);
-    padding: 6px 8px 4px;
-    border-bottom-color: rgb(51, 51, 56);
-    border-bottom-width: 1px;
-    align-items: center;
-}
-
-/* ─── Quick Bar ─── */
-.nexus-quickbar {
-    flex-direction: row;
-    flex-wrap: wrap;
-    margin: 8px 12px 0;
-}
-
 /* ─── Badges / Pills ─── */
 .nexus-pill {
     font-size: 8px;
@@ -435,35 +320,6 @@
     margin: 0 2px 0 6px;
     white-space: nowrap;
 }
-.nexus-pill-green {
-    background-color: rgb(51, 89, 51);
-    color: rgb(153, 255, 153);
-}
-.nexus-pill-blue {
-    background-color: rgb(51, 89, 128);
-    color: rgb(153, 204, 255);
-}
-.nexus-pill-purple {
-    background-color: rgb(77, 51, 102);
-    color: rgb(204, 153, 255);
-}
-.nexus-pill-yellow {
-    background-color: rgb(115, 89, 38);
-    color: rgb(255, 204, 51);
-}
-.nexus-pill-orange {
-    background-color: rgb(115, 76, 38);
-    color: rgb(255, 170, 51);
-}
-.nexus-pill-red {
-    background-color: rgb(102, 51, 51);
-    color: rgb(255, 102, 102);
-}
-.nexus-pill-gray {
-    background-color: rgb(64, 64, 69);
-    color: rgb(153, 153, 153);
-}
-
 /* ─── Status Dot ─── */
 .nexus-status-dot {
     width: 8px;
@@ -481,17 +337,6 @@
     margin: 30px 0 10px;
 }
 
-/* ─── Warning Box ─── */
-.nexus-warning-box {
-    color: rgb(255, 179, 51);
-    background-color: rgb(51, 38, 25);
-    padding: 8px;
-    margin-top: 8px;
-    font-size: 10px;
-    white-space: normal;
-    border-radius: 4px;
-}
-
 /* ─── Live Badge ─── */
 .nexus-live-badge {
     font-size: 9px;
@@ -500,26 +345,6 @@
     border-radius: 3px;
     background-color: rgb(25, 76, 25);
     color: rgb(102, 255, 102);
-}
-
-/* ─── Context Cards ─── */
-.nexus-context-card {
-    border-width: 1px;
-    border-color: rgb(64, 64, 71);
-    border-radius: 5px;
-    padding: 10px;
-    margin: 6px 0;
-    transition: background-color 0.15s, border-color 0.15s;
-    cursor: link;
-    background-color: rgb(38, 38, 43);
-}
-.nexus-context-card.selected {
-    background-color: rgb(46, 56, 66);
-    border-color: rgb(77, 204, 255);
-}
-.nexus-context-card:hover {
-    background-color: rgb(51, 51, 56);
-    border-color: rgb(102, 102, 110);
 }
 
 /* ─── Data Table ─── */
@@ -551,77 +376,14 @@
     white-space: nowrap;
 }
 
-/* ─── Validation Row ─── */
-.nexus-validation-row {
-    flex-direction: row;
-    margin-top: 2px;
-}
-
 /* ─── Search Row & Field ─── */
-.nexus-search-row {
-    flex-direction: row;
-    align-items: center;
-}
 .nexus-search-field {
     flex-grow: 1;
     height: 22px;
     font-size: 10px;
     margin-right: 8px;
 }
-.nexus-search-clear-btn {
-    margin-left: 6px;
-    height: 24px;
-    font-size: 9px;
-    background-color: rgb(64, 64, 69);
-    color: white;
-    padding: 0 8px;
-    border-radius: 3px;
-    border-width: 0;
-    cursor: link;
-}
-.nexus-search-clear-btn:hover {
-    background-color: rgb(77, 77, 82);
-}
-
-/* ─── Quick Find Results ─── */
-.nexus-qf-row {
-    flex-direction: row;
-    align-items: center;
-    padding: 3px 6px;
-    margin-bottom: 2px;
-    background-color: rgb(46, 46, 51);
-    border-radius: 3px;
-}
-.nexus-qf-row:hover {
-    background-color: rgb(51, 51, 58);
-}
-.nexus-qf-name {
-    font-size: 11px;
-    -unity-font-style: bold;
-    color: white;
-    flex-grow: 1;
-}
-.nexus-qf-btn {
-    font-size: 8px;
-    height: 18px;
-    color: white;
-    padding: 0 6px;
-    border-radius: 2px;
-    border-width: 0;
-    margin-left: 4px;
-    cursor: link;
-    white-space: nowrap;
-}
-
 /* ─── Filter Bar ─── */
-.nexus-filterbar {
-    flex-direction: row;
-    flex-wrap: wrap;
-    padding: 6px 10px;
-    border-bottom-color: rgb(51, 51, 56);
-    border-bottom-width: 1px;
-    align-items: center;
-}
 .nexus-filter-btn {
     font-size: 8px;
     padding: 1px 5px;
@@ -633,33 +395,6 @@
 .nexus-filter-btn.active { background-color: rgb(51, 89, 128); color: white; }
 .nexus-filter-btn.inactive { background-color: rgb(38, 38, 43); color: rgb(102, 102, 102); }
 .nexus-filter-btn:hover { background-color: rgb(51, 51, 58); }
-.nexus-filter-label {
-    font-size: 9px;
-    color: rgb(128, 128, 128);
-    margin-left: 10px;
-    white-space: nowrap;
-}
-
-/* ─── Status Row ─── */
-.nexus-status-row {
-    flex-direction: row;
-    align-items: center;
-    margin: 0 15px 10px;
-}
-.nexus-status-text {
-    font-size: 14px;
-    -unity-font-style: bold;
-    margin-left: 8px;
-}
-
-/* ─── Flex Grid ─── */
-.nexus-flex-grid {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    margin: 0 15px;
-}
-
 /* ─── Stat Row (key:value pair) ─── */
 .nexus-stat-row {
     flex-direction: row;
@@ -668,53 +403,7 @@
     border-bottom-width: 1px;
     border-bottom-color: rgb(51, 51, 56);
 }
-.nexus-stat-row-key {
-    font-size: 10px;
-    color: rgb(153, 153, 153);
-}
-.nexus-stat-row-value {
-    font-size: 10px;
-    -unity-font-style: bold;
-}
-
-/* ─── Bar Charts ─── */
-.nexus-bar-row {
-    flex-direction: row;
-    align-items: center;
-    margin-bottom: 4px;
-}
-.nexus-bar-label {
-    font-size: 8px;
-    color: rgb(153, 153, 153);
-    width: 45px;
-    flex-shrink: 0;
-}
-.nexus-bar-bg {
-    flex-grow: 1;
-    height: 14px;
-    background-color: rgb(41, 41, 46);
-    border-radius: 3px;
-    overflow: hidden;
-}
-.nexus-bar-fill {
-    height: 14px;
-    border-radius: 3px;
-    transition: width 0.3s;
-}
-.nexus-bar-value {
-    font-size: 8px;
-    -unity-font-style: bold;
-    width: 40px;
-    margin-left: 4px;
-    flex-shrink: 0;
-}
-
 /* ─── Welcome/Status Card ─── */
-.nexus-status-card-top {
-    flex-direction: row;
-    align-items: center;
-    margin-bottom: 8px;
-}
 .nexus-status-card-title {
     font-size: 16px;
     -unity-font-style: bold;
@@ -732,100 +421,6 @@
     flex-wrap: wrap;
     margin: 5px 0 0 15px;
 }
-.nexus-actions-grid {
-    flex-direction: row;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-}
-
-/* ─── Split Panes ─── */
-.nexus-split {
-    flex-direction: row;
-    flex-grow: 1;
-}
-.nexus-split-left {
-    min-width: 200px;
-    max-width: 35%;
-    padding: 10px;
-    border-right-color: rgb(51, 51, 56);
-    border-right-width: 1px;
-    overflow: scroll;
-}
-.nexus-split-right {
-    flex-grow: 1;
-    min-width: 300px;
-    padding: 10px;
-    overflow: scroll;
-}
-
-/* ─── Tracer Rows ─── */
-.nexus-trace-row {
-    padding: 4px;
-    margin: 1px 0;
-    border-radius: 3px;
-    cursor: link;
-}
-.nexus-trace-row:hover { background-color: rgba(255, 255, 255, 0.04); }
-.nexus-trace-row.selected { background-color: rgba(51, 77, 128, 0.6); }
-
-/* ─── Context Row ─── */
-.nexus-context-header {
-    flex-direction: row;
-    align-items: center;
-}
-.nexus-context-meta {
-    flex-direction: row;
-    margin-top: 4px;
-    flex-wrap: wrap;
-}
-
-/* ─── Live Section ─── */
-.nexus-live-metrics-card {
-    margin: 0 10px 10px;
-}
-.nexus-live-title {
-    font-size: 12px;
-    -unity-font-style: bold;
-    margin-bottom: 8px;
-}
-.nexus-live-chart-title {
-    font-size: 10px;
-    -unity-font-style: bold;
-    color: rgb(153, 153, 153);
-    margin-bottom: 6px;
-}
-
-/* ─── Signal Test Panel ─── */
-.nexus-signal-test-card {
-    margin: 8px 10px;
-}
-.nexus-signal-test-title {
-    font-size: 11px;
-    -unity-font-style: bold;
-    color: rgb(217, 217, 217);
-    margin-bottom: 8px;
-}
-.nexus-signal-test-dropdown {
-    margin-bottom: 8px;
-}
-.nexus-signal-test-result {
-    font-size: 10px;
-    color: rgb(102, 255, 102);
-    margin-bottom: 8px;
-    white-space: normal;
-}
-.nexus-fire-btn {
-    font-size: 9px;
-    padding: 4px 8px;
-    margin: 0 4px 4px 0;
-    border-radius: 3px;
-    border-width: 0;
-    color: white;
-    cursor: link;
-    transition: opacity 0.15s;
-}
-.nexus-fire-btn:hover { opacity: 0.8; }
-
 /* ─── Discovery Error ─── */
 .nexus-discovery-error {
     color: rgb(255, 77, 77);
@@ -839,38 +434,6 @@
     margin-top: 12px;
 }
 
-/* ─── Sparkline ─── */
-.nexus-sparkline {
-    width: 120px;
-    height: 32px;
-    flex-direction: row;
-    align-items: flex-end;
-    background-color: rgb(25, 25, 30);
-    border-radius: 3px;
-    padding: 2px;
-    overflow: hidden;
-}
-
-/* ─── Gauge ─── */
-.nexus-gauge-bg {
-    height: 6px;
-    background-color: rgb(25, 25, 30);
-    border-radius: 3px;
-    overflow: hidden;
-}
-.nexus-gauge-fill {
-    height: 6px;
-    border-top-left-radius: 3px;
-    border-bottom-left-radius: 3px;
-}
-
-/* ─── Context Card Metadata ─── */
-.nexus-context-card-actions {
-    flex-direction: row;
-    flex-wrap: wrap;
-    margin-top: 6px;
-}
-
 /* ─── Plugin Icon ─── */
 .nexus-plugin-icon {
     width: 16px;
@@ -880,29 +443,3 @@
     flex-shrink: 0;
 }
 
-/* ─── Live section label ─── */
-.nexus-live-ctx-label {
-    font-size: 11px;
-    -unity-font-style: bold;
-    color: rgb(102, 255, 102);
-    margin: 8px 0 0 15px;
-}
-
-/* ─── Health Card ─── */
-.nexus-health-title {
-    font-size: 12px;
-    -unity-font-style: bold;
-    color: rgb(102, 255, 102);
-    margin-bottom: 8px;
-}
-.nexus-health-text {
-    font-size: 10px;
-    color: rgb(153, 153, 153);
-    white-space: normal;
-    margin-bottom: 4px;
-}
-.nexus-health-note {
-    font-size: 8px;
-    color: rgb(102, 102, 102);
-    white-space: normal;
-}
