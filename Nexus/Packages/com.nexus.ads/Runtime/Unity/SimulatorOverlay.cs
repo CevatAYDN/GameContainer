@@ -43,7 +43,9 @@ namespace Nexus.Ads.Unity
             GUI.Label(new Rect(0, h * 0.3f + 40, w, 30), "scenario: " + _simulator.Scenario, style);
             float bw = Mathf.Min(220f, w * 0.6f), bh = 44f, x = (w - bw) / 2f, y = h * 0.55f;
             if (_format == AdFormat.Rewarded && GUI.Button(new Rect(x, y, bw, bh), "Watch to the end (reward)")) _simulator.CompleteShow(AdResult.Rewarded);
+            GUI.enabled = _simulator.CanClose; // MinShowSeconds holds the close back (issue #132)
             if (GUI.Button(new Rect(x, y + bh + 12, bw, bh), _format == AdFormat.Rewarded ? "Close early (no reward)" : "Close")) _simulator.CompleteShow(AdResult.Closed);
+            GUI.enabled = true;
             if (GUI.Button(new Rect(x, y + 2 * (bh + 12), bw, bh), "Simulate show failure")) _simulator.CompleteShow(AdResult.Failed);
             GUI.matrix = Matrix4x4.identity;
         }

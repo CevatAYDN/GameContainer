@@ -119,9 +119,14 @@ namespace Nexus.Ads.Editor
                 _body.Add(scenario);
                 var showing = AdsViews.Row(_body);
                 showing.Add(NexusEditorStyles.CreateButton("Reward", () => simulator.CompleteShow(AdResult.Rewarded), NexusEditorStyles.BtnGreen));
-                showing.Add(NexusEditorStyles.CreateButton("Close", () => simulator.CompleteShow(AdResult.Closed), NexusEditorStyles.BtnGray));
+                var close = NexusEditorStyles.CreateButton("Close", () => simulator.CompleteShow(AdResult.Closed), NexusEditorStyles.BtnGray);
+                showing.Add(close);
                 showing.Add(NexusEditorStyles.CreateButton("Fail", () => simulator.CompleteShow(AdResult.Failed), NexusEditorStyles.BtnRed));
-                _refreshers.Add(() => showing.style.display = simulator.IsShowing ? DisplayStyle.Flex : DisplayStyle.None);
+                _refreshers.Add(() =>
+                {
+                    showing.style.display = simulator.IsShowing ? DisplayStyle.Flex : DisplayStyle.None;
+                    close.SetEnabled(simulator.CanClose); // MinShowSeconds holds the close back (issue #132)
+                });
             }
 
             var acknowledge = NexusEditorStyles.CreateButton(string.Empty, () =>

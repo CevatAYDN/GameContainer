@@ -34,6 +34,10 @@ namespace Nexus.Ads.Unity
         [SerializeField] private bool _logEvents = true;
         [Tooltip("Off: nothing reads the advertising id or touches the consent flow and the SDK until the game calls StartAds()")]
         [SerializeField] private bool _startOnAwake = true;
+        [Tooltip("Off: the simulator gets no overlay; the game shows its own screen on Simulator.Opened and ends every show with Simulator.CompleteShow")]
+        [SerializeField] private bool _simulatorOverlay = true;
+        [Tooltip("Off: development builds get no debug panel")]
+        [SerializeField] private bool _debugPanel = true;
 
         private UnityAdTelemetry _telemetry;
         private float _timeScaleBeforeAd = 1f;
@@ -62,14 +66,22 @@ namespace Nexus.Ads.Unity
         /// <summary>Raised once the controller exists (where the gate needs the advertising id, it is fetched off the main thread first).</summary>
         public event Action Started;
 
-        /// <summary>Sets the settings and simulator scenario before the component is enabled (tests, code-made bootstraps).</summary>
-        public void Configure(AdsSettings settings, SimulatorScenario simulatorScenario = SimulatorScenario.Normal, bool logEvents = true, bool startOnAwake = true)
+        /// <summary>
+        /// Sets the settings and simulator scenario before the component is enabled (tests, code-made bootstraps). With
+        /// <paramref name="simulatorOverlay"/> off the simulator gets no overlay: the game shows its own screen on
+        /// <see cref="SimulatorProvider.Opened"/> and ends every show with <see cref="SimulatorProvider.CompleteShow"/>, or the
+        /// show stays open. With <paramref name="debugPanel"/> off a development build gets no debug panel (issue #132).
+        /// </summary>
+        public void Configure(AdsSettings settings, SimulatorScenario simulatorScenario = SimulatorScenario.Normal, bool logEvents = true, bool startOnAwake = true,
+            bool simulatorOverlay = true, bool debugPanel = true)
         {
             if (Controller != null || _startRequested) throw new InvalidOperationException("Configure before the bootstrap starts.");
             _settings = settings;
             _simulatorScenario = simulatorScenario;
             _logEvents = logEvents;
             _startOnAwake = startOnAwake;
+            _simulatorOverlay = simulatorOverlay;
+            _debugPanel = debugPanel;
         }
 
         /// <summary>Tests: stands in for <see cref="DeviceIdentity.FetchAdvertisingId"/>.</summary>
@@ -214,8 +226,12 @@ namespace Nexus.Ads.Unity
                 if (Mode == HostMode.Simulator)
                 {
                     var simulator = new SimulatorProvider(scheduler, _simulatorScenario) { Interactive = true };
-                    _overlay = gameObject.AddComponent<SimulatorOverlay>();
-                    _overlay.Bind(simulator);
+                    if (_simulatorOverlay)
+                    {
+                        _overlay = gameObject.AddComponent<SimulatorOverlay>();
+                        _overlay.Bind(simulator);
+                    }
+                    else Debug.LogWarning("[Nexus Ads] simulator overlay off: the game ends every simulated show with AdsBootstrap.Simulator.CompleteShow (issue #132)");
                     Provider = simulator;
                     consent = simulator;
                 }
@@ -237,7 +253,7 @@ namespace Nexus.Ads.Unity
             if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] PolicyViolation " + v);
             if (!UnityTouchInput.ReadsPointer) WarnTouchWaitUnread();
             Controller.Start(); // an idle host (ad-free, blocked, consent flow or provider missing) stays Stopped: its provider is NoAdsProvider
-            if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
+            if (Build != BuildKind.Release && _debugPanel) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
             // one line per start in every build, no ids: tools/device-acceptance -ExpectAds reads it (issue #52)
             Debug.Log("[Nexus Ads] started mode=" + Mode + " mediation=" + _settings.SelectedMediation + " gate=" + Gate.Decision
                 + " rule=" + (Gate.Rule ?? "-") + " testMode=" + (config.Provider.TestMode ? "on" : "off")

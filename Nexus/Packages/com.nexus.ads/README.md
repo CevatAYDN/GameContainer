@@ -125,6 +125,18 @@ SDK, runs nothing: its provider is `NoAdsProvider`, so the controller never star
 stays hidden and the reason is logged as an error. A release build never runs the simulator (issue #19; locked by
 `AdsCoreSuite` GT10–GT13).
 
+The simulator's overlay is IMGUI. A game that draws its own ad screen (UI Toolkit) turns the
+bootstrap's **Simulator Overlay** off (`simulatorOverlay: false` to `Configure`): the bootstrap adds no
+overlay, logs one warning, and every simulated show stays open until the game ends it. The game shows
+its screen on `AdsBootstrap.Instance.Simulator.Opened` and calls `CompleteShow` with `Rewarded`, `Closed`
+or `Failed`; it returns false when it did not end the show. `SimulatorProvider.MinShowSeconds`, set in
+the bootstrap's `Started` event (`Simulator` is null outside Simulator mode), keeps a show from closing
+for that many seconds, as an unskippable rewarded does: `CompleteShow(Closed)` is refused while
+`CanClose` is false, the overlay and the Placement Tester grey their Close button, and a reward or a
+failure ends the show at any time. **Debug Panel** off (`debugPanel: false`) leaves the development
+build's debug panel out (issue #132; `AdsCoreSuite` SM11–SM14, PlayMode
+`OverlayAndPanelOff_AddNoIMGUI_OnlyTheGamesCompleteShowEndsTheShow`).
+
 ## Using it without Nexus
 
 1. Create the settings asset: **Assets > Create > Nexus > Ads Settings**, saved as

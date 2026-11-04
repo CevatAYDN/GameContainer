@@ -26,8 +26,8 @@ namespace Nexus.Ads
     /// The provider that runs in the editor and on every device that may not talk to a real SDK. It is
     /// also a consent flow, so the consent scenario can be driven without a real form. With
     /// <see cref="Interactive"/> set, a show waits for <see cref="CompleteShow"/> (the Unity overlay's
-    /// buttons); otherwise it answers at once. It never takes the <see cref="MediationLock"/> name of a
-    /// real provider.
+    /// buttons, or the game's own screen); otherwise it answers at once. It never takes the
+    /// <see cref="MediationLock"/> name of a real provider.
     /// </summary>
     public sealed class SimulatorProvider : IAdProvider, IConsentFlow
     {
@@ -41,10 +41,19 @@ namespace Nexus.Ads
         private AdFormat _showing;
         private string _showingPlacement;
         private ProviderConfig _config;
+        private IDisposable _minShowTimer;
+        private bool _closable;
 
         public SimulatorScenario Scenario { get; set; }
-        /// <summary>A show stays open until <see cref="CompleteShow"/>; the Unity overlay sets this.</summary>
+        /// <summary>A show stays open until <see cref="CompleteShow"/>; the bootstrap sets this in Simulator mode.</summary>
         public bool Interactive { get; set; }
+        /// <summary>
+        /// Seconds an interactive show stays open before <see cref="CompleteShow"/> accepts <see cref="AdResult.Closed"/>
+        /// (an unskippable rewarded); 0, the default, accepts it at once. A reward and a failure end the show at any time (issue #132).
+        /// </summary>
+        public double MinShowSeconds { get; set; }
+        /// <summary>True while a show is open and <see cref="CompleteShow"/> would accept <see cref="AdResult.Closed"/>.</summary>
+        public bool CanClose => _showResult != null && _closable;
         public bool BannerVisible { get; private set; }
         public int LoadCount { get; private set; }
         public int ShowCount { get; private set; }
@@ -103,22 +112,37 @@ namespace Nexus.Ads
             _showing = format;
             _showingPlacement = placement;
             _showResult = onResult;
+            _closable = !Interactive || MinShowSeconds <= 0;
+            if (!_closable) _minShowTimer = _scheduler.Schedule(MinShowSeconds, () => { _minShowTimer = null; _closable = true; });
             Opened?.Invoke(format);
             if (Interactive) return;
-            CompleteShow(Scenario == SimulatorScenario.ClosedEarly ? AdResult.Closed
+            End(Scenario == SimulatorScenario.ClosedEarly ? AdResult.Closed
                 : format == AdFormat.Rewarded ? AdResult.Rewarded : AdResult.Closed);
         }
 
-        /// <summary>Ends the open show with <paramref name="result"/>; a second call does nothing.</summary>
-        public void CompleteShow(AdResult result)
+        /// <summary>
+        /// Ends the open show with <paramref name="result"/> and returns true. Returns false, and the show stays open, when no
+        /// show is open (a second call) or when <see cref="AdResult.Closed"/> comes before <see cref="MinShowSeconds"/>
+        /// (<see cref="CanClose"/> is false). An interstitial never pays: <see cref="AdResult.Rewarded"/> closes it.
+        /// </summary>
+        public bool CompleteShow(AdResult result)
+        {
+            if (result == AdResult.Rewarded && _showing != AdFormat.Rewarded) result = AdResult.Closed;
+            if (result == AdResult.Closed && !CanClose) return false;
+            return End(result);
+        }
+
+        private bool End(AdResult result)
         {
             var callback = _showResult;
-            if (callback == null) return;
+            if (callback == null) return false;
             _showResult = null;
-            if (result == AdResult.Rewarded && _showing != AdFormat.Rewarded) result = AdResult.Closed; // an interstitial never pays
+            _minShowTimer?.Dispose(); // a show that ended early must not let the next one close before its own minimum
+            _minShowTimer = null;
             if (result == AdResult.Rewarded || result == AdResult.Closed)
                 Revenue?.Invoke(new AdRevenue(ProviderName, _showingPlacement, _showing, 0, "USD", "simulated"));
             callback(result);
+            return true;
         }
 
         public bool IsShowing => _showResult != null;
@@ -161,6 +185,8 @@ namespace Nexus.Ads
         {
             foreach (var handle in _pending) handle?.Dispose();
             _pending.Clear();
+            _minShowTimer?.Dispose();
+            _minShowTimer = null;
         }
     }
 }

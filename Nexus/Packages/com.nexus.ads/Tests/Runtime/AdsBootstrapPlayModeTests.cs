@@ -15,7 +15,7 @@ namespace Nexus.Ads.Tests.Runtime
         private AdsSettings _settings;
         private AdsBootstrap _bootstrap;
 
-        private IEnumerator Boot(SimulatorScenario scenario, bool logEvents = false, double touchWaitSeconds = 0)
+        private IEnumerator Boot(SimulatorScenario scenario, bool logEvents = false, double touchWaitSeconds = 0, bool simulatorOverlay = true, bool debugPanel = true)
         {
             _settings = ScriptableObject.CreateInstance<AdsSettings>();
             _settings.SelectedMediation = AdProviderKind.LevelPlay;
@@ -25,7 +25,7 @@ namespace Nexus.Ads.Tests.Runtime
             _root = new GameObject("AdsBootstrapTest");
             _root.SetActive(false);
             _bootstrap = _root.AddComponent<AdsBootstrap>();
-            _bootstrap.Configure(_settings, scenario, logEvents);
+            _bootstrap.Configure(_settings, scenario, logEvents, simulatorOverlay: simulatorOverlay, debugPanel: debugPanel);
             _root.SetActive(true);
             float deadline = Time.realtimeSinceStartup + 5f;
             while (_bootstrap.Controller == null && Time.realtimeSinceStartup < deadline) yield return null;
@@ -387,6 +387,34 @@ namespace Nexus.Ads.Tests.Runtime
             Assert.IsNotNull(EnabledOnGui(), "the open panel draws");
             panel.Toggle();
             Assert.IsNull(EnabledOnGui(), "the closed panel stops drawing");
+        }
+
+        // Issue #132: a game with its own UI Toolkit screen turns the IMGUI overlay and debug panel off; the simulated rewarded
+        // then stays open until the game's CompleteShow, and the minimum show time holds its close back
+        [UnityTest]
+        public IEnumerator OverlayAndPanelOff_AddNoIMGUI_OnlyTheGamesCompleteShowEndsTheShow()
+        {
+            yield return Boot(SimulatorScenario.Normal, simulatorOverlay: false, debugPanel: false);
+            foreach (var behaviour in _root.GetComponents<MonoBehaviour>())
+                Assert.IsNull(behaviour.GetType().GetMethod("OnGUI", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic),
+                    behaviour.GetType().Name + " draws IMGUI");
+            var simulator = _bootstrap.Simulator;
+            simulator.MinShowSeconds = 0.2;
+            AdFormat? opened = null;
+            simulator.Opened += format => opened = format;
+
+            AdResult? result = null;
+            _bootstrap.Controller.Show("shop_refill", r => result = r);
+            Assert.AreEqual(AdFormat.Rewarded, opened, "the game's screen hears the show open");
+            Assert.IsFalse(simulator.CanClose);
+            Assert.IsFalse(simulator.CompleteShow(AdResult.Closed), "the minimum holds the close back");
+            yield return new WaitForSecondsRealtime(0.3f);
+            Assert.IsNull(result, "nothing but the game ends the show");
+            Assert.IsTrue(simulator.CanClose, "the minimum has passed");
+
+            Assert.IsTrue(simulator.CompleteShow(AdResult.Rewarded));
+            Assert.AreEqual(AdResult.Rewarded, result);
+            Assert.AreEqual(1f, Time.timeScale, "the closed show restored the time scale");
         }
 
         private string EnabledOnGui()

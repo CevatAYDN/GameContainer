@@ -1413,6 +1413,74 @@ namespace NexusBench
                 realRig.Controller.Start();
                 Check("SM10. Simulator_NeverHoldsMediationLock", simRig.Controller.State == AdController.Phase.Running && MediationLock.Holder == "levelplay" && realRig.Violations.Count == 0, $"holder={MediationLock.Holder ?? "none"} with a simulator running beside it");
             }
+
+            // #132: a game's own screen keeps a simulated rewarded open for MinShowSeconds; the controller's answer window does
+            // not end a show that opened in the game's window, so only the game's CompleteShow does
+            {
+                var simTime = new AdsScheduler(new AdsClock());
+                var sim = new SimulatorProvider(simTime) { Interactive = true, MinShowSeconds = 15 };
+                using var rig = new AdsRig(provider: sim, consent: sim);
+                rig.Controller.Start();
+                AdResult? shown = null;
+                rig.Controller.Show("shop_refill", x => shown = x);
+                rig.Scheduler.Advance(14.9); simTime.Advance(14.9);
+                bool canCloseEarly = sim.CanClose, closedEarly = sim.CompleteShow(AdResult.Closed);
+                bool held = !canCloseEarly && !closedEarly && sim.IsShowing && shown == null;
+                rig.Scheduler.Advance(0.2); simTime.Advance(0.2);
+                bool closed = sim.CanClose && sim.CompleteShow(AdResult.Closed) && shown == AdResult.Closed && rig.Telemetry.Count(AdEventKind.Rewarded) == 0;
+                Check("SM11. MinShowSeconds_RefusesCloseUntilItElapses", held && closed,
+                    $"at 14.9 s: can close={canCloseEarly}, close accepted={closedEarly}, still open={held}; at 15.1 s closed={closed}, result={shown}");
+            }
+
+            // #132: each show waits for its own minimum: one that failed early leaves no timer that frees the next one too soon
+            {
+                var simTime = new AdsScheduler(new AdsClock());
+                var sim = new SimulatorProvider(simTime) { Interactive = true, MinShowSeconds = 15 };
+                AdResult? first = null, second = null;
+                sim.Load(AdFormat.Rewarded);
+                sim.Show(AdFormat.Rewarded, "shop_refill", x => first = x);
+                simTime.Advance(1);
+                bool failedAtOnce = sim.CompleteShow(AdResult.Failed) && first == AdResult.Failed;
+                simTime.Advance(4);
+                sim.Load(AdFormat.Rewarded);
+                sim.Show(AdFormat.Rewarded, "shop_refill", x => second = x);
+                simTime.Advance(10.5); // 15.5 s: the failed show's minimum would have ended here
+                bool heldByItsOwn = !sim.CanClose && !sim.CompleteShow(AdResult.Closed) && second == null;
+                simTime.Advance(5); // 20.5 s: 15.5 s after the second show opened
+                bool closed = sim.CompleteShow(AdResult.Closed) && second == AdResult.Closed;
+                Check("SM12. MinShowSeconds_EachShowWaitsForItsOwn_AFailureEndsAtOnce", failedAtOnce && heldByItsOwn && closed,
+                    $"failure at 1 s ended the show={failedAtOnce}, second show held at 10.5 s of its 15={heldByItsOwn}, closed at 15.5 s={closed}");
+            }
+
+            // #132: a reward ends a rewarded before the minimum; an interstitial, which never pays, is not closed early by one
+            {
+                var simTime = new AdsScheduler(new AdsClock());
+                var sim = new SimulatorProvider(simTime) { Interactive = true, MinShowSeconds = 15 };
+                AdResult? rewarded = null, interstitial = null;
+                sim.Load(AdFormat.Rewarded);
+                sim.Show(AdFormat.Rewarded, "shop_refill", x => rewarded = x);
+                simTime.Advance(1);
+                bool paid = sim.CompleteShow(AdResult.Rewarded) && rewarded == AdResult.Rewarded;
+                sim.Load(AdFormat.Interstitial);
+                sim.Show(AdFormat.Interstitial, "level_end", x => interstitial = x);
+                simTime.Advance(1);
+                bool held = !sim.CompleteShow(AdResult.Rewarded) && sim.IsShowing && interstitial == null;
+                simTime.Advance(14.5);
+                bool closed = sim.CompleteShow(AdResult.Rewarded) && interstitial == AdResult.Closed;
+                Check("SM13. MinShowSeconds_RewardEndsARewarded_ButCannotCloseAnInterstitialEarly", paid && held && closed,
+                    $"reward at 1 s={paid} ({rewarded}), interstitial held at 1 s={held}, closed at 15.5 s={closed} ({interstitial})");
+            }
+
+            // #132: a show that answers by itself (not interactive) ignores the minimum and arms no timer
+            {
+                var simTime = new AdsScheduler(new AdsClock());
+                var sim = new SimulatorProvider(simTime, SimulatorScenario.ClosedEarly) { MinShowSeconds = 15 };
+                AdResult? answered = null;
+                sim.Load(AdFormat.Rewarded);
+                sim.Show(AdFormat.Rewarded, "shop_refill", x => answered = x);
+                Check("SM14. MinShowSeconds_NotInteractive_AnswersAtOnce", answered == AdResult.Closed && !sim.IsShowing && simTime.Pending == 0,
+                    $"result={answered?.ToString() ?? "none"} (expected Closed at once), timers left={simTime.Pending}");
+            }
         }
 
         // ----- engine independence
