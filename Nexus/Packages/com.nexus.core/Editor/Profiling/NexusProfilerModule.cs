@@ -16,6 +16,7 @@ namespace Nexus.Editor
     /// Editor note: record data first). In non-development builds the counters are
     /// compiled out, so profile a Development build.
     /// </summary>
+    [System.Serializable]   // the Profiler window keeps its modules in a [SerializeReference] field (#275)
     [ProfilerModuleMetadata("Nexus")]
     public sealed class NexusProfilerModule : ProfilerModule
     {

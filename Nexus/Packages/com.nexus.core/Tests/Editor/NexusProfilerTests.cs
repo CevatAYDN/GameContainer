@@ -89,6 +89,21 @@ namespace Nexus.Editor.Tests.Editor
             Assert.IsNotNull(module);
         }
 
+        // Issue #275: the Profiler window keeps its modules in a [SerializeReference] field, and Unity warned in every editor with
+        // the window open that the module lacked [Serializable]
+        [Test]
+        public void ProfilerModule_SerializedByReference_LogsNoWarning()
+        {
+            UnityEngine.JsonUtility.ToJson(new ModuleHolder { Module = new NexusProfilerModule() });
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
+        }
+
+        [System.Serializable]
+        private class ModuleHolder
+        {
+            [UnityEngine.SerializeReference] public object Module;
+        }
+
         private class ProfilerSmokeCommand : ICommand<ProfilerSmokeSignal>
         {
             public void Execute(ProfilerSmokeSignal signal) { }

@@ -61,6 +61,9 @@ everything under Unreleased is in the repository but not yet in a tagged package
   - PlayMode `DebugMenuTests` (6); the full PlayMode suite 298 / 0 / 2 of 300; the toggle test fails when a button no longer refreshes the toggles. The harness leaves the menu's three files out, as the overlay draws with UI Toolkit (gate 2). On the 2311DRK48G a held Backquote key (adb `--longpress`) opened and closed the menu at each of 28 presses, with its theme and the game's button; adb's plain key event, which releases at once, missed 1 of 12 (`Nexus/artifacts/phone-services-20261102-gaps-dev2/`, `Nexus/artifacts/phone-services-20261102-gaps/plain-vs-held-keys.txt`, `tools/unity-verify/services-probe.ps1`). The owner's three fingers opened and closed it, the probe counting three touches each time (`services-probe.ps1 -ThreeFingers`, `Nexus/artifacts/phone-services-20261102-gaps-fingers3/`).
 
 ### Fixed
+- **`NexusProfilerModule` lacked `[Serializable]`** (issue #275).
+  - The Profiler window keeps its modules in a `[SerializeReference]` field. An editor with the window open warned that the module "is being serialized by [SerializeReference], but is missing the [Serializable] attribute" (seen in Formatron).
+  - EditMode `NexusProfilerTests.ProfilerModule_SerializedByReference_LogsNoWarning` serializes the module the same way. Without the attribute it failed on that warning.
 - **The 0.6.0 migration notes left out four interface changes and one behaviour change** (issue #266).
   - MIGRATION's "Interfaces with new members" left out four changes:
     - `IIapService.GetOwnership` (the row named only `UnrequestedPurchase`);
