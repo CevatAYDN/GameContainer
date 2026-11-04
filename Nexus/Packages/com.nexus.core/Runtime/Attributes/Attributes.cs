@@ -199,6 +199,25 @@ namespace Nexus.Core
     }
 
     /// <summary>
+    /// Keeps types of the assembly that declares it out of the generated AOT binder (#158). A type whose namespace-qualified
+    /// name (nested types joined with '.') starts with one of the prefixes gets no constructor factory, injector or command
+    /// dispatcher from either generator, and the reflection path serves it; the binder lists an excluded [Inject] type at its
+    /// top. The match is ordinal and case-sensitive: "Voodoo." excludes a namespace, "GA" also global types such as
+    /// GAAdMobIntegration. It is meant for SDK sources compiled into a game assembly; an assembly that does not reference
+    /// Nexus is never scanned. An excluded type the game binds is constructed through reflection, so on IL2CPP with managed
+    /// stripping a type without [Inject] members needs an entry in the game's own link.xml.
+    /// <code>[assembly: Nexus.Core.BinderExclude("Voodoo.", "com.adjust.", "GameAnalyticsSDK.", "GA")]</code>
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Assembly, AllowMultiple = true)]
+    public sealed class BinderExcludeAttribute : Attribute
+    {
+        /// <summary>The name prefixes this assembly keeps out of the binder; null and empty entries are ignored.</summary>
+        public string[] Prefixes { get; }
+
+        public BinderExcludeAttribute(params string[] prefixes) => Prefixes = prefixes ?? Array.Empty<string>();
+    }
+
+    /// <summary>
     /// Associates a <see cref="View"/>-derived class with its <see cref="Mediator{TView}"/> type.
     /// When a View with this attribute is bound, the mediator is automatically created and wired.
     ///

@@ -96,7 +96,9 @@ generator (`SourceGenerator~/`) emit injectors, constructor factories and typed 
 dispatchers; only the editor generator writes `link.xml`. Both give the reflection path's answers (issue #191: an
 unbound `[Inject]` member is logged and filled later by `ReInjectAll`, or throws in strict mode; `[OptionalInject]`
 and binding names are honoured), and both list at the top of the binder every type they leave to the reflection
-path, with the reason. Both cover the game's own types, in the assemblies that reference Nexus: the Nexus packages' types
+path, with the reason. A game keeps third-party sources compiled into its own assembly off both binders with
+`[assembly: Nexus.Core.BinderExclude("Voodoo.", "GA")]`: a type of that assembly whose namespace-qualified name starts
+with a prefix gets no factory, injector or dispatcher (issue #158). Both cover the game's own types, in the assemblies that reference Nexus: the Nexus packages' types
 take the reflection path and each package preserves them in its own `link.xml` (handed to UnityLinker by
 `NexusPackagesLinkXml`; Unity reads only the files under `Assets`), so a package update does not leave a
 binder naming a removed type (issue #110). The source generator writes a binder only into a game's runtime assembly,

@@ -69,6 +69,9 @@ namespace Nexus.Generator
         private const string ConstructAttribute = "Nexus.Core.ConstructAttribute";
         private const string CompilerGeneratedAttribute = "System.Runtime.CompilerServices.CompilerGeneratedAttribute";
         private const string LazyInjection = "Nexus.Core.LazyInjection<T>";
+        private const string BinderExcludeAttribute = "Nexus.Core.BinderExcludeAttribute";
+        // The editor generator's NexusCodeGenerator.BinderExcludedReason, word for word (CG15).
+        private const string BinderExcludedReason = "excluded by [assembly: BinderExclude]";
 
         // Mirror of NexusAssemblyPolicy's name lists and rules, which this netstandard2.0 analyzer cannot reference; the
         // harness (CG7) fails when the two disagree on a game, framework, tool, editor or test assembly name (#191).
@@ -251,6 +254,21 @@ namespace Nexus.Generator
         /// <summary>A type's name in the binder's header list of types the reflection path serves.</summary>
         private static string DisplayName(ITypeSymbol type) => type.ToDisplayString();
 
+        /// <summary>The name prefixes an assembly keeps out of the binder with [assembly: BinderExclude] (#158).</summary>
+        private static string[] BinderExcludedPrefixes(IAssemblySymbol assembly)
+        {
+            var prefixes = new List<string>();
+            foreach (var a in assembly.GetAttributes())
+            {
+                if (a.AttributeClass == null || a.AttributeClass.ToDisplayString() != BinderExcludeAttribute || a.ConstructorArguments.Length != 1) continue;
+                var arg = a.ConstructorArguments[0];
+                if (arg.Kind != TypedConstantKind.Array || arg.IsNull) continue;
+                foreach (var value in arg.Values)
+                    if (value.Value is string prefix && prefix.Length > 0) prefixes.Add(prefix);
+            }
+            return prefixes.ToArray();
+        }
+
         /// <summary>The name System.Type.FullName gives a non-generic type, so the runtime's messages read the same on both paths.</summary>
         private static string ReflectionName(ITypeSymbol type)
         {
@@ -413,6 +431,17 @@ namespace Nexus.Generator
             var seenInject = new HashSet<string>(StringComparer.Ordinal);
             var seenCtor = new HashSet<string>(StringComparer.Ordinal);
             var seenCommands = new HashSet<string>(StringComparer.Ordinal);
+            // [assembly: BinderExclude] (#158): no binder line names a type under its own assembly's prefixes.
+            var excludedPrefixes = new Dictionary<ISymbol, string[]>(SymbolEqualityComparer.Default);
+            bool IsExcluded(INamedTypeSymbol type)
+            {
+                var assembly = type.ContainingAssembly;
+                if (assembly == null) return false;
+                if (!excludedPrefixes.TryGetValue(assembly, out var prefixes)) excludedPrefixes[assembly] = prefixes = BinderExcludedPrefixes(assembly);
+                if (prefixes.Length == 0) return false;
+                string name = DisplayName(type);
+                return prefixes.Any(p => name.StartsWith(p, StringComparison.Ordinal));
+            }
 
             // A compilation that does not reference the Nexus runtime gets no binder: the binder would not compile there.
             string nexusRuntime = compilation.GetTypeByMetadataName(InjectAttribute)?.ContainingAssembly.Name;
@@ -488,6 +517,11 @@ namespace Nexus.Generator
 
                 MemberSet members = fromCurrentCompilation ? GetMemberSet(type) : null;
                 bool valid = members == null || Validate(members);
+                if (IsExcluded(type))
+                {
+                    if (members != null && !members.IsEmpty) Fallback(type, BinderExcludedReason);
+                    return;
+                }
                 if (type.IsGenericType)
                 {
                     if (members != null && !members.IsEmpty) Fallback(type, "an open generic type: the binder names closed types only");

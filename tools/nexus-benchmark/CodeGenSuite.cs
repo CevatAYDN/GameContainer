@@ -199,6 +199,7 @@ namespace NexusBench
             Test_ArityOverloadImplementations_Preserved();
             // Last: they load an assembly named like a package, which every later scan would see.
             Test_Binders_Register_No_Package_Assembly_Type();
+            Test_Binders_Name_No_BinderExcluded_Type();
             Test_Shipped_SourceGenerator_Matches_Source();
             Test_Binder_Leaves_Unknown_Conditions_To_Reflection();
             Test_SourceGenerator_Runs_Only_In_Game_Assemblies();
@@ -660,6 +661,22 @@ namespace NexusBench.PackageFixture
     public struct PackageNetworkSignal : Nexus.Netcode.INetworkSignal { }
 }";
 
+        // The game fixture: the package fixture's types under a game's name, plus SDK-like types it keeps out of the binder (#158).
+        private static readonly string GameFixtureSource = PackageFixtureSource
+            .Replace("NexusBench.PackageFixture", "NexusBench.GameFixture")
+            .Replace("using NexusBench;", "using NexusBench;\n[assembly: BinderExclude(\"NexusBench.GameFixture.Sdk.\", \"SdkGlobal\")]")
+            + @"
+namespace NexusBench.GameFixture.Sdk
+{
+    public sealed class SdkCtorService { public SdkCtorService(CodeGenDep dep) { } }
+    public sealed class SdkInjected { [Inject] public CodeGenDep Dep; }
+    public struct SdkSignal { }
+    public sealed class SdkCommand : ICommand<SdkSignal> { public void Execute(SdkSignal signal) { } }
+}
+
+public sealed class SdkGlobalIntegration { public SdkGlobalIntegration() { } }
+";
+
         private static void Test_Binders_Register_No_Package_Assembly_Type()
         {
             const string name = "CG6. Binders_Register_No_Package_Assembly_Type";
@@ -714,6 +731,86 @@ namespace NexusBench.PackageFixture
             Report(name, ok, detail);
         }
 
+        // ─── CG15: a game keeps SDK sources compiled into its own assembly out of the binder (#158) ───
+        // Gigawatt's binder registered 44 factories for Voodoo, Adjust and GameAnalytics types (7 of them in the global
+        // namespace) that sit in Assembly-CSharp beside the game. [assembly: BinderExclude] names prefixes of the declaring
+        // assembly's types: neither generator may name one in code (factory, injector, dispatcher), an injectable one is
+        // listed with the reason and kept in link.xml, and the same assembly's other types stay registered.
+
+        private const string ExcludingGameSource = @"
+using Nexus.Core;
+using NexusBench;
+[assembly: BinderExclude(""NexusBench.CG15Game.Sdk."", ""SdkLocal"")]
+
+namespace NexusBench.CG15Game
+{
+    public sealed class Kept { [Inject] public CodeGenDep Dep; }
+}
+
+namespace NexusBench.CG15Game.Sdk
+{
+    public sealed class SdkLocalInjected { [Inject] public CodeGenDep Dep; }
+    public sealed class SdkLocalCtor { public SdkLocalCtor(CodeGenDep dep) { } }
+}
+
+public sealed class SdkLocalIntegration { [Inject] public CodeGenDep Dep; }
+";
+
+        private static void Test_Binders_Name_No_BinderExcluded_Type()
+        {
+            const string name = "CG15. Binders_Name_No_BinderExcluded_Type";
+            string rootDir = NexusEditorSettings.OutputRoot;
+            bool ok = false;
+            string detail;
+            try
+            {
+                string[] errors = LoadPackageAndGameFixtures();
+                if (errors.Length > 0)
+                {
+                    Report(name, false, "fixtures FAILED to compile: " + string.Join(" | ", errors));
+                    return;
+                }
+                bool NamesInCode(string binder, params string[] names) =>
+                    binder.Split('\n').Any(l => !l.TrimStart().StartsWith("//", StringComparison.Ordinal) && names.Any(l.Contains));
+                string Listed(string type) => $"//   {type}: {NexusCodeGenerator.BinderExcludedReason}";
+
+                if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true);
+                NexusCodeGenerator.GenerateBinder();
+                string editor = File.ReadAllText(Path.Combine(rootDir, "NexusGeneratedBinder.g.cs"));
+                string linkXml = File.ReadAllText(Path.Combine(rootDir, "link.xml"));
+                bool editorExcluded = !NamesInCode(editor, "GameFixture.Sdk.", "SdkGlobal");
+                bool editorListed = editor.Contains(Listed("NexusBench.GameFixture.Sdk.SdkInjected"));
+                bool editorLinkKept = linkXml.Contains("NexusBench.GameFixture.Sdk.SdkInjected");
+                bool editorRestKept = editor.Contains("RegisterConstructorFactory<NexusBench.GameFixture.PackageCtorService>");
+
+                var generator = new Nexus.Generator.NexusBinderGenerator();
+                string referenced = GenerateBinderSource(generator, "NexusBench.CG6Game", "namespace NexusBench.CG6Game { public sealed class Marker { } }");
+                bool referencedExcluded = referenced.Length > 0 && !NamesInCode(referenced, "GameFixture.Sdk.", "SdkGlobal");
+                bool referencedRestKept = HasRegistration(referenced, "RegisterConstructorFactory", "NexusBench.GameFixture.PackageCtorService");
+
+                string current = GenerateBinderSource(generator, "NexusBench.CG15Game", ExcludingGameSource);
+                bool currentExcluded = current.Length > 0 && !NamesInCode(current, "CG15Game.Sdk.", "SdkLocal");
+                bool currentListed = current.Contains(Listed("NexusBench.CG15Game.Sdk.SdkLocalInjected")) && current.Contains(Listed("SdkLocalIntegration"));
+                bool currentRestKept = HasRegistration(current, "RegisterInjector", "NexusBench.CG15Game.Kept");
+
+                ok = editorExcluded && editorListed && editorLinkKept && editorRestKept
+                     && referencedExcluded && referencedRestKept && currentExcluded && currentListed && currentRestKept;
+                detail = $"editorNamesNone={editorExcluded} editorListsInjectable={editorListed} editorLinkXmlKeeps={editorLinkKept} " +
+                         $"editorKeepsOthers={editorRestKept} sourceGeneratorReferencedNamesNone={referencedExcluded} " +
+                         $"sourceGeneratorReferencedKeepsOthers={referencedRestKept} sourceGeneratorCurrentNamesNone={currentExcluded} " +
+                         $"sourceGeneratorCurrentListsInjectables={currentListed} sourceGeneratorCurrentKeepsOthers={currentRestKept}";
+            }
+            catch (Exception ex)
+            {
+                detail = $"EXCEPTION: {ex.GetType().Name}: {ex.Message}";
+            }
+            finally
+            {
+                try { if (Directory.Exists(rootDir)) Directory.Delete(rootDir, true); } catch { }
+            }
+            Report(name, ok, detail);
+        }
+
         /// <summary>Compiles the CG6 fixture under the package's and the game's name and loads both from disk (as in
         /// CG2) so a source generator's compilation can reference them; once per run, a loaded file stays locked.</summary>
         private static string[] LoadPackageAndGameFixtures()
@@ -725,7 +822,7 @@ namespace NexusBench.PackageFixture
             var fixtures = new[]
             {
                 (Assembly: PackageFixtureAssembly, Source: PackageFixtureSource),
-                (Assembly: GameFixtureAssembly, Source: PackageFixtureSource.Replace("NexusBench.PackageFixture", "NexusBench.GameFixture")),
+                (Assembly: GameFixtureAssembly, Source: GameFixtureSource),
                 // a library that does not use Nexus (Newtonsoft, DOTween, an SDK): no binder names its types (#191)
                 (Assembly: PlainLibraryAssembly, Source: "namespace NexusBench.PlainLibrary { public sealed class PlainService { public PlainService(System.Text.StringBuilder log) { } } }"),
             };

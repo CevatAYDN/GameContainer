@@ -754,8 +754,11 @@ The binder registers only the project's own types; the Nexus packages' types tak
 - `its ICommand<T> is dispatched through MethodInfo.Invoke: the binder cannot name the command or the signal`, which costs an allocation per dispatch
 - `an [Inject] member in <file> (line <n>) is declared under #if <condition>` (editor generator): the member may be missing from a player, so the binder does not name it. The check takes the whole file: every type declared above that line in the same file keeps the reflection path. An `#if` around the whole type is fine; the binder repeats it (issue #85)
 - `every binder line that names it is left out: could not parse ...` or `... could not read ...` (editor generator): its `#if` could not be known, so no binder line names the type, also lines of other types that inject it
+- `excluded by [assembly: BinderExclude]`: the type's assembly declares `[assembly: Nexus.Core.BinderExclude(...)]` with a prefix of the type's namespace-qualified name (issue #158). Only a type with `[Inject]` members is listed; an excluded type that is only constructed is neither listed nor written to `link.xml`
 
 **Fix:** none is needed for correctness. To move a type onto the binder, make it and its `[Inject]` member types public, close the generic, move the member's `#if` around the whole type or into the member's body, or give the constructor parameter no default. An unparsable `#if` usually comes from a directive-like line in a block comment or a string; move it.
+
+To keep types off the binder, such as an SDK's sources imported under `Assets/` that compile into the game's assembly, declare in that assembly `[assembly: Nexus.Core.BinderExclude("Voodoo.", "com.adjust.", "GameAnalyticsSDK.", "GA")]`. Each prefix is compared, case-sensitive, with the start of the namespace-qualified name (`Outer.Inner` for a nested type), so `"Voodoo."` takes a namespace and `"GA"` also global types such as `GAAdMobIntegration`; check that no type of the game starts with a short prefix. Both generators read it after the next compile; regenerate the binder. The container still injects and constructs these types through reflection. On IL2CPP with managed stripping, an excluded type the container constructs and that has no `[Inject]` members needs an entry in the game's own `link.xml`, or `[Preserve]`.
 
 ---
 

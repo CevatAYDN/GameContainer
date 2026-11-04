@@ -220,6 +220,21 @@ namespace Nexus.Editor
         /// <summary>A type's name in the binder's header list of types the reflection path serves.</summary>
         private static string DisplayName(Type type) => type.FullName.Replace('+', '.');
 
+        /// <summary>The reason both generators give at the top of the binder for a type [assembly: BinderExclude] keeps out (#158).</summary>
+        internal const string BinderExcludedReason = "excluded by [assembly: BinderExclude]";
+
+        private static string[] BinderExcludedPrefixes(Assembly assembly)
+            => assembly.GetCustomAttributes<BinderExcludeAttribute>().SelectMany(a => a.Prefixes).Where(p => !string.IsNullOrEmpty(p)).ToArray();
+
+        private static bool IsBinderExcluded(Type type, string[] prefixes)
+        {
+            if (prefixes.Length == 0) return false;
+            string name = DisplayName(type);
+            foreach (var prefix in prefixes)
+                if (name.StartsWith(prefix, StringComparison.Ordinal)) return true;
+            return false;
+        }
+
         /// <summary>True when a type can be referenced from the generated binder file.</summary>
         private static bool ImplementsSignalFilter(Type type)
         {
@@ -411,8 +426,12 @@ namespace Nexus.Editor
                 // a package type named here would break the game's compile the day the package removes it (#110).
                 if (AssemblyCatalog.IsNexusPackageAssembly(AssemblyCatalog.GetSimpleName(assembly))) continue;
                 bool emittable = emittableAssemblies.Contains(assembly);
+                // [assembly: BinderExclude] (#158): the binder names no type under the assembly's prefixes; an injectable one
+                // keeps link.xml and the reflection path, and the binder's header lists it.
+                string[] excludedPrefixes = BinderExcludedPrefixes(assembly);
                 foreach (var type in AssemblyCatalog.GetTypesSafe(assembly))
                 {
+                    bool excluded = IsBinderExcluded(type, excludedPrefixes);
                     foreach (var member in type.GetMembers(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.DeclaredOnly))
                         if (!(member is Type) && (member.IsDefined(typeof(InjectAttribute), false) || member.IsDefined(typeof(OptionalInjectAttribute), false)))
                             invalid.Add($"{type.FullName}.{member.Name}: static, Nexus injects instance members only");
@@ -426,7 +445,7 @@ namespace Nexus.Editor
                     // runtime dispatcher falls back to MethodInfo.Invoke with a per-call
                     // object[] allocation. Emitting strongly-typed dispatcher registrations
                     // keeps the AOT dispatch path allocation-free.
-                    if (emittable && type.IsClass && !type.IsAbstract && !type.IsGenericTypeDefinition)
+                    if (emittable && !excluded && type.IsClass && !type.IsAbstract && !type.IsGenericTypeDefinition)
                     {
                         foreach (var iface in type.GetInterfaces())
                         {
@@ -475,19 +494,19 @@ namespace Nexus.Editor
                         bool hasInject = members.Fields.Length > 0 || members.Properties.Length > 0 || members.Methods.Length > 0;
                         // An [Inject] member or constructor under an #if of its own (#191): a binder line naming it would
                         // break the player compile, or set a member the player does not have.
-                        string memberProblem = emittable && codegenVisible && IsEmittableType(type) ? conditions.MemberProblem(type) : null;
+                        string memberProblem = emittable && codegenVisible && !excluded && IsEmittableType(type) ? conditions.MemberProblem(type) : null;
 
                         if (hasInject)
                         {
                             Validate(members);
                             linkXmlTypes.Add(type);
-                            if (emittable && codegenVisible && IsEmittableType(type))
+                            if (emittable && codegenVisible && !excluded && IsEmittableType(type))
                             {
                                 if (memberProblem == null) injectTypes.Add(type);
                                 else Fallback(type, memberProblem);
                             }
                             else if (emittable && !type.IsDefined(typeof(System.Runtime.CompilerServices.CompilerGeneratedAttribute), false))
-                                Fallback(type, type.ContainsGenericParameters
+                                Fallback(type, excluded ? BinderExcludedReason : type.ContainsGenericParameters
                                     ? "an open generic type: the binder names closed types only"
                                     : "not visible from the binder (internal or private)");
                         }
@@ -503,7 +522,7 @@ namespace Nexus.Editor
                         // `new` (CanEmitConstructorFactory) and have one [Inject]/[Construct]-marked
                         // public ctor or a single public ctor. Whether such a type is ever bound in
                         // DI is only known at runtime, so an unused factory is simply inert.
-                        if (emittable && codegenVisible && IsEmittableType(type) && !type.IsGenericTypeDefinition
+                        if (emittable && codegenVisible && !excluded && IsEmittableType(type) && !type.IsGenericTypeDefinition
                             && CanEmitConstructorFactory(type))
                         {
                             ConstructorInfo ctorToRegister = null;
