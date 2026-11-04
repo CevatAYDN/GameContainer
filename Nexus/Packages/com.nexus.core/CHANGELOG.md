@@ -89,6 +89,14 @@ everything under Unreleased is in the repository but not yet in a tagged package
   - Found by comparing every runtime interface at `v0.5.0` with `v0.6.0`.
   - Two members have a default body and need no step: `IAudioRootProvider.ReleaseRoot` and `IPlayerPrefsService.TryGetString`.
   - No known game implements any of the four interfaces outside test fakes, and the games' re-pin issues list those fakes.
+- **Three editor tools did their work when nothing would show it** (issue #261, found by the audit #206).
+  - **The Scene overlay** searched the scene for Roots every half second, and read each Root's renderers, colliders and signal handlers, with no Scene view open: also behind another tab, and in batch and test runs. It now refreshes only while a Scene view painted within the last second.
+    - EditMode `EditorAuditDefectTests.SceneOverlay_RefreshesOnlyWhileASceneViewPaints` checks both sides.
+  - **The `NexusBinding` inspector** ran its injectable-target preview on every IMGUI event: a `GetComponentsInChildren` and a member scan per component each time.
+    - It now keeps the preview until something it reads changes: a hierarchy change, an undoable change (a component added or removed, a property edited), an undo, or one of the listed components destroyed.
+    - Known limit: a component a script adds without `Undo` may not show until the binding is selected again. Unity's documentation does not say whether adding a component raises `hierarchyChanged`, and this was not tried.
+  - **The Nexus window's status bar** searched for Roots also in Play Mode, after every hierarchy change emptied the search's cache, and the Play Mode text does not show the count. It now searches only for the edit-mode text.
+  - No time was measured. The inspector and status bar changes have no test, because a test of "a call did not happen" needs a seam the code does not have.
 
 ### Removed
 - **Runtime members nobody calls** (issue #238).

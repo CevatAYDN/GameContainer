@@ -24,12 +24,16 @@ namespace Nexus.Editor
         // Data is live only during Play Mode (registrations + bounds move); a half-second
         // refresh is plenty and keeps edit-mode repaints cheap.
         private const double k_RefreshInterval = 0.5;
+        // The refresh runs only while a Scene view painted this recently: a closed Scene view, one behind another tab and
+        // a batch run paint none, and the scan ran there every half second (#261).
+        private const double k_SceneGuiWindow = 1.0;
         // Cap the per-context spoke fan-out so a context with dozens of handlers stays readable.
         private const int k_MaxSpokesPerContext = 24;
 
         private static readonly List<NexusSceneOverlayContextNode> s_nodes = new();
         private static int s_lastSignature = int.MinValue;
         private static double s_lastRefresh;
+        private static double s_lastSceneGui = double.MinValue;
         private static double s_lastErrorLog;
 
         private static readonly GUIStyle s_scopeLabelStyle;
@@ -86,6 +90,7 @@ namespace Nexus.Editor
         {
             if (!Enabled) return;
             double now = EditorApplication.timeSinceStartup;
+            if (now - s_lastSceneGui > k_SceneGuiWindow) return;
             if (now - s_lastRefresh < k_RefreshInterval) return;
             s_lastRefresh = now;
             RefreshData();
@@ -138,6 +143,7 @@ namespace Nexus.Editor
 
         private static void OnSceneGui(SceneView sceneView)
         {
+            s_lastSceneGui = EditorApplication.timeSinceStartup;
             if (!Enabled) return;
 
             Handles.BeginGUI();

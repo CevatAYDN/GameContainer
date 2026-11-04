@@ -511,15 +511,12 @@ namespace Nexus.Editor
             // reload) must not spam the console every 200ms and leave the window stuck.
             try
             {
-                bool playing = Application.isPlaying;
-                int contextCount = NexusEditorDataProvider.GetActiveContextCount();
-                int handlerCount = NexusEditorDataProvider.GetHandlerCount();
-                var roots = NexusEditorDataProvider.GetSceneRoots();
-                int rootCount = roots?.Length ?? 0;
-
-                _statusBar.text = playing
-                    ? string.Format(NexusLang.Get("statusbar_play"), contextCount, handlerCount)
-                    : string.Format(NexusLang.Get("statusbar_standby"), rootCount);
+                // Each text reads only its own numbers: the Root search ran in Play Mode too, after every hierarchy change
+                // emptied its cache, and the Play Mode text does not show it (#261).
+                _statusBar.text = Application.isPlaying
+                    ? string.Format(NexusLang.Get("statusbar_play"), NexusEditorDataProvider.GetActiveContextCount(),
+                        NexusEditorDataProvider.GetHandlerCount())
+                    : string.Format(NexusLang.Get("statusbar_standby"), NexusEditorDataProvider.GetSceneRoots()?.Length ?? 0);
             }
             catch (Exception ex)
             {

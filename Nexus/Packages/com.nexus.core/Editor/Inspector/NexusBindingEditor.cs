@@ -15,11 +15,31 @@ namespace Nexus.Editor.Inspector
         private SerializedProperty _timeProp;
         private SerializedProperty _customTargetsProp;
         private bool _showTargetsFoldout = true;
+        // The preview's discovery, kept until something it reads changes: it ran on every IMGUI event, each time a
+        // GetComponentsInChildren and a member scan per component (#261). Null: discover on the next draw.
+        private List<(MonoBehaviour Component, List<(string Name, Type Type)> InjectedMembers)> _injectables;
 
         private void OnEnable()
         {
             EnsureProperties();
+            _injectables = null;
+            // A child created, destroyed or moved; a component added or removed, or a property edited (undoable changes);
+            // an undo.
+            EditorApplication.hierarchyChanged += InvalidateInjectables;
+            ObjectChangeEvents.changesPublished += OnChangesPublished;
+            Undo.undoRedoPerformed += InvalidateInjectables;
         }
+
+        private void OnDisable()
+        {
+            EditorApplication.hierarchyChanged -= InvalidateInjectables;
+            ObjectChangeEvents.changesPublished -= OnChangesPublished;
+            Undo.undoRedoPerformed -= InvalidateInjectables;
+        }
+
+        private void InvalidateInjectables() => _injectables = null;
+
+        private void OnChangesPublished(ref ObjectChangeEventStream stream) => _injectables = null;
 
         private bool EnsureProperties()
         {
@@ -63,7 +83,9 @@ namespace Nexus.Editor.Inspector
             NexusInspectorGUI.EndCard();
 
             // 2. Discovered Dependencies Preview Card
-            var injectables = DiscoverInjectables(binding);
+            // A component destroyed alone (Destroy in Play Mode) raises none of the events above.
+            if (_injectables != null && _injectables.Exists(item => item.Component == null)) _injectables = null;
+            var injectables = _injectables ??= DiscoverInjectables(binding);
             NexusInspectorGUI.BeginCard("Injectable Targets", $"{injectables.Count} Found", injectables.Count > 0 ? StatusType.Success : StatusType.Warning);
 
             if (injectables.Count > 0)
@@ -110,7 +132,7 @@ namespace Nexus.Editor.Inspector
             }
             NexusInspectorGUI.EndCard();
 
-            serializedObject.ApplyModifiedProperties();
+            if (serializedObject.ApplyModifiedProperties()) _injectables = null; // the scope or the custom targets changed
         }
 
         internal static List<(MonoBehaviour Component, List<(string Name, Type Type)> InjectedMembers)> DiscoverInjectables(NexusBinding binding)

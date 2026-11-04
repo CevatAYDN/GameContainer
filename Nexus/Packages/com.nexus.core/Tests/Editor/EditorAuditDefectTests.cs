@@ -36,7 +36,7 @@ namespace Nexus.Editor.Tests
 
     public class InspectorAuditBehaviour : InspectorAuditBehaviourBase { }
 
-    /// <summary>Editor defects the audit #206 found (#252-#260); each test fails on the code before its fix.</summary>
+    /// <summary>Editor defects the audit #206 found (#252-#261); each test fails on the code before its fix.</summary>
     public class EditorAuditDefectTests
     {
         private const BindingFlags Instance = BindingFlags.Instance | BindingFlags.NonPublic;
@@ -190,6 +190,45 @@ namespace Nexus.Editor.Tests
                 if (second != null) Object.DestroyImmediate(second);
                 nodes.Clear();
                 signature.SetValue(null, int.MinValue);
+            }
+        }
+
+        [Test]
+        public void SceneOverlay_RefreshesOnlyWhileASceneViewPaints()
+        {
+            // the overlay searched the scene for Roots every half second with no Scene view open, in batch and test
+            // runs as well (#261)
+            var update = typeof(NexusSceneOverlay).GetMethod("OnEditorUpdate", Static);
+            var nodes = (System.Collections.Generic.List<NexusSceneOverlayContextNode>)typeof(NexusSceneOverlay).GetField("s_nodes", Static).GetValue(null);
+            var signature = typeof(NexusSceneOverlay).GetField("s_lastSignature", Static);
+            var lastRefresh = typeof(NexusSceneOverlay).GetField("s_lastRefresh", Static);
+            var lastSceneGui = typeof(NexusSceneOverlay).GetField("s_lastSceneGui", Static);
+            bool wasEnabled = NexusSceneOverlay.Enabled;
+            object paintedBefore = lastSceneGui.GetValue(null);
+            var root = new GameObject("OverlayAudit261");
+            try
+            {
+                NexusSceneOverlay.Enabled = true;
+                root.AddComponent<Root>();
+                double now = UnityEditor.EditorApplication.timeSinceStartup;
+
+                lastSceneGui.SetValue(null, now - 10.0);
+                lastRefresh.SetValue(null, 0.0);
+                update.Invoke(null, null);
+                Assert.IsFalse(nodes.Any(node => node.GameObject == root), "no Scene view painted: no refresh");
+
+                lastSceneGui.SetValue(null, now);
+                lastRefresh.SetValue(null, 0.0);
+                update.Invoke(null, null);
+                Assert.IsTrue(nodes.Any(node => node.GameObject == root), "a Scene view painted: the overlay refreshes");
+            }
+            finally
+            {
+                Object.DestroyImmediate(root);
+                nodes.Clear();
+                signature.SetValue(null, int.MinValue);
+                lastSceneGui.SetValue(null, paintedBefore);
+                NexusSceneOverlay.Enabled = wasEnabled;
             }
         }
 
