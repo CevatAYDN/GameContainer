@@ -52,7 +52,7 @@ for (#195). The policies behind each rule, with the pages they were read from, a
 |---|---|
 | `UnknownPlacement` | a placement name not declared in the settings, or declared with another format |
 | `InterstitialNaturalBreakOnly` | an interstitial on a placement without `NaturalBreak` |
-| `InterstitialFrequency` | an interstitial inside the gap, in the first seconds of a session, over a session or day cap, or right after a rewarded ad; a show of any format before its placement's first-show delay, inside its cooldown or over its session or day cap |
+| `InterstitialFrequency` | an interstitial inside the gap, in the first seconds of a session, before the player has had the policy's number of earlier sessions on the device, over a session or day cap, or right after a rewarded ad; a show of any format before its placement's first-show delay, inside its cooldown or over its session or day cap |
 | `NoStackedAds` | a second full-screen ad while one is open |
 | `NoAdInBackground` | a show while the app is not visible |
 | `NoRequestBeforeConsent` | a show before the consent flow finished |
@@ -62,7 +62,13 @@ for (#195). The policies behind each rule, with the pages they were read from, a
 
 Defaults of `AdPolicy.Default`: 30 s between interstitials, none in the first 60 s of a session,
 none within 30 s after a rewarded ad, no session or day cap, a new session after 30 min in the
-background. Locked by `AdsCoreSuite` AP1–AP6.
+background, interstitials from the first session. Locked by `AdsCoreSuite` AP1–AP6, AP8 and AP9.
+
+`MinLifetimeSessionsBeforeInterstitial` (remote key `ads.min_lifetime_sessions_before_interstitial`,
+#128) holds interstitials back until the player has had that many earlier sessions on the device: a
+cold start and a return after the resume gap each count one. The count is kept in `IPacingStore`
+next to the pacing rows, so a player who had the game before the update starts at 0 and clearing
+the app's data starts over (`AdsCoreSuite` PG26–PG29, PW8).
 
 The gap between interstitials, the wait after a rewarded ad and a placement's cooldown run from
 the show, across a resume and a restart: `SessionTracker` keeps each last show as a UTC wall-clock

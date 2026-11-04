@@ -312,6 +312,13 @@ namespace NexusBench
             Check("AP6. UnknownKey_Ignored", ReferenceEquals(p.Tighten("ads.nothing", 99), p), "same instance");
             Check("AP7. Retry_Backoff_2_4_8_64", RetryPolicy.DelaySeconds(1) == 2 && RetryPolicy.DelaySeconds(2) == 4 && RetryPolicy.DelaySeconds(3) == 8 && RetryPolicy.DelaySeconds(6) == 64 && RetryPolicy.DelaySeconds(20) == 64,
                 $"{RetryPolicy.DelaySeconds(1)},{RetryPolicy.DelaySeconds(2)},{RetryPolicy.DelaySeconds(3)},...,{RetryPolicy.DelaySeconds(6)},{RetryPolicy.DelaySeconds(20)}");
+            // #128: the lifetime-session threshold only grows and survives every other key's tightening
+            var gated = p.Tighten(AdPolicy.Keys.MinLifetimeSessionsBeforeInterstitial, 3).Tighten(AdPolicy.Keys.MinLifetimeSessionsBeforeInterstitial, 1)
+                .Tighten(AdPolicy.Keys.MinInterstitialGapSeconds, 90).Tighten(AdPolicy.Keys.MaxInterstitialsPerDay, 5).Tighten(AdPolicy.Keys.SessionResumeGapMinutes, 45);
+            Check("AP8. LifetimeSessions_OnlyGrows_KeptByOtherKeys", gated.MinLifetimeSessionsBeforeInterstitial == 3 && gated.MinInterstitialGapSeconds == 90 && gated.MaxInterstitialsPerDay == 5 && gated.SessionResumeGapMinutes == 45,
+                $"sessions={gated.MinLifetimeSessionsBeforeInterstitial} gap={gated.MinInterstitialGapSeconds} day={gated.MaxInterstitialsPerDay} resume={gated.SessionResumeGapMinutes}");
+            var fromSettings = p.Tighten(new AdPolicy(30, 60, 30, 0, 0, 30, 2));
+            Check("AP9. TightenPolicy_CarriesLifetimeSessions", fromSettings.MinLifetimeSessionsBeforeInterstitial == 2, $"sessions={fromSettings.MinLifetimeSessionsBeforeInterstitial} (the settings asset goes through this overload)");
         }
 
         // ----- PolicyGuard
@@ -428,6 +435,38 @@ namespace NexusBench
                 Check("PG23. WaitAfterRewarded_SurvivesARestart", !v.Allowed && v.Reason.Contains("a rewarded ad closed"), v.Reason);
                 v = after.Controller.Guard.Check("boost", AdFormat.Rewarded, open);
                 Check("PG24. PlacementCooldown_SurvivesARestart", !v.Allowed && v.Reason.Contains("cooldown"), v.Reason);
+            }
+
+            // #128: interstitials wait until the player has had N sessions on this device; the threshold is not the first-seconds floor,
+            // so each check runs past it. A cold start and a return after the resume gap each count one session.
+            var oneEarlier = AdsRig.Config(new AdPolicy(30, 60, 30, 0, 0, 30, 1));
+            using (var first = new AdsRig(oneEarlier).Running())
+            {
+                first.Scheduler.Advance(61);
+                v = first.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                Check("PG26. LifetimeSessions_FirstSessionBlocked", !v.Allowed && v.Rule == PolicyRules.InterstitialFrequency && v.Reason.Contains("earlier sessions"), v.Reason);
+                using var second = first.Restart(oneEarlier, 3600).Running();
+                second.Scheduler.Advance(61);
+                v = second.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                Check("PG27. LifetimeSessions_NextColdStartAllowed", v.Allowed, $"{v.Reason}; stored count={second.Store.Get("nexus.ads.sessions.lifetime")}");
+            }
+            using (var resumed = new AdsRig(oneEarlier).Running())
+            {
+                resumed.Visibility.Visible = false;
+                resumed.Scheduler.Advance(31 * 60);
+                resumed.Visibility.Visible = true;
+                resumed.Scheduler.Advance(61);
+                v = resumed.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                Check("PG28. LifetimeSessions_AResumeAfterTheGapCounts", v.Allowed, v.Reason ?? "allowed in the second session");
+            }
+            var raise = new AdsRemote();
+            raise.Values[AdPolicy.Keys.MinLifetimeSessionsBeforeInterstitial] = 1;
+            using (var remoteRig = new AdsRig(remote: raise).Running())
+            {
+                raise.Push();
+                remoteRig.Scheduler.Advance(61);
+                v = remoteRig.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                Check("PG29. LifetimeSessions_RemoteRaisesIt", !v.Allowed && v.Reason.Contains("earlier sessions"), v.Reason);
             }
         }
 
@@ -928,6 +967,15 @@ namespace NexusBench
                 Check("PW7. DayCap_RaisesReadyChanged_OnceTheUtcDayChanges",
                     sameDay == 0 && rig.ReadyChanges - before == 1 && rig.Controller.IsReady("reward_day") && rig.Scheduler.Pending == 0,
                     $"events in 10 min of the same day={sameDay}, after the day changed={rig.ReadyChanges - before} (expected 1), wakes left={rig.Scheduler.Pending}");
+            }
+
+            // #128: the lifetime-session threshold lasts the session like a cap, so the end of the first-seconds floor is no flip
+            using (var rig = new AdsRig(AdsRig.Config(new AdPolicy(30, 60, 30, 0, 0, 30, 1), placements: AdsRig.LevelEnd)).Running())
+            {
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(120);
+                Check("PW8. LifetimeSessions_ArmNoPacingWake", rig.ReadyChanges == before && rig.Scheduler.Pending == 0 && !rig.Controller.IsReady("level_end"),
+                    $"events in the first 2 min={rig.ReadyChanges - before} (expected 0), wakes left={rig.Scheduler.Pending}");
             }
         }
 

@@ -63,6 +63,8 @@ namespace Nexus.Ads
         {
             if (!placement.NaturalBreak)
                 return PolicyVerdict.Block(PolicyRules.InterstitialNaturalBreakOnly, "placement '" + placement.Name + "' is not marked NaturalBreak");
+            if (InterstitialLifetimeGated)
+                return Frequency(_session.SessionsBefore + " earlier sessions on this device; interstitials start after " + Policy.MinLifetimeSessionsBeforeInterstitial);
             double sinceStart = _session.SecondsSinceSessionStart;
             if (sinceStart < Policy.NoInterstitialForFirstSeconds)
                 return Frequency("the session is " + Seconds(sinceStart) + " old; the first interstitial waits " + Seconds(Policy.NoInterstitialForFirstSeconds));
@@ -108,9 +110,9 @@ namespace Nexus.Ads
             return Math.Max(wait, Wait(SinceLastRewarded, Policy.NoInterstitialAfterRewardedSeconds));
         }
 
-        /// <summary>True while a session cap blocks the placement; it ends with the session.</summary>
+        /// <summary>True while a session cap or the lifetime-session threshold blocks the placement; both end with the session.</summary>
         public bool SessionCapReached(AdPlacement placement)
-            => PlacementSessionCapped(placement) || (placement.Format == AdFormat.Interstitial && InterstitialSessionCapped);
+            => PlacementSessionCapped(placement) || (placement.Format == AdFormat.Interstitial && (InterstitialSessionCapped || InterstitialLifetimeGated));
 
         /// <summary>True while a day cap blocks the placement; it ends when <see cref="IAdClock.UtcDay"/> changes.</summary>
         public bool DayCapReached(AdPlacement placement)
@@ -121,6 +123,7 @@ namespace Nexus.Ads
         private double SinceLastInterstitial => _session.SecondsSinceSessionStart - (_session.LastInterstitialAt - _session.SessionStartedAt);
         private double SinceLastRewarded => _session.SecondsSinceSessionStart - (_session.LastRewardedAt - _session.SessionStartedAt);
         private bool InterstitialSessionCapped => Policy.MaxInterstitialsPerSession > 0 && _session.InterstitialsThisSession >= Policy.MaxInterstitialsPerSession;
+        private bool InterstitialLifetimeGated => _session.SessionsBefore < Policy.MinLifetimeSessionsBeforeInterstitial;
         private bool InterstitialDayCapped => Policy.MaxInterstitialsPerDay > 0 && _session.InterstitialsToday >= Policy.MaxInterstitialsPerDay;
         private bool PlacementSessionCapped(AdPlacement placement) => placement.SessionCap > 0 && _session.SessionCount(placement.Name) >= placement.SessionCap;
         private bool PlacementDayCapped(AdPlacement placement) => placement.DayCap > 0 && _session.DayCount(placement.Name) >= placement.DayCap;

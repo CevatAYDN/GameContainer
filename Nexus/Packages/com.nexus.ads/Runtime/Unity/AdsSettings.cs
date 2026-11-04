@@ -104,10 +104,12 @@ namespace Nexus.Ads.Unity
         [Tooltip("0 = no cap")] public int MaxInterstitialsPerSession;
         [Tooltip("0 = no cap")] public int MaxInterstitialsPerDay;
         public double SessionResumeGapMinutes = 30;
+        [Tooltip("Sessions on this device before the first interstitial; 0 = from the first session")] public int MinLifetimeSessionsBeforeInterstitial;
 
         public AdPolicy ToPolicy() => AdPolicy.Default.Tighten(new AdPolicy(
             Math.Max(0, MinInterstitialGapSeconds), Math.Max(0, NoInterstitialForFirstSeconds), Math.Max(0, NoInterstitialAfterRewardedSeconds),
-            Math.Max(0, MaxInterstitialsPerSession), Math.Max(0, MaxInterstitialsPerDay), Math.Max(0, SessionResumeGapMinutes)));
+            Math.Max(0, MaxInterstitialsPerSession), Math.Max(0, MaxInterstitialsPerDay), Math.Max(0, SessionResumeGapMinutes),
+            Math.Max(0, MinLifetimeSessionsBeforeInterstitial)));
     }
 
     /// <summary>

@@ -7,8 +7,8 @@ namespace Nexus.Ads
     /// <summary>
     /// The pacing memory: when the session started and its counts, which start over with each session, and
     /// what showed when and the per-day counters, which survive a restart through <see cref="IPacingStore"/>
-    /// (issue #153). A session starts cold or when the app returns after
-    /// <see cref="AdPolicy.SessionResumeGapMinutes"/> in the background.
+    /// (issue #153), as does the count of sessions started on this device (issue #128). A session starts cold or when the
+    /// app returns after <see cref="AdPolicy.SessionResumeGapMinutes"/> in the background.
     /// </summary>
     public sealed class SessionTracker
     {
@@ -17,6 +17,7 @@ namespace Nexus.Ads
         private const string LastInterstitialKey = "nexus.ads.last.interstitial";
         private const string LastRewardedKey = "nexus.ads.last.rewarded";
         private const string LastPlacementPrefix = "nexus.ads.last.placement.";
+        private const string LifetimeSessionsKey = "nexus.ads.sessions.lifetime";
 
         private readonly IAdClock _clock;
         private readonly IPacingStore _store;
@@ -31,6 +32,12 @@ namespace Nexus.Ads
         public double LastInterstitialAt { get; private set; }
         /// <summary>The last rewarded close on <see cref="IAdClock.Seconds"/> (an earlier run's is negative), or NaN.</summary>
         public double LastRewardedAt { get; private set; }
+        /// <summary>
+        /// Sessions started on this device before the current one, a resume after the gap included. Kept in the
+        /// <see cref="IPacingStore"/> like the day counters (issue #128 asked for the core's player-prefs service, which this
+        /// engine-free package cannot reference); a player who had the game before this counter existed starts at 0.
+        /// </summary>
+        public int SessionsBefore { get; private set; }
 
         public SessionTracker(IAdClock clock, IPacingStore store)
         {
@@ -101,6 +108,9 @@ namespace Nexus.Ads
             SessionStartedAt = _clock.Seconds;
             InterstitialsThisSession = 0;
             _sessionCounts.Clear();
+            string raw = _store.Get(LifetimeSessionsKey);
+            SessionsBefore = int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out int started) && started > 0 ? started : 0;
+            _store.Set(LifetimeSessionsKey, (SessionsBefore == int.MaxValue ? SessionsBefore : SessionsBefore + 1).ToString(CultureInfo.InvariantCulture));
         }
 
         // A show of an earlier run is stored as UTC seconds and placed on this run's clock; one ahead of the wall clock (the

@@ -20,34 +20,40 @@ namespace Nexus.Ads
             public const string MaxInterstitialsPerSession = "ads.max_interstitials_per_session";
             public const string MaxInterstitialsPerDay = "ads.max_interstitials_per_day";
             public const string SessionResumeGapMinutes = "ads.session_resume_gap_minutes";
+            public const string MinLifetimeSessionsBeforeInterstitial = "ads.min_lifetime_sessions_before_interstitial";
 
             public static readonly string[] All =
             {
                 MinInterstitialGapSeconds, NoInterstitialForFirstSeconds, NoInterstitialAfterRewardedSeconds,
-                MaxInterstitialsPerSession, MaxInterstitialsPerDay, SessionResumeGapMinutes,
+                MaxInterstitialsPerSession, MaxInterstitialsPerDay, SessionResumeGapMinutes, MinLifetimeSessionsBeforeInterstitial,
             };
         }
 
         public static readonly AdPolicy Default = new AdPolicy(30, 60, 30, 0, 0, 30);
 
         /// <summary>Seconds between two interstitials, any placement.</summary>
-        public double MinInterstitialGapSeconds { get; }
+        public double MinInterstitialGapSeconds { get; private set; }
         /// <summary>Seconds after session start without an interstitial.</summary>
-        public double NoInterstitialForFirstSeconds { get; }
+        public double NoInterstitialForFirstSeconds { get; private set; }
         /// <summary>Seconds after a rewarded ad without an interstitial.</summary>
-        public double NoInterstitialAfterRewardedSeconds { get; }
+        public double NoInterstitialAfterRewardedSeconds { get; private set; }
         /// <summary>Interstitials per session, all placements; 0 = no cap.</summary>
-        public int MaxInterstitialsPerSession { get; }
+        public int MaxInterstitialsPerSession { get; private set; }
         /// <summary>Interstitials per UTC day, all placements; 0 = no cap.</summary>
-        public int MaxInterstitialsPerDay { get; }
+        public int MaxInterstitialsPerDay { get; private set; }
         /// <summary>A return from the background after this many minutes starts a new session.</summary>
-        public double SessionResumeGapMinutes { get; }
+        public double SessionResumeGapMinutes { get; private set; }
+        /// <summary>
+        /// Sessions the player completes on this device before the first interstitial (issue #128); 0 = from the first session.
+        /// A session is a cold start or a return after <see cref="SessionResumeGapMinutes"/>, counted by <see cref="SessionTracker.SessionsBefore"/>.
+        /// </summary>
+        public int MinLifetimeSessionsBeforeInterstitial { get; private set; }
 
         public AdPolicy(double minInterstitialGapSeconds, double noInterstitialForFirstSeconds, double noInterstitialAfterRewardedSeconds,
-            int maxInterstitialsPerSession, int maxInterstitialsPerDay, double sessionResumeGapMinutes)
+            int maxInterstitialsPerSession, int maxInterstitialsPerDay, double sessionResumeGapMinutes, int minLifetimeSessionsBeforeInterstitial = 0)
         {
             if (minInterstitialGapSeconds < 0 || noInterstitialForFirstSeconds < 0 || noInterstitialAfterRewardedSeconds < 0
-                || maxInterstitialsPerSession < 0 || maxInterstitialsPerDay < 0 || sessionResumeGapMinutes < 0)
+                || maxInterstitialsPerSession < 0 || maxInterstitialsPerDay < 0 || sessionResumeGapMinutes < 0 || minLifetimeSessionsBeforeInterstitial < 0)
                 throw new ArgumentOutOfRangeException(nameof(minInterstitialGapSeconds), "Policy values cannot be negative.");
             MinInterstitialGapSeconds = minInterstitialGapSeconds;
             NoInterstitialForFirstSeconds = noInterstitialForFirstSeconds;
@@ -55,11 +61,12 @@ namespace Nexus.Ads
             MaxInterstitialsPerSession = maxInterstitialsPerSession;
             MaxInterstitialsPerDay = maxInterstitialsPerDay;
             SessionResumeGapMinutes = sessionResumeGapMinutes;
+            MinLifetimeSessionsBeforeInterstitial = minLifetimeSessionsBeforeInterstitial;
         }
 
         /// <summary>
         /// Returns a policy with <paramref name="key"/> set to <paramref name="value"/> when that is stricter
-        /// (gaps and delays only grow, caps only shrink, a cap of 0 never replaces a cap), otherwise this policy.
+        /// (gaps, delays and the lifetime-session threshold only grow, caps only shrink, a cap of 0 never replaces a cap), otherwise this policy.
         /// An unknown key returns this policy.
         /// </summary>
         public AdPolicy Tighten(string key, double value)
@@ -68,17 +75,20 @@ namespace Nexus.Ads
             switch (key)
             {
                 case Keys.MinInterstitialGapSeconds:
-                    return value > MinInterstitialGapSeconds ? new AdPolicy(value, NoInterstitialForFirstSeconds, NoInterstitialAfterRewardedSeconds, MaxInterstitialsPerSession, MaxInterstitialsPerDay, SessionResumeGapMinutes) : this;
+                    return value > MinInterstitialGapSeconds ? With(p => p.MinInterstitialGapSeconds = value) : this;
                 case Keys.NoInterstitialForFirstSeconds:
-                    return value > NoInterstitialForFirstSeconds ? new AdPolicy(MinInterstitialGapSeconds, value, NoInterstitialAfterRewardedSeconds, MaxInterstitialsPerSession, MaxInterstitialsPerDay, SessionResumeGapMinutes) : this;
+                    return value > NoInterstitialForFirstSeconds ? With(p => p.NoInterstitialForFirstSeconds = value) : this;
                 case Keys.NoInterstitialAfterRewardedSeconds:
-                    return value > NoInterstitialAfterRewardedSeconds ? new AdPolicy(MinInterstitialGapSeconds, NoInterstitialForFirstSeconds, value, MaxInterstitialsPerSession, MaxInterstitialsPerDay, SessionResumeGapMinutes) : this;
+                    return value > NoInterstitialAfterRewardedSeconds ? With(p => p.NoInterstitialAfterRewardedSeconds = value) : this;
                 case Keys.MaxInterstitialsPerSession:
-                    return StricterCap(MaxInterstitialsPerSession, value) ? new AdPolicy(MinInterstitialGapSeconds, NoInterstitialForFirstSeconds, NoInterstitialAfterRewardedSeconds, (int)value, MaxInterstitialsPerDay, SessionResumeGapMinutes) : this;
+                    return StricterCap(MaxInterstitialsPerSession, value) ? With(p => p.MaxInterstitialsPerSession = (int)value) : this;
                 case Keys.MaxInterstitialsPerDay:
-                    return StricterCap(MaxInterstitialsPerDay, value) ? new AdPolicy(MinInterstitialGapSeconds, NoInterstitialForFirstSeconds, NoInterstitialAfterRewardedSeconds, MaxInterstitialsPerSession, (int)value, SessionResumeGapMinutes) : this;
+                    return StricterCap(MaxInterstitialsPerDay, value) ? With(p => p.MaxInterstitialsPerDay = (int)value) : this;
                 case Keys.SessionResumeGapMinutes:
-                    return value > SessionResumeGapMinutes ? new AdPolicy(MinInterstitialGapSeconds, NoInterstitialForFirstSeconds, NoInterstitialAfterRewardedSeconds, MaxInterstitialsPerSession, MaxInterstitialsPerDay, value) : this;
+                    return value > SessionResumeGapMinutes ? With(p => p.SessionResumeGapMinutes = value) : this;
+                case Keys.MinLifetimeSessionsBeforeInterstitial:
+                    int sessions = value >= int.MaxValue ? int.MaxValue : (int)value;
+                    return sessions > MinLifetimeSessionsBeforeInterstitial ? With(p => p.MinLifetimeSessionsBeforeInterstitial = sessions) : this;
                 default:
                     return this;
             }
@@ -93,7 +103,16 @@ namespace Nexus.Ads
                 .Tighten(Keys.NoInterstitialAfterRewardedSeconds, requested.NoInterstitialAfterRewardedSeconds)
                 .Tighten(Keys.MaxInterstitialsPerSession, requested.MaxInterstitialsPerSession)
                 .Tighten(Keys.MaxInterstitialsPerDay, requested.MaxInterstitialsPerDay)
-                .Tighten(Keys.SessionResumeGapMinutes, requested.SessionResumeGapMinutes);
+                .Tighten(Keys.SessionResumeGapMinutes, requested.SessionResumeGapMinutes)
+                .Tighten(Keys.MinLifetimeSessionsBeforeInterstitial, requested.MinLifetimeSessionsBeforeInterstitial);
+        }
+
+        // A copy with one value changed: every other value carries over, so a key added later cannot be dropped by a case that forgot it.
+        private AdPolicy With(Action<AdPolicy> change)
+        {
+            var copy = (AdPolicy)MemberwiseClone();
+            change(copy);
+            return copy;
         }
 
         // A cap of 0 means none; a positive cap is stricter than none and a smaller positive cap is stricter still.
