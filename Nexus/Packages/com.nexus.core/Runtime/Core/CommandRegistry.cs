@@ -226,26 +226,6 @@ namespace Nexus.Core
         }
 
         /// <summary>
-        /// Removes a previously registered command handler (used by one-shot commands after
-        /// their single execution). Rebuilds the lock-free read copy so subsequent fires no
-        /// longer see the handler. No-op when the handler is not registered.
-        /// </summary>
-        public void UnregisterCommand(Type signalType, Type commandType)
-        {
-            lock (_handlerReadLock)
-            {
-                if (!_commandHandlers.TryGetValue(signalType, out var list))
-                    return;
-
-                int removed = list.RemoveAll(h => h.CommandType == commandType);
-                if (removed == 0) return;
-
-                _claimedOneShots.Remove((signalType, commandType));
-                RebuildHandlerReadCopies(signalType, list);
-            }
-        }
-
-        /// <summary>
         /// Rebuilds the volatile read-copy snapshots after a handler-list mutation under
         /// <see cref="_handlerReadLock"/>. Removes the signal entirely when its list is empty,
         /// otherwise recomputes the async flag for the remaining handlers.

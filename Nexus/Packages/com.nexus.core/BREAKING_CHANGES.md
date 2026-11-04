@@ -416,6 +416,17 @@ Features marked as beta:
 
 ### Recent Breaking Changes
 
+#### Version 0.7.0 (Unreleased)
+
+**Breaking Changes:**
+- Issue #238 removed public members that nothing references (the search is in the changelog):
+  - `NexusDI.WaitForBackgroundDispose`, `ClearPendingInjection` and `GetRegisteredSingletons`;
+  - `InjectScanner.HasInjectableMembers`;
+  - `CommandRegistry.UnregisterCommand`;
+  - `CommandExecutor.InFlightAsyncCommands`.
+
+**Migration:** See [MIGRATION.md](MIGRATION.md#version-060--070-unreleased).
+
 #### Version 0.6.0 (2026-11-02)
 
 **Breaking Changes:**

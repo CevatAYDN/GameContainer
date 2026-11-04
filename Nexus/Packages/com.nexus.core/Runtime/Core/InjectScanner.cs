@@ -63,13 +63,6 @@ namespace Nexus.Core
             return new MemberSet(fieldsList.ToArray(), propsList.ToArray(), methodsList.ToArray());
         }
 
-        public static bool HasInjectableMembers(Type type)
-        {
-            if (type == null || !type.IsClass || type.IsAbstract) return false;
-            var members = ScanMembers(type);
-            return members.Fields.Length > 0 || members.Properties.Length > 0 || members.Methods.Length > 0;
-        }
-
         public static ConstructorInfo FindInjectionConstructor(Type type, out int markedCtorCount)
         {
             markedCtorCount = 0;

@@ -90,6 +90,20 @@ everything under Unreleased is in the repository but not yet in a tagged package
   - Two members have a default body and need no step: `IAudioRootProvider.ReleaseRoot` and `IPlayerPrefsService.TryGetString`.
   - No known game implements any of the four interfaces outside test fakes, and the games' re-pin issues list those fakes.
 
+### Removed
+- **Runtime members nobody calls** (issue #238).
+  - **Public:**
+    - `NexusDI.WaitForBackgroundDispose`, with the task field it read; `Dispose()` still disposes the `IAsyncDisposable` singletons on the thread pool;
+    - `NexusDI.ClearPendingInjection` and `NexusDI.GetRegisteredSingletons`;
+    - `InjectScanner.HasInjectableMembers`;
+    - `CommandRegistry.UnregisterCommand`;
+    - `CommandExecutor.InFlightAsyncCommands`.
+  - **Internal:** `NexusDI.GetAllRegisteredTypes`, `IsSingletonBinding`, `IsFactoryBinding` and `GetEditorSingletonSnapshot`, and `CommandExecutor.ExecutorToken`. `DiBindingValidator` does its own captive check.
+  - **The search:** each name, whole word, in `Nexus/Packages`, `Nexus/Assets`, `tools/`, `docs/` and the 8 known games (Library, Temp, obj, Logs, bin and `docs/archive` left out).
+    - Each name appeared only at its definition.
+    - The games' hits were old package copies inside Pixel-Flow-Clone, IdleProject, PuzzleGame and RingFlow, not game code.
+  - **Kept:** `SignalSubscription<T>.Invoke` and `AsyncSignalSubscription<T>.InvokeAsync`, which nothing calls either. They are the only reads of the handler that the public constructors take, so removing them changes constructors the package itself uses. That needs the deprecation period in `BREAKING_CHANGES.md`.
+
 ## [0.6.0] - 2026-11-02
 
 Breaking changes and migration steps: `BREAKING_CHANGES.md` and `MIGRATION.md` ("Version 0.5.0 → 0.6.0").

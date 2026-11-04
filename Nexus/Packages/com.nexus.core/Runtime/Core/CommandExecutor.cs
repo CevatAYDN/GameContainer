@@ -36,17 +36,11 @@ namespace Nexus.Core
         // gives TryCancelInFlightCommands a real cancellation mechanism instead of a no-op.
         private readonly CancellationTokenSource _executorCts = new();
 
-        /// <summary>Token that cancels when the executor is disposed or in-flight commands are cancelled.</summary>
-        internal CancellationToken ExecutorToken => _executorCts.Token;
-
         /// <summary>
         /// Set by the owning SignalBus (which holds the composite lock): releases a one-shot composite
         /// trigger whose detached async command failed, since no Fire caller can catch that failure.
         /// </summary>
         internal Action<CompositeTriggerState> ReleaseOneShotComposite;
-
-        /// <summary>Number of async commands currently in flight (for dispose diagnostics).</summary>
-        public int InFlightAsyncCommands => Volatile.Read(ref _inFlightAsyncCommands);
 
         /// <summary>
         /// Signals cancellation to all in-flight async commands. Previously a no-op

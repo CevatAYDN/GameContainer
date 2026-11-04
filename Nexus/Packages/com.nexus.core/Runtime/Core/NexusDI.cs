@@ -255,11 +255,6 @@ namespace Nexus.Core
         // type-keyed guard would let two threads construct the same singleton through
         // two different interfaces concurrently.
         private readonly object _singletonLock = new();
-        // Background dispose task for IAsyncDisposable singletons scheduled by Dispose()
-        // When Dispose() collects async disposables it runs them through DisposeAllAsyncInBackground
-        // and stores the returned Task here so callers (e.g. Context.Dispose) may wait with a timeout
-        // for deterministic teardown when needed.
-        private Task _backgroundDisposeTask;
         // Per-binding wait handles for singleton construction synchronization
         private Dictionary<Binding, ManualResetEventSlim> _constructionWaitHandles; // first concurrent construction
         private readonly object _constructionWaitLock = new();
@@ -2322,14 +2317,6 @@ namespace Nexus.Core
             return resolved;
         }
 
-        public void ClearPendingInjection(object instance)
-        {
-            lock (_pendingInjectionsLock)
-            {
-                _pendingInjections?.Remove(instance);
-            }
-        }
-
         private void RecordPendingField(object instance, InjectableField field)
         {
             lock (_pendingInjectionsLock)
@@ -2485,57 +2472,6 @@ namespace Nexus.Core
         public List<DiValidationIssue> ValidateBindings(int maxConstructorParameters = 6)
             => DiBindingValidator.Validate(this, maxConstructorParameters);
 
-        internal HashSet<Type> GetAllRegisteredTypes()
-        {
-            var types = new HashSet<Type>(_bindings.Keys);
-            var namedBindings = Volatile.Read(ref _namedBindings);
-            if (namedBindings != null)
-                foreach (var kvp in namedBindings) types.Add(kvp.Key.Type);
-            types.Add(typeof(NexusDI));
-            types.Add(typeof(IContext));
-            types.Add(typeof(ISignalBus));
-            if (_parent != null) types.UnionWith(_parent.GetAllRegisteredTypes());
-            return types;
-        }
-
-        /// <summary>
-        /// Returns whether the type is bound as a singleton in this container or any
-        /// ancestor. Used by DI validation to detect captive dependencies (a singleton
-        /// service capturing a transient dependency).
-        /// </summary>
-        internal bool IsSingletonBinding(Type key)
-        {
-            if (key == null) return false;
-            if (_bindings.TryGetValue(key, out var b)) return b.IsSingleton;
-            // Named bindings redirect empty names to the default binding at registration,
-            // so a (key, null) named entry never exists — only the default map is checked.
-            return _parent != null && _parent.IsSingletonBinding(key);
-        }
-
-        /// <summary>
-        /// Returns whether the type is bound via a factory (BindFactory) in this
-        /// container or any ancestor. Factory-managed dependencies are explicitly exempt
-        /// from captive-dependency validation.
-        /// </summary>
-        internal bool IsFactoryBinding(Type key)
-        {
-            if (key == null) return false;
-            if (_bindings.TryGetValue(key, out var b)) return b.Factory != null;
-            return _parent != null && _parent.IsFactoryBinding(key);
-        }
-
-        /// <summary>Safe editor snapshot of resolved singleton instances.</summary>
-        internal List<(Type InterfaceType, object Instance)> GetEditorSingletonSnapshot()
-        {
-            var result = new List<(Type, object)>();
-            foreach (var kvp in _bindings)
-            {
-                if (kvp.Value.IsSingleton && kvp.Value.Instance != null)
-                    result.Add((kvp.Key, kvp.Value.Instance));
-            }
-            return result;
-        }
-
         /// <summary>Safe editor snapshot of interface→concrete type mappings (no private-type leak).</summary>
         internal List<(Type InterfaceType, Type ConcreteType)> GetEditorTypeMappings()
         {
@@ -2656,25 +2592,6 @@ namespace Nexus.Core
         {
             lock (_singletonLock)
                 return _resolvedSingletonOrder == null ? new List<object>() : new List<object>(_resolvedSingletonOrder);
-        }
-
-        public Dictionary<Type, object> GetRegisteredSingletons()
-        {
-            var result = new Dictionary<Type, object>();
-            foreach (var kvp in _bindings)
-            {
-                if (kvp.Value.IsSingleton && kvp.Value.Instance != null)
-                    result[kvp.Key] = kvp.Value.Instance;
-            }
-            if (_parent != null)
-            {
-                var parentSingletons = _parent.GetRegisteredSingletons();
-                foreach (var kvp in parentSingletons)
-                {
-                    if (!result.ContainsKey(kvp.Key)) result[kvp.Key] = kvp.Value;
-                }
-            }
-            return result;
         }
 
         // ─── Public API: Clearing ───
@@ -2957,7 +2874,7 @@ namespace Nexus.Core
             // Never block the calling thread on async teardown: the pure IAsyncDisposable singletons are disposed in ONE
             // ordered chain on the thread pool, not in one fire-and-forget task each.
             if (backlog != null)
-                _backgroundDisposeTask = DisposeAllAsyncInBackground(backlog);
+                _ = DisposeAllAsyncInBackground(backlog);
         }
 
         /// <summary>
@@ -2982,32 +2899,6 @@ namespace Nexus.Core
                 {
                     NexusRuntime.Logger?.LogError($"[Nexus] Error disposing async singleton {asyncDisposables[i].GetType().FullName}: {ex}");
                 }
-            }
-        }
-
-        /// <summary>
-        /// Blocks the calling thread up to <paramref name="timeout"/> waiting for the
-        /// background async-dispose task scheduled by <see cref="Dispose()"/>, if any.
-        /// Returns true if the background dispose completed within the timeout, false
-        /// if it is still running or threw.
-        /// </summary>
-        public bool WaitForBackgroundDispose(TimeSpan timeout)
-        {
-            var t = _backgroundDisposeTask;
-            if (t == null) return true;
-            try
-            {
-                return t.Wait(timeout);
-            }
-            catch (AggregateException ex)
-            {
-                NexusRuntime.Logger?.LogError($"[Nexus] Waiting for background dispose failed: {ex.Flatten().InnerException ?? ex}");
-                return false;
-            }
-            catch (Exception ex)
-            {
-                NexusRuntime.Logger?.LogError($"[Nexus] Waiting for background dispose failed: {ex}");
-                return false;
             }
         }
 

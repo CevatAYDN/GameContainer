@@ -4,6 +4,7 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 
 ## Table of Contents
 
+- [Version 0.6.0 → 0.7.0 (Unreleased)](#version-060--070-unreleased)
 - [Version 0.5.0 → 0.6.0](#version-050--060)
 - [Version 0.4.0 → 0.5.0](#version-040--050)
   - [Scene integration and large currency update](#scene-integration-and-large-currency-update)
@@ -12,6 +13,30 @@ This guide helps you migrate between versions of Nexus Core. Follow the instruct
 - [Version 0.2.0 → 0.3.0](#version-020--030)
 - [Version 0.1.0 → 0.2.0](#version-010--020)
 - [General Migration Tips](#general-migration-tips)
+
+---
+
+## Version 0.6.0 → 0.7.0 (Unreleased)
+
+On `main`, not yet released. The [changelog](CHANGELOG.md)'s `[Unreleased]` section lists every change since 0.6.0.
+
+#### Removed members nobody called
+
+Issue #238 removed these public members:
+- `NexusDI.WaitForBackgroundDispose`
+- `NexusDI.ClearPendingInjection`
+- `NexusDI.GetRegisteredSingletons`
+- `InjectScanner.HasInjectableMembers`
+- `CommandRegistry.UnregisterCommand`
+- `CommandExecutor.InFlightAsyncCommands`
+
+The package, the development project, `tools/` and the known games were searched, and none of them names one.
+A game that does gets CS1061. The replacements:
+
+| Removed | Use instead |
+|---|---|
+| `GetRegisteredSingletons` | `NexusDI.GetActiveSingletons()`: this container's singleton instances in creation order, without the parent's and without their binding types |
+| `WaitForBackgroundDispose` | `await NexusDI.DisposeAsync()` (the deterministic teardown of `IAsyncDisposable` singletons) |
 
 ---
 
