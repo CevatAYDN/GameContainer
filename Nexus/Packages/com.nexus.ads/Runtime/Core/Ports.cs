@@ -51,6 +51,15 @@ namespace Nexus.Ads
         void Record(in AdEvent e);
     }
 
+    /// <summary>
+    /// When the player last touched the screen, on the <see cref="IAdClock.Seconds"/> timeline; NaN before the first touch.
+    /// An interstitial waits <see cref="AdPolicy.NoInterstitialAfterTouchSeconds"/> after it (issue #126).
+    /// </summary>
+    public interface IAdTouchInput
+    {
+        double LastTouchAt { get; }
+    }
+
     /// <summary>The player bought "remove ads": interstitials and banners stop, rewarded ads stay (issue #195).</summary>
     public interface IAdFreeEntitlement
     {

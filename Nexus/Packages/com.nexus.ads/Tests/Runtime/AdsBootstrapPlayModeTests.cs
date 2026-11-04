@@ -15,10 +15,11 @@ namespace Nexus.Ads.Tests.Runtime
         private AdsSettings _settings;
         private AdsBootstrap _bootstrap;
 
-        private IEnumerator Boot(SimulatorScenario scenario, bool logEvents = false)
+        private IEnumerator Boot(SimulatorScenario scenario, bool logEvents = false, double touchWaitSeconds = 0)
         {
             _settings = ScriptableObject.CreateInstance<AdsSettings>();
             _settings.SelectedMediation = AdProviderKind.LevelPlay;
+            _settings.Policy.NoInterstitialAfterTouchSeconds = touchWaitSeconds;
             _settings.Placements.Add(new PlacementEntry { Name = "shop_refill", Format = AdFormat.Rewarded });
             _settings.Placements.Add(new PlacementEntry { Name = "level_end", Format = AdFormat.Interstitial, NaturalBreak = true });
             _root = new GameObject("AdsBootstrapTest");
@@ -176,6 +177,43 @@ namespace Nexus.Ads.Tests.Runtime
             Assert.AreEqual(AdResult.Blocked, result);
             Assert.AreEqual(PolicyRules.InterstitialFrequency, seen?.Rule);
             Assert.AreEqual(1f, Time.timeScale, "nothing opened, nothing paused");
+        }
+
+        // Issue #126: the bootstrap wires its UnityTouchInput into the guard, so the settings' touch wait blocks an
+        // interstitial that would open under the player's finger.
+        [UnityTest]
+        public IEnumerator Interstitial_RightAfterATouch_IsBlocked_AsInterstitialAfterTouch()
+        {
+            yield return Boot(SimulatorScenario.Normal, touchWaitSeconds: 5);
+            var touch = _root.GetComponent<UnityTouchInput>();
+            touch.enabled = false; // only Touched() below feeds the guard, not the machine's mouse
+            touch.Touched();
+            PolicyViolation? seen = null;
+            _bootstrap.Controller.Violation += v => seen = v;
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("InterstitialAfterTouch"));
+            AdResult? result = null;
+            _bootstrap.Controller.Show("level_end", r => result = r);
+            Assert.AreEqual(AdResult.Blocked, result);
+            Assert.AreEqual(PolicyRules.InterstitialAfterTouch, seen?.Rule);
+        }
+
+        // Issue #126: the touch and the guard read one timeline (UnityAdClock's), so the wait ends on time; the first-minute
+        // floor behind it is what blocks now. The interstitial allowed once both have ended is the harness's PG32.
+        [UnityTest]
+        public IEnumerator Interstitial_AfterTheTouchWait_IsNoLongerHeldBackByTheTouch()
+        {
+            yield return Boot(SimulatorScenario.Normal, touchWaitSeconds: 0.2);
+            var touch = _root.GetComponent<UnityTouchInput>();
+            touch.enabled = false; // only Touched() below feeds the guard, not the machine's mouse
+            touch.Touched();
+            yield return new WaitForSecondsRealtime(0.3f);
+            PolicyViolation? seen = null;
+            _bootstrap.Controller.Violation += v => seen = v;
+            LogAssert.Expect(LogType.Error, new System.Text.RegularExpressions.Regex("InterstitialFrequency"));
+            AdResult? result = null;
+            _bootstrap.Controller.Show("level_end", r => result = r);
+            Assert.AreEqual(AdResult.Blocked, result);
+            Assert.AreEqual(PolicyRules.InterstitialFrequency, seen?.Rule, "the touch wait has ended; the first minute holds the interstitial");
         }
 
         // Issue #36: with event logging on, the telemetry log and the bootstrap's Violation handler both wrote the

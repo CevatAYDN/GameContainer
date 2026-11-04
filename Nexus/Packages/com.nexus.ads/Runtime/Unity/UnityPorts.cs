@@ -36,6 +36,39 @@ namespace Nexus.Ads.Unity
         }
     }
 
+    /// <summary>
+    /// The player's last touch for <see cref="AdPolicy.NoInterstitialAfterTouchSeconds"/> (issue #126), on <see cref="UnityAdClock"/>'s
+    /// timeline: every frame a finger or the left mouse button is down or comes up, read from the Input Manager or from Input
+    /// System 1.20.0 or newer, whichever the project enables. A game whose players act through other input calls <see cref="Touched"/>.
+    /// </summary>
+    [DisallowMultipleComponent]
+    public sealed class UnityTouchInput : MonoBehaviour, IAdTouchInput
+    {
+        /// <summary>False when this build reads no pointer (neither the Input Manager nor Input System 1.20.0 or newer is enabled):
+        /// then only <see cref="Touched"/> feeds the rule.</summary>
+        public static bool ReadsPointer =>
+#if ENABLE_LEGACY_INPUT_MANAGER || (UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM)
+            true;
+#else
+            false;
+#endif
+
+        public double LastTouchAt { get; private set; } = double.NaN;
+
+        /// <summary>Records a touch now.</summary>
+        public void Touched() => LastTouchAt = Time.realtimeSinceStartupAsDouble;
+
+        private void Update()
+        {
+#if ENABLE_LEGACY_INPUT_MANAGER
+            if (Input.touchCount > 0 || Input.GetMouseButton(0) || Input.GetMouseButtonUp(0)) Touched();
+#elif UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
+            var pointer = UnityEngine.InputSystem.Pointer.current; // null until a pointer device exists
+            if (pointer != null && (pointer.press.isPressed || pointer.press.wasReleasedThisFrame)) Touched();
+#endif
+        }
+    }
+
     /// <summary>The Unity main thread, captured where the bootstrap is created.</summary>
     public sealed class UnityMainThread : IMainThread
     {

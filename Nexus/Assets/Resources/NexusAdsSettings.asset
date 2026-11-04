@@ -91,6 +91,8 @@ MonoBehaviour:
     MaxInterstitialsPerSession: 0
     MaxInterstitialsPerDay: 0
     SessionResumeGapMinutes: 30
+    MinLifetimeSessionsBeforeInterstitial: 0
+    NoInterstitialAfterTouchSeconds: 0
   GeneratedPlacementsPath: Assets/Scripts/Ads/AdPlacements.g.cs
   AppAdsTxtLines: []
   Consent: 0

@@ -14,6 +14,8 @@ namespace Nexus.Ads
         public const string InterstitialNaturalBreakOnly = "InterstitialNaturalBreakOnly";
         /// <summary>Minimum gap, first-show delay, per-session cap, per-day cap, placement cooldown, gap after a rewarded ad.</summary>
         public const string InterstitialFrequency = "InterstitialFrequency";
+        /// <summary>An interstitial within <see cref="AdPolicy.NoInterstitialAfterTouchSeconds"/> of the player's last touch, where the next tap would land on the ad.</summary>
+        public const string InterstitialAfterTouch = "InterstitialAfterTouch";
         /// <summary>A second full-screen ad while one is open.</summary>
         public const string NoStackedAds = "NoStackedAds";
         /// <summary>A show while the app is not visible.</summary>

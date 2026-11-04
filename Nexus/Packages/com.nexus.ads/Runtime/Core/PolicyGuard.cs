@@ -27,15 +27,17 @@ namespace Nexus.Ads
         private readonly AdsConfig _config;
         private readonly IAppVisibility _visibility;
         private readonly SessionTracker _session;
+        private readonly IAdTouchInput _touch;
 
         public AdPolicy Policy { get; private set; }
 
-        public PolicyGuard(AdsConfig config, AdPolicy policy, IAppVisibility visibility, SessionTracker session)
+        public PolicyGuard(AdsConfig config, AdPolicy policy, IAppVisibility visibility, SessionTracker session, IAdTouchInput touch = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
             Policy = policy ?? throw new ArgumentNullException(nameof(policy));
             _visibility = visibility ?? throw new ArgumentNullException(nameof(visibility));
             _session = session ?? throw new ArgumentNullException(nameof(session));
+            _touch = touch;
         }
 
         /// <summary>Replaces the floors with a stricter set; a looser set is ignored (see <see cref="AdPolicy.Tighten(AdPolicy)"/>).</summary>
@@ -65,6 +67,9 @@ namespace Nexus.Ads
                 return PolicyVerdict.Block(PolicyRules.InterstitialNaturalBreakOnly, "placement '" + placement.Name + "' is not marked NaturalBreak");
             if (InterstitialLifetimeGated)
                 return Frequency(_session.SessionsBefore + " earlier sessions on this device; interstitials start after " + Policy.MinLifetimeSessionsBeforeInterstitial);
+            double sinceTouch = SinceLastTouch;
+            if (sinceTouch < Policy.NoInterstitialAfterTouchSeconds)
+                return PolicyVerdict.Block(PolicyRules.InterstitialAfterTouch, "the player touched the screen " + Seconds(sinceTouch) + " ago; interstitials wait " + Seconds(Policy.NoInterstitialAfterTouchSeconds));
             double sinceStart = _session.SecondsSinceSessionStart;
             if (sinceStart < Policy.NoInterstitialForFirstSeconds)
                 return Frequency("the session is " + Seconds(sinceStart) + " old; the first interstitial waits " + Seconds(Policy.NoInterstitialForFirstSeconds));
@@ -97,7 +102,7 @@ namespace Nexus.Ads
 
         /// <summary>
         /// Seconds until every time rule that blocks the placement now has run out, 0 when none does: the first-interstitial
-        /// delay, the gap after an interstitial and after a rewarded ad, the placement's first-show delay and cooldown.
+        /// delay, the gap after an interstitial, after a rewarded ad and after the player's last touch, the placement's first-show delay and cooldown.
         /// A cap is not a time rule: see <see cref="SessionCapReached"/> and <see cref="DayCapReached"/>.
         /// </summary>
         public double SecondsUntilPacingEnds(AdPlacement placement)
@@ -107,6 +112,7 @@ namespace Nexus.Ads
             if (placement.Format != AdFormat.Interstitial) return wait;
             wait = Math.Max(wait, Wait(_session.SecondsSinceSessionStart, Policy.NoInterstitialForFirstSeconds));
             wait = Math.Max(wait, Wait(SinceLastInterstitial, Policy.MinInterstitialGapSeconds));
+            wait = Math.Max(wait, Wait(SinceLastTouch, Policy.NoInterstitialAfterTouchSeconds));
             return Math.Max(wait, Wait(SinceLastRewarded, Policy.NoInterstitialAfterRewardedSeconds));
         }
 
@@ -122,6 +128,7 @@ namespace Nexus.Ads
         // and a comparison with NaN is false, so the rule does not block.
         private double SinceLastInterstitial => _session.SecondsSinceSessionStart - (_session.LastInterstitialAt - _session.SessionStartedAt);
         private double SinceLastRewarded => _session.SecondsSinceSessionStart - (_session.LastRewardedAt - _session.SessionStartedAt);
+        private double SinceLastTouch => _touch == null ? double.NaN : _session.SecondsSinceSessionStart - (_touch.LastTouchAt - _session.SessionStartedAt);
         private bool InterstitialSessionCapped => Policy.MaxInterstitialsPerSession > 0 && _session.InterstitialsThisSession >= Policy.MaxInterstitialsPerSession;
         private bool InterstitialLifetimeGated => _session.SessionsBefore < Policy.MinLifetimeSessionsBeforeInterstitial;
         private bool InterstitialDayCapped => Policy.MaxInterstitialsPerDay > 0 && _session.InterstitialsToday >= Policy.MaxInterstitialsPerDay;

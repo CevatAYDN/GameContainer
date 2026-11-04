@@ -21,11 +21,13 @@ namespace Nexus.Ads
             public const string MaxInterstitialsPerDay = "ads.max_interstitials_per_day";
             public const string SessionResumeGapMinutes = "ads.session_resume_gap_minutes";
             public const string MinLifetimeSessionsBeforeInterstitial = "ads.min_lifetime_sessions_before_interstitial";
+            public const string NoInterstitialAfterTouchSeconds = "ads.no_interstitial_after_touch_seconds";
 
             public static readonly string[] All =
             {
                 MinInterstitialGapSeconds, NoInterstitialForFirstSeconds, NoInterstitialAfterRewardedSeconds,
                 MaxInterstitialsPerSession, MaxInterstitialsPerDay, SessionResumeGapMinutes, MinLifetimeSessionsBeforeInterstitial,
+                NoInterstitialAfterTouchSeconds,
             };
         }
 
@@ -48,12 +50,19 @@ namespace Nexus.Ads
         /// A session is a cold start or a return after <see cref="SessionResumeGapMinutes"/>, counted by <see cref="SessionTracker.SessionsBefore"/>.
         /// </summary>
         public int MinLifetimeSessionsBeforeInterstitial { get; private set; }
+        /// <summary>
+        /// Seconds after the player's last touch without an interstitial (issue #126), so an ad that opens under a finger
+        /// does not take the next tap; 0 = off. Read from <see cref="IAdTouchInput"/>: without one the rule cannot block.
+        /// </summary>
+        public double NoInterstitialAfterTouchSeconds { get; private set; }
 
         public AdPolicy(double minInterstitialGapSeconds, double noInterstitialForFirstSeconds, double noInterstitialAfterRewardedSeconds,
-            int maxInterstitialsPerSession, int maxInterstitialsPerDay, double sessionResumeGapMinutes, int minLifetimeSessionsBeforeInterstitial = 0)
+            int maxInterstitialsPerSession, int maxInterstitialsPerDay, double sessionResumeGapMinutes, int minLifetimeSessionsBeforeInterstitial = 0,
+            double noInterstitialAfterTouchSeconds = 0)
         {
             if (minInterstitialGapSeconds < 0 || noInterstitialForFirstSeconds < 0 || noInterstitialAfterRewardedSeconds < 0
-                || maxInterstitialsPerSession < 0 || maxInterstitialsPerDay < 0 || sessionResumeGapMinutes < 0 || minLifetimeSessionsBeforeInterstitial < 0)
+                || maxInterstitialsPerSession < 0 || maxInterstitialsPerDay < 0 || sessionResumeGapMinutes < 0 || minLifetimeSessionsBeforeInterstitial < 0
+                || noInterstitialAfterTouchSeconds < 0)
                 throw new ArgumentOutOfRangeException(nameof(minInterstitialGapSeconds), "Policy values cannot be negative.");
             MinInterstitialGapSeconds = minInterstitialGapSeconds;
             NoInterstitialForFirstSeconds = noInterstitialForFirstSeconds;
@@ -62,6 +71,7 @@ namespace Nexus.Ads
             MaxInterstitialsPerDay = maxInterstitialsPerDay;
             SessionResumeGapMinutes = sessionResumeGapMinutes;
             MinLifetimeSessionsBeforeInterstitial = minLifetimeSessionsBeforeInterstitial;
+            NoInterstitialAfterTouchSeconds = noInterstitialAfterTouchSeconds;
         }
 
         /// <summary>
@@ -89,6 +99,8 @@ namespace Nexus.Ads
                 case Keys.MinLifetimeSessionsBeforeInterstitial:
                     int sessions = value >= int.MaxValue ? int.MaxValue : (int)value;
                     return sessions > MinLifetimeSessionsBeforeInterstitial ? With(p => p.MinLifetimeSessionsBeforeInterstitial = sessions) : this;
+                case Keys.NoInterstitialAfterTouchSeconds:
+                    return value > NoInterstitialAfterTouchSeconds ? With(p => p.NoInterstitialAfterTouchSeconds = value) : this;
                 default:
                     return this;
             }
@@ -104,7 +116,8 @@ namespace Nexus.Ads
                 .Tighten(Keys.MaxInterstitialsPerSession, requested.MaxInterstitialsPerSession)
                 .Tighten(Keys.MaxInterstitialsPerDay, requested.MaxInterstitialsPerDay)
                 .Tighten(Keys.SessionResumeGapMinutes, requested.SessionResumeGapMinutes)
-                .Tighten(Keys.MinLifetimeSessionsBeforeInterstitial, requested.MinLifetimeSessionsBeforeInterstitial);
+                .Tighten(Keys.MinLifetimeSessionsBeforeInterstitial, requested.MinLifetimeSessionsBeforeInterstitial)
+                .Tighten(Keys.NoInterstitialAfterTouchSeconds, requested.NoInterstitialAfterTouchSeconds);
         }
 
         // A copy with one value changed: every other value carries over, so a key added later cannot be dropped by a case that forgot it.

@@ -52,9 +52,12 @@ namespace NexusBench
         private readonly List<Entry> _entries = new();
         public AdsScheduler(AdsClock clock) => _clock = clock;
         public int Pending { get { int n = 0; foreach (var e in _entries) if (!e.Cancelled) n++; return n; } }
+        /// <summary>Every Schedule call so far, cancelled or run ones included.</summary>
+        public int Scheduled { get; private set; }
 
         public IDisposable Schedule(double seconds, Action action)
         {
+            Scheduled++;
             var entry = new Entry { Due = _clock.Seconds + seconds, Action = action };
             _entries.Add(entry);
             return entry;
@@ -110,6 +113,11 @@ namespace NexusBench
         public bool TryGetDouble(string key, out double value) => Values.TryGetValue(key, out value);
         public event Action Changed;
         public void Push() => Changed?.Invoke();
+    }
+
+    public sealed class AdsTouch : IAdTouchInput
+    {
+        public double LastTouchAt { get; set; } = double.NaN;
     }
 
     public sealed class AdsAdFree : IAdFreeEntitlement
@@ -203,13 +211,13 @@ namespace NexusBench
         public static readonly AdPlacement MidGame = new("mid_game", AdFormat.Interstitial, naturalBreak: false);
 
         public AdsRig(AdsConfig config = null, IConsentFlow consent = null, IAdFreeEntitlement adFree = null, IAdsRemoteConfig remote = null, IAdProvider provider = null,
-            AdsStore store = null, AdsClock clock = null)
+            AdsStore store = null, AdsClock clock = null, IAdTouchInput touch = null)
         {
             Clock = clock ?? new AdsClock();
             Store = store ?? new AdsStore();
             Scheduler = new AdsScheduler(Clock);
             config ??= Config();
-            Controller = new AdController(config, provider ?? Provider, Clock, Visibility, new AdsMainThread(), Scheduler, Store, Telemetry, consent, adFree, remote);
+            Controller = new AdController(config, provider ?? Provider, Clock, Visibility, new AdsMainThread(), Scheduler, Store, Telemetry, consent, adFree, remote, touch);
             Controller.Violation += v => Violations.Add(v);
             Controller.ReadyChanged += () => ReadyChanges++;
         }
@@ -319,6 +327,13 @@ namespace NexusBench
                 $"sessions={gated.MinLifetimeSessionsBeforeInterstitial} gap={gated.MinInterstitialGapSeconds} day={gated.MaxInterstitialsPerDay} resume={gated.SessionResumeGapMinutes}");
             var fromSettings = p.Tighten(new AdPolicy(30, 60, 30, 0, 0, 30, 2));
             Check("AP9. TightenPolicy_CarriesLifetimeSessions", fromSettings.MinLifetimeSessionsBeforeInterstitial == 2, $"sessions={fromSettings.MinLifetimeSessionsBeforeInterstitial} (the settings asset goes through this overload)");
+            // #126: the wait after the player's last touch only grows and survives every other key's tightening
+            var touchy = p.Tighten(AdPolicy.Keys.NoInterstitialAfterTouchSeconds, 2).Tighten(AdPolicy.Keys.NoInterstitialAfterTouchSeconds, 0.5)
+                .Tighten(AdPolicy.Keys.MinInterstitialGapSeconds, 90).Tighten(AdPolicy.Keys.MinLifetimeSessionsBeforeInterstitial, 3);
+            Check("AP10. TouchWait_OnlyGrows_KeptByOtherKeys", touchy.NoInterstitialAfterTouchSeconds == 2 && touchy.MinInterstitialGapSeconds == 90 && touchy.MinLifetimeSessionsBeforeInterstitial == 3,
+                $"touch={touchy.NoInterstitialAfterTouchSeconds} gap={touchy.MinInterstitialGapSeconds} sessions={touchy.MinLifetimeSessionsBeforeInterstitial}");
+            var touchFromSettings = p.Tighten(new AdPolicy(30, 60, 30, 0, 0, 30, 0, 1.5));
+            Check("AP11. TightenPolicy_CarriesTouchWait", touchFromSettings.NoInterstitialAfterTouchSeconds == 1.5, $"touch={touchFromSettings.NoInterstitialAfterTouchSeconds} (the settings asset goes through this overload)");
         }
 
         // ----- PolicyGuard
@@ -467,6 +482,41 @@ namespace NexusBench
                 remoteRig.Scheduler.Advance(61);
                 v = remoteRig.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
                 Check("PG29. LifetimeSessions_RemoteRaisesIt", !v.Allowed && v.Reason.Contains("earlier sessions"), v.Reason);
+            }
+
+            // #126: interstitials wait after the player's last touch, so one that opens under a finger does not take the next tap.
+            // No first-seconds floor, so the floor cannot hide the rule.
+            var touchWait = AdsRig.Config(new AdPolicy(30, 0, 30, 0, 0, 30, 0, 2), BuildKind.Development, AdsRig.LevelEnd);
+            using (var noInput = new AdsRig(touchWait).Running())
+            {
+                using var untouched = new AdsRig(touchWait, touch: new AdsTouch()).Running();
+                var a = noInput.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                var b = untouched.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                Check("PG30. TouchWait_NoTouchYetOrNoInput_Allowed", a.Allowed && b.Allowed, $"no input port: {a.Reason ?? "allowed"}; no touch yet: {b.Reason ?? "allowed"}");
+            }
+            var touched = new AdsTouch();
+            using (var touchRig = new AdsRig(touchWait, touch: touched).Running())
+            {
+                touchRig.Scheduler.Advance(10);
+                touched.LastTouchAt = touchRig.Clock.Seconds - 0.5;
+                v = touchRig.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                double left = touchRig.Controller.Guard.SecondsUntilPacingEnds(AdsRig.LevelEnd);
+                Check("PG31. TouchWait_BlocksWithItsRule_AndCountsDown", !v.Allowed && v.Rule == PolicyRules.InterstitialAfterTouch && Math.Abs(left - 1.5) < 1e-9, $"{v.Rule}: {v.Reason}; left={left} (expected 1.5)");
+                touchRig.Scheduler.Advance(1.5);
+                v = touchRig.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                Check("PG32. TouchWait_AllowedOnceItEnds", v.Allowed && touchRig.Controller.Guard.SecondsUntilPacingEnds(AdsRig.LevelEnd) == 0, v.Reason ?? "allowed 2 s after the touch");
+            }
+            var raiseTouch = new AdsRemote();
+            var remoteTouch = new AdsTouch();
+            using (var remoteRig = new AdsRig(AdsRig.Config(new AdPolicy(30, 0, 30, 0, 0, 30), BuildKind.Development, AdsRig.LevelEnd), remote: raiseTouch, touch: remoteTouch).Running())
+            {
+                remoteRig.Scheduler.Advance(10);
+                remoteTouch.LastTouchAt = remoteRig.Clock.Seconds - 1;
+                bool before = remoteRig.Controller.Guard.Check("level_end", AdFormat.Interstitial, open).Allowed;
+                raiseTouch.Values[AdPolicy.Keys.NoInterstitialAfterTouchSeconds] = 2;
+                raiseTouch.Push();
+                v = remoteRig.Controller.Guard.Check("level_end", AdFormat.Interstitial, open);
+                Check("PG33. TouchWait_RemoteRaisesIt", before && !v.Allowed && v.Rule == PolicyRules.InterstitialAfterTouch, $"before the push allowed={before}; after: {v.Rule}: {v.Reason}");
             }
         }
 
@@ -976,6 +1026,56 @@ namespace NexusBench
                 rig.Scheduler.Advance(120);
                 Check("PW8. LifetimeSessions_ArmNoPacingWake", rig.ReadyChanges == before && rig.Scheduler.Pending == 0 && !rig.Controller.IsReady("level_end"),
                     $"events in the first 2 min={rig.ReadyChanges - before} (expected 0), wakes left={rig.Scheduler.Pending}");
+            }
+
+            // #126: a touch just before the first-seconds floor ends holds the interstitial past it; the wake re-armed when the
+            // floor ends covers the touch wait, so a UI that follows ReadyChanged learns when the interstitial is ready again.
+            var touch = new AdsTouch();
+            using (var rig = new AdsRig(AdsRig.Config(new AdPolicy(30, 60, 30, 0, 0, 30, 0, 2), placements: AdsRig.LevelEnd), touch: touch).Running())
+            {
+                rig.Scheduler.Advance(59.5);
+                touch.LastTouchAt = rig.Clock.Seconds;
+                rig.Scheduler.Advance(1.9);
+                bool heldPastTheFloor = !rig.Controller.IsReady("level_end");
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(0.2);
+                Check("PW9. TouchWait_RaisesReadyChanged_WhenItEnds",
+                    heldPastTheFloor && rig.ReadyChanges - before == 1 && rig.Controller.IsReady("level_end") && rig.Scheduler.Pending == 0,
+                    $"held 1.9 s after the touch={heldPastTheFloor}, events when the 2 s wait ended={rig.ReadyChanges - before} (expected 1), wakes left={rig.Scheduler.Pending}");
+            }
+
+            // #126: a touch starts its wait at no event of the controller's, so with nothing else pending no wake is armed; the
+            // Show it blocks arms one, and a game that keeps its break open hears ReadyChanged when the wait ends and asks again.
+            var noFloorTouchWait = AdsRig.Config(new AdPolicy(30, 0, 30, 0, 0, 30, 0, 2), placements: AdsRig.LevelEnd);
+            var showTouch = new AdsTouch();
+            using (var rig = new AdsRig(noFloorTouchWait, touch: showTouch).Running())
+            {
+                rig.Scheduler.Advance(5);
+                int idle = rig.Scheduler.Pending;
+                showTouch.LastTouchAt = rig.Clock.Seconds;
+                var r = rig.Show("level_end");
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(1.9);
+                int early = rig.ReadyChanges - before;
+                rig.Scheduler.Advance(0.2);
+                Check("PW10. TouchWait_BlockedShow_RaisesReadyChanged_WhenItEnds",
+                    idle == 0 && r == AdResult.Blocked && early == 0 && rig.ReadyChanges - before == 1 && rig.Controller.IsReady("level_end") && rig.Scheduler.Pending == 0,
+                    $"wakes before the touch={idle} (expected 0), show={r}, events before the wait ended={early}, when it ended={rig.ReadyChanges - before} (expected 1), wakes left={rig.Scheduler.Pending}");
+            }
+            var askTouch = new AdsTouch();
+            using (var rig = new AdsRig(noFloorTouchWait, touch: askTouch).Running())
+            {
+                rig.Scheduler.Advance(5);
+                askTouch.LastTouchAt = rig.Clock.Seconds;
+                int scheduled = rig.Scheduler.Scheduled;
+                bool anyReady = false;
+                for (int i = 0; i < 20; i++) { anyReady |= rig.Controller.IsReady("level_end"); rig.Scheduler.Advance(0.05); }
+                int armed = rig.Scheduler.Scheduled - scheduled;
+                int before = rig.ReadyChanges;
+                rig.Scheduler.Advance(1.05);
+                Check("PW11. TouchWait_IsReadyMeetingIt_ArmsOneWake",
+                    !anyReady && armed == 1 && rig.ReadyChanges - before == 1 && rig.Controller.IsReady("level_end") && rig.Scheduler.Pending == 0,
+                    $"ready during the wait={anyReady}, wakes armed by 20 asks={armed} (expected 1), events when it ended={rig.ReadyChanges - before} (expected 1), wakes left={rig.Scheduler.Pending}");
             }
         }
 

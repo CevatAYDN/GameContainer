@@ -193,6 +193,7 @@ namespace Nexus.Ads.Unity
             var config = _settings.ToConfig(Build, Platform);
             var scheduler = gameObject.GetComponent<UnityAdScheduler>() ?? gameObject.AddComponent<UnityAdScheduler>();
             var visibility = gameObject.GetComponent<UnityAppVisibility>() ?? gameObject.AddComponent<UnityAppVisibility>();
+            var touch = gameObject.GetComponent<UnityTouchInput>() ?? gameObject.AddComponent<UnityTouchInput>();
             _telemetry = new UnityAdTelemetry(_logEvents && Build != BuildKind.Release, violations: Build == BuildKind.Release);
 
             Factories.TryGetValue(_settings.SelectedMediation, out var factory);
@@ -226,13 +227,15 @@ namespace Nexus.Ads.Unity
                 }
             }
 
-            Controller = new AdController(config, Provider, new UnityAdClock(), visibility, mainThread, scheduler, new PlayerPrefsPacingStore(), _telemetry, consent);
+            Controller = new AdController(config, Provider, new UnityAdClock(), visibility, mainThread, scheduler, new PlayerPrefsPacingStore(), _telemetry, consent, touch: touch);
             Controller.ReadyChanged += Ads.RaiseReadyChanged; // before Start, so the first fill reaches subscriptions made before this bootstrap existed (issue #195)
+            if (!UnityTouchInput.ReadsPointer) Controller.ReadyChanged += WarnTouchWaitUnread; // remote values arrive with a ReadyChanged
             Controller.AdOpened += OnAdOpened;
             Controller.AdClosed += OnAdClosed;
             // tools/device-acceptance counts "[Nexus Ads] PolicyViolation" lines; keep the token. A release build writes
             // each rule and placement's first block as a warning with the same token (UnityAdTelemetry, issue #164)
             if (Build != BuildKind.Release) Controller.Violation += v => Debug.LogError("[Nexus Ads] PolicyViolation " + v);
+            if (!UnityTouchInput.ReadsPointer) WarnTouchWaitUnread();
             Controller.Start(); // an idle host (ad-free, blocked, consent flow or provider missing) stays Stopped: its provider is NoAdsProvider
             if (Build != BuildKind.Release) gameObject.AddComponent<AdsDebugPanel>().Bind(this);
             // one line per start in every build, no ids: tools/device-acceptance -ExpectAds reads it (issue #52)
@@ -240,6 +243,15 @@ namespace Nexus.Ads.Unity
                 + " rule=" + (Gate.Rule ?? "-") + " testMode=" + (config.Provider.TestMode ? "on" : "off")
                 + " consent=" + DescribeConsent(_settings, Mode, consent));
             Started?.Invoke();
+        }
+
+        // The touch wait set with no pointer to read would never block; said once, in every build (issue #126).
+        private void WarnTouchWaitUnread()
+        {
+            if (Controller == null || Controller.Guard.Policy.NoInterstitialAfterTouchSeconds <= 0) return;
+            Controller.ReadyChanged -= WarnTouchWaitUnread;
+            Debug.LogWarning("[Nexus Ads] " + AdPolicy.Keys.NoInterstitialAfterTouchSeconds + " is set but this build reads no pointer (neither the Input Manager"
+                + " nor Input System 1.20.0 or newer is enabled): interstitials wait after a touch only when the game calls UnityTouchInput.Touched()");
         }
 
         private void OnAdOpened(AdFormat format)

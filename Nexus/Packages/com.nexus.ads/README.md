@@ -53,6 +53,7 @@ for (#195). The policies behind each rule, with the pages they were read from, a
 | `UnknownPlacement` | a placement name not declared in the settings, or declared with another format |
 | `InterstitialNaturalBreakOnly` | an interstitial on a placement without `NaturalBreak` |
 | `InterstitialFrequency` | an interstitial inside the gap, in the first seconds of a session, before the player has had the policy's number of earlier sessions on the device, over a session or day cap, or right after a rewarded ad; a show of any format before its placement's first-show delay, inside its cooldown or over its session or day cap |
+| `InterstitialAfterTouch` | an interstitial within the policy's wait after the player's last touch (off by default) |
 | `NoStackedAds` | a second full-screen ad while one is open |
 | `NoAdInBackground` | a show while the app is not visible |
 | `NoRequestBeforeConsent` | a show before the consent flow finished |
@@ -62,13 +63,26 @@ for (#195). The policies behind each rule, with the pages they were read from, a
 
 Defaults of `AdPolicy.Default`: 30 s between interstitials, none in the first 60 s of a session,
 none within 30 s after a rewarded ad, no session or day cap, a new session after 30 min in the
-background, interstitials from the first session. Locked by `AdsCoreSuite` AP1–AP6, AP8 and AP9.
+background, interstitials from the first session, no wait after a touch. Locked by `AdsCoreSuite`
+AP1–AP6 and AP8–AP11.
 
 `MinLifetimeSessionsBeforeInterstitial` (remote key `ads.min_lifetime_sessions_before_interstitial`,
 #128) holds interstitials back until the player has had that many earlier sessions on the device: a
 cold start and a return after the resume gap each count one. The count is kept in `IPacingStore`
 next to the pacing rows, so a player who had the game before the update starts at 0 and clearing
 the app's data starts over (`AdsCoreSuite` PG26–PG29, PW8).
+
+`NoInterstitialAfterTouchSeconds` (remote key `ads.no_interstitial_after_touch_seconds`, #126) blocks
+an interstitial as `InterstitialAfterTouch` for that many seconds after the player's last touch, so
+one that opens under a finger in a game played by holding or dragging does not take the next tap.
+The bootstrap adds `UnityTouchInput`, which records every frame a finger or the left mouse button is
+down or comes up, read from the Input Manager or from Input System 1.20.0 or newer; a game whose
+players act through other input (a gamepad, keys) calls `UnityTouchInput.Touched()` itself. A build
+that reads no pointer logs one warning when the wait is set. A touch itself raises no
+`ReadyChanged`; an `IsReady` or `Show` that meets the wait (`Show` answers `Blocked`) arms the pacing
+wake, so `ReadyChanged` follows when the wait ends and a game that keeps its break open asks again
+then. While the player keeps touching, a wake may raise `ReadyChanged` with nothing changed
+(`AdsCoreSuite` PG30–PG33, PW9–PW11).
 
 The gap between interstitials, the wait after a rewarded ad and a placement's cooldown run from
 the show, across a resume and a restart: `SessionTracker` keeps each last show as a UTC wall-clock
@@ -177,7 +191,7 @@ A UI that shows or hides an ad button follows `Ads.OnReadyChanged` and asks `Ads
 fires, as `AdRewardedButton` does; it does not poll every frame. The event fires on a load, a load
 failure, the end of a show, consent, visibility, the kill switch, the ad-free entitlement and the end
 of a pacing window (a placement's cooldown or first-show delay, the interstitial gaps, a day cap at
-the UTC day change, issue #95). A poll reaches the SDK each time the 0.1 s answer reuse runs out,
+the UTC day change, issue #95; the wait after a touch that `IsReady` or `Show` met, #126). A poll reaches the SDK each time the 0.1 s answer reuse runs out,
 which on Android is a JNI call that allocates.
 
 Full-screen ads pause `AudioListener` and set `Time.timeScale` to 0 until they close (switches on

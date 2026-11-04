@@ -80,7 +80,7 @@ namespace Nexus.Ads
 
         public AdController(AdsConfig config, IAdProvider provider, IAdClock clock, IAppVisibility visibility, IMainThread mainThread,
             IAdScheduler scheduler, IPacingStore store, IAdTelemetry telemetry,
-            IConsentFlow consent = null, IAdFreeEntitlement adFree = null, IAdsRemoteConfig remote = null)
+            IConsentFlow consent = null, IAdFreeEntitlement adFree = null, IAdsRemoteConfig remote = null, IAdTouchInput touch = null)
         {
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _provider = provider ?? throw new ArgumentNullException(nameof(provider));
@@ -94,7 +94,7 @@ namespace Nexus.Ads
             _adFree = adFree;
             _remote = remote;
             _session = new SessionTracker(clock, store);
-            Guard = new PolicyGuard(config, config.Policy, visibility, _session);
+            Guard = new PolicyGuard(config, config.Policy, visibility, _session, touch);
             if (config.Uses(AdFormat.Rewarded)) _slots[AdFormat.Rewarded] = new Slot();
             if (config.Uses(AdFormat.Interstitial)) _slots[AdFormat.Interstitial] = new Slot();
         }
@@ -139,7 +139,9 @@ namespace Nexus.Ads
             if (declared == null || State != Phase.Running || _killSwitch || AdFreeCovers(declared.Format)) return false;
             if (declared.Format == AdFormat.Banner) return true;
             if (!_slots.TryGetValue(declared.Format, out var slot) || slot.State != SlotState.Ready || !ProviderReady(declared.Format)) return false;
-            return Guard.Check(placement, declared.Format, new GuardState(_fullScreenOpen, false)).Allowed;
+            var verdict = Guard.Check(placement, declared.Format, new GuardState(_fullScreenOpen, false));
+            WakeAfterTouch(verdict, declared);
+            return verdict.Allowed;
         }
 
         private bool ProviderReady(AdFormat format)
@@ -179,6 +181,7 @@ namespace Nexus.Ads
             if (!verdict.Allowed)
             {
                 Raise(new PolicyViolation(verdict.Rule, placement ?? "", format, verdict.Reason));
+                WakeAfterTouch(verdict, declared);
                 onResult?.Invoke(AdResult.Blocked);
                 return;
             }
@@ -618,6 +621,16 @@ namespace Nexus.Ads
             _pacingWakeAt = _clock.Seconds + soonest + PacingWakeMarginSeconds;
             _pacingDay = dayCapped ? _clock.UtcDay : long.MinValue; // a day change matters only to a wake armed for a day cap
             _pacingWake = _scheduler.Schedule(Math.Min(soonest + PacingWakeMarginSeconds, dayCapped ? DayCapCheckSeconds : double.PositiveInfinity), OnPacingWake);
+        }
+
+        // The touch wait is the one time rule that starts at no event of the controller's, so no wake was armed for its end:
+        // the IsReady or Show that meets it arms one, and ReadyChanged follows when the wait ends (issue #126). A wake already
+        // armed for that moment is kept, so asking again does not schedule again.
+        private void WakeAfterTouch(in PolicyVerdict verdict, AdPlacement placement)
+        {
+            if (verdict.Allowed || verdict.Rule != PolicyRules.InterstitialAfterTouch) return;
+            if (_pacingWake != null && _pacingWakeAt <= _clock.Seconds + Guard.SecondsUntilPacingEnds(placement) + 2 * PacingWakeMarginSeconds) return;
+            ArmPacingWake();
         }
 
         private void OnPacingWake()
