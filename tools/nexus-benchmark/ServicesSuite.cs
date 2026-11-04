@@ -373,6 +373,20 @@ namespace NexusBench
                 bool overClamped = Math.Abs(input.MoveInput.magnitude - 1f) < 1e-3 && received.Count == 2;
                 Check("I4. Over_Length_Vector_Clamped", overClamped,
                     $"MoveInput={input.MoveInput} received={received.Count}");
+
+                // #156: a provider answers every button unless it is a partial one; the buttons a partial provider does not supply
+                // are read by the service itself (false here, where the host has no keys), so the provider's "true" never reaches them
+                var full = new PressingProvider();
+                input.SetInputProvider(full);
+                bool fullOwns = input.GetButton("Cancel") && input.GetButtonDown("Cancel") && input.GetButtonUp("Cancel");
+                Check("I5. FullProvider_AnswersEveryButton", fullOwns, $"Cancel read through a plain provider={fullOwns}");
+
+                var partial = new PressingPartialProvider("Jump");
+                input.SetInputProvider(partial);
+                bool declined = !input.GetButton("Cancel") && !input.GetButtonDown("Cancel") && !input.GetButtonUp("Cancel");
+                bool supplied = input.GetButton("Jump") && input.GetButtonDown("Jump") && input.GetButtonUp("Jump");
+                Check("I6. PartialProvider_LeavesTheButtonsItDoesNotSupplyToTheService", declined && supplied,
+                    $"Cancel left to the service={declined}, Jump answered by the provider={supplied}");
             }
             finally
             {
@@ -1431,5 +1445,20 @@ namespace NexusBench
         public ValueTask OnInitializeAsync(CancellationToken ct) => default;
         public ValueTask OnStartAsync(CancellationToken ct) => default;
         public void OnDispose() { }
+    }
+
+    internal class PressingProvider : IInputProvider
+    {
+        public Vector2 GetMoveInput() => Vector2.zero;
+        public bool GetButton(string actionName) => true;
+        public bool GetButtonDown(string actionName) => true;
+        public bool GetButtonUp(string actionName) => true;
+    }
+
+    internal sealed class PressingPartialProvider : PressingProvider, IPartialInputProvider
+    {
+        private readonly string _button;
+        public PressingPartialProvider(string button) => _button = button;
+        public bool ProvidesButton(string actionName) => actionName == _button;
     }
 }

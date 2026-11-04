@@ -13,6 +13,11 @@ everything under Unreleased is in the repository but not yet in a tagged package
 ## [Unreleased]
 
 ### Added
+- **`IPartialInputProvider`: an input provider can supply only some buttons** (issue #156).
+  - An `IInputProvider` answered every button read of `InputService`, so a provider with movement only took Android's back key: `ScreenStack`'s back chain reads `GetButtonDown("Cancel")`. Wickling's floating joystick is not registered as a provider for this reason.
+  - A provider that also implements `IPartialInputProvider` answers the buttons for which `ProvidesButton(actionName)` returns true; the service reads the others itself through the Input System or the Input Manager. The movement stays the provider's, neutral frames included.
+  - `IInputProvider` is unchanged, and a provider that does not implement the new interface still answers every button.
+  - Harness I5, I6; PlayMode `InputServiceButtonTests.A_partial_provider_leaves_the_back_key_to_the_service_and_a_plain_provider_still_answers_it`.
 - **`IAdService.OnAdImpression` reports each impression with its format, currency and precision** (issue #135).
   - `OnImpressionRecorded` carries the network, the value and the placement, so a game logged every impression as USD: an AdMob impression is in the AdMob account's currency, and the ads bridge dropped the format, the currency and the precision that `AdRevenue` has. ChipCrisis hard-codes `"USD"`.
   - The new `AdImpression` struct holds the network, the placement, the format, the value, the currency (ISO 4217) and the precision word; the three the caller did not give are null. `AdService.RaiseImpression(AdImpression)` raises `OnAdImpression`, then `OnImpressionRecorded`; the three-value `RaiseImpression` raises both with nulls.

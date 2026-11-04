@@ -17,7 +17,9 @@ For a local checkout, use **Install package from disk** and select
 when pinning a production git dependency. Unity resolves the package's uGUI, profiling and Input System dependencies.
 For built-in keyboard/gamepad support, set Player Settings → Active Input Handling to
 Input System Package (New) or Both. A custom IInputProvider can supply replay, UI
-or virtual controls; its neutral input is authoritative.
+or virtual controls; its neutral input is authoritative. A provider that has only some
+buttons, such as an on-screen joystick, implements IPartialInputProvider so the back key
+still reaches the service.
 This package targets Unity 6; older Unity versions are not promised by this guide.
 
 ## Beginner: run the example

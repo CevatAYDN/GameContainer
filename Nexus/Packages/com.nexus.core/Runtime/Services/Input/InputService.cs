@@ -74,9 +74,16 @@ namespace Nexus.Core.Services
             _virtualJoystickInput = Vector2.ClampMagnitude(direction, 1f);
         }
 
-        public bool GetButton(string actionName)
+        // The provider answers a button unless it is a partial one that does not supply it (issue #156).
+        private IInputProvider ButtonProvider(string actionName)
         {
             var provider = _customProvider ?? InputProvider;
+            return provider is IPartialInputProvider partial && !partial.ProvidesButton(actionName) ? null : provider;
+        }
+
+        public bool GetButton(string actionName)
+        {
+            var provider = ButtonProvider(actionName);
             if (provider != null) return provider.GetButton(actionName);
 #if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
             if (CheckNewInputButton(actionName, ButtonQuery.Pressed)) return true;
@@ -90,7 +97,7 @@ namespace Nexus.Core.Services
 
         public bool GetButtonDown(string actionName)
         {
-            var provider = _customProvider ?? InputProvider;
+            var provider = ButtonProvider(actionName);
             if (provider != null) return provider.GetButtonDown(actionName);
 #if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
             if (CheckNewInputButton(actionName, ButtonQuery.Down)) return true;
@@ -104,7 +111,7 @@ namespace Nexus.Core.Services
 
         public bool GetButtonUp(string actionName)
         {
-            var provider = _customProvider ?? InputProvider;
+            var provider = ButtonProvider(actionName);
             if (provider != null) return provider.GetButtonUp(actionName);
 #if UNITY_INPUT_SYSTEM && ENABLE_INPUT_SYSTEM
             if (CheckNewInputButton(actionName, ButtonQuery.Up)) return true;

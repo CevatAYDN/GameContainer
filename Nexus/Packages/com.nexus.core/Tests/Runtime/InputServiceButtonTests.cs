@@ -1,6 +1,7 @@
 using System.Threading;
 using NUnit.Framework;
 using Nexus.Core.Services;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace Nexus.Tests
@@ -30,6 +31,44 @@ namespace Nexus.Tests
             {
                 input.OnDispose();
             }
+        }
+
+        // Issue #156: a provider answered every button read, so a joystick that has no buttons took Android's back key from the service
+        [Test]
+        public void A_partial_provider_leaves_the_back_key_to_the_service_and_a_plain_provider_still_answers_it()
+        {
+            var input = new InputService();
+            input.InitializeAsync(CancellationToken.None).GetAwaiter().GetResult();
+            try
+            {
+                var keyboard = InputSystem.AddDevice<Keyboard>();
+                Press(keyboard.escapeKey, queueEventOnly: true);
+                Release(keyboard.escapeKey, queueEventOnly: true);
+                InputSystem.Update();
+
+                input.SetInputProvider(new StickWithoutButtons());
+                bool partialProvider = input.GetButtonDown("Cancel");
+                input.SetInputProvider(new Stick());
+                bool plainProvider = input.GetButtonDown("Cancel");
+                Assert.That((partialProvider, plainProvider), Is.EqualTo((true, false)));
+            }
+            finally
+            {
+                input.OnDispose();
+            }
+        }
+
+        private class Stick : IInputProvider
+        {
+            public Vector2 GetMoveInput() => Vector2.right;
+            public bool GetButton(string actionName) => false;
+            public bool GetButtonDown(string actionName) => false;
+            public bool GetButtonUp(string actionName) => false;
+        }
+
+        private sealed class StickWithoutButtons : Stick, IPartialInputProvider
+        {
+            public bool ProvidesButton(string actionName) => false;
         }
     }
 }

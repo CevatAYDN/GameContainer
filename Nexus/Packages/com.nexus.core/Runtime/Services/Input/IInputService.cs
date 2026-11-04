@@ -17,6 +17,8 @@ namespace Nexus.Core.Services
     /// <summary>
     /// Pluggable input provider interface. Implement to feed custom input from
     /// Unity New Input System (InputActionAsset), Rewired, Touch Gestures, or Network Replay.
+    /// A provider answers the movement and every button read; one that supplies only some buttons
+    /// implements <see cref="IPartialInputProvider"/>.
     /// </summary>
     [Preserve]
     public interface IInputProvider
@@ -25,6 +27,19 @@ namespace Nexus.Core.Services
         bool GetButton(string actionName);
         bool GetButtonDown(string actionName);
         bool GetButtonUp(string actionName);
+    }
+
+    /// <summary>
+    /// A provider that supplies only some buttons, such as an on-screen joystick that has none. The
+    /// service reads a button the provider does not supply itself (Input System or Input Manager), so
+    /// Android's back key still reaches "Cancel". The movement stays the provider's, neutral frames
+    /// included (issue #156).
+    /// </summary>
+    [Preserve]
+    public interface IPartialInputProvider : IInputProvider
+    {
+        /// <summary>True when the provider answers <paramref name="actionName"/>; false leaves it to the service.</summary>
+        bool ProvidesButton(string actionName);
     }
 
     /// <summary>

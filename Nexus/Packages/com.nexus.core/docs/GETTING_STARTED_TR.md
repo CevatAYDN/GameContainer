@@ -17,7 +17,9 @@ Yerel bir checkout için **Install package from disk** ile
 bir sürüm etiketi veya commit (`#<revision>`) kullanın. Unity, paketin uGUI, profiling ve Input System bağımlılıklarını çözer.
 Yerleşik klavye/gamepad desteği için Player Settings → Active Input Handling ayarını
 Input System Package (New) veya Both yapın. Özel bir IInputProvider replay, UI
-veya sanal kontroller sağlayabilir; onun nötr girişi belirleyicidir.
+veya sanal kontroller sağlayabilir; onun nötr girişi belirleyicidir. Yalnızca bazı
+tuşları olan bir sağlayıcı, örneğin ekran joystick'i, IPartialInputProvider uygular;
+geri tuşu böylece servise ulaşmaya devam eder.
 Bu paket Unity 6'yı hedefler; bu rehber eski Unity sürümleri için söz vermez.
 
 ## Yeni başlayan: örneği çalıştırın
