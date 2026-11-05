@@ -172,20 +172,18 @@ namespace Nexus.Editor.Tests
         public void CrossBoundary_MultipleParents_DifferentTypesResolveCorrectly()
         {
             using var grandparent = NexusTestHarness.CreateContext(
-                builder =>
-                {
-                    builder.BindCrossBoundary<ICrossBoundaryModel, CrossBoundaryModel>();
-                    builder.BindCrossBoundary<ISharedService, SharedService>();
-                });
+                builder => builder.BindCrossBoundary<ICrossBoundaryModel, CrossBoundaryModel>());
 
             using var parent = NexusTestHarness.CreateChildContext(grandparent, "Parent");
+            parent.Context.Container.BindCrossBoundary<ISharedService, SharedService>();
             using var child = NexusTestHarness.CreateChildContext(parent, "Child");
 
             var model = child.Context.ResolveCrossBoundary<ICrossBoundaryModel>();
             var service = child.Context.ResolveCrossBoundary<ISharedService>();
 
+            Assert.AreSame(grandparent.Context.Resolve<ICrossBoundaryModel>(), model, "the model comes from the grandparent");
             Assert.AreEqual(42, model.Value);
-            Assert.IsNotNull(service);
+            Assert.AreSame(parent.Context.Resolve<ISharedService>(), service, "the service comes from the parent");
         }
     }
 }

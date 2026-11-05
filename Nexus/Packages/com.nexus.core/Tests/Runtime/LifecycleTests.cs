@@ -40,7 +40,7 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public async Task ContextLifecycle_TriggeredInOrder()
+        public void Configure_AndDispose_ReachTheLifecycleBoundInTheContextsContainer()
         {
             var lifecycle = new TestLifecycle();
             var context = new Context();
@@ -48,14 +48,7 @@ namespace Nexus.Tests
 
             context.Configure();
             Assert.IsTrue(lifecycle.ConfigureCalled);
-            Assert.IsFalse(lifecycle.InitializeCalled);
-
-            await lifecycle.OnInitializeAsync(context.LifetimeToken);
-            Assert.IsTrue(lifecycle.InitializeCalled);
-            Assert.IsFalse(lifecycle.StartCalled);
-
-            await lifecycle.OnStartAsync(context.LifetimeToken);
-            Assert.IsTrue(lifecycle.StartCalled);
+            Assert.IsFalse(lifecycle.InitializeCalled, "Configure does not initialize");
 
             context.Dispose();
             Assert.IsTrue(lifecycle.DisposeCalled);

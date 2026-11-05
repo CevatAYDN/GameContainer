@@ -43,7 +43,7 @@ namespace Nexus.Firebase.Tests
         [Test]
         public void AnalyticsEventName_AcceptsNamesUpToFortyCharacters()
         {
-            string longest = new string('a', AnalyticsEventName.MaxLength);
+            string longest = new string('a', 40);
             Assert.IsTrue(AnalyticsEventName.IsValid(longest));
             Assert.IsFalse(AnalyticsEventName.IsValid(longest + "a"), "forty-one characters are refused");
         }
@@ -95,10 +95,10 @@ namespace Nexus.Firebase.Tests
         }
 
         [Test]
-        public void AnalyticsUserProperty_ValueIsLimitedToThirtySixCharacters()
+        public void AnalyticsUserProperty_RefusesAValueOverThirtySixCharactersOrNull()
         {
-            Assert.IsTrue(AnalyticsUserProperty.IsValidValue(new string('v', AnalyticsUserProperty.MaxValueLength)));
-            Assert.IsFalse(AnalyticsUserProperty.IsValidValue(new string('v', AnalyticsUserProperty.MaxValueLength + 1)));
+            Assert.IsTrue(AnalyticsUserProperty.IsValidValue(new string('v', 36)));
+            Assert.IsFalse(AnalyticsUserProperty.IsValidValue(new string('v', 37)));
             Assert.IsFalse(AnalyticsUserProperty.IsValidValue(null), "a null value would remove the property");
         }
 

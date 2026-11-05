@@ -34,9 +34,11 @@ namespace Nexus.Tests
             public ISignalBus SignalBus { get; private set; }
             public bool IsBound { get; private set; }
             public string[] Events { get; set; }
+            public bool ViewWasBoundAtBind;
 
             public void Bind(object view, ISignalBus signalBus)
             {
+                ViewWasBoundAtBind = (view as TestView)?.IsBound == true;
                 BoundView = view;
                 SignalBus = signalBus;
                 IsBound = true;
@@ -456,6 +458,7 @@ namespace Nexus.Tests
             Assert.IsNotNull(mediator);
             Assert.AreSame(view, mediator.BoundView);
             Assert.IsTrue(mediator.IsBound);
+            Assert.IsTrue(mediator.ViewWasBoundAtBind, "the mediator was bound before its view");
 
             binder.UnregisterView(view);
             Assert.AreEqual(2, view.Events.Count);

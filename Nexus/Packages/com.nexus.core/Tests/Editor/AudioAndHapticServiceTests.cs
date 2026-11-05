@@ -24,7 +24,7 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public async Task AudioService_VolumeClampingAndMuteState()
+        public async Task AudioService_ClampsVolumesToZeroToOne()
         {
             using var audio = new AudioService
             {
@@ -33,18 +33,12 @@ namespace Nexus.Editor.Tests
             await audio.InitializeAsync(default);
 
             audio.MasterVolume = 0.8f;
-            audio.BgmVolume = 0.5f;
-            audio.SfxVolume = 0.7f;
+            audio.BgmVolume = -0.5f;
+            audio.SfxVolume = 1.5f;
 
             Assert.AreEqual(0.8f, audio.MasterVolume);
-            Assert.AreEqual(0.5f, audio.BgmVolume);
-            Assert.AreEqual(0.7f, audio.SfxVolume);
-
-            audio.IsMuted = true;
-            Assert.IsTrue(audio.IsMuted);
-
-            audio.IsMuted = false;
-            Assert.IsFalse(audio.IsMuted);
+            Assert.AreEqual(0f, audio.BgmVolume);
+            Assert.AreEqual(1f, audio.SfxVolume);
         }
 
         // ── Issue #71: the game's store, separate mutes, haptic effects, the audio root contract ──

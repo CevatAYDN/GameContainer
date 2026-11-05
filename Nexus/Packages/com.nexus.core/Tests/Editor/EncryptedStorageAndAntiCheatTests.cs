@@ -321,9 +321,12 @@ namespace Nexus.Editor.Tests
         {
             const string salt = "Test_Salt_Import166";
             ForgetStore(salt);
+            NexusRuntime.Reset(); // the fallback logger, which a release player disables
+            NexusBuild.OverrideForTests(false);
             var store = new EncryptedStorageService(salt, StorageKeyBinding.Device, "phone-A") { AutoSave = true };
             try
             {
+                Assert.IsFalse(NexusRuntime.Logger.IsEnabled, "a release player's logger drops LogWarning");
                 store.SetString("coins", "40");
                 string payload = store.ExportEncryptedSaveData("coins", out string failure);
                 Assert.IsNull(failure);
@@ -359,6 +362,7 @@ namespace Nexus.Editor.Tests
             }
             finally
             {
+                NexusBuild.OverrideForTests(null);
                 store.Dispose();
                 ForgetStore(salt);
             }
@@ -405,6 +409,8 @@ namespace Nexus.Editor.Tests
 
             Assert.AreEqual(9999, storage.GetInt("PlayerCoins"));
             Assert.AreEqual("Hero", storage.GetString("PlayerName"));
+            StringAssert.DoesNotContain("Hero", System.Text.Encoding.UTF8.GetString(File.ReadAllBytes(Private<string>(storage, "GetFilePath", "PlayerName"))),
+                "the save file holds the value encrypted");
             Assert.IsTrue(storage.HasKey("PlayerCoins"));
 
             storage.DeleteKey("PlayerCoins");
@@ -532,6 +538,8 @@ namespace Nexus.Editor.Tests
             secureInt.Value = 150;
             Assert.AreEqual(150, (int)secureInt);
             Assert.AreEqual(1, callCount);
+            var core = SecureCore(secureInt);
+            Assert.AreNotEqual(150, (int)CoreField(core, "_obscuredValue").GetValue(core), "memory holds the value XOR its keys");
         }
 
         [Test]
@@ -560,6 +568,8 @@ namespace Nexus.Editor.Tests
             secureLong.Value = 150L;
             Assert.AreEqual(150L, (long)secureLong);
             Assert.AreEqual(1, callCount);
+            var core = SecureCore(secureLong);
+            Assert.AreNotEqual(150L, (long)CoreField(core, "_obscuredValue").GetValue(core), "memory holds the value XOR its keys");
         }
 
         [Test]
@@ -648,6 +658,8 @@ namespace Nexus.Editor.Tests
             secureString.Value = "Mage";
             Assert.AreEqual("Mage", (string)secureString);
             Assert.AreEqual(1, callCount);
+            var core = SecureCore(secureString);
+            Assert.AreNotEqual("Mage", new string((char[])CoreField(core, "_obscuredChars").GetValue(core)), "memory holds each char XOR its key");
         }
 
         [Test]

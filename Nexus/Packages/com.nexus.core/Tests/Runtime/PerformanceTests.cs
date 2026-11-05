@@ -100,6 +100,9 @@ namespace Nexus.Tests
             }
 
             Assert.AreEqual(102, _counter.Value);
+            var stats = System.Linq.Enumerable.Single(_poolManager.GetPoolStatsSnapshot(), s => s.CommandType == typeof(PerfCommand));
+            Assert.AreEqual(102, stats.TotalGets);
+            Assert.AreEqual(0, stats.TotalCreated, "a command that was not returned made the pool create another");
         }
 
         [Test]

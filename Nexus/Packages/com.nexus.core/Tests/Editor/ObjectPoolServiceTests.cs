@@ -73,10 +73,15 @@ namespace Nexus.Editor.Tests
         public void Prewarm_InstantiatesRequestedCount()
         {
             _poolService.Prewarm(_prefab, 5);
+            var poolRoot = _manualRoot.transform.Find("Pool_TestPrefab");
+            Assert.AreEqual(5, poolRoot.childCount);
+            var prewarmed = new List<GameObject>();
+            foreach (Transform child in poolRoot) prewarmed.Add(child.gameObject);
+
             var spawned = _poolService.Spawn(_prefab);
 
-            Assert.IsNotNull(spawned);
-            Assert.AreEqual(_prefab.name, spawned.name);
+            Assert.That(prewarmed, Has.Member(spawned), "the spawn instantiated instead of taking a prewarmed instance");
+            Assert.AreEqual(4, poolRoot.childCount);
             _poolService.Despawn(spawned);
         }
 
@@ -90,37 +95,6 @@ namespace Nexus.Editor.Tests
             _poolService.Despawn(instance.gameObject);
             Assert.IsTrue(instance.DespawnedCalled);
             Assert.IsFalse(instance.gameObject.activeSelf);
-        }
-
-        [Test]
-        public void SpawnSessionGenerations_AdvanceOnRespawn_GuardStaleTimers()
-        {
-            // Regression: DespawnAfter used to capture only the instance and blindly despawn
-            // it when the timer fired. If the object was manually despawned and RE-spawned
-            // while the timer was pending, the stale timer killed the live re-spawned object.
-            // The fix tracks a per-instance spawn-session generation: it advances on every
-            // Spawn and is cleared on Despawn, so stale timers can detect the re-spawn.
-            // The generation map was re-keyed from GetInstanceID ints to managed object
-            // references (ObjectPoolService.GetKey) — the test must use the same key space.
-            var genField = typeof(ObjectPoolService).GetField("_spawnGenerations",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            var generations = (System.Collections.Generic.Dictionary<UnityEngine.Object, long>)genField.GetValue(_poolService);
-
-            var instance = _poolService.Spawn(_prefab);
-            Assert.IsTrue(generations.TryGetValue(instance, out long firstGen), "Spawn must record a generation.");
-
-            // Manual despawn clears the generation entry (no stale timer can hit it).
-            _poolService.Despawn(instance);
-            Assert.IsFalse(generations.ContainsKey(instance), "Despawn must clear the generation entry.");
-
-            // Re-spawn gets a NEW, higher generation.
-            var respawned = _poolService.Spawn(_prefab);
-            Assert.AreSame(instance, respawned, "Pool should reuse the same instance.");
-            Assert.IsTrue(generations.TryGetValue(instance, out long secondGen));
-            Assert.Greater(secondGen, firstGen,
-                "Re-spawn must advance the generation so stale DespawnAfter timers are ignored.");
-
-            _poolService.Despawn(respawned);
         }
         private T Field<T>(string name) => (T)typeof(ObjectPoolService)
             .GetField(name, System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)

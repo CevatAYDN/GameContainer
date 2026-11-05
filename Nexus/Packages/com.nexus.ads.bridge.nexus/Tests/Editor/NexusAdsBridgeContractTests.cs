@@ -56,19 +56,21 @@ namespace Nexus.Ads.Bridge.Tests
         private AdAdapterFactory _factory;
         private TestStoreService _store;
 
-        private static AdsConfig Config() => new AdsConfig(
+        private static AdsConfig Config(AdPolicy policy) => new AdsConfig(
             new[] { new AdPlacement("shop_refill", AdFormat.Rewarded), new AdPlacement("level_end", AdFormat.Interstitial, naturalBreak: true) },
-            AdPolicy.Default,
+            policy,
             new ProviderConfig("key", new Dictionary<AdFormat, string>(), true, null, false, false, false, "G"),
             BuildKind.Editor);
 
         [SetUp]
-        public void SetUp()
+        public void SetUp() => Build(AdPolicy.Default);
+
+        private void Build(AdPolicy policy)
         {
             MediationLock.Release(MediationLock.Holder ?? "");
             _clock = new TestClock();
             _simulator = new SimulatorProvider(new TestScheduler());
-            _controller = new AdController(Config(), _simulator, _clock, new TestVisibility(), new TestMainThread(), new TestScheduler(), new TestStore(), new TestTelemetry(), _simulator);
+            _controller = new AdController(Config(policy), _simulator, _clock, new TestVisibility(), new TestMainThread(), new TestScheduler(), new TestStore(), new TestTelemetry(), _simulator);
             _service = new AdService();
             _factory = new AdAdapterFactory();
             _store = new TestStoreService();
@@ -175,18 +177,19 @@ namespace Nexus.Ads.Bridge.Tests
         }
 
         [Test]
-        public void TheServiceCooldown_IsThePolicyFloor_AndTheGuardPacesInterstitials()
+        public void TheServiceCooldown_FollowsThePolicyGap()
         {
+            // AdService's own default cooldown is 30 s, as is AdPolicy.Default's gap; a 0 s gap shows that the bridge set it
+            _controller.Dispose(); _service.Dispose();
+            Build(new AdPolicy(0, 60, 30, 0, 0, 30));
+
             Assert.IsFalse(_service.IsInterstitialAvailable("level_end"), "first minute of the session");
             _clock.Seconds = 61;
             Assert.IsTrue(_service.IsInterstitialAvailable("level_end"));
             bool closed = false;
             _service.ShowInterstitial("level_end", () => closed = true);
             Assert.IsTrue(closed);
-            Assert.IsFalse(_service.IsInterstitialAvailable("level_end"), "service cooldown = policy gap, both 30 s");
-            _clock.Seconds = 95;
-            // the service's own clock is Unity's; its cooldown stays engaged in a headless test, so only the guard is asserted here
-            Assert.IsTrue(_controller.IsReady("level_end"));
+            Assert.IsTrue(_service.IsInterstitialAvailable("level_end"), "the service kept its 30 s default instead of the policy's 0 s gap");
         }
 
         [Test]

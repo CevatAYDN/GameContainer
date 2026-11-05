@@ -25,6 +25,8 @@ namespace Nexus.Editor.Tests
         {
             using var context = new Context(); var machine = new GameStateMachine();
             context.Container.BindInstance<IGameStateMachine>(machine);
+            using var otherContext = new Context(); var other = new GameStateMachine();
+            otherContext.Container.BindInstance<IGameStateMachine>(other);
             var plugin = new FSMPlugin();
             try
             {
@@ -32,17 +34,20 @@ namespace Nexus.Editor.Tests
                 var cards = (Dictionary<IGameStateMachine, VisualElement>)typeof(FSMPlugin)
                     .GetField("_cards", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(plugin);
                 var render = typeof(FSMPlugin).GetMethod("Render", BindingFlags.Instance | BindingFlags.NonPublic);
-                var original = cards[machine];
+                var content = (ScrollView)typeof(FSMPlugin).GetField("_content", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(plugin);
+                var original = cards[machine]; var otherOriginal = cards[other];
                 render.Invoke(plugin, null); Assert.AreSame(original, cards[machine]);
                 machine.RegisterState(new State()); render.Invoke(plugin, null);
                 Assert.AreNotSame(original, cards[machine]);
+                Assert.AreSame(otherOriginal, cards[other], "the unchanged machine's card was rebuilt too");
+                Assert.AreEqual(cards.Count, content.contentContainer.childCount, "the rebuilt card was added beside the old one");
                 var updated = cards[machine]; render.Invoke(plugin, null); Assert.AreSame(updated, cards[machine]);
                 plugin.OnUpdate(); plugin.OnDisable(); Assert.AreEqual(0, cards.Count);
                 var live = (HashSet<IGameStateMachine>)typeof(FSMPlugin).GetField("_live", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(plugin);
                 Assert.AreEqual(0, live.Count);
                 Assert.IsNotNull(plugin.CreateView()); plugin.OnEnable(); render.Invoke(plugin, null);
                 Assert.IsTrue(cards.ContainsKey(machine));
-                var content = (ScrollView)typeof(FSMPlugin).GetField("_content", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(plugin);
+                content = (ScrollView)typeof(FSMPlugin).GetField("_content", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(plugin); // CreateView built a new one
                 Assert.AreEqual(cards.Count, content.contentContainer.childCount);
             }
             finally { plugin.OnDisable(); }

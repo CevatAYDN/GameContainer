@@ -37,12 +37,19 @@ namespace Nexus.Tests
             bData.ScopeTag = "Shared";
             using var b = new Context(null, bData);
 
+            var cData = ScriptableObject.CreateInstance<ContextData>();
+            cData.ScopeTag = "Other";
+            using var c = new Context(null, cData);
+
             var contexts = NexusRuntime.GetContexts("Shared");
 
-            Assert.GreaterOrEqual(contexts.Count, 2);
+            Assert.That(contexts, Has.Member(a));
+            Assert.That(contexts, Has.Member(b));
+            Assert.That(contexts, Has.No.Member(c));
 
             Object.DestroyImmediate(aData);
             Object.DestroyImmediate(bData);
+            Object.DestroyImmediate(cData);
         }
 
         [Test]

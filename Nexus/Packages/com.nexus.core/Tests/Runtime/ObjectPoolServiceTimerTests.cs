@@ -48,6 +48,25 @@ namespace Nexus.Tests.Runtime
             Assert.IsTrue(reused.activeSelf);
         }
 
+        // DespawnAfter captured only the instance, so the timer of a spawn that was despawned by hand despawned the live
+        // object that reused the instance.
+        [UnityTest]
+        public IEnumerator DespawnAfter_FromAnEarlierSpawn_LeavesTheRespawnedInstanceAlone()
+        {
+            var fx = _pool.Spawn(_prefab);
+            _pool.DespawnAfter(fx, 0.05f);
+            _pool.Despawn(fx);
+            var respawned = _pool.Spawn(_prefab);
+            Assert.AreSame(fx, respawned);
+
+            yield return new WaitForSeconds(0.2f);
+            Assert.IsTrue(respawned.activeSelf, "the earlier spawn's timer despawned the respawned instance");
+
+            _pool.DespawnAfter(respawned, 0.05f);
+            yield return new WaitForSeconds(0.2f);
+            Assert.IsFalse(respawned.activeSelf, "the current spawn's timer despawns it");
+        }
+
         // A spawn without a parent stayed under the pool root, which lives in DontDestroyOnLoad, so it outlived its level.
         [Test]
         public void Spawn_WithoutAParent_PutsTheInstanceAtTheActiveScenesRoot()

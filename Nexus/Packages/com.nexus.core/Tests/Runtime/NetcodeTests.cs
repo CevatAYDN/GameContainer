@@ -185,6 +185,8 @@ namespace Nexus.Tests
             _networkBus.Clear();
 
             Assert.AreEqual(0, _networkBus.Histories.Count);
+            Assert.DoesNotThrow(() => _networkBus.RollbackAndResimulate(rollbackTick: 5, targetTick: 5),
+                "a model that stayed registered has no snapshot of tick 5");
         }
 
         [Test]
@@ -314,6 +316,7 @@ namespace Nexus.Tests
                 "Pre-rollback state must be the last fired signal.");
 
             // Roll back to tick 50 and resimulate to the end of the confirmed horizon.
+            _replayModel.LastHealth = -1; // so a rollback that restores and replays nothing fails below
             _networkBus.RollbackAndResimulate(rollbackTick: 50, targetTick: tickCount - 1);
 
             // Deterministic replay: model must be exactly the last replayed signal value.

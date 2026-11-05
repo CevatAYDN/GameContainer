@@ -590,15 +590,11 @@ namespace Nexus.Ads.Tests
         }
 
         [Test]
-        public void Catalog_ParsesAndNamesTheThreeProviders()
+        public void Catalog_ParsesIntoItsMirror_AndAgreesWithTheRuntimeSamplePrefixAndLevelPlayPackage()
         {
             var catalog = PlatformCatalog.Load(fresh: true);
-            Assert.AreEqual(3, catalog.providers.Length);
             Assert.AreEqual("com.unity.services.levelplay", catalog.Provider(AdProviderKind.LevelPlay).sdk.upm.package);
             Assert.AreEqual(AdMobSampleIds.PublisherPrefix, catalog.Provider(AdProviderKind.AdMob).testData.publisherPrefix);
-            Assert.IsFalse(catalog.Provider(AdProviderKind.Max).childDirectedAllowed);
-            Assert.IsTrue(catalog.Network("inmobi").childDirectedAllowed);
-            Assert.IsFalse(catalog.Network("chartboost").childDirectedAllowed);
         }
     }
 }

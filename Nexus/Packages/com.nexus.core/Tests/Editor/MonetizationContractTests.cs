@@ -11,11 +11,12 @@ namespace Nexus.Editor.Tests
     {
         public bool Ready = true;
         public bool RewardResult = true;
+        public int RewardedShows;
         public void Initialize(Action onInitialized) => onInitialized?.Invoke();
         public bool IsInterstitialReady(string placement) => Ready;
         public void ShowInterstitial(string placement, Action onClosed) => onClosed?.Invoke();
         public bool IsRewardedReady(string placement) => Ready;
-        public void ShowRewarded(string placement, Action<bool> onCompleted) => onCompleted?.Invoke(RewardResult);
+        public void ShowRewarded(string placement, Action<bool> onCompleted) { RewardedShows++; onCompleted?.Invoke(RewardResult); }
         public void ShowBanner(string placement, string position) { }
         public void HideBanner() { }
     }
@@ -46,14 +47,14 @@ namespace Nexus.Editor.Tests
         {
             using var ads = new AdService();
             await ads.InitializeAsync(default);
-            var mock = new MockAdNetworkAdapter();
-            ads.SetNetworkAdapter(mock);
-            mock.SetRewardedReady("default", false);
+            var adapter = new BoolOnlyAdAdapter { Ready = false };
+            ads.SetNetworkAdapter(adapter);
 
             AdOutcome? outcome = null;
             ads.RequestReward("default", o => outcome = o);
 
             Assert.That(outcome, Is.EqualTo(AdOutcome.NotReady));
+            Assert.AreEqual(0, adapter.RewardedShows);
         }
 
         [Test]

@@ -118,9 +118,12 @@ namespace Nexus.Editor.Tests
             Assert.IsNull(view1.Context, "View1 must be unbound after UnregisterView");
 
             // Register view2 → should get pooled mediator
+            var binder = testContext.Context.Resolve<ViewBinder>();
+            int pops = binder.PoolPopCount;
             var view2 = new AbstractionBindingView();
             testContext.Context.RegisterView(view2);
             Assert.IsNotNull(view2.Context, "View2 must be bound from pooled mediator");
+            Assert.AreEqual(pops + 1, binder.PoolPopCount, "View2's mediator came from the pool");
             Assert.IsTrue(view2.WasBound, "View2.OnBind must have been called");
 
             // Cleanup

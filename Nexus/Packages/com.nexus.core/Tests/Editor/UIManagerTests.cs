@@ -149,12 +149,21 @@ namespace Nexus.Editor.Tests
         [Test]
         public void CloseAll_ClosesEveryScreen()
         {
-            _uiManager.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+            var otherPrefab = new GameObject("other"); otherPrefab.AddComponent<OtherTestScreen>();
+            try
+            {
+                _uiManager.RegisterScreenPrefab<OtherTestScreen>(otherPrefab);
+                _uiManager.OpenScreenAsync<TestScreenView>().GetAwaiter().GetResult();
+                _uiManager.OpenScreenAsync<OtherTestScreen>().GetAwaiter().GetResult();
+                Assert.AreEqual(2, _uiManager.OpenScreenCount);
 
-            _uiManager.CloseAllAsync().GetAwaiter().GetResult();
+                _uiManager.CloseAllAsync().GetAwaiter().GetResult();
 
-            Assert.AreEqual(0, _uiManager.OpenScreenCount);
-            Assert.IsFalse(_uiManager.IsScreenOpen<TestScreenView>());
+                Assert.AreEqual(0, _uiManager.OpenScreenCount);
+                Assert.IsFalse(_uiManager.IsScreenOpen<TestScreenView>());
+                Assert.IsFalse(_uiManager.IsScreenOpen<OtherTestScreen>());
+            }
+            finally { Object.DestroyImmediate(otherPrefab); }
         }
 
         [Test]

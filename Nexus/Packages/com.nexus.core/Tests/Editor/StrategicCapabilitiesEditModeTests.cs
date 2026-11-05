@@ -80,15 +80,14 @@ namespace Nexus.Editor.Tests
             Assert.AreEqual(ExecutionMode.Sequential, attr.Mode);
         }
 
+        // Issue #280: NexusTestContext read only [SignalHandler], so a command that declares only [RegisterCommand], which the
+        // context's assembly scan registers, threw InvalidOperationException
         [Test]
-        public void RegisterCommandAttribute_AutoDiscovery_RegistersAndExecutesCommand()
+        public void RegisterCommandAttribute_IsReadByTheScanRoutine_AndTheCommandExecutes()
         {
             var state = new TestCapState();
-            using var ctx = NexusTestHarness.CreateContext(builder =>
-            {
-                builder.BindInstance(state);
-                builder.BindCommand<TestCapSignal, TestCapCommand>();
-            });
+            using var ctx = NexusTestHarness.CreateContext(builder => builder.BindInstance(state));
+            ctx.RegisterCommand<TestCapCommand>();
 
             ctx.Context.SignalBus.Fire(new TestCapSignal(42));
 

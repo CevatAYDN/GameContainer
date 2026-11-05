@@ -93,7 +93,7 @@ namespace Nexus.Tests
         }
 
         [Test]
-        public void ThreadSafeDrained_Before_NextFrame()
+        public void DrainThreadSafe_LeavesNextFrameSignalsForDrainNextFrame()
         {
             var order = new System.Collections.Generic.List<string>();
             _signalBus.Subscribe<OrderedSignalA>(sig => order.Add("A"));
@@ -105,6 +105,7 @@ namespace Nexus.Tests
 
             // Thread-safe queue drains first (simulates Update)
             _queue.DrainThreadSafe();
+            Assert.AreEqual(1, order.Count, "DrainThreadSafe delivered the next-frame signal too");
             Assert.AreEqual("A", order[0]);
 
             // Then next-frame queue (simulates LateUpdate)

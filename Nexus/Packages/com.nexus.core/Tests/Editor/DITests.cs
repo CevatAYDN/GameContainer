@@ -152,15 +152,11 @@ namespace Nexus.Editor.Tests
             [Inject] public IDependency DependencyField;
             public bool ResetCalled;
 
-            public void Reset()
-            {
-                ResetCalled = true;
-                DependencyField = null;
-            }
+            public void Reset() => ResetCalled = true;
         }
 
         [Test]
-        public void ClearInjectedReferences_Resettable_CallsReset()
+        public void ClearInjectedReferences_CallsReset_AndClearsTheInjectFields()
         {
             using var di = new NexusDI();
             di.Bind<IDependency, ConcreteDependency>();

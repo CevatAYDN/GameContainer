@@ -55,33 +55,23 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
-        public void OfflineTimeCalculator_ValidatesTimeAndDetectsTampering()
+        public void OfflineTimeCalculator_GrantsNothingForAClockSetBack_AndClampsAClockPushedForwardToTheMonotonicTick()
         {
             using var storage = new EncryptedStorageService("Test_Offline_Salt");
-
-            // Record quit timestamp
             OfflineTimeCalculator.RecordQuitTimestamp(storage);
+            long now = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-            // Calculate offline time (should be 0 or small positive number)
-            long offlineSec = OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600);
-            Assert.GreaterOrEqual(offlineSec, 0);
+            // the clock was set back: the quit lies 1000 s in the future
+            storage.SetLong("NT_LastQuitTimestamp", now + 1000);
+            UnityEngine.TestTools.LogAssert.Expect(LogType.Warning,
+                new System.Text.RegularExpressions.Regex(@"^\[OfflineTimeCalculator\] Time manipulation detected! Offline progress set to 0\.$"));
+            Assert.AreEqual(0, OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600));
 
-            // Test anti-cheat: set quit time 1000 seconds into the future
-            long futureTimestamp = System.DateTimeOffset.UtcNow.ToUnixTimeSeconds() + 1000;
-            storage.SetLong("NT_LastQuitTimestamp", futureTimestamp);
-            storage.Save();
-
-            long tamperedOfflineSec = OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600);
-            Assert.AreEqual(0, tamperedOfflineSec, "Tampered future timestamp must return 0 offline seconds.");
-
-            // A8: a monotonic hardware tick is stored alongside the wall clock; a clock
-            // pushed FORWARD (wall diff inflated but monotonic diff ~0) must be clamped
-            // to the real elapsed time instead of granting inflated offline rewards.
-            long monoMs = System.Diagnostics.Stopwatch.GetTimestamp() * 1000L / System.Diagnostics.Stopwatch.Frequency;
-            long realElapsedMs = monoMs - storage.GetLong("NT_LastQuitMonotonicMs", 0L);
-            long forwardCheatSec = OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600);
-            Assert.LessOrEqual(forwardCheatSec, Math.Max(0, realElapsedMs / 1000L) + 1,
-                "Forward clock manipulation must not inflate offline progress beyond real elapsed time.");
+            // A8: the clock was pushed forward: the wall clock says 1000 s, the monotonic tick recorded at the quit says ~0
+            storage.SetLong("NT_LastQuitTimestamp", now - 1000);
+            Assert.LessOrEqual(OfflineTimeCalculator.CalculateOfflineSeconds(storage, 3600), 1,
+                "a forward clock granted the wall clock's 1000 s");
+            UnityEngine.TestTools.LogAssert.NoUnexpectedReceived();
 
             storage.DeleteKey("NT_LastQuitTimestamp");
             storage.DeleteKey("NT_LastQuitMonotonicMs");
