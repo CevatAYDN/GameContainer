@@ -159,7 +159,7 @@ iapService.SetStoreAdapter(iapFactory.CreateAdapter(UnityIapAdapter.ProviderName
 It was ported from the first shipped Nexus game and is verified by compiling against the real SDK
 package in a disposable project and by tests of its behaviour before initialization and of a
 confirmed purchase through a store plugged into Unity IAP (Unity IAP 5.4.4 in
-`Nexus/artifacts/iap-20261028/` and `iap-20261031/`; see the repository's `docs/RELEASE_GATES.md`). Gigawatt runs it in its signed Android IL2CPP release build; a price, a
+`Nexus/artifacts/iap-20261028/` and `iap-20261031/`, 5.5.0 in `iap-20261105/`; see the repository's `docs/RELEASE_GATES.md`). Gigawatt runs it in its signed Android IL2CPP release build; a price, a
 purchase and a restore against Google Play are the open item.
 
 Adapter warnings (an ad that did not load, a store that is not reachable, products not fetched)
