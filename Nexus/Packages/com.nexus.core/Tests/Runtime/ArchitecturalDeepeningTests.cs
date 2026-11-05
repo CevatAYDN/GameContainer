@@ -135,7 +135,7 @@ namespace Nexus.Tests.Runtime
         // ─── Phase 3: SignalBus nested types ───
 
         [Test]
-        public async Task SignalBus_SubscriptionNodeNested_AsyncSubscription()
+        public async Task SignalBus_FireAsync_AwaitsAYieldingAsyncSubscriber()
         {
             using var context = ContextFactory.Create();
             var signalBus = context.SignalBus;

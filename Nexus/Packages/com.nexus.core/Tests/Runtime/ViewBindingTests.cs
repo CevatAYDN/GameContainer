@@ -33,7 +33,6 @@ namespace Nexus.Tests
             public object BoundView { get; private set; }
             public ISignalBus SignalBus { get; private set; }
             public bool IsBound { get; private set; }
-            public string[] Events { get; set; }
             public bool ViewWasBoundAtBind;
 
             public void Bind(object view, ISignalBus signalBus)

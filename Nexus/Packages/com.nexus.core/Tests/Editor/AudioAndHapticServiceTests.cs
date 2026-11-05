@@ -158,6 +158,29 @@ namespace Nexus.Editor.Tests
         }
 
         [Test]
+        public async Task AudioService_PlaySfxWithRandomPitch_PassesThePitchRangeAndTheVolumeInTheirPlaces()
+        {
+            // PlaySfxWithRandomPitch takes (min, max, volume) and forwards to PlaySfx's (volume, min, max).
+            var provider = new TestAudioRootProvider();
+            using var audio = new AudioService { AudioRootProvider = provider, PlayerPrefsService = new MemoryPrefs() };
+            await audio.InitializeAsync(default);
+            var root = provider.GetOrCreateRoot();
+            var clip = AudioClip.Create("click", 64, 1, 44100, false);
+            try
+            {
+                audio.PlaySfxWithRandomPitch(clip, minPitch: 1.25f, maxPitch: 1.25f, volume: 0.5f);
+                var source = root.transform.GetChild(0).GetComponent<AudioSource>();
+                Assert.AreEqual(1.25f, source.pitch, 1e-5f, "The pitch comes from the range, not from the volume.");
+                Assert.AreEqual(0.5f, source.volume, 1e-5f, "The volume is the one passed, not a pitch bound.");
+            }
+            finally
+            {
+                UnityEngine.Object.DestroyImmediate(clip);
+                UnityEngine.Object.DestroyImmediate(root);
+            }
+        }
+
+        [Test]
         public async Task AudioService_Dispose_HandsAProvidersRootBackWhateverItsType()
         {
             var provider = new ReleasingRootProvider();

@@ -1034,7 +1034,13 @@ namespace NexusBench
                     && provider.InstantiateCount == beforeReopen;
                 Check("U6. Reopen_Reuses_Pooled_Instance", pooledReuse,
                     $"sameInstance={ReferenceEquals(first, reopened)} instantiated={provider.InstantiateCount} (before={beforeReopen}; pooled => no fresh instantiation)");
+                int openBeforeCloseAll = ui.OpenScreenCount;
                 ui.CloseAllAsync().GetAwaiter().GetResult();
+                bool allClosed = openBeforeCloseAll == 2 && ui.OpenScreenCount == 0
+                    && ui.GetOpenScreensSnapshot().Count == 0
+                    && !ui.IsScreenOpen<SvcScreenView>() && !ui.IsScreenOpen<SvcScreenViewB>();
+                Check("U6b. CloseAll_Closes_Every_Open_Screen", allClosed,
+                    $"open before={openBeforeCloseAll} after={ui.OpenScreenCount} snapshot={ui.GetOpenScreensSnapshot().Count}");
 
                 // U7: dispose hands every provider instance back and destroys the canvas it created (issue #185);
                 // queries and snapshot are safe afterwards.
